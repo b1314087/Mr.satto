@@ -19,6 +19,16 @@ import { PdfReorderPagesTool } from "./implementations/pdf-reorder-pages-tool";
 import { PdfRotateTool } from "./implementations/pdf-rotate-tool";
 import { ImageToPdfTool } from "./implementations/image-to-pdf-tool";
 import { PdfToImageTool } from "./implementations/pdf-to-image-tool";
+import { FileBulkRenameTool } from "./implementations/file-bulk-rename-tool";
+import { FileSequentialRenameTool } from "./implementations/file-sequential-rename-tool";
+import { FileZipTool } from "./implementations/file-zip-tool";
+import { CsvToExcelTool } from "./implementations/csv-to-excel-tool";
+import { ExcelToCsvTool } from "./implementations/excel-to-csv-tool";
+import { CsvMergeTool } from "./implementations/csv-merge-tool";
+import { CsvDedupeTool } from "./implementations/csv-dedupe-tool";
+import { CsvReplaceTool } from "./implementations/csv-replace-tool";
+import { PdfCompressTool } from "./implementations/pdf-compress-tool";
+import { PdfToTextTool } from "./implementations/pdf-to-text-tool";
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -77,6 +87,26 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageToPdfTool />;
     case "pdf-to-image":
       return <PdfToImageTool />;
+    case "file-bulk-rename":
+      return <FileBulkRenameTool />;
+    case "file-sequential-rename":
+      return <FileSequentialRenameTool />;
+    case "file-zip":
+      return <FileZipTool />;
+    case "csv-to-excel":
+      return <CsvToExcelTool />;
+    case "excel-to-csv":
+      return <ExcelToCsvTool />;
+    case "csv-merge":
+      return <CsvMergeTool />;
+    case "csv-dedupe":
+      return <CsvDedupeTool />;
+    case "csv-replace":
+      return <CsvReplaceTool />;
+    case "pdf-compress":
+      return <PdfCompressTool />;
+    case "pdf-to-text":
+      return <PdfToTextTool />;
     default:
       return null;
   }

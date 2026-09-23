@@ -56,28 +56,35 @@ export interface PdfToImageOutputItem extends NamedFileOutput {
   height: number;
 }
 
+/**
+ * PDFの読み込みエラーを日本語の分かりやすいメッセージへ変換する共通ヘルパー。
+ * PdfToImageProcessor / PdfToTextProcessor の両方が同じ pdfjs-dist の
+ * getDocument() を使うため、エラーハンドリングを共通化している。
+ */
+async function loadPdfDocument(file: File) {
+  const pdfjsLib = await getPdfjs();
+  const bytes = await file.arrayBuffer();
+  try {
+    return await pdfjsLib.getDocument({ data: bytes }).promise;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "";
+    if (/password/i.test(message)) {
+      throw new Error(
+        "パスワード保護されたPDFは処理できません。パスワードを解除してから再度お試しください。"
+      );
+    }
+    throw new Error(
+      `${file.name} の読み込みに失敗しました。PDFファイルが破損している可能性があります。`
+    );
+  }
+}
+
 export class PdfToImageProcessor extends BrowserProcessor<
   PdfToImageInput,
   PdfToImageOutputItem[]
 > {
   async process({ file, mimeType, scale = 2 }: PdfToImageInput): Promise<PdfToImageOutputItem[]> {
-    const pdfjsLib = await getPdfjs();
-    const bytes = await file.arrayBuffer();
-
-    let pdf;
-    try {
-      pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "";
-      if (/password/i.test(message)) {
-        throw new Error(
-          "パスワード保護されたPDFは処理できません。パスワードを解除してから再度お試しください。"
-        );
-      }
-      throw new Error(
-        `${file.name} の読み込みに失敗しました。PDFファイルが破損している可能性があります。`
-      );
-    }
+    const pdf = await loadPdfDocument(file);
 
     if (pdf.numPages === 0) {
       throw new Error("このPDFにはページがありません");
@@ -115,5 +122,78 @@ export class PdfToImageProcessor extends BrowserProcessor<
     }
 
     return outputs;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDF → テキスト（Phase 2-B）
+// ---------------------------------------------------------------------------
+export interface PdfToTextInput {
+  file: File;
+}
+
+export interface PdfToTextPage {
+  pageNumber: number;
+  text: string;
+}
+
+export interface PdfToTextOutput {
+  pageCount: number;
+  pages: PdfToTextPage[];
+  /** "--- Page N ---" 区切りで連結した全文 */
+  combinedText: string;
+  /** 1文字も抽出できなかった場合はfalse（スキャン画像PDFの可能性） */
+  hasExtractableText: boolean;
+}
+
+/**
+ * PDF→テキスト Processor。
+ *
+ * pdfjs-dist の getTextContent() は「文字情報として埋め込まれた
+ * テキスト」のみを取得できる。スキャン画像として保存されたPDF
+ * （文字情報を持たないPDF）からはテキストを取得できないため、
+ * その場合は例外にはせず hasExtractableText: false を返し、
+ * UI側でその旨を案内する（OCRは今回のスコープ外）。
+ */
+export class PdfToTextProcessor extends BrowserProcessor<PdfToTextInput, PdfToTextOutput> {
+  async process({ file }: PdfToTextInput): Promise<PdfToTextOutput> {
+    const pdf = await loadPdfDocument(file);
+
+    if (pdf.numPages === 0) {
+      throw new Error("このPDFにはページがありません");
+    }
+
+    const pages: PdfToTextPage[] = [];
+    try {
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        const page = await pdf.getPage(pageNumber);
+        const textContent = await page.getTextContent();
+
+        let raw = "";
+        for (const item of textContent.items) {
+          if ("str" in item) {
+            raw += item.str;
+            raw += item.hasEOL ? "\n" : " ";
+          }
+        }
+        // 連続する空白・過剰な空行を整理して読みやすくする
+        const text = raw
+          .replace(/[ \t]+/g, " ")
+          .replace(/ *\n */g, "\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+
+        pages.push({ pageNumber, text });
+      }
+    } catch {
+      throw new Error("PDFからのテキスト抽出に失敗しました");
+    }
+
+    const hasExtractableText = pages.some((p) => p.text.length > 0);
+    const combinedText = pages
+      .map((p) => `--- Page ${p.pageNumber} ---\n${p.text}`)
+      .join("\n\n");
+
+    return { pageCount: pdf.numPages, pages, combinedText, hasExtractableText };
   }
 }

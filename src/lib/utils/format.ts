@@ -51,3 +51,45 @@ export function stripExtension(filename: string): string {
   const dot = sanitized.lastIndexOf(".");
   return dot === -1 ? sanitized : sanitized.slice(0, dot);
 }
+
+/**
+ * ファイル名（サニタイズ済み）から拡張子のみを取り出す（ドットは含まない）。
+ * 拡張子がない場合は空文字を返す。
+ * ファイル系ツール（一括リネーム・連番リネーム）が「拡張子維持」を
+ * 実現するために、元ファイル名から拡張子だけを分離するのに使う。
+ */
+export function getExtension(filename: string): string {
+  const sanitized = sanitizeFileName(filename);
+  const dot = sanitized.lastIndexOf(".");
+  return dot === -1 ? "" : sanitized.slice(dot + 1);
+}
+
+/**
+ * 出力ファイル名の一覧に同名が含まれる場合、拡張子の直前に "_2" "_3"...
+ * を付加して一意化する（例: photo.jpg, photo.jpg → photo.jpg, photo_2.jpg）。
+ * ZIP化・ファイルリネームなど、複数の出力ファイルを同時に扱うツールが
+ * 意図せず同名で上書きしてしまわないよう、共通で使う。
+ * 付加後の名前が既存の別ファイル名と衝突する場合も、衝突しなくなるまで
+ * 番号を増やして再試行する。
+ */
+export function dedupeFileNames(names: string[]): string[] {
+  const used = new Set<string>();
+  const result: string[] = [];
+  for (const name of names) {
+    let candidate = name;
+    if (used.has(candidate)) {
+      const dot = name.lastIndexOf(".");
+      const base = dot === -1 ? name : name.slice(0, dot);
+      const ext = dot === -1 ? "" : name.slice(dot);
+      let n = 2;
+      candidate = `${base}_${n}${ext}`;
+      while (used.has(candidate)) {
+        n += 1;
+        candidate = `${base}_${n}${ext}`;
+      }
+    }
+    used.add(candidate);
+    result.push(candidate);
+  }
+  return result;
+}

@@ -65,6 +65,60 @@ export async function getPdfPageCount(file: File): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// PDF圧縮（Phase 2-B）
+// ---------------------------------------------------------------------------
+export interface PdfCompressInput {
+  file: File;
+}
+
+export interface PdfCompressOutput {
+  blob: Blob;
+  url: string;
+  originalSizeBytes: number;
+  compressedSizeBytes: number;
+  pageCount: number;
+}
+
+/**
+ * PDF圧縮。
+ *
+ * 重要な注意（開発指示書■9・■24）: pdf-lib には埋め込み画像の
+ * 再圧縮・ダウンサンプリング・不要フォントのサブセット化といった
+ * 「本格的なPDF圧縮」の機能は無い。ここで行っているのは、
+ * PDFの内部構造をオブジェクトストリームへまとめて再構築する
+ * （save()の既定オプション useObjectStreams: true を明示指定）という
+ * pdf-libの公開APIで可能な範囲の最適化のみである。
+ *
+ * そのため、画像が大半を占めるPDFなど、内部構造の再構築だけでは
+ * サイズがほとんど変わらない（場合によっては微増する）PDFが
+ * 一定数存在する。このProcessorは常に「元のサイズ」「処理後のサイズ」
+ * を実測してそのまま返し、UI側で実際の数値のみを表示する。
+ * 「必ず圧縮できる」「大幅に削減できる」という体裁を作らない。
+ */
+export class PdfCompressProcessor extends BrowserProcessor<PdfCompressInput, PdfCompressOutput> {
+  async process({ file }: PdfCompressInput): Promise<PdfCompressOutput> {
+    const doc = await loadPdfDoc(file);
+    const originalSizeBytes = file.size;
+
+    let bytes: Uint8Array;
+    try {
+      bytes = await doc.save({ useObjectStreams: true });
+    } catch {
+      throw new Error("PDFの圧縮処理に失敗しました");
+    }
+    const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
+
+    return {
+      blob,
+      url: URL.createObjectURL(blob),
+      originalSizeBytes,
+      compressedSizeBytes: blob.size,
+      pageCount: doc.getPageCount(),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // PDF結合
 // ---------------------------------------------------------------------------
 export interface PdfMergeInput {
