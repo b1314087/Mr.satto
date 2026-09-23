@@ -1,0 +1,450 @@
+import type { Tool } from "./types";
+
+/**
+ * 全ツールの一覧（データ駆動）。
+ *
+ * status: "available"    -> Phase 1 で実際に動作する
+ *         "coming-soon"  -> 仮ページ（準備中）
+ * processor: 将来 BrowserProcessor / ServerProcessor のどちらを
+ *            使うかの想定。"auto" はファイルサイズ等で自動切り替えする想定。
+ */
+export const tools: Tool[] = [
+  // ------------------------------------------------------------------
+  // 画像
+  // ------------------------------------------------------------------
+  {
+    id: "image-resize",
+    name: "画像リサイズ",
+    category: "image",
+    description: "画像の縦横サイズを指定してリサイズします",
+    status: "available",
+    processor: "browser",
+    keywords: ["resize", "サイズ変更", "縮小", "拡大"],
+    featured: true,
+  },
+  {
+    id: "image-compress",
+    name: "画像圧縮",
+    category: "image",
+    description: "画質を保ちながら画像のファイルサイズを小さくします",
+    status: "available",
+    processor: "browser",
+    keywords: ["compress", "軽量化", "容量"],
+    featured: true,
+  },
+  {
+    id: "image-compress-to-size",
+    name: "指定KBまで圧縮",
+    category: "image",
+    description: "目標のファイルサイズ(KB)を指定して自動で圧縮します",
+    status: "available",
+    processor: "browser",
+    keywords: ["kb", "容量指定", "圧縮"],
+  },
+  {
+    id: "image-jpg-convert",
+    name: "JPG変換",
+    category: "image",
+    description: "画像をJPG形式に変換します",
+    status: "available",
+    processor: "browser",
+    keywords: ["jpg", "jpeg", "変換"],
+  },
+  {
+    id: "image-png-convert",
+    name: "PNG変換",
+    category: "image",
+    description: "画像をPNG形式に変換します",
+    status: "available",
+    processor: "browser",
+    keywords: ["png", "変換", "透過"],
+  },
+  {
+    id: "image-webp-convert",
+    name: "WebP変換",
+    category: "image",
+    description: "画像をWebP形式に変換します",
+    status: "available",
+    processor: "browser",
+    keywords: ["webp", "変換"],
+  },
+  {
+    id: "image-sns-size",
+    name: "SNSサイズ変換",
+    category: "image",
+    description: "Instagram・X(Twitter)など各SNSの推奨サイズに変換します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["sns", "instagram", "twitter", "x"],
+  },
+  {
+    id: "image-crop",
+    name: "画像トリミング",
+    category: "image",
+    description: "画像の必要な部分だけを切り抜きます",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["crop", "切り抜き", "トリミング"],
+  },
+  {
+    id: "image-rotate",
+    name: "画像回転",
+    category: "image",
+    description: "画像を90度単位で回転・反転します",
+    status: "available",
+    processor: "browser",
+    keywords: ["rotate", "回転", "反転"],
+  },
+
+  // ------------------------------------------------------------------
+  // PDF
+  // ------------------------------------------------------------------
+  {
+    id: "pdf-merge",
+    name: "PDF結合",
+    category: "pdf",
+    description: "複数のPDFファイルを1つに結合します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["merge", "結合"],
+  },
+  {
+    id: "pdf-split",
+    name: "PDF分割",
+    category: "pdf",
+    description: "PDFをページ単位で分割します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["split", "分割"],
+  },
+  {
+    id: "pdf-delete-pages",
+    name: "PDFページ削除",
+    category: "pdf",
+    description: "PDFの不要なページを削除します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["delete", "削除"],
+  },
+  {
+    id: "pdf-reorder-pages",
+    name: "PDFページ並び替え",
+    category: "pdf",
+    description: "PDFのページ順序を並び替えます",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["reorder", "並び替え"],
+  },
+  {
+    id: "pdf-rotate",
+    name: "PDF回転",
+    category: "pdf",
+    description: "PDFのページを回転します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["rotate", "回転"],
+  },
+  {
+    id: "pdf-compress",
+    name: "PDF圧縮",
+    category: "pdf",
+    description: "PDFのファイルサイズを圧縮します",
+    status: "coming-soon",
+    processor: "auto",
+    keywords: ["compress", "軽量化"],
+  },
+  {
+    id: "pdf-to-image",
+    name: "PDF→画像",
+    category: "pdf",
+    description: "PDFの各ページを画像として書き出します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["image", "画像化"],
+  },
+  {
+    id: "image-to-pdf",
+    name: "画像→PDF",
+    category: "pdf",
+    description: "複数の画像を1つのPDFにまとめます",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["pdf化"],
+  },
+  {
+    id: "pdf-to-text",
+    name: "PDF→テキスト",
+    category: "pdf",
+    description: "PDFからテキストを抽出します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["text", "抽出", "テキスト化"],
+  },
+  {
+    id: "pdf-to-excel",
+    name: "PDF→Excel",
+    category: "pdf",
+    description: "PDF内の表をExcelファイルに変換します",
+    status: "coming-soon",
+    processor: "server",
+    keywords: ["excel", "表"],
+  },
+  {
+    id: "pdf-to-word",
+    name: "PDF→Word",
+    category: "pdf",
+    description: "PDFをWord文書に変換します",
+    status: "coming-soon",
+    processor: "server",
+    keywords: ["word", "文書"],
+  },
+  {
+    id: "ocr",
+    name: "OCR",
+    category: "pdf",
+    description: "スキャンしたPDF・画像から文字を読み取ります",
+    status: "coming-soon",
+    processor: "server",
+    keywords: ["文字認識", "スキャン"],
+  },
+
+  // ------------------------------------------------------------------
+  // ファイル
+  // ------------------------------------------------------------------
+  {
+    id: "file-bulk-rename",
+    name: "一括ファイル名変更",
+    category: "file",
+    description: "複数のファイル名をまとめて変更します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["rename", "リネーム"],
+  },
+  {
+    id: "file-sequential-rename",
+    name: "連番リネーム",
+    category: "file",
+    description: "ファイル名に連番を付けてリネームします",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["連番", "リネーム"],
+  },
+  {
+    id: "file-zip",
+    name: "ZIP作成",
+    category: "file",
+    description: "複数のファイルをまとめてZIP化します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["zip", "圧縮"],
+  },
+
+  // ------------------------------------------------------------------
+  // CSV・Excel
+  // ------------------------------------------------------------------
+  {
+    id: "csv-format",
+    name: "CSV整形",
+    category: "csv-excel",
+    description: "余分な空白・空行・改行コードを整えます",
+    status: "available",
+    processor: "browser",
+    keywords: ["csv", "整形", "クリーニング"],
+    featured: true,
+  },
+  {
+    id: "csv-to-excel",
+    name: "CSV→Excel",
+    category: "csv-excel",
+    description: "CSVファイルをExcel形式に変換します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["excel", "変換"],
+  },
+  {
+    id: "excel-to-csv",
+    name: "Excel→CSV",
+    category: "csv-excel",
+    description: "ExcelファイルをCSV形式に変換します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["csv", "変換"],
+  },
+  {
+    id: "csv-merge",
+    name: "CSV結合",
+    category: "csv-excel",
+    description: "複数のCSVファイルを1つに結合します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["結合", "マージ"],
+  },
+  {
+    id: "csv-dedupe",
+    name: "重複削除",
+    category: "csv-excel",
+    description: "CSVの重複した行を削除します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["重複", "削除"],
+  },
+  {
+    id: "csv-replace",
+    name: "文字列置換",
+    category: "csv-excel",
+    description: "CSV内の文字列を一括置換します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["置換", "検索"],
+  },
+
+  // ------------------------------------------------------------------
+  // 学生向け
+  // ------------------------------------------------------------------
+  {
+    id: "pomodoro-timer",
+    name: "ポモドーロタイマー",
+    category: "student",
+    description: "集中と休憩を繰り返す勉強・作業用タイマーです",
+    status: "available",
+    processor: "browser",
+    keywords: ["timer", "タイマー", "勉強", "集中"],
+    featured: true,
+  },
+  {
+    id: "unit-converter",
+    name: "単位変換",
+    category: "student",
+    description: "長さ・重さ・温度などの単位を変換します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["単位", "換算"],
+  },
+  {
+    id: "citation-formatter",
+    name: "参考文献リスト整形",
+    category: "student",
+    description: "レポート用の参考文献リストを整形します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["レポート", "引用"],
+  },
+
+  // ------------------------------------------------------------------
+  // 仕事
+  // ------------------------------------------------------------------
+  {
+    id: "business-card-qr",
+    name: "名刺QRコード作成",
+    category: "work",
+    description: "連絡先情報をQRコード化して名刺やメールに使えます",
+    status: "available",
+    processor: "browser",
+    keywords: ["qr", "名刺", "連絡先", "vcard"],
+    featured: true,
+  },
+  {
+    id: "meeting-notes-template",
+    name: "議事録テンプレート生成",
+    category: "work",
+    description: "会議の議事録テンプレートを自動生成します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["議事録", "会議"],
+  },
+  {
+    id: "simple-invoice",
+    name: "簡易請求書作成",
+    category: "work",
+    description: "簡単な請求書をブラウザ上で作成します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["請求書", "invoice"],
+  },
+
+  // ------------------------------------------------------------------
+  // クリエイター
+  // ------------------------------------------------------------------
+  {
+    id: "color-palette-generator",
+    name: "配色パレット生成",
+    category: "creator",
+    description: "ベースカラーから調和の取れた配色パレットを作成します",
+    status: "available",
+    processor: "browser",
+    keywords: ["color", "配色", "パレット", "デザイン"],
+    featured: true,
+  },
+  {
+    id: "gradient-generator",
+    name: "グラデーション生成",
+    category: "creator",
+    description: "CSS用のグラデーションを作成します",
+    status: "coming-soon",
+    processor: "browser",
+    keywords: ["gradient", "css"],
+  },
+  {
+    id: "background-remover",
+    name: "背景透過（背景除去）",
+    category: "creator",
+    description: "AIを使って画像の背景を自動的に除去します",
+    status: "coming-soon",
+    processor: "server",
+    keywords: ["背景除去", "透過", "ai"],
+  },
+
+  // ------------------------------------------------------------------
+  // その他
+  // ------------------------------------------------------------------
+  {
+    id: "qr-generator",
+    name: "QRコード生成",
+    category: "other",
+    description: "URLやテキストからQRコードを作成します",
+    status: "available",
+    processor: "browser",
+    keywords: ["qr", "コード"],
+    featured: true,
+  },
+  {
+    id: "password-generator",
+    name: "パスワード生成",
+    category: "other",
+    description: "安全でランダムなパスワードを生成します",
+    status: "available",
+    processor: "browser",
+    keywords: ["password", "パスワード", "乱数"],
+    featured: true,
+  },
+  {
+    id: "char-count",
+    name: "文字数カウント",
+    category: "other",
+    description: "文字数・単語数・行数をカウントします",
+    status: "available",
+    processor: "browser",
+    keywords: ["文字数", "カウント"],
+  },
+  {
+    id: "json-formatter",
+    name: "JSON整形",
+    category: "other",
+    description: "JSONを見やすく整形・検証します",
+    status: "available",
+    processor: "browser",
+    keywords: ["json", "整形", "フォーマット"],
+  },
+];
+
+export function getToolById(id: string): Tool | undefined {
+  return tools.find((t) => t.id === id);
+}
+
+export function getToolsByCategory(category: string): Tool[] {
+  return tools.filter((t) => t.category === category);
+}
+
+export function getFeaturedTools(): Tool[] {
+  return tools.filter((t) => t.featured);
+}
