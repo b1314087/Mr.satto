@@ -6,6 +6,7 @@ import { getCategory } from "@/lib/tools/categories";
 import { CategoryBadge } from "@/components/tools/category-badge";
 import { ComingSoon } from "@/components/tools/coming-soon";
 import { ToolImplementation } from "@/components/tools/tool-registry";
+import { ToolAccessGate } from "@/components/tools/tool-access-gate";
 import { hasImplementation } from "@/lib/tools/registry";
 import { ToolCard } from "@/components/tools/tool-card";
 import { AdSlot } from "@/components/ads/ad-slot";
@@ -70,7 +71,13 @@ export default async function ToolPage({ params }: ToolPageProps) {
       </div>
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
-        {isAvailable ? <ToolImplementation toolId={tool.id} /> : <ComingSoon tool={tool} />}
+        {isAvailable ? (
+          <ToolAccessGate toolId={tool.id} requiredPlan={tool.requiredPlan}>
+            <ToolImplementation toolId={tool.id} />
+          </ToolAccessGate>
+        ) : (
+          <ComingSoon tool={tool} />
+        )}
       </div>
 
       <div className="mt-6">

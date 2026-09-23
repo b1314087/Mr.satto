@@ -24,6 +24,9 @@ export function Footer() {
           <Link href="/tools" className="hover:text-blue-600 dark:hover:text-blue-400">
             ツール一覧
           </Link>
+          <Link href="/pricing" className="hover:text-blue-600 dark:hover:text-blue-400">
+            料金プラン
+          </Link>
           <Link href="/about" className="hover:text-blue-600 dark:hover:text-blue-400">
             {siteConfig.shortName}について
           </Link>
