@@ -8,6 +8,7 @@ import { ComingSoon } from "@/components/tools/coming-soon";
 import { ToolImplementation } from "@/components/tools/tool-registry";
 import { hasImplementation } from "@/lib/tools/registry";
 import { ToolCard } from "@/components/tools/tool-card";
+import { AdSlot } from "@/components/ads/ad-slot";
 
 interface ToolPageProps {
   params: Promise<{ tool: string }>;
@@ -70,6 +71,10 @@ export default async function ToolPage({ params }: ToolPageProps) {
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
         {isAvailable ? <ToolImplementation toolId={tool.id} /> : <ComingSoon tool={tool} />}
+      </div>
+
+      <div className="mt-6">
+        <AdSlot placement="tool-page" />
       </div>
 
       {related.length > 0 && (

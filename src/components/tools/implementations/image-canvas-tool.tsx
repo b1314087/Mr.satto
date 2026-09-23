@@ -76,6 +76,14 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     setStatus("idle");
   }, [file]);
 
+  useEffect(() => {
+    // 処理結果のプレビュー用Object URLは、次の結果に差し替わる時・
+    // アンマウント時に解放する（解放しないとメモリリークになる）
+    return () => {
+      if (result) URL.revokeObjectURL(result.url);
+    };
+  }, [result]);
+
   if (!spec) {
     return <ErrorMessage message="このツールの設定が見つかりませんでした" />;
   }
