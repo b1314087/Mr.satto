@@ -20,6 +20,9 @@ export function Footer() {
           <Link href="/tools" className="hover:text-blue-600 dark:hover:text-blue-400">
             ツール一覧
           </Link>
+          <Link href="/about" className="hover:text-blue-600 dark:hover:text-blue-400">
+            {siteConfig.shortName}について
+          </Link>
           <Link href="/privacy" className="hover:text-blue-600 dark:hover:text-blue-400">
             プライバシーポリシー
           </Link>

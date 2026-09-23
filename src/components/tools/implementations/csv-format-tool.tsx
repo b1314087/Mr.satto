@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CsvFormatProcessor } from "@/lib/processors/browser/text";
 import { ErrorMessage } from "@/components/common/error-message";
+import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob } from "@/lib/utils/format";
 
 export function CsvFormatTool() {
@@ -78,13 +79,7 @@ export function CsvFormatTool() {
             rows={10}
             className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900"
           />
-          <button
-            type="button"
-            onClick={handleDownload}
-            className="w-fit rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            CSVとしてダウンロード
-          </button>
+          <RewardedDownloadGate onDownload={handleDownload} label="CSVとしてダウンロード" />
         </div>
       )}
     </div>

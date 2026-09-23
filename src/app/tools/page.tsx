@@ -7,6 +7,9 @@ import type { CategoryId } from "@/lib/tools/types";
 export const metadata: Metadata = {
   title: "ツール一覧",
   description: "画像・PDF・ファイル・CSV/Excelなど、全ツールを検索・カテゴリから探せます。",
+  alternates: {
+    canonical: "/tools",
+  },
 };
 
 const CATEGORY_IDS = new Set(categories.map((c) => c.id));

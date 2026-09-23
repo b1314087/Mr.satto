@@ -4,6 +4,9 @@ import { siteConfig } from "@/lib/config/site";
 export const metadata: Metadata = {
   title: "利用規約",
   description: `${siteConfig.name}の利用規約です。`,
+  alternates: {
+    canonical: "/terms",
+  },
 };
 
 export default function TermsPage() {

@@ -16,7 +16,8 @@ Next.js (App Router) + TypeScript + Tailwind CSS で構築しています。GitH
 - React 19 / TypeScript
 - Tailwind CSS v4（ダークモード: `next-themes` によるOS連動 + 手動切り替え）
 - 依存ライブラリは最小限（`qrcode` のみ。QR生成も完全にブラウザ内で完結）
-- 外部の有料API・広告・決済・アカウント機能は導入していません
+- 決済・アカウント機能は導入していません。広告収益化(Google AdSense)は「土台」のみ用意しており、
+  広告IDを設定するまでは実際の広告配信は行われません（後述）
 
 ## ディレクトリ構成（抜粋）
 
@@ -29,6 +30,7 @@ src/
     privacy/ terms/ contact # 静的ページ
     sitemap.ts robots.ts opengraph-image.tsx  # SEO関連
   components/
+    ads/                    # AdSlot / RewardedDownloadGate（広告・Download Gate）
     common/                 # FileDropzone / FileList / ProcessingStatus / DownloadButton / ErrorMessage など共通UI
     layout/                 # Header / Footer
     theme/                  # ダークモード
@@ -40,6 +42,8 @@ src/
       types.ts              # Processor / BrowserProcessor / ServerProcessor の基底インターフェース
       browser/               # 実際にブラウザ内で処理を行うProcessor実装（画像・QR・パスワード・テキスト等）
       server/                # Phase 2以降で実装するServerProcessorのプレースホルダー
+    ads/config.ts           # AdSense関連の設定（広告ID・スロットID。環境変数から取得）
+    download/types.ts       # DownloadAccessMode ("free" | "rewarded" | "premium")
 ```
 
 ## Processorアーキテクチャ
@@ -67,6 +71,26 @@ UIコンポーネントは各Processorクラスの `process()` だけを呼び�
 それ以外のツール（PDF編集・OCR・ファイル一括操作など）は Phase 1 では「準備中」ページとして
 登録のみ行っており、`src/lib/tools/data.ts` の `status` を `"available"` に変更し、対応する
 Processor・UIコンポーネントを実装することで追加できます。
+
+## 広告収益化(Google AdSense)アーキテクチャ
+
+```
+Tool Processing → Processed File → Download Gate(RewardedDownloadGate) → Download
+```
+
+各ツールのダウンロード処理は `RewardedDownloadGate` コンポーネント（`src/components/ads/`）を
+経由します。`DownloadAccessMode`（`src/lib/download/types.ts`）で以下を切り替えられる設計です。
+
+- `free`（現在の標準）: 通常広告を表示しつつ、そのままダウンロードできる
+- `rewarded`（Phase 2以降）: リワード広告の視聴完了後にダウンロードが解除される
+- `premium`（将来のPremiumプラン向け）: 広告なしで即ダウンロード
+
+広告表示自体は `AdSlot` コンポーネント（`src/components/ads/ad-slot.tsx`）が担当します。
+`NEXT_PUBLIC_ADSENSE_CLIENT_ID` が未設定の間（現在）は、実際の広告は読み込まれず、
+レイアウト確認用のプレースホルダー（「広告（準備中）」の枠）が表示されるだけです。
+AdSenseの審査に通過して広告ID・スロットIDを取得したら、`.env.example` を参考に
+Vercelの環境変数へ設定してください（`NEXT_PUBLIC_` プレフィックスの値は秘密情報ではないため、
+Vercelの環境変数タイプは「Config」を選択してください）。
 
 ## ローカル開発
 

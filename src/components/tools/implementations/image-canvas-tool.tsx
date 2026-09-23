@@ -5,7 +5,7 @@ import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
-import { DownloadButton } from "@/components/common/download-button";
+import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   ImageResizeProcessor,
   ImageCompressProcessor,
@@ -14,7 +14,7 @@ import {
   ImageRotateProcessor,
 } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
-import { formatBytes, replaceExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
 
 type ImageMode = "resize" | "compress" | "compress-to-size" | "convert" | "rotate";
 
@@ -255,7 +255,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px ・ {formatBytes(result.sizeBytes)}
           </p>
-          <DownloadButton blob={result.blob} filename={downloadName} />
+          <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
     </div>

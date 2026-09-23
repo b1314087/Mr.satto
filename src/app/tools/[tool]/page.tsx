@@ -24,6 +24,9 @@ export async function generateMetadata({ params }: ToolPageProps): Promise<Metad
   return {
     title: tool.name,
     description: tool.description,
+    alternates: {
+      canonical: `/tools/${tool.id}`,
+    },
   };
 }
 

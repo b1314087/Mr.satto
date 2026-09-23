@@ -4,6 +4,7 @@ import { useState } from "react";
 import { QrCodeProcessor } from "@/lib/processors/browser/qrcode";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
+import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob } from "@/lib/utils/format";
 
 export function QrGeneratorTool() {
@@ -61,13 +62,7 @@ export function QrGeneratorTool() {
         <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={dataUrl} alt="生成されたQRコード" className="h-48 w-48 rounded-lg bg-white p-2" />
-          <button
-            type="button"
-            onClick={handleDownload}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            画像としてダウンロード
-          </button>
+          <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" />
         </div>
       )}
     </div>
