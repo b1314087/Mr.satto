@@ -1,4 +1,5 @@
 import type { Plan } from "./types";
+import { getCurrentUser } from "@/lib/auth/user";
 
 /**
  * localStorage に保存する開発用プラン上書きのキー。
@@ -37,11 +38,22 @@ function getDevPlanOverride(): Plan | null {
 /**
  * 現在のユーザーのプランを取得する唯一の窓口。
  *
- * ログイン・決済（Stripe / Supabase）は未実装のため、現時点では常に "free" を返す
- * （development環境でのみ、開発者本人のブラウザに限りローカル上書きが可能）。
+ * 重要：「ユーザー状態」（Guest / ログイン済み。src/lib/auth/user.ts）と
+ * 「料金プラン」（free / standard / premium）は別概念として扱う。
+ * ただしGuestは仕様上必ずfreeプランとして扱うため、この関数の中で
+ * その対応付けだけを行う（Guest = free、という関係をここに閉じ込め、
+ * 他の場所で「ログインしていない ≒ free」という判定を重複させない）。
  *
- * 将来、この関数の中身だけを
- *   - ログインユーザー情報
+ * - Guest（未ログイン）        -> 常に "free"
+ * - 認証済みユーザー           -> 本来は契約プランを返すべきだが、
+ *                                Stripe/Supabase等の決済・認証基盤が
+ *                                未実装のため、現時点では便宜上 "free" を返す。
+ *                                将来この分岐に、ログイン済みだが無料・
+ *                                契約期限切れ・解約後の猶予期間なども含めた
+ *                                実際のプラン判定を実装する。
+ *
+ * development環境でのみ、開発者本人のブラウザに限りローカル上書きが可能。
+ * 将来、認証済みユーザーのプラン取得部分だけを
  *   - Stripe subscription
  *   - Supabase DB のサブスクリプション状態
  * などへ差し替えれば、呼び出し側（ToolAccessGate 等）を一切変更せずに
@@ -49,5 +61,17 @@ function getDevPlanOverride(): Plan | null {
  * プラン文字列を直接ハードコードしないこと。
  */
 export function getCurrentPlan(): Plan {
-  return getDevPlanOverride() ?? "free";
+  const devOverride = getDevPlanOverride();
+  if (devOverride) return devOverride;
+
+  const user = getCurrentUser();
+  if (user === null) {
+    // Guestは仕様上必ずfree
+    return "free";
+  }
+
+  // TODO(将来): 認証済みユーザーの実際の契約プランを
+  // Stripe subscription / Supabase DB 等から取得して返す。
+  // 現時点では認証自体が存在しないため、この分岐には到達しない。
+  return "free";
 }

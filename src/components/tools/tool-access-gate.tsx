@@ -7,6 +7,7 @@ import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { getCurrentPlan } from "@/lib/plans/current-plan";
 import { canUseTool } from "@/lib/plans/access";
 import { getRewardedAdService } from "@/lib/ads/reward-provider";
+import { getTemporaryAccessService } from "@/lib/plans/temporary-access";
 import { AdSlot } from "@/components/ads/ad-slot";
 
 /**
@@ -22,6 +23,12 @@ import { AdSlot } from "@/components/ads/ad-slot";
  *
  * 判定ロジック自体は持たず、canUseTool() の結果に応じて表示を出し分けるだけ
  * （ツールごとに判定コードを書かないための共通化）。
+ *
+ * Guest（未ログイン）にもログイン画面は一切表示しない。
+ * standard対象ツールはGuestのまま「広告を見て無料で使う」の一本道で
+ * 利用でき、会員登録やログインを要求する導線は作らない
+ * （getCurrentPlan() がGuestを常にfreeへ対応付けているため、
+ * このコンポーネントはユーザー状態を意識する必要がない）。
  */
 export function ToolAccessGate({
   toolId,
@@ -34,7 +41,8 @@ export function ToolAccessGate({
 }) {
   const plan = getCurrentPlan();
   const access = canUseTool(plan, requiredPlan);
-  const [adUnlocked, setAdUnlocked] = useState(false);
+  const temporaryAccess = getTemporaryAccessService();
+  const [adUnlocked, setAdUnlocked] = useState(() => temporaryAccess.hasAccess(toolId));
   const [isWatchingAd, setIsWatchingAd] = useState(false);
   const [adError, setAdError] = useState(false);
 
@@ -59,6 +67,13 @@ export function ToolAccessGate({
         >
           プレミアムに登録する（準備中）
         </button>
+        {/*
+          将来のログイン・購入導線の接続点：
+          Guestがここに到達した場合はログイン+購入、認証済みStandardユーザーが
+          到達した場合はアップグレード購入のみでよい。ユーザー状態は
+          getCurrentUser()（src/lib/auth/user.ts）から取得できるため、
+          ボタンの本実装時にここで分岐すればよい。
+        */}
       </div>
     );
   }
@@ -80,6 +95,8 @@ export function ToolAccessGate({
             const result = await getRewardedAdService().watchAd({ toolId });
             setIsWatchingAd(false);
             if (result === "granted") {
+              // 視聴完了 -> 一時的な利用権限を付与する（付与方式の差し替え点）
+              temporaryAccess.grant(toolId);
               setAdUnlocked(true);
             } else {
               setAdError(true);
