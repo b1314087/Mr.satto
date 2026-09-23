@@ -37,7 +37,17 @@ export function sanitizeFileName(name: string): string {
 }
 
 export function replaceExtension(filename: string, newExt: string): string {
-  const dot = filename.lastIndexOf(".");
-  const base = dot === -1 ? filename : filename.slice(0, dot);
-  return `${sanitizeFileName(base)}.${newExt}`;
+  return `${stripExtension(filename)}.${newExt}`;
+}
+
+/**
+ * ファイル名から拡張子を除いた部分（サニタイズ済み）を取り出す。
+ * PDF系ツール（結合・分割・削除・並び替え・回転・画像→PDF・バッチ変換等）が
+ * 出力ファイル名に接尾辞を付ける際、共通してこの関数を使う
+ * （各ツールで同じ処理を再実装しないための共通化）。
+ */
+export function stripExtension(filename: string): string {
+  const sanitized = sanitizeFileName(filename);
+  const dot = sanitized.lastIndexOf(".");
+  return dot === -1 ? sanitized : sanitized.slice(0, dot);
 }

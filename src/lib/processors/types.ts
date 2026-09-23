@@ -49,3 +49,23 @@ export interface ImageProcessorOutput {
   mimeType: string;
   sizeBytes: number;
 }
+
+/** PDF処理系 Processor の共通出力形式（1ファイルを返す場合） */
+export interface PdfProcessorOutput {
+  blob: Blob;
+  url: string;
+  pageCount: number;
+  sizeBytes: number;
+}
+
+/**
+ * PDF分割・PDF→画像など、複数ファイルを出力するProcessorの
+ * 個々の出力アイテム共通形式。ダウンロード用のファイル名も
+ * Processor側で決定し、UI側でファイル名生成ロジックを重複させない。
+ */
+export interface NamedFileOutput {
+  blob: Blob;
+  /** sanitizeFileName/replaceExtension適用済みの拡張子込みファイル名 */
+  suggestedName: string;
+  sizeBytes: number;
+}

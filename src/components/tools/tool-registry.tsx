@@ -9,6 +9,16 @@ import { JsonFormatterTool } from "./implementations/json-formatter-tool";
 import { CsvFormatTool } from "./implementations/csv-format-tool";
 import { PomodoroTimerTool } from "./implementations/pomodoro-timer-tool";
 import { ColorPaletteTool } from "./implementations/color-palette-tool";
+import { ImageSnsSizeTool } from "./implementations/image-sns-size-tool";
+import { ImageCropTool } from "./implementations/image-crop-tool";
+import { ImageBatchConvertTool } from "./implementations/image-batch-convert-tool";
+import { PdfMergeTool } from "./implementations/pdf-merge-tool";
+import { PdfSplitTool } from "./implementations/pdf-split-tool";
+import { PdfDeletePagesTool } from "./implementations/pdf-delete-pages-tool";
+import { PdfReorderPagesTool } from "./implementations/pdf-reorder-pages-tool";
+import { PdfRotateTool } from "./implementations/pdf-rotate-tool";
+import { ImageToPdfTool } from "./implementations/image-to-pdf-tool";
+import { PdfToImageTool } from "./implementations/pdf-to-image-tool";
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -47,6 +57,26 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PomodoroTimerTool />;
     case "color-palette-generator":
       return <ColorPaletteTool />;
+    case "image-sns-size":
+      return <ImageSnsSizeTool />;
+    case "image-crop":
+      return <ImageCropTool />;
+    case "image-batch-convert":
+      return <ImageBatchConvertTool />;
+    case "pdf-merge":
+      return <PdfMergeTool />;
+    case "pdf-split":
+      return <PdfSplitTool />;
+    case "pdf-delete-pages":
+      return <PdfDeletePagesTool />;
+    case "pdf-reorder-pages":
+      return <PdfReorderPagesTool />;
+    case "pdf-rotate":
+      return <PdfRotateTool />;
+    case "image-to-pdf":
+      return <ImageToPdfTool />;
+    case "pdf-to-image":
+      return <PdfToImageTool />;
     default:
       return null;
   }

@@ -1,7 +1,11 @@
 import { BrowserProcessor, type ImageProcessorOutput } from "../types";
 
-/** File/Blob から HTMLImageElement を読み込む */
-function loadImage(file: Blob): Promise<HTMLImageElement> {
+/**
+ * File/Blob から HTMLImageElement を読み込む。
+ * PDF系Processor（image-to-pdf等）からも再利用するため export する
+ * （「すでにある処理を再実装しない」ための共通化）。
+ */
+export function loadImage(file: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -17,7 +21,7 @@ function loadImage(file: Blob): Promise<HTMLImageElement> {
   });
 }
 
-function canvasToBlob(
+export function canvasToBlob(
   canvas: HTMLCanvasElement,
   mimeType: string,
   quality?: number
@@ -211,4 +215,84 @@ export class ImageRotateProcessor extends BrowserProcessor<
     const blob = await canvasToBlob(canvas, outType, 0.92);
     return toOutput(blob, canvas.width, canvas.height);
   }
+}
+
+// ---------------------------------------------------------------------------
+// トリミング（Phase 2-A）
+// 画像トリミングツール・SNSサイズ変換ツールの両方から利用する共通Processor。
+// 「切り抜き範囲の決め方」（自由選択 / 比率プリセットからの中央揃え）はUI側の
+// 責務とし、このProcessorは「与えられた範囲を切り抜いて必要なら指定サイズへ
+// 描画し直す」ことだけを行う。
+// ---------------------------------------------------------------------------
+export interface CropRegion {
+  /** 元画像のピクセル座標系での切り抜き位置・サイズ */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ImageCropInput {
+  file: File;
+  crop: CropRegion;
+  /** 指定時は切り抜き後にこのサイズへ描画し直す（未指定なら切り抜きサイズのまま） */
+  targetWidth?: number;
+  targetHeight?: number;
+  mimeType?: string;
+}
+
+export class ImageCropProcessor extends BrowserProcessor<ImageCropInput, ImageProcessorOutput> {
+  async process({ file, crop, targetWidth, targetHeight, mimeType }: ImageCropInput) {
+    if (crop.width <= 0 || crop.height <= 0) {
+      throw new Error("切り抜き範囲が正しくありません");
+    }
+    const img = await loadImage(file);
+    const sx = Math.max(0, Math.min(crop.x, img.naturalWidth - 1));
+    const sy = Math.max(0, Math.min(crop.y, img.naturalHeight - 1));
+    const sw = Math.max(1, Math.min(crop.width, img.naturalWidth - sx));
+    const sh = Math.max(1, Math.min(crop.height, img.naturalHeight - sy));
+
+    const outWidth = Math.round(targetWidth ?? sw);
+    const outHeight = Math.round(targetHeight ?? sh);
+    if (outWidth <= 0 || outHeight <= 0) {
+      throw new Error("出力サイズが正しくありません");
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = outWidth;
+    canvas.height = outHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvasの初期化に失敗しました");
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outWidth, outHeight);
+
+    const outType = mimeType ?? file.type ?? "image/png";
+    const blob = await canvasToBlob(canvas, outType, 0.92);
+    return toOutput(blob, canvas.width, canvas.height);
+  }
+}
+
+/**
+ * 指定した比率(width/height)に収まるよう、中央基準で切り抜く範囲を計算する。
+ * SNSサイズ変換ツールが「不必要に引き伸ばさず」プリセット比率へ合わせるために使う
+ * （長い方の辺を切り詰め、短い方の辺はそのまま使う＝拡大縮小のみで引き伸ばしはしない）。
+ */
+export function computeCenterCropForAspect(
+  sourceWidth: number,
+  sourceHeight: number,
+  aspectRatio: number
+): CropRegion {
+  const sourceRatio = sourceWidth / sourceHeight;
+  let width = sourceWidth;
+  let height = sourceHeight;
+  if (sourceRatio > aspectRatio) {
+    width = Math.max(1, Math.round(sourceHeight * aspectRatio));
+  } else {
+    height = Math.max(1, Math.round(sourceWidth / aspectRatio));
+  }
+  return {
+    x: Math.round((sourceWidth - width) / 2),
+    y: Math.round((sourceHeight - height) / 2),
+    width,
+    height,
+  };
 }
