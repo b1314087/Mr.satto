@@ -25,7 +25,7 @@ export default function Image() {
           <span>{siteConfig.shortName}</span>
         </div>
         <div style={{ fontSize: 28, marginTop: 24, opacity: 0.85, maxWidth: 900, textAlign: "center" }}>
-          画像・PDF・CSVをブラウザで、無料で処理
+          {siteConfig.tagline}
         </div>
       </div>
     ),

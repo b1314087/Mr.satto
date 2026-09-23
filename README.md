@@ -1,8 +1,14 @@
-# 万能Webツール（Phase 1）
+# Mr.Satto（Phase 1）
 
-画像・PDF・ファイル・CSV/Excel・学生向け・仕事・クリエイター向けなどのツールを1つにまとめた
-「万能Webツール」の Phase 1 実装です。Next.js (App Router) + TypeScript + Tailwind CSS で構築し、
-GitHub → Vercel の流れでそのままWebサイトとして公開できる構成になっています。
+「面倒な作業を、サッと。」がコンセプトのWebツールサービス **Mr.Satto** の Phase 1 実装です。
+画像・PDF・ファイル・CSV/Excel・学生向け・仕事・クリエイター向けなどのツールを1つにまとめ、
+Next.js (App Router) + TypeScript + Tailwind CSS で構築しています。GitHub → Vercel の流れで
+そのままWebサイトとして公開できる構成になっています。
+
+> サービス名(ユーザー向け表示)は `src/lib/config/site.ts` の `siteConfig` に一元化しており、
+> ここを変更するだけで全ページのブランド表記が切り替わります。なお、内部的なリポジトリ名・
+> npmパッケージ名（`package.json` の `name`）は `universal-web-tools` のままにしています
+> （変更による不要な影響を避けるため。ユーザーに表示されることはありません）。
 
 ## 技術構成
 

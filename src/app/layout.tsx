@@ -8,7 +8,7 @@ import { siteConfig } from "@/lib/config/site";
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
-    default: `${siteConfig.name}｜ブラウザで完結する無料オンラインツール集`,
+    default: `${siteConfig.name}｜${siteConfig.tagline}`,
     template: `%s｜${siteConfig.name}`,
   },
   description: siteConfig.description,
@@ -17,12 +17,12 @@ export const metadata: Metadata = {
     type: "website",
     locale: siteConfig.locale,
     siteName: siteConfig.name,
-    title: siteConfig.name,
+    title: `${siteConfig.name}｜${siteConfig.tagline}`,
     description: siteConfig.description,
   },
   twitter: {
     card: "summary_large_image",
-    title: siteConfig.name,
+    title: `${siteConfig.name}｜${siteConfig.tagline}`,
     description: siteConfig.description,
   },
 };

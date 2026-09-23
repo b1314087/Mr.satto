@@ -8,6 +8,9 @@ export function Footer() {
         <div>
           <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
             {siteConfig.shortName}
+            <span className="ml-2 font-normal text-neutral-400 dark:text-neutral-500">
+              {siteConfig.tagline}
+            </span>
           </p>
           <p className="mt-1 max-w-md text-xs text-neutral-500 dark:text-neutral-400">
             ファイルはブラウザ上で処理され、サーバーに保存されません。

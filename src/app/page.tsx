@@ -15,6 +15,9 @@ export default function Home() {
           <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white sm:text-4xl">
             {siteConfig.name}
           </h1>
+          <p className="text-lg font-medium text-blue-600 dark:text-blue-400">
+            {siteConfig.tagline}
+          </p>
           <p className="text-neutral-600 dark:text-neutral-300">{siteConfig.description}</p>
           <div className="w-full max-w-lg">
             <SearchBar />
