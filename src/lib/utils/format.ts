@@ -21,8 +21,23 @@ export function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+/**
+ * Windowsでも安全に保存できるファイル名に変換する。
+ * \ / : * ? " < > | 、および制御文字を "_" に置換し、
+ * Windowsで問題になりやすい末尾のピリオド・スペースも取り除く。
+ * 日本語などのマルチバイト文字はそのまま維持する（ASCII化はしない）。
+ */
+export function sanitizeFileName(name: string): string {
+  const withoutForbiddenChars = name
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/[\x00-\x1f]/g, "");
+  const withoutTrailingDotsOrSpaces = withoutForbiddenChars.replace(/[.\s]+$/g, "");
+  // サニタイズの結果、空文字になってしまった場合のフォールバック
+  return withoutTrailingDotsOrSpaces || "file";
+}
+
 export function replaceExtension(filename: string, newExt: string): string {
   const dot = filename.lastIndexOf(".");
   const base = dot === -1 ? filename : filename.slice(0, dot);
-  return `${base}.${newExt}`;
+  return `${sanitizeFileName(base)}.${newExt}`;
 }

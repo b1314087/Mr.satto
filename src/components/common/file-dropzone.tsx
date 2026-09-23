@@ -14,9 +14,42 @@ interface FileDropzoneProps {
 }
 
 /**
+ * `accept` に指定されたパターン（MIMEタイプ／"image/*"／".csv" のような拡張子）
+ * のいずれかにファイルが一致するかを判定する。
+ * ファイル選択ダイアログの `accept` 属性はドラッグ&ドロップには効かないため、
+ * ドロップ時にも同じ判定を通すために使う。
+ */
+function matchesAccept(file: File, accept: string): boolean {
+  const patterns = accept
+    .split(",")
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean);
+  if (patterns.length === 0) return true;
+
+  const name = file.name.toLowerCase();
+  const type = (file.type || "").toLowerCase();
+
+  return patterns.some((pattern) => {
+    if (pattern.startsWith(".")) {
+      return name.endsWith(pattern);
+    }
+    if (pattern.endsWith("/*")) {
+      const prefix = pattern.slice(0, pattern.indexOf("/"));
+      return type.startsWith(`${prefix}/`);
+    }
+    return type === pattern;
+  });
+}
+
+/**
  * 共通ファイル選択UI。ドラッグ&ドロップとタップ操作の両方に対応し、
  * スマートフォンでも扱いやすいサイズにする（21章）。
  * 各ツールが独自のアップロードUIを作らないための共通コンポーネント（16章）。
+ *
+ * ファイル選択・ドラッグ&ドロップのどちらの経路でも `validateAndEmit` を
+ * 通すことで、形式チェック・サイズチェックを共通化している。
+ * ここでの形式チェックは「明らかに対象外のファイルを早期に弾く」ためのもので、
+ * 各Processor側のエラー処理を代替するものではない。
  */
 export function FileDropzone({
   accept,
@@ -35,6 +68,19 @@ export function FileDropzone({
     (fileList: FileList | null) => {
       if (!fileList || fileList.length === 0) return;
       const files = Array.from(fileList);
+
+      if (accept) {
+        // ファイル選択ダイアログのaccept属性はドラッグ&ドロップには効かないため、
+        // ここで両方の経路に共通のチェックをかける
+        const unsupported = files.find((f) => !matchesAccept(f, accept));
+        if (unsupported) {
+          onError?.(
+            `このファイル形式には対応していません（${unsupported.name}）。対応している形式のファイルを選択してください。`
+          );
+          return;
+        }
+      }
+
       const maxBytes = maxSizeMB * 1024 * 1024;
       const tooLarge = files.find((f) => f.size > maxBytes);
       if (tooLarge) {
@@ -45,7 +91,7 @@ export function FileDropzone({
       }
       onFilesSelected(multiple ? files : [files[0]]);
     },
-    [maxSizeMB, multiple, onFilesSelected, onError]
+    [accept, maxSizeMB, multiple, onFilesSelected, onError]
   );
 
   return (
