@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PasswordGenerateProcessor } from "@/lib/processors/browser/password";
 import { ErrorMessage } from "@/components/common/error-message";
+import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 
 const STRENGTH_LABEL = ["とても弱い", "弱い", "普通", "強い", "とても強い"];
 const STRENGTH_COLOR = [
@@ -24,8 +25,11 @@ export function PasswordGeneratorTool() {
   const [strength, setStrength] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<ProcessingState>("idle");
 
   async function handleGenerate() {
+    if (status === "processing") return;
+    setStatus("processing");
     setError(null);
     setCopied(false);
     try {
@@ -38,8 +42,10 @@ export function PasswordGeneratorTool() {
       });
       setPassword(result.password);
       setStrength(result.strength);
+      setStatus("success");
     } catch (e) {
       setError(e instanceof Error ? e.message : "生成に失敗しました");
+      setStatus("error");
     }
   }
 
@@ -82,11 +88,13 @@ export function PasswordGeneratorTool() {
       <button
         type="button"
         onClick={handleGenerate}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+        disabled={status === "processing"}
+        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
-        パスワードを生成する
+        {status === "processing" ? "生成中..." : "パスワードを生成する"}
       </button>
 
+      <ProcessingStatus state={status} processingLabel="生成中..." successLabel="パスワードを生成しました" />
       {error && <ErrorMessage message={error} />}
 
       {password && (

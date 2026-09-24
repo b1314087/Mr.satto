@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import type { RequiredPlan } from "@/lib/plans/types";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { getCurrentPlan } from "@/lib/plans/current-plan";
@@ -67,6 +68,12 @@ export function ToolAccessGate({
         >
           プレミアムに登録する（準備中）
         </button>
+        <Link
+          href="/pricing"
+          className="text-xs text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+        >
+          料金プランの詳細を見る
+        </Link>
         {/*
           将来のログイン・購入導線の接続点：
           Guestがここに到達した場合はログイン+購入、認証済みStandardユーザーが
@@ -111,6 +118,12 @@ export function ToolAccessGate({
             広告の読み込みに失敗しました。もう一度お試しください。
           </p>
         )}
+        <Link
+          href="/pricing"
+          className="text-xs text-neutral-400 underline-offset-2 hover:text-blue-600 hover:underline dark:text-neutral-500 dark:hover:text-blue-400"
+        >
+          広告なしで使いたい場合はこちら（料金プラン）
+        </Link>
       </div>
     );
   }

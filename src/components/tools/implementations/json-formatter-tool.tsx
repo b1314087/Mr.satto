@@ -3,21 +3,27 @@
 import { useState } from "react";
 import { JsonFormatProcessor } from "@/lib/processors/browser/text";
 import { ErrorMessage } from "@/components/common/error-message";
+import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 
 export function JsonFormatterTool() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [indent, setIndent] = useState(2);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<ProcessingState>("idle");
 
   async function run(minify = false) {
+    if (status === "processing") return;
+    setStatus("processing");
     setError(null);
     try {
       const result = await new JsonFormatProcessor().process({ text: input, indent, minify });
       setOutput(result.formatted);
+      setStatus("success");
     } catch (e) {
       setOutput("");
       setError(e instanceof Error ? e.message : "整形に失敗しました");
+      setStatus("error");
     }
   }
 
@@ -66,14 +72,16 @@ export function JsonFormatterTool() {
         <button
           type="button"
           onClick={() => run(false)}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          disabled={status === "processing"}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
-          整形する
+          {status === "processing" ? "処理中..." : "整形する"}
         </button>
         <button
           type="button"
           onClick={() => run(true)}
-          className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          disabled={status === "processing"}
+          className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
         >
           圧縮(minify)する
         </button>
@@ -88,6 +96,7 @@ export function JsonFormatterTool() {
         )}
       </div>
 
+      <ProcessingStatus state={status} processingLabel="処理中..." successLabel="整形が完了しました" />
       {error && <ErrorMessage message={error} />}
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CsvFormatProcessor } from "@/lib/processors/browser/text";
 import { ErrorMessage } from "@/components/common/error-message";
+import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob } from "@/lib/utils/format";
 
@@ -13,16 +14,21 @@ export function CsvFormatTool() {
   const [trimCells, setTrimCells] = useState(true);
   const [removeEmptyLines, setRemoveEmptyLines] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<ProcessingState>("idle");
 
   async function handleFormat() {
+    if (status === "processing") return;
+    setStatus("processing");
     setError(null);
     try {
       const result = await new CsvFormatProcessor().process({ text: input, trimCells, removeEmptyLines });
       setOutput(result.formatted);
       setRowCount(result.rowCount);
+      setStatus("success");
     } catch (e) {
       setOutput("");
       setError(e instanceof Error ? e.message : "整形に失敗しました");
+      setStatus("error");
     }
   }
 
@@ -62,12 +68,13 @@ export function CsvFormatTool() {
       <button
         type="button"
         onClick={handleFormat}
-        disabled={!input.trim()}
+        disabled={!input.trim() || status === "processing"}
         className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
-        整形する
+        {status === "processing" ? "処理中..." : "整形する"}
       </button>
 
+      <ProcessingStatus state={status} processingLabel="処理中..." successLabel="整形が完了しました" />
       {error && <ErrorMessage message={error} />}
 
       {output && (

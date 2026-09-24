@@ -38,9 +38,21 @@ export default async function ToolPage({ params }: ToolPageProps) {
   if (!tool) notFound();
 
   const isAvailable = tool.status === "available" && hasImplementation(tool.id);
-  const related = getToolsByCategory(tool.category)
-    .filter((t) => t.id !== tool.id)
-    .slice(0, 4);
+
+  // 関連ツール: 「準備中」のツールや自分自身は候補から除外する（Coming Soonのみが
+  // 表示される状態を避けるため）。同カテゴリだけで4件に満たない場合は、
+  // 他カテゴリの主要ツール（featured）で補う（複雑なおすすめアルゴリズムは使わない）。
+  const isRecommendable = (t: (typeof tools)[number]) =>
+    t.id !== tool.id && t.status === "available" && hasImplementation(t.id);
+  const sameCategoryRelated = getToolsByCategory(tool.category).filter(isRecommendable);
+  const related = sameCategoryRelated.slice(0, 4);
+  if (related.length < 4) {
+    const usedIds = new Set([tool.id, ...related.map((t) => t.id)]);
+    const fallback = tools.filter(
+      (t) => t.featured && isRecommendable(t) && !usedIds.has(t.id)
+    );
+    related.push(...fallback.slice(0, 4 - related.length));
+  }
   const category = getCategory(tool.category);
 
   return (
@@ -87,7 +99,9 @@ export default async function ToolPage({ params }: ToolPageProps) {
       {related.length > 0 && (
         <div className="mt-12">
           <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
-            {category?.name}の他のツール
+            {related.length <= sameCategoryRelated.length
+              ? `${category?.name}の他のツール`
+              : "こちらのツールもおすすめです"}
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {related.map((t) => (

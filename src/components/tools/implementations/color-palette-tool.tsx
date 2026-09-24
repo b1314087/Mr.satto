@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ColorPaletteProcessor, type ColorPaletteInput } from "@/lib/processors/browser/color";
 import { ErrorMessage } from "@/components/common/error-message";
+import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 
 const MODES: { value: ColorPaletteInput["mode"]; label: string }[] = [
   { value: "monochromatic", label: "モノクロマティック" },
@@ -17,8 +18,11 @@ export function ColorPaletteTool() {
   const [colors, setColors] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [status, setStatus] = useState<ProcessingState>("idle");
 
   async function generate(nextMode = mode, nextColor = baseColor) {
+    if (status === "processing") return;
+    setStatus("processing");
     setError(null);
     try {
       const result = await new ColorPaletteProcessor().process({
@@ -26,9 +30,11 @@ export function ColorPaletteTool() {
         mode: nextMode,
       });
       setColors(result.colors);
+      setStatus("success");
     } catch (e) {
       setColors([]);
       setError(e instanceof Error ? e.message : "生成に失敗しました");
+      setStatus("error");
     }
   }
 
@@ -78,12 +84,14 @@ export function ColorPaletteTool() {
         <button
           type="button"
           onClick={() => generate()}
-          className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+          disabled={status === "processing"}
+          className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
-          パレットを生成する
+          {status === "processing" ? "生成中..." : "パレットを生成する"}
         </button>
       </div>
 
+      <ProcessingStatus state={status} processingLabel="生成中..." successLabel="パレットを生成しました" />
       {error && <ErrorMessage message={error} />}
 
       {colors.length > 0 && (
