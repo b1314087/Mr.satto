@@ -114,6 +114,36 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["rotate", "回転", "反転"],
   },
+  {
+    id: "image-flip",
+    name: "画像反転",
+    category: "image",
+    description: "画像を左右または上下に反転します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["flip", "反転", "ミラー", "左右反転", "上下反転"],
+  },
+  {
+    id: "image-grayscale",
+    name: "画像グレースケール",
+    category: "image",
+    description: "画像をモノクロ・グレースケールに変換します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["grayscale", "モノクロ", "白黒", "グレースケール"],
+  },
+  {
+    id: "image-adjust",
+    name: "画像明るさ・コントラスト調整",
+    category: "image",
+    description: "画像の明るさとコントラストを調整します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["明るさ", "コントラスト", "brightness", "contrast", "調整"],
+  },
 
   // ------------------------------------------------------------------
   // PDF
@@ -238,6 +268,52 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["文字認識", "スキャン", "OCR"],
   },
+  {
+    id: "pdf-extract-pages",
+    name: "PDFページ抽出",
+    category: "pdf",
+    description: "指定したページだけを新しいPDFとして取り出します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["extract", "抽出", "ページ抽出"],
+  },
+  {
+    id: "pdf-add-page-numbers",
+    name: "PDFページ番号追加",
+    category: "pdf",
+    description: "PDFの各ページにページ番号を追加します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["ページ番号", "page number", "ノンブル"],
+  },
+  {
+    id: "pdf-watermark",
+    name: "PDF透かし",
+    category: "pdf",
+    description: "PDFの各ページにテキストの透かしを追加します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["透かし", "watermark", "社外秘", "CONFIDENTIAL"],
+  },
+  {
+    // Phase 6で検討したが、現在の依存ライブラリ(pdf-lib)はPDFの暗号化(パスワード保護)の
+    // 書き込みを公式にサポートしておらず(README「Encryption Handling」参照)、
+    // 代替ライブラリも(a)出所不明で信頼できない、(b)単一メンテナのWASMラッパーで
+    // バンドルサイズが大きい、(c)AGPLライセンスで商用利用と非互換、という理由で
+    // いずれも採用を見送った。「見た目だけのパスワード入力欄」を作ることを避けるため、
+    // このツールは今回 available にしない（最終報告を参照）。
+    id: "pdf-password-protect",
+    name: "PDFパスワード保護",
+    category: "pdf",
+    description: "PDFにパスワードを設定して保護します",
+    status: "coming-soon",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["password", "パスワード", "暗号化", "保護"],
+  },
 
   // ------------------------------------------------------------------
   // ファイル
@@ -326,6 +402,26 @@ export const tools: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["重複", "削除"],
+  },
+  {
+    id: "csv-to-json",
+    name: "CSV→JSON",
+    category: "csv-excel",
+    description: "CSVファイルをJSON形式に変換します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["json", "変換", "csv to json"],
+  },
+  {
+    id: "json-to-csv",
+    name: "JSON→CSV",
+    category: "csv-excel",
+    description: "JSON配列をCSV形式に変換します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["json", "csv", "変換", "json to csv"],
   },
   {
     id: "csv-replace",
@@ -508,6 +604,16 @@ export const tools: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["json", "整形", "フォーマット"],
+  },
+  {
+    id: "text-line-cleaner",
+    name: "テキスト行整理",
+    category: "other",
+    description: "空行削除・重複行削除・並び替えなどをまとめて行います",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["テキスト", "整理", "重複削除", "ソート", "空行削除"],
   },
 ];
 

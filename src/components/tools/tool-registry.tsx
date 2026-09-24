@@ -35,6 +35,15 @@ import { OrderGeneratorTool } from "./implementations/order-generator-tool";
 import { OcrTool } from "./implementations/ocr-tool";
 import { PdfToExcelTool } from "./implementations/pdf-to-excel-tool";
 import { PdfToWordTool } from "./implementations/pdf-to-word-tool";
+import { PdfExtractPagesTool } from "./implementations/pdf-extract-pages-tool";
+import { PdfAddPageNumbersTool } from "./implementations/pdf-add-page-numbers-tool";
+import { PdfWatermarkTool } from "./implementations/pdf-watermark-tool";
+import { ImageFlipTool } from "./implementations/image-flip-tool";
+import { ImageGrayscaleTool } from "./implementations/image-grayscale-tool";
+import { ImageAdjustTool } from "./implementations/image-adjust-tool";
+import { CsvToJsonTool } from "./implementations/csv-to-json-tool";
+import { JsonToCsvTool } from "./implementations/json-to-csv-tool";
+import { TextLineCleanerTool } from "./implementations/text-line-cleaner-tool";
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -125,6 +134,24 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfToExcelTool />;
     case "pdf-to-word":
       return <PdfToWordTool />;
+    case "pdf-extract-pages":
+      return <PdfExtractPagesTool />;
+    case "pdf-add-page-numbers":
+      return <PdfAddPageNumbersTool />;
+    case "pdf-watermark":
+      return <PdfWatermarkTool />;
+    case "image-flip":
+      return <ImageFlipTool />;
+    case "image-grayscale":
+      return <ImageGrayscaleTool />;
+    case "image-adjust":
+      return <ImageAdjustTool />;
+    case "csv-to-json":
+      return <CsvToJsonTool />;
+    case "json-to-csv":
+      return <JsonToCsvTool />;
+    case "text-line-cleaner":
+      return <TextLineCleanerTool />;
     default:
       return null;
   }

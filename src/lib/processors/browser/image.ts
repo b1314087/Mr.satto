@@ -38,7 +38,11 @@ export function canvasToBlob(
   });
 }
 
-function toOutput(blob: Blob, width: number, height: number): ImageProcessorOutput {
+/**
+ * Phase 6で追加した画像反転・グレースケール・明るさ/コントラスト調整の
+ * Processorからも再利用するため export する（新規ツールでの再実装を避ける）。
+ */
+export function toOutput(blob: Blob, width: number, height: number): ImageProcessorOutput {
   return {
     blob,
     url: URL.createObjectURL(blob),
@@ -49,7 +53,7 @@ function toOutput(blob: Blob, width: number, height: number): ImageProcessorOutp
   };
 }
 
-function drawToCanvas(img: HTMLImageElement, width: number, height: number) {
+export function drawToCanvas(img: HTMLImageElement, width: number, height: number) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -266,6 +270,131 @@ export class ImageCropProcessor extends BrowserProcessor<ImageCropInput, ImagePr
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outWidth, outHeight);
 
     const outType = mimeType ?? file.type ?? "image/png";
+    const blob = await canvasToBlob(canvas, outType, 0.92);
+    return toOutput(blob, canvas.width, canvas.height);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 反転（Phase 6）
+// ---------------------------------------------------------------------------
+export interface ImageFlipInput {
+  file: File;
+  direction: "horizontal" | "vertical";
+}
+
+export class ImageFlipProcessor extends BrowserProcessor<ImageFlipInput, ImageProcessorOutput> {
+  async process({ file, direction }: ImageFlipInput) {
+    const img = await loadImage(file);
+    const width = img.naturalWidth;
+    const height = img.naturalHeight;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvasの初期化に失敗しました");
+
+    if (direction === "horizontal") {
+      ctx.translate(width, 0);
+      ctx.scale(-1, 1);
+    } else {
+      ctx.translate(0, height);
+      ctx.scale(1, -1);
+    }
+    ctx.drawImage(img, 0, 0);
+
+    const outType = file.type || "image/png";
+    const blob = await canvasToBlob(canvas, outType, 0.92);
+    return toOutput(blob, canvas.width, canvas.height);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// グレースケール（Phase 6）
+// ---------------------------------------------------------------------------
+export interface ImageGrayscaleInput {
+  file: File;
+}
+
+export class ImageGrayscaleProcessor extends BrowserProcessor<
+  ImageGrayscaleInput,
+  ImageProcessorOutput
+> {
+  async process({ file }: ImageGrayscaleInput) {
+    const img = await loadImage(file);
+    const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvasの初期化に失敗しました");
+
+    // 元画像を直接書き換えず、Canvas上の複製に対してのみ処理する。
+    // アルファチャンネル（透過）は変更しない。
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      // 知覚輝度に近い重み付け（ITU-R BT.601）でグレー値を求める
+      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      data[i] = gray;
+      data[i + 1] = gray;
+      data[i + 2] = gray;
+      // data[i + 3]（アルファ）はそのまま
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const outType = file.type || "image/png";
+    const blob = await canvasToBlob(canvas, outType, 0.92);
+    return toOutput(blob, canvas.width, canvas.height);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 明るさ・コントラスト調整（Phase 6）
+// ---------------------------------------------------------------------------
+export interface ImageAdjustInput {
+  file: File;
+  /** -100〜100 */
+  brightness: number;
+  /** -100〜100 */
+  contrast: number;
+}
+
+function clampByte(value: number): number {
+  return Math.min(255, Math.max(0, value));
+}
+
+export class ImageAdjustProcessor extends BrowserProcessor<ImageAdjustInput, ImageProcessorOutput> {
+  async process({ file, brightness, contrast }: ImageAdjustInput) {
+    if (
+      !Number.isFinite(brightness) ||
+      !Number.isFinite(contrast) ||
+      brightness < -100 ||
+      brightness > 100 ||
+      contrast < -100 ||
+      contrast > 100
+    ) {
+      throw new Error("明るさ・コントラストは-100〜100の範囲で指定してください");
+    }
+    const img = await loadImage(file);
+    const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvasの初期化に失敗しました");
+
+    // UIの -100〜100 を、-255〜255 の内部値へ変換してから既知のコントラスト式を適用する。
+    // 極端な値（±100）でも式自体は破綻しない（±255の範囲で必ず有限の値になる）。
+    const brightnessShift = brightness * 2.55;
+    const contrastValue = contrast * 2.55;
+    const contrastFactor = (259 * (contrastValue + 255)) / (255 * (259 - contrastValue));
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = clampByte(contrastFactor * (data[i] - 128) + 128 + brightnessShift);
+      data[i + 1] = clampByte(contrastFactor * (data[i + 1] - 128) + 128 + brightnessShift);
+      data[i + 2] = clampByte(contrastFactor * (data[i + 2] - 128) + 128 + brightnessShift);
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    const outType = file.type || "image/png";
     const blob = await canvasToBlob(canvas, outType, 0.92);
     return toOutput(blob, canvas.width, canvas.height);
   }

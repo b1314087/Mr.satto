@@ -94,3 +94,80 @@ export class CsvFormatProcessor extends BrowserProcessor<CsvFormatInput, CsvForm
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// テキスト行整理（Phase 6）
+// ---------------------------------------------------------------------------
+export type TextLineSort = "none" | "asc" | "desc";
+
+export interface TextLineCleanerInput {
+  text: string;
+  removeEmptyLines: boolean;
+  trimLines: boolean;
+  collapseSpaces: boolean;
+  dedupeLines: boolean;
+  sort: TextLineSort;
+}
+
+export interface TextLineCleanerOutput {
+  result: string;
+  lineCountBefore: number;
+  lineCountAfter: number;
+}
+
+/**
+ * 各処理項目（空行削除・行頭行末空白削除・連続スペース整理・重複行削除・ソート）を
+ * それぞれ個別にON/OFFできるようにし、ユーザーが選んでいない処理は行わない
+ * （意図しないデータ変更を避ける。Phase 6 spec 16章）。
+ * 昇順/降順ソートは同時に両立しない状態のため、1つの sort 値（"none"|"asc"|"desc"）
+ * として扱う（UI側でもラジオボタン相当の排他選択にする）。
+ */
+export class TextLineCleanerProcessor extends BrowserProcessor<
+  TextLineCleanerInput,
+  TextLineCleanerOutput
+> {
+  async process({
+    text,
+    removeEmptyLines,
+    trimLines,
+    collapseSpaces,
+    dedupeLines,
+    sort,
+  }: TextLineCleanerInput) {
+    if (!text.trim()) {
+      throw new Error("テキストを入力してください");
+    }
+
+    let lines = text.split(/\r\n|\r|\n/);
+    const lineCountBefore = lines.length;
+
+    if (trimLines) {
+      lines = lines.map((line) => line.trim());
+    }
+    if (collapseSpaces) {
+      lines = lines.map((line) => line.replace(/[ \t]{2,}/g, " "));
+    }
+    if (removeEmptyLines) {
+      lines = lines.filter((line) => line.trim() !== "");
+    }
+    if (dedupeLines) {
+      const seen = new Set<string>();
+      lines = lines.filter((line) => {
+        if (seen.has(line)) return false;
+        seen.add(line);
+        return true;
+      });
+    }
+    if (sort === "asc") {
+      lines = [...lines].sort((a, b) => a.localeCompare(b, "ja"));
+    } else if (sort === "desc") {
+      lines = [...lines].sort((a, b) => b.localeCompare(a, "ja"));
+    }
+
+    return {
+      result: lines.join("\n"),
+      lineCountBefore,
+      lineCountAfter: lines.length,
+    };
+  }
+}

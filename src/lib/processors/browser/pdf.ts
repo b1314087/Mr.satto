@@ -1,7 +1,10 @@
-import { PDFDocument, degrees as pdfDegrees } from "pdf-lib";
+import { PDFDocument, StandardFonts, degrees as pdfDegrees, rgb } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import { BrowserProcessor, type PdfProcessorOutput, type NamedFileOutput } from "../types";
 import { loadImage, canvasToBlob } from "./image";
 import { stripExtension } from "@/lib/utils/format";
+import { parsePageSelection } from "@/lib/pdf/page-selection";
+import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 
 /**
  * PDF系Processor（Phase 2-A）。
@@ -391,6 +394,216 @@ export class ImagesToPdfProcessor extends BrowserProcessor<ImageToPdfInput, PdfP
         page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
       }
     }
+    return finalizePdf(doc);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDFページ抽出（Phase 6）
+// ---------------------------------------------------------------------------
+export interface PdfExtractPagesInput {
+  file: File;
+  /** "1,3,5-7" のようなページ指定文字列。指定順序を維持する */
+  pageSelection: string;
+}
+
+export class PdfExtractPagesProcessor extends BrowserProcessor<
+  PdfExtractPagesInput,
+  PdfProcessorOutput
+> {
+  async process({ file, pageSelection }: PdfExtractPagesInput) {
+    const src = await loadPdfDoc(file);
+    const totalPages = src.getPageCount();
+    if (totalPages === 0) {
+      throw new Error("このPDFにはページがありません");
+    }
+    // parsePageSelectionが範囲・0ページ・逆順・不正文字列・重複を検証済みのエラーを投げる
+    const pageNumbers = parsePageSelection(pageSelection, totalPages);
+    const out = await PDFDocument.create();
+    const copied = await out.copyPages(
+      src,
+      pageNumbers.map((p) => p - 1)
+    );
+    copied.forEach((page) => out.addPage(page));
+    return finalizePdf(out);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDFページ番号追加（Phase 6）
+// ---------------------------------------------------------------------------
+export type PageNumberPosition = "bottom-left" | "bottom-center" | "bottom-right";
+
+export interface PdfAddPageNumbersInput {
+  file: File;
+  /** 何番から数え始めるか（表示上の開始番号。1始まりが基本だが変更可能） */
+  startNumber: number;
+  position: PageNumberPosition;
+  fontSize: number;
+}
+
+const PAGE_NUMBER_MARGIN = 24;
+
+export class PdfAddPageNumbersProcessor extends BrowserProcessor<
+  PdfAddPageNumbersInput,
+  PdfProcessorOutput
+> {
+  async process({ file, startNumber, position, fontSize }: PdfAddPageNumbersInput) {
+    if (!Number.isInteger(startNumber)) {
+      throw new Error("開始番号は整数で指定してください");
+    }
+    if (!Number.isFinite(fontSize) || fontSize < 6 || fontSize > 72) {
+      throw new Error("フォントサイズは6〜72の範囲で指定してください");
+    }
+    const doc = await loadPdfDoc(file);
+    const pages = doc.getPages();
+    if (pages.length === 0) {
+      throw new Error("このPDFにはページがありません");
+    }
+
+    // ページ番号は数字と "/" のみで構成されるため、日本語フォントの埋め込みは不要
+    // （既存の帳票PDF生成と違い、追加のフォント取得を発生させない）。
+    let font;
+    try {
+      font = await doc.embedFont(StandardFonts.Helvetica);
+    } catch {
+      throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
+    }
+
+    pages.forEach((page, index) => {
+      const label = String(startNumber + index);
+      const width = font.widthOfTextAtSize(label, fontSize);
+      const { width: pageWidth } = page.getSize();
+      let x: number;
+      if (position === "bottom-left") {
+        x = PAGE_NUMBER_MARGIN;
+      } else if (position === "bottom-right") {
+        x = pageWidth - PAGE_NUMBER_MARGIN - width;
+      } else {
+        x = (pageWidth - width) / 2;
+      }
+      page.drawText(label, {
+        x,
+        y: PAGE_NUMBER_MARGIN * 0.6,
+        size: fontSize,
+        font,
+        color: rgb(0.3, 0.3, 0.32),
+      });
+    });
+
+    return finalizePdf(doc);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDF透かし（Phase 6）
+// ---------------------------------------------------------------------------
+export type WatermarkPosition = "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+export interface PdfWatermarkInput {
+  file: File;
+  text: string;
+  /** 0〜1 */
+  opacity: number;
+  fontSize: number;
+  position: WatermarkPosition;
+  /** 度数（反時計回り） */
+  rotation: number;
+}
+
+const WATERMARK_MARGIN = 32;
+
+export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, PdfProcessorOutput> {
+  async process({ file, text, opacity, fontSize, position, rotation }: PdfWatermarkInput) {
+    if (text.trim() === "") {
+      throw new Error("透かしの文字を入力してください");
+    }
+    if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) {
+      throw new Error("不透明度は0〜1の範囲で指定してください");
+    }
+    if (!Number.isFinite(fontSize) || fontSize < 6 || fontSize > 200) {
+      throw new Error("フォントサイズは6〜200の範囲で指定してください");
+    }
+    const doc = await loadPdfDoc(file);
+    const pages = doc.getPages();
+    if (pages.length === 0) {
+      throw new Error("このPDFにはページがありません");
+    }
+
+    // 「CONFIDENTIAL」等の英数字だけでなく「社外秘」のような日本語も透かしに
+    // 使えるよう、既存の帳票PDF生成と同じ日本語TrueTypeフォント(Noto Sans JP)を
+    // 再利用する（新しいフォント資産は追加しない。subset:falseの理由は
+    // document-pdf.tsのコメントを参照）。
+    let fontBytes: ArrayBuffer;
+    try {
+      fontBytes = await loadJapaneseFontBytes();
+    } catch {
+      throw new Error(
+        "日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。"
+      );
+    }
+    let font;
+    try {
+      doc.registerFontkit(fontkit);
+      font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
+    } catch {
+      throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
+    }
+
+    let width: number;
+    try {
+      width = font.widthOfTextAtSize(text, fontSize);
+    } catch {
+      throw new Error(
+        "この文字は透かしとして描画できませんでした。別の文字列でお試しください。"
+      );
+    }
+    const height = font.heightAtSize(fontSize);
+
+    for (const page of pages) {
+      const { width: pageWidth, height: pageHeight } = page.getSize();
+      let x: number;
+      let y: number;
+      switch (position) {
+        case "top-left":
+          x = WATERMARK_MARGIN;
+          y = pageHeight - WATERMARK_MARGIN - height;
+          break;
+        case "top-right":
+          x = pageWidth - WATERMARK_MARGIN - width;
+          y = pageHeight - WATERMARK_MARGIN - height;
+          break;
+        case "bottom-left":
+          x = WATERMARK_MARGIN;
+          y = WATERMARK_MARGIN;
+          break;
+        case "bottom-right":
+          x = pageWidth - WATERMARK_MARGIN - width;
+          y = WATERMARK_MARGIN;
+          break;
+        case "center":
+        default:
+          x = (pageWidth - width) / 2;
+          y = (pageHeight - height) / 2;
+          break;
+      }
+      try {
+        page.drawText(text, {
+          x,
+          y,
+          size: fontSize,
+          font,
+          color: rgb(0.5, 0.5, 0.5),
+          opacity,
+          rotate: pdfDegrees(rotation),
+        });
+      } catch {
+        throw new Error(
+          "この文字は透かしとして描画できませんでした。別の文字列でお試しください。"
+        );
+      }
+    }
+
     return finalizePdf(doc);
   }
 }

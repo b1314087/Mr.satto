@@ -1,6 +1,7 @@
 import { PDFDocument, type PDFFont, type PDFPage, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { BrowserProcessor } from "../types";
+import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import {
   DOCUMENT_TYPE_META,
   isBankAccountEmpty,
@@ -49,27 +50,6 @@ const COLOR_TEXT: [number, number, number] = [0.13, 0.13, 0.15];
 const COLOR_MUTED: [number, number, number] = [0.45, 0.45, 0.48];
 const COLOR_LINE: [number, number, number] = [0.8, 0.8, 0.82];
 const COLOR_HEADER_BG: [number, number, number] = [0.93, 0.94, 0.96];
-
-// ---------------------------------------------------------------------------
-// 日本語フォントの読み込み（ブラウザから1回だけ取得し、以後はキャッシュする）
-// ---------------------------------------------------------------------------
-let fontBytesPromise: Promise<ArrayBuffer> | null = null;
-
-function loadJapaneseFontBytes(): Promise<ArrayBuffer> {
-  if (!fontBytesPromise) {
-    fontBytesPromise = fetch("/fonts/NotoSansJP-Regular.ttf")
-      .then((res) => {
-        if (!res.ok) throw new Error(`font fetch failed: ${res.status}`);
-        return res.arrayBuffer();
-      })
-      .catch((e) => {
-        // 失敗時は次回の呼び出しで再取得できるようキャッシュをリセットする
-        fontBytesPromise = null;
-        throw e;
-      });
-  }
-  return fontBytesPromise;
-}
 
 // ---------------------------------------------------------------------------
 // テキスト折り返し（日本語は単語区切りが無いため1文字単位で幅計測する）
