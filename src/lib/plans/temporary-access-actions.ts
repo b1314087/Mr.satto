@@ -2,18 +2,18 @@
 
 import { cookies } from "next/headers";
 import { issueTemporaryAccessToken, verifyTemporaryAccessToken } from "./temp-access-token";
+import { TEMP_ACCESS_COOKIE_NAME, TEMP_ACCESS_DURATION_MS } from "./temporary-access-cookie";
 
 /**
- * Temporary Accessトークンを保持するCookie名。
+ * Temporary Accessトークンを保持するCookie名・有効期間。
  *
- * 注意："use server" ファイルは非同期関数以外をexportできないため、
- * このファイルの外から参照する必要が生じた場合は、この値を
- * temp-access-token.ts 側などへ移すこと（このファイルからexportしない）。
+ * Phase 4でこの値の参照元を temporary-access-cookie.ts（"use server"ではない
+ * 共有定数モジュール）へ移した。理由：クライアント側（残り時間表示・複数タブ
+ * 同期用に document.cookie を直接読む src/lib/plans/temporary-access.ts）からも
+ * 同じCookie名を参照する必要が生じたため（"use server" ファイルは非同期関数以外を
+ * exportできないため、このファイル自体からは引き続きexportしない）。
  */
-const TEMP_ACCESS_COOKIE = "mrsatto_temp_access";
-
-/** 「15分間」は仕様で確定した値。勝手に変更しない（Phase 3 spec 3章・35章）。 */
-const TEMP_ACCESS_DURATION_MS = 15 * 60 * 1000;
+const TEMP_ACCESS_COOKIE = TEMP_ACCESS_COOKIE_NAME;
 
 /**
  * リワード広告の視聴成功後に呼び出すServer Action。

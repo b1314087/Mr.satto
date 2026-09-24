@@ -97,6 +97,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
             plan={serverPlan.plan}
             isAuthenticated={serverPlan.userId !== null}
             temporaryAccessActive={serverPlan.temporaryAccessActive}
+            temporaryAccessExpiresAtMs={serverPlan.temporaryAccessExpiresAtMs}
           >
             <ToolImplementation toolId={tool.id} />
           </ToolAccessGate>
