@@ -10,6 +10,7 @@ import { ToolAccessGate } from "@/components/tools/tool-access-gate";
 import { hasImplementation } from "@/lib/tools/registry";
 import { ToolCard } from "@/components/tools/tool-card";
 import { AdSlot } from "@/components/ads/ad-slot";
+import { getServerPlan } from "@/lib/plans/current-plan";
 
 interface ToolPageProps {
   params: Promise<{ tool: string }>;
@@ -38,6 +39,12 @@ export default async function ToolPage({ params }: ToolPageProps) {
   if (!tool) notFound();
 
   const isAvailable = tool.status === "available" && hasImplementation(tool.id);
+
+  // Phase 3: 権限判定はサーバー側（認証ユーザー + DB契約状態 + 署名付き
+  // Temporary Accessトークン）で確定させ、その結果だけをToolAccessGateへ渡す。
+  // ツールが利用不可（isAvailable === false）の場合はcookies()を読む必要がなく、
+  // 準備中ページを静的なまま提供できるため呼び出さない。
+  const serverPlan = isAvailable ? await getServerPlan() : null;
 
   // 関連ツール: 「準備中」のツールや自分自身は候補から除外する（Coming Soonのみが
   // 表示される状態を避けるため）。同カテゴリだけで4件に満たない場合は、
@@ -83,8 +90,14 @@ export default async function ToolPage({ params }: ToolPageProps) {
       </div>
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
-        {isAvailable ? (
-          <ToolAccessGate toolId={tool.id} requiredPlan={tool.requiredPlan}>
+        {isAvailable && serverPlan ? (
+          <ToolAccessGate
+            toolId={tool.id}
+            requiredPlan={tool.requiredPlan}
+            plan={serverPlan.plan}
+            isAuthenticated={serverPlan.userId !== null}
+            temporaryAccessActive={serverPlan.temporaryAccessActive}
+          >
             <ToolImplementation toolId={tool.id} />
           </ToolAccessGate>
         ) : (

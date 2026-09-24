@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { siteConfig } from "@/lib/config/site";
 import { PLAN_DEFINITIONS, PLAN_IDS } from "@/lib/plans/types";
+import { getServerPlan } from "@/lib/plans/current-plan";
+import { isStripeConfigured } from "@/lib/stripe/config";
+import { PricingActionButton } from "@/components/pricing/pricing-action-button";
 
 export const metadata: Metadata = {
   title: "料金プラン",
@@ -15,13 +18,34 @@ const PLAN_TOOL_ACCESS_LABEL: Record<string, string> = {
   all: "すべてのツールを利用可能",
 };
 
-export default function PricingPage() {
+/** 料金ページ限定の、プランごとの利用条件の補足（誇張表現は入れない） */
+const PLAN_USAGE_NOTE: Record<string, string> = {
+  free: "広告を見ると15分間スタンダード対象ツールを利用できます（複数のツールをまとめて利用可能）",
+  standard: "月額550円・広告なし",
+  premium: "月額980円・広告なし・プレミアム対象ツールも利用可能",
+};
+
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ checkout?: string }>;
+}) {
+  const { checkout } = await searchParams;
+  const serverPlan = await getServerPlan();
+  const stripeConfigured = isStripeConfigured();
+
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-12 sm:px-6">
       <h1 className="mb-2 text-2xl font-bold text-neutral-900 dark:text-white">料金プラン</h1>
       <p className="mb-10 text-sm text-neutral-600 dark:text-neutral-300">
         {siteConfig.name}は3つのプランでご利用いただけます。
       </p>
+
+      {checkout === "cancelled" && (
+        <p className="mb-6 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+          お申し込みは完了していません。もう一度お試しいただけます。
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {PLAN_IDS.map((id) => {
@@ -54,23 +78,31 @@ export default function PricingPage() {
                 </li>
               </ul>
 
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">{plan.description}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {PLAN_USAGE_NOTE[plan.id]}
+              </p>
 
-              <button
-                type="button"
-                disabled
-                title="現在準備中です。決済機能は今後提供予定です"
-                className="mt-auto w-full cursor-not-allowed rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm text-neutral-400 dark:border-neutral-700 dark:text-neutral-500"
-              >
-                {plan.priceYen === 0 ? "現在のプラン" : "準備中"}
-              </button>
+              {plan.id === "free" ? (
+                <span className="mt-auto w-full rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-center text-sm text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
+                  {serverPlan.plan === "free" ? "現在ご利用中のプランです" : "ログイン不要"}
+                </span>
+              ) : (
+                <PricingActionButton
+                  plan={plan.id}
+                  isAuthenticated={serverPlan.userId !== null}
+                  currentPlan={serverPlan.plan}
+                  stripeConfigured={stripeConfigured}
+                />
+              )}
             </div>
           );
         })}
       </div>
 
       <p className="mt-8 text-xs text-neutral-400 dark:text-neutral-500">
-        ※ 現在、有料プランへのお申し込み・お支払い機能は準備中です。プレミアム対象ツール（見積書作成・請求書作成・注文書作成など）は順次公開予定です。
+        ※ お支払い・契約状況の確認は Stripe を利用しています。カード情報はMr.Satto側では保存しません。
+        {!stripeConfigured &&
+          " 現在、Standard・Premiumへのお申し込み機能は準備中です。"}
       </p>
     </div>
   );

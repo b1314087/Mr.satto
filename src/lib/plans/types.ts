@@ -1,17 +1,19 @@
 /**
- * Mr.Satto の料金プラン（Phase 2-0: 料金・利用権限基盤）。
+ * Mr.Satto の料金プラン（Phase 3: 会員登録・課金・プラン管理で確定）。
  *
- * 今後の正式な料金体系：
+ * 正式な料金体系：
  *
- * free     : 0円。広告を見ることでスタンダード対象ツールを利用可能
- * standard : 550円。広告なしでスタンダード対象ツールを利用可能
- * premium  : 880円。広告なしですべてのツールを利用可能
+ * free     : 0円。ログイン不要。リワード広告視聴で15分間スタンダード対象ツールを利用可能
+ * standard : 月額550円。ログイン必須。広告なしでスタンダード対象ツールを利用可能
+ * premium  : 月額980円。ログイン必須。広告なしですべてのツールを利用可能
  *
  * 重要：「広告も見ない」「料金も払わない」でそのまま使える
  * 完全無料プランは、最終仕様として存在しない。
- * free ユーザーは standard 対象ツールの利用時に、将来的に
- * Rewarded Ads 等の正式な広告報酬方式を必ず通過する設計とする
- * （このファイルはその前提となる型・データを一元管理する）。
+ * free ユーザーは standard 対象ツールの利用時に、Rewarded Ads の視聴によって
+ * 15分間の一時利用権（Temporary Access）を得る（src/lib/plans/temporary-access.ts）。
+ *
+ * standard / premium の実際の契約状態は Stripe Subscription が正式な情報源であり、
+ * Webhook経由でSupabase DBへ同期される（src/lib/plans/current-plan.tsのgetServerPlan）。
  */
 export type Plan = "free" | "standard" | "premium";
 
@@ -65,7 +67,7 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
   premium: {
     id: "premium",
     name: "プレミアム",
-    priceYen: 880,
+    priceYen: 980,
     adsRequired: false,
     toolAccess: "all",
     description: "広告なしですべてのツールを利用できます",
