@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { tools } from "@/lib/tools/data";
+import { categories } from "@/lib/tools/categories";
 import { siteConfig } from "@/lib/config/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -15,11 +16,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${siteConfig.url}/contact`, changeFrequency: "yearly", priority: 0.3 },
   ];
 
-  const toolRoutes: MetadataRoute.Sitemap = tools.map((tool) => ({
-    url: `${siteConfig.url}/tools/${tool.id}`,
-    changeFrequency: "monthly",
-    priority: tool.status === "available" ? 0.8 : 0.5,
+  const categoryRoutes: MetadataRoute.Sitemap = categories.map((category) => ({
+    url: `${siteConfig.url}/tools/${category.id}`,
+    changeFrequency: "weekly",
+    priority: 0.7,
   }));
 
-  return [...staticRoutes, ...toolRoutes];
+  // 「準備中」のツールは内容が薄い仮ページであり、検索結果に出す価値のある
+  // ページではないため、sitemapには含めない（generateMetadata側でもnoindexにしている）。
+  const toolRoutes: MetadataRoute.Sitemap = tools
+    .filter((tool) => tool.status === "available")
+    .map((tool) => ({
+      url: `${siteConfig.url}/tools/${tool.id}`,
+      changeFrequency: "monthly",
+      priority: 0.8,
+    }));
+
+  return [...staticRoutes, ...categoryRoutes, ...toolRoutes];
 }

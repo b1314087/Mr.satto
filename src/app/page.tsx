@@ -4,12 +4,17 @@ import { ToolGrid } from "@/components/tools/tool-grid";
 import { categories } from "@/lib/tools/categories";
 import { getFeaturedTools, tools } from "@/lib/tools/data";
 import { siteConfig } from "@/lib/config/site";
+import { JsonLd } from "@/components/seo/json-ld";
+import { buildWebApplication, buildWebSite } from "@/lib/seo/structured-data";
 
 export default function Home() {
   const featured = getFeaturedTools();
 
   return (
     <div className="flex flex-col">
+      <JsonLd data={buildWebSite()} />
+      <JsonLd data={buildWebApplication()} />
+
       <section className="border-b border-neutral-200 bg-gradient-to-b from-blue-50 to-white px-4 py-16 text-center dark:border-neutral-800 dark:from-neutral-900 dark:to-neutral-950 sm:px-6">
         <div className="mx-auto flex max-w-2xl flex-col items-center gap-6">
           <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white sm:text-4xl">
@@ -23,7 +28,7 @@ export default function Home() {
             <SearchBar />
           </div>
           <p className="text-xs text-neutral-400 dark:text-neutral-500">
-            全 {tools.length} ツール ・ 会員登録不要 ・ 完全無料
+            全 {tools.length} ツール ・ 会員登録不要ですぐ試せる
           </p>
         </div>
       </section>
@@ -34,7 +39,7 @@ export default function Home() {
           {categories.map((category) => (
             <Link
               key={category.id}
-              href={`/tools?category=${category.id}`}
+              href={`/tools/${category.id}`}
               className="flex flex-col items-center gap-2 rounded-xl border border-neutral-200 bg-white p-5 text-center transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-blue-700"
             >
               <span className="text-3xl" aria-hidden="true">
@@ -71,9 +76,9 @@ export default function Home() {
           </div>
           <div className="flex-1 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
             <p className="text-2xl">⚡</p>
-            <h3 className="mt-2 font-semibold text-neutral-900 dark:text-white">高速・無料</h3>
+            <h3 className="mt-2 font-semibold text-neutral-900 dark:text-white">会員登録不要ですぐ使える</h3>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              会員登録不要ですぐに使えます。今後もほとんどの機能を無料で提供します。
+              アカウントを作らなくてもすぐに使い始められます。無料プランでも、広告を見れば15分間スタンダードツールを利用できます。
             </p>
           </div>
           <div className="flex-1 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">

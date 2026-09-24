@@ -45,7 +45,7 @@ export default function AboutPage() {
             {categories.map((category) => (
               <Link
                 key={category.id}
-                href={`/tools?category=${category.id}`}
+                href={`/tools/${category.id}`}
                 className="flex flex-col items-center gap-1 rounded-lg border border-neutral-200 bg-white p-3 text-center text-xs text-neutral-600 transition-colors hover:border-blue-300 hover:text-blue-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-blue-700 dark:hover:text-blue-400"
               >
                 <span className="text-xl" aria-hidden="true">

@@ -18,6 +18,17 @@ export default function NotFound() {
       >
         ツール一覧へ戻る
       </Link>
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-blue-600 dark:text-blue-400">
+        <Link href="/" className="hover:underline">
+          トップページ
+        </Link>
+        <Link href="/pricing" className="hover:underline">
+          料金プラン
+        </Link>
+        <Link href="/contact" className="hover:underline">
+          お問い合わせ
+        </Link>
+      </div>
     </div>
   );
 }
