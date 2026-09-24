@@ -13,12 +13,23 @@ import type { Plan } from "@/lib/plans/types";
  * 架空のIDを埋め込むことはしない（Phase 3 spec 41章）。isStripeConfigured()が
  * falseの間、Checkout関連のAPI Routeは明確なエラーメッセージを返す。
  */
+/**
+ * .trim()しているのは、Vercel等のダッシュボードへ環境変数の値をコピー&ペーストする際、
+ * 末尾に改行や空白が混入することがあり（コピー元によっては起こりうる）、それが原因で
+ * StripeへのリクエストのAuthorizationヘッダーが不正な値になり
+ * "Invalid character in header content" のようなエラーで接続自体が失敗する事例が
+ * 実際にあったため（Phase 3運用開始時に確認済み）。
+ */
+function trimmedEnv(name: string): string {
+  return (process.env[name] ?? "").trim();
+}
+
 export const stripeConfig = {
-  secretKey: process.env.STRIPE_SECRET_KEY ?? "",
-  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? "",
+  secretKey: trimmedEnv("STRIPE_SECRET_KEY"),
+  webhookSecret: trimmedEnv("STRIPE_WEBHOOK_SECRET"),
   priceIds: {
-    standard: process.env.STRIPE_STANDARD_PRICE_ID ?? "",
-    premium: process.env.STRIPE_PREMIUM_PRICE_ID ?? "",
+    standard: trimmedEnv("STRIPE_STANDARD_PRICE_ID"),
+    premium: trimmedEnv("STRIPE_PREMIUM_PRICE_ID"),
   } satisfies Record<Exclude<Plan, "free">, string>,
 };
 
