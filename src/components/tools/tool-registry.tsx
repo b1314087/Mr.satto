@@ -32,6 +32,9 @@ import { PdfToTextTool } from "./implementations/pdf-to-text-tool";
 import { EstimateGeneratorTool } from "./implementations/estimate-generator-tool";
 import { InvoiceGeneratorTool } from "./implementations/invoice-generator-tool";
 import { OrderGeneratorTool } from "./implementations/order-generator-tool";
+import { OcrTool } from "./implementations/ocr-tool";
+import { PdfToExcelTool } from "./implementations/pdf-to-excel-tool";
+import { PdfToWordTool } from "./implementations/pdf-to-word-tool";
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -116,6 +119,12 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <InvoiceGeneratorTool />;
     case "order-generator":
       return <OrderGeneratorTool />;
+    case "ocr":
+      return <OcrTool />;
+    case "pdf-to-excel":
+      return <PdfToExcelTool />;
+    case "pdf-to-word":
+      return <PdfToWordTool />;
     default:
       return null;
   }

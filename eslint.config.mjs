@@ -15,6 +15,10 @@ const eslintConfig = defineConfig([
     // pdfjs-dist の Worker (PDF→画像ツール用) は node_modules からコピーした
     // 圧縮済み配布物であり、Lint対象のソースコードではない。
     "public/pdf.worker.min.mjs",
+    // tesseract.js / tesseract.js-core のWorker・WASMグルーコードも同様に
+    // npmパッケージから抽出した圧縮済み配布物（Phase 2-D OCR機能用）であり、
+    // 自前のソースコードではないためLint対象から除外する。
+    "public/tesseract/**",
   ]),
 ]);
 

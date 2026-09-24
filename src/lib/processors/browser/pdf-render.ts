@@ -1,6 +1,7 @@
 import { BrowserProcessor, type NamedFileOutput } from "../types";
 import { canvasToBlob } from "./image";
 import { stripExtension } from "@/lib/utils/format";
+import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
 
 /**
  * PDF→画像 Processor（Phase 2-A）。
@@ -13,35 +14,11 @@ import { stripExtension } from "@/lib/utils/format";
  *
  * レンダリングはCanvas 2D経由でブラウザ上で完結し、ファイルは
  * 外部に送信されない。
- */
-
-let pdfjsLibPromise: ReturnType<typeof importPdfjs> | null = null;
-
-/**
- * pdfjs-dist は比較的重いライブラリ（Workerスクリプトのみで約1.3MB）のため、
- * このツールが実際に使われるまで読み込まない（動的import）。
- * Workerの参照先は public/pdf.worker.min.mjs に配置した静的ファイルとし、
- * バンドラー(Turbopack)依存のアセット解決に頼らない、確実な方式にしている。
  *
- * バージョンは意図的に最新(6.x)ではなく 4.10.38 に固定している。
- * 6.x系はレンダリング内部で `Map.prototype.getOrInsertComputed`
- * （非常に新しいJS機能）を前提にしており、これをサポートしない
- * ブラウザ（検証に使ったChromiumを含む）では実行時エラーになることを
- * 実機検証で確認したため。4.10.38は広く使われている安定版で、
- * 対応ブラウザの幅が広い。
+ * pdfjs-dist の読み込み・PDF読み込み自体は、Phase 2-Dで
+ * OCR/PDF→Excel/PDF→Wordと共通化するため src/lib/pdf/pdfjs-client.ts
+ * へ移設した（ロジックは変更していない）。
  */
-async function importPdfjs() {
-  const pdfjsLib = await import("pdfjs-dist");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-  return pdfjsLib;
-}
-
-function getPdfjs() {
-  if (!pdfjsLibPromise) {
-    pdfjsLibPromise = importPdfjs();
-  }
-  return pdfjsLibPromise;
-}
 
 export interface PdfToImageInput {
   file: File;
@@ -54,29 +31,6 @@ export interface PdfToImageOutputItem extends NamedFileOutput {
   pageNumber: number;
   width: number;
   height: number;
-}
-
-/**
- * PDFの読み込みエラーを日本語の分かりやすいメッセージへ変換する共通ヘルパー。
- * PdfToImageProcessor / PdfToTextProcessor の両方が同じ pdfjs-dist の
- * getDocument() を使うため、エラーハンドリングを共通化している。
- */
-async function loadPdfDocument(file: File) {
-  const pdfjsLib = await getPdfjs();
-  const bytes = await file.arrayBuffer();
-  try {
-    return await pdfjsLib.getDocument({ data: bytes }).promise;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "";
-    if (/password/i.test(message)) {
-      throw new Error(
-        "パスワード保護されたPDFは処理できません。パスワードを解除してから再度お試しください。"
-      );
-    }
-    throw new Error(
-      `${file.name} の読み込みに失敗しました。PDFファイルが破損している可能性があります。`
-    );
-  }
 }
 
 export class PdfToImageProcessor extends BrowserProcessor<
