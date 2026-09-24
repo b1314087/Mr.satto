@@ -29,6 +29,9 @@ import { CsvDedupeTool } from "./implementations/csv-dedupe-tool";
 import { CsvReplaceTool } from "./implementations/csv-replace-tool";
 import { PdfCompressTool } from "./implementations/pdf-compress-tool";
 import { PdfToTextTool } from "./implementations/pdf-to-text-tool";
+import { EstimateGeneratorTool } from "./implementations/estimate-generator-tool";
+import { InvoiceGeneratorTool } from "./implementations/invoice-generator-tool";
+import { OrderGeneratorTool } from "./implementations/order-generator-tool";
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -107,6 +110,12 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfCompressTool />;
     case "pdf-to-text":
       return <PdfToTextTool />;
+    case "estimate-generator":
+      return <EstimateGeneratorTool />;
+    case "invoice-generator":
+      return <InvoiceGeneratorTool />;
+    case "order-generator":
+      return <OrderGeneratorTool />;
     default:
       return null;
   }
