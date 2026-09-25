@@ -4,6 +4,11 @@ import { getStripeClient } from "@/lib/stripe/client";
 import { isStripeConfigured } from "@/lib/stripe/config";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { siteConfig } from "@/lib/config/site";
+import { checkRateLimit } from "@/lib/utils/rate-limit";
+
+// Customer Portal Session作成もStripe APIコストが発生する操作のため、
+// 認証済みユーザー単位で乱打を抑制する（Phase 6.5 セキュリティ監査で追加）。
+const RATE_LIMIT = { limit: 5, windowMs: 60_000 };
 
 /**
  * Stripe Customer Portal のセッションを作成し、そのURLを返す。
@@ -24,6 +29,14 @@ export async function POST() {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "この操作にはログインが必要です。" }, { status: 401 });
+  }
+
+  const rateLimit = checkRateLimit(`stripe-portal:${user.id}`, RATE_LIMIT);
+  if (rateLimit.limited) {
+    return NextResponse.json(
+      { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rateLimit.retryAfterMs / 1000)) } }
+    );
   }
 
   const supabase = getSupabaseServiceClient();

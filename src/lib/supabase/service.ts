@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
-import { supabaseConfig, isSupabaseServiceConfigured } from "./config";
+import { supabaseConfig } from "./config";
+import { supabaseServiceConfig, isSupabaseServiceConfigured } from "./service-config";
 
 /**
  * Service Role Key を使うSupabaseクライアント（RLSを経由しない特権クライアント）。
@@ -20,7 +21,7 @@ import { supabaseConfig, isSupabaseServiceConfigured } from "./config";
  */
 export function getSupabaseServiceClient() {
   if (!isSupabaseServiceConfigured()) return null;
-  return createClient(supabaseConfig.url, supabaseConfig.serviceRoleKey, {
+  return createClient(supabaseConfig.url, supabaseServiceConfig.serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }

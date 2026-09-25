@@ -5,6 +5,11 @@ import { isStripeConfigured, hasPriceIdFor, stripeConfig } from "@/lib/stripe/co
 import { getOrCreateStripeCustomerId } from "@/lib/stripe/customer";
 import { siteConfig } from "@/lib/config/site";
 import type { Plan } from "@/lib/plans/types";
+import { checkRateLimit } from "@/lib/utils/rate-limit";
+
+// Checkout Session作成はStripe APIコストが発生する操作のため、
+// 認証済みユーザー単位で乱打を抑制する（Phase 6.5 セキュリティ監査で追加）。
+const RATE_LIMIT = { limit: 5, windowMs: 60_000 };
 
 /**
  * Standard / Premium のStripe Checkout Sessionを作成し、そのURLを返す。
@@ -32,6 +37,14 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "この操作にはログインが必要です。" },
       { status: 401 }
+    );
+  }
+
+  const rateLimit = checkRateLimit(`stripe-checkout:${user.id}`, RATE_LIMIT);
+  if (rateLimit.limited) {
+    return NextResponse.json(
+      { error: "リクエストが多すぎます。しばらくしてから再度お試しください。" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rateLimit.retryAfterMs / 1000)) } }
     );
   }
 
