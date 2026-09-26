@@ -55,12 +55,16 @@ export function ImageSnsSizeTool() {
     const img = new Image();
     img.onload = () => {
       setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
-      URL.revokeObjectURL(url);
     };
     img.src = url;
     setResult(null);
     setError(null);
     setStatus("idle");
+    // Phase 7: revokeをonloadの中だけで行うと、画像のdecodeに失敗した場合
+    // （onerror）や、ファイルが素早く変更されてこのeffectが再実行された場合に
+    // Object URLが解放されないまま残ってしまう。cleanup関数側で必ず解放する
+    // ようにし、どちらのケースでも確実に解放されるようにする。
+    return () => URL.revokeObjectURL(url);
   }, [file]);
 
   useEffect(() => {

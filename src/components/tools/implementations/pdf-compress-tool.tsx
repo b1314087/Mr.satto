@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -22,6 +22,14 @@ export function PdfCompressTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfCompressOutput | null>(null);
+
+  // Phase 7: 生成結果のObject URL(result.url)は画面上で使っていないが、
+  // 解放しないとページを離れるまでメモリに残り続けるため、明示的に解放する。
+  useEffect(() => {
+    return () => {
+      if (result) URL.revokeObjectURL(result.url);
+    };
+  }, [result]);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);

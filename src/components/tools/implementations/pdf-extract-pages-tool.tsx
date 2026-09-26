@@ -19,6 +19,14 @@ export function PdfExtractPagesTool() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfProcessorOutput | null>(null);
 
+  // Phase 7: 生成結果のObject URL(result.url)は画面上で使っていないが、
+  // 解放しないとページを離れるまでメモリに残り続けるため、明示的に解放する。
+  useEffect(() => {
+    return () => {
+      if (result) URL.revokeObjectURL(result.url);
+    };
+  }, [result]);
+
   useEffect(() => {
     if (!file) {
       // eslint-disable-next-line react-hooks/set-state-in-effect

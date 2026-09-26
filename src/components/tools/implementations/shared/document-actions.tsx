@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -24,6 +24,14 @@ export function DocumentActions({ form }: { form: DocumentFormState }) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DocumentPdfOutput | null>(null);
   const meta = DOCUMENT_TYPE_META[form.type];
+
+  // Phase 7: 生成結果のObject URL(result.url、「新しいタブでPDFを開く」用)を
+  // 次の結果に置き換わる時／unmount時に解放する。
+  useEffect(() => {
+    return () => {
+      if (result) URL.revokeObjectURL(result.url);
+    };
+  }, [result]);
 
   async function handleGenerate() {
     setStatus("processing");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -15,6 +15,16 @@ export function PdfMergeTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfProcessorOutput | null>(null);
+
+  // Phase 7: 生成結果のObject URLを、次の結果に置き換わる時／unmount時に解放する
+  // （画像系ツールと同じパターン。本ツールはダウンロードにblobを直接使うため
+  // 画面上でurlを使うことはないが、Processor側の型に合わせて生成されている
+  // ため、明示的に解放しないとページを離れるまで保持され続けてしまう）。
+  useEffect(() => {
+    return () => {
+      if (result) URL.revokeObjectURL(result.url);
+    };
+  }, [result]);
 
   function addFiles(newFiles: File[]) {
     setFiles((prev) => [...prev, ...newFiles]);

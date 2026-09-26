@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -8,7 +8,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { OcrProcessor, type OcrOutput } from "@/lib/processors/browser/ocr";
-import type { OcrLanguageOption } from "@/lib/ocr/tesseract-client";
+import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 const LANGUAGE_OPTIONS: { value: OcrLanguageOption; label: string }[] = [
@@ -39,6 +39,17 @@ export function OcrTool() {
   const [copied, setCopied] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const cancelRef = useRef(false);
+
+  // Phase 7: OCR用Tesseract.js Workerは一度生成されるとページ内で使い回される
+  // 設計だが、terminateOcrWorker()がこれまでどこからも呼ばれておらず、
+  // OCRページを離れた後もWASM＋言語データを積んだWorkerがメモリに残り
+  // 続けていた。ページを離れる（コンポーネントがunmountされる）タイミングで
+  // 明示的に終了させる（OCRの認識ロジック自体は変更していない）。
+  useEffect(() => {
+    return () => {
+      void terminateOcrWorker();
+    };
+  }, []);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
