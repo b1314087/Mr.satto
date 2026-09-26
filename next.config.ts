@@ -60,6 +60,18 @@ import type { NextConfig } from "next";
  * （実際にPhase 10のテストで発見。動画は常にブラウザ内で生成したBlobのみを
  * 参照し、外部URLを一切読み込まないため、img-src/worker-srcと同じ理由で
  * 'self' blob: の範囲に限定して許可する）。
+ *
+ * 'wasm-unsafe-eval'（Phase 11で発見・追加）：OCR（tesseract.js）が内部で
+ * WebAssemblyモジュールをコンパイルする際、このディレクティブが無いと
+ * ブラウザが "Refused to compile or instantiate WebAssembly module because
+ * 'unsafe-eval' is not an allowed source of script" でWASMのコンパイル自体を
+ * 拒否し、OCRが一切動作しないことをPlaywright実機検証で発見した
+ * （既存の /tools/ocr、および今回追加した記入済みPDF→ExcelのOCR経路の両方に
+ * 影響する、Phase 6.5のCSP導入時点から存在していた既存の不具合）。
+ * 'unsafe-eval'（任意の文字列からのJS実行=eval/Function()を許可）とは異なり、
+ * 'wasm-unsafe-eval' はWebAssemblyのコンパイル・実行のみを許可する、より
+ * 狭い範囲のCSPソース（Chrome 92+ 等の主要ブラウザが対応）のため、
+ * 汎用的なeval()を許可することなくこの問題を解決できる。
  */
 const AD_SCRIPT_ORIGINS = "https://pagead2.googlesyndication.com https://securepubads.g.doubleclick.net";
 const AD_FRAME_ORIGINS =
@@ -77,7 +89,7 @@ const SUPABASE_ORIGIN = (() => {
 
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' ${AD_SCRIPT_ORIGINS}`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${AD_SCRIPT_ORIGINS}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data:",
   "font-src 'self'",

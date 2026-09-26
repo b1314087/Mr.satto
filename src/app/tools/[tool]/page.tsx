@@ -25,6 +25,13 @@ interface ToolPageProps {
 }
 
 /**
+ * Phase 11: 汎用<ToolAccessGate>をバイパスし、ツール自身が専用のServer Actionsで
+ * 利用可否を判定するツールID。将来同種のツールが増えた場合はここに追記する
+ * （複数箇所に同じ判定を分散させないための唯一の定義箇所）。
+ */
+const BYPASS_ACCESS_GATE_TOOL_ID = "filled-pdf-to-excel";
+
+/**
  * このルートは「/tools/[tool]」1つで、ツール詳細ページとカテゴリ一覧ページの
  * 両方を担う（Phase 5）。Next.jsは同じ階層に異なる名前の動的セグメント
  * （例: [tool] と [category]）を共存させられないため、既存の[tool]セグメントを
@@ -184,7 +191,16 @@ export default async function ToolPage({ params }: ToolPageProps) {
       </div>
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
-        {isAvailable && serverPlan ? (
+        {isAvailable && tool.id === BYPASS_ACCESS_GATE_TOOL_ID ? (
+          // Phase 11: 記入済みPDF→Excelは、Free「広告1回→3ページ」/
+          // Standard「1日10回まで広告なし・11回目以降は広告」/Premium「無制限」という
+          // ツール専用・ページ数ベースの利用制限を持ち、既存の汎用<ToolAccessGate>
+          // （Standard対象ツール全体・15分間の広告ゲート）とは条件が根本的に異なる。
+          // そのためこのツールIDのみゲートをバイパスし、ツール自身が
+          // src/lib/tools/filled-pdf-to-excel/ 配下のServer Actionsを直接呼び出して
+          // 利用可否を判定する（詳細は同ディレクトリ内の各ファイルのコメント参照）。
+          <ToolImplementation toolId={tool.id} />
+        ) : isAvailable && serverPlan ? (
           <ToolAccessGate
             toolId={tool.id}
             requiredPlan={tool.requiredPlan}

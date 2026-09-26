@@ -706,6 +706,33 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["注文書", "order", "発注", "帳票"],
   },
+  {
+    // Phase 11: この2ツールは料金・利用制限の仕組みがページ数ベース・
+    // 日次回数ベースの専用設計のため、requiredPlanは他ツールと同様に型上の
+    // 分類（SEO・カテゴリ表示用）として設定しつつ、実際のアクセス制御は
+    // src/app/tools/[tool]/page.tsx で汎用<ToolAccessGate>をバイパスし、
+    // ツール自身がsrc/lib/tools/filled-pdf-to-excel/配下のServer Actionsを
+    // 直接呼び出して行う（詳細は同ディレクトリ内の各ファイルのコメント参照）。
+    id: "filled-pdf-to-excel",
+    name: "記入済みPDF→Excel",
+    category: "work",
+    description: "記入済みの申請書・帳票のPDFを項目ごとに整理してExcelに変換します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["記入済み", "申請書", "帳票", "excel化", "ocr", "pdf excel"],
+    featured: true,
+  },
+  {
+    id: "form-to-individual-pdfs",
+    name: "フォーム回答から個別PDFを一括作成",
+    category: "work",
+    description: "Googleフォーム・Microsoft Formsの回答データをPDFテンプレートに差し込み、個別PDFを一括生成します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["フォーム", "google forms", "microsoft forms", "個別pdf", "一括作成", "差し込み"],
+  },
 
   // ------------------------------------------------------------------
   // クリエイター

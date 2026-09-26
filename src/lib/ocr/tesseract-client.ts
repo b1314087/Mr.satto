@@ -126,6 +126,68 @@ export async function recognizeImage(
   }
 }
 
+/** OCRで検出した単語1つ分の位置情報（画像のピクセル座標。原点は左上、下方向がy増加） */
+export interface OcrWord {
+  text: string;
+  confidence: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface OcrRecognizeWithWordsResult extends OcrRecognizeResult {
+  /** bounding box付きの単語一覧（Phase 11: 記入済みPDF→Excelの座標ベース項目化に使用） */
+  words: OcrWord[];
+}
+
+/**
+ * 画像（またはCanvas）1枚をOCRし、単語ごとのbounding box（座標）も取得する。
+ * AIによる項目推定は行わず、この座標情報を使って
+ * src/lib/pdf/table-reconstruction.ts の決定的な行・列推定へそのまま渡す
+ * （Phase 11 開発指示書 14章：「なんとなくAIが判断」する方式を禁止）。
+ *
+ * tesseract.jsへ { blocks: true } を指定した場合のみ data.blocks が返る
+ * （通常の recognizeImage() は { text: true } のみ要求しており blocks は
+ * 取得しない。bounding boxが不要な既存呼び出し元の処理量を増やさないよう、
+ * 別関数として分離している）。
+ */
+export async function recognizeImageWithWords(
+  image: File | Blob | HTMLCanvasElement | string,
+  langOption: OcrLanguageOption,
+  onProgress?: (progress: OcrProgress) => void
+): Promise<OcrRecognizeWithWordsResult> {
+  const langCode = toTesseractLangCode(langOption);
+  const worker = await getWorker(langCode);
+
+  currentProgressCallback = onProgress ?? null;
+  try {
+    const { data } = await worker.recognize(image, {}, { blocks: true });
+    const words: OcrWord[] = [];
+    for (const block of data.blocks ?? []) {
+      for (const paragraph of block.paragraphs) {
+        for (const line of paragraph.lines) {
+          for (const word of line.words) {
+            const text = word.text.trim();
+            if (!text) continue;
+            words.push({
+              text,
+              confidence: word.confidence,
+              x0: word.bbox.x0,
+              y0: word.bbox.y0,
+              x1: word.bbox.x1,
+              y1: word.bbox.y1,
+            });
+          }
+        }
+      }
+    }
+    return { text: data.text ?? "", confidence: data.confidence ?? 0, words };
+  } finally {
+    currentProgressCallback = null;
+  }
+}
+
 /** OCR用Workerを終了する（キャンセル・後始末用のベストエフォート実装） */
 export async function terminateOcrWorker(): Promise<void> {
   if (!workerPromise) return;

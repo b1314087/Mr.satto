@@ -220,6 +220,15 @@ const VideoH264Tool = dynamic(() =>
 const VideoThumbnailTool = dynamic(() =>
   import("./implementations/video-thumbnail-tool").then((m) => m.VideoThumbnailTool)
 );
+// Phase 11: OCR(tesseract.js)を内部で使うため、既存のOCRツールと同様の
+// チャンク境界問題が起きないか実機検証したが、こちらは問題なく動作した
+// （OCRツール自体を静的importのまま保護する既存の対応方針は変更していない）。
+const FilledPdfToExcelTool = dynamic(() =>
+  import("./implementations/filled-pdf-to-excel-tool").then((m) => m.FilledPdfToExcelTool)
+);
+const FormToIndividualPdfsTool = dynamic(() =>
+  import("./implementations/form-to-individual-pdfs-tool").then((m) => m.FormToIndividualPdfsTool)
+);
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -364,6 +373,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <VideoH264Tool />;
     case "video-thumbnail":
       return <VideoThumbnailTool />;
+    case "filled-pdf-to-excel":
+      return <FilledPdfToExcelTool />;
+    case "form-to-individual-pdfs":
+      return <FormToIndividualPdfsTool />;
     default:
       return null;
   }
