@@ -53,6 +53,13 @@ import type { NextConfig } from "next";
  *
  * Stripeは、Stripe.jsを埋め込まずCheckout/Customer Portalへリダイレクトするフローのみのため、
  * CSPへStripe向けの許可を追加する必要はない。
+ *
+ * media-src（Phase 10で追加）：動画ツールのプレビュー用 <video src="blob:..."> は
+ * media-src が未指定だと default-src 'self' にフォールバックし、blob: が許可されず
+ * ブラウザに "Media load rejected by URL safety check" で拒否される
+ * （実際にPhase 10のテストで発見。動画は常にブラウザ内で生成したBlobのみを
+ * 参照し、外部URLを一切読み込まないため、img-src/worker-srcと同じ理由で
+ * 'self' blob: の範囲に限定して許可する）。
  */
 const AD_SCRIPT_ORIGINS = "https://pagead2.googlesyndication.com https://securepubads.g.doubleclick.net";
 const AD_FRAME_ORIGINS =
@@ -76,6 +83,7 @@ const CSP_DIRECTIVES = [
   "font-src 'self'",
   `connect-src 'self' ${SUPABASE_ORIGIN} ${AD_SCRIPT_ORIGINS}`,
   "worker-src 'self' blob:",
+  "media-src 'self' blob:",
   `frame-src ${AD_FRAME_ORIGINS}`,
   "object-src 'none'",
   "base-uri 'self'",

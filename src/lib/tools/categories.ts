@@ -26,6 +26,12 @@ export const categories: Category[] = [
     icon: "📊",
   },
   {
+    id: "video",
+    name: "動画",
+    description: "形式変換・圧縮・解像度変更などブラウザ完結の動画ツール",
+    icon: "🎬",
+  },
+  {
     id: "student",
     name: "学生向け",
     description: "レポートや勉強に役立つツール",

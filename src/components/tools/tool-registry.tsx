@@ -202,6 +202,24 @@ const TextCaseConverterTool = dynamic(() =>
 const CsvColumnEditorTool = dynamic(() =>
   import("./implementations/csv-column-editor-tool").then((m) => m.CsvColumnEditorTool)
 );
+const VideoConvertTool = dynamic(() =>
+  import("./implementations/video-convert-tool").then((m) => m.VideoConvertTool)
+);
+const VideoCompressTool = dynamic(() =>
+  import("./implementations/video-compress-tool").then((m) => m.VideoCompressTool)
+);
+const VideoResizeTool = dynamic(() =>
+  import("./implementations/video-resize-tool").then((m) => m.VideoResizeTool)
+);
+const VideoFrameRateTool = dynamic(() =>
+  import("./implementations/video-frame-rate-tool").then((m) => m.VideoFrameRateTool)
+);
+const VideoH264Tool = dynamic(() =>
+  import("./implementations/video-h264-tool").then((m) => m.VideoH264Tool)
+);
+const VideoThumbnailTool = dynamic(() =>
+  import("./implementations/video-thumbnail-tool").then((m) => m.VideoThumbnailTool)
+);
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -334,6 +352,18 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <TextCaseConverterTool />;
     case "csv-column-editor":
       return <CsvColumnEditorTool />;
+    case "video-convert":
+      return <VideoConvertTool />;
+    case "video-compress":
+      return <VideoCompressTool />;
+    case "video-resize":
+      return <VideoResizeTool />;
+    case "video-frame-rate":
+      return <VideoFrameRateTool />;
+    case "video-h264":
+      return <VideoH264Tool />;
+    case "video-thumbnail":
+      return <VideoThumbnailTool />;
     default:
       return null;
   }

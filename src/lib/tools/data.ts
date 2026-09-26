@@ -545,6 +545,78 @@ export const tools: Tool[] = [
   },
 
   // ------------------------------------------------------------------
+  // 動画（Phase 10）
+  //
+  // 6ツールすべて BrowserProcessor。動画ファイルはブラウザ内
+  // （WebCodecs + mediabunny）で処理され、Mr.Sattoのサーバーへ
+  // アップロードされることはない（最終報告参照）。
+  // requiredPlan: 動画処理は他の処理に比べて負荷が高く、実装後の検証でも
+  // 大きめのファイル・長い処理時間を扱う前提となったため、既存のPDF↔Word/
+  // Excel変換・OCR等と同様にpremium系統に合わせた（開発指示書 3章）。
+  // 既存ツールのrequiredPlanや料金体系は変更していない。
+  // ------------------------------------------------------------------
+  {
+    id: "video-convert",
+    name: "動画形式変換",
+    category: "video",
+    description: "動画をMP4・WebM形式に変換します",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["動画変換", "mp4", "webm", "mov", "形式変換"],
+  },
+  {
+    id: "video-compress",
+    name: "動画圧縮",
+    category: "video",
+    description: "動画のファイルサイズを圧縮します",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["動画圧縮", "軽量化", "容量"],
+  },
+  {
+    id: "video-resize",
+    name: "動画解像度変更",
+    category: "video",
+    description: "動画の解像度を1080p・720p・480pなどに変更します",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["解像度", "1080p", "720p", "480p", "リサイズ"],
+  },
+  {
+    id: "video-frame-rate",
+    name: "動画フレームレート変更",
+    category: "video",
+    description: "動画のフレームレート(fps)を下げます",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["フレームレート", "fps", "60fps", "30fps"],
+  },
+  {
+    id: "video-h264",
+    name: "H.264変換",
+    category: "video",
+    description: "動画をH.264(AVC)コーデック・MP4形式に変換します",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["h264", "avc", "コーデック変換"],
+  },
+  {
+    id: "video-thumbnail",
+    name: "動画サムネイル抽出",
+    category: "video",
+    description: "動画の指定した時点の静止画をPNG・JPEGで書き出します",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["サムネイル", "静止画抽出", "フレーム抽出", "png", "jpeg"],
+  },
+
+  // ------------------------------------------------------------------
   // 学生向け
   // ------------------------------------------------------------------
   {

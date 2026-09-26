@@ -18,6 +18,7 @@ export type CategoryId =
   | "pdf"
   | "file"
   | "csv-excel"
+  | "video"
   | "student"
   | "work"
   | "creator"
