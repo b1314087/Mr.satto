@@ -166,6 +166,36 @@ const JsonToCsvTool = dynamic(() =>
 const TextLineCleanerTool = dynamic(() =>
   import("./implementations/text-line-cleaner-tool").then((m) => m.TextLineCleanerTool)
 );
+const FileUnzipTool = dynamic(() =>
+  import("./implementations/file-unzip-tool").then((m) => m.FileUnzipTool)
+);
+const FileHashTool = dynamic(() =>
+  import("./implementations/file-hash-tool").then((m) => m.FileHashTool)
+);
+const FileInspectorTool = dynamic(() =>
+  import("./implementations/file-inspector-tool").then((m) => m.FileInspectorTool)
+);
+const PdfResizePagesTool = dynamic(() =>
+  import("./implementations/pdf-resize-pages-tool").then((m) => m.PdfResizePagesTool)
+);
+const PdfMetadataRemoveTool = dynamic(() =>
+  import("./implementations/pdf-metadata-remove-tool").then((m) => m.PdfMetadataRemoveTool)
+);
+const PdfCropPagesTool = dynamic(() =>
+  import("./implementations/pdf-crop-pages-tool").then((m) => m.PdfCropPagesTool)
+);
+const ImageMetadataRemoveTool = dynamic(() =>
+  import("./implementations/image-metadata-remove-tool").then((m) => m.ImageMetadataRemoveTool)
+);
+const ImageWatermarkTool = dynamic(() =>
+  import("./implementations/image-watermark-tool").then((m) => m.ImageWatermarkTool)
+);
+const TextCaseConverterTool = dynamic(() =>
+  import("./implementations/text-case-converter-tool").then((m) => m.TextCaseConverterTool)
+);
+const CsvColumnEditorTool = dynamic(() =>
+  import("./implementations/csv-column-editor-tool").then((m) => m.CsvColumnEditorTool)
+);
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -274,6 +304,26 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <JsonToCsvTool />;
     case "text-line-cleaner":
       return <TextLineCleanerTool />;
+    case "file-unzip":
+      return <FileUnzipTool />;
+    case "file-hash":
+      return <FileHashTool />;
+    case "file-inspector":
+      return <FileInspectorTool />;
+    case "pdf-resize-pages":
+      return <PdfResizePagesTool />;
+    case "pdf-metadata-remove":
+      return <PdfMetadataRemoveTool />;
+    case "pdf-crop-pages":
+      return <PdfCropPagesTool />;
+    case "image-metadata-remove":
+      return <ImageMetadataRemoveTool />;
+    case "image-watermark":
+      return <ImageWatermarkTool />;
+    case "text-case-converter":
+      return <TextCaseConverterTool />;
+    case "csv-column-editor":
+      return <CsvColumnEditorTool />;
     default:
       return null;
   }

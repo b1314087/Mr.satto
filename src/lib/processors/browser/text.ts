@@ -171,3 +171,77 @@ export class TextLineCleanerProcessor extends BrowserProcessor<
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// テキスト大文字・小文字変換（Phase 8）
+// ---------------------------------------------------------------------------
+export type TextCaseMode = "upper" | "lower" | "title" | "sentence";
+
+export interface TextCaseConvertInput {
+  text: string;
+  mode: TextCaseMode;
+}
+
+export interface TextCaseConvertOutput {
+  result: string;
+}
+
+/**
+ * 文の先頭（。！？.!? または改行の直後、およびテキストの先頭）にある
+ * アルファベットだけを大文字化する「文頭大文字（Sentence case）」。
+ * 大文字化する以外の文字は一切変更しないため、日本語部分やアルファベット
+ * 以外の記号を破壊しない。
+ */
+function toSentenceCase(text: string): string {
+  let result = "";
+  let capitalizeNext = true;
+  for (const ch of text) {
+    if (capitalizeNext && /[a-zA-Z]/.test(ch)) {
+      result += ch.toUpperCase();
+      capitalizeNext = false;
+      continue;
+    }
+    result += ch;
+    if (/[.!?。！？\n]/.test(ch)) {
+      capitalizeNext = true;
+    } else if (!/\s/.test(ch)) {
+      capitalizeNext = false;
+    }
+  }
+  return result;
+}
+
+/**
+ * 大文字・小文字変換。
+ *
+ * 日本語（ひらがな・カタカナ・漢字）には大文字/小文字という概念が無いため、
+ * JavaScript標準のtoUpperCase()/toLowerCase()はASCIIアルファベット以外の
+ * 文字をそのまま素通りさせる（変換も破壊もしない）性質をそのまま利用している。
+ * 「単語の先頭を大文字化」（title）も、英字の連続部分だけを正規表現で
+ * 抜き出して変換するため、日本語部分は正規表現にマッチせずそのまま残る。
+ * 外部APIは使わず、すべてブラウザ内の文字列処理のみで完結する。
+ */
+export class TextCaseConvertProcessor extends BrowserProcessor<
+  TextCaseConvertInput,
+  TextCaseConvertOutput
+> {
+  async process({ text, mode }: TextCaseConvertInput): Promise<TextCaseConvertOutput> {
+    switch (mode) {
+      case "upper":
+        return { result: text.toUpperCase() };
+      case "lower":
+        return { result: text.toLowerCase() };
+      case "title":
+        return {
+          result: text.replace(
+            /[A-Za-z]+/g,
+            (word) => word[0].toUpperCase() + word.slice(1).toLowerCase()
+          ),
+        };
+      case "sentence":
+        return { result: toSentenceCase(text) };
+      default:
+        return { result: text };
+    }
+  }
+}

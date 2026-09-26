@@ -400,6 +400,141 @@ export class ImageAdjustProcessor extends BrowserProcessor<ImageAdjustInput, Ima
   }
 }
 
+// ---------------------------------------------------------------------------
+// 画像メタデータ削除（Phase 8）
+// ---------------------------------------------------------------------------
+export interface ImageMetadataRemoveInput {
+  file: File;
+  /** 省略時は元の形式を維持する（Canvasが再エンコードできない形式はPNGにフォールバック） */
+  outputMimeType?: "image/jpeg" | "image/png" | "image/webp";
+  /** JPEG/WebP書き出し時の画質(0〜1)。省略時は0.92 */
+  quality?: number;
+}
+
+const CANVAS_REENCODABLE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/**
+ * Canvasへ描画し直して再エンコードすることで、元ファイルのバイト列に
+ * 含まれていたEXIF等の付随データを持ち越さない（=結果のBlobは常に
+ * 新規生成された、元とは別のバイト列になる）。
+ *
+ * 重要な注意（開発指示書■11・■44）: これは「ブラウザのCanvasが再現できる
+ * 画素情報だけを新しいファイルとして書き出す」処理であり、
+ * 「あらゆるメタデータ形式を検出して確実に除去した」ことを保証するものではない。
+ * 出力形式は必ずJPEG/PNG/WebPのいずれかになり（Canvas.toBlob()の対応形式）、
+ * 元がそれ以外の形式だった場合は元の形式を維持できない。UI側でこの2点を
+ * 明示する。
+ */
+export class ImageMetadataRemoveProcessor extends BrowserProcessor<
+  ImageMetadataRemoveInput,
+  ImageProcessorOutput
+> {
+  async process({ file, outputMimeType, quality }: ImageMetadataRemoveInput) {
+    const img = await loadImage(file);
+    const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
+    const requested = outputMimeType ?? file.type;
+    const outType = CANVAS_REENCODABLE_TYPES.has(requested) ? requested : "image/png";
+    const blob = await canvasToBlob(canvas, outType, quality ?? 0.92);
+    return toOutput(blob, canvas.width, canvas.height);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 画像ウォーターマーク（Phase 8）
+// ---------------------------------------------------------------------------
+export type ImageWatermarkPosition =
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right"
+  | "center";
+
+export interface ImageWatermarkInput {
+  file: File;
+  text: string;
+  position: ImageWatermarkPosition;
+  /** 0〜1 */
+  opacity: number;
+  fontSize: number;
+  /** 度数（時計回り） */
+  rotation: number;
+}
+
+/**
+ * Canvasへテキストを描画してから再書き出しする。元のFile/Blobは一切変更せず、
+ * 新しいBlobを結果として返す（開発指示書■12）。
+ * PDF透かし（src/lib/processors/browser/pdf.ts の PdfWatermarkProcessor）の
+ * 「位置・不透明度・回転」という設定項目の考え方は踏襲しつつ、画像用に
+ * 新しいライブラリは追加せずCanvas APIだけで実装している。
+ */
+export class ImageWatermarkProcessor extends BrowserProcessor<
+  ImageWatermarkInput,
+  ImageProcessorOutput
+> {
+  async process({ file, text, position, opacity, fontSize, rotation }: ImageWatermarkInput) {
+    if (text.trim() === "") {
+      throw new Error("透かしの文字を入力してください");
+    }
+    if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) {
+      throw new Error("不透明度は0〜1の範囲で指定してください");
+    }
+    if (!Number.isFinite(fontSize) || fontSize < 6 || fontSize > 400) {
+      throw new Error("フォントサイズは6〜400の範囲で指定してください");
+    }
+    const img = await loadImage(file);
+    const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvasの初期化に失敗しました");
+
+    ctx.font = `${fontSize}px sans-serif`;
+    const textWidth = ctx.measureText(text).width;
+    const margin = Math.max(8, Math.round(Math.min(canvas.width, canvas.height) * 0.03));
+
+    let x: number;
+    let y: number;
+    switch (position) {
+      case "top-left":
+        x = margin;
+        y = margin + fontSize;
+        break;
+      case "top-right":
+        x = canvas.width - margin - textWidth;
+        y = margin + fontSize;
+        break;
+      case "bottom-left":
+        x = margin;
+        y = canvas.height - margin;
+        break;
+      case "bottom-right":
+        x = canvas.width - margin - textWidth;
+        y = canvas.height - margin;
+        break;
+      case "center":
+      default:
+        x = (canvas.width - textWidth) / 2;
+        y = (canvas.height + fontSize) / 2;
+        break;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(x + textWidth / 2, y - fontSize / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.translate(-(x + textWidth / 2), -(y - fontSize / 2));
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.lineWidth = Math.max(1, fontSize / 16);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeText(text, x, y);
+    ctx.fillText(text, x, y);
+    ctx.restore();
+
+    const outType = file.type || "image/png";
+    const blob = await canvasToBlob(canvas, outType, 0.92);
+    return toOutput(blob, canvas.width, canvas.height);
+  }
+}
+
 /**
  * 指定した比率(width/height)に収まるよう、中央基準で切り抜く範囲を計算する。
  * SNSサイズ変換ツールが「不必要に引き伸ばさず」プリセット比率へ合わせるために使う

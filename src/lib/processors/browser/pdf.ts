@@ -26,8 +26,18 @@ function zeroPad(n: number, totalDigits: number): string {
 /**
  * PDFファイルを読み込む。破損・パスワード保護のケースを
  * ユーザーに分かりやすいメッセージへ変換する。
+ *
+ * updateMetadata: pdf-libのPDFDocument.load()はデフォルト(true)で、
+ * 読み込んだ第間にProducerを"pdf-lib (https://github.com/Hopding/pdf-lib)"へ
+ * 上書きする（node_modules/pdf-lib/cjs/api/PDFDocument.js の
+ * updateInfoDict()を参照。コンストラクタ内でload時に呼ばれる）。
+ * 既存のPDF結合・分割等のツールはメタデータを見ないためこの挙動は無害だが、
+ * PDFメタデータ削除ツール（readPdfMetadata/PdfMetadataRemoveProcessor）は
+ * 「読み込んだ時点でのメタデータ」を正しく読み取る/検証する必要があるため、
+ * それらの呼び出しでは明示的に updateMetadata: false を渡す
+ * （他のPDF系Processorの挙動は一切変更しない）。
  */
-async function loadPdfDoc(file: File): Promise<PDFDocument> {
+async function loadPdfDoc(file: File, options?: { updateMetadata?: boolean }): Promise<PDFDocument> {
   let bytes: ArrayBuffer;
   try {
     bytes = await file.arrayBuffer();
@@ -35,7 +45,11 @@ async function loadPdfDoc(file: File): Promise<PDFDocument> {
     throw new Error("ファイルの読み込みに失敗しました");
   }
   try {
-    return await PDFDocument.load(bytes, { ignoreEncryption: false, throwOnInvalidObject: false });
+    return await PDFDocument.load(bytes, {
+      ignoreEncryption: false,
+      throwOnInvalidObject: false,
+      updateMetadata: options?.updateMetadata ?? true,
+    });
   } catch (e) {
     const name = e instanceof Error ? e.name : "";
     const message = e instanceof Error ? e.message : "";
@@ -602,6 +616,261 @@ export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, P
           "この文字は透かしとして描画できませんでした。別の文字列でお試しください。"
         );
       }
+    }
+
+    return finalizePdf(doc);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDFページサイズ変更（Phase 8）
+// ---------------------------------------------------------------------------
+export type PdfPageSizePreset = "a4" | "a3" | "letter" | "original";
+export type PdfPageOrientation = "portrait" | "landscape";
+/**
+ * "fit"   = 内容を新しいページサイズに合わせて拡大縮小する（アスペクト比維持・中央配置）
+ * "keep"  = 内容の大きさ・位置は変えず、ページのサイズ（MediaBox/CropBox）だけを変更する
+ * UIでは必ずこの2つの違いを明示し、どちらが選ばれているか曖昧にしない（開発指示書■9）。
+ */
+export type PdfResizeContentMode = "fit" | "keep";
+
+const PDF_PAGE_SIZE_PT: Record<Exclude<PdfPageSizePreset, "original">, { width: number; height: number }> = {
+  a4: { width: 595.28, height: 841.89 },
+  a3: { width: 841.89, height: 1190.55 },
+  letter: { width: 612, height: 792 },
+};
+
+export interface PdfResizePagesInput {
+  file: File;
+  pageSize: PdfPageSizePreset;
+  orientation: PdfPageOrientation;
+  contentMode: PdfResizeContentMode;
+}
+
+/**
+ * pdf-libの公式API（setSize/scaleContent/translateContent）のみを使う。
+ * scaleContent/translateContentはページ内のベクトルデータ（テキスト・図形・
+ * 埋め込み画像の配置情報）の座標変換のみを行い、画像自体をラスタライズし
+ * 直すことはないため、内容の画質を劣化させない（開発指示書■9・■24）。
+ */
+export class PdfResizePagesProcessor extends BrowserProcessor<
+  PdfResizePagesInput,
+  PdfProcessorOutput
+> {
+  async process({ file, pageSize, orientation, contentMode }: PdfResizePagesInput) {
+    const doc = await loadPdfDoc(file);
+    const pages = doc.getPages();
+    if (pages.length === 0) {
+      throw new Error("このPDFにはページがありません");
+    }
+    if (pageSize === "original") {
+      // サイズ変更なし。呼び出し側のUIでは選択できないようにしているが、
+      // 万一渡された場合も何もせず元のPDFをそのまま返す（安全側の挙動）。
+      return finalizePdf(doc);
+    }
+
+    const base = PDF_PAGE_SIZE_PT[pageSize];
+    const [newWidth, newHeight] =
+      orientation === "landscape"
+        ? [Math.max(base.width, base.height), Math.min(base.width, base.height)]
+        : [Math.min(base.width, base.height), Math.max(base.width, base.height)];
+
+    for (const page of pages) {
+      const { width: oldWidth, height: oldHeight } = page.getSize();
+      if (oldWidth <= 0 || oldHeight <= 0) continue;
+
+      if (contentMode === "fit") {
+        const scale = Math.min(newWidth / oldWidth, newHeight / oldHeight);
+        page.scaleContent(scale, scale);
+        const scaledWidth = oldWidth * scale;
+        const scaledHeight = oldHeight * scale;
+        page.setSize(newWidth, newHeight);
+        page.translateContent((newWidth - scaledWidth) / 2, (newHeight - scaledHeight) / 2);
+      } else {
+        // ページの原点（左下）は変えず、幅と高さだけを変更する。
+        // 拡大した場合は右上方向に余白が増え、縮小した場合は内容の右上側が
+        // ページ範囲外（見た目上クロップされた状態）になる。
+        page.setSize(newWidth, newHeight);
+      }
+    }
+
+    return finalizePdf(doc);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDFメタデータ削除（Phase 8）
+// ---------------------------------------------------------------------------
+export interface PdfMetadataInfo {
+  title?: string;
+  author?: string;
+  subject?: string;
+  keywords?: string;
+  creator?: string;
+  producer?: string;
+}
+
+/** UI側の「削除前のメタデータを確認する」表示用（保存はしない、読み取りのみ） */
+export async function readPdfMetadata(file: File): Promise<PdfMetadataInfo> {
+  // updateMetadata: false が必須。指定しないと、読み込んだ瞬間にpdf-libが
+  // Producerを自身のライブラリ名へ上書きしてしまい、「削除前の実際の値」を
+  // 正しく表示できなくなる（loadPdfDoc()のコメント参照）。
+  const doc = await loadPdfDoc(file, { updateMetadata: false });
+  return {
+    title: doc.getTitle() || undefined,
+    author: doc.getAuthor() || undefined,
+    subject: doc.getSubject() || undefined,
+    keywords: doc.getKeywords() || undefined,
+    creator: doc.getCreator() || undefined,
+    producer: doc.getProducer() || undefined,
+  };
+}
+
+export interface PdfMetadataRemoveInput {
+  file: File;
+}
+
+export interface PdfMetadataRemoveOutput extends PdfProcessorOutput {
+  /**
+   * 「削除できたことにする」のではなく、保存後のPDFを実際に再読み込みして
+   * 確認した結果（開発指示書■8）。すべて undefined であれば標準メタデータの
+   * 削除に成功している。
+   */
+  remainingMetadata: PdfMetadataInfo;
+}
+
+/**
+ * pdf-libの公式API（setTitle/setAuthor/setSubject/setKeywords/setCreator/
+ * setProducer）で、PDFの標準的な文書情報（Info Dictionary）を空にする。
+ *
+ * 重要な発見（実装中に実機検証で確認）: pdf-libの`PDFDocument.load()`は
+ * デフォルト（updateMetadata: true）で、読み込んだ瞬間にProducerを
+ * "pdf-lib (https://github.com/Hopding/pdf-lib)"へ自動的に上書きする
+ * （node_modules/pdf-lib/cjs/api/PDFDocument.js の updateInfoDict()を
+ * 確認済み。コンストラクタ内でload時に呼ばれ、save()自体はこの上書きを
+ * 行わない）。これに気づかずいたため、当初の実装では「削除したはずの
+ * Producerが検証時に復活して見える」という誤検知が発生した。
+ * 対策として、読み込み・検証時のPDFDocument.load()には必ず
+ * updateMetadata: false を明示的に渡している（loadPdfDoc()参照）。
+ * これにより、setProducer("")で設定した空文字列が保存後も正しく維持される。
+ *
+ * 重要な注意（開発指示書■8・■44）: pdf-libのPDFDocumentは上記6項目の
+ * Info Dictionaryフィールドの読み書きAPIのみを公開しており、一部のPDF編集
+ * ソフトが別途埋め込むことがあるXMPメタデータストリームを検出・削除する
+ * 公式APIは持っていない（node_modules/pdf-lib/es/api/PDFDocument.d.ts を
+ * 確認済み）。そのため本ツールは「PDFの標準的な文書情報を削除する」ものであり、
+ * 「PDFに含まれるあらゆるメタデータを完全に削除する」ことは保証しない。
+ * この違いはUI側で明示し、過剰な表現（「完全に匿名化」等）は使わない。
+ * 作成日時・更新日時（CreationDate/ModificationDate）は開発指示書に明示された
+ * 削除対象（Title/Author/Subject/Keywords/Creator/Producer）に含まれないため、
+ * 本ツールでは変更しない。
+ */
+export class PdfMetadataRemoveProcessor extends BrowserProcessor<
+  PdfMetadataRemoveInput,
+  PdfMetadataRemoveOutput
+> {
+  async process({ file }: PdfMetadataRemoveInput): Promise<PdfMetadataRemoveOutput> {
+    const doc = await loadPdfDoc(file, { updateMetadata: false });
+    if (doc.getPageCount() === 0) {
+      throw new Error("このPDFにはページがありません");
+    }
+
+    doc.setTitle("");
+    doc.setAuthor("");
+    doc.setSubject("");
+    doc.setKeywords([]);
+    doc.setCreator("");
+    doc.setProducer("");
+
+    let bytes: Uint8Array;
+    try {
+      bytes = await doc.save();
+    } catch {
+      throw new Error("PDFの生成に失敗しました");
+    }
+    const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
+
+    // 保存して終わりにせず、実際に保存後のバイト列を再度読み込んで
+    // 標準メタデータが空になっていることを確認する。
+    // ここでも updateMetadata: false が必須（上記コメント参照）。
+    let remainingMetadata: PdfMetadataInfo;
+    try {
+      const verifyDoc = await PDFDocument.load(bytes, {
+        throwOnInvalidObject: false,
+        updateMetadata: false,
+      });
+      remainingMetadata = {
+        title: verifyDoc.getTitle() || undefined,
+        author: verifyDoc.getAuthor() || undefined,
+        subject: verifyDoc.getSubject() || undefined,
+        keywords: verifyDoc.getKeywords() || undefined,
+        creator: verifyDoc.getCreator() || undefined,
+        producer: verifyDoc.getProducer() || undefined,
+      };
+    } catch {
+      remainingMetadata = {};
+    }
+
+    return {
+      blob,
+      url: URL.createObjectURL(blob),
+      pageCount: doc.getPageCount(),
+      sizeBytes: blob.size,
+      remainingMetadata,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PDF余白・ページ範囲調整（クロップ）（Phase 8）
+// ---------------------------------------------------------------------------
+const MM_TO_PT = 2.8346456693;
+
+export interface PdfCropMargins {
+  topMm: number;
+  bottomMm: number;
+  leftMm: number;
+  rightMm: number;
+}
+
+export interface PdfCropPagesInput {
+  file: File;
+  margins: PdfCropMargins;
+}
+
+/**
+ * CropBoxのみを変更し、ページ内容（MediaBoxやページの描画命令）自体は
+ * 一切再描画しない（開発指示書■10）。CropBoxはPDF仕様上「表示・印刷される
+ * 可視範囲」を表すプロパティであり、内容を再エンコードせずに見た目上の
+ * 余白調整を実現できる。
+ */
+export class PdfCropPagesProcessor extends BrowserProcessor<PdfCropPagesInput, PdfProcessorOutput> {
+  async process({ file, margins }: PdfCropPagesInput) {
+    const { topMm, bottomMm, leftMm, rightMm } = margins;
+    if ([topMm, bottomMm, leftMm, rightMm].some((v) => !Number.isFinite(v) || v < 0)) {
+      throw new Error("余白は0以上の数値で指定してください");
+    }
+    const doc = await loadPdfDoc(file);
+    const pages = doc.getPages();
+    if (pages.length === 0) {
+      throw new Error("このPDFにはページがありません");
+    }
+
+    const topPt = topMm * MM_TO_PT;
+    const bottomPt = bottomMm * MM_TO_PT;
+    const leftPt = leftMm * MM_TO_PT;
+    const rightPt = rightMm * MM_TO_PT;
+
+    for (const page of pages) {
+      const { x, y, width, height } = page.getCropBox();
+      const newWidth = width - leftPt - rightPt;
+      const newHeight = height - topPt - bottomPt;
+      if (newWidth <= 1 || newHeight <= 1) {
+        throw new Error(
+          "指定した余白がページサイズに対して大きすぎます。余白の値を小さくしてください。"
+        );
+      }
+      page.setCropBox(x + leftPt, y + bottomPt, newWidth, newHeight);
     }
 
     return finalizePdf(doc);

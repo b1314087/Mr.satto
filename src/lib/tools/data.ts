@@ -144,6 +144,26 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["明るさ", "コントラスト", "brightness", "contrast", "調整"],
   },
+  {
+    id: "image-metadata-remove",
+    name: "画像メタデータ削除",
+    category: "image",
+    description: "画像を再エンコードして不要なメタデータを取り除きます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["exif", "メタデータ", "位置情報", "撮影日時"],
+  },
+  {
+    id: "image-watermark",
+    name: "画像ウォーターマーク",
+    category: "image",
+    description: "画像にテキストの透かしを追加します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["透かし", "watermark", "ロゴ", "CONFIDENTIAL"],
+  },
 
   // ------------------------------------------------------------------
   // PDF
@@ -314,6 +334,36 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["password", "パスワード", "暗号化", "保護"],
   },
+  {
+    id: "pdf-resize-pages",
+    name: "PDFページサイズ変更",
+    category: "pdf",
+    description: "PDFのページサイズをA4・A3・Letterなどに変更します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["ページサイズ", "a4", "a3", "letter", "リサイズ"],
+  },
+  {
+    id: "pdf-metadata-remove",
+    name: "PDFメタデータ削除",
+    category: "pdf",
+    description: "PDFのタイトル・作成者などのメタデータを確認して削除します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["メタデータ", "プロパティ", "作成者", "タイトル削除"],
+  },
+  {
+    id: "pdf-crop-pages",
+    name: "PDF余白調整",
+    category: "pdf",
+    description: "PDFページの上下左右の余白（表示範囲）を調整します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["余白", "クロップ", "crop", "トリミング"],
+  },
 
   // ------------------------------------------------------------------
   // ファイル
@@ -347,6 +397,36 @@ export const tools: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["zip", "圧縮"],
+  },
+  {
+    id: "file-unzip",
+    name: "ZIP解凍",
+    category: "file",
+    description: "ZIPファイルをブラウザ上で解凍して中身を取り出します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["zip", "解凍", "展開", "unzip"],
+  },
+  {
+    id: "file-hash",
+    name: "ファイルハッシュ",
+    category: "file",
+    description: "ファイルのSHA-256ハッシュ値を計算します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["hash", "ハッシュ", "sha256", "sha-256", "checksum"],
+  },
+  {
+    id: "file-inspector",
+    name: "ファイル情報確認",
+    category: "file",
+    description: "ファイル名・種類・サイズなどの基本情報を確認します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["ファイル情報", "メタ情報", "プロパティ"],
   },
 
   // ------------------------------------------------------------------
@@ -432,6 +512,16 @@ export const tools: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["置換", "検索"],
+  },
+  {
+    id: "csv-column-editor",
+    name: "CSV列編集",
+    category: "csv-excel",
+    description: "CSVの列を選択・削除・リネーム・並び替えします",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["列編集", "列削除", "列並び替え", "column"],
   },
 
   // ------------------------------------------------------------------
@@ -614,6 +704,16 @@ export const tools: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["テキスト", "整理", "重複削除", "ソート", "空行削除"],
+  },
+  {
+    id: "text-case-converter",
+    name: "大文字・小文字変換",
+    category: "other",
+    description: "英字テキストを大文字・小文字・先頭大文字に変換します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["大文字", "小文字", "uppercase", "lowercase", "case"],
   },
 ];
 

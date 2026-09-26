@@ -164,3 +164,74 @@ export class CsvReplaceProcessor extends BrowserProcessor<CsvReplaceInput, CsvRe
     return { blob, replacedCount, rowCount: rows.length };
   }
 }
+
+// ---------------------------------------------------------------------------
+// CSV列編集（列選択・削除・リネーム・並び替え）（Phase 8）
+// ---------------------------------------------------------------------------
+export interface CsvColumnEditInput {
+  file: File;
+  /**
+   * 残す列の元インデックス（0始まり）を、出力したい順序で並べた配列。
+   * 配列に含めなかった列は削除される。同じインデックスを複数回含めることはできない。
+   */
+  columnOrder: number[];
+  /** 元の列インデックス -> 新しい見出し名。指定が無い/空文字の列は既存の見出しをそのまま使う */
+  renames?: Record<number, string>;
+  /** 1行目をヘッダー（列名）として扱うか。trueの場合、renameは1行目にのみ適用される */
+  hasHeader: boolean;
+}
+
+export interface CsvColumnEditOutput {
+  blob: Blob;
+  rowCount: number;
+  columnCount: number;
+}
+
+/**
+ * 列の選択・削除・リネーム・並び替えのいずれも、既存のRFC4180準拠パーサー/
+ * シリアライザ（parseCsv/csvRowsToBlob）を経由する。カンマ区切りの文字列
+ * split/joinを独自実装しないため、セル内のカンマ・改行・ダブルクォート・
+ * 日本語・BOMの扱いは他のCSV系ツールと完全に共通の挙動になる。
+ */
+export class CsvColumnEditProcessor extends BrowserProcessor<
+  CsvColumnEditInput,
+  CsvColumnEditOutput
+> {
+  async process({
+    file,
+    columnOrder,
+    renames,
+    hasHeader,
+  }: CsvColumnEditInput): Promise<CsvColumnEditOutput> {
+    if (columnOrder.length === 0) {
+      throw new Error("残す列を1つ以上選択してください");
+    }
+    const text = await readTextOrThrow(file);
+    const rows = parseCsv(text).filter((row) => !isBlankRow(row));
+    if (rows.length === 0) {
+      throw new Error("CSVの内容が空です。ファイルを確認してください。");
+    }
+
+    const originalColumnCount = rows[0].length;
+    const hasInvalidIndex = columnOrder.some(
+      (i) => !Number.isInteger(i) || i < 0 || i >= originalColumnCount
+    );
+    if (hasInvalidIndex) {
+      throw new Error("列の指定が正しくありません。ファイルを選び直してください。");
+    }
+
+    const resultRows = rows.map((row, rowIndex) => {
+      const isHeaderRow = hasHeader && rowIndex === 0;
+      return columnOrder.map((colIndex) => {
+        const rename = renames?.[colIndex];
+        if (isHeaderRow && rename !== undefined && rename.trim() !== "") {
+          return rename;
+        }
+        return row[colIndex] ?? "";
+      });
+    });
+
+    const blob = csvRowsToBlob(resultRows);
+    return { blob, rowCount: resultRows.length, columnCount: columnOrder.length };
+  }
+}
