@@ -5,7 +5,7 @@ import { categories } from "@/lib/tools/categories";
 import { getFeaturedTools, tools } from "@/lib/tools/data";
 import { siteConfig } from "@/lib/config/site";
 import { JsonLd } from "@/components/seo/json-ld";
-import { buildWebApplication, buildWebSite } from "@/lib/seo/structured-data";
+import { buildOrganization, buildWebApplication, buildWebSite } from "@/lib/seo/structured-data";
 
 export default function Home() {
   const featured = getFeaturedTools();
@@ -13,6 +13,7 @@ export default function Home() {
   return (
     <div className="flex flex-col">
       <JsonLd data={buildWebSite()} />
+      <JsonLd data={buildOrganization()} />
       <JsonLd data={buildWebApplication()} />
 
       <section className="border-b border-neutral-200 bg-gradient-to-b from-blue-50 to-white px-4 py-16 text-center dark:border-neutral-800 dark:from-neutral-900 dark:to-neutral-950 sm:px-6">
@@ -22,6 +23,9 @@ export default function Home() {
           </h1>
           <p className="text-lg font-medium text-blue-600 dark:text-blue-400">
             {siteConfig.tagline}
+          </p>
+          <p className="text-neutral-600 dark:text-neutral-300">
+            {siteConfig.name}は、画像・PDF・CSV・ファイルなどの面倒な作業を、ブラウザ上でサッと解決できるWebツールサービスです。
           </p>
           <p className="text-neutral-600 dark:text-neutral-300">{siteConfig.description}</p>
           <div className="w-full max-w-lg">

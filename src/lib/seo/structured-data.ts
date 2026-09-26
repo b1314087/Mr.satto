@@ -43,14 +43,48 @@ export function buildFaqPage(items: ToolFaqItem[]) {
   };
 }
 
+/**
+ * ホームページ末尾の "/" を除いたホスト名（例: "mrmatto.vercel.app"）。
+ * WebSiteのalternateNameで、ブランド名(Mr.Satto)を第一候補としつつ、
+ * 実際のVercelドメインも代替名として補助的に示すために使う（Phase 12）。
+ */
+function getSiteHost(): string {
+  try {
+    return new URL(siteConfig.url).host;
+  } catch {
+    return siteConfig.url;
+  }
+}
+
 export function buildWebSite() {
   return {
     "@context": "https://schema.org",
     "@type": "WebSite",
     name: siteConfig.name,
-    url: siteConfig.url,
+    // GoogleがサイトのブランドをMr.Sattoとして認識しやすくするための代替名。
+    // ブランド名(Mr.Satto)を第一候補にし、現在のVercelドメインは補助的な代替名として並べる
+    // (Phase 12)。架空の別名は追加しない。
+    alternateName: [siteConfig.name, getSiteHost()],
+    url: `${siteConfig.url}/`,
     description: siteConfig.description,
     inLanguage: "ja",
+  };
+}
+
+/**
+ * サイト・サービスの運営主体としてのOrganization構造化データ（Phase 12）。
+ *
+ * 実在しない会社名・住所・電話番号・SNSアカウント・レビュー等は一切含めない。
+ * サイト上に実際に存在する情報（サービス名・公開URL）のみを記載する。
+ * ロゴ画像についても、専用のロゴ画像アセットが存在しないため含めない
+ * （将来、実際のロゴ画像を追加した場合にlogoフィールドを追加する）。
+ */
+export function buildOrganization() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: siteConfig.name,
+    url: `${siteConfig.url}/`,
   };
 }
 

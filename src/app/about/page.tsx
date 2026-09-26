@@ -4,8 +4,8 @@ import { categories } from "@/lib/tools/categories";
 import { siteConfig } from "@/lib/config/site";
 
 export const metadata: Metadata = {
-  title: "Mr.Sattoについて",
-  description: `${siteConfig.name}のコンセプトと目指す姿について紹介します。`,
+  title: "Mr.Sattoとは",
+  description: `${siteConfig.name}（${siteConfig.tagline}）がどんなサービスか、対応分野・料金プラン・プライバシー設計について紹介します。`,
   alternates: {
     canonical: "/about",
   },
@@ -15,7 +15,7 @@ export default function AboutPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
       <h1 className="mb-2 text-2xl font-bold text-neutral-900 dark:text-white">
-        {siteConfig.name}について
+        {siteConfig.name}とは
       </h1>
       <p className="mb-10 text-lg font-medium text-blue-600 dark:text-blue-400">
         {siteConfig.tagline}
@@ -39,7 +39,8 @@ export default function AboutPage() {
             今できること
           </h2>
           <p className="mb-4">
-            現在は以下のようなカテゴリのツールを、ブラウザ上ですぐに使える形で提供しています。
+            {siteConfig.name}は、PDFの変換・結合、画像のリサイズ・圧縮、CSV・Excelの整形、ファイル名の一括変更やZIP作成といった、
+            仕事や学生の作業で「ちょっと面倒」と感じやすい用途のツールを、ブラウザ上ですぐに使える形で提供しています。
           </p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {categories.map((category) => (
@@ -82,6 +83,22 @@ export default function AboutPage() {
             機能を増やすことよりも、シンプルで分かりやすく、初めての方でもすぐ使えることを
             優先しています。スマートフォンでも快適に使えるよう設計しており、
             多くの処理はファイルをサーバーに送信せずお使いのブラウザ内で完結します。
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+            料金プランについて
+          </h2>
+          <p>
+            {siteConfig.name}は会員登録なしでもすぐに使い始められます。無料プランでも、広告を見れば
+            スタンダード対象ツールを一定時間利用できます。広告なしで使いたい方向けにスタンダードプラン
+            （月額550円）、すべてのツールを広告なしで使えるプレミアムプラン（月額980円）もご用意しています。
+            詳しい内容は
+            <Link href="/pricing" className="text-blue-600 hover:underline dark:text-blue-400">
+              料金プラン
+            </Link>
+            のページをご覧ください。
           </p>
         </section>
 
