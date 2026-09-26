@@ -139,6 +139,12 @@ const PdfToExcelTool = dynamic(() =>
 const PdfToWordTool = dynamic(() =>
   import("./implementations/pdf-to-word-tool").then((m) => m.PdfToWordTool)
 );
+const WordToPdfTool = dynamic(() =>
+  import("./implementations/word-to-pdf-tool").then((m) => m.WordToPdfTool)
+);
+const ExcelToPdfTool = dynamic(() =>
+  import("./implementations/excel-to-pdf-tool").then((m) => m.ExcelToPdfTool)
+);
 const PdfExtractPagesTool = dynamic(() =>
   import("./implementations/pdf-extract-pages-tool").then((m) => m.PdfExtractPagesTool)
 );
@@ -286,6 +292,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfToExcelTool />;
     case "pdf-to-word":
       return <PdfToWordTool />;
+    case "word-to-pdf":
+      return <WordToPdfTool />;
+    case "excel-to-pdf":
+      return <ExcelToPdfTool />;
     case "pdf-extract-pages":
       return <PdfExtractPagesTool />;
     case "pdf-add-page-numbers":
