@@ -22,6 +22,29 @@ export function downloadBlob(blob: Blob, filename: string) {
 }
 
 /**
+ * base64エンコードされたdata URL（例: QRCode.toDataURL()の出力）を
+ * fetch()を使わずに直接Blobへ変換する。
+ *
+ * data: URLはネットワークリクエストを一切伴わないため、本来fetch()を
+ * 使う必要はない。CSPのconnect-srcはfetch/XHRの送信先を制限するもので
+ * （data:スキームは含まれていない。img-srcとは別のディレクティブ）、
+ * `fetch(dataUrl)` はブラウザ側で「Failed to fetch」として失敗する。
+ * atob()による直接デコードはCSPの制約を受けず、かつネットワーク往復も
+ * 発生しないため、この用途ではfetch()より正しい実装になる。
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(",");
+  const mimeMatch = /^data:(.*?)(;base64)?$/.exec(header);
+  const mimeType = mimeMatch?.[1] || "application/octet-stream";
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
+/**
  * Windowsでも安全に保存できるファイル名に変換する。
  * \ / : * ? " < > | 、および制御文字を "_" に置換し、
  * Windowsで問題になりやすい末尾のピリオド・スペースも取り除く。

@@ -52,3 +52,14 @@ export async function assertDownloadedFile(
   }
   return { path: path!, size: buf.length };
 }
+
+/**
+ * PNGファイルのIHDRチャンクから幅・高さを読み取る（新規パッケージを追加せず、
+ * PNGフォーマットのバイト構造を直接パースする）。
+ * ダウンロードされた画像が「マジックバイトが一致するだけの空データ」ではなく、
+ * 実際に寸法を持つ画像として成立していることを確認するために使う。
+ */
+export function getPngDimensions(buf: Buffer): { width: number; height: number } {
+  // シグネチャ8バイト + 長さ4バイト + "IHDR" 4バイト = オフセット16から幅・高さ(各4バイト、ビッグエンディアン)
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}

@@ -1,6 +1,13 @@
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
-import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import {
+  uploadFixture,
+  waitForSuccess,
+  clickAndDownload,
+  assertDownloadedFile,
+  getPngDimensions,
+} from "../helpers/tool-runner";
+import fs from "node:fs";
 
 /**
  * 仕事カテゴリの代表E2E（Phase 14 優先度1位/一部は意図的にsmokeレベルに留める）。
@@ -75,6 +82,31 @@ test("filled-pdf-to-excel: PDFを受け付け、ページ数が表示される�
   // と判断した。playwright.config.ts の retries:1 で吸収する前提とし、
   // 本テストは意図通りsmokeレベルに留める。
   await expect(page.getByText(/^合計ページ数: \d+ページ$/)).toBeVisible({ timeout: 30_000 });
+});
+
+test("business-card-qr: 連絡先情報を入力してQRコードを生成しダウンロードできる", async ({ page }) => {
+  // Phase 14.1: qr-generatorと共通のQrCodeProcessor/handleDownloadパターンを
+  // 使っているため、同じ「fetch(dataUrl)がCSPで失敗する」バグが
+  // 名刺QRコード作成にも存在していた。現在提供されているUI項目
+  // （氏名・会社名・役職・電話番号・メールアドレス・Webサイト）のみを使い、
+  // 新しい入力項目は追加しない。
+  await page.goto("/tools/business-card-qr");
+
+  await page.getByPlaceholder("山田 太郎").fill("テスト 太郎");
+  await page.getByPlaceholder("株式会社サンプル").fill("テスト株式会社");
+  await page.getByPlaceholder("03-1234-5678").fill("03-0000-0000");
+  await page.getByPlaceholder("taro@example.com").fill("test@example.com");
+  await page.getByPlaceholder("https://example.com").fill("https://mrmatto.vercel.app/");
+
+  await page.getByRole("button", { name: "名刺QRコードを生成する" }).click();
+  await waitForSuccess(page, "生成しました");
+  await expect(page.getByRole("img", { name: "生成された名刺QRコード" })).toBeVisible();
+
+  const download = await clickAndDownload(page, "画像としてダウンロード");
+  const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 10 });
+  const { width, height } = getPngDimensions(fs.readFileSync(path));
+  expect(width).toBeGreaterThan(0);
+  expect(height).toBeGreaterThan(0);
 });
 
 test("form-to-individual-pdfs: テンプレートPDFを受け付け、次のステップへ進める（smoke）", async ({ page }) => {

@@ -5,7 +5,7 @@ import { QrCodeProcessor } from "@/lib/processors/browser/qrcode";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { downloadBlob } from "@/lib/utils/format";
+import { downloadBlob, dataUrlToBlob } from "@/lib/utils/format";
 
 export function QrGeneratorTool() {
   const [text, setText] = useState("");
@@ -27,9 +27,12 @@ export function QrGeneratorTool() {
     }
   }
 
-  async function handleDownload() {
+  function handleDownload() {
     if (!dataUrl) return;
-    const blob = await (await fetch(dataUrl)).blob();
+    // data URLはfetch()を使わずに直接Blobへ変換する（CSPのconnect-srcに
+    // data:を含めていないため、fetch(dataUrl)は失敗する。詳細はformat.tsの
+    // dataUrlToBlob()のコメントを参照）。
+    const blob = dataUrlToBlob(dataUrl);
     downloadBlob(blob, "qrcode.png");
   }
 

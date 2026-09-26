@@ -1,16 +1,23 @@
 import { test, expect } from "../fixtures/premium-test";
-import { clickAndDownload, assertDownloadedFile, waitForSuccess } from "../helpers/tool-runner";
+import { clickAndDownload, assertDownloadedFile, waitForSuccess, getPngDimensions } from "../helpers/tool-runner";
+import fs from "node:fs";
 
 /**
- * その他カテゴリの代表E2E（Phase 14）:
+ * その他カテゴリの代表E2E（Phase 14 / Phase 14.1）:
  * qr-generator / password-generator / char-count / json-formatter / text-line-cleaner
  *
  * このカテゴリはファイルアップロードを伴わない、テキスト入力ベースのツールが
  * 中心のため、共通ヘルパー（uploadFixture）は使わず、テキスト入力→処理→
  * 結果確認、という流れで検証する。
+ *
+ * Phase 14.1: qr-generatorのダウンロードで「Failed to fetch」が発生する
+ * 実バグ（handleDownload()がdata URLをfetch()経由でBlob化しようとし、
+ * CSPのconnect-srcにdata:が含まれず失敗していた）を修正した回帰テスト。
+ * URL・日本語テキストの両方で、生成→表示→ダウンロード→PNGとして
+ * 成立していること（マジックバイト＋実際の画像寸法）まで確認する。
  */
 
-test("qr-generator: テキストからQRコードを生成し画像としてダウンロードできる", async ({ page }) => {
+test("qr-generator: URLからQRコードを生成し画像としてダウンロードできる", async ({ page }) => {
   await page.goto("/tools/qr-generator");
   await page.getByRole("textbox").first().fill("https://mrmatto.vercel.app/");
 
@@ -20,7 +27,34 @@ test("qr-generator: テキストからQRコードを生成し画像としてダ�
   await expect(page.getByRole("img", { name: "生成されたQRコード" })).toBeVisible();
 
   const download = await clickAndDownload(page, "画像としてダウンロード");
-  await assertDownloadedFile(download, { format: "png", minBytes: 10 });
+  const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 10 });
+
+  // マジックバイトの一致だけでなく、実際に寸法を持つPNG画像として
+  // 成立していることを確認する（IHDRチャンクを直接パース）。
+  const { width, height } = getPngDimensions(fs.readFileSync(path));
+  expect(width).toBeGreaterThan(0);
+  expect(height).toBeGreaterThan(0);
+});
+
+test("qr-generator: 日本語テキストからもQRコードを生成しダウンロードできる", async ({ page }) => {
+  await page.goto("/tools/qr-generator");
+  await page.getByRole("textbox").first().fill("東京都渋谷区 テスト株式会社 御中");
+
+  await page.getByRole("button", { name: "QRコードを生成する" }).click();
+  await waitForSuccess(page, "生成しました");
+  await expect(page.getByRole("img", { name: "生成されたQRコード" })).toBeVisible();
+
+  const download = await clickAndDownload(page, "画像としてダウンロード");
+  const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 10 });
+  const { width, height } = getPngDimensions(fs.readFileSync(path));
+  expect(width).toBeGreaterThan(0);
+  expect(height).toBeGreaterThan(0);
+});
+
+test("qr-generator: 空欄では生成ボタンが無効化され、クラッシュしない", async ({ page }) => {
+  await page.goto("/tools/qr-generator");
+  await expect(page.getByRole("button", { name: "QRコードを生成する" })).toBeDisabled();
+  await expect(page.locator("body")).not.toContainText("Application error");
 });
 
 test("password-generator: パスワードを生成できる", async ({ page }) => {
