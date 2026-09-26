@@ -13,6 +13,14 @@
 # testing
 /coverage
 
+# Playwright（Phase 14: 自動テスト基盤）
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+# テスト実行のたびに生成される合成フィクスチャ（実データ・個人情報は含まない使い捨てファイル）
+/tests/fixtures/generated/
+
 # next.js
 /.next/
 /out/
