@@ -1,6 +1,8 @@
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
+import { fieldDisplayId } from "@/lib/pdf-template/types";
+import { TEMPLATE_FIELDS } from "../fixtures/template-layout";
 
 /**
  * privacy回帰テスト（Phase 14）。
@@ -204,4 +206,72 @@ test("電子印鑑生成(印鑑を取り込む)操作中、画像・PDFの中身
 
   expect(apiLeaks, `自社APIへの不審なアップロードが検出されました: ${JSON.stringify(apiLeaks)}`).toEqual([]);
   expect(externalLeaks, `外部への不審なアップロードが検出されました: ${JSON.stringify(externalLeaks)}`).toEqual([]);
+});
+
+test("filled-pdf-to-excel(テンプレートモード)操作中、PDF・OCR結果が自社API・外部APIへ送信されず、コンソールにも出力されない", async ({
+  page,
+  baseURL,
+}) => {
+  // Phase 18: テンプレート登録(枠の指定)〜記入済みPDFのアップロード〜抽出〜
+  // Excelダウンロードまでの一連の操作中、ダミーの記入内容（tests/fixtures/
+  // template-layout.ts の山田太郎氏のデータ、実在の人物・個人情報ではない）が
+  // ネットワークへ送信されないこと、かつブラウザのコンソールにも出力されない
+  // こと（開発指示書25章・39章：console.logへのPDF本文・OCR結果・個人情報の
+  // 出力禁止）を確認する。
+  const recorder = new NetworkRecorder(page);
+  const consoleTexts: string[] = [];
+  page.on("console", (msg) => consoleTexts.push(msg.text()));
+
+  const marker = "山田太郎";
+
+  await page.goto("/tools/filled-pdf-to-excel");
+  // 既知の環境要因: このページが静的importしているwrite-excel-file起因のチャンクを
+  // `next dev`(Turbopack)が初回アクセス時にオンデマンドコンパイルするため、
+  // 初回表示だけ数秒〜まれに30秒超まで遅延することがある(tests/tools/work.spec.tsの
+  // filled-pdf-to-excel smokeテストのコメント参照。本番ビルドでは再現しない)。
+  await expect(page.getByRole("button", { name: "テンプレート", exact: false })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "テンプレート", exact: false }).click();
+  await expect(page.getByText("空のテンプレートPDFをドラッグ&ドロップ")).toBeVisible({ timeout: 30_000 });
+
+  await page.locator('input[type="file"]').first().setInputFiles(fixtures.templateBlankPdf);
+  await expect(page.locator('[data-testid="template-canvas"]')).toBeVisible({ timeout: 15_000 });
+
+  // 1人目の「氏名」欄のみを登録する(プライバシー検証が目的のため、テンプレート
+  // 自体は最小限にする)。座標はtests/fixtures/template-layout.tsのTEMPLATE_FIELDS[0]
+  // (フィクスチャPDF生成にも使われている、単一の情報源)と一致させる。
+  const field = TEMPLATE_FIELDS[0];
+  const badge = fieldDisplayId(field.personIndex, field.fieldIndex);
+  await page.getByRole("button", { name: "項目を追加" }).first().click();
+  await page.locator('[data-testid="template-canvas"]').click({ position: { x: 20, y: 20 } });
+  await page.getByLabel(`X (${badge})`).fill(String(field.x));
+  await page.getByLabel(`Y (${badge})`).fill(String(field.y));
+  await page.getByLabel(`幅 (${badge})`).fill(String(field.width));
+  await page.getByLabel(`高さ (${badge})`).fill(String(field.height));
+  await page.getByLabel(`項目名 (${badge})`).fill(field.label);
+
+  await page.getByRole("button", { name: "テンプレート確認へ" }).click();
+  await page.getByRole("button", { name: "テンプレートを確定して記入済みPDFへ進む" }).click();
+  await expect(page.getByText("記入済みのPDFをドラッグ&ドロップ")).toBeVisible({ timeout: 30_000 });
+
+  await page.locator('input[type="file"]').first().setInputFiles(fixtures.templateFilledPdf);
+  const runButton = page.getByRole("button", { name: "抽出する" });
+  await expect(runButton).toBeEnabled({ timeout: 20_000 });
+  await runButton.click();
+  await expect(page.getByText(/出力人数: \d+/)).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByLabel("1人目 氏名")).toHaveValue(marker);
+
+  const excelDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Excelをダウンロード" }).click();
+  await excelDownloadPromise;
+
+  const origin = new URL(baseURL!).origin;
+  const apiLeaks = findSuspiciousApiUploads(recorder, origin, ["/api/stripe"]);
+  const externalLeaks = findSuspiciousExternalUploads(recorder, origin);
+  const markerLeaks = findLeakedRequests(recorder, marker).filter((r) => !r.url.startsWith(origin) || r.method !== "GET");
+  const consoleLeaks = consoleTexts.filter((t) => t.includes(marker));
+
+  expect(apiLeaks, `自社APIへの不審なアップロードが検出されました: ${JSON.stringify(apiLeaks)}`).toEqual([]);
+  expect(externalLeaks, `外部への不審なアップロードが検出されました: ${JSON.stringify(externalLeaks)}`).toEqual([]);
+  expect(markerLeaks, `記入内容の漏えいが疑われるリクエスト: ${JSON.stringify(markerLeaks)}`).toEqual([]);
+  expect(consoleLeaks, `記入内容がコンソールへ出力されています: ${JSON.stringify(consoleLeaks)}`).toEqual([]);
 });

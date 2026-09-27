@@ -8,6 +8,22 @@ import { zipSync, strToU8 } from "fflate";
 import { fixtures } from "./fixtures/paths";
 import { tools } from "@/lib/tools/data";
 import { categories } from "@/lib/tools/categories";
+import {
+  TEMPLATE_PAGE,
+  TEMPLATE_FIELDS,
+  THREE_PERSON_TEMPLATE_FIELDS,
+  FIELD_LABEL_TEXT,
+  PERSON_A,
+  PERSON_B,
+  PERSON_C,
+  PERSON_D,
+  SCANNED_TEMPLATE_FIELDS,
+  SCANNED_TEMPLATE_FIELDS_PERSON2,
+  SCANNED_PERSON_A,
+  SCANNED_PERSON_B,
+  type DummyPerson,
+  type TemplateFieldSpec,
+} from "./fixtures/template-layout";
 
 /**
  * Phase 14: テスト用バイナリフィクスチャの生成（global setup）。
@@ -30,6 +46,7 @@ export default async function globalSetup() {
 
   await Promise.all([generatePdfs(), generateXlsx(), generateZip(), generateImages(), generateVideo()]);
   await generateStampFixtures();
+  await generateTemplateFixtures();
   await warmupRoutes();
 }
 
@@ -286,6 +303,199 @@ async function generateStampFixtures() {
     const embeddedPng = await pdf.embedPng(stampPngBytes);
     page2.drawImage(embeddedPng, { x: 50, y: 150, width: 150, height: 150 });
     fs.writeFileSync(fixtures.stampPdf, await pdf.save());
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Phase 18: 記入されたPDF→Excel「テンプレートモード」テスト用フィクスチャ生成。
+ *
+ * 実在の人物・個人情報は一切使用しない（tests/fixtures/template-layout.ts に
+ * まとめた架空のダミーデータのみ）。座標定義をテスト本体（テンプレート編集画面で
+ * 入力枠のX/Y/幅/高さを数値入力する箇所）と共有することで、フィクスチャの
+ * 実際の印字位置とテストが登録する入力枠がずれないようにしている。
+ *
+ * 1人目の「氏名」だけは、印字ラベル「氏名：」を枠の内側に含む位置にしている
+ * （開発指示書16章の固定文字除外の検証用）。
+ */
+async function generateTemplateFixtures() {
+  const jpFontBytes = fs.readFileSync(path.join(__dirname, "..", "public", "fonts", "NotoSansJP-Regular.ttf"));
+
+  async function newTemplateDoc() {
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const font = await doc.embedFont(jpFontBytes, { subset: false });
+    return { doc, font };
+  }
+
+  function drawLabelsAndBoxes(
+    page: Awaited<ReturnType<PDFDocument["addPage"]>>,
+    font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+    fields: TemplateFieldSpec[] = TEMPLATE_FIELDS
+  ) {
+    for (const field of fields) {
+      const labelText = FIELD_LABEL_TEXT[field.label];
+      // 枠がラベルを内包する項目(person1の氏名)はラベルを枠の左端(x)から描き、
+      // それ以外は枠の外側(x=40)にラベルを置く「素直な」レイアウトにする。
+      const labelX = field.x <= 41 ? field.x : 40;
+      page.drawText(labelText, { x: labelX, y: field.y + 5, size: 12, font, color: rgb(0.15, 0.15, 0.15) });
+      page.drawRectangle({
+        x: field.x,
+        y: field.y,
+        width: field.width,
+        height: field.height,
+        borderColor: rgb(0.5, 0.5, 0.5),
+        borderWidth: 1,
+      });
+    }
+  }
+
+  function valueXFor(field: TemplateFieldSpec, font: Awaited<ReturnType<PDFDocument["embedFont"]>>): number {
+    if (field.x <= 41) {
+      const labelWidth = font.widthOfTextAtSize(FIELD_LABEL_TEXT[field.label], 12);
+      return field.x + labelWidth + 4;
+    }
+    return field.x + 4;
+  }
+
+  function drawPersonValues(
+    page: Awaited<ReturnType<PDFDocument["addPage"]>>,
+    font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+    personIndex: number,
+    person: DummyPerson,
+    fields: TemplateFieldSpec[] = TEMPLATE_FIELDS
+  ) {
+    for (const field of fields.filter((f) => f.personIndex === personIndex)) {
+      const value = person[field.label as keyof DummyPerson];
+      const x = valueXFor(field, font);
+      page.drawText(value, { x, y: field.y + 5, size: 11, font, color: rgb(0, 0, 0) });
+    }
+  }
+
+  // 1. 空のテンプレートPDF（ラベルと枠の罫線のみ、入力値はなし）
+  {
+    const { doc, font } = await newTemplateDoc();
+    const page = doc.addPage([TEMPLATE_PAGE.width, TEMPLATE_PAGE.height]);
+    drawLabelsAndBoxes(page, font);
+    fs.writeFileSync(fixtures.templateBlankPdf, await doc.save());
+  }
+
+  // 2. 記入済み（2人ともフル入力、テキストレイヤーあり）
+  {
+    const { doc, font } = await newTemplateDoc();
+    const page = doc.addPage([TEMPLATE_PAGE.width, TEMPLATE_PAGE.height]);
+    drawLabelsAndBoxes(page, font);
+    drawPersonValues(page, font, 1, PERSON_A);
+    drawPersonValues(page, font, 2, PERSON_B);
+    fs.writeFileSync(fixtures.templateFilledPdf, await doc.save());
+  }
+
+  // 3. 2人目が空欄（人物存在判定・除外設定の検証用）
+  {
+    const { doc, font } = await newTemplateDoc();
+    const page = doc.addPage([TEMPLATE_PAGE.width, TEMPLATE_PAGE.height]);
+    drawLabelsAndBoxes(page, font);
+    drawPersonValues(page, font, 1, PERSON_A);
+    fs.writeFileSync(fixtures.templateFilledEmptySecondPdf, await doc.save());
+  }
+
+  // 4. 複数ページ（同一レイアウトを2ページへ適用。合計4人分）
+  {
+    const { doc, font } = await newTemplateDoc();
+    const page1 = doc.addPage([TEMPLATE_PAGE.width, TEMPLATE_PAGE.height]);
+    drawLabelsAndBoxes(page1, font);
+    drawPersonValues(page1, font, 1, PERSON_A);
+    drawPersonValues(page1, font, 2, PERSON_B);
+    const page2 = doc.addPage([TEMPLATE_PAGE.width, TEMPLATE_PAGE.height]);
+    drawLabelsAndBoxes(page2, font);
+    drawPersonValues(page2, font, 1, PERSON_C);
+    drawPersonValues(page2, font, 2, PERSON_D);
+    fs.writeFileSync(fixtures.templateFilledMultiPagePdf, await doc.save());
+  }
+
+  // 5. 1ページに3人分（「1ページ3人」ケースの検証用。開発指示書44章）
+  {
+    const { doc, font } = await newTemplateDoc();
+    const page = doc.addPage([TEMPLATE_PAGE.width, TEMPLATE_PAGE.height]);
+    drawLabelsAndBoxes(page, font, THREE_PERSON_TEMPLATE_FIELDS);
+    drawPersonValues(page, font, 1, PERSON_A, THREE_PERSON_TEMPLATE_FIELDS);
+    drawPersonValues(page, font, 2, PERSON_B, THREE_PERSON_TEMPLATE_FIELDS);
+    drawPersonValues(page, font, 3, PERSON_C, THREE_PERSON_TEMPLATE_FIELDS);
+    fs.writeFileSync(fixtures.templateFilledThreePersonPdf, await doc.save());
+  }
+
+  // 6. スキャン画像（文字レイヤーを持たない、OCRフォールバック検証用）
+  await generateScannedTemplateFixture();
+}
+
+/**
+ * OCRフォールバック（開発指示書17・18章）検証用の、文字レイヤーを持たない
+ * スキャン画像PDF。認識精度を安定させるため、内容は英数字のみにしている
+ * （日本語OCRの精度検証自体は目的ではなく、あくまで「テキストレイヤーが
+ * 無いページでOCR経路が正しく動くこと」の検証が目的のため）。
+ *
+ * 「記入済み」だけでなく「空のテンプレート」も同じレイアウトで生成する。
+ * テンプレート確認時の固定文字取得（captureFixedTextForTemplate、開発指示書16章）は
+ * 必ずユーザーが最初に登録した空のテンプレートPDF自身に対してOCRを行う仕様のため、
+ * テストでも実際のアプリの使い方と同じく「空のテンプレートPDFを登録 → 記入済み
+ * スキャンPDFを処理」という2つの別ファイルを用意する（同じファイルを両方に使うと、
+ * 固定文字として値まで丸ごと取り込んでしまい、正しい検証にならないため）。
+ */
+async function generateScannedTemplateFixture() {
+  const allFields = [...SCANNED_TEMPLATE_FIELDS, ...SCANNED_TEMPLATE_FIELDS_PERSON2];
+  const personValues: Record<number, Record<string, string>> = { 1: SCANNED_PERSON_A, 2: SCANNED_PERSON_B };
+
+  await renderScannedFieldsToPdf(allFields, (f) => `${f.label}: ${personValues[f.personIndex][f.label]}`, fixtures.templateFilledScannedPdf);
+  // 空のテンプレート側は、記入欄の枠とラベル（末尾の":"まで）だけを描画し、値は一切含めない。
+  await renderScannedFieldsToPdf(allFields, (f) => `${f.label}:`, fixtures.templateBlankScannedPdf);
+}
+
+async function renderScannedFieldsToPdf(fields: TemplateFieldSpec[], textForField: (field: TemplateFieldSpec) => string, outputPath: string) {
+  const scale = 2;
+  const w = Math.round(TEMPLATE_PAGE.width * scale);
+  const h = Math.round(TEMPLATE_PAGE.height * scale);
+
+  const drawCommands = fields
+    .map((f) => {
+      const left = Math.round(f.x * scale);
+      const top = Math.round((TEMPLATE_PAGE.height - f.y - f.height) * scale);
+      const width = Math.round(f.width * scale);
+      const height = Math.round(f.height * scale);
+      const text = textForField(f);
+      const baselineY = top + Math.round(height * 0.68);
+      return `
+        ctx.strokeStyle = '#888888';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(${left}, ${top}, ${width}, ${height});
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(${JSON.stringify(text)}, ${left + 6}, ${baselineY});
+      `;
+    })
+    .join("\n");
+
+  const browser = await chromium.launch(launchOptions);
+  try {
+    const page = await browser.newPage({ viewport: { width: w, height: h } });
+    await page.setContent(
+      `<html><body style="margin:0"><canvas id="c" width="${w}" height="${h}"></canvas>
+       <script>
+         const ctx = document.getElementById('c').getContext('2d');
+         ctx.fillStyle = '#ffffff';
+         ctx.fillRect(0, 0, ${w}, ${h});
+         ${drawCommands}
+       </script></body></html>`
+    );
+    const dataUrl = await page.$eval("#c", (el) => (el as HTMLCanvasElement).toDataURL("image/png"));
+    const pngBytes = Buffer.from(dataUrl.split(",")[1], "base64");
+
+    const doc = await PDFDocument.create();
+    const pdfPage = doc.addPage([TEMPLATE_PAGE.width, TEMPLATE_PAGE.height]);
+    const embedded = await doc.embedPng(pngBytes);
+    pdfPage.drawImage(embedded, { x: 0, y: 0, width: TEMPLATE_PAGE.width, height: TEMPLATE_PAGE.height });
+    fs.writeFileSync(outputPath, await doc.save());
   } finally {
     await browser.close();
   }

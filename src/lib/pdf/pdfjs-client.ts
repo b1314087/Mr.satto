@@ -109,3 +109,43 @@ export async function getPositionedTextItems(page: PdfjsPage): Promise<Positione
 export function pageHasText(items: PositionedTextItem[]): boolean {
   return items.some((item) => item.str.trim().length > 0);
 }
+
+/**
+ * ページをcanvasへ描画する共通ヘルパー（Phase 18で新設）。
+ * OCR用のページ画像化（filled-pdf-to-excel.ts, pdf-fill-annotate-template等）や
+ * PDF→画像で個別に実装されていたcanvas生成処理のうち、今回新しく追加する
+ * テンプレートモードの実装から共通利用する。既存の各Processorは、動作中の
+ * コードへの不要な変更を避けるため、今回はこちらへの移行を行っていない。
+ *
+ * longestSideMax を指定すると、ページの長辺がその値を超えないよう
+ * scale を自動的に縮小する（スマートフォン等でのメモリ超過を防ぐ、
+ * 開発指示書40章のパフォーマンス方針）。
+ */
+export interface RenderedPageCanvas {
+  canvas: HTMLCanvasElement;
+  /** 実際に描画へ使ったスケール（longestSideMaxにより要求値から縮小された場合がある） */
+  scale: number;
+}
+
+export async function renderPageToCanvas(
+  page: PdfjsPage,
+  scale: number,
+  longestSideMax?: number
+): Promise<RenderedPageCanvas> {
+  let effectiveScale = scale;
+  if (longestSideMax) {
+    const base = page.getViewport({ scale });
+    const longest = Math.max(base.width, base.height);
+    if (longest > longestSideMax) {
+      effectiveScale = scale * (longestSideMax / longest);
+    }
+  }
+  const viewport = page.getViewport({ scale: effectiveScale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const canvasContext = canvas.getContext("2d");
+  if (!canvasContext) throw new Error("Canvasの初期化に失敗しました");
+  await page.render({ canvasContext, viewport }).promise;
+  return { canvas, scale: effectiveScale };
+}

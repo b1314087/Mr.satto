@@ -42,4 +42,14 @@ export const fixtures = {
   stampPdf: path.join(GENERATED_DIR, "stamp.pdf"),
   stampLargeImagePng: path.join(GENERATED_DIR, "stamp-large.png"),
   stampTransparentPng: path.join(GENERATED_DIR, "stamp-transparent.png"),
+
+  // Phase 18: 記入されたPDF→Excel「テンプレートモード」テスト用フィクスチャ。
+  // 実在の人物・個人情報は一切使用しない（tests/fixtures/template-layout.ts参照）。
+  templateBlankPdf: path.join(GENERATED_DIR, "template-blank.pdf"),
+  templateFilledPdf: path.join(GENERATED_DIR, "template-filled.pdf"),
+  templateFilledEmptySecondPdf: path.join(GENERATED_DIR, "template-filled-empty-second.pdf"),
+  templateFilledMultiPagePdf: path.join(GENERATED_DIR, "template-filled-multi-page.pdf"),
+  templateFilledThreePersonPdf: path.join(GENERATED_DIR, "template-filled-three-person.pdf"),
+  templateBlankScannedPdf: path.join(GENERATED_DIR, "template-blank-scanned.pdf"),
+  templateFilledScannedPdf: path.join(GENERATED_DIR, "template-filled-scanned.pdf"),
 };
