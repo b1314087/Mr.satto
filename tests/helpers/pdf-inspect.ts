@@ -81,3 +81,89 @@ export function isValidPdfFile(filePath: string): boolean {
   const buf = fs.readFileSync(filePath);
   return buf.subarray(0, 5).toString("latin1") === "%PDF-" && buf.length > 0;
 }
+
+export interface PageOpSummary {
+  /** 画像(paintImageXObject等)を描画する命令が含まれるか（追加した画像・印影の検証用） */
+  hasImage: boolean;
+  /** パス構築系の命令が1つでも含まれるか（追加した図形・手書き・チェック枠の検証用） */
+  hasPath: boolean;
+  /**
+   * パスの部分区間(moveToで始まる区間)の数のおおよその目安。
+   * pdf-libはre命令(矩形専用オペレータ)を使わず、drawRectangle/drawLine/drawEllipse
+   * いずれもmoveTo+lineTo/curveTo+(closePath)の組み合わせで描画するため、正確な
+   * 「矩形が何個・直線が何本」という区別はできないが、「配置した図形の数に応じて
+   * パス区間の数が増える」ことの検証には十分使える（詳細はverify-opsummary系の
+   * 手動検証で確認済み。実装報告書を参照）。
+   */
+  pathSegmentCount: number;
+  /** closePath命令の回数（矩形など「閉じた」パスの目安） */
+  closePathCount: number;
+  /** curveTo系命令の回数（楕円/円の描画は12個前後のベジェ曲線に分解されるため、円の存在の目安になる） */
+  curveSegmentCount: number;
+}
+
+/**
+ * Phase 17: テキスト以外（図形・画像・印影など、pdfjsのgetTextContent()では見えない
+ * ベクター/画像描画）がPDFへ実際に書き出されているかを検証するためのヘルパー。
+ *
+ * 「ダウンロードイベントが発火しただけ」を成功と見なさない方針を、テキスト以外の
+ * オブジェクト（矩形・円・直線・画像・印影）にも適用するために、pdfjs-dist
+ * （新規依存の追加なし、既存のextractPdfContentと同じNode向けビルド）の
+ * getOperatorList()を使い、ページの描画命令の内訳を集計する。
+ *
+ * 注意: pdf-libは矩形・直線・楕円のいずれも、PDFの専用オペレータ(re等)ではなく
+ * moveTo/lineTo/curveTo/closePathの組み合わせで描画する（node_modules/pdf-lib/
+ * cjs/api/operations.js で確認済み）。そのため「矩形が何個・直線が何本」を
+ * 厳密に区別することはできないが、本ヘルパーは「そもそも図形が描画されたか」
+ * 「配置数に応じて増えるか」の検証を目的としており、その用途には十分な精度を持つ。
+ */
+export async function getPageOpSummary(filePath: string, pageNumber: number): Promise<PageOpSummary> {
+  const pdfjsLib = await getPdfjs();
+  const data = new Uint8Array(fs.readFileSync(filePath));
+  const doc = await pdfjsLib.getDocument({ data, standardFontDataUrl: STANDARD_FONT_DATA_URL }).promise;
+  const page = await doc.getPage(pageNumber);
+  const opList = await page.getOperatorList();
+  const OPS = pdfjsLib.OPS;
+
+  let hasImage = false;
+  let pathSegmentCount = 0;
+  let closePathCount = 0;
+  let curveSegmentCount = 0;
+
+  const fnArray = opList.fnArray as number[];
+  const argsArray = opList.argsArray as unknown[];
+
+  for (let i = 0; i < fnArray.length; i++) {
+    const fn = fnArray[i];
+    if (
+      fn === OPS.paintImageXObject ||
+      fn === OPS.paintInlineImageXObject ||
+      fn === OPS.paintImageXObjectRepeat ||
+      fn === OPS.paintImageMaskXObject
+    ) {
+      hasImage = true;
+    } else if (fn === OPS.constructPath) {
+      const args = argsArray[i] as [number[], number[], number[]] | undefined;
+      const subOps = args?.[0] ?? [];
+      for (const sub of subOps) {
+        if (sub === OPS.moveTo) pathSegmentCount++;
+        else if (sub === OPS.closePath) closePathCount++;
+        else if (sub === OPS.curveTo || sub === OPS.curveTo2 || sub === OPS.curveTo3) curveSegmentCount++;
+      }
+    } else if (fn === OPS.moveTo) {
+      pathSegmentCount++;
+    } else if (fn === OPS.closePath) {
+      closePathCount++;
+    } else if (fn === OPS.curveTo || fn === OPS.curveTo2 || fn === OPS.curveTo3) {
+      curveSegmentCount++;
+    }
+  }
+
+  return {
+    hasImage,
+    hasPath: pathSegmentCount > 0 || curveSegmentCount > 0,
+    pathSegmentCount,
+    closePathCount,
+    curveSegmentCount,
+  };
+}

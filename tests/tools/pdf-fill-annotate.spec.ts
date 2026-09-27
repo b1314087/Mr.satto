@@ -95,7 +95,7 @@ test("テキストを追加して内容を編集できる", async ({ page }) => 
   await clickCanvasAt(page, 60, 80);
 
   await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
-  const textInput = page.locator(OBJECT_LIST).locator('input[type="text"]').first();
+  const textInput = page.locator(OBJECT_LIST).locator('textarea').first();
   await textInput.fill("テスト入力ABC123");
   await expect(textInput).toHaveValue("テスト入力ABC123");
 });
@@ -237,8 +237,8 @@ test("PDFを書き出してダウンロードでき、生成されたPDFが妥�
   await openToolWithPdf(page, fixtures.singlePagePdf);
   await page.getByRole("button", { name: "テキスト", exact: true }).click();
   await clickCanvasAt(page, 50, 50);
-  await page.locator(OBJECT_LIST).locator('input[type="text"]').first().fill("E2E-EXPORT-CHECK");
-  await page.locator(OBJECT_LIST).locator('input[type="text"]').first().blur();
+  await page.locator(OBJECT_LIST).locator('textarea').first().fill("E2E-EXPORT-CHECK");
+  await page.locator(OBJECT_LIST).locator('textarea').first().blur();
 
   const downloadPath = await exportAndDownload(page);
   const extracted = await extractPdfContent(downloadPath);
@@ -264,7 +264,7 @@ test("日本語のテキストが文字化けせずにPDFへ出力される", as
   await openToolWithPdf(page, fixtures.singlePagePdf);
   await page.getByRole("button", { name: "テキスト", exact: true }).click();
   await clickCanvasAt(page, 50, 100);
-  const input = page.locator(OBJECT_LIST).locator('input[type="text"]').first();
+  const input = page.locator(OBJECT_LIST).locator('textarea').first();
   await input.fill("日本語テストABC123あいうえお");
   await input.blur();
 
@@ -280,7 +280,7 @@ test("日付は自動入力されず、選択した日付だけがテキスト�
   await clickCanvasAt(page, 50, 50);
 
   const row = page.locator(OBJECT_LIST).locator("li").first();
-  const textInput = row.locator('input[type="text"]').first();
+  const textInput = row.locator('textarea').first();
   await expect(textInput).toHaveValue(""); // 自動入力されていないこと
 
   await row.locator('input[type="date"]').fill("2026-09-27");
@@ -311,7 +311,7 @@ test("表示倍率(50%/100%/150%)を変えても、PDF上の同じ相対位置�
     expect(box, `ズームレベル${zoom}%でキャンバスのサイズが取得できませんでした`).toBeTruthy();
     await page.locator(CANVAS).click({ position: { x: box!.width * FRACTION_X, y: box!.height * FRACTION_Y } });
 
-    const input = page.locator(OBJECT_LIST).locator('input[type="text"]').first();
+    const input = page.locator(OBJECT_LIST).locator('textarea').first();
     await input.fill(`Z${zoom}`);
     await input.blur();
 
@@ -366,7 +366,7 @@ test.describe("エッジケース", () => {
     await page.getByRole("button", { name: "テキスト", exact: true }).click();
     await clickCanvasAt(page, 50, 50);
     const longText = "あ".repeat(600); // 上限(500文字)を超える入力
-    const input = page.locator(OBJECT_LIST).locator('input[type="text"]').first();
+    const input = page.locator(OBJECT_LIST).locator('textarea').first();
     await input.fill(longText);
     await expect(async () => {
       const value = await input.inputValue();

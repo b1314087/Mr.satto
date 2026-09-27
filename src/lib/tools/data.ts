@@ -342,11 +342,21 @@ export const tools: Tool[] = [
     id: "pdf-fill-annotate",
     name: "PDF記入・注釈",
     category: "pdf",
-    description: "PDFに文字・チェック・手書き・画像を書き込んで、その場でダウンロードします",
+    description: "PDFに文字・チェック・図形・手書き・画像・印影を追加して、その場でダウンロードします",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["PDF記入", "PDFに書き込み", "PDFに文字を入力", "PDFにチェック", "PDFに手書き", "PDFに画像を追加", "PDF編集"],
+    keywords: [
+      "PDF記入",
+      "PDFに書き込み",
+      "PDFに文字を入力",
+      "PDFにチェックを入れる",
+      "PDFに手書き",
+      "PDFに画像を追加",
+      "PDFに印鑑を押す",
+      "PDF編集",
+      "PDFを編集する",
+    ],
   },
   {
     // Phase 6で検討したが、現在の依存ライブラリ(pdf-lib)はPDFの暗号化(パスワード保護)の

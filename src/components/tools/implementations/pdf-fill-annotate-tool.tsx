@@ -11,15 +11,24 @@ import { PdfFillAnnotateProcessor } from "@/lib/processors/browser/pdf-fill-anno
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import {
   createAnnotationId,
+  DUPLICATE_OFFSET_PT,
   PDF_FILL_ANNOTATE_LIMITS,
   type AnnotationColor,
   type AnnotationObject,
   type CheckboxAnnotationObject,
+  type CheckboxMarkStyle,
   type ImageAnnotationObject,
   type InkAnnotationObject,
   type InkPoint,
+  type LineShapeObject,
+  type RectangleShapeObject,
+  type CircleShapeObject,
+  type ShapeAnnotationObject,
+  type ShapeKind,
+  type TextAlign,
   type TextAnnotationObject,
 } from "@/lib/pdf-annotate/types";
+import { rotatePointAround } from "@/lib/pdf-annotate/geometry";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -39,7 +48,7 @@ import { downloadBlob, stripExtension } from "@/lib/utils/format";
  * 生成物を保存することは一切行わない。
  */
 
-type ToolMode = "select" | "text" | "checkbox" | "ink" | "image";
+type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape";
 type ColorChoice = "black" | "red" | "blue";
 
 interface PageInfo {
@@ -53,10 +62,17 @@ interface PendingImage {
   mimeType: "image/png" | "image/jpeg";
   previewUrl: string;
   aspectRatio: number;
+  /** 電子印鑑生成からの取り込みなど「印影」として配置するかのラベル用フラグ */
+  isStamp: boolean;
 }
 
 const PREVIEW_MAX_WIDTH = 640;
-const ZOOM_LEVELS = [50, 100, 150] as const;
+// Phase 17: 座標変換の検証対象倍率(100/125/150/200%)を含む形へ拡張
+const ZOOM_LEVELS = [50, 75, 100, 125, 150, 200] as const;
+const ROTATE_STEP_DEG = 15;
+const MARK_STYLE_LABELS: Record<CheckboxMarkStyle, string> = { check: "レ点", cross: "×", circle: "○" };
+const ALIGN_LABELS: Record<TextAlign, string> = { left: "左揃え", center: "中央揃え", right: "右揃え" };
+const SHAPE_KIND_LABELS: Record<ShapeKind, string> = { rectangle: "矩形", circle: "円・楕円", line: "直線" };
 
 const COLOR_CHOICES: Record<ColorChoice, AnnotationColor> = {
   black: { r: 0.1, g: 0.1, b: 0.12 },
@@ -94,6 +110,19 @@ function inkBounds(obj: InkAnnotationObject) {
     minY: Math.min(...ys) - pad,
     maxY: Math.max(...ys) + pad,
   };
+}
+function lineBounds(obj: LineShapeObject) {
+  const pad = Math.max(obj.strokeWidth, 1);
+  return {
+    minX: Math.min(obj.x1, obj.x2) - pad,
+    maxX: Math.max(obj.x1, obj.x2) + pad,
+    minY: Math.min(obj.y1, obj.y2) - pad,
+    maxY: Math.max(obj.y1, obj.y2) + pad,
+  };
+}
+function normalizeRotation(deg: number): number {
+  const r = deg % 360;
+  return r < 0 ? r + 360 : r;
 }
 function formatDate(iso: string, style: "slash" | "kanji"): string {
   const parts = iso.split("-").map(Number);
@@ -138,9 +167,20 @@ export function PdfFillAnnotateTool() {
   const [textFontSize, setTextFontSize] = useState(14);
   const [textColorChoice, setTextColorChoice] = useState<ColorChoice>("black");
   const [textBold, setTextBold] = useState(false);
+  const [textAlign, setTextAlign] = useState<TextAlign>("left");
 
   // --- チェック配置の既定値 ---
   const [checkboxSize, setCheckboxSize] = useState(16);
+  const [checkboxMarkStyle, setCheckboxMarkStyle] = useState<CheckboxMarkStyle>("check");
+
+  // --- 図形配置の既定値（Phase 17） ---
+  const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
+  const [shapeColorChoice, setShapeColorChoice] = useState<ColorChoice>("blue");
+  const [shapeStrokeWidth, setShapeStrokeWidth] = useState(2);
+  const [shapeFill, setShapeFill] = useState(false);
+
+  // --- ページ移動（ページ番号を指定してジャンプ） ---
+  const [pageJumpValue, setPageJumpValue] = useState("");
 
   // --- 手書き ---
   const [inkColorChoice, setInkColorChoice] = useState<ColorChoice>("black");
@@ -249,6 +289,94 @@ export function PdfFillAnnotateTool() {
   }
 
   // ---------------------------------------------------------------------
+  // 2.5 複製・回転・前面/背面（Phase 17）
+  // ---------------------------------------------------------------------
+  function duplicateObject(id: string) {
+    const target = objects.find((o) => o.id === id);
+    if (!target) return;
+    if (objects.length >= PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerDocument) {
+      setError(`配置できる注釈の数は${PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerDocument}個までです。`);
+      return;
+    }
+    const onSamePage = objects.filter((o) => o.page === target.page).length;
+    if (onSamePage >= PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerPage) {
+      setError(`1ページに配置できる注釈の数は${PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerPage}個までです。`);
+      return;
+    }
+    const d = DUPLICATE_OFFSET_PT;
+    let clone: AnnotationObject;
+    if (target.type === "ink") {
+      clone = { ...target, id: createAnnotationId("ink"), points: target.points.map((p) => ({ x: p.x + d, y: p.y + d })) };
+    } else if (target.type === "shape" && target.shapeKind === "line") {
+      clone = { ...target, id: createAnnotationId("shape"), x1: target.x1 + d, y1: target.y1 + d, x2: target.x2 + d, y2: target.y2 + d };
+    } else {
+      // text / checkbox / image / shape(rectangle・circle): 明らかにズレて見えるようx,yを両方ずらす
+      clone = { ...target, id: createAnnotationId(target.type), x: target.x + d, y: target.y + d } as AnnotationObject;
+    }
+    commit([...objects, clone]);
+    setActiveObjectId(clone.id);
+  }
+
+  /** 矩形・円・画像（rotationフィールドを持つもの）の回転を指定角ぶん進める */
+  function rotateByField(id: string, deltaDeg: number) {
+    const target = objects.find((o) => o.id === id);
+    if (!target) return;
+    if (target.type === "image") {
+      patchObjectWithHistory(id, { rotation: normalizeRotation((target.rotation ?? 0) + deltaDeg) });
+    } else if (target.type === "shape" && target.shapeKind !== "line") {
+      patchObjectWithHistory(id, { rotation: normalizeRotation(target.rotation + deltaDeg) });
+    }
+  }
+
+  /** 直線・手書き（回転フィールドを持たないもの）は、中心を軸に座標をその場で回転させる */
+  function rotateByBaking(id: string, deltaDeg: number) {
+    const target = objects.find((o) => o.id === id);
+    if (!target) return;
+    if (target.type === "ink") {
+      const b = inkBounds(target);
+      const center = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+      patchObjectWithHistory(id, { points: target.points.map((p) => rotatePointAround(p, center, deltaDeg)) });
+    } else if (target.type === "shape" && target.shapeKind === "line") {
+      const center = { x: (target.x1 + target.x2) / 2, y: (target.y1 + target.y2) / 2 };
+      const p1 = rotatePointAround({ x: target.x1, y: target.y1 }, center, deltaDeg);
+      const p2 = rotatePointAround({ x: target.x2, y: target.y2 }, center, deltaDeg);
+      patchObjectWithHistory(id, { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
+    }
+  }
+
+  function rotateObject(id: string, deltaDeg: number) {
+    const target = objects.find((o) => o.id === id);
+    if (!target) return;
+    if (target.type === "image" || (target.type === "shape" && target.shapeKind !== "line")) {
+      rotateByField(id, deltaDeg);
+    } else if (target.type === "ink" || (target.type === "shape" && target.shapeKind === "line")) {
+      rotateByBaking(id, deltaDeg);
+    }
+  }
+
+  /** 選択中オブジェクトを、同じページ内の他のオブジェクトに対して最前面/最背面へ移動する */
+  function reorderObject(id: string, direction: "front" | "back") {
+    const idx = objects.findIndex((o) => o.id === id);
+    if (idx === -1) return;
+    const target = objects[idx];
+    const without = objects.filter((o) => o.id !== id);
+    const samePageIndices = without.reduce<number[]>((acc, o, i) => {
+      if (o.page === target.page) acc.push(i);
+      return acc;
+    }, []);
+    let insertAt: number;
+    if (samePageIndices.length === 0) {
+      insertAt = without.length;
+    } else if (direction === "front") {
+      insertAt = samePageIndices[samePageIndices.length - 1] + 1;
+    } else {
+      insertAt = samePageIndices[0];
+    }
+    const next = [...without.slice(0, insertAt), target, ...without.slice(insertAt)];
+    commit(next);
+  }
+
+  // ---------------------------------------------------------------------
   // 1. PDFアップロード・ページ表示
   // ---------------------------------------------------------------------
   async function handleFileSelect(files: File[]) {
@@ -352,6 +480,11 @@ export function PdfFillAnnotateTool() {
       setError(`配置できる注釈の数は${PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerDocument}個までです。`);
       return true;
     }
+    const onThisPage = objects.filter((o) => o.page === selectedPage).length;
+    if (onThisPage >= PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerPage) {
+      setError(`1ページに配置できる注釈の数は${PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerPage}個までです。`);
+      return true;
+    }
     return false;
   }
 
@@ -375,6 +508,21 @@ export function PdfFillAnnotateTool() {
           patchObjectWithHistory(target.id, {
             points: target.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
           });
+        } else if (target.type === "shape" && target.shapeKind === "line") {
+          const centerX = (target.x1 + target.x2) / 2;
+          const centerY = (target.y1 + target.y2) / 2;
+          const newCenterY = screenToPdfY(clickY, 0, currentPageInfo.height, pageRenderScale);
+          const dx = pdfX - centerX;
+          const dy = newCenterY - centerY;
+          patchObjectWithHistory(target.id, {
+            x1: target.x1 + dx,
+            y1: target.y1 + dy,
+            x2: target.x2 + dx,
+            y2: target.y2 + dy,
+          });
+        } else if (target.type === "shape") {
+          const pdfY = screenToPdfY(clickY, target.height, currentPageInfo.height, pageRenderScale);
+          patchObjectWithHistory(target.id, { x: Math.max(0, pdfX), y: Math.max(0, pdfY) });
         } else {
           const h = target.type === "image" ? target.height : target.type === "checkbox" ? target.size : 0;
           const pdfY = screenToPdfY(clickY, h, currentPageInfo.height, pageRenderScale);
@@ -399,6 +547,7 @@ export function PdfFillAnnotateTool() {
         fontSize,
         color: COLOR_CHOICES[textColorChoice],
         bold: textBold,
+        align: textAlign,
       };
       commit([...objects, obj]);
       setActiveObjectId(obj.id);
@@ -415,18 +564,19 @@ export function PdfFillAnnotateTool() {
         y: Math.max(0, pdfY),
         size,
         checked: false,
+        markStyle: checkboxMarkStyle,
       };
       commit([...objects, obj]);
       setActiveObjectId(obj.id);
       setMode("select");
-    } else if (mode === "image" && pendingImage) {
+    } else if ((mode === "image" || mode === "stamp") && pendingImage) {
       if (atObjectLimit()) return;
       const maxWidthPt = Math.min(currentPageInfo.width * 0.6, 220);
       const width = maxWidthPt;
       const height = width / pendingImage.aspectRatio;
       const pdfY = screenToPdfY(clickY, height, currentPageInfo.height, pageRenderScale);
       const obj: ImageAnnotationObject = {
-        id: createAnnotationId("image"),
+        id: createAnnotationId(pendingImage.isStamp ? "stamp" : "image"),
         type: "image",
         page: selectedPage,
         x: Math.max(0, pdfX),
@@ -437,10 +587,56 @@ export function PdfFillAnnotateTool() {
         mimeType: pendingImage.mimeType,
         previewUrl: pendingImage.previewUrl,
         aspectRatio: pendingImage.aspectRatio,
+        rotation: 0,
+        aspectLocked: true,
+        isStamp: pendingImage.isStamp,
       };
       commit([...objects, obj]);
       setActiveObjectId(obj.id);
       setPendingImage(null);
+      setMode("select");
+    } else if (mode === "shape") {
+      if (atObjectLimit()) return;
+      const color = COLOR_CHOICES[shapeColorChoice];
+      if (shapeKind === "line") {
+        const centerY = screenToPdfY(clickY, 0, currentPageInfo.height, pageRenderScale);
+        const half = 40;
+        const obj: LineShapeObject = {
+          id: createAnnotationId("shape"),
+          type: "shape",
+          shapeKind: "line",
+          page: selectedPage,
+          x1: Math.max(0, pdfX - half),
+          y1: Math.max(0, centerY - half * 0.5),
+          x2: pdfX + half,
+          y2: centerY + half * 0.5,
+          color,
+          strokeWidth: shapeStrokeWidth,
+        };
+        commit([...objects, obj]);
+        setActiveObjectId(obj.id);
+      } else {
+        const width = shapeKind === "circle" ? 70 : 100;
+        const height = shapeKind === "circle" ? 70 : 60;
+        const centerY = screenToPdfY(clickY, 0, currentPageInfo.height, pageRenderScale);
+        const base = {
+          id: createAnnotationId("shape"),
+          type: "shape" as const,
+          page: selectedPage,
+          x: Math.max(0, pdfX - width / 2),
+          y: Math.max(0, centerY - height / 2),
+          width,
+          height,
+          rotation: 0,
+          color,
+          strokeWidth: shapeStrokeWidth,
+          fill: shapeFill,
+        };
+        const obj: RectangleShapeObject | CircleShapeObject =
+          shapeKind === "circle" ? { ...base, shapeKind: "circle" } : { ...base, shapeKind: "rectangle" };
+        commit([...objects, obj]);
+        setActiveObjectId(obj.id);
+      }
       setMode("select");
     } else if (mode === "select") {
       setActiveObjectId(null);
@@ -475,6 +671,17 @@ export function PdfFillAnnotateTool() {
         const original = drag.original;
         if (original.type === "ink" && o.type === "ink") {
           return { ...o, points: original.points.map((p) => ({ x: p.x + dxPdf, y: p.y + dyPdf })) };
+        }
+        if (original.type === "shape" && o.type === "shape" && original.shapeKind === "line" && o.shapeKind === "line") {
+          return { ...o, x1: original.x1 + dxPdf, y1: original.y1 + dyPdf, x2: original.x2 + dxPdf, y2: original.y2 + dyPdf };
+        }
+        if (
+          original.type === "shape" &&
+          o.type === "shape" &&
+          original.shapeKind !== "line" &&
+          o.shapeKind !== "line"
+        ) {
+          return { ...o, x: Math.max(0, original.x + dxPdf), y: Math.max(0, original.y + dyPdf) } as ShapeAnnotationObject;
         }
         if (
           (original.type === "text" || original.type === "checkbox" || original.type === "image") &&
@@ -577,7 +784,7 @@ export function PdfFillAnnotateTool() {
   // ---------------------------------------------------------------------
   // 5. 画像
   // ---------------------------------------------------------------------
-  async function handleImageStage(files: File[]) {
+  async function handleImageStage(files: File[], isStamp: boolean) {
     const f = files[0];
     if (!f) return;
     setError(null);
@@ -601,8 +808,8 @@ export function PdfFillAnnotateTool() {
         img.src = previewUrl;
       });
       if (pendingImage) URL.revokeObjectURL(pendingImage.previewUrl);
-      setPendingImage({ bytes, mimeType, previewUrl, aspectRatio: dims.width / dims.height || 1 });
-      setMode("image");
+      setPendingImage({ bytes, mimeType, previewUrl, aspectRatio: dims.width / dims.height || 1, isStamp });
+      setMode(isStamp ? "stamp" : "image");
     } catch (e) {
       setError(e instanceof Error ? e.message : "画像の読み込みに失敗しました");
     }
@@ -641,9 +848,18 @@ export function PdfFillAnnotateTool() {
     { value: "select", label: "選択・移動" },
     { value: "text", label: "テキスト" },
     { value: "checkbox", label: "チェック" },
+    { value: "shape", label: "図形" },
     { value: "ink", label: "手書き" },
     { value: "image", label: "画像" },
+    { value: "stamp", label: "印影" },
   ];
+
+  function handlePageJumpSubmit() {
+    const n = Number(pageJumpValue);
+    if (!Number.isInteger(n)) return;
+    handlePageChange(n);
+    setPageJumpValue("");
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -696,6 +912,32 @@ export function PdfFillAnnotateTool() {
               >
                 →
               </button>
+              {pages.length > 2 && (
+                <span className="flex items-center gap-1">
+                  <label className="flex items-center gap-1">
+                    <span className="sr-only">ページ番号を指定して移動</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={pages.length}
+                      value={pageJumpValue}
+                      onChange={(e) => setPageJumpValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handlePageJumpSubmit();
+                      }}
+                      placeholder="ページ番号"
+                      className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handlePageJumpSubmit}
+                    className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700"
+                  >
+                    移動
+                  </button>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1" role="group" aria-label="表示倍率">
@@ -744,7 +986,7 @@ export function PdfFillAnnotateTool() {
                 onClick={() => {
                   setMode(m.value);
                   setRepositioningId(null);
-                  if (m.value !== "image" && pendingImage) {
+                  if (m.value !== "image" && m.value !== "stamp" && pendingImage) {
                     URL.revokeObjectURL(pendingImage.previewUrl);
                     setPendingImage(null);
                   }
@@ -793,6 +1035,23 @@ export function PdfFillAnnotateTool() {
                 <input type="checkbox" checked={textBold} onChange={(e) => setTextBold(e.target.checked)} />
                 太字
               </label>
+              <label className="flex items-center gap-1">
+                整列
+                <select
+                  value={textAlign}
+                  onChange={(e) => setTextAlign(e.target.value as TextAlign)}
+                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  {(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => (
+                    <option key={a} value={a}>
+                      {ALIGN_LABELS[a]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <span className="text-neutral-500 dark:text-neutral-400">
+                複数行にしたい場合は、配置後の入力欄でShift+Enter（またはEnter）で改行できます。
+              </span>
             </div>
           )}
 
@@ -810,6 +1069,72 @@ export function PdfFillAnnotateTool() {
                   className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
                 />
               </label>
+              <label className="flex items-center gap-1">
+                マーク
+                <select
+                  value={checkboxMarkStyle}
+                  onChange={(e) => setCheckboxMarkStyle(e.target.value as CheckboxMarkStyle)}
+                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  {(Object.keys(MARK_STYLE_LABELS) as CheckboxMarkStyle[]).map((m) => (
+                    <option key={m} value={m}>
+                      {MARK_STYLE_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+
+          {mode === "shape" && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">
+              <span className="text-blue-700 dark:text-blue-300">PDF上をクリックして図形を配置してください。</span>
+              <label className="flex items-center gap-1">
+                種類
+                <select
+                  value={shapeKind}
+                  onChange={(e) => setShapeKind(e.target.value as ShapeKind)}
+                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  {(Object.keys(SHAPE_KIND_LABELS) as ShapeKind[]).map((k) => (
+                    <option key={k} value={k}>
+                      {SHAPE_KIND_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                色
+                <select
+                  value={shapeColorChoice}
+                  onChange={(e) => setShapeColorChoice(e.target.value as ColorChoice)}
+                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  {(Object.keys(COLOR_LABELS) as ColorChoice[]).map((c) => (
+                    <option key={c} value={c}>
+                      {COLOR_LABELS[c]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                線の太さ
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  step={0.5}
+                  value={shapeStrokeWidth}
+                  onChange={(e) => setShapeStrokeWidth(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
+                  className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
+              {shapeKind !== "line" && (
+                <label className="flex items-center gap-1">
+                  <input type="checkbox" checked={shapeFill} onChange={(e) => setShapeFill(e.target.checked)} />
+                  塗りつぶし
+                </label>
+              )}
             </div>
           )}
 
@@ -872,12 +1197,41 @@ export function PdfFillAnnotateTool() {
                   maxSizeMB={PDF_FILL_ANNOTATE_LIMITS.maxImageSizeMB}
                   label="画像をドラッグ&ドロップ"
                   hint="PNG・JPEGに対応（1枚）"
-                  onFilesSelected={handleImageStage}
+                  onFilesSelected={(files) => void handleImageStage(files, false)}
                   onError={setError}
                 />
               ) : (
                 <div className="flex items-center gap-3">
                   <span className="text-blue-700 dark:text-blue-300">PDF上をクリックして画像を配置してください。</span>
+                  <button
+                    type="button"
+                    onClick={handleCancelPendingImage}
+                    className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {mode === "stamp" && (
+            <div className="flex flex-col gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">
+              <span className="text-neutral-500 dark:text-neutral-400">
+                「電子印鑑生成」ツールで作った印影PNGなど、印影画像をそのまま配置できます（内部的には画像オブジェクトと同じ扱いです）。
+              </span>
+              {!pendingImage ? (
+                <FileDropzone
+                  accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+                  maxSizeMB={PDF_FILL_ANNOTATE_LIMITS.maxImageSizeMB}
+                  label="印影画像をドラッグ&ドロップ"
+                  hint="PNG・JPEGに対応（1枚、背景透過PNG推奨）"
+                  onFilesSelected={(files) => void handleImageStage(files, true)}
+                  onError={setError}
+                />
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-blue-700 dark:text-blue-300">PDF上をクリックして印影を配置してください。</span>
                   <button
                     type="button"
                     onClick={handleCancelPendingImage}
@@ -993,9 +1347,11 @@ export function PdfFillAnnotateTool() {
                 if (obj.type === "image") {
                   const w = obj.width * pageRenderScale;
                   const h = obj.height * pageRenderScale;
+                  const rotation = obj.rotation ?? 0;
                   return (
                     <div
                       key={obj.id}
+                      data-testid={obj.isStamp ? "pdf-annotate-stamp-object" : undefined}
                       onPointerDown={(e) => handleObjectPointerDown(e, obj)}
                       onPointerMove={handleObjectPointerMove}
                       onPointerUp={handleObjectPointerUp}
@@ -1006,6 +1362,7 @@ export function PdfFillAnnotateTool() {
                         top: pdfToScreenY(obj.y, obj.height, currentPageInfo.height, pageRenderScale),
                         width: w,
                         height: h,
+                        transform: rotation ? `rotate(${-rotation}deg)` : undefined,
                         cursor: mode === "select" ? "move" : "default",
                         touchAction: "none",
                       }}
@@ -1015,49 +1372,106 @@ export function PdfFillAnnotateTool() {
                     </div>
                   );
                 }
-                // ink
-                const b = inkBounds(obj);
-                const left = pdfToScreenX(b.minX, pageRenderScale);
-                const top = pdfToScreenY(b.maxY, 0, currentPageInfo.height, pageRenderScale);
-                const width = (b.maxX - b.minX) * pageRenderScale;
-                const height = (b.maxY - b.minY) * pageRenderScale;
+                if (obj.type === "ink") {
+                  const b = inkBounds(obj);
+                  const left = pdfToScreenX(b.minX, pageRenderScale);
+                  const top = pdfToScreenY(b.maxY, 0, currentPageInfo.height, pageRenderScale);
+                  const width = (b.maxX - b.minX) * pageRenderScale;
+                  const height = (b.maxY - b.minY) * pageRenderScale;
+                  return (
+                    <div
+                      key={obj.id}
+                      onPointerDown={(e) => {
+                        if (mode === "ink" && eraseMode) {
+                          e.stopPropagation();
+                          handleEraseStroke(obj.id);
+                          return;
+                        }
+                        handleObjectPointerDown(e, obj);
+                      }}
+                      onPointerMove={handleObjectPointerMove}
+                      onPointerUp={handleObjectPointerUp}
+                      onClick={handleObjectInertClick}
+                      className={isActive ? "absolute outline outline-2 outline-blue-500" : "absolute"}
+                      style={{
+                        left,
+                        top,
+                        width,
+                        height,
+                        cursor: mode === "select" ? "move" : eraseMode ? "pointer" : "default",
+                        touchAction: "none",
+                      }}
+                    >
+                      <svg width={width} height={height} style={{ overflow: "visible" }} aria-hidden="true">
+                        <polyline
+                          points={obj.points
+                            .map((p) => `${(p.x - b.minX) * pageRenderScale},${(b.maxY - p.y) * pageRenderScale}`)
+                            .join(" ")}
+                          fill="none"
+                          stroke={cssColor(obj.color)}
+                          strokeWidth={Math.max(1, obj.strokeWidth * pageRenderScale)}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                  );
+                }
+                // shape（矩形・円/楕円・直線）
+                if (obj.shapeKind === "line") {
+                  const b = lineBounds(obj);
+                  const left = pdfToScreenX(b.minX, pageRenderScale);
+                  const top = pdfToScreenY(b.maxY, 0, currentPageInfo.height, pageRenderScale);
+                  const width = (b.maxX - b.minX) * pageRenderScale;
+                  const height = (b.maxY - b.minY) * pageRenderScale;
+                  return (
+                    <div
+                      key={obj.id}
+                      onPointerDown={(e) => handleObjectPointerDown(e, obj)}
+                      onPointerMove={handleObjectPointerMove}
+                      onPointerUp={handleObjectPointerUp}
+                      onClick={handleObjectInertClick}
+                      className={isActive ? "absolute outline outline-2 outline-blue-500" : "absolute"}
+                      style={{ left, top, width, height, cursor: mode === "select" ? "move" : "default", touchAction: "none" }}
+                    >
+                      <svg width={width} height={height} style={{ overflow: "visible" }} aria-hidden="true">
+                        <line
+                          x1={(obj.x1 - b.minX) * pageRenderScale}
+                          y1={(b.maxY - obj.y1) * pageRenderScale}
+                          x2={(obj.x2 - b.minX) * pageRenderScale}
+                          y2={(b.maxY - obj.y2) * pageRenderScale}
+                          stroke={cssColor(obj.color)}
+                          strokeWidth={Math.max(1, obj.strokeWidth * pageRenderScale)}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </div>
+                  );
+                }
+                const w = obj.width * pageRenderScale;
+                const h = obj.height * pageRenderScale;
                 return (
                   <div
                     key={obj.id}
-                    onPointerDown={(e) => {
-                      if (mode === "ink" && eraseMode) {
-                        e.stopPropagation();
-                        handleEraseStroke(obj.id);
-                        return;
-                      }
-                      handleObjectPointerDown(e, obj);
-                    }}
+                    onPointerDown={(e) => handleObjectPointerDown(e, obj)}
                     onPointerMove={handleObjectPointerMove}
                     onPointerUp={handleObjectPointerUp}
                     onClick={handleObjectInertClick}
-                    className={isActive ? "absolute outline outline-2 outline-blue-500" : "absolute"}
+                    className={`absolute ${isActive ? "outline outline-2 outline-blue-500" : ""} ${
+                      obj.shapeKind === "circle" ? "rounded-full" : ""
+                    }`}
                     style={{
-                      left,
-                      top,
-                      width,
-                      height,
-                      cursor: mode === "select" ? "move" : eraseMode ? "pointer" : "default",
+                      left: pdfToScreenX(obj.x, pageRenderScale),
+                      top: pdfToScreenY(obj.y, obj.height, currentPageInfo.height, pageRenderScale),
+                      width: w,
+                      height: h,
+                      border: `${Math.max(1, obj.strokeWidth * pageRenderScale)}px solid ${cssColor(obj.color)}`,
+                      backgroundColor: obj.fill ? cssColor(obj.color) : "transparent",
+                      transform: obj.rotation ? `rotate(${-obj.rotation}deg)` : undefined,
+                      cursor: mode === "select" ? "move" : "default",
                       touchAction: "none",
                     }}
-                  >
-                    <svg width={width} height={height} style={{ overflow: "visible" }} aria-hidden="true">
-                      <polyline
-                        points={obj.points
-                          .map((p) => `${(p.x - b.minX) * pageRenderScale},${(b.maxY - p.y) * pageRenderScale}`)
-                          .join(" ")}
-                        fill="none"
-                        stroke={cssColor(obj.color)}
-                        strokeWidth={Math.max(1, obj.strokeWidth * pageRenderScale)}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
+                  />
                 );
               })}
             </div>
@@ -1086,8 +1500,8 @@ export function PdfFillAnnotateTool() {
                       <>
                         <label className="flex items-center gap-1">
                           <span className="sr-only">テキスト内容</span>
-                          <input
-                            type="text"
+                          <textarea
+                            rows={obj.text.includes("\n") ? Math.min(5, obj.text.split("\n").length) : 1}
                             value={obj.text}
                             onFocus={() => (textEditStartRef.current = { id: obj.id, text: obj.text })}
                             onChange={(e) =>
@@ -1103,8 +1517,8 @@ export function PdfFillAnnotateTool() {
                                 }
                               }
                             }}
-                            placeholder="テキストを入力"
-                            className="w-40 rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                            placeholder="テキストを入力（Enterで改行）"
+                            className="w-40 resize-y rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
                           />
                         </label>
                         <DateInsertHelper onInsert={(text) => patchObjectWithHistory(obj.id, { text })} />
@@ -1128,6 +1542,20 @@ export function PdfFillAnnotateTool() {
                             onChange={(e) => patchObjectWithHistory(obj.id, { bold: e.target.checked })}
                           />
                           太字
+                        </label>
+                        <label className="flex items-center gap-1">
+                          整列
+                          <select
+                            value={obj.align ?? "left"}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { align: e.target.value as TextAlign })}
+                            className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          >
+                            {(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => (
+                              <option key={a} value={a}>
+                                {ALIGN_LABELS[a]}
+                              </option>
+                            ))}
+                          </select>
                         </label>
                       </>
                     )}
@@ -1153,41 +1581,148 @@ export function PdfFillAnnotateTool() {
                             className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
                           />
                         </label>
+                        <label className="flex items-center gap-1">
+                          マーク
+                          <select
+                            value={obj.markStyle ?? "check"}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { markStyle: e.target.value as CheckboxMarkStyle })}
+                            className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          >
+                            {(Object.keys(MARK_STYLE_LABELS) as CheckboxMarkStyle[]).map((m) => (
+                              <option key={m} value={m}>
+                                {MARK_STYLE_LABELS[m]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       </>
                     )}
 
                     {obj.type === "ink" && (
-                      <label className="flex items-center gap-1">
-                        太さ
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          step={0.5}
-                          value={obj.strokeWidth}
-                          onChange={(e) =>
-                            patchObjectWithHistory(obj.id, { strokeWidth: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })
-                          }
-                          className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                      </label>
+                      <>
+                        <label className="flex items-center gap-1">
+                          太さ
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            step={0.5}
+                            value={obj.strokeWidth}
+                            onChange={(e) =>
+                              patchObjectWithHistory(obj.id, { strokeWidth: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })
+                            }
+                            className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                      </>
                     )}
 
                     {obj.type === "image" && (
-                      <label className="flex items-center gap-1">
-                        幅
-                        <input
-                          type="number"
-                          min={10}
-                          max={2000}
-                          value={Math.round(obj.width)}
-                          onChange={(e) => {
-                            const width = Math.min(2000, Math.max(10, Number(e.target.value) || 10));
-                            patchObjectWithHistory(obj.id, { width, height: width / obj.aspectRatio });
-                          }}
-                          className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                        />
-                      </label>
+                      <>
+                        <label className="flex items-center gap-1">
+                          幅
+                          <input
+                            type="number"
+                            min={10}
+                            max={2000}
+                            value={Math.round(obj.width)}
+                            onChange={(e) => {
+                              const width = Math.min(2000, Math.max(10, Number(e.target.value) || 10));
+                              const aspectLocked = obj.aspectLocked !== false;
+                              patchObjectWithHistory(obj.id, {
+                                width,
+                                height: aspectLocked ? width / obj.aspectRatio : obj.height,
+                              });
+                            }}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          高さ
+                          <input
+                            type="number"
+                            min={10}
+                            max={2000}
+                            disabled={obj.aspectLocked !== false}
+                            value={Math.round(obj.height)}
+                            onChange={(e) => {
+                              const height = Math.min(2000, Math.max(10, Number(e.target.value) || 10));
+                              patchObjectWithHistory(obj.id, { height });
+                            }}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={obj.aspectLocked !== false}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { aspectLocked: e.target.checked })}
+                          />
+                          縦横比を固定
+                        </label>
+                        <label className="flex items-center gap-1">
+                          回転
+                          <input
+                            type="number"
+                            min={0}
+                            max={359}
+                            value={Math.round(obj.rotation ?? 0)}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { rotation: normalizeRotation(Number(e.target.value) || 0) })}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                          °
+                        </label>
+                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                      </>
+                    )}
+
+                    {obj.type === "shape" && obj.shapeKind !== "line" && (
+                      <>
+                        <label className="flex items-center gap-1">
+                          幅
+                          <input
+                            type="number"
+                            min={5}
+                            max={2000}
+                            value={Math.round(obj.width)}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { width: Math.min(2000, Math.max(5, Number(e.target.value) || 5)) })}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          高さ
+                          <input
+                            type="number"
+                            min={5}
+                            max={2000}
+                            value={Math.round(obj.height)}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { height: Math.min(2000, Math.max(5, Number(e.target.value) || 5)) })}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input type="checkbox" checked={obj.fill} onChange={(e) => patchObjectWithHistory(obj.id, { fill: e.target.checked })} />
+                          塗りつぶし
+                        </label>
+                        <label className="flex items-center gap-1">
+                          回転
+                          <input
+                            type="number"
+                            min={0}
+                            max={359}
+                            value={Math.round(obj.rotation)}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { rotation: normalizeRotation(Number(e.target.value) || 0) })}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                          °
+                        </label>
+                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                      </>
+                    )}
+
+                    {obj.type === "shape" && obj.shapeKind === "line" && (
+                      <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
                     )}
 
                     <button
@@ -1201,6 +1736,36 @@ export function PdfFillAnnotateTool() {
                       className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
                     >
                       移動
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        duplicateObject(obj.id);
+                      }}
+                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
+                    >
+                      複製
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderObject(obj.id, "front");
+                      }}
+                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
+                    >
+                      最前面へ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderObject(obj.id, "back");
+                      }}
+                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
+                    >
+                      最背面へ
                     </button>
                     <button
                       type="button"
@@ -1249,6 +1814,44 @@ export function PdfFillAnnotateTool() {
 }
 
 /** 日付のテキストへの挿入補助（現在日付を自動入力せず、ユーザーが選んだ日付だけを反映する） */
+/**
+ * 回転操作の共通ボタン（時計回り/反時計回りに15度）。Phase 17で追加した各オブジェクトの
+ * 回転UIから共通で使う。
+ *
+ * 注意: オブジェクトのrotationフィールドはPDF-native座標系（反時計回りが正）の角度で
+ * 保持しており、画面上はtransform: rotate(-rotation deg)で表示している（geometry.tsの
+ * コメント参照）。そのため「画面上で時計回りに回す」操作はrotationフィールドを
+ * 減算、「反時計回りに回す」操作は加算に対応する。
+ */
+function RotateButtons({ onRotate }: { onRotate: (deltaDeg: number) => void }) {
+  return (
+    <span className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRotate(ROTATE_STEP_DEG);
+        }}
+        aria-label="反時計回りに回転"
+        className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+      >
+        ↺
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRotate(-ROTATE_STEP_DEG);
+        }}
+        aria-label="時計回りに回転"
+        className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+      >
+        ↻
+      </button>
+    </span>
+  );
+}
+
 function DateInsertHelper({ onInsert }: { onInsert: (text: string) => void }) {
   const [dateValue, setDateValue] = useState("");
   const [style, setStyle] = useState<"slash" | "kanji">("slash");

@@ -66,8 +66,8 @@ test("pdf-fill-annotate操作中、PDF・入力したテキスト・画像が自
   // テキスト
   await page.getByRole("button", { name: "テキスト", exact: true }).click();
   await page.locator('[data-testid="pdf-annotate-canvas"]').click({ position: { x: 50, y: 50 } });
-  await page.locator('[data-testid="pdf-annotate-object-list"]').locator('input[type="text"]').first().fill(marker);
-  await page.locator('[data-testid="pdf-annotate-object-list"]').locator('input[type="text"]').first().blur();
+  await page.locator('[data-testid="pdf-annotate-object-list"]').locator('textarea').first().fill(marker);
+  await page.locator('[data-testid="pdf-annotate-object-list"]').locator('textarea').first().blur();
 
   // チェック
   await page.getByRole("button", { name: "チェック", exact: true }).click();
