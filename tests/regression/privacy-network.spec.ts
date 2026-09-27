@@ -107,6 +107,51 @@ test("pdf-fill-annotate操作中、PDF・入力したテキスト・画像が自
   expect(markerLeaks, `入力したテキストの漏えいが疑われるリクエスト: ${JSON.stringify(markerLeaks)}`).toEqual([]);
 });
 
+test("pdf-fill-annotate(Phase17: 図形・回転・複製・印影)操作中、内容が自社API・外部APIへ送信されない", async ({ page, baseURL }) => {
+  // Phase 17: 図形の追加、画像(印影)の回転、オブジェクトの複製、電子印鑑生成PNGの
+  // 印影としての取り込み、という新しい操作を一通り行い、書き出し・ダウンロードまでの間、
+  // フィクスチャ内容（印影画像データ）がネットワークへ一切送信されないことを確認する。
+  const recorder = new NetworkRecorder(page);
+  await page.goto("/tools/pdf-fill-annotate");
+
+  const input = page.locator('input[type="file"]').first();
+  await input.setInputFiles(fixtures.singlePagePdf);
+  await expect(page.locator('[data-testid="pdf-annotate-canvas"]')).toBeVisible({ timeout: 15_000 });
+
+  // 図形（矩形）を配置
+  await page.getByRole("button", { name: "図形", exact: true }).click();
+  await page.locator('[data-testid="pdf-annotate-canvas"]').click({ position: { x: 60, y: 60 } });
+
+  // 配置した図形を複製
+  await page.locator('[data-testid="pdf-annotate-object-list"]').getByRole("button", { name: "複製" }).first().click();
+
+  // 印影（電子印鑑生成PNGを画像オブジェクトとして取り込む）を配置し、回転させる
+  await page.getByRole("button", { name: "印影", exact: true }).click();
+  await page.locator('input[type="file"]').last().setInputFiles(fixtures.stampTransparentPng);
+  await page.locator('[data-testid="pdf-annotate-canvas"]').click({ position: { x: 420, y: 420 } });
+  const rotateButton = page
+    .locator('[data-testid="pdf-annotate-object-list"]')
+    .getByRole("button", { name: /回転/ })
+    .first();
+  if (await rotateButton.count()) {
+    await rotateButton.click();
+  }
+
+  // 書き出し・ダウンロード
+  await page.getByRole("button", { name: "PDFを書き出す" }).click();
+  await expect(page.getByText("書き出しが完了しました", { exact: false })).toBeVisible({ timeout: 30_000 });
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "PDFをダウンロード" }).click();
+  await downloadPromise;
+
+  const origin = new URL(baseURL!).origin;
+  const apiLeaks = findSuspiciousApiUploads(recorder, origin, ["/api/stripe"]);
+  const externalLeaks = findSuspiciousExternalUploads(recorder, origin);
+
+  expect(apiLeaks, `自社APIへの不審なアップロードが検出されました: ${JSON.stringify(apiLeaks)}`).toEqual([]);
+  expect(externalLeaks, `外部への不審なアップロードが検出されました: ${JSON.stringify(externalLeaks)}`).toEqual([]);
+});
+
 test("電子印鑑生成(文字から作る)操作中、入力した文字が自社API・外部APIへ送信されない", async ({ page, baseURL }) => {
   // Phase 16: 文字入力から印影PNGを生成・ダウンロードするまでの一連の操作中、
   // 入力した文字がネットワークへ一切送信されないことを確認する。
