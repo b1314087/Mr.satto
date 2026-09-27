@@ -895,5 +895,8 @@ export function getToolsByCategory(category: string): Tool[] {
 }
 
 export function getFeaturedTools(): Tool[] {
-  return tools.filter((t) => t.featured);
+  // Phase 19: おすすめツール（ホーム等）には準備中(coming-soon)のツールを
+  // 絶対に混ぜない（開発指示書10章）。現状featured:trueなcoming-soonツールは
+  // 存在しないが、今後のデータ追加ミスで混入することを防ぐための安全策。
+  return tools.filter((t) => t.featured && t.status === "available");
 }

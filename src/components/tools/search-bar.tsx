@@ -1,13 +1,20 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface SearchBarProps {
   placeholder?: string;
   initialValue?: string;
   size?: "sm" | "lg";
   onSearch?: (value: string) => void;
+  /**
+   * Phase 19: 「絞り込みを解除」など、呼び出し側の都合で検索テキストを
+   * 強制的に空にしたいときに、このプロパティの値を変える（インクリメントする等）。
+   * 初回マウント時には何もしない（=既存の initialValue によるURL復元を壊さない）。
+   * このプロパティを渡さない既存の呼び出し箇所（HeaderSearch等）の挙動は変えない。
+   */
+  resetSignal?: number;
 }
 
 /**
@@ -19,9 +26,22 @@ export function SearchBar({
   initialValue = "",
   size = "lg",
   onSearch,
+  resetSignal,
 }: SearchBarProps) {
   const router = useRouter();
   const [value, setValue] = useState(initialValue);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    // 初回マウント時（resetSignalが最初に評価された時点）は何もしない。
+    // ここで無条件にsetValue("")してしまうと、URLの?qから初期値を復元している
+    // ケース（initialValue由来）を毎回上書きしてしまうため。
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setValue("");
+  }, [resetSignal]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

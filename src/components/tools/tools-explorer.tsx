@@ -40,17 +40,45 @@ export function ToolsExplorer({
     return result;
   }, [tools, category, query]);
 
+  // Phase 19: 準備中（coming-soon）のツールは実装済みツールの検索結果に
+  // 紛れ込ませない（開発指示書10章）。カテゴリページ（CategoryLanding）で
+  // 既に採用している「実装済み／準備中を別セクションに分ける」という
+  // 既存パターンを、この検索・一覧ページにも合わせる。
+  const availableFiltered = useMemo(
+    () => filtered.filter((t) => t.status === "available"),
+    [filtered]
+  );
+  const comingSoonFiltered = useMemo(
+    () => filtered.filter((t) => t.status === "coming-soon"),
+    [filtered]
+  );
+
+  const hasActiveFilter = query.trim().length > 0 || category !== "all";
+
+  // 「絞り込みを解除」でSearchBar内部のテキストも確実に空にするための信号
+  // （SearchBar側のresetSignalプロパティ。値を変えるとSearchBarが自身の表示を
+  // 空文字にリセットする。他の呼び出し箇所（ヘッダー等）には影響しない）。
+  const [searchBarResetSignal, setSearchBarResetSignal] = useState(0);
+
+  function clearFilters() {
+    setQuery("");
+    setCategory("all");
+    updateUrl("", "all");
+    setSearchBarResetSignal((n) => n + 1);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <SearchBar
         initialValue={initialQuery}
+        resetSignal={searchBarResetSignal}
         onSearch={(value) => {
           setQuery(value);
           updateUrl(value, category);
         }}
       />
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => {
@@ -85,13 +113,34 @@ export function ToolsExplorer({
             {cat.name}
           </button>
         ))}
+        {hasActiveFilter && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded-full border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+          >
+            絞り込みを解除
+          </button>
+        )}
       </div>
 
       <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        {filtered.length}件のツール
+        {availableFiltered.length}件のツール
       </p>
 
-      <ToolGrid tools={filtered} />
+      <ToolGrid tools={availableFiltered} />
+
+      {comingSoonFiltered.length > 0 && (
+        <div className="mt-4">
+          <h2 className="mb-1 text-sm font-semibold text-neutral-500 dark:text-neutral-400">
+            準備中のツール（{comingSoonFiltered.length}件）
+          </h2>
+          <p className="mb-4 text-xs text-neutral-400 dark:text-neutral-500">
+            近日公開予定のツールです。まだ利用できません。
+          </p>
+          <ToolGrid tools={comingSoonFiltered} />
+        </div>
+      )}
     </div>
   );
 }
