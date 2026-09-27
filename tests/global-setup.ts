@@ -29,6 +29,7 @@ export default async function globalSetup() {
   fs.mkdirSync(fixtures.dir.generated, { recursive: true });
 
   await Promise.all([generatePdfs(), generateXlsx(), generateZip(), generateImages(), generateVideo()]);
+  await generateStampFixtures();
   await warmupRoutes();
 }
 
@@ -162,6 +163,129 @@ async function generateVideo() {
       const generatedPath = await video.path();
       fs.renameSync(generatedPath, fixtures.webm);
     }
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Phase 16: 電子印鑑生成（印影取り込み）テスト用フィクスチャ生成。
+ *
+ * 実在の印鑑・個人情報は一切使用せず、すべてCanvasで合成した架空の
+ * 「白地に赤い円」を印影に見立てた図形を使う。generateImages()と同じ
+ * Chromiumのページ内Canvasで描画する方式を再利用し、新規依存は追加しない。
+ */
+async function generateStampFixtures() {
+  const browser = await chromium.launch(launchOptions);
+  try {
+    // setContent()の使い回しによる状態残留を避けるため、図形ごとに
+    // 新しいページを開いてCanvasを描画・書き出す。
+    async function drawCanvasPng(size: number, script: string, mimeType: "image/png" | "image/jpeg" = "image/png", quality?: number) {
+      const page = await browser.newPage({ viewport: { width: size, height: size } });
+      try {
+        await page.setContent(
+          `<html><body style="margin:0"><canvas id="c" width="${size}" height="${size}"></canvas><script>${script}</script></body></html>`
+        );
+        const dataUrl = await page.$eval(
+          "#c",
+          (el, args) => (el as HTMLCanvasElement).toDataURL(args.mimeType, args.quality),
+          { mimeType, quality }
+        );
+        return Buffer.from(dataUrl.split(",")[1], "base64");
+      } finally {
+        await page.close();
+      }
+    }
+
+    // 標準的な印影サンプル（白背景に赤い円、内側にも小さな模様）
+    const stampScript = `
+      const ctx = document.getElementById('c').getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 300, 300);
+      ctx.strokeStyle = '#b7282e';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.arc(150, 150, 110, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#b7282e';
+      ctx.font = 'bold 90px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('印', 150, 158);
+    `;
+    fs.writeFileSync(fixtures.stampPng, await drawCanvasPng(300, stampScript, "image/png"));
+    fs.writeFileSync(fixtures.stampJpg, await drawCanvasPng(300, stampScript, "image/jpeg", 0.92));
+
+    // 小さい印影（大きな白背景の中に小さな赤い円のみ。自動トリミングの確認用）
+    const smallScript = `
+      const ctx = document.getElementById('c').getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 300, 300);
+      ctx.fillStyle = '#b7282e';
+      ctx.beginPath();
+      ctx.arc(150, 150, 18, 0, Math.PI * 2);
+      ctx.fill();
+    `;
+    fs.writeFileSync(fixtures.stampSmallPng, await drawCanvasPng(300, smallScript));
+
+    // 背景が複雑な印影（グラデーション+模様の背景。完全分離を前提にしないテスト用）
+    const complexScript = `
+      const ctx = document.getElementById('c').getContext('2d');
+      const grad = ctx.createLinearGradient(0, 0, 300, 300);
+      grad.addColorStop(0, '#f5f0e6');
+      grad.addColorStop(1, '#e2d9c4');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 300, 300);
+      ctx.strokeStyle = 'rgba(120,110,90,0.25)';
+      for (let i = 0; i < 300; i += 12) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, 300);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#b7282e';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.arc(150, 150, 100, 0, Math.PI * 2);
+      ctx.stroke();
+    `;
+    fs.writeFileSync(fixtures.stampComplexBgPng, await drawCanvasPng(300, complexScript));
+
+    // 大きめの画像（処理上限・パフォーマンスのエッジケース確認用）
+    const largeScript = `
+      const ctx = document.getElementById('c').getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 1600, 1600);
+      ctx.strokeStyle = '#b7282e';
+      ctx.lineWidth = 40;
+      ctx.beginPath();
+      ctx.arc(800, 800, 600, 0, Math.PI * 2);
+      ctx.stroke();
+    `;
+    fs.writeFileSync(fixtures.stampLargeImagePng, await drawCanvasPng(1600, largeScript));
+
+    // 既に透明背景を持つPNG（背景を白で塗らず、円の外側はclearRectのまま=透明）。
+    // 取り込みフローが「元から透明な画像」を扱っても壊れないことの確認用。
+    const transparentScript = `
+      const ctx = document.getElementById('c').getContext('2d');
+      ctx.clearRect(0, 0, 300, 300);
+      ctx.fillStyle = '#b7282e';
+      ctx.beginPath();
+      ctx.arc(150, 150, 100, 0, Math.PI * 2);
+      ctx.fill();
+    `;
+    fs.writeFileSync(fixtures.stampTransparentPng, await drawCanvasPng(300, transparentScript));
+
+    // 印影を含む複数ページPDF（1ページ目はテキストのみ、2ページ目に印影画像を埋め込み）
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const page1 = pdf.addPage([300, 400]);
+    page1.drawText("Mr.Satto test fixture - stamp doc page 1", { x: 20, y: 360, size: 12, font, color: rgb(0, 0, 0) });
+    const page2 = pdf.addPage([300, 400]);
+    const stampPngBytes = fs.readFileSync(fixtures.stampPng);
+    const embeddedPng = await pdf.embedPng(stampPngBytes);
+    page2.drawImage(embeddedPng, { x: 50, y: 150, width: 150, height: 150 });
+    fs.writeFileSync(fixtures.stampPdf, await pdf.save());
   } finally {
     await browser.close();
   }

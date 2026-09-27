@@ -32,4 +32,14 @@ export const fixtures = {
   xlsx: path.join(GENERATED_DIR, "sample.xlsx"),
   zip: path.join(GENERATED_DIR, "sample.zip"),
   webm: path.join(GENERATED_DIR, "sample.webm"),
+
+  // Phase 16: 電子印鑑生成（印影取り込み）テスト用フィクスチャ。
+  // 実在の印鑑・個人情報は一切使用せず、すべてCanvasで合成した架空の図形。
+  stampPng: path.join(GENERATED_DIR, "stamp.png"),
+  stampJpg: path.join(GENERATED_DIR, "stamp.jpg"),
+  stampSmallPng: path.join(GENERATED_DIR, "stamp-small.png"),
+  stampComplexBgPng: path.join(GENERATED_DIR, "stamp-complex-bg.png"),
+  stampPdf: path.join(GENERATED_DIR, "stamp.pdf"),
+  stampLargeImagePng: path.join(GENERATED_DIR, "stamp-large.png"),
+  stampTransparentPng: path.join(GENERATED_DIR, "stamp-transparent.png"),
 };

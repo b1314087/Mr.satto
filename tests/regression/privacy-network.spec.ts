@@ -106,3 +106,57 @@ test("pdf-fill-annotate操作中、PDF・入力したテキスト・画像が自
   expect(externalLeaks, `外部への不審なアップロードが検出されました: ${JSON.stringify(externalLeaks)}`).toEqual([]);
   expect(markerLeaks, `入力したテキストの漏えいが疑われるリクエスト: ${JSON.stringify(markerLeaks)}`).toEqual([]);
 });
+
+test("電子印鑑生成(文字から作る)操作中、入力した文字が自社API・外部APIへ送信されない", async ({ page, baseURL }) => {
+  // Phase 16: 文字入力から印影PNGを生成・ダウンロードするまでの一連の操作中、
+  // 入力した文字がネットワークへ一切送信されないことを確認する。
+  const recorder = new NetworkRecorder(page);
+  await page.goto("/tools/electronic-stamp-generator");
+
+  // 文字から生成モードは実用上の上限として8文字以内に制限しているため、
+  // その範囲に収まるユニークなマーカー文字列を使う。
+  const marker = "印9f3a1";
+  await page.locator("#stamp-text-input").fill(marker);
+  await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
+  await expect(page.getByText("印影画像が完成しました", { exact: false })).toBeVisible({ timeout: 15_000 });
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "PNGをダウンロード" }).click();
+  await downloadPromise;
+
+  const origin = new URL(baseURL!).origin;
+  const apiLeaks = findSuspiciousApiUploads(recorder, origin, ["/api/stripe"]);
+  const externalLeaks = findSuspiciousExternalUploads(recorder, origin);
+  const markerLeaks = findLeakedRequests(recorder, marker).filter((r) => !r.url.startsWith(origin) || r.method !== "GET");
+
+  expect(apiLeaks, `自社APIへの不審なアップロードが検出されました: ${JSON.stringify(apiLeaks)}`).toEqual([]);
+  expect(externalLeaks, `外部への不審なアップロードが検出されました: ${JSON.stringify(externalLeaks)}`).toEqual([]);
+  expect(markerLeaks, `入力した文字の漏えいが疑われるリクエスト: ${JSON.stringify(markerLeaks)}`).toEqual([]);
+});
+
+test("電子印鑑生成(印鑑を取り込む)操作中、画像・PDFの中身が自社API・外部APIへ送信されない", async ({ page, baseURL }) => {
+  // Phase 16: 画像・PDFの取り込み〜範囲選択〜背景透過〜書き出し・ダウンロードまでの
+  // 一連の操作中、ファイルの中身がネットワークへ一切送信されないことを確認する。
+  const recorder = new NetworkRecorder(page);
+  await page.goto("/tools/electronic-stamp-generator");
+
+  await page.getByRole("button", { name: "印鑑を取り込む", exact: true }).click();
+  const input = page.locator('input[type="file"]').first();
+  await input.setInputFiles(fixtures.stampPdf);
+  await expect(page.locator('[data-testid="stamp-crop-container"]')).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "次へ", exact: true }).click();
+  await page.getByRole("button", { name: "切り抜く", exact: true }).click();
+  await expect(page.locator('[data-testid="stamp-final-preview"]')).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
+  await expect(page.getByText("印影画像が完成しました", { exact: false })).toBeVisible({ timeout: 15_000 });
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "PNGをダウンロード" }).click();
+  await downloadPromise;
+
+  const origin = new URL(baseURL!).origin;
+  const apiLeaks = findSuspiciousApiUploads(recorder, origin, ["/api/stripe"]);
+  const externalLeaks = findSuspiciousExternalUploads(recorder, origin);
+
+  expect(apiLeaks, `自社APIへの不審なアップロードが検出されました: ${JSON.stringify(apiLeaks)}`).toEqual([]);
+  expect(externalLeaks, `外部への不審なアップロードが検出されました: ${JSON.stringify(externalLeaks)}`).toEqual([]);
+});

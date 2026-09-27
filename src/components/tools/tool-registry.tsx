@@ -232,6 +232,9 @@ const FormToIndividualPdfsTool = dynamic(() =>
 const PdfFillAnnotateTool = dynamic(() =>
   import("./implementations/pdf-fill-annotate-tool").then((m) => m.PdfFillAnnotateTool)
 );
+const ElectronicStampGeneratorTool = dynamic(() =>
+  import("./implementations/electronic-stamp-generator-tool").then((m) => m.ElectronicStampGeneratorTool)
+);
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -382,6 +385,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <FormToIndividualPdfsTool />;
     case "pdf-fill-annotate":
       return <PdfFillAnnotateTool />;
+    case "electronic-stamp-generator":
+      return <ElectronicStampGeneratorTool />;
     default:
       return null;
   }

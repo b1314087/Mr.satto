@@ -778,6 +778,26 @@ export const tools: Tool[] = [
     processor: "server",
     keywords: ["背景除去", "透過", "ai"],
   },
+  {
+    id: "electronic-stamp-generator",
+    name: "電子印鑑生成",
+    category: "creator",
+    description: "文字から印影画像を作成したり、お手持ちの印鑑を画像・PDFから取り込んで透明PNGに整えたりできます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: [
+      "電子印鑑",
+      "電子印鑑 作成",
+      "印影",
+      "印影 png",
+      "印鑑 画像化",
+      "印鑑 pdfから画像",
+      "印鑑 透明背景",
+      "印影 背景透過",
+      "はんこ",
+    ],
+  },
 
   // ------------------------------------------------------------------
   // その他
