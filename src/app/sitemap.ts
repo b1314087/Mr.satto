@@ -16,10 +16,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${siteConfig.url}/contact`, changeFrequency: "yearly", priority: 0.3 },
   ];
 
+  // Phase 21: カテゴリページ(ハブ)より個別ツールページ(スポーク)のpriorityが
+  // 高くなっていた逆転を修正。検索エンジン→Mr.Sattoの適切なページ→関連ツールへ、
+  // という導線に合わせ、カテゴリページを個別ツールページ以上のpriorityにする。
   const categoryRoutes: MetadataRoute.Sitemap = categories.map((category) => ({
     url: `${siteConfig.url}/tools/${category.id}`,
     changeFrequency: "weekly",
-    priority: 0.7,
+    priority: 0.8,
   }));
 
   // 「準備中」のツールは内容が薄い仮ページであり、検索結果に出す価値のある
@@ -29,7 +32,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     .map((tool) => ({
       url: `${siteConfig.url}/tools/${tool.id}`,
       changeFrequency: "monthly",
-      priority: 0.8,
+      priority: 0.7,
     }));
 
   return [...staticRoutes, ...categoryRoutes, ...toolRoutes];

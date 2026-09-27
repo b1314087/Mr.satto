@@ -7,6 +7,7 @@ import { ComingSoon } from "@/components/tools/coming-soon";
 import { ToolImplementation } from "@/components/tools/tool-registry";
 import { ToolAccessGate } from "@/components/tools/tool-access-gate";
 import { hasImplementation } from "@/lib/tools/registry";
+import { getRelatedTools } from "@/lib/tools/related-tools";
 import { ToolCard } from "@/components/tools/tool-card";
 import { AdSlot } from "@/components/ads/ad-slot";
 import { getServerPlan } from "@/lib/plans/current-plan";
@@ -152,17 +153,11 @@ export default async function ToolPage({ params }: ToolPageProps) {
   // 関連ツール: 「準備中」のツールや自分自身は候補から除外する（Coming Soonのみが
   // 表示される状態を避けるため）。同カテゴリだけで4件に満たない場合は、
   // 他カテゴリの主要ツール（featured）で補う（複雑なおすすめアルゴリズムは使わない）。
-  const isRecommendable = (t: (typeof tools)[number]) =>
-    t.id !== tool.id && t.status === "available" && hasImplementation(t.id);
-  const sameCategoryRelated = getToolsByCategory(tool.category).filter(isRecommendable);
-  const related = sameCategoryRelated.slice(0, 4);
-  if (related.length < 4) {
-    const usedIds = new Set([tool.id, ...related.map((t) => t.id)]);
-    const fallback = tools.filter(
-      (t) => t.featured && isRecommendable(t) && !usedIds.has(t.id)
-    );
-    related.push(...fallback.slice(0, 4 - related.length));
-  }
+  // Phase 21: 選定ロジックは src/lib/tools/related-tools.ts に切り出し済み
+  // （同カテゴリの円環選定により、宣言順で後方のツールが関連ツールに一切
+  // 出てこなくなる孤立ページ問題を解消。詳細は同ファイルのコメント参照。
+  // ページ側とテスト側の両方から同じロジックを参照する）。
+  const { related, sameCategoryCandidateCount } = getRelatedTools(tool);
   const toolCategory = getCategory(tool.category);
   const seo = isAvailable ? getToolSeoContent(tool.id) : undefined;
 
@@ -239,7 +234,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
       {related.length > 0 && (
         <div className="mt-12">
           <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
-            {related.length <= sameCategoryRelated.length
+            {related.length <= sameCategoryCandidateCount
               ? `${toolCategory?.name}の他のツール`
               : "こちらのツールもおすすめです"}
           </h2>
