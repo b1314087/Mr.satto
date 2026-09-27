@@ -1,6 +1,8 @@
 import fs from "node:fs";
+import path from "node:path";
 import { chromium } from "@playwright/test";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import writeExcelFile from "write-excel-file/node";
 import { zipSync, strToU8 } from "fflate";
 import { fixtures } from "./fixtures/paths";
@@ -80,6 +82,23 @@ async function generatePdfs() {
     page.drawText(`Mr.Satto test fixture - page ${i}`, { x: 20, y: 360, size: 12, font: multiFont, color: rgb(0, 0, 0) });
   }
   fs.writeFileSync(fixtures.multiPagePdf, await multi.save());
+
+  // 日本語PDFフィクスチャ（Phase 15: PDF記入・注釈の日本語まわりのテスト用。
+  // アプリ本体と同じNoto Sans JP・subset:falseで埋め込む）
+  const jp = await PDFDocument.create();
+  jp.registerFontkit(fontkit);
+  const jpFontBytes = fs.readFileSync(path.join(__dirname, "..", "public", "fonts", "NotoSansJP-Regular.ttf"));
+  const jpFont = await jp.embedFont(jpFontBytes, { subset: false });
+  const jpPage = jp.addPage([300, 400]);
+  jpPage.drawText("日本語のテストPDF", { x: 20, y: 360, size: 14, font: jpFont, color: rgb(0, 0, 0) });
+  fs.writeFileSync(fixtures.japanesePdf, await jp.save());
+
+  // 横向き(landscape)PDFフィクスチャ（Phase 15: 座標変換の向き違いテスト用）
+  const landscape = await PDFDocument.create();
+  const landscapeFont = await landscape.embedFont(StandardFonts.Helvetica);
+  const landscapePage = landscape.addPage([400, 300]); // 幅 > 高さ
+  landscapePage.drawText("Mr.Satto test fixture - landscape", { x: 20, y: 260, size: 12, font: landscapeFont, color: rgb(0, 0, 0) });
+  fs.writeFileSync(fixtures.landscapePdf, await landscape.save());
 }
 
 async function generateXlsx() {

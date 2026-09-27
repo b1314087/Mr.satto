@@ -34,6 +34,15 @@ export async function checkBasicAccessibility(page: Page) {
       .filter((el) => {
         const type = (el as HTMLInputElement).type;
         if (type === "hidden") return false;
+        // CSSで視覚的に隠されている（display:none等の）input/select/textareaは、
+        // フォーカス移動やスクリーンリーダーの通常の読み上げ対象にもならないため、
+        // 単独のラベルが無くても実害がない。共通のFileDropzone
+        // （src/components/common/file-dropzone.tsx）が「ラベル付きの
+        // role="button"の中に、実装の都合上hiddenな<input type="file">を
+        // 隠し持つ」という広く使われる正当なパターンを採用しているため、
+        // このチェックの対象からも除外する（上のボタンチェックと同じ可視判定）。
+        const visible = (el as HTMLElement).offsetParent !== null || el.getClientRects().length > 0;
+        if (!visible) return false;
         const id = el.getAttribute("id");
         const hasLabelFor = id ? !!document.querySelector(`label[for="${CSS.escape(id)}"]`) : false;
         const wrappedInLabel = !!el.closest("label");

@@ -25,6 +25,8 @@ export const fixtures = {
 
   singlePagePdf: path.join(GENERATED_DIR, "single-page.pdf"),
   multiPagePdf: path.join(GENERATED_DIR, "multi-page.pdf"),
+  japanesePdf: path.join(GENERATED_DIR, "japanese.pdf"),
+  landscapePdf: path.join(GENERATED_DIR, "landscape.pdf"),
   png: path.join(GENERATED_DIR, "sample.png"),
   jpg: path.join(GENERATED_DIR, "sample.jpg"),
   xlsx: path.join(GENERATED_DIR, "sample.xlsx"),

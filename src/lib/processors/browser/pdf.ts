@@ -37,7 +37,7 @@ function zeroPad(n: number, totalDigits: number): string {
  * それらの呼び出しでは明示的に updateMetadata: false を渡す
  * （他のPDF系Processorの挙動は一切変更しない）。
  */
-async function loadPdfDoc(file: File, options?: { updateMetadata?: boolean }): Promise<PDFDocument> {
+export async function loadPdfDoc(file: File, options?: { updateMetadata?: boolean }): Promise<PDFDocument> {
   let bytes: ArrayBuffer;
   try {
     bytes = await file.arrayBuffer();
@@ -64,7 +64,7 @@ async function loadPdfDoc(file: File, options?: { updateMetadata?: boolean }): P
   }
 }
 
-async function finalizePdf(doc: PDFDocument): Promise<PdfProcessorOutput> {
+export async function finalizePdf(doc: PDFDocument): Promise<PdfProcessorOutput> {
   const bytes = await doc.save();
   const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
   return {

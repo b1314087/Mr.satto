@@ -339,6 +339,16 @@ export const tools: Tool[] = [
     keywords: ["透かし", "watermark", "社外秘", "CONFIDENTIAL"],
   },
   {
+    id: "pdf-fill-annotate",
+    name: "PDF記入・注釈",
+    category: "pdf",
+    description: "PDFに文字・チェック・手書き・画像を書き込んで、その場でダウンロードします",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["PDF記入", "PDFに書き込み", "PDFに文字を入力", "PDFにチェック", "PDFに手書き", "PDFに画像を追加", "PDF編集"],
+  },
+  {
     // Phase 6で検討したが、現在の依存ライブラリ(pdf-lib)はPDFの暗号化(パスワード保護)の
     // 書き込みを公式にサポートしておらず(README「Encryption Handling」参照)、
     // 代替ライブラリも(a)出所不明で信頼できない、(b)単一メンテナのWASMラッパーで

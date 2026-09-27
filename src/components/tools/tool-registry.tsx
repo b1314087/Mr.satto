@@ -229,6 +229,9 @@ const FilledPdfToExcelTool = dynamic(() =>
 const FormToIndividualPdfsTool = dynamic(() =>
   import("./implementations/form-to-individual-pdfs-tool").then((m) => m.FormToIndividualPdfsTool)
 );
+const PdfFillAnnotateTool = dynamic(() =>
+  import("./implementations/pdf-fill-annotate-tool").then((m) => m.PdfFillAnnotateTool)
+);
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -377,6 +380,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <FilledPdfToExcelTool />;
     case "form-to-individual-pdfs":
       return <FormToIndividualPdfsTool />;
+    case "pdf-fill-annotate":
+      return <PdfFillAnnotateTool />;
     default:
       return null;
   }
