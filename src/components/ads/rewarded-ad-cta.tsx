@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AdSlot } from "./ad-slot";
 import { getRewardedAdService, type RewardedAdState } from "@/lib/ads/reward-provider";
 import { getTemporaryAccessService } from "@/lib/plans/temporary-access";
+import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 
 /**
  * Freeユーザー向けの「広告を見て15分無料で使う」導線（Phase 4）。
@@ -39,11 +40,9 @@ const PHASE_LABEL: Partial<Record<UiPhase, string>> = {
 
 export function RewardedAdCta({
   toolId,
-  isAuthenticated,
   onGranted,
 }: {
   toolId: string;
-  isAuthenticated: boolean;
   onGranted: () => void;
 }) {
   const router = useRouter();
@@ -148,14 +147,22 @@ export function RewardedAdCta({
           エラーが発生しました。しばらくしてからもう一度お試しください。
         </p>
       )}
-      {!isAuthenticated && (
-        <Link
-          href="/pricing"
-          className="text-xs text-neutral-400 underline-offset-2 hover:text-blue-600 hover:underline dark:text-neutral-500 dark:hover:text-blue-400"
-        >
-          広告なしで使いたい場合はこちら（料金プラン）
-        </Link>
-      )}
+      {/*
+        Phase 20 5章・4章: 「広告を見て一時利用」だけでなく「Standardへ」という
+        もう一方の選択肢も、認証状態に関わらずこの画面で分かるようにする
+        （従来は未ログインユーザーにのみ表示しており、ログイン済みだが
+        無料プランのユーザーにはこの導線が出ていなかった）。
+        価格はPLAN_DEFINITIONSを参照し、実際の料金と食い違う文言にしない。
+      */}
+      <p className="text-xs text-neutral-400 dark:text-neutral-500">
+        Standard（月額{PLAN_DEFINITIONS.standard.priceYen}円・広告なし）に加入すると、この案内なしでご利用いただけます。
+      </p>
+      <Link
+        href="/pricing"
+        className="text-xs text-neutral-400 underline-offset-2 hover:text-blue-600 hover:underline dark:text-neutral-500 dark:hover:text-blue-400"
+      >
+        広告なしで使いたい場合はこちら（料金プラン）
+      </Link>
     </div>
   );
 }

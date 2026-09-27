@@ -10,6 +10,8 @@ import { hasImplementation } from "@/lib/tools/registry";
 import { ToolCard } from "@/components/tools/tool-card";
 import { AdSlot } from "@/components/ads/ad-slot";
 import { getServerPlan } from "@/lib/plans/current-plan";
+import { shouldShowAds } from "@/lib/plans/access";
+import { CurrentPlanProvider } from "@/lib/plans/plan-context";
 import { Breadcrumb } from "@/components/tools/breadcrumb";
 import { CategoryLanding } from "@/components/tools/category-landing";
 import { ToolHowTo } from "@/components/tools/tool-how-to";
@@ -191,7 +193,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
       </div>
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
-        {isAvailable && tool.id === BYPASS_ACCESS_GATE_TOOL_ID ? (
+        {isAvailable && serverPlan && tool.id === BYPASS_ACCESS_GATE_TOOL_ID ? (
           // Phase 11: 記入済みPDF→Excelは、Free「広告1回→3ページ」/
           // Standard「1日10回まで広告なし・11回目以降は広告」/Premium「無制限」という
           // ツール専用・ページ数ベースの利用制限を持ち、既存の汎用<ToolAccessGate>
@@ -199,26 +201,37 @@ export default async function ToolPage({ params }: ToolPageProps) {
           // そのためこのツールIDのみゲートをバイパスし、ツール自身が
           // src/lib/tools/filled-pdf-to-excel/ 配下のServer Actionsを直接呼び出して
           // 利用可否を判定する（詳細は同ディレクトリ内の各ファイルのコメント参照）。
-          <ToolImplementation toolId={tool.id} />
-        ) : isAvailable && serverPlan ? (
-          <ToolAccessGate
-            toolId={tool.id}
-            requiredPlan={tool.requiredPlan}
-            plan={serverPlan.plan}
-            isAuthenticated={serverPlan.userId !== null}
-            temporaryAccessActive={serverPlan.temporaryAccessActive}
-            temporaryAccessExpiresAtMs={serverPlan.temporaryAccessExpiresAtMs}
-          >
+          // （serverPlanは isAvailable のときのみ非nullだが、TypeScriptの型上は
+          //   ここで明示的にチェックしておく必要がある）
+          <CurrentPlanProvider plan={serverPlan.plan}>
             <ToolImplementation toolId={tool.id} />
-          </ToolAccessGate>
+          </CurrentPlanProvider>
+        ) : isAvailable && serverPlan ? (
+          <CurrentPlanProvider plan={serverPlan.plan}>
+            <ToolAccessGate
+              toolId={tool.id}
+              requiredPlan={tool.requiredPlan}
+              plan={serverPlan.plan}
+              temporaryAccessActive={serverPlan.temporaryAccessActive}
+              temporaryAccessExpiresAtMs={serverPlan.temporaryAccessExpiresAtMs}
+            >
+              <ToolImplementation toolId={tool.id} />
+            </ToolAccessGate>
+          </CurrentPlanProvider>
         ) : (
           <ComingSoon tool={tool} />
         )}
       </div>
 
-      <div className="mt-6">
-        <AdSlot placement="tool-page" />
-      </div>
+      {/* Phase 20: Standard/Premium（広告なし）と分かっている場合は、ツール本体の
+          下の通常広告枠も出さない。「広告なし」の説明とページ内の実際の表示が
+          矛盾しないようにするため（開発指示書2章・10章）。プラン不明（準備中
+          ツールなどでgetServerPlan()を呼んでいない場合）は従来どおり表示する。 */}
+      {(serverPlan === null || shouldShowAds(serverPlan.plan)) && (
+        <div className="mt-6">
+          <AdSlot placement="tool-page" />
+        </div>
+      )}
 
       {seo && <ToolHowTo steps={seo.howTo} />}
       {seo && <ToolFaq items={seo.faq} />}

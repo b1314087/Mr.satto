@@ -16,7 +16,12 @@ import { TemporaryAccessBanner } from "@/components/tools/temporary-access-banne
  *
  * Tool Page（Server Component） → getServerPlan() でサーバー側の信頼できる
  * 状態（認証ユーザー + DB上の契約状態 + 署名付きTemporary Accessトークン）を解決
- *   → その結果を plan / isAuthenticated / temporaryAccessActive としてpropsで渡す
+ *   → その結果を plan / temporaryAccessActive としてpropsで渡す
+ *   （Phase 20: 広告ゲート・Standard導線の文言は認証状態によって出し分けない
+ *   方針とし、isAuthenticatedはこのコンポーネントの判定・表示に使わないため
+ *   propsから削除した。Section 17「ログインを不必要に要求しない」の趣旨に
+ *   合わせ、未ログインのFreeユーザーとログイン済みのFreeユーザーで
+ *   Rewarded Ad導線の見え方を変えない）
  *   → Tool Access Gate → 利用権限判定（Phase 4 spec 15章の6状態）
  *       1. Free + Standard tool + Temporary Accessあり            -> children
  *       2. Free + Standard tool + Temporary Accessなし            -> Rewarded Ad CTA
@@ -42,7 +47,6 @@ export function ToolAccessGate({
   toolId,
   requiredPlan,
   plan,
-  isAuthenticated,
   temporaryAccessActive,
   temporaryAccessExpiresAtMs,
   children,
@@ -51,7 +55,6 @@ export function ToolAccessGate({
   requiredPlan: RequiredPlan;
   /** src/lib/plans/current-plan.ts の getServerPlan() が解決した、サーバー確定のプラン */
   plan: Plan;
-  isAuthenticated: boolean;
   /** サーバー側で検証済みの、Freeユーザーの一時利用権が現在有効かどうか */
   temporaryAccessActive: boolean;
   /** サーバー側で検証済みの、Temporary Accessの有効期限（ms epoch）。無効な場合はnull */
@@ -117,11 +120,7 @@ export function ToolAccessGate({
   // 状態②: 利用可能・広告必要（Temporary Accessが未取得/失効している間はRewarded Ad CTAを表示）
   if (isGated) {
     return (
-      <RewardedAdCta
-        toolId={toolId}
-        isAuthenticated={isAuthenticated}
-        onGranted={() => setUnlockedOptimistically(true)}
-      />
+      <RewardedAdCta toolId={toolId} onGranted={() => setUnlockedOptimistically(true)} />
     );
   }
 

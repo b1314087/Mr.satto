@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AdSlot } from "./ad-slot";
 import { DEFAULT_DOWNLOAD_ACCESS_MODE, type DownloadAccessMode } from "@/lib/download/types";
+import { useShouldShowDownloadAds } from "@/lib/plans/plan-context";
 
 interface RewardedDownloadGateProps {
   /** 現時点では常に "free"。将来 "rewarded" / "premium" に切り替えられる */
@@ -62,6 +63,12 @@ export function RewardedDownloadGate({
   disabled,
 }: RewardedDownloadGateProps) {
   const [rewardUnlocked, setRewardUnlocked] = useState(false);
+  // Phase 20: Standard/Premium（広告なしプラン）のユーザーには、ダウンロード
+  // ボタンの前後に通常のAdSlotを表示しない。ツール一覧・Pricing・ToolAccessGate
+  // 等ですでに「広告なし」と案内している内容と、ダウンロード直前の画面が
+  // 矛盾しないようにするための表示切り替えであり、ダウンロードボタン自体の
+  // 表示・有効/無効には一切影響しない（広告の有無と処理成否を結び付けない）。
+  const showAds = useShouldShowDownloadAds();
 
   // premium: 広告なしで即ダウンロード（Premiumプランは未実装のため現在は使用しない）
   if (mode === "premium") {
@@ -88,12 +95,13 @@ export function RewardedDownloadGate({
     );
   }
 
-  // free（デフォルト）: 通常広告を表示しつつ、ダウンロード自体はすぐに行える
+  // free（デフォルト）: 通常広告を表示しつつ、ダウンロード自体はすぐに行える。
+  // ただしStandard/Premium（広告なしプラン）と分かっている場合は広告枠自体を出さない。
   return (
     <div className="flex flex-col items-center gap-3">
-      <AdSlot placement="pre-download" />
+      {showAds && <AdSlot placement="pre-download" />}
       <DownloadTriggerButton onClick={onDownload} label={label} disabled={disabled} />
-      <AdSlot placement="post-download" />
+      {showAds && <AdSlot placement="post-download" />}
     </div>
   );
 }
