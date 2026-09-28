@@ -52,4 +52,38 @@ export const fixtures = {
   templateFilledThreePersonPdf: path.join(GENERATED_DIR, "template-filled-three-person.pdf"),
   templateBlankScannedPdf: path.join(GENERATED_DIR, "template-blank-scanned.pdf"),
   templateFilledScannedPdf: path.join(GENERATED_DIR, "template-filled-scanned.pdf"),
+
+  // Phase 18.2: checkbox枠(A-19)・隣接Field分離(A-11/A-12)テスト用フィクスチャ。
+  // 実在の人物・個人情報は一切使用しない（tests/fixtures/template-layout.ts参照）。
+  templateBlankCheckboxPdf: path.join(GENERATED_DIR, "template-blank-checkbox.pdf"),
+  templateFilledCheckboxCheckedPdf: path.join(GENERATED_DIR, "template-filled-checkbox-checked.pdf"),
+  templateFilledCheckboxUncheckedPdf: path.join(GENERATED_DIR, "template-filled-checkbox-unchecked.pdf"),
+  templateBlankAdjacentPdf: path.join(GENERATED_DIR, "template-blank-adjacent.pdf"),
+  templateFilledAdjacentPdf: path.join(GENERATED_DIR, "template-filled-adjacent.pdf"),
+
+  // Phase 18.2 B節: excel-to-pdf「Excelの印刷ページ=PDFのページ」テスト用フィクスチャ。
+  // 実在の企業・個人データは一切使用しない、架空のダミーセル内容のみ
+  // （tests/fixtures/xlsx-writer.ts の手組みXLSXビルダーで生成。
+  // write-excel-fileでは印刷設定を書き出せないため新規に用意した）。
+  excelFit1x1Xlsx: path.join(GENERATED_DIR, "excel-fit-1x1.xlsx"),
+  excelFit1x3Xlsx: path.join(GENERATED_DIR, "excel-fit-1x3.xlsx"),
+  excelFit2x2Xlsx: path.join(GENERATED_DIR, "excel-fit-2x2.xlsx"),
+  excelPrintAreaXlsx: path.join(GENERATED_DIR, "excel-print-area.xlsx"),
+  excelHiddenXlsx: path.join(GENERATED_DIR, "excel-hidden.xlsx"),
+  excelPageBreakXlsx: path.join(GENERATED_DIR, "excel-page-break.xlsx"),
+  excelBorderPartialXlsx: path.join(GENERATED_DIR, "excel-border-partial.xlsx"),
+  excelBorderlessLargeXlsx: path.join(GENERATED_DIR, "excel-borderless-large.xlsx"),
+  excelPaperA3PortraitXlsx: path.join(GENERATED_DIR, "excel-paper-a3-portrait.xlsx"),
+  excelPaperLetterLandscapeXlsx: path.join(GENERATED_DIR, "excel-paper-letter-landscape.xlsx"),
+  excelMarginsXlsx: path.join(GENERATED_DIR, "excel-margins.xlsx"),
+
+  // Phase 18.2 C節: word-to-pdf「Wordの印刷ページ=PDFのページ」テスト用フィクスチャ。
+  // 実在の企業・個人データは一切使用しない、架空のダミー文章のみ
+  // （tests/fixtures/docx-writer.ts の手組みDOCXビルダーで生成）。
+  wordPageBreakDocx: path.join(GENERATED_DIR, "word-page-break.docx"),
+  wordPageBreakBeforeDocx: path.join(GENERATED_DIR, "word-page-break-before.docx"),
+  wordLandscapeA4Docx: path.join(GENERATED_DIR, "word-landscape-a4.docx"),
+  wordMarginsDocx: path.join(GENERATED_DIR, "word-margins.docx"),
+  wordRichContentDocx: path.join(GENERATED_DIR, "word-rich-content.docx"),
+  wordMultiSectionDocx: path.join(GENERATED_DIR, "word-multi-section.docx"),
 };

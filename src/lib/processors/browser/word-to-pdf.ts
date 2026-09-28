@@ -14,15 +14,17 @@ import { BrowserProcessor } from "../types";
 import type { PdfProcessorOutput } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { addLinkAnnotation } from "@/lib/pdf/pdf-link-annotation";
+import { parseWordDocumentStructure, type BodyChildHint } from "@/lib/word/section-settings";
 
 /**
- * Word（DOCX）→ PDF Processor（Phase 9）。
+ * Word（DOCX）→ PDF Processor（Phase 9、Phase 18.2 C節で用紙設定・改ページ対応を強化）。
  *
- * 開発指示書■10の方針どおり、「Wordと見た目が完全一致すること」は保証しない。
- * 目標は、段落・見出し・太字/斜体/下線・箇条書き・番号付きリスト・改ページ・表・
+ * 開発指示書■10・E章の方針どおり、「Wordと見た目が完全一致すること」は保証しない。
+ * 目標は「Wordの1印刷ページ = PDFの1ページ」にできるだけ近づけつつ、
+ * 段落・見出し・太字/斜体/下線・箇条書き・番号付きリスト・改ページ・表・
  * 画像・リンクといった基本要素を、実際に開けるPDFへ実用的な精度で変換すること。
  *
- * 変換方式（■5・■11）:
+ * 変換方式（■5・■11、Phase 18.2 C節）:
  *   DOCX
  *    → mammoth（DOCX→HTMLの定番ライブラリ。BSD-2-Clauseライセンス・
  *      ブラウザ向けエントリを公式に持つ。新規追加した唯一の依存パッケージ）
@@ -31,12 +33,30 @@ import { addLinkAnnotation } from "@/lib/pdf/pdf-link-annotation";
  *      ※ DOMParserが生成するDocumentはページに一切アタッチされないため、
  *        <script>は実行されず、<img>等の外部リソースも自動取得されない
  *        （■11・■12: 生成HTMLをそのままinnerHTML/dangerouslySetInnerHTMLで
-　*        DOMへ挿入しない、危険なコンテンツを安全に扱う、という要件を満たす）。
+ *        DOMへ挿入しない、危険なコンテンツを安全に扱う、という要件を満たす）。
  *        また、テキスト・タグ構造のみを読み取り、DOM自体を表示に使わないため
  *        独立したサニタイズライブラリは追加していない。
  *    → 内部ドキュメントモデル（段落/見出し/リスト/表/画像/改ページ）
- *    → pdf-lib + 既存の日本語TrueTypeフォント資産（Noto Sans JP）で
- *      A4 PDFへ描画・ページ分割
+ *    → pdf-lib + 既存の日本語TrueTypeフォント資産（Noto Sans JP）でPDFへ描画・ページ分割
+ *
+ * 用紙サイズ・向き・余白（開発指示書C-3・C-4・C-8）について: mammothは見出し・
+ * 段落・書式等の「内容」だけをHTML化し、セクション区切り(w:sectPr)・用紙サイズ
+ * (w:pgSz)・余白(w:pgMar)・「段落の前で改ページ」(w:pageBreakBefore)といった
+ * 「ページ構造」の情報はmammothの中間ドキュメントモデルの時点で読み捨てられる
+ * （node_modules/mammoth/lib/docx/body-reader.js のignoreElementsで確認済み）。
+ * そのため、Excel側(ooxml-page-settings.ts)と同じ方針で、新しい巨大なWord解析
+ * ライブラリを追加する代わりに、src/lib/word/section-settings.ts が
+ * word/document.xmlを直接読み、最初のセクションの用紙サイズ・向き・余白を
+ * 文書全体に適用する（■C-11: DOCXは複数セクション毎に異なる用紙設定を
+ * 持てるが、本実装では「最初のセクションの設定を全体へ適用し、2個目以降の
+ * セクションがあれば警告を出す」までを対応範囲とする。取得できない場合は
+ * 既定値(A4・既定余白)にフォールバックする）。
+ *
+ * 明示的な改ページ（開発指示書C-9）について: 従来からの
+ * w:br(type="page")によるものに加え、Phase 18.2で
+ * w:pageBreakBefore（段落プロパティによる改ページ）も、mammothの
+ * transformDocumentフック内でword/document.xmlの解析結果と対応付けて
+ * ページ区切りマーカー段落へ変換するようにした（詳細は下記の関数群を参照）。
  *
  * フォントについて: 既存資産はNoto Sans JPのRegularウェイトのみのため
  * （■15: 新しいフォントファイルは追加しない）、太字はPDFのテキスト描画モードを
@@ -50,11 +70,10 @@ import { addLinkAnnotation } from "@/lib/pdf/pdf-link-annotation";
  * 優先した。
  */
 
-const A4_WIDTH = 595.28;
-const A4_HEIGHT = 841.89;
-const MARGIN = 56;
-const CONTENT_WIDTH = A4_WIDTH - MARGIN * 2;
-const BOTTOM_LIMIT = MARGIN;
+/** DOCXから用紙設定が取得できなかった場合のフォールバック値（従来のPhase 9のA4/56pt） */
+const DEFAULT_PAGE_WIDTH = 595.28;
+const DEFAULT_PAGE_HEIGHT = 841.89;
+const DEFAULT_MARGIN = 56;
 const BODY_SIZE = 10.5;
 const LINE_HEIGHT = 15;
 const PARAGRAPH_GAP = 6;
@@ -111,6 +130,35 @@ type DocBlock = ParagraphBlock | TableBlock | ImageBlock | PageBreakBlock;
 // 正式なオプション）を利用する、型がゆるいプラグイン的な拡張ポイントのため
 // unknown型で慎重に扱う。
 // ---------------------------------------------------------------------------
+function makePageBreakMarkerParagraph(): Record<string, unknown> {
+  return {
+    type: "paragraph",
+    styleId: null,
+    styleName: null,
+    numbering: null,
+    alignment: null,
+    indent: { start: null, end: null, firstLine: null, hanging: null },
+    children: [
+      {
+        type: "run",
+        styleId: null,
+        styleName: null,
+        isBold: false,
+        isUnderline: false,
+        isItalic: false,
+        isStrikethrough: false,
+        isAllCaps: false,
+        isSmallCaps: false,
+        verticalAlignment: "baseline",
+        font: null,
+        fontSize: null,
+        highlight: null,
+        children: [{ type: "text", value: PAGE_BREAK_MARKER }],
+      },
+    ],
+  };
+}
+
 function markPageBreaks(node: unknown): unknown {
   if (!node || typeof node !== "object") return node;
   const obj = node as Record<string, unknown>;
@@ -119,34 +167,46 @@ function markPageBreaks(node: unknown): unknown {
     next = { ...obj, children: obj.children.map(markPageBreaks) };
   }
   if (next.type === "break" && next.breakType === "page") {
-    return {
-      type: "paragraph",
-      styleId: null,
-      styleName: null,
-      numbering: null,
-      alignment: null,
-      indent: { start: null, end: null, firstLine: null, hanging: null },
-      children: [
-        {
-          type: "run",
-          styleId: null,
-          styleName: null,
-          isBold: false,
-          isUnderline: false,
-          isItalic: false,
-          isStrikethrough: false,
-          isAllCaps: false,
-          isSmallCaps: false,
-          verticalAlignment: "baseline",
-          font: null,
-          fontSize: null,
-          highlight: null,
-          children: [{ type: "text", value: PAGE_BREAK_MARKER }],
-        },
-      ],
-    };
+    return makePageBreakMarkerParagraph();
   }
   return next;
+}
+
+/**
+ * w:pageBreakBefore（段落プロパティによる明示的な改ページ、開発指示書C-9）を
+ * ページ区切りマーカー段落として文書ツリーの先頭(Document.children)へ挿入する。
+ *
+ * mammothの中間ドキュメントモデルはw:pageBreakBefore自体を保持しないため
+ * （body-reader.jsで未対応）、word/document.xmlを直接読んだ結果(bodyHints、
+ * src/lib/word/section-settings.ts参照)と、mammothが返す文書本文直下の
+ * children配列とを「段落(paragraph)・表(table)ノードだけを対象に、出現順で
+ * 対応付ける」ことで実現する。本文直下のw:p/w:tblは、mammoth側でも
+ * ignoreElements（w:sectPr等）以外は1つずつそのままDocument.childrenの
+ * ノードになる（body-reader.jsで確認済み）ため、対象をparagraph/tableに
+ * 限定する限りインデックスがずれない。
+ *
+ * 文書の一番最初の段落の前には(そもそも直前ページが存在しないため)挿入しない。
+ */
+function injectPageBreakBeforeMarkers(documentNode: unknown, bodyHints: BodyChildHint[]): unknown {
+  if (!documentNode || typeof documentNode !== "object") return documentNode;
+  const obj = documentNode as Record<string, unknown>;
+  if (!Array.isArray(obj.children)) return documentNode;
+
+  let hintIndex = 0;
+  const nextChildren: unknown[] = [];
+  for (const child of obj.children) {
+    const isTopLevelContentNode =
+      child !== null && typeof child === "object" && ((child as Record<string, unknown>).type === "paragraph" || (child as Record<string, unknown>).type === "table");
+    if (isTopLevelContentNode) {
+      const hint = bodyHints[hintIndex];
+      hintIndex += 1;
+      if (hint?.pageBreakBefore && nextChildren.length > 0) {
+        nextChildren.push(makePageBreakMarkerParagraph());
+      }
+    }
+    nextChildren.push(child);
+  }
+  return { ...obj, children: nextChildren };
 }
 
 /** インライン要素(strong/em/u/a/text)を再帰的に読み、TextRunの配列へ展開する */
@@ -400,16 +460,29 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       throw new Error("ファイルの読み込みに失敗しました");
     }
 
+    // word/document.xmlから用紙設定(セクション)・段落のpageBreakBefore情報を直接読み取る
+    // (Phase 18.2 C節、詳細はsection-settings.tsとファイル冒頭のコメントを参照)。
+    // 解析に失敗しても例外は投げず空の結果を返す実装のため、この呼び出し自体は失敗しない。
+    const structure = parseWordDocumentStructure(arrayBuffer);
+
+    const warnings: string[] = [];
+    const section = structure.sections[0] ?? null;
+    if (structure.sections.length > 1) {
+      warnings.push(
+        "この文書には複数のセクション（用紙設定が変わる区切り）が含まれています。現在の実装では最初のセクションの用紙設定（用紙サイズ・向き・余白）を文書全体に適用しており、2つ目以降のセクションで用紙設定が変わる場合は反映されません。"
+      );
+    }
+
     const mammoth = await import("mammoth");
     let html: string;
-    const warnings: string[] = [];
     try {
       const result = await mammoth.convertToHtml(
         { arrayBuffer },
         {
           convertImage: mammoth.images.dataUri,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          transformDocument: markPageBreaks as any,
+          transformDocument: ((documentNode: unknown) =>
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            markPageBreaks(injectPageBreakBeforeMarkers(documentNode, structure.bodyChildren))) as any,
         }
       );
       html = result.value;
@@ -446,19 +519,30 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
     }
 
-    let page: PDFPage = doc.addPage([A4_WIDTH, A4_HEIGHT]);
-    let cursorY = A4_HEIGHT - MARGIN;
+    // 用紙サイズ・余白(開発指示書C-3・C-4・C-8): DOCXの最初のセクションから取得できれば
+    // それを使い、取得できなければ既定値(A4・56pt)にフォールバックする。
+    const pageWidth = section?.pageWidthPt ?? DEFAULT_PAGE_WIDTH;
+    const pageHeight = section?.pageHeightPt ?? DEFAULT_PAGE_HEIGHT;
+    const marginTop = section?.margins.top ?? DEFAULT_MARGIN;
+    const marginBottom = section?.margins.bottom ?? DEFAULT_MARGIN;
+    const marginLeft = section?.margins.left ?? DEFAULT_MARGIN;
+    const marginRight = section?.margins.right ?? DEFAULT_MARGIN;
+    const contentWidth = Math.max(50, pageWidth - marginLeft - marginRight);
+    const bottomLimit = marginBottom;
+
+    let page: PDFPage = doc.addPage([pageWidth, pageHeight]);
+    let cursorY = pageHeight - marginTop;
 
     function newPage() {
       if (doc.getPageCount() >= MAX_PAGE_COUNT) {
         throw new Error(`変換できるページ数の上限は${MAX_PAGE_COUNT}ページです。`);
       }
-      page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
-      cursorY = A4_HEIGHT - MARGIN;
+      page = doc.addPage([pageWidth, pageHeight]);
+      cursorY = pageHeight - marginTop;
     }
 
     function ensureSpace(height: number) {
-      if (cursorY - height < BOTTOM_LIMIT) newPage();
+      if (cursorY - height < bottomLimit) newPage();
     }
 
     function drawSegment(seg: Segment, x: number, y: number, size: number): number {
@@ -518,7 +602,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const effectiveRuns: TextRun[] = isHeading ? runs.map((r) => ({ ...r, bold: true })) : runs;
 
       const indent = block.list ? 16 + block.list.level * 16 : 0;
-      const maxWidth = CONTENT_WIDTH - indent;
+      const maxWidth = contentWidth - indent;
       if (maxWidth <= 10) return;
 
       const chars = flattenRuns(effectiveRuns);
@@ -530,10 +614,10 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
 
       lines.forEach((lineChars, lineIdx) => {
         ensureSpace(lineHeight);
-        let x = MARGIN + indent;
+        let x = marginLeft + indent;
         if (block.list && lineIdx === 0) {
           const prefix = block.list.ordered ? `${block.list.number ?? 1}. ` : "・";
-          page.drawText(prefix, { x: MARGIN + block.list.level * 16, y: cursorY - size, size, font, color: rgb(0.12, 0.12, 0.14) });
+          page.drawText(prefix, { x: marginLeft + block.list.level * 16, y: cursorY - size, size, font, color: rgb(0.12, 0.12, 0.14) });
         }
         const segments = groupSegments(lineChars);
         for (const seg of segments) {
@@ -549,7 +633,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       if (block.rows.length === 0) return;
       const colCount = Math.max(...block.rows.map((r) => r.length));
       if (colCount === 0) return;
-      const colWidth = CONTENT_WIDTH / colCount;
+      const colWidth = contentWidth / colCount;
       const cellPadding = 5;
       const cellFontSize = 9;
 
@@ -563,7 +647,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         ensureSpace(rowHeight);
         const rowTop = cursorY;
         for (let col = 0; col < colCount; col++) {
-          const x = MARGIN + col * colWidth;
+          const x = marginLeft + col * colWidth;
           page.drawRectangle({
             x,
             y: rowTop - rowHeight,
@@ -624,14 +708,14 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         return;
       }
 
-      const maxHeight = A4_HEIGHT - MARGIN * 2;
-      let { width, height } = embedded.scaleToFit(CONTENT_WIDTH, maxHeight);
+      const maxHeight = pageHeight - marginTop - marginBottom;
+      let { width, height } = embedded.scaleToFit(contentWidth, maxHeight);
       if (width <= 0 || height <= 0) {
-        width = CONTENT_WIDTH;
-        height = CONTENT_WIDTH * 0.5;
+        width = contentWidth;
+        height = contentWidth * 0.5;
       }
       ensureSpace(height);
-      page.drawImage(embedded, { x: MARGIN, y: cursorY - height, width, height });
+      page.drawImage(embedded, { x: marginLeft, y: cursorY - height, width, height });
       cursorY -= height + PARAGRAPH_GAP;
     }
 

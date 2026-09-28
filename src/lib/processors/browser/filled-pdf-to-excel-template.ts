@@ -84,6 +84,7 @@ export class FilledPdfToExcelTemplateProcessor extends BrowserProcessor<
         file,
         template,
         language,
+        fileIndex,
         onPageProgress: (info) => {
           onPageProgress?.({
             fileName: file.name,

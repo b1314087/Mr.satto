@@ -15,7 +15,7 @@ import type { TemplateField } from "./types";
  * どちらも既存基盤をそのまま再利用し、新しい抽出エンジンは作らない。
  */
 
-export type FieldExtractionMethod = "text-layer" | "ocr" | "empty";
+export type FieldExtractionMethod = "text-layer" | "ocr" | "empty" | "checkbox";
 
 export interface FieldExtractionResult {
   value: string;
@@ -24,9 +24,47 @@ export interface FieldExtractionResult {
 }
 
 /**
- * PDFページ座標系での矩形(x, y, width, height。原点左下)に、バウンディング
- * ボックスの中心が入っているテキスト断片だけを抽出し、行ごとに読み順
- * （上→下、各行内は左→右）で連結する。
+ * text item（PDF.jsから取得した文字断片）の矩形が、TemplateFieldの矩形と
+ * どれだけ重なっているか（0〜1、text item自身の面積に対する重なり面積の割合）
+ * を返す。開発指示書A-10/A-11「文字の位置判定は、単純な1点だけでなく、
+ * text itemのx/y/width/height相当の情報から矩形を作り、TemplateField矩形との
+ * 交差判定を行う」に対応する。中心点1点だけの判定と異なり、隣接する枠の
+ * 境界をまたぐtext item（例: 「1-① 氏名」の右端が「1-② 住所」の左端に
+ * わずかに重なる場合）でも、より多く重なっている側の枠だけに正しく
+ * 割り当てられる（A-12: 隣接Fieldの分離）。
+ */
+function overlapRatio(
+  item: Pick<PositionedTextItem, "x" | "y" | "width" | "height">,
+  fieldX: number,
+  fieldY: number,
+  fieldWidth: number,
+  fieldHeight: number
+): number {
+  const itemLeft = item.x;
+  const itemRight = item.x + item.width;
+  const itemBottom = item.y;
+  const itemTop = item.y + item.height;
+  const fieldLeft = fieldX;
+  const fieldRight = fieldX + fieldWidth;
+  const fieldBottom = fieldY;
+  const fieldTop = fieldY + fieldHeight;
+
+  const overlapWidth = Math.max(0, Math.min(itemRight, fieldRight) - Math.max(itemLeft, fieldLeft));
+  const overlapHeight = Math.max(0, Math.min(itemTop, fieldTop) - Math.max(itemBottom, fieldBottom));
+  const overlapArea = overlapWidth * overlapHeight;
+  if (overlapArea <= 0) return 0;
+
+  const itemArea = Math.max(item.width * item.height, 1e-6);
+  return overlapArea / itemArea;
+}
+
+/** text itemの矩形の半分以上がTemplateField矩形に重なっていれば、その枠に属するとみなす閾値 */
+const FIELD_OVERLAP_THRESHOLD = 0.5;
+
+/**
+ * PDFページ座標系での矩形(x, y, width, height。原点左下)に、矩形として
+ * 一定割合以上重なっているテキスト断片だけを抽出し、行ごとに読み順
+ * （上→下、各行内は左→右）で連結する（開発指示書A-10〜A-13）。
  * groupIntoLines（table-reconstruction.ts）と同じ行グルーピングロジックを
  * 再利用しており、表構造の推定とは独立に「1つの枠の中の文字列」だけを見る。
  */
@@ -37,16 +75,9 @@ export function collectTextInRegion(
   width: number,
   height: number
 ): string {
-  const minX = x;
-  const maxX = x + width;
-  const minY = y;
-  const maxY = y + height;
-
   const inside = items.filter((item) => {
     if (item.str.trim() === "") return false;
-    const cx = item.x + item.width / 2;
-    const cy = item.y + item.height / 2;
-    return cx >= minX && cx <= maxX && cy >= minY && cy <= maxY;
+    return overlapRatio(item, x, y, width, height) >= FIELD_OVERLAP_THRESHOLD;
   });
   if (inside.length === 0) return "";
 

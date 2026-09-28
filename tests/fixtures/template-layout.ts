@@ -69,6 +69,30 @@ export const THREE_PERSON_TEMPLATE_FIELDS: TemplateFieldSpec[] = [
   { personIndex: 3, fieldIndex: 3, label: "住所", x: 140, y: 215, width: 180, height: 20 },
 ];
 
+/**
+ * Phase 18.2 A-19: checkbox枠の検証用レイアウト。
+ * 「氏名」のtextフィールドに加え、checkbox型の「同意」フィールドを1つ持つ、
+ * 最小限の1人分テンプレート（専用の小さいページを使い、既存のTEMPLATE_FIELDSや
+ * それを使う既存フィクスチャ・既存テストには一切影響しない）。
+ */
+export const CHECKBOX_PAGE = { width: 300, height: 200 };
+export const CHECKBOX_TEMPLATE_FIELDS: TemplateFieldSpec[] = [
+  { personIndex: 1, fieldIndex: 1, label: "氏名", x: 40, y: 140, width: 200, height: 20 },
+  { personIndex: 1, fieldIndex: 2, label: "同意", x: 40, y: 80, width: 30, height: 30 },
+];
+export const CHECKBOX_PERSON_NAME = "高橋修";
+
+/**
+ * Phase 18.2 A-11/A-12: 隣接するFieldの分離を検証するための、間隔ゼロで
+ * 隙間なく隣り合う2つのtext枠（横方向に完全に接している）。
+ */
+export const ADJACENT_PAGE = { width: 320, height: 120 };
+export const ADJACENT_TEMPLATE_FIELDS: TemplateFieldSpec[] = [
+  { personIndex: 1, fieldIndex: 1, label: "氏名", x: 20, y: 60, width: 120, height: 24 },
+  { personIndex: 1, fieldIndex: 2, label: "住所", x: 140, y: 60, width: 160, height: 24 },
+];
+export const ADJACENT_PERSON = { 氏名: "伊藤次郎", 住所: "東京都渋谷区9-9-9" };
+
 /** OCRフォールバック検証用のスキャン画像フィクスチャは、認識精度を安定させるため英数字のみを使う */
 export const SCANNED_TEMPLATE_FIELDS: TemplateFieldSpec[] = [
   { personIndex: 1, fieldIndex: 1, label: "NAME", x: 140, y: 615, width: 240, height: 24 },

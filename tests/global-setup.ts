@@ -6,6 +6,8 @@ import fontkit from "@pdf-lib/fontkit";
 import writeExcelFile from "write-excel-file/node";
 import { zipSync, strToU8 } from "fflate";
 import { fixtures } from "./fixtures/paths";
+import { buildMinimalXlsx, type XlsxSheetSpec, type XlsxCellSpec } from "./fixtures/xlsx-writer";
+import { buildMinimalDocx, type DocxDocumentSpec } from "./fixtures/docx-writer";
 import { tools } from "@/lib/tools/data";
 import { categories } from "@/lib/tools/categories";
 import {
@@ -21,6 +23,12 @@ import {
   SCANNED_TEMPLATE_FIELDS_PERSON2,
   SCANNED_PERSON_A,
   SCANNED_PERSON_B,
+  CHECKBOX_PAGE,
+  CHECKBOX_TEMPLATE_FIELDS,
+  CHECKBOX_PERSON_NAME,
+  ADJACENT_PAGE,
+  ADJACENT_TEMPLATE_FIELDS,
+  ADJACENT_PERSON,
   type DummyPerson,
   type TemplateFieldSpec,
 } from "./fixtures/template-layout";
@@ -47,6 +55,9 @@ export default async function globalSetup() {
   await Promise.all([generatePdfs(), generateXlsx(), generateZip(), generateImages(), generateVideo()]);
   await generateStampFixtures();
   await generateTemplateFixtures();
+  await generateCheckboxAndAdjacentTemplateFixtures();
+  generateExcelToPdfFixtures();
+  generateWordToPdfFixtures();
   await warmupRoutes();
 }
 
@@ -430,6 +441,127 @@ async function generateTemplateFixtures() {
 }
 
 /**
+ * Phase 18.2: checkbox枠（A-19）・隣接Field分離（A-11/A-12）テスト用フィクスチャ。
+ *
+ * checkbox枠は、空のテンプレート側は罫線の四角だけ（記入なし）、記入済み側は
+ * 「チェックあり」（四角の内側を黒く塗りつぶす）と「チェックなし」（四角のみ、
+ * 記入なしのまま）の2種類を用意する。塗りつぶし量・黒画素割合で判定する
+ * ルールベース判定（checkbox-detection.ts）を、文字認識ではなく実際に
+ * 「黒く塗られているかどうか」で検証できるようにするため。
+ *
+ * 隣接Fieldは、2つのtext枠を隙間なく横に並べ、各枠の値をその境界のすぐ内側まで
+ * 印字することで、「1つのtext itemが片方の枠だけに正しく割り当てられるか」
+ * （矩形の重なり面積ベースの判定、A-11/A-12）を検証する。
+ */
+async function generateCheckboxAndAdjacentTemplateFixtures() {
+  const jpFontBytes = fs.readFileSync(path.join(__dirname, "..", "public", "fonts", "NotoSansJP-Regular.ttf"));
+
+  async function newDoc() {
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const font = await doc.embedFont(jpFontBytes, { subset: false });
+    return { doc, font };
+  }
+
+  const nameField = CHECKBOX_TEMPLATE_FIELDS[0];
+  const checkboxField = CHECKBOX_TEMPLATE_FIELDS[1];
+
+  function drawCheckboxLayout(
+    page: Awaited<ReturnType<PDFDocument["addPage"]>>,
+    font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+    opts: { withName: boolean; checked: boolean }
+  ) {
+    // 氏名欄（textフィールド）
+    page.drawRectangle({
+      x: nameField.x,
+      y: nameField.y,
+      width: nameField.width,
+      height: nameField.height,
+      borderColor: rgb(0.5, 0.5, 0.5),
+      borderWidth: 1,
+    });
+    if (opts.withName) {
+      page.drawText(CHECKBOX_PERSON_NAME, { x: nameField.x + 4, y: nameField.y + 5, size: 11, font, color: rgb(0, 0, 0) });
+    }
+
+    // 同意欄（checkboxフィールド）: 罫線の四角。チェックありの場合だけ内側を黒く塗りつぶす。
+    page.drawRectangle({
+      x: checkboxField.x,
+      y: checkboxField.y,
+      width: checkboxField.width,
+      height: checkboxField.height,
+      borderColor: rgb(0.2, 0.2, 0.2),
+      borderWidth: 1.5,
+    });
+    if (opts.checked) {
+      const inset = 5;
+      page.drawRectangle({
+        x: checkboxField.x + inset,
+        y: checkboxField.y + inset,
+        width: checkboxField.width - inset * 2,
+        height: checkboxField.height - inset * 2,
+        color: rgb(0, 0, 0),
+      });
+    }
+  }
+
+  // 1. 空のテンプレート（氏名・同意とも未記入）
+  {
+    const { doc, font } = await newDoc();
+    const page = doc.addPage([CHECKBOX_PAGE.width, CHECKBOX_PAGE.height]);
+    drawCheckboxLayout(page, font, { withName: false, checked: false });
+    fs.writeFileSync(fixtures.templateBlankCheckboxPdf, await doc.save());
+  }
+
+  // 2. 記入済み・チェックあり
+  {
+    const { doc, font } = await newDoc();
+    const page = doc.addPage([CHECKBOX_PAGE.width, CHECKBOX_PAGE.height]);
+    drawCheckboxLayout(page, font, { withName: true, checked: true });
+    fs.writeFileSync(fixtures.templateFilledCheckboxCheckedPdf, await doc.save());
+  }
+
+  // 3. 記入済み・チェックなし
+  {
+    const { doc, font } = await newDoc();
+    const page = doc.addPage([CHECKBOX_PAGE.width, CHECKBOX_PAGE.height]);
+    drawCheckboxLayout(page, font, { withName: true, checked: false });
+    fs.writeFileSync(fixtures.templateFilledCheckboxUncheckedPdf, await doc.save());
+  }
+
+  // 4. 隣接Field: 空のテンプレート（枠線のみ）
+  const [adjField1, adjField2] = ADJACENT_TEMPLATE_FIELDS;
+  function drawAdjacentBoxes(page: Awaited<ReturnType<PDFDocument["addPage"]>>) {
+    for (const field of ADJACENT_TEMPLATE_FIELDS) {
+      page.drawRectangle({
+        x: field.x,
+        y: field.y,
+        width: field.width,
+        height: field.height,
+        borderColor: rgb(0.5, 0.5, 0.5),
+        borderWidth: 1,
+      });
+    }
+  }
+  {
+    const { doc } = await newDoc();
+    const page = doc.addPage([ADJACENT_PAGE.width, ADJACENT_PAGE.height]);
+    drawAdjacentBoxes(page);
+    fs.writeFileSync(fixtures.templateBlankAdjacentPdf, await doc.save());
+  }
+
+  // 5. 隣接Field: 記入済み（境界のすぐ内側まで文字を寄せて印字する）
+  {
+    const { doc, font } = await newDoc();
+    const page = doc.addPage([ADJACENT_PAGE.width, ADJACENT_PAGE.height]);
+    drawAdjacentBoxes(page);
+    page.drawText(ADJACENT_PERSON.氏名, { x: adjField1.x + 4, y: adjField1.y + 6, size: 11, font, color: rgb(0, 0, 0) });
+    page.drawText(ADJACENT_PERSON.住所, { x: adjField2.x + 4, y: adjField2.y + 6, size: 11, font, color: rgb(0, 0, 0) });
+    fs.writeFileSync(fixtures.templateFilledAdjacentPdf, await doc.save());
+  }
+}
+
+/**
  * OCRフォールバック（開発指示書17・18章）検証用の、文字レイヤーを持たない
  * スキャン画像PDF。認識精度を安定させるため、内容は英数字のみにしている
  * （日本語OCRの精度検証自体は目的ではなく、あくまで「テキストレイヤーが
@@ -499,4 +631,229 @@ async function renderScannedFieldsToPdf(fields: TemplateFieldSpec[], textForFiel
   } finally {
     await browser.close();
   }
+}
+
+/**
+ * Phase 18.2 B節: excel-to-pdf「Excelの印刷ページ=PDFのページ」テスト用フィクスチャ生成。
+ *
+ * write-excel-file（既存依存）は印刷範囲・ページ設定(Fit to Page/scale)・余白・
+ * 非表示行列・改ページ・セル罫線を書き出せないため、tests/fixtures/xlsx-writer.ts の
+ * 手組みXLSXビルダー（fflateのみ使用、新規依存なし）で、これらの印刷設定を
+ * 直接埋め込んだ最小限のXLSXを生成する。実在の企業・個人データは一切使用しない。
+ *
+ * Fit to Width/Height を明示指定したケース(B-13)は、内容量に関わらず必ず
+ * 指定ページ数になる(computePageGrid の splitIntoExactGroups による保証)ため、
+ * セルの内容自体は「行数・列数が指定ページ数以上あること」だけを満たす
+ * 単純なダミー値で十分（実際のフォント計測に依存しない、決定的なテスト）。
+ */
+function generateExcelToPdfFixtures() {
+  function cell(value: string | number, border?: XlsxCellSpec["border"]): XlsxCellSpec {
+    return { value, border };
+  }
+
+  function grid(rows: number, cols: number, labelPrefix = ""): (XlsxCellSpec | null)[][] {
+    return Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) => cell(`${labelPrefix}R${r}C${c}`)));
+  }
+
+  function write(path: string, sheets: XlsxSheetSpec[]) {
+    fs.writeFileSync(path, buildMinimalXlsx(sheets));
+  }
+
+  // Test1(B-20): A4/横向き/Fit to Width 1 × Fit to Height 1 → 必ず1ページ
+  // (内容量だけでは複数ページになりうる量を用意し、それでも1ページになることを確認する)
+  write(fixtures.excelFit1x1Xlsx, [
+    {
+      name: "Sheet1",
+      rows: grid(15, 6, "FIT1X1_"),
+      paperSize: 9, // A4
+      orientation: "landscape",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 1,
+    },
+  ]);
+
+  // Test2(B-20): Fit to Width 1 × Fit to Height 3 → 必ず3ページ(横1×縦3)
+  write(fixtures.excelFit1x3Xlsx, [
+    {
+      name: "Sheet1",
+      rows: grid(12, 4, "FIT1X3_"),
+      paperSize: 9,
+      orientation: "portrait",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 3,
+    },
+  ]);
+
+  // Test3(B-20): Fit to Width 2 × Fit to Height 2 → 必ず4ページ(横2×縦2)
+  write(fixtures.excelFit2x2Xlsx, [
+    {
+      name: "Sheet1",
+      rows: grid(8, 8, "FIT2X2_"),
+      paperSize: 9,
+      orientation: "portrait",
+      fitToPage: true,
+      fitToWidth: 2,
+      fitToHeight: 2,
+    },
+  ]);
+
+  // Test4(B-20/K-2): 印刷範囲(Print Area)の外にあるデータはPDFに含まれてはならない
+  {
+    const rows: (XlsxCellSpec | null)[][] = Array.from({ length: 6 }, (_, r) =>
+      Array.from({ length: 6 }, (_, c) => (r <= 2 && c <= 2 ? cell(`INSIDE_R${r}C${c}`) : cell(`OUTSIDE_R${r}C${c}`)))
+    );
+    write(fixtures.excelPrintAreaXlsx, [
+      { name: "Sheet1", rows, paperSize: 9, orientation: "portrait", printArea: "A1:C3" },
+    ]);
+  }
+
+  // 非表示行・非表示列(B-16): 非表示に設定した行・列の内容はPDFに含まれてはならない
+  {
+    const rows: (XlsxCellSpec | null)[][] = Array.from({ length: 6 }, (_, r) =>
+      Array.from({ length: 4 }, (_, c) => {
+        if (r === 1) return cell(`HIDDEN_ROW_TEXT_C${c}`);
+        if (c === 2) return cell(`HIDDEN_COL_TEXT_R${r}`);
+        return cell(`VISIBLE_TEXT_R${r}C${c}`);
+      })
+    );
+    write(fixtures.excelHiddenXlsx, [
+      { name: "Sheet1", rows, paperSize: 9, orientation: "portrait", hiddenRows: [1], hiddenCols: [2] },
+    ]);
+  }
+
+  // 明示的な改ページ(B-15): 指定した行の直後で必ずページが分かれる
+  write(fixtures.excelPageBreakXlsx, [
+    {
+      name: "Sheet1",
+      rows: Array.from({ length: 6 }, (_, r) => [cell(`BREAK_ROW${r}`)]),
+      paperSize: 9,
+      orientation: "portrait",
+      rowBreaksAfter: [2], // 3行目(0始まりで2)の直後で改ページ
+    },
+  ]);
+
+  // セル罫線(B-6〜B-9): 実際に罫線が設定されているセル・辺だけを描画する
+  // (2x2グリッド。セル(0,0)はbottom+right、セル(1,1)はtopのみ。合計3辺)
+  write(fixtures.excelBorderPartialXlsx, [
+    {
+      name: "Sheet1",
+      rows: [
+        [cell("BORDER_A", { bottom: true, right: true }), cell("BORDER_B")],
+        [cell("BORDER_C"), cell("BORDER_D", { top: true })],
+      ],
+      paperSize: 9,
+      orientation: "portrait",
+    },
+  ]);
+
+  // Gridlines(常に描画しない)・罫線なしの大きな表(B-7/B-21): 罫線情報が一切無ければ、
+  // 表がどれだけ大きくても・複数ページにまたがっても、線は一切描画されない
+  write(fixtures.excelBorderlessLargeXlsx, [
+    {
+      name: "Sheet1",
+      rows: grid(20, 10, "NOBORDER_"),
+      paperSize: 9,
+      orientation: "portrait",
+    },
+  ]);
+
+  // 用紙サイズ(B-10): A3・縦
+  write(fixtures.excelPaperA3PortraitXlsx, [
+    { name: "Sheet1", rows: grid(2, 2, "A3_"), paperSize: 8, orientation: "portrait" },
+  ]);
+
+  // 用紙サイズ(B-10): Letter・横
+  write(fixtures.excelPaperLetterLandscapeXlsx, [
+    { name: "Sheet1", rows: grid(2, 2, "LETTER_"), paperSize: 1, orientation: "landscape" },
+  ]);
+
+  // 余白(B-12): 明示的な余白設定(インチ)がPDFの描画開始位置に反映される
+  write(fixtures.excelMarginsXlsx, [
+    {
+      name: "Sheet1",
+      rows: [[cell("MARGIN_TEST")]],
+      paperSize: 9,
+      orientation: "portrait",
+      margins: { left: 1.0, top: 1.2, right: 0.5, bottom: 0.5 },
+    },
+  ]);
+}
+
+/** 1x1の赤色透過なしPNG(テスト専用の合成データ、実在の画像は一切使用しない)。
+ *  Phase 18.2 C節(word-to-pdf)の画像埋め込みテスト用。 */
+const TINY_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+/**
+ * Phase 18.2 C節: word-to-pdf「Wordの印刷ページ=PDFのページ」テスト用フィクスチャ生成。
+ *
+ * mammoth(既存依存)はDOCXの内容(見出し・段落・書式・表・画像)はHTML化するが、
+ * セクション区切り・用紙サイズ・余白・w:pageBreakBeforeによる改ページといった
+ * 「ページ構造」の情報は読み捨てるため、これらを検証するにはword/document.xmlの
+ * 中身を直接制御できるテスト用DOCXが必要になる。write-excel-file相当の既存DOCX
+ * 生成ライブラリはこのプロジェクトに無いため、tests/fixtures/docx-writer.ts の
+ * 手組みDOCXビルダー(fflateのみ使用、新規依存なし)で生成する。
+ * 実在の企業・個人データは一切使用しない。
+ */
+function generateWordToPdfFixtures() {
+  function write(path: string, spec: DocxDocumentSpec) {
+    fs.writeFileSync(path, buildMinimalDocx(spec));
+  }
+
+  // 明示的な改ページ(w:br type="page"、C-9・C-14): 必ずその位置でページが分かれる
+  write(fixtures.wordPageBreakDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "PAGEBREAK_TEST_PAGE1_TEXT" }] },
+      { kind: "pagebreak" },
+      { kind: "paragraph", runs: [{ text: "PAGEBREAK_TEST_PAGE2_TEXT" }] },
+    ],
+  });
+
+  // 明示的な改ページ(w:pageBreakBefore、C-9): 段落プロパティによる改ページも同様に反映される
+  write(fixtures.wordPageBreakBeforeDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "PBB_TEST_PAGE1_TEXT" }] },
+      { kind: "paragraph", runs: [{ text: "PBB_TEST_PAGE2_TEXT" }], pageBreakBefore: true },
+    ],
+  });
+
+  // 用紙サイズ・向き(C-3・C-4・C-14): A4横向き → PDFもA4横向きになる
+  write(fixtures.wordLandscapeA4Docx, {
+    blocks: [{ kind: "paragraph", runs: [{ text: "LANDSCAPE_TEST_TEXT" }] }],
+    section: { orientation: "landscape" },
+  });
+
+  // 余白(C-8): 明示的な左余白がPDFの描画開始位置に反映される
+  // (2.0inch = 2880twips。既定値56ptよりも明確に区別できる値にしている)
+  write(fixtures.wordMarginsDocx, {
+    blocks: [{ kind: "paragraph", runs: [{ text: "M" }] }],
+    section: { marginsTwips: { left: 2880, top: 1417, right: 1417, bottom: 1417 } },
+  });
+
+  // 見出し・太字/斜体/下線・表・画像(C-6・C-7・C-10・C-12・C-13): 基本要素が保持される
+  write(fixtures.wordRichContentDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "見出しRICH_HEADING_TEXT" }], heading: 1 },
+      { kind: "paragraph", runs: [{ text: "RICH_BOLD_TEXT", bold: true }, { text: "RICH_ITALIC_TEXT", italic: true }, { text: "RICH_UNDERLINE_TEXT", underline: true }] },
+      { kind: "table", rows: [["RICH_CELL_A1", "RICH_CELL_B1"], ["RICH_CELL_A2", "RICH_CELL_B2"]] },
+      { kind: "image", pngBase64: TINY_PNG_BASE64, widthPt: 80, heightPt: 40 },
+    ],
+  });
+
+  // 複数セクション(C-11): 現在の実装範囲(最初のセクションの用紙設定を全体に適用)を
+  // 明示的に警告として伝える。1つ目のセクションはA4縦、2つ目はLegal横と、
+  // 明確に異なる用紙設定にしている。
+  write(fixtures.wordMultiSectionDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "SECTION1_TEXT" }] },
+      {
+        kind: "paragraph",
+        runs: [{ text: "SECTION_BREAK_MARKER" }],
+        sectionEnd: { pageWidthTwips: 11906, pageHeightTwips: 16838 }, // A4縦(セクション1の設定)
+      },
+      { kind: "paragraph", runs: [{ text: "SECTION2_TEXT" }] },
+    ],
+    section: { pageWidthTwips: 12240, pageHeightTwips: 15840, orientation: "landscape" }, // Legal横(セクション2=文書末尾の設定)
+  });
 }

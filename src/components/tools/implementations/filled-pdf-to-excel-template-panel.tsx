@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ErrorMessage } from "@/components/common/error-message";
-import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
-import { pdfToScreenX, pdfToScreenY, screenToPdfX, screenToPdfY, clamp } from "@/lib/pdf/coords";
+import { loadPdfDocument, type PdfjsPage } from "@/lib/pdf/pdfjs-client";
+import { pdfRectToScreenRect, screenRectToPdfRect, clamp } from "@/lib/pdf/coords";
 import {
   createEmptyTemplate,
   createFieldId,
@@ -42,7 +42,6 @@ const LANGUAGE_OPTIONS: { value: OcrLanguageOption; label: string }[] = [
   { value: "en", label: "英語のみ" },
 ];
 
-const PREVIEW_MAX_WIDTH = 640;
 const DEFAULT_FIELD_WIDTH = 130;
 const DEFAULT_FIELD_HEIGHT = 22;
 const MIN_FIELD_SIZE = 10;
@@ -55,12 +54,19 @@ interface TemplatePageMeta {
   height: number;
 }
 
+/** PDF.jsのpage.getViewport()が返すviewportの型（動的importのためPdfjsPageから導出する） */
+type PdfViewport = ReturnType<PdfjsPage["getViewport"]>;
+
+/** テンプレート編集キャンバスのズーム倍率（開発指示書A-3〜A-5）。100% = PDF実座標1pt = 画面1px */
+const ZOOM_LEVELS = [80, 100, 150, 200] as const;
+
 interface DragState {
   fieldId: string;
   mode: "move" | "resize";
   startClientX: number;
   startClientY: number;
-  orig: { x: number; y: number; width: number; height: number };
+  /** ドラッグ開始時点の、そのviewportにおける枠の画面座標矩形(CSS px) */
+  origScreenRect: { left: number; top: number; width: number; height: number };
 }
 
 export function FilledPdfToExcelTemplatePanel() {
@@ -75,9 +81,13 @@ export function FilledPdfToExcelTemplatePanel() {
   const [template, setTemplate] = useState<Template>(createEmptyTemplate());
   const [personIndexes, setPersonIndexes] = useState<number[]>([]);
   const [pendingFieldPerson, setPendingFieldPerson] = useState<number | null>(null);
+  const [pendingFieldType, setPendingFieldType] = useState<"text" | "checkbox">("text");
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
-  const [pageRenderScale, setPageRenderScale] = useState(1);
+  const [zoomPercent, setZoomPercent] = useState<number>(100);
+  // 現在表示中ページのPDF.js viewport（開発指示書A-6: 独自のx/zoom計算ではなく、
+  // PDF.js自身のconvertToViewportPoint/convertToPdfPointで座標変換するために保持する）
+  const [activeViewport, setActiveViewport] = useState<PdfViewport | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
 
@@ -113,8 +123,11 @@ export function FilledPdfToExcelTemplatePanel() {
     setTemplate(createEmptyTemplate());
     setPersonIndexes([]);
     setPendingFieldPerson(null);
+    setPendingFieldType("text");
     setActiveFieldId(null);
     setPageImageUrl(null);
+    setZoomPercent(100);
+    setActiveViewport(null);
     setFilledFiles([]);
     setTotalPages(null);
     setPageCountError(null);
@@ -126,15 +139,28 @@ export function FilledPdfToExcelTemplatePanel() {
   // -----------------------------------------------------------------------
   // 1. テンプレート登録
   // -----------------------------------------------------------------------
+  /**
+   * テンプレートページを指定のズーム倍率で描画する（開発指示書A-3〜A-7）。
+   *
+   * 「100% = PDF実座標1ptを画面1pxとして表示」という固定の基準を採用し、
+   * コンテナ幅（containerWidth）など、ズームと無関係にウィンドウサイズ等で
+   * 変わりうる値をscaleの計算に混ぜない。これにより、80%→150%→80%→200%→100%と
+   * 何度切り替えても、同じズーム%は常に同じscale・同じviewportになる
+   * （A-5の「zoom往復で位置が変わらない」ための前提）。
+   *
+   * 生成したviewport（PDF.js自身が持つ座標変換の実体）をactiveViewportとして
+   * 保持し、以後の枠の作成・表示・ドラッグはすべてこのviewportの
+   * convertToViewportPoint/convertToPdfPointを経由する（独自のx*scaleのような
+   * 計算をコンポーネント側で行わない。A-6）。
+   */
   async function renderTemplatePage(
     pdf: Awaited<ReturnType<typeof loadPdfDocument>>,
     pageIndex: number,
-    pageInfo: TemplatePageMeta
+    pageInfo: TemplatePageMeta,
+    zoomPct: number
   ) {
     const page = await pdf.getPage(pageIndex + 1);
-    const containerWidth = canvasWrapRef.current?.clientWidth || PREVIEW_MAX_WIDTH;
-    const baseWidth = Math.min(containerWidth, PREVIEW_MAX_WIDTH);
-    const scale = baseWidth / pageInfo.width;
+    const scale = zoomPct / 100;
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(viewport.width);
@@ -142,7 +168,7 @@ export function FilledPdfToExcelTemplatePanel() {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("プレビューの生成に失敗しました");
     await page.render({ canvasContext: ctx, viewport }).promise;
-    setPageRenderScale(scale);
+    setActiveViewport(viewport);
     setPageImageUrl(canvas.toDataURL("image/png"));
   }
 
@@ -164,9 +190,10 @@ export function FilledPdfToExcelTemplatePanel() {
       setTemplatePdfBytes(bytes);
       setTemplatePages(pageInfos);
       setCurrentPageIndex(0);
+      setZoomPercent(100);
       setTemplate({ pages: pageInfos, fields: [], excludeEmptyPersons: true });
       setPersonIndexes([1]);
-      await renderTemplatePage(pdf, 0, pageInfos[0]);
+      await renderTemplatePage(pdf, 0, pageInfos[0], 100);
       setStep("editor");
     } catch (e) {
       setError(e instanceof Error ? e.message : "テンプレートPDFの読み込みに失敗しました");
@@ -179,7 +206,17 @@ export function FilledPdfToExcelTemplatePanel() {
     if (!info) return;
     const pdf = await loadPdfDocument(new File([templatePdfBytes.slice(0)], templateFile.name, { type: "application/pdf" }));
     setCurrentPageIndex(pageIndex);
-    await renderTemplatePage(pdf, pageIndex, info);
+    await renderTemplatePage(pdf, pageIndex, info, zoomPercent);
+  }
+
+  /** ズーム変更（開発指示書A-3〜A-5のテスト対象操作そのもの）。現在のページを新しい倍率で再描画する */
+  async function handleZoomChange(nextZoomPercent: number) {
+    if (!templateFile || !templatePdfBytes) return;
+    const info = templatePages[currentPageIndex];
+    if (!info) return;
+    setZoomPercent(nextZoomPercent);
+    const pdf = await loadPdfDocument(new File([templatePdfBytes.slice(0)], templateFile.name, { type: "application/pdf" }));
+    await renderTemplatePage(pdf, currentPageIndex, info, nextZoomPercent);
   }
 
   // -----------------------------------------------------------------------
@@ -215,7 +252,7 @@ export function FilledPdfToExcelTemplatePanel() {
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (pendingFieldPerson === null) return;
     const pageInfo = templatePages[currentPageIndex];
-    if (!pageInfo) return;
+    if (!pageInfo || !activeViewport) return;
     if (template.fields.length >= TEMPLATE_LIMITS.maxFieldsTotal) {
       setError(`登録できる入力枠の総数は${TEMPLATE_LIMITS.maxFieldsTotal}個までです。`);
       setPendingFieldPerson(null);
@@ -233,8 +270,12 @@ export function FilledPdfToExcelTemplatePanel() {
     const clickY = e.clientY - rect.top;
     const width = Math.min(DEFAULT_FIELD_WIDTH, pageInfo.width * 0.6);
     const height = Math.min(DEFAULT_FIELD_HEIGHT, pageInfo.height * 0.1) || DEFAULT_FIELD_HEIGHT;
-    const rawX = screenToPdfX(clickX, pageRenderScale);
-    const rawY = screenToPdfY(clickY, height, pageInfo.height, pageRenderScale);
+
+    // マウス座標 → 現在のPDF.js viewport → PDF実座標（開発指示書A-6）。
+    // クリック位置は新しい枠の画面上の左上角として扱う。
+    const clickPdf = screenRectToPdfRect({ left: clickX, top: clickY, width: 0, height: 0 }, activeViewport);
+    const rawX = clickPdf.x;
+    const rawY = clickPdf.y - height;
     const x = clamp(rawX, 0, Math.max(0, pageInfo.width - width));
     const y = clamp(rawY, 0, Math.max(0, pageInfo.height - height));
 
@@ -249,6 +290,7 @@ export function FilledPdfToExcelTemplatePanel() {
       y,
       width,
       height,
+      type: pendingFieldType,
     };
     setTemplate((prev) => ({ ...prev, fields: [...prev.fields, newField] }));
     setActiveFieldId(newField.id);
@@ -257,41 +299,72 @@ export function FilledPdfToExcelTemplatePanel() {
 
   function handleFieldPointerDown(e: React.PointerEvent<HTMLDivElement>, field: TemplateField, mode: "move" | "resize") {
     e.stopPropagation();
+    if (!activeViewport) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     setActiveFieldId(field.id);
+    const origScreenRect = pdfRectToScreenRect({ x: field.x, y: field.y, width: field.width, height: field.height }, activeViewport);
     dragRef.current = {
       fieldId: field.id,
       mode,
       startClientX: e.clientX,
       startClientY: e.clientY,
-      orig: { x: field.x, y: field.y, width: field.width, height: field.height },
+      origScreenRect,
     };
   }
 
+  /**
+   * 枠のドラッグ移動・リサイズ（開発指示書A-6〜A-8）。
+   *
+   * ドラッグ開始時点の枠の「画面座標矩形」を基準に、ポインターの移動量
+   * （画面px）をその矩形へ加算した新しい画面矩形を作り、それを
+   * screenRectToPdfRect() で現在のviewportに基づきPDF実座標へ変換する。
+   * 独自の「dx / scale」のような式を最終座標の計算に使わず、必ず
+   * viewportの変換メソッドを経由することで、ズーム倍率や（対応していれば）
+   * 回転が変わっても位置がずれない（A-5・A-8）。
+   */
   function handleFieldPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
-    if (!drag) return;
+    if (!drag || !activeViewport) return;
     const pageInfo = templatePages[currentPageIndex];
     if (!pageInfo) return;
-    const dxPt = (e.clientX - drag.startClientX) / pageRenderScale;
-    const dyPt = (e.clientY - drag.startClientY) / pageRenderScale;
+    const dxScreen = e.clientX - drag.startClientX;
+    const dyScreen = e.clientY - drag.startClientY;
 
     setTemplate((prev) => ({
       ...prev,
       fields: prev.fields.map((f) => {
         if (f.id !== drag.fieldId) return f;
+
         if (drag.mode === "move") {
-          const x = clamp(drag.orig.x + dxPt, 0, Math.max(0, pageInfo.width - f.width));
-          // 画面下方向(+dyPt)へのドラッグはPDF座標系ではyの減少に対応する(原点左下・上方向が正のため)
-          const y = clamp(drag.orig.y - dyPt, 0, Math.max(0, pageInfo.height - f.height));
+          const newScreenRect = {
+            left: drag.origScreenRect.left + dxScreen,
+            top: drag.origScreenRect.top + dyScreen,
+            width: drag.origScreenRect.width,
+            height: drag.origScreenRect.height,
+          };
+          const pdfRect = screenRectToPdfRect(newScreenRect, activeViewport);
+          const x = clamp(pdfRect.x, 0, Math.max(0, pageInfo.width - f.width));
+          const y = clamp(pdfRect.y, 0, Math.max(0, pageInfo.height - f.height));
           return { ...f, x, y };
         }
+
         // resize: 右下ハンドルをドラッグ。左上(画面上)の角を固定したまま幅・高さを変える
-        let width = Math.max(MIN_FIELD_SIZE, drag.orig.width + dxPt);
-        width = Math.min(width, pageInfo.width - drag.orig.x);
-        let height = Math.max(MIN_FIELD_SIZE, drag.orig.height + dyPt);
-        height = Math.min(height, drag.orig.y + drag.orig.height);
-        const y = drag.orig.y - (height - drag.orig.height);
+        const newScreenWidth = Math.max(MIN_FIELD_SIZE, drag.origScreenRect.width + dxScreen);
+        const newScreenHeight = Math.max(MIN_FIELD_SIZE, drag.origScreenRect.height + dyScreen);
+        const newScreenRect = {
+          left: drag.origScreenRect.left,
+          top: drag.origScreenRect.top,
+          width: newScreenWidth,
+          height: newScreenHeight,
+        };
+        const pdfRect = screenRectToPdfRect(newScreenRect, activeViewport);
+        const width = clamp(pdfRect.width, MIN_FIELD_SIZE, pageInfo.width - pdfRect.x);
+        const height = clamp(pdfRect.height, MIN_FIELD_SIZE, pdfRect.y + pdfRect.height);
+        // 右下ハンドルのドラッグでは左上(画面上)の角=PDF上端を固定する。
+        // pdfRect.y はリサイズ後の矩形の下端なので、元の上端(origトップ相当)を
+        // 保つよう、上端 = pdfRect.y + pdfRect.height を固定してyを再計算する。
+        const topEdge = pdfRect.y + pdfRect.height;
+        const y = clamp(topEdge - height, 0, Math.max(0, pageInfo.height - height));
         return { ...f, width, height, y };
       }),
     }));
@@ -470,29 +543,55 @@ export function FilledPdfToExcelTemplatePanel() {
 
       {step === "editor" && currentPageInfo && (
         <div className="flex flex-col gap-4">
-          {templatePages.length > 1 && (
-            <div className="flex items-center gap-3 text-sm text-neutral-600 dark:text-neutral-300">
-              <button
-                type="button"
-                disabled={currentPageIndex === 0}
-                onClick={() => void goToTemplatePage(currentPageIndex - 1)}
-                className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700"
-              >
-                前のページ
-              </button>
-              <span>
-                {currentPageIndex + 1} / {templatePages.length} ページ目
-              </span>
-              <button
-                type="button"
-                disabled={currentPageIndex >= templatePages.length - 1}
-                onClick={() => void goToTemplatePage(currentPageIndex + 1)}
-                className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700"
-              >
-                次のページ
-              </button>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-600 dark:text-neutral-300">
+            {templatePages.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  disabled={currentPageIndex === 0}
+                  onClick={() => void goToTemplatePage(currentPageIndex - 1)}
+                  className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700"
+                >
+                  前のページ
+                </button>
+                <span>
+                  {currentPageIndex + 1} / {templatePages.length} ページ目
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPageIndex >= templatePages.length - 1}
+                  onClick={() => void goToTemplatePage(currentPageIndex + 1)}
+                  className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700"
+                >
+                  次のページ
+                </button>
+              </>
+            )}
+
+            <div className="flex items-center gap-1" role="group" aria-label="表示倍率">
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">表示倍率:</span>
+              {ZOOM_LEVELS.map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  data-testid={`zoom-${level}`}
+                  aria-pressed={zoomPercent === level}
+                  onClick={() => void handleZoomChange(level)}
+                  className={`rounded border px-2 py-1 text-xs ${
+                    zoomPercent === level
+                      ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                      : "border-neutral-300 dark:border-neutral-700"
+                  }`}
+                >
+                  {level}%
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            枠の位置はPDF実座標で保存されるため、表示倍率を変更しても指定した枠はPDF上の同じ位置に留まります。
+          </p>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div ref={canvasWrapRef} className="relative w-full overflow-auto rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
@@ -506,32 +605,44 @@ export function FilledPdfToExcelTemplatePanel() {
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={pageImageUrl} alt={`テンプレート ${currentPageIndex + 1}ページ目`} draggable={false} />
-                  {fieldsOnCurrentPage.map((field) => {
-                    const left = pdfToScreenX(field.x, pageRenderScale);
-                    const top = pdfToScreenY(field.y, field.height, currentPageInfo.height, pageRenderScale);
-                    const w = field.width * pageRenderScale;
-                    const h = field.height * pageRenderScale;
-                    const active = activeFieldId === field.id;
-                    return (
-                      <div
-                        key={field.id}
-                        data-testid={`template-field-${fieldDisplayId(field.personIndex, field.fieldIndex)}`}
-                        onPointerDown={(e) => handleFieldPointerDown(e, field, "move")}
-                        className={`absolute flex items-start justify-start border-2 text-[10px] font-semibold ${
-                          active ? "border-blue-600 bg-blue-500/10" : "border-emerald-600 bg-emerald-500/10"
-                        }`}
-                        style={{ left, top, width: Math.max(w, 4), height: Math.max(h, 4) }}
-                      >
-                        <span className="rounded-br bg-white/90 px-1 text-neutral-700 dark:bg-neutral-900/90 dark:text-neutral-100">
-                          {fieldDisplayId(field.personIndex, field.fieldIndex)}
-                        </span>
+                  {activeViewport &&
+                    fieldsOnCurrentPage.map((field) => {
+                      const screenRect = pdfRectToScreenRect(
+                        { x: field.x, y: field.y, width: field.width, height: field.height },
+                        activeViewport
+                      );
+                      const active = activeFieldId === field.id;
+                      const isCheckbox = field.type === "checkbox";
+                      return (
                         <div
-                          onPointerDown={(e) => handleFieldPointerDown(e, field, "resize")}
-                          className="absolute -bottom-1 -right-1 h-3 w-3 cursor-nwse-resize rounded-full border border-white bg-blue-600"
-                        />
-                      </div>
-                    );
-                  })}
+                          key={field.id}
+                          data-testid={`template-field-${fieldDisplayId(field.personIndex, field.fieldIndex)}`}
+                          onPointerDown={(e) => handleFieldPointerDown(e, field, "move")}
+                          className={`absolute flex items-start justify-start border-2 text-[10px] font-semibold ${
+                            active
+                              ? "border-blue-600 bg-blue-500/10"
+                              : isCheckbox
+                                ? "border-amber-600 bg-amber-500/10"
+                                : "border-emerald-600 bg-emerald-500/10"
+                          }`}
+                          style={{
+                            left: screenRect.left,
+                            top: screenRect.top,
+                            width: Math.max(screenRect.width, 4),
+                            height: Math.max(screenRect.height, 4),
+                          }}
+                        >
+                          <span className="rounded-br bg-white/90 px-1 text-neutral-700 dark:bg-neutral-900/90 dark:text-neutral-100">
+                            {fieldDisplayId(field.personIndex, field.fieldIndex)}
+                            {isCheckbox ? "☑" : ""}
+                          </span>
+                          <div
+                            onPointerDown={(e) => handleFieldPointerDown(e, field, "resize")}
+                            className="absolute -bottom-1 -right-1 h-3 w-3 cursor-nwse-resize rounded-full border border-white bg-blue-600"
+                          />
+                        </div>
+                      );
+                    })}
                 </div>
               )}
               {pendingFieldPerson !== null && (
@@ -549,6 +660,37 @@ export function FilledPdfToExcelTemplatePanel() {
               >
                 + 人物を追加
               </button>
+
+              <fieldset className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
+                <legend className="mb-1 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                  次に追加する項目の種類
+                </legend>
+                {(
+                  [
+                    { value: "text" as const, label: "テキスト" },
+                    { value: "checkbox" as const, label: "チェックボックス" },
+                  ]
+                ).map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`cursor-pointer rounded border px-2 py-1 ${
+                      pendingFieldType === opt.value
+                        ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                        : "border-neutral-300 dark:border-neutral-700"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pending-field-type"
+                      value={opt.value}
+                      checked={pendingFieldType === opt.value}
+                      onChange={() => setPendingFieldType(opt.value)}
+                      className="sr-only"
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </fieldset>
 
               {personIndexes.map((personIndex) => {
                 const fields = template.fields.filter((f) => f.personIndex === personIndex).sort((a, b) => a.fieldIndex - b.fieldIndex);
@@ -598,6 +740,15 @@ export function FilledPdfToExcelTemplatePanel() {
                               onChange={(e) => updateField(field.id, { label: e.target.value })}
                               className="min-w-0 flex-1 rounded border border-neutral-300 px-1.5 py-0.5 dark:border-neutral-700 dark:bg-neutral-950"
                             />
+                            <select
+                              aria-label={`種類 (${badge})`}
+                              value={field.type}
+                              onChange={(e) => updateField(field.id, { type: e.target.value === "checkbox" ? "checkbox" : "text" })}
+                              className="rounded border border-neutral-300 px-1 py-0.5 dark:border-neutral-700 dark:bg-neutral-950"
+                            >
+                              <option value="text">テキスト</option>
+                              <option value="checkbox">チェックボックス</option>
+                            </select>
                             <button type="button" onClick={() => deleteField(field.id)} className="text-red-600 dark:text-red-400">
                               削除
                             </button>
@@ -671,23 +822,31 @@ export function FilledPdfToExcelTemplatePanel() {
               <div className="relative inline-block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={pageImageUrl} alt="テンプレートの確認" draggable={false} />
-                {fieldsOnCurrentPage.map((field) => {
-                  const left = pdfToScreenX(field.x, pageRenderScale);
-                  const top = pdfToScreenY(field.y, field.height, currentPageInfo?.height ?? 0, pageRenderScale);
-                  const w = field.width * pageRenderScale;
-                  const h = field.height * pageRenderScale;
-                  return (
-                    <div
-                      key={field.id}
-                      className="absolute border-2 border-emerald-600 bg-emerald-500/10 text-[10px] font-semibold"
-                      style={{ left, top, width: Math.max(w, 4), height: Math.max(h, 4) }}
-                    >
-                      <span className="bg-white/90 px-1 text-neutral-700 dark:bg-neutral-900/90 dark:text-neutral-100">
-                        {fieldDisplayId(field.personIndex, field.fieldIndex)}
-                      </span>
-                    </div>
-                  );
-                })}
+                {activeViewport &&
+                  fieldsOnCurrentPage.map((field) => {
+                    const screenRect = pdfRectToScreenRect(
+                      { x: field.x, y: field.y, width: field.width, height: field.height },
+                      activeViewport
+                    );
+                    return (
+                      <div
+                        key={field.id}
+                        className={`absolute border-2 text-[10px] font-semibold ${
+                          field.type === "checkbox" ? "border-amber-600 bg-amber-500/10" : "border-emerald-600 bg-emerald-500/10"
+                        }`}
+                        style={{
+                          left: screenRect.left,
+                          top: screenRect.top,
+                          width: Math.max(screenRect.width, 4),
+                          height: Math.max(screenRect.height, 4),
+                        }}
+                      >
+                        <span className="bg-white/90 px-1 text-neutral-700 dark:bg-neutral-900/90 dark:text-neutral-100">
+                          {fieldDisplayId(field.personIndex, field.fieldIndex)}
+                        </span>
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </div>

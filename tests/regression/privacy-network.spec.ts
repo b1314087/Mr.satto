@@ -275,3 +275,71 @@ test("filled-pdf-to-excel(テンプレートモード)操作中、PDF・OCR結�
   expect(markerLeaks, `記入内容の漏えいが疑われるリクエスト: ${JSON.stringify(markerLeaks)}`).toEqual([]);
   expect(consoleLeaks, `記入内容がコンソールへ出力されています: ${JSON.stringify(consoleLeaks)}`).toEqual([]);
 });
+
+test("excel-to-pdf操作中、Excelのセル内容が自社API・外部APIへ送信されず、コンソールにも出力されない(Phase 18.2 L章)", async ({
+  page,
+  baseURL,
+}) => {
+  // Phase 18.2 B節: 印刷設定(印刷範囲・用紙・余白・Fit to Page等)をXLSX内部XMLから
+  // 直接読み取るようになった(ooxml-page-settings.ts)ため、セル内容だけでなく
+  // その読み取り処理自体もネットワーク送信・コンソール出力を伴わないことを確認する。
+  const recorder = new NetworkRecorder(page);
+  const consoleTexts: string[] = [];
+  page.on("console", (msg) => consoleTexts.push(msg.text()));
+
+  const marker = "FIT1X1_R0C0";
+  await page.goto("/tools/excel-to-pdf");
+  await page.locator('input[type="file"]').first().setInputFiles(fixtures.excelFit1x1Xlsx);
+  await expect(page.getByRole("button", { name: "PDFに変換する" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "PDFに変換する" }).click();
+  await expect(page.getByText("完了", { exact: false })).toBeVisible({ timeout: 30_000 });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "PDFをダウンロード" }).click();
+  await downloadPromise;
+
+  const origin = new URL(baseURL!).origin;
+  const apiLeaks = findSuspiciousApiUploads(recorder, origin, ["/api/stripe"]);
+  const externalLeaks = findSuspiciousExternalUploads(recorder, origin);
+  const markerLeaks = findLeakedRequests(recorder, marker).filter((r) => !r.url.startsWith(origin) || r.method !== "GET");
+  const consoleLeaks = consoleTexts.filter((t) => t.includes(marker));
+
+  expect(apiLeaks, `自社APIへの不審なアップロードが検出されました: ${JSON.stringify(apiLeaks)}`).toEqual([]);
+  expect(externalLeaks, `外部への不審なアップロードが検出されました: ${JSON.stringify(externalLeaks)}`).toEqual([]);
+  expect(markerLeaks, `セル内容の漏えいが疑われるリクエスト: ${JSON.stringify(markerLeaks)}`).toEqual([]);
+  expect(consoleLeaks, `セル内容がコンソールへ出力されています: ${JSON.stringify(consoleLeaks)}`).toEqual([]);
+});
+
+test("word-to-pdf操作中、Word文書の内容が自社API・外部APIへ送信されず、コンソールにも出力されない(Phase 18.2 L章)", async ({
+  page,
+  baseURL,
+}) => {
+  // Phase 18.2 C節: 用紙設定(セクション・余白・pageBreakBefore)をDOCX内部XMLから
+  // 直接読み取るようになった(section-settings.ts)ため、本文だけでなくその読み取り
+  // 処理自体もネットワーク送信・コンソール出力を伴わないことを確認する。
+  const recorder = new NetworkRecorder(page);
+  const consoleTexts: string[] = [];
+  page.on("console", (msg) => consoleTexts.push(msg.text()));
+
+  const marker = "RICH_HEADING_TEXT";
+  await page.goto("/tools/word-to-pdf");
+  await page.locator('input[type="file"]').first().setInputFiles(fixtures.wordRichContentDocx);
+  await expect(page.getByRole("button", { name: "PDFに変換する" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "PDFに変換する" }).click();
+  await expect(page.getByText("完了", { exact: false })).toBeVisible({ timeout: 30_000 });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "PDFをダウンロード" }).click();
+  await downloadPromise;
+
+  const origin = new URL(baseURL!).origin;
+  const apiLeaks = findSuspiciousApiUploads(recorder, origin, ["/api/stripe"]);
+  const externalLeaks = findSuspiciousExternalUploads(recorder, origin);
+  const markerLeaks = findLeakedRequests(recorder, marker).filter((r) => !r.url.startsWith(origin) || r.method !== "GET");
+  const consoleLeaks = consoleTexts.filter((t) => t.includes(marker));
+
+  expect(apiLeaks, `自社APIへの不審なアップロードが検出されました: ${JSON.stringify(apiLeaks)}`).toEqual([]);
+  expect(externalLeaks, `外部への不審なアップロードが検出されました: ${JSON.stringify(externalLeaks)}`).toEqual([]);
+  expect(markerLeaks, `文書内容の漏えいが疑われるリクエスト: ${JSON.stringify(markerLeaks)}`).toEqual([]);
+  expect(consoleLeaks, `文書内容がコンソールへ出力されています: ${JSON.stringify(consoleLeaks)}`).toEqual([]);
+});

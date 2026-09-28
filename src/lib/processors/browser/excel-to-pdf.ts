@@ -3,31 +3,43 @@ import fontkit from "@pdf-lib/fontkit";
 import { BrowserProcessor } from "../types";
 import type { PdfProcessorOutput } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
+import { parseWorkbookPageSettings, type SheetPageSettings } from "@/lib/excel/ooxml-page-settings";
+import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
 
 /**
- * Excel（XLSX）→ PDF Processor（Phase 9）。
+ * Excel（XLSX）→ PDF Processor（Phase 9、Phase 18.2 B節で大幅改修）。
  *
  * 対応形式は .xlsx のみ（■20・■35）。read-excel-file（Phase 2-Bで既に採用済み・
- * npm audit 0件・xlsx(SheetJS)やexceljsを見送った経緯はcsv-excel.tsのコメントを
- * 参照）は旧形式の.xlsに対応しておらず(InvalidInputErrorCode: XLS_FILE_NOT_SUPPORTED)、
- * 安全に扱えることを確認できていないため、.xlsは対応外として明示する。
+ * npm audit 0件）はセルの値のみを返し、印刷範囲・用紙サイズ・向き・余白・
+ * Fit to Page・改ページ・非表示行列・セル罫線などの「印刷設定」は取得できない。
+ * これらは src/lib/excel/ooxml-page-settings.ts がXLSX内部のOOXML XMLから
+ * 直接読み取る（開発指示書B-19。新しい巨大なExcelライブラリは追加せず、
+ * 既存のfflate(ZIP)とブラウザ標準DOMParserだけで完結させている）。
  *
- * 新しいExcelライブラリは追加しない。列幅・結合セル・数式の再計算結果・
- * チャート/図形など、read-excel-fileが取得できない情報は無理に再現しない
- * （■23・■26・■28・■29）。数式は再計算せず、保存済みの値をそのまま表示する。
+ * 目標は「Excelの印刷設定でPDF保存したときの結果にできるだけ近づける」こと
+ * （開発指示書B-1）であり、Microsoft Excelとの100%同一を保証するものではない
+ * （開発指示書E章）。取得できなかった情報（列の結合・数式の再計算結果・
+ * チャート/図形・セルの塗りつぶし色等）は無理に再現しない。
  */
 
-const A4_WIDTH = 595.28;
-const A4_HEIGHT = 841.89;
-const MARGIN = 40;
+const PAPER_SIZES_PT: Record<string, { width: number; height: number }> = {
+  A4: { width: 595.28, height: 841.89 },
+  A3: { width: 841.89, height: 1190.55 },
+  Letter: { width: 612, height: 792 },
+  Legal: { width: 612, height: 1008 },
+  A5: { width: 419.53, height: 595.28 },
+};
+const DEFAULT_PAPER_SIZE = "A4";
+/** Excel側の余白情報が取得できない場合のフォールバック（既存Phase 9の値を踏襲） */
+const DEFAULT_MARGIN_PT = 40;
 const MAX_ROWS_TOTAL = 50000;
 const MAX_PAGE_COUNT = 500;
 const MIN_COL_WIDTH = 24;
 const MAX_COL_WIDTH = 220;
-const HEADER_BG: [number, number, number] = [0.93, 0.94, 0.96];
-const LINE_COLOR: [number, number, number] = [0.78, 0.78, 0.8];
+const LINE_COLOR: [number, number, number] = [0.35, 0.35, 0.38];
 const TEXT_COLOR: [number, number, number] = [0.13, 0.13, 0.15];
 const MUTED_COLOR: [number, number, number] = [0.45, 0.45, 0.48];
+const TITLE_BLOCK_HEIGHT = 26;
 
 export type RawCellValue = string | number | boolean | Date | null;
 
@@ -109,59 +121,39 @@ function wrapByWidth(text: string, font: PDFFont, size: number, maxWidth: number
   return lines.length > 0 ? lines : [""];
 }
 
-/** 列ごとの内容量から列幅を決める（read-excel-fileは実際の列幅を提供しないため、
- *  代わりにセル内容の実測フォント幅から近似値を求める）。
- *
- * 以前は文字数×係数という単純な近似だったが、日本語（全角・fontSizeとほぼ同じ幅）と
- * 半角の数字・英字（全角の半分程度の幅）が同じ列に混在するケース
- * （例:「郵便番号」という見出しと「00123」という値）で、文字数だけでは
- * 幅を大きく見誤り、セル内で文字が不自然に途中改行される不具合があった。
- * そのため、実際にPDF埋め込みフォントの widthOfTextAtSize() で計測した
- * 文字列の実測幅の最大値を使う。 */
-function computeColumnWidths(rows: RawCellValue[][], colCount: number, font: PDFFont, fontSize: number): number[] {
-  const widths: number[] = new Array(colCount).fill(MIN_COL_WIDTH);
+/** 列ごとの内容量から列幅を近似する（Excel側の実際の列幅が取得できなかった列のフォールバック） */
+function computeFallbackColumnWidths(rows: RawCellValue[][], colIndexes: number[], font: PDFFont, fontSize: number): number[] {
+  const widths: number[] = new Array(colIndexes.length).fill(MIN_COL_WIDTH);
   const sampleRows = rows.slice(0, 200); // 巨大シートでの計測コストを抑える
   for (const row of sampleRows) {
-    for (let c = 0; c < colCount; c++) {
-      const text = cellToDisplayString(row[c] ?? null).slice(0, 80);
-      if (text === "") continue;
+    colIndexes.forEach((origCol, i) => {
+      const text = cellToDisplayString(row[origCol] ?? null).slice(0, 80);
+      if (text === "") return;
       const measured = font.widthOfTextAtSize(text, fontSize);
-      widths[c] = Math.max(widths[c], measured);
-    }
+      widths[i] = Math.max(widths[i], measured);
+    });
   }
-  // +14: セル内側の左右余白(cellPadding=4pt×2辺=8pt)を確実に上回る余裕を持たせ、
-  // ぴったりの幅で実測した文字列が1文字だけ折り返される事態を防ぐ。
+  // +14: セル内側の左右余白(cellPadding=4pt×2辺=8pt)を確実に上回る余裕を持たせる
   return widths.map((w) => Math.min(Math.max(w + 14, MIN_COL_WIDTH), MAX_COL_WIDTH));
 }
 
-/** 列を「1ページの横幅に収まる列グループ」へ分割する（fitToWidth=falseのとき、
- *  Excel実機の「複数ページに分けて印刷」に近い挙動になる） */
-function splitIntoColumnGroups(widths: number[], contentWidth: number): number[][] {
-  const groups: number[][] = [];
-  let current: number[] = [];
-  let currentWidth = 0;
-  widths.forEach((w, idx) => {
-    if (current.length > 0 && currentWidth + w > contentWidth) {
-      groups.push(current);
-      current = [];
-      currentWidth = 0;
-    }
-    current.push(idx);
-    currentWidth += w;
-  });
-  if (current.length > 0) groups.push(current);
-  return groups.length > 0 ? groups : [widths.map((_, i) => i)];
-}
-
 export type PageOrientation = "portrait" | "landscape";
+/** "auto" = Excel自身のページ設定（取得できた場合）を優先する */
+export type OrientationOption = "auto" | PageOrientation;
+/**
+ * "auto"      : ExcelのFit to Page / Scale設定をそのまま使う（取得できなければ自然な改ページ）
+ * "fit-width" : 常に横1ページへ収める（Excelの設定が無い場合の簡易指定。旧仕様の「横幅に合わせる」相当）
+ * "multi-page": 内容量なりに複数ページへ分ける（Excelの設定が無い場合の簡易指定。旧仕様のfitToWidth=false相当）
+ */
+export type FitOption = "auto" | "fit-width" | "multi-page";
 
 export interface ExcelToPdfInput {
+  /** OOXML印刷設定（印刷範囲・用紙・向き・余白・Fit to Page・改ページ・非表示行列・罫線）の解析に使う */
+  file: File;
   sheets: RawExcelSheet[];
   selectedSheetNames: string[];
-  orientation: PageOrientation;
-  /** true: 列幅を縮小してでも1ページ幅に収める / false: 内容量に応じた幅を優先し、
-   *  収まらない場合は列を複数ページグループへ分割する */
-  fitToWidth: boolean;
+  orientation: OrientationOption;
+  fitMode: FitOption;
   /** 先頭行を見出し行として各ページ上部に繰り返す */
   repeatHeaderRow: boolean;
 }
@@ -172,14 +164,28 @@ export interface ExcelToPdfOutput extends PdfProcessorOutput {
   totalRowCount: number;
 }
 
+function inchesToPt(inches: number): number {
+  return inches * 72;
+}
+
+/** 元の行/列インデックス配列（印刷範囲・非表示行列を反映済み）から、
+ *  OOXMLの改ページ位置（元インデックス基準）をローカルインデックス基準へ変換する */
+function mapBreaksToLocalIndex(breaksAfterOriginal: number[], localToOriginal: number[]): Set<number> {
+  const result = new Set<number>();
+  for (const orig of breaksAfterOriginal) {
+    // 改ページ位置そのものが非表示等で除外されている場合は、直前の含まれる行/列を区切りとみなす
+    let localIdx = -1;
+    for (let i = 0; i < localToOriginal.length; i++) {
+      if (localToOriginal[i] <= orig) localIdx = i;
+      else break;
+    }
+    if (localIdx >= 0) result.add(localIdx);
+  }
+  return result;
+}
+
 export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, ExcelToPdfOutput> {
-  async process({
-    sheets,
-    selectedSheetNames,
-    orientation,
-    fitToWidth,
-    repeatHeaderRow,
-  }: ExcelToPdfInput): Promise<ExcelToPdfOutput> {
+  async process({ file, sheets, selectedSheetNames, orientation, fitMode, repeatHeaderRow }: ExcelToPdfInput): Promise<ExcelToPdfOutput> {
     const targetSheets = sheets.filter((s) => selectedSheetNames.includes(s.name));
     if (targetSheets.length === 0) {
       throw new Error("変換するシートを1つ以上選択してください。");
@@ -209,135 +215,30 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
     }
 
-    const pageWidth = orientation === "landscape" ? A4_HEIGHT : A4_WIDTH;
-    const pageHeight = orientation === "landscape" ? A4_WIDTH : A4_HEIGHT;
-    const contentWidth = pageWidth - MARGIN * 2;
-    const bottomLimit = MARGIN + 16;
+    // Excel印刷設定の取得(取得できなければ空のMap。以後は全てフォールバックへ進む。開発指示書B-19)
+    let pageSettingsBySheet: Map<string, SheetPageSettings>;
+    try {
+      pageSettingsBySheet = await parseWorkbookPageSettings(file);
+    } catch {
+      pageSettingsBySheet = new Map();
+    }
 
     const warnings: string[] = [];
-    let page: PDFPage = doc.addPage([pageWidth, pageHeight]);
-    let cursorY = pageHeight - MARGIN;
-
-    function newPage() {
-      if (doc.getPageCount() >= MAX_PAGE_COUNT) {
-        throw new Error(`変換できるページ数の上限は${MAX_PAGE_COUNT}ページです。`);
-      }
-      page = doc.addPage([pageWidth, pageHeight]);
-      cursorY = pageHeight - MARGIN;
-    }
-
-    function ensureSpace(height: number) {
-      if (cursorY - height < bottomLimit) newPage();
-    }
 
     /**
      * 1文字ずつdrawTextを呼び出す（Phase 9で判明した重要な問題への対処）。
-     *
-     * pdf-lib（内部でfontkitのfont.layout()を使用）に、既存の日本語フォント資産
-     * (Noto Sans JP)をsubset:falseで埋め込んだ状態で、英字に数字が直接続く文字列
-     * （例:"Sheet1"「A9」等。日本語+数字や、数字だけの文字列では発生しない）を
-     * 1回のdrawText呼び出しで描画すると、表示される見た目（グリフの形）自体は
-     * 正しいまま保たれる一方で、PDFのテキスト情報（ToUnicode、コピー&ペースト・
-     * 検索・スクリーンリーダー等が参照する文字情報）だけが無関係な文字に化ける、
-     * という現象を実機検証で発見した（pdf-lib/fontkit側の挙動に起因する既存の
-     * 制約で、Phase 9で新たに埋め込みロジックを変えたことによる問題ではない）。
-     * 1文字ずつ描画すると、1回のdrawText呼び出しの中で複数文字にまたがる
-     * 変換が発生しないため、この問題を回避できる（実機検証済み）。
-     * Excelの既定のシート名(Sheet1等)はこのパターンに該当するため、この
-     * ツールで実際に発生しうる不具合として、表示される文字列すべてに適用する。
+     * pdf-lib+fontkitで、既存の日本語フォント資産(Noto Sans JP)をsubset:falseで
+     * 埋め込んだ状態で、英字に数字が直接続く文字列を1回のdrawText呼び出しで
+     * 描画すると、PDFのテキスト情報だけが無関係な文字に化ける現象への対処
+     * （実機検証済み、Phase 9からの既存の対処をそのまま踏襲）。
      */
-    function drawTextRobust(text: string, x: number, y: number, size: number, color: ReturnType<typeof rgb>): number {
+    function drawTextRobust(page: PDFPage, text: string, x: number, y: number, size: number, color: ReturnType<typeof rgb>, embedFont: PDFFont): number {
       let cx = x;
       for (const ch of Array.from(text)) {
-        page.drawText(ch, { x: cx, y, size, font, color });
-        cx += font.widthOfTextAtSize(ch, size);
+        page.drawText(ch, { x: cx, y, size, font: embedFont, color });
+        cx += embedFont.widthOfTextAtSize(ch, size);
       }
       return cx - x;
-    }
-
-    function drawSheetTitle(name: string) {
-      ensureSpace(24);
-      drawTextRobust(name, MARGIN, cursorY - 14, 13, rgb(...TEXT_COLOR));
-      cursorY -= 26;
-    }
-
-    function drawColumnGroup(rows: RawCellValue[][], colIndexes: number[], widths: number[], sheetHasHeader: boolean) {
-      const fontSize = fitToWidth ? computeFitFontSize(widths, contentWidth) : 9;
-      const cellPadding = 4;
-      const lineHeight = fontSize + 3;
-
-      function drawHeaderRow(headerRow: RawCellValue[]) {
-        const wrapped = colIndexes.map((c, i) =>
-          wrapByWidth(cellToDisplayString(headerRow[c] ?? null), font, fontSize, widths[i] - cellPadding * 2)
-        );
-        const lineCount = Math.max(1, ...wrapped.map((w) => w.length));
-        const rowHeight = lineCount * lineHeight + cellPadding * 2;
-        ensureSpace(rowHeight);
-        const top = cursorY;
-        let x = MARGIN;
-        colIndexes.forEach((_, i) => {
-          page.drawRectangle({ x, y: top - rowHeight, width: widths[i], height: rowHeight, color: rgb(...HEADER_BG) });
-          page.drawRectangle({
-            x,
-            y: top - rowHeight,
-            width: widths[i],
-            height: rowHeight,
-            borderColor: rgb(...LINE_COLOR),
-            borderWidth: 0.6,
-          });
-          wrapped[i].forEach((line, li) => {
-            drawTextRobust(line, x + cellPadding, top - cellPadding - (li + 1) * lineHeight + 3, fontSize, rgb(...TEXT_COLOR));
-          });
-          x += widths[i];
-        });
-        cursorY = top - rowHeight;
-      }
-
-      const startRow = sheetHasHeader && repeatHeaderRow ? 1 : 0;
-      if (sheetHasHeader && repeatHeaderRow && rows[0]) {
-        drawHeaderRow(rows[0]);
-      }
-
-      for (let r = startRow; r < rows.length; r++) {
-        const row = rows[r];
-        const wrapped = colIndexes.map((c, i) =>
-          wrapByWidth(cellToDisplayString(row[c] ?? null), font, fontSize, widths[i] - cellPadding * 2)
-        );
-        const lineCount = Math.max(1, ...wrapped.map((w) => w.length));
-        const rowHeight = lineCount * lineHeight + cellPadding * 2;
-
-        const beforeBreakY = cursorY;
-        ensureSpace(rowHeight);
-        if (cursorY !== beforeBreakY && sheetHasHeader && repeatHeaderRow && rows[0]) {
-          drawHeaderRow(rows[0]);
-        }
-
-        const top = cursorY;
-        let x = MARGIN;
-        colIndexes.forEach((_, i) => {
-          page.drawRectangle({
-            x,
-            y: top - rowHeight,
-            width: widths[i],
-            height: rowHeight,
-            borderColor: rgb(...LINE_COLOR),
-            borderWidth: 0.6,
-          });
-          wrapped[i].forEach((line, li) => {
-            drawTextRobust(line, x + cellPadding, top - cellPadding - (li + 1) * lineHeight + 3, fontSize, rgb(...MUTED_COLOR));
-          });
-          x += widths[i];
-        });
-        cursorY = top - rowHeight;
-      }
-      cursorY -= 10;
-    }
-
-    function computeFitFontSize(widths: number[], maxTotal: number): number {
-      const total = widths.reduce((a, b) => a + b, 0);
-      if (total <= maxTotal) return 9;
-      const ratio = maxTotal / total;
-      return Math.max(6, Math.round(9 * ratio * 10) / 10);
     }
 
     let sheetCount = 0;
@@ -348,40 +249,191 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       }
       return true;
     });
-
-    sheetsToRender.forEach((sheet, sheetIdx) => {
-      if (sheetIdx > 0) newPage();
-      sheetCount++;
-      drawSheetTitle(sheet.name);
-
-      const colCount = Math.max(...sheet.rows.map((r) => r.length), 1);
-      let widths = computeColumnWidths(sheet.rows, colCount, font, 9);
-
-      if (fitToWidth) {
-        const total = widths.reduce((a, b) => a + b, 0);
-        if (total > contentWidth) {
-          const scale = contentWidth / total;
-          widths = widths.map((w) => Math.max(w * scale, 4));
-        }
-        drawColumnGroup(sheet.rows, widths.map((_, i) => i), widths, true);
-      } else {
-        const groups = splitIntoColumnGroups(widths, contentWidth);
-        if (groups.length > 1) {
-          warnings.push(
-            `「${sheet.name}」は列数が多いため、列を${groups.length}つのグループに分けて出力しました（Excel印刷の複数ページ分割に相当）`
-          );
-        }
-        groups.forEach((colIndexes, groupIdx) => {
-          if (groupIdx > 0) newPage();
-          const groupWidths = colIndexes.map((c) => widths[c]);
-          drawColumnGroup(sheet.rows, colIndexes, groupWidths, true);
-        });
-      }
-    });
-
     if (sheetsToRender.length === 0) {
       throw new Error("変換できる内容がありませんでした（選択したシートはすべて空です）。");
     }
+
+    sheetsToRender.forEach((sheet) => {
+      sheetCount++;
+      const settings = pageSettingsBySheet.get(sheet.name) ?? null;
+
+      // --- 1. 印刷範囲(B-5): Excel側で明示的に指定されていればその範囲だけを対象にする ---
+      const totalColCount = Math.max(...sheet.rows.map((r) => r.length), 1);
+      const rangeStartRow = settings?.printArea ? Math.max(0, settings.printArea.startRow) : 0;
+      const rangeEndRow = settings?.printArea ? Math.min(sheet.rows.length - 1, settings.printArea.endRow) : sheet.rows.length - 1;
+      const rangeStartCol = settings?.printArea ? Math.max(0, settings.printArea.startCol) : 0;
+      const rangeEndCol = settings?.printArea ? Math.min(totalColCount - 1, settings.printArea.endCol) : totalColCount - 1;
+      if (settings?.printArea) {
+        warnings.push(`「${sheet.name}」はExcelの印刷範囲(${rangeStartRow + 1}〜${rangeEndRow + 1}行目)だけをPDF化しました`);
+      }
+
+      // --- 非表示行・列を除外(B-16) ---
+      const localToOriginalRow: number[] = [];
+      for (let r = rangeStartRow; r <= rangeEndRow; r++) {
+        if (!settings?.hiddenRows.has(r)) localToOriginalRow.push(r);
+      }
+      const localToOriginalCol: number[] = [];
+      for (let c = rangeStartCol; c <= rangeEndCol; c++) {
+        if (!settings?.hiddenCols.has(c)) localToOriginalCol.push(c);
+      }
+      if (localToOriginalRow.length === 0 || localToOriginalCol.length === 0) {
+        warnings.push(`「${sheet.name}」は印刷対象の行・列がありませんでした（印刷範囲・非表示設定をご確認ください）`);
+        return;
+      }
+
+      // --- 2. 用紙サイズ・3. 向き(B-10/B-11) ---
+      const effectiveOrientation: PageOrientation = orientation !== "auto" ? orientation : settings?.orientation ?? "portrait";
+      const paperKey = settings?.paperSize ?? DEFAULT_PAPER_SIZE;
+      const paper = PAPER_SIZES_PT[paperKey] ?? PAPER_SIZES_PT[DEFAULT_PAPER_SIZE];
+      const pageWidth = effectiveOrientation === "landscape" ? paper.height : paper.width;
+      const pageHeight = effectiveOrientation === "landscape" ? paper.width : paper.height;
+
+      // --- 4. 余白(B-12) ---
+      const marginLeft = settings?.margins ? inchesToPt(settings.margins.left) : DEFAULT_MARGIN_PT;
+      const marginRight = settings?.margins ? inchesToPt(settings.margins.right) : DEFAULT_MARGIN_PT;
+      const marginTop = settings?.margins ? inchesToPt(settings.margins.top) : DEFAULT_MARGIN_PT;
+      const marginBottom = settings?.margins ? inchesToPt(settings.margins.bottom) : DEFAULT_MARGIN_PT;
+      const contentWidth = Math.max(50, pageWidth - marginLeft - marginRight);
+      const contentHeightForData = Math.max(50, pageHeight - marginTop - marginBottom - TITLE_BLOCK_HEIGHT);
+
+      // --- 列幅: Excel実測値があれば使い、無ければ内容量から近似する ---
+      const fallbackWidths = computeFallbackColumnWidths(sheet.rows, localToOriginalCol, font, 9);
+      const colWidths = localToOriginalCol.map((origCol, i) => settings?.columnWidthsPt.get(origCol) ?? fallbackWidths[i]);
+
+      // --- 5〜7. Fit to Width/Height/Scale(B-13/B-14) ---
+      const fit: FitPageSettings =
+        fitMode === "fit-width"
+          ? { fitToPageEnabled: true, fitToWidth: 1, fitToHeight: null, scalePercent: null }
+          : fitMode === "multi-page"
+            ? { fitToPageEnabled: false, fitToWidth: null, fitToHeight: null, scalePercent: null }
+            : {
+                fitToPageEnabled: settings?.fitToPageEnabled ?? false,
+                fitToWidth: settings?.fitToWidth ?? null,
+                fitToHeight: settings?.fitToHeight ?? null,
+                scalePercent: settings?.scalePercent ?? null,
+              };
+
+      const fontSize = 9;
+      const cellPadding = 4;
+      const lineHeight = fontSize + 3;
+
+      // 行の高さ: Excel実測値があれば使い、無ければラップ後の行数から見積もる
+      const rowHeights = localToOriginalRow.map((origRow) => {
+        const known = settings?.rowHeightsPt.get(origRow);
+        if (known) return known;
+        const row = sheet.rows[origRow] ?? [];
+        const lineCount = Math.max(
+          1,
+          ...localToOriginalCol.map((origCol, i) => wrapByWidth(cellToDisplayString(row[origCol] ?? null), font, fontSize, colWidths[i] - cellPadding * 2).length)
+        );
+        return lineCount * lineHeight + cellPadding * 2;
+      });
+
+      // 見出し行の繰り返し(repeatHeaderRow)は、印刷範囲の最初の行を毎ページの先頭に
+      // 追加で描画する。ページ分割の計算(computePageGrid)へは見出し行を含めず、
+      // その代わり見出し行の高さぶんを事前にcontentHeightから差し引いておくことで、
+      // 「本文行を目一杯詰めてから見出し分だけページをはみ出す」事態を防ぐ
+      // （開発指示書B-2〜B-4の「Excel印刷ページ=PDFページ」という前提を崩さないため）。
+      const headerLocalRowIndex = repeatHeaderRow ? 0 : -1;
+      const bodyLocalRowIndexes = repeatHeaderRow ? localToOriginalRow.map((_, i) => i).slice(1) : localToOriginalRow.map((_, i) => i);
+      const bodyRowSizes = bodyLocalRowIndexes.map((i) => rowHeights[i]);
+      const headerRowHeightPt = headerLocalRowIndex >= 0 ? rowHeights[headerLocalRowIndex] : 0;
+      const contentHeightForBody = Math.max(20, contentHeightForData - headerRowHeightPt);
+
+      // --- 8. 改ページ(B-15): 取得できれば反映、取得できなければ上記の自然な分割のまま ---
+      const rowBreaksLocalAll = mapBreaksToLocalIndex(settings?.rowBreaksAfter ?? [], localToOriginalRow);
+      // 見出し行を除いたbodyLocalRowIndexes基準のインデックスへ変換する
+      const rowBreaksLocal = new Set(
+        Array.from(rowBreaksLocalAll)
+          .map((idx) => bodyLocalRowIndexes.indexOf(idx))
+          .filter((idx) => idx >= 0)
+      );
+      const colBreaksLocal = mapBreaksToLocalIndex(settings?.colBreaksAfter ?? [], localToOriginalCol);
+
+      const grid = computePageGrid({
+        colSizesPt: colWidths,
+        rowSizesPt: bodyRowSizes,
+        contentWidthPt: contentWidth,
+        contentHeightPt: contentHeightForBody,
+        fit,
+        colBreaksAfterIndex: colBreaksLocal,
+        rowBreaksAfterIndex: rowBreaksLocal,
+      });
+      // grid.rowGroups の各要素は bodyLocalRowIndexes 配列内でのインデックスなので、
+      // 描画時には元のローカル行インデックス（localToOriginalRow基準）へ戻す
+      const rowGroupsInLocalRowIndex = grid.rowGroups.map((group) => group.map((i) => bodyLocalRowIndexes[i]));
+
+      if (grid.colGroups.length * rowGroupsInLocalRowIndex.length > 1) {
+        warnings.push(
+          `「${sheet.name}」は${grid.colGroups.length}(横)×${rowGroupsInLocalRowIndex.length}(縦)ページに分割しました（Excelの印刷ページ数に合わせています）`
+        );
+      }
+
+      function borderFor(origRow: number, origCol: number) {
+        return settings?.cellBorders.get(`${origRow}:${origCol}`) ?? null;
+      }
+
+      function drawCellBorders(page: PDFPage, x: number, yTop: number, width: number, height: number, origRow: number, origCol: number, s: number) {
+        const b = borderFor(origRow, origCol);
+        if (!b) return;
+        const yBottom = yTop - height;
+        const color = rgb(...LINE_COLOR);
+        const thickness = Math.max(0.4, 0.6 * s);
+        if (b.top) page.drawLine({ start: { x, y: yTop }, end: { x: x + width, y: yTop }, thickness, color });
+        if (b.bottom) page.drawLine({ start: { x, y: yBottom }, end: { x: x + width, y: yBottom }, thickness, color });
+        if (b.left) page.drawLine({ start: { x, y: yBottom }, end: { x, y: yTop }, thickness, color });
+        if (b.right) page.drawLine({ start: { x: x + width, y: yBottom }, end: { x: x + width, y: yTop }, thickness, color });
+      }
+
+      function drawRow(page: PDFPage, localRowIdx: number, colGroup: number[], top: number, isHeader: boolean) {
+        const origRow = localToOriginalRow[localRowIdx];
+        const row = sheet.rows[origRow] ?? [];
+        const s = grid.scale;
+        const rowH = rowHeights[localRowIdx] * s;
+        let x = marginLeft;
+        const color = isHeader ? rgb(...TEXT_COLOR) : rgb(...MUTED_COLOR);
+        colGroup.forEach((localColIdx) => {
+          const origCol = localToOriginalCol[localColIdx];
+          const w = colWidths[localColIdx] * s;
+          const text = cellToDisplayString(row[origCol] ?? null);
+          const wrapped = wrapByWidth(text, font, fontSize * s, w - cellPadding * 2 * s);
+          wrapped.slice(0, Math.max(1, Math.floor(rowH / (lineHeight * s)))).forEach((line, li) => {
+            drawTextRobust(page, line, x + cellPadding * s, top - cellPadding * s - (li + 1) * lineHeight * s + 3 * s, fontSize * s, color, font);
+          });
+          drawCellBorders(page, x, top, w, rowH, origRow, origCol, s);
+          x += w;
+        });
+        return top - rowH;
+      }
+
+      // --- ページ順序: Excelの既定(down, then over) = 同じ列グループ内で縦方向に進み、
+      //     縦方向を使い切ってから次の列グループへ進む ---
+      let firstPageOfSheet = true;
+      grid.colGroups.forEach((colGroup) => {
+        rowGroupsInLocalRowIndex.forEach((rowGroup) => {
+          if (doc.getPageCount() >= MAX_PAGE_COUNT) {
+            throw new Error(`変換できるページ数の上限は${MAX_PAGE_COUNT}ページです。`);
+          }
+          const page = doc.addPage([pageWidth, pageHeight]);
+          let cursorY = pageHeight - marginTop;
+
+          if (firstPageOfSheet) {
+            drawTextRobust(page, sheet.name, marginLeft, cursorY - 14, 13, rgb(...TEXT_COLOR), font);
+            cursorY -= TITLE_BLOCK_HEIGHT;
+            firstPageOfSheet = false;
+          }
+
+          // 見出し行(headerLocalRowIndex)はページ分割の計算から除外しているため、
+          // repeatHeaderRow有効時は毎ページ無条件で先頭に描画する。
+          if (headerLocalRowIndex >= 0) {
+            cursorY = drawRow(page, headerLocalRowIndex, colGroup, cursorY, true);
+          }
+          rowGroup.forEach((localRowIdx) => {
+            cursorY = drawRow(page, localRowIdx, colGroup, cursorY, false);
+          });
+        });
+      });
+    });
 
     let bytes: Uint8Array;
     try {

@@ -8,7 +8,8 @@ import {
   type RenderedPageCanvas,
 } from "@/lib/pdf/pdfjs-client";
 import type { OcrLanguageOption } from "@/lib/ocr/tesseract-client";
-import { extractFieldValue, type FieldExtractionMethod } from "./field-extraction";
+import { extractFieldValue, cropFieldCanvas, type FieldExtractionMethod } from "./field-extraction";
+import { extractCheckboxValue, computeDarkPixelRatio, CHECKBOX_CHECKED_VALUE, CHECKBOX_UNCHECKED_VALUE } from "./checkbox-detection";
 import { PERSON_VALID_MIN_RATIO, type Template, type TemplateField } from "./types";
 
 /**
@@ -86,6 +87,12 @@ export interface ExtractPersonsFromFileOptions {
   file: File;
   template: Template;
   language: OcrLanguageOption;
+  /**
+   * 複数の記入済みPDFをまとめて処理する場合（開発指示書A-22）の、ファイルの
+   * 通し番号。PersonRecord.id をファイルをまたいで一意にするためだけに使う
+   * （個人情報は含まない）。省略時は0番目として扱う。
+   */
+  fileIndex?: number;
   onPageProgress?: (info: { currentPage: number; totalPages: number; method: "text-layer" | "ocr" }) => void;
 }
 
@@ -102,7 +109,7 @@ export interface ExtractPersonsFromFileResult {
  * （開発指示書12章：同一レイアウトの複数ページへの適用）。
  */
 export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions): Promise<ExtractPersonsFromFileResult> {
-  const { file, template, language, onPageProgress } = opts;
+  const { file, template, language, fileIndex = 0, onPageProgress } = opts;
   const pdf = await loadPdfDocument(file);
   const templatePageCount = Math.max(1, template.pages.length);
   const records: PersonRecord[] = [];
@@ -141,6 +148,20 @@ export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions
       const sortedFields = [...(byPerson.get(personIndex) ?? [])].sort((a, b) => a.fieldIndex - b.fieldIndex);
       const values: PersonFieldValue[] = [];
       for (const field of sortedFields) {
+        if (field.type === "checkbox") {
+          // checkboxはOCR文字認識に頼らず、黒画素割合ベースのルールベース判定を使う
+          // （開発指示書A-19）。テキストレイヤーの有無に関わらず必ずページ描画→
+          // 枠だけのcropを経由する（extractFieldValueのtext-layer優先パスは通らない）。
+          const checkboxResult = await extractCheckboxValue({ field, getPage: getOcrPage, pageHeightPt });
+          values.push({
+            fieldIndex: field.fieldIndex,
+            label: field.label.trim() || `項目${field.fieldIndex}`,
+            value: checkboxResult.checked ? CHECKBOX_CHECKED_VALUE : CHECKBOX_UNCHECKED_VALUE,
+            method: "checkbox",
+            confidence: null,
+          });
+          continue;
+        }
         const result = await extractFieldValue({
           field,
           textItems: hasText ? textItems : [],
@@ -160,7 +181,10 @@ export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions
       const excluded = !valid && template.excludeEmptyPersons;
       idCounter += 1;
       records.push({
-        id: `p${idCounter}-${pageNumber}-${personIndex}`,
+        // 複数PDFをまとめて処理する場合(A-22)、ファイルをまたいでpageNumber・
+        // personIndexが一致しうるため、fileIndexを含めてidを一意にする
+        // (Reactのkeyの重複を防ぐ。個人情報は含まない)。
+        id: `p${fileIndex}-${idCounter}-${pageNumber}-${personIndex}`,
         sourceFileName: file.name,
         sourcePageNumber: pageNumber,
         personIndex,
@@ -175,10 +199,13 @@ export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions
 }
 
 /**
- * テンプレート登録時に、空のテンプレートPDF自身から各枠の「固定文字」
- * （ラベルの残り等）を読み取り、テンプレート定義へ記録する（開発指示書15・16章）。
- * 記入済みPDFの抽出結果からこの固定文字を除外することで、
- * 「氏名：」等が値に混ざるのを防ぐ。
+ * テンプレート登録時に、空のテンプレートPDF自身から各枠の情報を読み取り、
+ * テンプレート定義へ記録する（開発指示書15・16章、Phase 18.2 A-19）。
+ *
+ * - "text" 枠: 「固定文字」（ラベルの残り等）を読み取り、記入済みPDFの
+ *   抽出結果からこの固定文字を除外することで「氏名：」等が値に混ざるのを防ぐ。
+ * - "checkbox" 枠: 空のテンプレート自身のこの枠内の黒画素割合を記録し、
+ *   記入済みPDFを読み取る際の「差分でチェック有無を判定する」ための基準値とする。
  */
 export async function captureFixedTextForTemplate(
   templateFile: File,
@@ -195,7 +222,7 @@ export async function captureFixedTextForTemplate(
   for (const field of template.fields) {
     const pageNumber = field.pageIndex + 1;
     if (pageNumber < 1 || pageNumber > pdf.numPages) {
-      updatedFields.push({ ...field, fixedText: undefined });
+      updatedFields.push({ ...field, fixedText: undefined, blankFillRatio: undefined });
       continue;
     }
 
@@ -210,6 +237,18 @@ export async function captureFixedTextForTemplate(
       pageCache.set(pageNumber, ctx);
     }
 
+    if (field.type === "checkbox") {
+      try {
+        const rendered = await ctx.getOcrPage();
+        const crop = rendered ? cropFieldCanvas(rendered.canvas, field, ctx.pageHeightPt, rendered.scale) : null;
+        const blankFillRatio = crop ? computeDarkPixelRatio(crop) : undefined;
+        updatedFields.push({ ...field, fixedText: undefined, blankFillRatio });
+      } catch {
+        updatedFields.push({ ...field, fixedText: undefined, blankFillRatio: undefined });
+      }
+      continue;
+    }
+
     const result = await extractFieldValue({
       field: { ...field, fixedText: undefined },
       textItems: ctx.hasText ? ctx.textItems : [],
@@ -217,7 +256,7 @@ export async function captureFixedTextForTemplate(
       pageHeightPt: ctx.pageHeightPt,
       language,
     });
-    updatedFields.push({ ...field, fixedText: result.value || undefined });
+    updatedFields.push({ ...field, fixedText: result.value || undefined, blankFillRatio: undefined });
   }
 
   return { ...template, fields: updatedFields };

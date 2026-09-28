@@ -10,24 +10,32 @@ import {
   ExcelToPdfProcessor,
   readExcelSheets,
   type ExcelToPdfOutput,
-  type PageOrientation,
+  type OrientationOption,
+  type FitOption,
   type RawExcelSheet,
 } from "@/lib/processors/browser/excel-to-pdf";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 /**
- * Excel（XLSX）→ PDF（Phase 9）。
+ * Excel（XLSX）→ PDF（Phase 9、Phase 18.2 B節で大幅改修）。
  *
  * 対応形式は.xlsxのみ（.xlsには非対応。read-excel-fileが安全に対応できることを
- * 確認できていないため）。数式は再計算せず保存済みの値を表示し、チャート・図形・
- * 結合セルなど取得できない情報は無理に再現しない。
+ * 確認できていないため）。数式は再計算せず保存済みの値を表示する。
+ *
+ * 「Excelの印刷設定でPDF保存した結果にできるだけ近づける」ことを目標に、
+ * 印刷範囲・用紙サイズ・向き・余白・Fit to Page・拡大縮小・改ページ・
+ * 非表示行列・セルの実際の罫線をExcelファイル自身から読み取って反映する
+ * （開発指示書Phase 18.2 B節）。向き・ページの収め方は既定で「自動
+ * （Excelの設定を優先）」とし、Excel側に情報が無い場合のみ以下の手動指定へ
+ * フォールバックする。取得できないもの（結合セル・チャート・図形・数式の
+ * 再計算結果・セルの塗りつぶし色等）は無理に再現しない。
  */
 export function ExcelToPdfTool() {
   const [file, setFile] = useState<File | null>(null);
   const [sheets, setSheets] = useState<RawExcelSheet[] | null>(null);
   const [selectedSheets, setSelectedSheets] = useState<Set<string>>(new Set());
-  const [orientation, setOrientation] = useState<PageOrientation>("portrait");
-  const [fitToWidth, setFitToWidth] = useState(true);
+  const [orientation, setOrientation] = useState<OrientationOption>("auto");
+  const [fitMode, setFitMode] = useState<FitOption>("auto");
   const [repeatHeaderRow, setRepeatHeaderRow] = useState(true);
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -72,10 +80,11 @@ export function ExcelToPdfTool() {
 
     try {
       const output = await new ExcelToPdfProcessor().process({
+        file,
         sheets,
         selectedSheetNames: Array.from(selectedSheets),
         orientation,
-        fitToWidth,
+        fitMode,
         repeatHeaderRow,
       });
       setResult(output);
@@ -100,7 +109,8 @@ export function ExcelToPdfTool() {
           ファイルが外部のサーバーへ送信されることはありません。
         </p>
         <p>
-          列幅はセルの内容量から自動的に決めています（Excel上で設定した実際の列幅は取得できないため）。
+          印刷範囲・用紙サイズ・向き・余白・列幅・改ページなどはExcelファイル自身に保存されている設定を
+          できるだけ読み取って反映します（取得できない場合のみ下記の指定や自動推定にフォールバックします）。
           グラフ・図形・結合セルなど、取得できない情報は再現されない場合があります。
         </p>
       </div>
@@ -142,48 +152,52 @@ export function ExcelToPdfTool() {
             <div>
               <p className="mb-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200">向き</p>
               <div className="flex gap-2">
-                {(["portrait", "landscape"] as const).map((o) => (
+                {(
+                  [
+                    { value: "auto", label: "自動（Excelの設定）" },
+                    { value: "portrait", label: "縦" },
+                    { value: "landscape", label: "横" },
+                  ] as const
+                ).map((o) => (
                   <button
-                    key={o}
+                    key={o.value}
                     type="button"
-                    onClick={() => setOrientation(o)}
+                    onClick={() => setOrientation(o.value)}
                     className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                      orientation === o
+                      orientation === o.value
                         ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
                         : "border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
                     }`}
                   >
-                    {o === "portrait" ? "縦" : "横"}
+                    {o.label}
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <p className="mb-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200">列幅</p>
+              <p className="mb-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200">ページの収め方</p>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFitToWidth(true)}
-                  className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                    fitToWidth
-                      ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                      : "border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
-                  }`}
-                >
-                  横幅に合わせる
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFitToWidth(false)}
-                  className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                    !fitToWidth
-                      ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                      : "border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
-                  }`}
-                >
-                  列数が多い場合はページを分ける
-                </button>
+                {(
+                  [
+                    { value: "auto", label: "自動（Excelの設定）" },
+                    { value: "fit-width", label: "横幅に合わせる" },
+                    { value: "multi-page", label: "列数が多い場合はページを分ける" },
+                  ] as const
+                ).map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setFitMode(o.value)}
+                    className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                      fitMode === o.value
+                        ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                        : "border-neutral-300 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
