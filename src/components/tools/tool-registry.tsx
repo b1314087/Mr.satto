@@ -196,6 +196,9 @@ const ImageMetadataRemoveTool = dynamic(() =>
 const ImageWatermarkTool = dynamic(() =>
   import("./implementations/image-watermark-tool").then((m) => m.ImageWatermarkTool)
 );
+const ImageLayoutTool = dynamic(() =>
+  import("./implementations/image-layout-tool").then((m) => m.ImageLayoutTool)
+);
 const TextCaseConverterTool = dynamic(() =>
   import("./implementations/text-case-converter-tool").then((m) => m.TextCaseConverterTool)
 );
@@ -363,6 +366,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageMetadataRemoveTool />;
     case "image-watermark":
       return <ImageWatermarkTool />;
+    case "image-layout":
+      return <ImageLayoutTool />;
     case "text-case-converter":
       return <TextCaseConverterTool />;
     case "csv-column-editor":

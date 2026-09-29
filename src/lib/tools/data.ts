@@ -164,6 +164,26 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["透かし", "watermark", "ロゴ", "CONFIDENTIAL"],
   },
+  {
+    id: "image-layout",
+    name: "画像レイアウト",
+    category: "image",
+    description: "複数の画像・文字を自由配置し、結合・グリッド配置してPNG/JPEG/PDFに書き出します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: [
+      "画像結合",
+      "コラージュ",
+      "collage",
+      "レイアウト",
+      "グリッド配置",
+      "A4配置",
+      "縦結合",
+      "横結合",
+      "文字入れ",
+    ],
+  },
 
   // ------------------------------------------------------------------
   // PDF
