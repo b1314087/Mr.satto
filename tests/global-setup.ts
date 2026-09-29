@@ -187,6 +187,24 @@ async function generateImages() {
     );
     fs.writeFileSync(fixtures.landscapeJpg, Buffer.from(landscapeDataUrl.split(",")[1], "base64"));
 
+    // Step 5: 画像結合テスト用の縦長(portrait)画像。sample.png(64x64)・
+    // landscapeJpg(300x200)とサイズ・向きが異なる画像を混在させて結合結果を確認する。
+    const portraitPage = await browser.newPage({ viewport: { width: 120, height: 200 } });
+    await portraitPage.setContent(
+      `<html><body style="margin:0"><canvas id="c" width="120" height="200"></canvas>
+       <script>
+         const ctx = document.getElementById('c').getContext('2d');
+         ctx.fillStyle = '#16a34a';
+         ctx.fillRect(0, 0, 120, 200);
+         ctx.fillStyle = '#ffffff';
+         ctx.fillRect(30, 60, 60, 80);
+       </script></body></html>`
+    );
+    const portraitDataUrl = await portraitPage.$eval("#c", (el) =>
+      (el as HTMLCanvasElement).toDataURL("image/png")
+    );
+    fs.writeFileSync(fixtures.portraitPng, Buffer.from(portraitDataUrl.split(",")[1], "base64"));
+
     // 破損ファイル（拡張子は.pngだが中身が不正なバイト列）の異常系テスト用。
     // 実在の画像形式を装わない、明らかに無効なバイト列にする。
     fs.writeFileSync(fixtures.corruptedImage, Buffer.from("not a valid png file", "utf-8"));

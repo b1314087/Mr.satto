@@ -35,6 +35,9 @@ export const fixtures = {
   landscapeJpg: path.join(GENERATED_DIR, "landscape.jpg"),
   // 破損ファイル（拡張子は画像だが中身が不正なバイト列）の異常系テスト用。
   corruptedImage: path.join(GENERATED_DIR, "corrupted-image.png"),
+  // Step 5: 画像結合テスト用。sample.png(64x64正方形)・landscapeJpg(300x200横長)とは
+  // 別に、異なるサイズが混在する場合の結合結果を確認するための縦長(portrait)画像。
+  portraitPng: path.join(GENERATED_DIR, "portrait.png"),
   xlsx: path.join(GENERATED_DIR, "sample.xlsx"),
   zip: path.join(GENERATED_DIR, "sample.zip"),
   webm: path.join(GENERATED_DIR, "sample.webm"),

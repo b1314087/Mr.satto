@@ -202,6 +202,9 @@ const ImageLayoutTool = dynamic(() =>
 const ImagePassportPhotoTool = dynamic(() =>
   import("./implementations/image-passport-photo-tool").then((m) => m.ImagePassportPhotoTool)
 );
+const ImageMergeTool = dynamic(() =>
+  import("./implementations/image-merge-tool").then((m) => m.ImageMergeTool)
+);
 const TextCaseConverterTool = dynamic(() =>
   import("./implementations/text-case-converter-tool").then((m) => m.TextCaseConverterTool)
 );
@@ -373,6 +376,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageLayoutTool />;
     case "image-passport-photo":
       return <ImagePassportPhotoTool />;
+    case "image-merge":
+      return <ImageMergeTool />;
     case "text-case-converter":
       return <TextCaseConverterTool />;
     case "csv-column-editor":
