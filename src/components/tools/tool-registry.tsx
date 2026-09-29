@@ -211,6 +211,9 @@ const ImagePaddingTextTool = dynamic(() =>
 const ImageTileSplitTool = dynamic(() =>
   import("./implementations/image-tile-split-tool").then((m) => m.ImageTileSplitTool)
 );
+const ImageMosaicTool = dynamic(() =>
+  import("./implementations/image-mosaic-tool").then((m) => m.ImageMosaicTool)
+);
 const TextCaseConverterTool = dynamic(() =>
   import("./implementations/text-case-converter-tool").then((m) => m.TextCaseConverterTool)
 );
@@ -388,6 +391,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImagePaddingTextTool />;
     case "image-tile-split":
       return <ImageTileSplitTool />;
+    case "image-mosaic":
+      return <ImageMosaicTool />;
     case "text-case-converter":
       return <TextCaseConverterTool />;
     case "csv-column-editor":
