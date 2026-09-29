@@ -856,4 +856,24 @@ function generateWordToPdfFixtures() {
     ],
     section: { pageWidthTwips: 12240, pageHeightTwips: 15840, orientation: "landscape" }, // Legal横(セクション2=文書末尾の設定)
   });
+
+  // 空白行・連続空行(Phase 22 C-2〜C-4): P・Q・R・Sをそれぞれ1文字だけの段落にし、
+  // P-Q間は空行なし、Q-R間は空行1つ、R-S間は空行2つ、というように空行の数を
+  // 変えて並べる(1文字にするのは、既存の余白テストと同じく
+  // pdf.pages[0].items.find(it => it.str === "P") で個々の文字の実座標を
+  // そのまま取得するため)。word-to-pdf.tsの行送り計算(LINE_HEIGHT=15,
+  // PARAGRAPH_GAP=6)から、空行なしの段落間隔は21pt、空行1つぶんの間隔は
+  // 42pt(21の2倍)、空行2つぶんの間隔は63pt(21の3倍)になるはずで、これによって
+  // 「空行が実際に1行分として積み増しされているか」をピクセル単位で検証できる。
+  write(fixtures.wordBlankLinesDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "P" }] },
+      { kind: "paragraph", runs: [{ text: "Q" }] },
+      { kind: "paragraph", runs: [] },
+      { kind: "paragraph", runs: [{ text: "R" }] },
+      { kind: "paragraph", runs: [] },
+      { kind: "paragraph", runs: [] },
+      { kind: "paragraph", runs: [{ text: "S" }] },
+    ],
+  });
 }

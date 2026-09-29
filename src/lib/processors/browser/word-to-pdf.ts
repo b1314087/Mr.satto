@@ -84,6 +84,19 @@ const MAX_DOCX_SIZE_BYTES = 30 * 1024 * 1024;
 /** 1枚あたりの画像デコード後サイズの上限（巨大画像によるメモリ逼迫を防ぐ） */
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_PAGE_COUNT = 300;
+/**
+ * 空のWord段落(開発指示書C-2〜C-4、Phase 22)を検出するためのマーカー。
+ *
+ * mammothは中身が空のw:p(テキスト・改行・画像等、視覚要素を一切持たない段落)を
+ * HTML化する際、<p></p>すら出力せずHTMLから完全に消してしまうことを実機検証で
+ * 確認済み。そのため、明示的な改ページ(PAGE_BREAK_MARKER)と同じ手法で、mammothの
+ * transformDocumentフックの時点(HTML化される前)で「空の段落」を検出し、
+ * マーカー文字列を埋め込んだ段落へ置き換えることで、空段落の存在そのものを
+ * HTMLへ保存する。htmlToBlocks側でこのマーカーを検出し、実際には空文字の
+ * ParagraphBlock(runs: [])へ戻す。既存のPAGE_BREAK_MARKERと同じくPUA文字で
+ * 囲むことで、実際の文書中のテキストと衝突しないようにしている。
+ */
+const EMPTY_PARAGRAPH_MARKER = "MRSATTO_EMPTY_PARAGRAPH";
 
 const PAGE_BREAK_MARKER = "MRSATTO_PAGE_BREAK";
 
@@ -209,6 +222,66 @@ function injectPageBreakBeforeMarkers(documentNode: unknown, bodyHints: BodyChil
   return { ...obj, children: nextChildren };
 }
 
+/**
+ * 空段落マーカー用のrunノードを1つ生成する(makePageBreakMarkerParagraphと対の関数)。
+ */
+function makeEmptyParagraphMarkerRun(): Record<string, unknown> {
+  return {
+    type: "run",
+    styleId: null,
+    styleName: null,
+    isBold: false,
+    isUnderline: false,
+    isItalic: false,
+    isStrikethrough: false,
+    isAllCaps: false,
+    isSmallCaps: false,
+    verticalAlignment: "baseline",
+    font: null,
+    fontSize: null,
+    highlight: null,
+    children: [{ type: "text", value: EMPTY_PARAGRAPH_MARKER }],
+  };
+}
+
+/**
+ * mammothの中間ドキュメントツリーを走査し、視覚的な内容(テキスト・改行・タブ等)を
+ * 一切持たない段落(w:pPr のみでw:rを持たない、またはw:rはあっても空文字列のみの
+ * 段落。Wordで「空白の1行」として見えるもの)を検出し、EMPTY_PARAGRAPH_MARKERを
+ * 埋め込んだrunを追加する(開発指示書C-2〜C-4、Phase 22)。
+ *
+ * mammothは中身が空の段落をHTML化する際、<p></p>すら出力せず消してしまうため
+ * (実機検証済み)、この変換を経ないと「Wordで入れた空白1行がPDFで消える」問題が
+ * 起きる。改ページ用のmarkPageBreaksと同じ「transformDocumentフックで中間木を
+ * 書き換える」方式を踏襲している。
+ *
+ * 改ページ(w:br type="page")や通常の改行(w:br)は視覚的な要素として扱い、
+ * 「空」とは判定しない(hasVisibleContentのbreakノードの扱い)。
+ */
+function markEmptyParagraphs(node: unknown): unknown {
+  function hasVisibleContent(n: unknown): boolean {
+    if (!n || typeof n !== "object") return false;
+    const obj = n as Record<string, unknown>;
+    if (obj.type === "text" && typeof obj.value === "string" && obj.value !== "") return true;
+    if (obj.type === "break") return true;
+    if (obj.type === "image" || obj.type === "drawing") return true;
+    if (Array.isArray(obj.children)) return obj.children.some(hasVisibleContent);
+    return false;
+  }
+
+  if (!node || typeof node !== "object") return node;
+  const obj = node as Record<string, unknown>;
+  let next: Record<string, unknown> = obj;
+  if (Array.isArray(obj.children)) {
+    next = { ...obj, children: obj.children.map(markEmptyParagraphs) };
+  }
+  if (next.type === "paragraph" && !hasVisibleContent(next)) {
+    const children = Array.isArray(next.children) ? next.children : [];
+    next = { ...next, children: [...children, makeEmptyParagraphMarkerRun()] };
+  }
+  return next;
+}
+
 /** インライン要素(strong/em/u/a/text)を再帰的に読み、TextRunの配列へ展開する */
 function extractRuns(
   node: ChildNode,
@@ -241,6 +314,11 @@ function extractRuns(
 function isPageBreakParagraph(runs: TextRun[]): boolean {
   const joined = runs.map((r) => r.text).join("");
   return joined.trim() === PAGE_BREAK_MARKER.trim() || joined.includes(PAGE_BREAK_MARKER);
+}
+
+function isEmptyParagraphMarker(runs: TextRun[]): boolean {
+  const joined = runs.map((r) => r.text).join("");
+  return joined.trim() === EMPTY_PARAGRAPH_MARKER.trim() || joined.includes(EMPTY_PARAGRAPH_MARKER);
 }
 
 /** <table>を内部モデルのTableBlockへ変換する。colspan/rowspanによる視覚的な
@@ -327,6 +405,10 @@ function htmlToBlocks(html: string): { blocks: DocBlock[]; warnings: string[] } 
         if (!hasImage) {
           if (isPageBreakParagraph(runs)) {
             blocks.push({ kind: "pagebreak" });
+          } else if (isEmptyParagraphMarker(runs)) {
+            // 開発指示書C-2〜C-4: mammothが本来消してしまう空段落を、
+            // markEmptyParagraphsで埋め込んだマーカーから実際の空段落(runs: [])へ戻す。
+            blocks.push({ kind: "paragraph", runs: [], heading: 0 });
           } else {
             blocks.push({ kind: "paragraph", runs, heading: 0 });
           }
@@ -482,7 +564,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
           convertImage: mammoth.images.dataUri,
           transformDocument: ((documentNode: unknown) =>
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            markPageBreaks(injectPageBreakBeforeMarkers(documentNode, structure.bodyChildren))) as any,
+            markEmptyParagraphs(markPageBreaks(injectPageBreakBeforeMarkers(documentNode, structure.bodyChildren)))) as any,
         }
       );
       html = result.value;
@@ -606,10 +688,13 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       if (maxWidth <= 10) return;
 
       const chars = flattenRuns(effectiveRuns);
-      if (chars.length === 0) {
-        cursorY -= lineHeight * 0.6;
-        return;
-      }
+      // 開発指示書C-2〜C-4(Phase 22): 空段落(chars.length === 0。markEmptyParagraphsで
+      // 検出した「Wordの空白1行」を含む)を特別に圧縮せず、通常の1行分の段落と全く同じ
+      // 経路(wrapFlatChars→1行分のensureSpace/cursorY移動→末尾のPARAGRAPH_GAP)を通す。
+      // これにより空段落は「文字を描画しない1行の段落」として、実際の文章行と
+      // 同じ高さ(lineHeight + PARAGRAPH_GAP)を持つ。以前は lineHeight*0.6 のみを
+      // 消費する特別扱いをしていたため、Wordの空白行がPDFでは実際の行より
+      // 狭く詰まって見える不具合があった。
       const lines = wrapFlatChars(chars, font, size, maxWidth);
 
       lines.forEach((lineChars, lineIdx) => {

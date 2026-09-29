@@ -86,4 +86,7 @@ export const fixtures = {
   wordMarginsDocx: path.join(GENERATED_DIR, "word-margins.docx"),
   wordRichContentDocx: path.join(GENERATED_DIR, "word-rich-content.docx"),
   wordMultiSectionDocx: path.join(GENERATED_DIR, "word-multi-section.docx"),
+
+  // Phase 22: word-to-pdfの空白行・連続空行保持テスト用フィクスチャ。
+  wordBlankLinesDocx: path.join(GENERATED_DIR, "word-blank-lines.docx"),
 };
