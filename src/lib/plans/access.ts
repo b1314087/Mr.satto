@@ -40,9 +40,12 @@ export function canUseTool(plan: Plan, requiredPlan: RequiredPlan): ToolAccessRe
  * free → true / standard → false / premium → false。
  *
  * 各ページへ直接 `plan === "free"` のような判定を書かず、必ずこの関数を経由する。
- * 注意: 現時点ではAdSense広告枠（Header/Tool page/Footer/Before/After download）の
- * 表示・非表示切り替えには未接続。既存のAdSense実装を壊さないため、
- * 接続は将来（ログイン・決済基盤が揃った時点）に行う想定。
+ * ツール詳細ページ（src/app/tools/[tool]/page.tsx）はサーバー側で解決した
+ * プランを使ってこの関数を経由する。フッター広告（Phase 23で修正）は
+ * RootLayoutの構造上サーバー側プランを受け取れないため、
+ * src/components/layout/footer-ad-slot.tsx がクライアント側で別途取得した
+ * プランに対して、判定ロジックとしてはこの同じ関数を経由させている
+ * （判定ルール自体を重複実装しないため）。
  */
 export function shouldShowAds(plan: Plan): boolean {
   return PLAN_DEFINITIONS[plan].adsRequired;

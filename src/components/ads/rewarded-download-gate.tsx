@@ -70,7 +70,10 @@ export function RewardedDownloadGate({
   // 表示・有効/無効には一切影響しない（広告の有無と処理成否を結び付けない）。
   const showAds = useShouldShowDownloadAds();
 
-  // premium: 広告なしで即ダウンロード（Premiumプランは未実装のため現在は使用しない）
+  // premium: 広告なしで即ダウンロード。Standard/Premiumプラン自体はPhase 3で
+  // 実装済みだが、そのユーザーへの広告非表示は下のfreeモード内のshowAds判定で
+  // 既に実現できているため、このmode切り替え自体は現時点では使用しない
+  // （DEFAULT_DOWNLOAD_ACCESS_MODEは常に"free"。src/lib/download/types.ts参照）。
   if (mode === "premium") {
     return <DownloadTriggerButton onClick={onDownload} label={label} disabled={disabled} />;
   }
