@@ -217,8 +217,12 @@ test.describe("AdSlot: 広告未配信でもレイアウトが崩れず、アク
     await clearDevOverrides(context);
   });
 
-  test("広告未配信時はプレースホルダーが役割・aria-label付きで表示され、ツール自体は使える", async ({ page, context, baseURL }) => {
-    await setDevPlanOverride(context, "standard", baseURL!);
+  test("広告未配信時はプレースホルダーが役割・aria-label付きで表示され、ツール自体は使える", async ({ page }) => {
+    // Freeユーザー（未ログイン・override無し）の状態で確認する。
+    // Standard/Premiumではフッター広告自体が非表示になる仕様のため
+    // （下の「Standard/Premiumではフッター広告が表示されない」テスト参照）、
+    // 「広告枠が表示されている状態でのプレースホルダー表示」を確認するこの
+    // テストはFreeで行う。
     await page.goto("/tools/image-resize");
 
     // フッター広告は準備中プレースホルダーとして、役割とラベルを持って表示される
@@ -230,5 +234,33 @@ test.describe("AdSlot: 広告未配信でもレイアウトが崩れず、アク
 
     // 広告が未配信でも、ツール本体の操作（アップロード欄）は問題なく使える
     await expect(page.locator('input[type="file"]')).toBeAttached();
+  });
+});
+
+test.describe("フッター広告: 広告なしプランには表示されない(Phase 23で修正)", () => {
+  // Phase 20時点ではフッターに広告なしプランの判定が一切接続されておらず、
+  // Standard/Premiumユーザーにも常にフッター広告が表示され続けていた
+  // （Phase 23監査で発見）。src/components/layout/footer-ad-slot.tsx が
+  // クライアント側で開発専用Cookie（本番では無効）または実際のSupabase契約状態を
+  // 見て判定する。ここでは開発専用CookieでFree/Standard/Premiumを切り替えて検証する。
+  test.beforeEach(async ({ context }) => {
+    await clearDevOverrides(context);
+  });
+
+  test("Freeではフッター広告(プレースホルダー)が表示される", async ({ page }) => {
+    await page.goto("/tools/image-resize");
+    await expect(page.locator('[data-ad-placement="footer"]')).toBeVisible();
+  });
+
+  test("Standardではフッター広告が表示されない", async ({ page, context, baseURL }) => {
+    await setDevPlanOverride(context, "standard", baseURL!);
+    await page.goto("/tools/image-resize");
+    await expect(page.locator('[data-ad-placement="footer"]')).toBeHidden();
+  });
+
+  test("Premiumではフッター広告が表示されない", async ({ page, context, baseURL }) => {
+    await setDevPlanOverride(context, "premium", baseURL!);
+    await page.goto("/tools/image-resize");
+    await expect(page.locator('[data-ad-placement="footer"]')).toBeHidden();
   });
 });

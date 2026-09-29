@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { siteConfig } from "@/lib/config/site";
-import { AdSlot } from "@/components/ads/ad-slot";
+import { FooterAdSlot } from "@/components/layout/footer-ad-slot";
 
 export function Footer() {
   return (
     <footer className="border-t border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950">
       <div className="mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6">
-        <AdSlot placement="footer" />
+        <FooterAdSlot />
       </div>
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div>
