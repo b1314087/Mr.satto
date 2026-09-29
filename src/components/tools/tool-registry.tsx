@@ -208,6 +208,9 @@ const ImageMergeTool = dynamic(() =>
 const ImagePaddingTextTool = dynamic(() =>
   import("./implementations/image-padding-text-tool").then((m) => m.ImagePaddingTextTool)
 );
+const ImageTileSplitTool = dynamic(() =>
+  import("./implementations/image-tile-split-tool").then((m) => m.ImageTileSplitTool)
+);
 const TextCaseConverterTool = dynamic(() =>
   import("./implementations/text-case-converter-tool").then((m) => m.TextCaseConverterTool)
 );
@@ -383,6 +386,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageMergeTool />;
     case "image-padding-text":
       return <ImagePaddingTextTool />;
+    case "image-tile-split":
+      return <ImageTileSplitTool />;
     case "text-case-converter":
       return <TextCaseConverterTool />;
     case "csv-column-editor":
