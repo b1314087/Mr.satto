@@ -76,6 +76,7 @@ export const fixtures = {
   excelPaperA3PortraitXlsx: path.join(GENERATED_DIR, "excel-paper-a3-portrait.xlsx"),
   excelPaperLetterLandscapeXlsx: path.join(GENERATED_DIR, "excel-paper-letter-landscape.xlsx"),
   excelMarginsXlsx: path.join(GENERATED_DIR, "excel-margins.xlsx"),
+  excelSheetNameXlsx: path.join(GENERATED_DIR, "excel-sheet-name.xlsx"),
 
   // Phase 18.2 C節: word-to-pdf「Wordの印刷ページ=PDFのページ」テスト用フィクスチャ。
   // 実在の企業・個人データは一切使用しない、架空のダミー文章のみ

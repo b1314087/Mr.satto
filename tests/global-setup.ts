@@ -779,6 +779,18 @@ function generateExcelToPdfFixtures() {
       margins: { left: 1.0, top: 1.2, right: 0.5, bottom: 0.5 },
     },
   ]);
+
+  // シート名の非表示(B-9、Phase 22): シート名にわざと分かりやすい固有の文字列を
+  // 付け、PDF側の抽出テキストにこのシート名が一切含まれない(Mr.Sattoが勝手に
+  // ページ上部へシート名を追加しない)ことを検証する。
+  write(fixtures.excelSheetNameXlsx, [
+    {
+      name: "SHEETNAME_MUST_NOT_APPEAR_IN_PDF",
+      rows: [[cell("SHEETNAME_TEST_CELL_VALUE")]],
+      paperSize: 9,
+      orientation: "portrait",
+    },
+  ]);
 }
 
 /** 1x1の赤色透過なしPNG(テスト専用の合成データ、実在の画像は一切使用しない)。

@@ -39,7 +39,6 @@ const MAX_COL_WIDTH = 220;
 const LINE_COLOR: [number, number, number] = [0.35, 0.35, 0.38];
 const TEXT_COLOR: [number, number, number] = [0.13, 0.13, 0.15];
 const MUTED_COLOR: [number, number, number] = [0.45, 0.45, 0.48];
-const TITLE_BLOCK_HEIGHT = 26;
 
 export type RawCellValue = string | number | boolean | Date | null;
 
@@ -294,7 +293,9 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       const marginTop = settings?.margins ? inchesToPt(settings.margins.top) : DEFAULT_MARGIN_PT;
       const marginBottom = settings?.margins ? inchesToPt(settings.margins.bottom) : DEFAULT_MARGIN_PT;
       const contentWidth = Math.max(50, pageWidth - marginLeft - marginRight);
-      const contentHeightForData = Math.max(50, pageHeight - marginTop - marginBottom - TITLE_BLOCK_HEIGHT);
+      // シート名の自動タイトル(旧titleBlock)を撤廃した(B-9)ため、その分の予約高さも
+      // 差し引かない。これによりFit to Page計算がExcelの実際の余白設定とより一致する。
+      const contentHeightForData = Math.max(50, pageHeight - marginTop - marginBottom);
 
       // --- 列幅: Excel実測値があれば使い、無ければ内容量から近似する ---
       const fallbackWidths = computeFallbackColumnWidths(sheet.rows, localToOriginalCol, font, 9);
@@ -408,7 +409,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
 
       // --- ページ順序: Excelの既定(down, then over) = 同じ列グループ内で縦方向に進み、
       //     縦方向を使い切ってから次の列グループへ進む ---
-      let firstPageOfSheet = true;
+      // シート名を自動でページ上部へ表示する処理(旧titleBlock)は、開発指示書B-9
+      // (Phase 22)により撤廃した。「Excel側で設定されていないシート名をMr.Sattoが
+      // 勝手にページへ追加しない」ことが「非常に重要」と明記されているため、
+      // Excelの実際のHeader/Footer設定を取得できない現状の実装では、
+      // 何も追加しない(=B-10「設定がなければ勝手に追加しない」を満たす)方を優先する。
       grid.colGroups.forEach((colGroup) => {
         rowGroupsInLocalRowIndex.forEach((rowGroup) => {
           if (doc.getPageCount() >= MAX_PAGE_COUNT) {
@@ -416,12 +421,6 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           }
           const page = doc.addPage([pageWidth, pageHeight]);
           let cursorY = pageHeight - marginTop;
-
-          if (firstPageOfSheet) {
-            drawTextRobust(page, sheet.name, marginLeft, cursorY - 14, 13, rgb(...TEXT_COLOR), font);
-            cursorY -= TITLE_BLOCK_HEIGHT;
-            firstPageOfSheet = false;
-          }
 
           // 見出し行(headerLocalRowIndex)はページ分割の計算から除外しているため、
           // repeatHeaderRow有効時は毎ページ無条件で先頭に描画する。
