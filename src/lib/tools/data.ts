@@ -184,6 +184,25 @@ export const tools: Tool[] = [
       "文字入れ",
     ],
   },
+  {
+    id: "image-passport-photo",
+    name: "証明写真サイズ変換",
+    category: "image",
+    description: "証明写真サイズにトリミングし、画像として保存またはA4用紙にまとめてPDF印刷できます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: [
+      "証明写真",
+      "証明写真 サイズ",
+      "履歴書 写真",
+      "写真 トリミング",
+      "パスポートサイズ",
+      "id photo",
+      "passport photo",
+      "A4 印刷",
+    ],
+  },
 
   // ------------------------------------------------------------------
   // PDF

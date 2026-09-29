@@ -29,6 +29,12 @@ export const fixtures = {
   landscapePdf: path.join(GENERATED_DIR, "landscape.pdf"),
   png: path.join(GENERATED_DIR, "sample.png"),
   jpg: path.join(GENERATED_DIR, "sample.jpg"),
+  // Step 4: 証明写真サイズ変換テスト用。横長画像を証明写真比率へ変更した際の
+  // 意図しない大幅な切り取りを確認する目的で、正方形のsample.png/jpgとは別に
+  // 横長(landscape)の画像を用意する。
+  landscapeJpg: path.join(GENERATED_DIR, "landscape.jpg"),
+  // 破損ファイル（拡張子は画像だが中身が不正なバイト列）の異常系テスト用。
+  corruptedImage: path.join(GENERATED_DIR, "corrupted-image.png"),
   xlsx: path.join(GENERATED_DIR, "sample.xlsx"),
   zip: path.join(GENERATED_DIR, "sample.zip"),
   webm: path.join(GENERATED_DIR, "sample.webm"),

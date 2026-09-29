@@ -199,6 +199,9 @@ const ImageWatermarkTool = dynamic(() =>
 const ImageLayoutTool = dynamic(() =>
   import("./implementations/image-layout-tool").then((m) => m.ImageLayoutTool)
 );
+const ImagePassportPhotoTool = dynamic(() =>
+  import("./implementations/image-passport-photo-tool").then((m) => m.ImagePassportPhotoTool)
+);
 const TextCaseConverterTool = dynamic(() =>
   import("./implementations/text-case-converter-tool").then((m) => m.TextCaseConverterTool)
 );
@@ -368,6 +371,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageWatermarkTool />;
     case "image-layout":
       return <ImageLayoutTool />;
+    case "image-passport-photo":
+      return <ImagePassportPhotoTool />;
     case "text-case-converter":
       return <TextCaseConverterTool />;
     case "csv-column-editor":

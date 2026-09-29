@@ -280,6 +280,55 @@ export function computeGridCells(options: GridLayoutOptions): GridCell[] {
   return cells;
 }
 
+/**
+ * 固定サイズのセルを、用紙内へ収まるだけ敷き詰めて配置する
+ * （Step 4: 証明写真サイズ変換で追加）。
+ *
+ * computeGridCells() は指定した列数×行数で利用可能領域いっぱいにセルを
+ * 引き伸ばして分割するのに対し、証明写真は「セル自体の物理サイズ(mm)を
+ * 厳密に保つ」必要がある（引き伸ばすと印刷サイズが狂ってしまう）ため、
+ * 別の小さな関数として用意する（画像レイアウトの描画・書き出しエンジン
+ * 自体は変更せず、既存のImageLayoutRenderProcessorへ渡すGridCell[]の
+ * 計算方法だけを追加する）。余った余白は上下左右中央に均等配置する。
+ */
+export interface FixedSizeGridOptions {
+  canvasWidthPx: number;
+  canvasHeightPx: number;
+  marginPx: number;
+  gapPx: number;
+  cellWidthPx: number;
+  cellHeightPx: number;
+}
+
+export function computeFixedSizeGrid(options: FixedSizeGridOptions): GridCell[] {
+  const { canvasWidthPx, canvasHeightPx, marginPx, gapPx, cellWidthPx, cellHeightPx } = options;
+  if (cellWidthPx <= 0 || cellHeightPx <= 0) return [];
+
+  const usableWidth = canvasWidthPx - marginPx * 2;
+  const usableHeight = canvasHeightPx - marginPx * 2;
+  const columns = Math.max(0, Math.floor((usableWidth + gapPx) / (cellWidthPx + gapPx)));
+  const rows = Math.max(0, Math.floor((usableHeight + gapPx) / (cellHeightPx + gapPx)));
+  if (columns === 0 || rows === 0) return [];
+
+  const totalWidth = columns * cellWidthPx + (columns - 1) * gapPx;
+  const totalHeight = rows * cellHeightPx + (rows - 1) * gapPx;
+  const offsetX = marginPx + (usableWidth - totalWidth) / 2;
+  const offsetY = marginPx + (usableHeight - totalHeight) / 2;
+
+  const cells: GridCell[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < columns; c++) {
+      cells.push({
+        x: offsetX + c * (cellWidthPx + gapPx),
+        y: offsetY + r * (cellHeightPx + gapPx),
+        width: cellWidthPx,
+        height: cellHeightPx,
+      });
+    }
+  }
+  return cells;
+}
+
 /** 画像枚数から、なるべく正方形に近い列数×行数を自動算出する（「自動」列数指定用） */
 export function computeAutoGridShape(itemCount: number, canvasWidthPx: number, canvasHeightPx: number) {
   if (itemCount <= 0) return { columns: 1, rows: 1 };

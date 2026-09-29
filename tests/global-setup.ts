@@ -167,6 +167,29 @@ async function generateImages() {
     const jpgDataUrl = await page.$eval("#c", (el) => (el as HTMLCanvasElement).toDataURL("image/jpeg", 0.9));
     fs.writeFileSync(fixtures.png, Buffer.from(pngDataUrl.split(",")[1], "base64"));
     fs.writeFileSync(fixtures.jpg, Buffer.from(jpgDataUrl.split(",")[1], "base64"));
+
+    // Step 4: 証明写真サイズ変換テスト用の横長(landscape)画像。
+    const landscapePage = await browser.newPage({ viewport: { width: 300, height: 200 } });
+    await landscapePage.setContent(
+      `<html><body style="margin:0"><canvas id="c" width="300" height="200"></canvas>
+       <script>
+         const ctx = document.getElementById('c').getContext('2d');
+         ctx.fillStyle = '#1d4ed8';
+         ctx.fillRect(0, 0, 300, 200);
+         ctx.fillStyle = '#ffffff';
+         ctx.beginPath();
+         ctx.arc(150, 100, 60, 0, Math.PI * 2);
+         ctx.fill();
+       </script></body></html>`
+    );
+    const landscapeDataUrl = await landscapePage.$eval("#c", (el) =>
+      (el as HTMLCanvasElement).toDataURL("image/jpeg", 0.9)
+    );
+    fs.writeFileSync(fixtures.landscapeJpg, Buffer.from(landscapeDataUrl.split(",")[1], "base64"));
+
+    // 破損ファイル（拡張子は.pngだが中身が不正なバイト列）の異常系テスト用。
+    // 実在の画像形式を装わない、明らかに無効なバイト列にする。
+    fs.writeFileSync(fixtures.corruptedImage, Buffer.from("not a valid png file", "utf-8"));
   } finally {
     await browser.close();
   }
