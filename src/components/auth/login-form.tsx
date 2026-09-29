@@ -96,6 +96,12 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
         />
       </label>
 
+      <div className="text-right text-xs">
+        <Link href="/auth/forgot-password" className="text-blue-600 hover:underline dark:text-blue-400">
+          パスワードをお忘れの場合
+        </Link>
+      </div>
+
       <button
         type="submit"
         disabled={status === "processing"}
