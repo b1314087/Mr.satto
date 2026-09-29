@@ -791,6 +791,24 @@ function generateExcelToPdfFixtures() {
       orientation: "portrait",
     },
   ]);
+
+  // ヘッダー/フッター(B-10、Phase 22): Excel側で実際に設定されている
+  // ヘッダー/フッター(左/中央/右)がPDFへ反映される。&P/&Nのページ番号・
+  // 総ページ数トークンも解決されることを、必ず2ページになるFit設定と
+  // 組み合わせて検証する。
+  write(fixtures.excelHeaderFooterXlsx, [
+    {
+      name: "Sheet1",
+      rows: Array.from({ length: 4 }, (_, r) => [cell(`HF_ROW${r}`)]),
+      paperSize: 9,
+      orientation: "portrait",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 2,
+      header: { left: "HF_HEADER_LEFT", center: "HF_HEADER_CENTER", right: "HF_HEADER_RIGHT" },
+      footer: { left: "HF_FOOTER_PAGE_&P", center: "HF_FOOTER_CENTER", right: "HF_FOOTER_TOTAL_&N" },
+    },
+  ]);
 }
 
 /** 1x1の赤色透過なしPNG(テスト専用の合成データ、実在の画像は一切使用しない)。

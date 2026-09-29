@@ -224,6 +224,28 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
 
     const warnings: string[] = [];
 
+    // ヘッダー/フッター(B-9・B-10)の&D(日付)・&T(時刻)トークン解決用に、
+    // 変換実行時刻を1回だけ取得する(ページごとに変わると使いにくいため)。
+    const now = new Date();
+    const nowDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const nowTimeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    /**
+     * ooxml-page-settings.tsが返すヘッダー/フッター文字列内の{{PAGE}}等の
+     * プレースホルダーを、実際の値へ解決する(B-9・B-10)。&P(ページ番号)・
+     * &N(総ページ数)はページ分割が確定するここでしか分からないため、
+     * シートごとの描画ループの中で解決する。
+     */
+    function resolveHeaderFooterTokens(text: string, ctx: { pageInSheet: number; totalPagesInSheet: number; sheetName: string }): string {
+      return text
+        .replace(/\{\{PAGE\}\}/g, String(ctx.pageInSheet))
+        .replace(/\{\{PAGES\}\}/g, String(ctx.totalPagesInSheet))
+        .replace(/\{\{DATE\}\}/g, nowDateStr)
+        .replace(/\{\{TIME\}\}/g, nowTimeStr)
+        .replace(/\{\{SHEET\}\}/g, ctx.sheetName)
+        .replace(/\{\{FILE\}\}/g, file.name);
+    }
+
     /**
      * 1文字ずつdrawTextを呼び出す（Phase 9で判明した重要な問題への対処）。
      * pdf-lib+fontkitで、既存の日本語フォント資産(Noto Sans JP)をsubset:falseで
@@ -238,6 +260,34 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         cx += embedFont.widthOfTextAtSize(ch, size);
       }
       return cx - x;
+    }
+
+    /**
+     * ヘッダー/フッターの左/中央/右セクションを1行で描画する(B-9・B-10)。
+     * Excel側で実際に設定されている場合のみ呼び出す側で呼ぶため、ここでは
+     * 「与えられたセクションをそのまま描く」ことだけに責務を絞っている。
+     */
+    function drawHeaderFooterSections(
+      page: PDFPage,
+      sections: { left: string; center: string; right: string },
+      baselineY: number,
+      areaLeft: number,
+      areaRight: number,
+      embedFont: PDFFont
+    ) {
+      const size = 8;
+      const color = rgb(...MUTED_COLOR);
+      if (sections.left) {
+        drawTextRobust(page, sections.left, areaLeft, baselineY, size, color, embedFont);
+      }
+      if (sections.center) {
+        const w = embedFont.widthOfTextAtSize(sections.center, size);
+        drawTextRobust(page, sections.center, areaLeft + (areaRight - areaLeft - w) / 2, baselineY, size, color, embedFont);
+      }
+      if (sections.right) {
+        const w = embedFont.widthOfTextAtSize(sections.right, size);
+        drawTextRobust(page, sections.right, areaRight - w, baselineY, size, color, embedFont);
+      }
     }
 
     let sheetCount = 0;
@@ -412,15 +462,54 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       // シート名を自動でページ上部へ表示する処理(旧titleBlock)は、開発指示書B-9
       // (Phase 22)により撤廃した。「Excel側で設定されていないシート名をMr.Sattoが
       // 勝手にページへ追加しない」ことが「非常に重要」と明記されているため、
-      // Excelの実際のHeader/Footer設定を取得できない現状の実装では、
-      // 何も追加しない(=B-10「設定がなければ勝手に追加しない」を満たす)方を優先する。
+      // シート名は表示しない。一方でExcel側に実際のHeader/Footer設定(&L/&C/&R)が
+      // 存在する場合はB-10に基づきそれを反映する(settings?.header/footerは
+      // Excel側で明示的に設定されている場合のみ値を持つため、これを描画しても
+      // B-9「勝手にシート名を追加しない」とは矛盾しない)。
+      const totalPagesForSheet = grid.colGroups.length * rowGroupsInLocalRowIndex.length;
+      let pageInSheet = 0;
+      const headerMarginPt = settings?.margins ? inchesToPt(settings.margins.header) : DEFAULT_MARGIN_PT / 2;
+      const footerMarginPt = settings?.margins ? inchesToPt(settings.margins.footer) : DEFAULT_MARGIN_PT / 2;
+
       grid.colGroups.forEach((colGroup) => {
         rowGroupsInLocalRowIndex.forEach((rowGroup) => {
           if (doc.getPageCount() >= MAX_PAGE_COUNT) {
             throw new Error(`変換できるページ数の上限は${MAX_PAGE_COUNT}ページです。`);
           }
+          pageInSheet++;
           const page = doc.addPage([pageWidth, pageHeight]);
           let cursorY = pageHeight - marginTop;
+
+          if (settings?.header) {
+            const ctx = { pageInSheet, totalPagesInSheet: totalPagesForSheet, sheetName: sheet.name };
+            drawHeaderFooterSections(
+              page,
+              {
+                left: resolveHeaderFooterTokens(settings.header.left, ctx),
+                center: resolveHeaderFooterTokens(settings.header.center, ctx),
+                right: resolveHeaderFooterTokens(settings.header.right, ctx),
+              },
+              pageHeight - headerMarginPt,
+              marginLeft,
+              pageWidth - marginRight,
+              font
+            );
+          }
+          if (settings?.footer) {
+            const ctx = { pageInSheet, totalPagesInSheet: totalPagesForSheet, sheetName: sheet.name };
+            drawHeaderFooterSections(
+              page,
+              {
+                left: resolveHeaderFooterTokens(settings.footer.left, ctx),
+                center: resolveHeaderFooterTokens(settings.footer.center, ctx),
+                right: resolveHeaderFooterTokens(settings.footer.right, ctx),
+              },
+              Math.max(footerMarginPt - 10, 8),
+              marginLeft,
+              pageWidth - marginRight,
+              font
+            );
+          }
 
           // 見出し行(headerLocalRowIndex)はページ分割の計算から除外しているため、
           // repeatHeaderRow有効時は毎ページ無条件で先頭に描画する。

@@ -62,6 +62,24 @@ export interface SheetPageSettings {
   colBreaksAfter: number[];
   /** key: "row:col"(0始まり)。値: その辺に実際に罫線が設定されているか */
   cellBorders: Map<string, { top: boolean; bottom: boolean; left: boolean; right: boolean }>;
+  /**
+   * ヘッダー/フッター(開発指示書B-9・B-10、Phase 22)。Excel側で設定されている
+   * 場合のみ値を持つ(未設定ならnull)。oddHeader/oddFooter(既定のヘッダー/
+   * フッター)のみ対応し、ページ番号ごとに内容が変わるfirstHeader/evenHeader等
+   * (differentFirst/differentOddEven)には対応しない(D-3: 完全互換は謳わない)。
+   * &P(ページ番号)・&N(総ページ数)・&D(日付)・&T(時刻)・&A(シート名)・&F(ファイル名)
+   * といったフィールドコードは、実際の値へ解決せず {{PAGE}} 等のプレースホルダー
+   * 文字列のまま返す(ページ番号・総ページ数はページ分割が確定するexcel-to-pdf.ts
+   * 側でしか分からないため、解決はレンダリング側の責務とする)。
+   */
+  header: HeaderFooterSections | null;
+  footer: HeaderFooterSections | null;
+}
+
+export interface HeaderFooterSections {
+  left: string;
+  center: string;
+  right: string;
 }
 
 function emptySheetSettings(): SheetPageSettings {
@@ -81,6 +99,72 @@ function emptySheetSettings(): SheetPageSettings {
     rowBreaksAfter: [],
     colBreaksAfter: [],
     cellBorders: new Map(),
+    header: null,
+    footer: null,
+  };
+}
+
+/**
+ * OOXMLのヘッダー/フッター文字列(&L/&C/&Rで左/中央/右セクションを区切り、
+ * &"フォント名,スタイル"・&nn(フォントサイズ)・&B/&I/&U等(太字/斜体/下線等の
+ * トグル)・&K RRGGBB(色)・&G(埋め込み画像)といった書式コードを含む)を、
+ * 実際に描画に使う3セクションのプレーンテキストへ変換する。
+ *
+ * &P(ページ番号)・&N(総ページ数)・&D(日付)・&T(時刻)・&A(シート名)・&F(ファイル名)
+ * は、この時点ではまだ値を解決できない(特に&P/&Nはページ分割の確定後にしか
+ * 分からない)ため、後段(excel-to-pdf.ts)で文字列置換するプレースホルダーへ
+ * 変換するだけにとどめる。フォント指定・色・画像等、この処理系で再現しない
+ * 書式コードは読み飛ばす(D-3: 完全互換は謳わない)。
+ */
+export function parseHeaderFooterSections(raw: string): HeaderFooterSections {
+  // "&&" はリテラルの"&"1文字を表すエスケープ。他の処理より先に、衝突しない
+  // 一時トークンへ退避しておく。
+  const AMP_ESCAPE = "\u0000AMP\u0000";
+  let s = raw.replace(/&&/g, AMP_ESCAPE);
+
+  // フィールドコード(値を後段で解決するプレースホルダーへ置換)
+  s = s
+    .replace(/&P/g, "{{PAGE}}")
+    .replace(/&N/g, "{{PAGES}}")
+    .replace(/&D/g, "{{DATE}}")
+    .replace(/&T/g, "{{TIME}}")
+    .replace(/&A/g, "{{SHEET}}")
+    .replace(/&F/g, "{{FILE}}")
+    .replace(/&Z/g, "") // &Z(ファイルパス)は取得できないため単に除去する
+    .replace(/&G/g, ""); // &G(埋め込み画像)は今回対応しないため除去する
+
+  // フォント指定・フォントサイズ・太字/斜体/下線等のトグル・文字色は、この
+  // 実装では再現しないため読み飛ばす。
+  s = s.replace(/&"[^"]*"/g, "");
+  s = s.replace(/&K[0-9A-Fa-f]{6}/g, "");
+  s = s.replace(/&\d{1,3}/g, "");
+  s = s.replace(/&[BIUESXYO]/g, "");
+
+  s = s.replace(new RegExp(AMP_ESCAPE, "g"), "&");
+
+  const sections: HeaderFooterSections = { left: "", center: "", right: "" };
+  const markerRe = /&([LCR])/g;
+  let match: RegExpExecArray | null;
+  let lastIndex = 0;
+  let currentKey: "left" | "center" | "right" | null = null;
+  const keyByLetter: Record<string, "left" | "center" | "right"> = { L: "left", C: "center", R: "right" };
+
+  const assign = (key: "left" | "center" | "right" | null, text: string) => {
+    if (!key || text === "") return;
+    sections[key] += text;
+  };
+
+  while ((match = markerRe.exec(s)) !== null) {
+    assign(currentKey, s.slice(lastIndex, match.index));
+    currentKey = keyByLetter[match[1]];
+    lastIndex = markerRe.lastIndex;
+  }
+  assign(currentKey, s.slice(lastIndex));
+
+  return {
+    left: sections.left.trim(),
+    center: sections.center.trim(),
+    right: sections.right.trim(),
   };
 }
 
@@ -302,6 +386,17 @@ function parseSheetXml(sheetXmlText: string, styleBorders: BorderDef[]): Partial
   }
   result.rowBreaksAfter = rowBreaksAfter;
   result.colBreaksAfter = colBreaksAfter;
+
+  // ヘッダー/フッター(B-9・B-10): oddHeader/oddFooterが存在し、かつ空文字でない
+  // 場合のみ値を持たせる(Excel側で何も設定していない場合にnullのままにすることで、
+  // 呼び出し側が「設定が無ければ何も描画しない」を機械的に判定できるようにする)。
+  const headerFooterEl = doc.getElementsByTagName("headerFooter")[0];
+  if (headerFooterEl) {
+    const oddHeaderText = headerFooterEl.getElementsByTagName("oddHeader")[0]?.textContent ?? "";
+    const oddFooterText = headerFooterEl.getElementsByTagName("oddFooter")[0]?.textContent ?? "";
+    if (oddHeaderText.trim() !== "") result.header = parseHeaderFooterSections(oddHeaderText);
+    if (oddFooterText.trim() !== "") result.footer = parseHeaderFooterSections(oddFooterText);
+  }
 
   return result;
 }

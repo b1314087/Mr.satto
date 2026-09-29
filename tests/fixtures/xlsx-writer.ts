@@ -40,6 +40,11 @@ export interface XlsxSheetSpec {
   rowHeights?: Record<number, number>; // 0始まり行番号 → pt
   rowBreaksAfter?: number[]; // 0始まり。この行の直後で改ページ
   colBreaksAfter?: number[];
+  /** ヘッダー/フッター(Phase 22 B-9・B-10)。指定したセクションのみ&L/&C/&Rとして書き出す。
+   *  &P(ページ番号)・&N(総ページ数)等のOOXMLフィールドコードはそのまま文字列に
+   *  含めてよい(例: center: "&P/&N")。 */
+  header?: { left?: string; center?: string; right?: string };
+  footer?: { left?: string; center?: string; right?: string };
 }
 
 function colLetter(colIndex0: number): string {
@@ -165,6 +170,24 @@ function buildSheetXml(sheet: XlsxSheetSpec, styleIndexByKey: Map<string, number
           .join("")}</colBreaks>`
       : "";
 
+  // ヘッダー/フッター(Phase 22 B-9・B-10): 指定されたセクションだけを&L/&C/&Rで組み立てる。
+  const buildHeaderFooterRaw = (spec?: { left?: string; center?: string; right?: string }): string => {
+    if (!spec) return "";
+    let raw = "";
+    if (spec.left) raw += `&L${spec.left}`;
+    if (spec.center) raw += `&C${spec.center}`;
+    if (spec.right) raw += `&R${spec.right}`;
+    return raw;
+  };
+  const oddHeaderRaw = buildHeaderFooterRaw(sheet.header);
+  const oddFooterRaw = buildHeaderFooterRaw(sheet.footer);
+  const headerFooterXml =
+    oddHeaderRaw || oddFooterRaw
+      ? `<headerFooter>${oddHeaderRaw ? `<oddHeader>${escapeXml(oddHeaderRaw)}</oddHeader>` : ""}${
+          oddFooterRaw ? `<oddFooter>${escapeXml(oddFooterRaw)}</oddFooter>` : ""
+        }</headerFooter>`
+      : "";
+
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 ${pageSetUpPr}
@@ -175,6 +198,7 @@ ${colsXml}
 <sheetData>${rowsXml}</sheetData>
 ${pageMarginsXml}
 <pageSetup ${pageSetupAttrs}/>
+${headerFooterXml}
 ${rowBreaksXml}
 ${colBreaksXml}
 </worksheet>`;

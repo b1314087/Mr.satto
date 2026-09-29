@@ -41,3 +41,26 @@ test("シート名を勝手にPDF上部へ表示しない(B-9)", async ({ page }
   expect(pdf.text).toContain("SHEETNAME_TEST_CELL_VALUE");
   expect(pdf.text).not.toContain("SHEETNAME_MUST_NOT_APPEAR_IN_PDF");
 });
+
+test("Excel側の実際のHeader/Footer設定がPDFへ反映される(B-10)", async ({ page }) => {
+  const path = await convertAndDownload(page, fixtures.excelHeaderFooterXlsx);
+  const pdf = await extractPdfContent(path);
+  expect(pdf.pageCount).toBe(2);
+  // 左/中央/右の各セクションの文字列がそのまま反映される
+  expect(pdf.pages[0].text).toContain("HF_HEADER_LEFT");
+  expect(pdf.pages[0].text).toContain("HF_HEADER_CENTER");
+  expect(pdf.pages[0].text).toContain("HF_HEADER_RIGHT");
+  expect(pdf.pages[0].text).toContain("HF_FOOTER_CENTER");
+  // &P(ページ番号)・&N(総ページ数)は実際の値へ解決され、ページごとに異なる
+  expect(pdf.pages[0].text).toContain("HF_FOOTER_PAGE_1");
+  expect(pdf.pages[0].text).toContain("HF_FOOTER_TOTAL_2");
+  expect(pdf.pages[1].text).toContain("HF_FOOTER_PAGE_2");
+  expect(pdf.pages[1].text).toContain("HF_FOOTER_TOTAL_2");
+  // ヘッダーは各ページの上部余白付近(本文の描画開始位置より更に上)、
+  // フッターは下部余白付近に描画される(extractPdfContentは1文字=1item)。
+  const pageHeight = pdf.pages[0].height;
+  const headerBandItems = pdf.pages[0].items.filter((it) => it.y > pageHeight - 40);
+  const footerBandItems = pdf.pages[0].items.filter((it) => it.y < 40);
+  expect(headerBandItems.length).toBeGreaterThan(0);
+  expect(footerBandItems.length).toBeGreaterThan(0);
+});
