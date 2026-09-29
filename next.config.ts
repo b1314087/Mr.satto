@@ -141,6 +141,27 @@ const nextConfig: NextConfig = {
    */
   serverExternalPackages: ["stripe"],
 
+  /**
+   * 「お問い合わせ」機能削除（次工程 事前作業）に伴うリダイレクト。
+   *
+   * /contact は単純な静的ページ（フォームやDBは持たず、mailtoリンクのみ）だったが、
+   * 機能自体が不要と判断され削除した。sitemap.xmlに掲載され続けてきた既存URLの
+   * ため、検索エンジンに登録されている可能性・外部からのブックマーク/リンクの
+   * 可能性を考慮し、いきなり404にはせず恒久的なリダイレクト(308)でトップページへ
+   * 誘導する（Next.js公式ドキュメント推奨のredirects()方式。
+   * node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/redirects.md
+   * 参照。静的生成のページには影響しない）。
+   */
+  async redirects() {
+    return [
+      {
+        source: "/contact",
+        destination: "/",
+        permanent: true,
+      },
+    ];
+  },
+
   async headers() {
     return [
       {

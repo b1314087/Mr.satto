@@ -115,11 +115,7 @@ export default function AboutPage() {
             <Link href="/terms" className="text-blue-600 hover:underline dark:text-blue-400">
               利用規約
             </Link>
-            をご確認ください。ご意見・ご要望は
-            <Link href="/contact" className="text-blue-600 hover:underline dark:text-blue-400">
-              お問い合わせ
-            </Link>
-            からお気軽にどうぞ。
+            をご確認ください。
           </p>
         </section>
       </div>

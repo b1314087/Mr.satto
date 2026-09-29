@@ -10,7 +10,7 @@ import { checkBasicAccessibility, checkKeyboardFocusable } from "../helpers/a11y
  * レベルの最小限のアクセシビリティチェック（tests/helpers/a11y.ts）も
  * 主要ページに対して行う。
  */
-const MAIN_PAGES = ["/", "/tools", "/pricing", "/about", "/contact", "/terms", "/privacy"];
+const MAIN_PAGES = ["/", "/tools", "/pricing", "/about", "/terms", "/privacy", "/auth/forgot-password"];
 
 for (const path of MAIN_PAGES) {
   test(`主要ページが200で開ける: ${path}`, async ({ page }) => {

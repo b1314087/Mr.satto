@@ -13,7 +13,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${siteConfig.url}/about`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${siteConfig.url}/privacy`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${siteConfig.url}/terms`, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${siteConfig.url}/contact`, changeFrequency: "yearly", priority: 0.3 },
   ];
 
   // Phase 21: カテゴリページ(ハブ)より個別ツールページ(スポーク)のpriorityが

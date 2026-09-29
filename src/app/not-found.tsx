@@ -25,9 +25,6 @@ export default function NotFound() {
         <Link href="/pricing" className="hover:underline">
           料金プラン
         </Link>
-        <Link href="/contact" className="hover:underline">
-          お問い合わせ
-        </Link>
       </div>
     </div>
   );

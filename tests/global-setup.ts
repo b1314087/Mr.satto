@@ -72,7 +72,7 @@ async function warmupRoutes() {
   const port = process.env.PLAYWRIGHT_TEST_PORT ?? "3100";
   const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL ?? `http://localhost:${port}`;
 
-  const staticRoutes = ["/", "/tools", "/pricing", "/about", "/contact", "/terms", "/privacy"];
+  const staticRoutes = ["/", "/tools", "/pricing", "/about", "/terms", "/privacy", "/auth/forgot-password"];
   const categoryRoutes = categories.map((c) => `/tools/${c.id}`);
   const toolRoutes = tools.map((t) => `/tools/${t.id}`);
   const routes = Array.from(new Set([...staticRoutes, ...categoryRoutes, ...toolRoutes]));

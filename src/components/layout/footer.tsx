@@ -36,9 +36,6 @@ export function Footer() {
           <Link href="/terms" className="hover:text-blue-600 dark:hover:text-blue-400">
             利用規約
           </Link>
-          <Link href="/contact" className="hover:text-blue-600 dark:hover:text-blue-400">
-            お問い合わせ
-          </Link>
         </nav>
       </div>
       <div className="border-t border-neutral-200 px-4 py-4 text-center text-xs text-neutral-400 dark:border-neutral-800 sm:px-6">
