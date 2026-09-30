@@ -14,6 +14,6 @@ export const siteConfig = {
     "画像圧縮・PDF編集・CSV整形・QRコード生成など、面倒なWeb作業をブラウザ上でサッと片付ける無料のオンラインツール集です。ファイルはサーバーに保存されません。",
   // Vercel等にデプロイ後、実際のURLに差し替えてください
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://example.vercel.app",
-  contactEmail: "contact@example.com",
+  contactEmail: "taninpasya@gmail.com",
   locale: "ja_JP",
 };
