@@ -153,20 +153,28 @@ const nextConfig: NextConfig = {
    * node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/redirects.md
    * 参照。静的生成のページには影響しない）。
    *
-   * 2件目以降はカテゴリ再編（次工程・カテゴリ再編フェーズ）に伴うリダイレクト。
+   * 2件目以降はカテゴリ再編（次工程・カテゴリ再編フェーズ、および続く見直し）に
+   * 伴うリダイレクト。
    *
-   * 利用者属性ベースだった student(学生向け)/work(仕事)/creator(クリエイター)/
-   * other(その他) の4カテゴリを廃止し、目的ベースの10カテゴリへ再編した。
-   * 個別ツールのURL(/tools/{tool-id})は一切変更していないが、カテゴリ一覧
-   * ページ(/tools/{category-id})のURLは廃止・変更されるため、検索エンジンに
-   * 登録されている可能性・外部からのリンクの可能性を考慮し、上記/contactと
-   * 同じ方式(redirects()、恒久リダイレクト)で誘導する。
+   * 第1段階で、利用者属性ベースだった student(学生向け)/work(仕事)/
+   * creator(クリエイター)/other(その他) の4カテゴリを廃止し、目的ベースの
+   * 10カテゴリ（image/pdf/csv-excel/word/video/file/text/utility/generator/
+   * documents）へ再編した。
+   * 第2段階の見直しで、text(テキスト)/utility(便利ツール)/documents(書類作成)の
+   * 3カテゴリを再び other(その他) へ統合し、最終的に8カテゴリとした
+   * （個別ツールのURL(/tools/{tool-id})はどちらの段階でも一切変更していない）。
    *
-   * - work: 所属ツールがほぼそのまま documents(書類作成) に移動したため、
-   *   1対1で /tools/documents へ。
-   * - student/creator/other: 所属ツールが複数の新カテゴリへ分散したため、
-   *   特定の新カテゴリへ無理に寄せず、カテゴリ一覧・全ツール一覧として
+   * - work: 所属ツールの大半が最終的に other(その他) に集約されたため、
+   *   /tools/other へ。
+   * - student: 所属ツールが全て最終的に other(その他) に集約されたため、
+   *   /tools/other へ。
+   * - creator: 所属ツールが image と generator に分散したままのため、
+   *   特定のカテゴリへ無理に寄せず、カテゴリ一覧・全ツール一覧として
    *   機能する /tools へ誘導する。
+   * - text/utility/documents: 第1段階で新設したカテゴリを第2段階で
+   *   other(その他) へ統合したため、/tools/other へ。
+   * - other: 第2段階で other(その他) を実在のカテゴリとして復活させたため、
+   *   このIDへのリダイレクトは行わない（/tools/other は通常のカテゴリページ）。
    */
   async redirects() {
     return [
@@ -177,12 +185,12 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/tools/work",
-        destination: "/tools/documents",
+        destination: "/tools/other",
         permanent: true,
       },
       {
         source: "/tools/student",
-        destination: "/tools",
+        destination: "/tools/other",
         permanent: true,
       },
       {
@@ -191,8 +199,18 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       {
-        source: "/tools/other",
-        destination: "/tools",
+        source: "/tools/text",
+        destination: "/tools/other",
+        permanent: true,
+      },
+      {
+        source: "/tools/utility",
+        destination: "/tools/other",
+        permanent: true,
+      },
+      {
+        source: "/tools/documents",
+        destination: "/tools/other",
         permanent: true,
       },
     ];

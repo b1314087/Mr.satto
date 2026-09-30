@@ -20,10 +20,8 @@ export type CategoryId =
   | "word"
   | "video"
   | "file"
-  | "text"
-  | "utility"
   | "generator"
-  | "documents";
+  | "other";
 
 export interface Category {
   id: CategoryId;

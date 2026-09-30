@@ -38,28 +38,16 @@ export const categories: Category[] = [
     icon: "🗂️",
   },
   {
-    id: "text",
-    name: "テキスト",
-    description: "文字数カウント・整形など文章・文字列の処理ツール",
-    icon: "🔤",
-  },
-  {
-    id: "utility",
-    name: "便利ツール",
-    description: "日付・時間・単位変換などファイルを伴わない汎用ツール",
-    icon: "🧮",
-  },
-  {
     id: "generator",
     name: "生成ツール",
     description: "QRコード・パスワード・配色パレットなどを新規生成するツール",
     icon: "🛠️",
   },
   {
-    id: "documents",
-    name: "書類作成",
-    description: "見積書・請求書・ラベルなど帳票・印刷物を新規作成するツール",
-    icon: "📑",
+    id: "other",
+    name: "その他",
+    description: "文字数カウントや日付計算、見積書・請求書作成など、特定のカテゴリに当てはまらない便利なツール",
+    icon: "✨",
   },
 ];
 
