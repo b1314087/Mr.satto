@@ -60,6 +60,7 @@ export default async function globalSetup() {
   generateWordToPdfFixtures();
   await generatePdfToExcelFixtures();
   await generatePdfToWordScannedFixture();
+  await generateLightweightToolsFixtures();
   await warmupRoutes();
 }
 
@@ -1125,4 +1126,84 @@ async function generatePdfToWordScannedFixture() {
   } finally {
     await browser.close();
   }
+}
+
+/**
+ * 次工程・軽量便利ツール一括追加: Excel系5ツール(Tool 4〜8)・Word系2ツール
+ * (Tool 9・10)のテスト用フィクスチャ生成。
+ *
+ * Excel側は、write-excel-file/node（既存依存。テストのNode実行環境専用の
+ * エントリポイントで、アプリ本体は/universalしか使わない）を使い、
+ * 実際のDate型セル・複数シート・完全に空白な行/列を持つXLSXを生成する。
+ * write-excel-file/nodeでは日付は素のDateオブジェクトをそのまま渡せば
+ * type: Dateとして書き出される（READMEどおり）。
+ *
+ * Word側は既存のdocx-writer.ts（fflateのみで組み立てる最小限のDOCX）を再利用する。
+ * 実在の企業・個人データは一切使用しない。
+ */
+async function generateLightweightToolsFixtures() {
+  // Excel空白行・空白列削除(Tool 5)用: 完全に空白な行(2行目)・列(C列、全行nullでなければ
+  // ならないため見出し行も含めてC列は一切値を入れない)を含む
+  await writeExcelFile([
+    ["A1", "B1", null, "D1"],
+    [null, null, null, null], // 完全に空白な行
+    ["A3", "B3", null, "D3"],
+    ["A4", "B4", null, "D4"],
+  ]).toFile(fixtures.xlsxBlankRowsCols);
+
+  // 複数シート(Tool 4/5/6/7/8の複数シート挙動確認用): 内容の異なる2シート
+  await writeExcelFile([
+    { sheet: "Sheet1", data: [["S1_A1", "S1_B1"], ["S1_A2", "S1_B2"]] },
+    { sheet: "Sheet2", data: [["S2_A1", "S2_B1"], ["S2_A2", "S2_B2"]] },
+  ]).toFile(fixtures.xlsxMultiSheet);
+
+  // 日付一括変更(Tool 8)用: Excelの日付型セル・文字列形式の日付・日付以外の
+  // 文字列セル・数値セルを混在させ、「日付として認識できるセルだけ」が
+  // 変更されることを検証できるようにする。
+  await writeExcelFile(
+    [
+      ["date_cell", "string_date", "plain_text", "number"],
+      [new Date(2026, 9, 1), "2026/10/01", "not a date", 12345],
+    ],
+    { dateFormat: "yyyy-mm-dd" }
+  ).toFile(fixtures.xlsxDates);
+
+  // Word段落整理(Tool 9)・Word番号振り直し(Tool 10)用フィクスチャ
+  function writeDocx(path: string, spec: DocxDocumentSpec) {
+    fs.writeFileSync(path, buildMinimalDocx(spec));
+  }
+
+  // 通常のテキスト(単一段落)
+  writeDocx(fixtures.wordNormalDocx, {
+    blocks: [{ kind: "paragraph", runs: [{ text: "これは通常のテスト用文章です。" }] }],
+  });
+
+  // 複数段落
+  writeDocx(fixtures.wordMultiParagraphDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "1つ目の段落です。" }] },
+      { kind: "paragraph", runs: [{ text: "2つ目の段落です。" }] },
+      { kind: "paragraph", runs: [{ text: "3つ目の段落です。" }] },
+    ],
+  });
+
+  // 番号振り直し(Tool 10)用: 先頭に "1." "2." "3." の番号が付いた段落と、
+  // 番号を持たない本文段落を混在させる(本文段落は変換対象外であることの確認用)。
+  writeDocx(fixtures.wordNumberedDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "見出し（番号なし本文）" }] },
+      { kind: "paragraph", runs: [{ text: "1. りんご" }] },
+      { kind: "paragraph", runs: [{ text: "2. みかん" }] },
+      { kind: "paragraph", runs: [{ text: "3. ぶどう" }] },
+      { kind: "paragraph", runs: [{ text: "補足の本文段落です。" }] },
+    ],
+  });
+
+  // 日本語テキスト・全角/半角スペース混在(Tool 9)用
+  writeDocx(fixtures.wordJapaneseDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "全角スペース　を含む日本語の文章です。" }] },
+      { kind: "paragraph", runs: [{ text: "半角スペース  が連続する場合の文章です。" }] },
+    ],
+  });
 }

@@ -254,6 +254,38 @@ const ElectronicStampGeneratorTool = dynamic(() =>
   import("./implementations/electronic-stamp-generator-tool").then((m) => m.ElectronicStampGeneratorTool)
 );
 
+// 次工程・軽量便利ツール一括追加（Tool 1〜10）
+const DateWeekdayTool = dynamic(() =>
+  import("./implementations/date-weekday-tool").then((m) => m.DateWeekdayTool)
+);
+const TimeCalculatorTool = dynamic(() =>
+  import("./implementations/time-calculator-tool").then((m) => m.TimeCalculatorTool)
+);
+const NumberFormatTool = dynamic(() =>
+  import("./implementations/number-format-tool").then((m) => m.NumberFormatTool)
+);
+const ExcelTransposeTool = dynamic(() =>
+  import("./implementations/excel-transpose-tool").then((m) => m.ExcelTransposeTool)
+);
+const ExcelBlankRemoveTool = dynamic(() =>
+  import("./implementations/excel-blank-remove-tool").then((m) => m.ExcelBlankRemoveTool)
+);
+const ExcelReplaceTool = dynamic(() =>
+  import("./implementations/excel-replace-tool").then((m) => m.ExcelReplaceTool)
+);
+const ExcelMergeCenterTool = dynamic(() =>
+  import("./implementations/excel-merge-center-tool").then((m) => m.ExcelMergeCenterTool)
+);
+const ExcelDateShiftTool = dynamic(() =>
+  import("./implementations/excel-date-shift-tool").then((m) => m.ExcelDateShiftTool)
+);
+const WordParagraphCleanupTool = dynamic(() =>
+  import("./implementations/word-paragraph-cleanup-tool").then((m) => m.WordParagraphCleanupTool)
+);
+const WordRenumberTool = dynamic(() =>
+  import("./implementations/word-renumber-tool").then((m) => m.WordRenumberTool)
+);
+
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
   "image-compress",
@@ -417,6 +449,26 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfFillAnnotateTool />;
     case "electronic-stamp-generator":
       return <ElectronicStampGeneratorTool />;
+    case "date-weekday-tool":
+      return <DateWeekdayTool />;
+    case "time-calculator":
+      return <TimeCalculatorTool />;
+    case "number-format":
+      return <NumberFormatTool />;
+    case "excel-transpose":
+      return <ExcelTransposeTool />;
+    case "excel-blank-remove":
+      return <ExcelBlankRemoveTool />;
+    case "excel-replace":
+      return <ExcelReplaceTool />;
+    case "excel-merge-center":
+      return <ExcelMergeCenterTool />;
+    case "excel-date-shift":
+      return <ExcelDateShiftTool />;
+    case "word-paragraph-cleanup":
+      return <WordParagraphCleanupTool />;
+    case "word-renumber":
+      return <WordRenumberTool />;
     default:
       return null;
   }

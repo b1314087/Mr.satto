@@ -682,6 +682,61 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["列編集", "列削除", "列並び替え", "column"],
   },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 4）
+    id: "excel-transpose",
+    name: "Excel行列入れ替え",
+    category: "csv-excel",
+    description: "Excelファイルの行と列を入れ替えます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["行列入れ替え", "転置", "transpose", "excel"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 5）
+    id: "excel-blank-remove",
+    name: "Excel空白行・空白列削除",
+    category: "csv-excel",
+    description: "Excelファイル内の完全に空白な行・列をまとめて削除します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["空白行削除", "空白列削除", "excel", "クリーニング"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 6）
+    id: "excel-replace",
+    name: "Excel文字削除・置換",
+    category: "csv-excel",
+    description: "Excel内の文字列を検索して削除・置換します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["置換", "削除", "検索", "excel"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 7）
+    id: "excel-merge-center",
+    name: "Excel横セル結合・中央揃え",
+    category: "csv-excel",
+    description: "指定した範囲のセルを横方向に結合し、中央揃えを設定します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["セル結合", "中央揃え", "excel", "merge"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 8）
+    id: "excel-date-shift",
+    name: "Excel日付一括変更",
+    category: "csv-excel",
+    description: "Excel内の日付セルの年・月・日をまとめて変更、または日数を加減算します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["日付変更", "日付一括", "excel", "date"],
+  },
 
   // ------------------------------------------------------------------
   // 動画（Phase 10）
@@ -1002,6 +1057,61 @@ export const tools: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["大文字", "小文字", "uppercase", "lowercase", "case"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 1）
+    id: "date-weekday-tool",
+    name: "日付・曜日ツール",
+    category: "other",
+    description: "曜日確認・日付の加減算・日付一覧・曜日抽出・営業日計算をまとめて行います",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["日付計算", "曜日", "営業日", "日付一覧", "カレンダー"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 2）
+    id: "time-calculator",
+    name: "時間計算",
+    category: "other",
+    description: "時間差・時刻の加減算・複数時間の合計・実働時間（休憩差引）を計算します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["時間計算", "時刻", "実働時間", "勤怠", "休憩"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 3）
+    id: "number-format",
+    name: "数字・番号フォーマット",
+    category: "other",
+    description: "郵便番号・電話番号の整形や、カンマ・区切り文字の追加削除を行います",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["郵便番号", "電話番号", "ハイフン", "カンマ", "フォーマット"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 9）
+    id: "word-paragraph-cleanup",
+    name: "Word段落整理",
+    category: "other",
+    description: "Word文書の全角・半角スペースや空白行をまとめて整理します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["word", "段落整理", "空白行削除", "スペース変換"],
+  },
+  {
+    // 次工程・軽量便利ツール一括追加（Tool 10）
+    id: "word-renumber",
+    name: "Word番号振り直し",
+    category: "other",
+    description: "「1.2.3.」「(1)(2)(3)」「①②③」「ア イ ウ」などの番号表記をまとめて変換します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["word", "番号振り直し", "採番", "リスト"],
   },
 ];
 

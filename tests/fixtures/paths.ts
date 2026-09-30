@@ -121,4 +121,14 @@ export const fixtures = {
   wordOnePageWithTableDocx: path.join(GENERATED_DIR, "word-overflow-one-page-table.docx"),
   wordOnePageWithImageDocx: path.join(GENERATED_DIR, "word-overflow-one-page-image.docx"),
   wordGenuineTwoPageDocx: path.join(GENERATED_DIR, "word-overflow-genuine-two-page.docx"),
+
+  // 次工程・軽量便利ツール一括追加: Excel系5ツール(Tool 4〜8)・Word系2ツール
+  // (Tool 9・10)のテスト用フィクスチャ。実在の企業・個人データは一切使用しない。
+  xlsxBlankRowsCols: path.join(GENERATED_DIR, "xlsx-blank-rows-cols.xlsx"),
+  xlsxMultiSheet: path.join(GENERATED_DIR, "xlsx-multi-sheet.xlsx"),
+  xlsxDates: path.join(GENERATED_DIR, "xlsx-dates.xlsx"),
+  wordNormalDocx: path.join(GENERATED_DIR, "word-normal.docx"),
+  wordMultiParagraphDocx: path.join(GENERATED_DIR, "word-multi-paragraph.docx"),
+  wordNumberedDocx: path.join(GENERATED_DIR, "word-numbered.docx"),
+  wordJapaneseDocx: path.join(GENERATED_DIR, "word-japanese.docx"),
 };
