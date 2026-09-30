@@ -142,8 +142,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["stripe"],
 
   /**
-   * 「お問い合わせ」機能削除（次工程 事前作業）に伴うリダイレクト。
+   * redirects()一覧。
    *
+   * 1件目「お問い合わせ」機能削除（次工程 事前作業）に伴うリダイレクト。
    * /contact は単純な静的ページ（フォームやDBは持たず、mailtoリンクのみ）だったが、
    * 機能自体が不要と判断され削除した。sitemap.xmlに掲載され続けてきた既存URLの
    * ため、検索エンジンに登録されている可能性・外部からのブックマーク/リンクの
@@ -151,12 +152,47 @@ const nextConfig: NextConfig = {
    * 誘導する（Next.js公式ドキュメント推奨のredirects()方式。
    * node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/redirects.md
    * 参照。静的生成のページには影響しない）。
+   *
+   * 2件目以降はカテゴリ再編（次工程・カテゴリ再編フェーズ）に伴うリダイレクト。
+   *
+   * 利用者属性ベースだった student(学生向け)/work(仕事)/creator(クリエイター)/
+   * other(その他) の4カテゴリを廃止し、目的ベースの10カテゴリへ再編した。
+   * 個別ツールのURL(/tools/{tool-id})は一切変更していないが、カテゴリ一覧
+   * ページ(/tools/{category-id})のURLは廃止・変更されるため、検索エンジンに
+   * 登録されている可能性・外部からのリンクの可能性を考慮し、上記/contactと
+   * 同じ方式(redirects()、恒久リダイレクト)で誘導する。
+   *
+   * - work: 所属ツールがほぼそのまま documents(書類作成) に移動したため、
+   *   1対1で /tools/documents へ。
+   * - student/creator/other: 所属ツールが複数の新カテゴリへ分散したため、
+   *   特定の新カテゴリへ無理に寄せず、カテゴリ一覧・全ツール一覧として
+   *   機能する /tools へ誘導する。
    */
   async redirects() {
     return [
       {
         source: "/contact",
         destination: "/",
+        permanent: true,
+      },
+      {
+        source: "/tools/work",
+        destination: "/tools/documents",
+        permanent: true,
+      },
+      {
+        source: "/tools/student",
+        destination: "/tools",
+        permanent: true,
+      },
+      {
+        source: "/tools/creator",
+        destination: "/tools",
+        permanent: true,
+      },
+      {
+        source: "/tools/other",
+        destination: "/tools",
         permanent: true,
       },
     ];

@@ -380,7 +380,7 @@ export const tools: Tool[] = [
   {
     id: "pdf-to-excel",
     name: "PDF→Excel",
-    category: "pdf",
+    category: "csv-excel",
     description: "PDF内の表をExcelファイルに変換します",
     status: "available",
     requiredPlan: "premium",
@@ -390,7 +390,7 @@ export const tools: Tool[] = [
   {
     id: "pdf-to-word",
     name: "PDF→Word",
-    category: "pdf",
+    category: "word",
     description: "PDFをWord文書に変換します",
     status: "available",
     requiredPlan: "premium",
@@ -816,7 +816,7 @@ export const tools: Tool[] = [
   {
     id: "pomodoro-timer",
     name: "ポモドーロタイマー",
-    category: "student",
+    category: "utility",
     description: "集中と休憩を繰り返す勉強・作業用タイマーです",
     status: "available",
     requiredPlan: "standard",
@@ -827,7 +827,7 @@ export const tools: Tool[] = [
   {
     id: "unit-converter",
     name: "単位変換",
-    category: "student",
+    category: "utility",
     description: "長さ・重さ・温度などの単位を変換します",
     status: "coming-soon",
     requiredPlan: "standard",
@@ -837,7 +837,7 @@ export const tools: Tool[] = [
   {
     id: "citation-formatter",
     name: "参考文献リスト整形",
-    category: "student",
+    category: "text",
     description: "レポート用の参考文献リストを整形します",
     status: "coming-soon",
     requiredPlan: "standard",
@@ -851,7 +851,7 @@ export const tools: Tool[] = [
   {
     id: "business-card-qr",
     name: "名刺QRコード作成",
-    category: "work",
+    category: "generator",
     description: "連絡先情報をQRコード化して名刺やメールに使えます",
     status: "available",
     requiredPlan: "standard",
@@ -862,7 +862,7 @@ export const tools: Tool[] = [
   {
     id: "meeting-notes-template",
     name: "議事録テンプレート生成",
-    category: "work",
+    category: "documents",
     description: "会議の議事録テンプレートを自動生成します",
     status: "coming-soon",
     requiredPlan: "standard",
@@ -872,7 +872,7 @@ export const tools: Tool[] = [
   {
     id: "estimate-generator",
     name: "見積書作成",
-    category: "work",
+    category: "documents",
     description: "オンラインで見積書を作成してPDFで保存できます",
     status: "available",
     requiredPlan: "premium",
@@ -882,7 +882,7 @@ export const tools: Tool[] = [
   {
     id: "invoice-generator",
     name: "請求書作成",
-    category: "work",
+    category: "documents",
     description: "請求書を作成して振込先情報付きのPDFでダウンロードできます",
     status: "available",
     requiredPlan: "premium",
@@ -893,7 +893,7 @@ export const tools: Tool[] = [
   {
     id: "order-generator",
     name: "注文書作成",
-    category: "work",
+    category: "documents",
     description: "注文書を簡単に作成してPDFで保存できます",
     status: "available",
     requiredPlan: "premium",
@@ -909,7 +909,7 @@ export const tools: Tool[] = [
     // 直接呼び出して行う（詳細は同ディレクトリ内の各ファイルのコメント参照）。
     id: "filled-pdf-to-excel",
     name: "記入済みPDF→Excel",
-    category: "work",
+    category: "csv-excel",
     description: "記入済みの申請書・帳票のPDFを項目ごとに整理してExcelに変換します。テンプレートを登録すれば1ページに複数人分の情報がある帳票にも対応します",
     status: "available",
     requiredPlan: "standard",
@@ -930,7 +930,7 @@ export const tools: Tool[] = [
   {
     id: "form-to-individual-pdfs",
     name: "フォーム回答から個別PDFを一括作成",
-    category: "work",
+    category: "documents",
     description: "Googleフォーム・Microsoft Formsの回答データをPDFテンプレートに差し込み、個別PDFを一括生成します",
     status: "available",
     requiredPlan: "standard",
@@ -944,7 +944,7 @@ export const tools: Tool[] = [
   {
     id: "color-palette-generator",
     name: "配色パレット生成",
-    category: "creator",
+    category: "generator",
     description: "ベースカラーから調和の取れた配色パレットを作成します",
     status: "available",
     requiredPlan: "standard",
@@ -955,7 +955,7 @@ export const tools: Tool[] = [
   {
     id: "gradient-generator",
     name: "グラデーション生成",
-    category: "creator",
+    category: "generator",
     description: "CSS用のグラデーションを作成します",
     status: "coming-soon",
     requiredPlan: "standard",
@@ -965,7 +965,7 @@ export const tools: Tool[] = [
   {
     id: "background-remover",
     name: "背景透過（背景除去）",
-    category: "creator",
+    category: "image",
     description: "AIを使って画像の背景を自動的に除去します",
     status: "coming-soon",
     requiredPlan: "standard",
@@ -975,7 +975,7 @@ export const tools: Tool[] = [
   {
     id: "electronic-stamp-generator",
     name: "電子印鑑生成",
-    category: "creator",
+    category: "generator",
     description: "文字から印影画像を作成したり、お手持ちの印鑑を画像・PDFから取り込んで透明PNGに整えたりできます",
     status: "available",
     requiredPlan: "standard",
@@ -999,7 +999,7 @@ export const tools: Tool[] = [
   {
     id: "qr-generator",
     name: "QRコード生成",
-    category: "other",
+    category: "generator",
     description: "URLやテキストからQRコードを作成します",
     status: "available",
     requiredPlan: "standard",
@@ -1010,7 +1010,7 @@ export const tools: Tool[] = [
   {
     id: "password-generator",
     name: "パスワード生成",
-    category: "other",
+    category: "generator",
     description: "安全でランダムなパスワードを生成します",
     status: "available",
     requiredPlan: "standard",
@@ -1021,7 +1021,7 @@ export const tools: Tool[] = [
   {
     id: "char-count",
     name: "文字数カウント",
-    category: "other",
+    category: "text",
     description: "文字数・単語数・行数をカウントします",
     status: "available",
     requiredPlan: "standard",
@@ -1031,7 +1031,7 @@ export const tools: Tool[] = [
   {
     id: "json-formatter",
     name: "JSON整形",
-    category: "other",
+    category: "text",
     description: "JSONを見やすく整形・検証します",
     status: "available",
     requiredPlan: "standard",
@@ -1041,7 +1041,7 @@ export const tools: Tool[] = [
   {
     id: "text-line-cleaner",
     name: "テキスト行整理",
-    category: "other",
+    category: "text",
     description: "空行削除・重複行削除・並び替えなどをまとめて行います",
     status: "available",
     requiredPlan: "standard",
@@ -1051,7 +1051,7 @@ export const tools: Tool[] = [
   {
     id: "text-case-converter",
     name: "大文字・小文字変換",
-    category: "other",
+    category: "text",
     description: "英字テキストを大文字・小文字・先頭大文字に変換します",
     status: "available",
     requiredPlan: "standard",
@@ -1062,7 +1062,7 @@ export const tools: Tool[] = [
     // 次工程・軽量便利ツール一括追加（Tool 1）
     id: "date-weekday-tool",
     name: "日付・曜日ツール",
-    category: "other",
+    category: "utility",
     description: "曜日確認・日付の加減算・日付一覧・曜日抽出・営業日計算をまとめて行います",
     status: "available",
     requiredPlan: "standard",
@@ -1073,7 +1073,7 @@ export const tools: Tool[] = [
     // 次工程・軽量便利ツール一括追加（Tool 2）
     id: "time-calculator",
     name: "時間計算",
-    category: "other",
+    category: "utility",
     description: "時間差・時刻の加減算・複数時間の合計・実働時間（休憩差引）を計算します",
     status: "available",
     requiredPlan: "standard",
@@ -1084,7 +1084,7 @@ export const tools: Tool[] = [
     // 次工程・軽量便利ツール一括追加（Tool 3）
     id: "number-format",
     name: "数字・番号フォーマット",
-    category: "other",
+    category: "utility",
     description: "郵便番号・電話番号の整形や、カンマ・区切り文字の追加削除を行います",
     status: "available",
     requiredPlan: "standard",
@@ -1095,7 +1095,7 @@ export const tools: Tool[] = [
     // 次工程・軽量便利ツール一括追加（Tool 9）
     id: "word-paragraph-cleanup",
     name: "Word段落整理",
-    category: "other",
+    category: "word",
     description: "Word文書の全角・半角スペースや空白行をまとめて整理します",
     status: "available",
     requiredPlan: "standard",
@@ -1106,7 +1106,7 @@ export const tools: Tool[] = [
     // 次工程・軽量便利ツール一括追加（Tool 10）
     id: "word-renumber",
     name: "Word番号振り直し",
-    category: "other",
+    category: "word",
     description: "「1.2.3.」「(1)(2)(3)」「①②③」「ア イ ウ」などの番号表記をまとめて変換します",
     status: "available",
     requiredPlan: "standard",
@@ -1117,7 +1117,7 @@ export const tools: Tool[] = [
     // 次工程・印刷帳票4ツール追加フェーズ
     id: "excel-label",
     name: "Excelラベル作成",
-    category: "work",
+    category: "documents",
     description: "ラベルの幅・高さ・行数・列数・余白をmm指定し、同じ文字を並べたラベルシートをExcelで作成します",
     status: "available",
     requiredPlan: "standard",
@@ -1127,7 +1127,7 @@ export const tools: Tool[] = [
   {
     id: "envelope-address",
     name: "封筒宛名作成",
-    category: "work",
+    category: "documents",
     description: "長形3号・長形4号・角形2号の封筒に、縦書き/横書きで宛名・差出人を印刷するPDFを作成します。Excel/CSVからの複数宛先読み込みにも対応",
     status: "available",
     requiredPlan: "standard",
@@ -1137,7 +1137,7 @@ export const tools: Tool[] = [
   {
     id: "ticket-voucher",
     name: "整理券・金券・引換券作成",
-    category: "work",
+    category: "documents",
     description: "用紙サイズ・枚数・連番・QRコード・バーコード・切り取り線を指定して、整理券や金券、引換券のPDFをまとめて作成します",
     status: "available",
     requiredPlan: "standard",
@@ -1147,7 +1147,7 @@ export const tools: Tool[] = [
   {
     id: "roster-template",
     name: "名簿テンプレート作成",
-    category: "work",
+    category: "documents",
     description: "Excel/CSVから使用する列を選び、行の高さ・列の幅をmm指定して、印刷向けの名簿シートをExcel・PDFで作成します",
     status: "available",
     requiredPlan: "standard",

@@ -16,13 +16,14 @@ export type ToolStatus = "available" | "coming-soon";
 export type CategoryId =
   | "image"
   | "pdf"
-  | "file"
   | "csv-excel"
+  | "word"
   | "video"
-  | "student"
-  | "work"
-  | "creator"
-  | "other";
+  | "file"
+  | "text"
+  | "utility"
+  | "generator"
+  | "documents";
 
 export interface Category {
   id: CategoryId;
