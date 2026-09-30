@@ -286,6 +286,20 @@ const WordRenumberTool = dynamic(() =>
   import("./implementations/word-renumber-tool").then((m) => m.WordRenumberTool)
 );
 
+// 次工程・印刷帳票4ツール追加フェーズ
+const ExcelLabelTool = dynamic(() =>
+  import("./implementations/excel-label-tool").then((m) => m.ExcelLabelTool)
+);
+const EnvelopeAddressTool = dynamic(() =>
+  import("./implementations/envelope-address-tool").then((m) => m.EnvelopeAddressTool)
+);
+const TicketVoucherTool = dynamic(() =>
+  import("./implementations/ticket-voucher-tool").then((m) => m.TicketVoucherTool)
+);
+const RosterTemplateTool = dynamic(() =>
+  import("./implementations/roster-template-tool").then((m) => m.RosterTemplateTool)
+);
+
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
   "image-compress",
@@ -469,6 +483,14 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <WordParagraphCleanupTool />;
     case "word-renumber":
       return <WordRenumberTool />;
+    case "excel-label":
+      return <ExcelLabelTool />;
+    case "envelope-address":
+      return <EnvelopeAddressTool />;
+    case "ticket-voucher":
+      return <TicketVoucherTool />;
+    case "roster-template":
+      return <RosterTemplateTool />;
     default:
       return null;
   }

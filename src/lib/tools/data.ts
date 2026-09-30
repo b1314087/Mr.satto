@@ -1113,6 +1113,47 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["word", "番号振り直し", "採番", "リスト"],
   },
+  {
+    // 次工程・印刷帳票4ツール追加フェーズ
+    id: "excel-label",
+    name: "Excelラベル作成",
+    category: "work",
+    description: "ラベルの幅・高さ・行数・列数・余白をmm指定し、同じ文字を並べたラベルシートをExcelで作成します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["ラベル", "宛名ラベル", "シール", "印刷"],
+  },
+  {
+    id: "envelope-address",
+    name: "封筒宛名作成",
+    category: "work",
+    description: "長形3号・長形4号・角形2号の封筒に、縦書き/横書きで宛名・差出人を印刷するPDFを作成します。Excel/CSVからの複数宛先読み込みにも対応",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["封筒", "宛名", "宛名印刷", "長形3号", "角形2号"],
+  },
+  {
+    id: "ticket-voucher",
+    name: "整理券・金券・引換券作成",
+    category: "work",
+    description: "用紙サイズ・枚数・連番・QRコード・バーコード・切り取り線を指定して、整理券や金券、引換券のPDFをまとめて作成します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["整理券", "金券", "引換券", "チケット", "QRコード", "バーコード"],
+  },
+  {
+    id: "roster-template",
+    name: "名簿テンプレート作成",
+    category: "work",
+    description: "Excel/CSVから使用する列を選び、行の高さ・列の幅をmm指定して、印刷向けの名簿シートをExcel・PDFで作成します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["名簿", "一覧表", "出席簿", "台帳"],
+  },
 ];
 
 export function getToolById(id: string): Tool | undefined {

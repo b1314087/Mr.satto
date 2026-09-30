@@ -42,14 +42,22 @@ export async function readXlsxSheets(file: File): Promise<XlsxSheet[]> {
  * write-excel-file/universal の Row/Cell 型をそのまま再利用できるよう、
  * 出力側は unknown[][] を受け取ってそのまま渡す（Tool 7 の結合セルのように
  * CellObject（columnSpan/align等）を混在させたい場合にも対応できるようにするため）。
+ *
+ * columns（列幅指定, mmToExcelColumnWidth等で求めた"文字数"単位の配列）は
+ * 次工程・印刷帳票4ツール追加フェーズ（Excelラベル作成・名簿テンプレート作成）で
+ * 追加したオプション引数。省略時は従来通り列幅指定なしで書き出すため、
+ * 既存の呼び出し箇所（Tool 4〜8）の動作は変更しない。
  */
-export async function writeXlsxSheets(sheets: { name: string; rows: unknown[][] }[]): Promise<Blob> {
+export async function writeXlsxSheets(
+  sheets: { name: string; rows: unknown[][]; columns?: { width: number }[] }[]
+): Promise<Blob> {
   const { default: writeXlsxFile } = await import("write-excel-file/universal");
   // write-excel-file はデータが0行のシートを受け付けないため、空シートには
   // 空セル1行を補って安全に書き出せるようにする。
   const safeSheets = sheets.map((s) => ({
     name: s.name,
     rows: s.rows.length > 0 ? s.rows : [[null]],
+    columns: s.columns,
   }));
   // write-excel-file の型は `unknown` を直接受け付けないため、
   // ライブラリ自身がエクスポートする Row/SheetData 型へこの境界でのみ変換する。
@@ -57,8 +65,13 @@ export async function writeXlsxSheets(sheets: { name: string; rows: unknown[][] 
   // 書き戻す場合（Tool 4/8等）、CellObjectでformatを個別指定しない限り
   // write-excel-fileが「Dateセルにはformatが必要」というエラーを投げるため
   // （pdf-to-excel.tsが個別セルへ指定しているformatと同じ既定値に揃える）。
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sheetInputs = safeSheets.map((s) => ({ sheet: s.name, dateFormat: "yyyy-mm-dd", data: s.rows as any }));
+  const sheetInputs = safeSheets.map((s) => ({
+    sheet: s.name,
+    dateFormat: "yyyy-mm-dd",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: s.rows as any,
+    ...(s.columns ? { columns: s.columns } : {}),
+  }));
   try {
     return await writeXlsxFile(sheetInputs).toBlob();
   } catch {
@@ -102,4 +115,16 @@ export function columnIndexToLetter(index: number): string {
     n = Math.floor((n - 1) / 26);
   }
   return result;
+}
+
+/**
+ * mm幅を write-excel-file の列幅指定（"文字数"単位、Excel既定フォント基準の近似値）へ変換する
+ * （Mr.Satto 次工程・印刷帳票4ツール追加フェーズ：Excelラベル作成・名簿テンプレート作成の2ツールが
+ * 共通で使う。write-excel-file自体はmm単位の列幅指定をサポートしていないため、
+ * 96dpi換算のピクセル幅からExcelの伝統的な「文字数」単位へ近似変換する
+ * （Excel標準フォントでの一般的な近似式。環境・フォントにより実際の表示幅は多少前後する）。
+ */
+export function mmToExcelColumnWidth(mm: number): number {
+  const px = mm * (96 / 25.4);
+  return Math.max(1, (px - 5) / 7);
 }
