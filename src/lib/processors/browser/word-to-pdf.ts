@@ -14,7 +14,7 @@ import { BrowserProcessor } from "../types";
 import type { PdfProcessorOutput } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { addLinkAnnotation } from "@/lib/pdf/pdf-link-annotation";
-import { parseWordDocumentStructure, type BodyChildHint } from "@/lib/word/section-settings";
+import { parseWordDocumentStructure, type BodyChildHint, type DefaultParagraphSpacing } from "@/lib/word/section-settings";
 
 /**
  * Word（DOCX）→ PDF Processor（Phase 9、Phase 18.2 C節で用紙設定・改ページ対応を強化）。
@@ -75,8 +75,50 @@ const DEFAULT_PAGE_WIDTH = 595.28;
 const DEFAULT_PAGE_HEIGHT = 841.89;
 const DEFAULT_MARGIN = 56;
 const BODY_SIZE = 10.5;
-const LINE_HEIGHT = 15;
+/** 段落後の間隔が文書側から全く取得できなかった場合のみ使うフォールバック値
+ *  （外出先PC修正指示書§32-35対応前の旧固定値。取得できた場合はresolveParagraphGapが
+ *  実際の文書設定(Normalスタイルのw:after)から計算した値を優先する） */
 const PARAGRAPH_GAP = 6;
+/** Wordの「単一行間隔」は行間が正確に1.0倍というわけではなく、フォントの
+ *  行間メトリクスを踏まえて概ね1.1〜1.2倍程度になる（実機のWord/LibreOffice出力
+ *  で確認）。行間の指定が全く取得できない場合の近似係数として使う。 */
+const SINGLE_LINE_SPACING_FACTOR = 1.15;
+
+/**
+ * 実際の行の高さ(pt)を、文書既定の行間設定(DefaultParagraphSpacing)と
+ * 描画するテキストのフォントサイズから計算する（外出先PC修正指示書§32-35）。
+ *
+ * 【背景】以前は本文の行間を、フォントサイズに関係なく常に15pt固定で計算していた。
+ * 10.5pt本文に対する15pt行間は倍率にして約1.43倍であり、
+ * Wordの「単一行間隔」(概ね1.1〜1.2倍)よりも常に広い。これが積み重なることで
+ * 「Wordでは1ページに収まる文書がPDFでは2ページ目にあふれる」不具合の
+ * 主要因の1つになっていた（もう1つの要因はparagraphGap、下記参照）。
+ */
+function resolveLineHeight(spacing: DefaultParagraphSpacing, size: number): number {
+  if (spacing.lineRule === "exact" && spacing.lineValue !== null) {
+    return spacing.lineValue;
+  }
+  if (spacing.lineRule === "atLeast" && spacing.lineValue !== null) {
+    return Math.max(spacing.lineValue, size * SINGLE_LINE_SPACING_FACTOR);
+  }
+  if (spacing.lineRule === "auto" && spacing.lineValue !== null) {
+    const multiplier = spacing.lineValue / 240; // 240 = 1行(単一間隔)
+    return size * SINGLE_LINE_SPACING_FACTOR * multiplier;
+  }
+  // 文書側から行間情報が全く取得できなかった場合: 従来の固定値(15pt)ではなく、
+  // Wordの単一行間隔によりまだ近いフォントサイズ比例の値にフォールバックする
+  return size * SINGLE_LINE_SPACING_FACTOR;
+}
+
+/**
+ * 段落後の間隔(pt)を、文書既定の段落間隔設定から計算する（外出先PC修正指示書§32-35）。
+ * 個々の段落単位のw:after上書きまでは追跡しないため(段落ごとのインデックス対応が
+ * 難しいため。section-settings.tsのコメント参照)、文書既定(Normalスタイル)の値を
+ * 全ての本文段落に適用する。取得できなければ従来の固定値(6pt)にフォールバックする。
+ */
+function resolveParagraphGap(spacing: DefaultParagraphSpacing): number {
+  return spacing.afterPt ?? PARAGRAPH_GAP;
+}
 
 /** 未検証のDOCXを信頼しないための安全策（■18・■34）。妥当なDOCXは通常これより
  *  はるかに小さいため、この上限自体がZIP爆弾的な入力への一次防御になる。 */
@@ -680,7 +722,10 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const runs = block.runs.filter((r) => r.text !== "");
       const isHeading = block.heading > 0;
       const size = isHeading ? Math.max(20 - (block.heading - 1) * 2, 12) : BODY_SIZE;
-      const lineHeight = isHeading ? size + 6 : LINE_HEIGHT;
+      // 本文の行間は文書既定の設定(structure.defaultSpacing)から計算する(§32-35)。
+      // 見出しは既存どおりサイズ+6ptの固定比を維持する(見出しは通常文書全体の
+      // ページ数へ与える影響が小さく、今回の不具合報告の主要因ではないため)。
+      const lineHeight = isHeading ? size + 6 : resolveLineHeight(structure.defaultSpacing, size);
       const effectiveRuns: TextRun[] = isHeading ? runs.map((r) => ({ ...r, bold: true })) : runs;
 
       const indent = block.list ? 16 + block.list.level * 16 : 0;
@@ -711,7 +756,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         }
         cursorY -= lineHeight;
       });
-      cursorY -= isHeading ? 6 : PARAGRAPH_GAP;
+      cursorY -= isHeading ? 6 : resolveParagraphGap(structure.defaultSpacing);
     }
 
     function drawTable(block: TableBlock) {

@@ -63,6 +63,17 @@ export interface SheetPageSettings {
   /** key: "row:col"(0始まり)。値: その辺に実際に罫線が設定されているか */
   cellBorders: Map<string, { top: boolean; bottom: boolean; left: boolean; right: boolean }>;
   /**
+   * セルの背景色・文字色・太字（開発指示書§29-31「Excelの色がPDFに反映されない」対応）。
+   * 取得できる／実際に指定されている場合のみキーを持つ（既定色・塗りつぶしなしのセルは
+   * 記録しない。cellBordersと同じ「差分だけを持つ」方針で、巨大シートでのMapサイズを
+   * 抑える）。値は"#RRGGBB"形式。indexed color・theme colorは今回のバージョンでは
+   * 対応しない（rgb属性で明示的に指定された色のみ。取得できなかった色は無理に
+   * 再現しない方針を踏襲）。
+   */
+  cellFills: Map<string, string>;
+  cellFontColors: Map<string, string>;
+  cellBold: Map<string, boolean>;
+  /**
    * ヘッダー/フッター(開発指示書B-9・B-10、Phase 22)。Excel側で設定されている
    * 場合のみ値を持つ(未設定ならnull)。oddHeader/oddFooter(既定のヘッダー/
    * フッター)のみ対応し、ページ番号ごとに内容が変わるfirstHeader/evenHeader等
@@ -99,6 +110,9 @@ function emptySheetSettings(): SheetPageSettings {
     rowBreaksAfter: [],
     colBreaksAfter: [],
     cellBorders: new Map(),
+    cellFills: new Map(),
+    cellFontColors: new Map(),
+    cellBold: new Map(),
     header: null,
     footer: null,
   };
@@ -233,8 +247,42 @@ interface BorderDef {
   right: boolean;
 }
 
-/** styles.xml の <borders> と <cellXfs> から、style index(s) → 罫線有無 の対応表を作る */
-function parseBorderStyles(stylesXmlText: string | null): BorderDef[] {
+/** resolvedスタイル1件分（cellXfsのxf要素1つに対応する、セル1スタイルぶんの情報） */
+interface ResolvedCellStyle {
+  border: BorderDef;
+  /** "#RRGGBB"。塗りつぶしなし・indexed/theme色など解決できない場合はnull */
+  fillRgb: string | null;
+  fontRgb: string | null;
+  bold: boolean;
+}
+
+/**
+ * OOXMLの色（ARGBの8桁16進、まれに6桁もそのまま許容）を"#RRGGBB"へ変換する。
+ * indexed属性・theme属性による色指定（パレット番号・テーマカラー参照）は
+ * 今回のバージョンでは解決しない（テーマのxml解析まで踏み込むと対応範囲が
+ * 大きく広がるため、開発指示書の「無理に再現しない」方針に沿って明示的な
+ * rgb属性を持つ色のみを対象とする）。
+ */
+function argbToRgbHex(argb: string | null | undefined): string | null {
+  if (!argb) return null;
+  const hex = argb.replace(/^#/, "");
+  if (hex.length === 8) return `#${hex.slice(2)}`; // AARRGGBB → RRGGBB
+  if (hex.length === 6) return `#${hex}`;
+  return null;
+}
+
+/** <color rgb="FFRRGGBB"/> のような要素から解決できる色（rgb属性のみ対応）を読む */
+function readColorEl(colorEl: Element | undefined): string | null {
+  if (!colorEl) return null;
+  return argbToRgbHex(colorEl.getAttribute("rgb"));
+}
+
+/**
+ * styles.xml の <fonts>/<fills>/<borders> と <cellXfs> から、
+ * style index(s、セル側のs属性の値＝cellXfs内でのxf要素の出現順) → 罫線有無・
+ * 背景色・文字色・太字 の対応表を作る（開発指示書§21-26・§29-31）。
+ */
+function parseCellStyles(stylesXmlText: string | null): ResolvedCellStyle[] {
   if (!stylesXmlText) return [];
   const doc = parseXml(stylesXmlText);
   if (!doc) return [];
@@ -242,8 +290,7 @@ function parseBorderStyles(stylesXmlText: string | null): BorderDef[] {
   const borderDefs: BorderDef[] = [];
   const bordersEl = doc.getElementsByTagName("borders")[0];
   if (bordersEl) {
-    const borderEls = Array.from(bordersEl.getElementsByTagName("border"));
-    for (const b of borderEls) {
+    for (const b of Array.from(bordersEl.getElementsByTagName("border"))) {
       const hasSide = (tag: string) => {
         const el = b.getElementsByTagName(tag)[0];
         // <top style="thin">...</top> のように style属性を持つ(かつ"none"でない)場合のみ罫線ありとみなす
@@ -259,23 +306,61 @@ function parseBorderStyles(stylesXmlText: string | null): BorderDef[] {
     }
   }
 
-  // cellXfs の各xf要素が持つborderId(0始まり、bordersリストのインデックス)から、
-  // style index(s、セル側が参照する番号=cellXfs内でのxf要素の出現順)→BorderDefの対応表を作る
+  // <fills><fill><patternFill patternType="solid"><fgColor rgb="FFRRGGBB"/>...
+  // patternType="solid"のときのみfgColorが実際に見える背景色になる（それ以外の
+  // ハッチング等のパターン塗りつぶしは、今回は色の再現対象外とし無視する）。
+  const fillRgbs: (string | null)[] = [];
+  const fillsEl = doc.getElementsByTagName("fills")[0];
+  if (fillsEl) {
+    for (const fill of Array.from(fillsEl.getElementsByTagName("fill"))) {
+      const patternFill = fill.getElementsByTagName("patternFill")[0];
+      const patternType = patternFill?.getAttribute("patternType");
+      if (patternType === "solid") {
+        fillRgbs.push(readColorEl(patternFill?.getElementsByTagName("fgColor")[0]));
+      } else {
+        fillRgbs.push(null);
+      }
+    }
+  }
+
+  // <fonts><font><color rgb="FFRRGGBB"/><b/>...
+  const fontDefs: { rgb: string | null; bold: boolean }[] = [];
+  const fontsEl = doc.getElementsByTagName("fonts")[0];
+  if (fontsEl) {
+    for (const fontEl of Array.from(fontsEl.getElementsByTagName("font"))) {
+      const rgb = readColorEl(fontEl.getElementsByTagName("color")[0]);
+      const bold = fontEl.getElementsByTagName("b").length > 0;
+      fontDefs.push({ rgb, bold });
+    }
+  }
+
   const cellXfsEl = doc.getElementsByTagName("cellXfs")[0];
-  const result: BorderDef[] = [];
+  const result: ResolvedCellStyle[] = [];
   if (cellXfsEl) {
     const xfEls = Array.from(cellXfsEl.children).filter((el) => el.tagName === "xf");
     for (const xf of xfEls) {
       const borderId = xf.getAttribute("borderId");
-      const idx = borderId ? Number(borderId) : 0;
-      result.push(borderDefs[idx] ?? { top: false, bottom: false, left: false, right: false });
+      const fillId = xf.getAttribute("fillId");
+      const fontId = xf.getAttribute("fontId");
+      const border = borderDefs[borderId ? Number(borderId) : 0] ?? { top: false, bottom: false, left: false, right: false };
+      // xf@applyFill="1"（または省略、Excel実ファイルではapplyFillが無くても
+      // fillIdが実際に効いているケースが大半のため、applyFill=0を明示していない限り適用する）
+      const applyFillExplicit = xf.getAttribute("applyFill");
+      const fillRgb = applyFillExplicit === "0" ? null : (fillRgbs[fillId ? Number(fillId) : 0] ?? null);
+      const fontDef = fontDefs[fontId ? Number(fontId) : 0];
+      result.push({
+        border,
+        fillRgb,
+        fontRgb: fontDef?.rgb ?? null,
+        bold: fontDef?.bold ?? false,
+      });
     }
   }
   return result;
 }
 
 /** 1つのワークシートXML(sheetN.xml)から、そのシートの印刷関連情報を読み取る */
-function parseSheetXml(sheetXmlText: string, styleBorders: BorderDef[]): Partial<SheetPageSettings> {
+function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[]): Partial<SheetPageSettings> {
   const doc = parseXml(sheetXmlText);
   if (!doc) return {};
   const result: Partial<SheetPageSettings> = {};
@@ -322,6 +407,9 @@ function parseSheetXml(sheetXmlText: string, styleBorders: BorderDef[]): Partial
   const columnWidthsPt = new Map<number, number>();
   const rowHeightsPt = new Map<number, number>();
   const cellBorders = new Map<string, BorderDef>();
+  const cellFills = new Map<string, string>();
+  const cellFontColors = new Map<string, string>();
+  const cellBold = new Map<string, boolean>();
 
   const colsEl = doc.getElementsByTagName("cols")[0];
   if (colsEl) {
@@ -353,10 +441,16 @@ function parseSheetXml(sheetXmlText: string, styleBorders: BorderDef[]): Partial
         if (!ref || !sAttr) continue;
         const parsed = parseCellRef(ref);
         if (!parsed) continue;
-        const border = styleBorders[Number(sAttr)];
-        if (border && (border.top || border.bottom || border.left || border.right)) {
-          cellBorders.set(`${parsed.row}:${parsed.col}`, border);
+        const style = cellStyles[Number(sAttr)];
+        if (!style) continue;
+        const key = `${parsed.row}:${parsed.col}`;
+        const { border } = style;
+        if (border.top || border.bottom || border.left || border.right) {
+          cellBorders.set(key, border);
         }
+        if (style.fillRgb) cellFills.set(key, style.fillRgb);
+        if (style.fontRgb) cellFontColors.set(key, style.fontRgb);
+        if (style.bold) cellBold.set(key, true);
       }
     }
   }
@@ -366,6 +460,9 @@ function parseSheetXml(sheetXmlText: string, styleBorders: BorderDef[]): Partial
   result.columnWidthsPt = columnWidthsPt;
   result.rowHeightsPt = rowHeightsPt;
   result.cellBorders = cellBorders;
+  result.cellFills = cellFills;
+  result.cellFontColors = cellFontColors;
+  result.cellBold = cellBold;
 
   // 明示的な改ページ（手動のみ。man="1"）
   const rowBreaksAfter: number[] = [];
@@ -459,7 +556,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
       }
     }
 
-    const styleBorders = parseBorderStyles(stylesXmlText);
+    const cellStyles = parseCellStyles(stylesXmlText);
 
     for (let i = 0; i < sheetNamesInOrder.length; i++) {
       const name = sheetNamesInOrder[i];
@@ -468,7 +565,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
       const sheetXmlText = await readEntryText(entries, target);
       if (!sheetXmlText) continue;
 
-      const parsed = parseSheetXml(sheetXmlText, styleBorders);
+      const parsed = parseSheetXml(sheetXmlText, cellStyles);
       const settings: SheetPageSettings = { ...emptySheetSettings(), ...parsed };
       settings.printArea = printAreaBySheetIndex.get(i) ?? null;
       result.set(name, settings);

@@ -167,3 +167,32 @@ export async function getPageOpSummary(filePath: string, pageNumber: number): Pr
     curveSegmentCount,
   };
 }
+
+/**
+ * 外出先PC修正指示書§29-31（excel-to-pdfのセル背景色・文字色反映）検証用。
+ * ページの描画命令から、実際に使われた塗り色(非ストローク色。"rg"オペレータ=
+ * OPS.setFillRGBColor)を"#RRGGBB"の集合として取り出す。セルの背景矩形も
+ * 文字の描画色もどちらも同じ"rg"で色を指定するため、このヘルパー1つで両方を
+ * 検証できる（個々の矩形・文字がどのセルに対応するかまでは追わず、
+ * 「そのページのどこかで実際にその色が使われたか」を確認する用途に絞る）。
+ */
+export async function getFillColorsUsed(filePath: string, pageNumber: number): Promise<Set<string>> {
+  const pdfjsLib = await getPdfjs();
+  const data = new Uint8Array(fs.readFileSync(filePath));
+  const doc = await pdfjsLib.getDocument({ data, standardFontDataUrl: STANDARD_FONT_DATA_URL }).promise;
+  const page = await doc.getPage(pageNumber);
+  const opList = await page.getOperatorList();
+  const OPS = pdfjsLib.OPS;
+
+  const colors = new Set<string>();
+  const fnArray = opList.fnArray as number[];
+  const argsArray = opList.argsArray as unknown[];
+  for (let i = 0; i < fnArray.length; i++) {
+    if (fnArray[i] !== OPS.setFillRGBColor) continue;
+    const args = argsArray[i] as number[] | undefined;
+    if (!args || args.length < 3) continue;
+    const toHex = (v: number) => Math.round(v).toString(16).padStart(2, "0");
+    colors.add(`#${toHex(args[0])}${toHex(args[1])}${toHex(args[2])}`.toLowerCase());
+  }
+  return colors;
+}

@@ -148,10 +148,32 @@ function columnIndexFor(x: number, breaks: number[]): number {
   return idx;
 }
 
+/** 列結合(colspan)の推定結果。1行につき最大1個まで（複雑な複数結合は対象外、実用上の精度を優先） */
+export interface ColumnSpanHint {
+  row: number;
+  col: number;
+  span: number;
+}
+
 export interface ReconstructedTable {
   /** 行×列の文字列グリッド（空セルは空文字列） */
   rows: string[][];
   columnCount: number;
+  /**
+   * 罫線・結合セル復元(外出先PC修正指示書§21-26)用の幾何情報。
+   * PDFページ座標系(原点左下、上方向が正)でのセル境界線の位置。
+   * rowBoundariesY.length === rows.length + 1、colBoundariesX.length === columnCount + 1。
+   * rows.length === 0 のときは空配列。
+   */
+  rowBoundariesY: number[];
+  colBoundariesX: number[];
+  /** 列結合(colspan)の推定結果一覧（開発指示書§21-26。行結合(rowspan)は今回は対象外）。 */
+  columnSpans: ColumnSpanHint[];
+}
+
+function averageItemFontHeight(items: PositionedTextItem[]): number {
+  if (items.length === 0) return 10;
+  return items.reduce((sum, item) => sum + item.fontHeight, 0) / items.length;
 }
 
 /**
@@ -163,23 +185,70 @@ export interface ReconstructedTable {
 export function reconstructTable(items: PositionedTextItem[]): ReconstructedTable {
   const lines = groupIntoLines(items);
   if (lines.length === 0) {
-    return { rows: [], columnCount: 0 };
+    return { rows: [], columnCount: 0, rowBoundariesY: [], colBoundariesX: [], columnSpans: [] };
   }
 
   const breaks = computeColumnBreaks(lines);
   const columnCount = breaks.length + 1;
 
-  const rows: string[][] = lines.map((line) => {
+  const rows: string[][] = [];
+  const columnSpans: ColumnSpanHint[] = [];
+
+  lines.forEach((line, rowIndex) => {
     const row: string[][] = Array.from({ length: columnCount }, () => []);
     for (const item of line.items) {
       const midX = item.x + item.width / 2;
       const colIndex = Math.min(columnCount - 1, columnIndexFor(midX, breaks));
       row[colIndex].push(item.str);
     }
-    return row.map((cellParts) => cellParts.join(" ").replace(/\s+/g, " ").trim());
+    rows.push(row.map((cellParts) => cellParts.join(" ").replace(/\s+/g, " ").trim()));
+
+    // 列結合(colspan)の推定(§21-26): 1つのテキスト項目の実際のバウンディングボックス
+    // (中点ではなく左端〜右端)が、ページ全体で検出された列区切り(breaks)を1つ以上
+    // またいでいる場合、その項目は「複数列にまたがるセル」として描画されていたと
+    // みなす。breaksはページ全体（他の多くの行）の実際の隙間パターンから決定的に
+    // 導出された値のため、特定の行のテキストがそれをまたいでいること自体が
+        // 「その行だけ列が結合されている」強い根拠になる(通常の1列幅の文章が
+    // たまたま隣の列にはみ出す、という状況は考えにくい)。
+    // 1行に複数の結合候補がある場合は最大のものを1つだけ採用する
+    // (複雑な複数結合は対象外、実用上の精度を優先する方針)。
+    let bestSpan: ColumnSpanHint | null = null;
+    for (const item of line.items) {
+      if (item.str.trim() === "") continue;
+      const startCol = Math.min(columnCount - 1, columnIndexFor(item.x, breaks));
+      const endCol = Math.min(columnCount - 1, columnIndexFor(item.x + item.width, breaks));
+      if (endCol > startCol) {
+        const span = endCol - startCol + 1;
+        if (!bestSpan || span > bestSpan.span) {
+          bestSpan = { row: rowIndex, col: startCol, span };
+        }
+      }
+    }
+    if (bestSpan) columnSpans.push(bestSpan);
   });
 
-  return { rows, columnCount };
+  // --- 罫線復元(§21-26)用の境界線座標(PDFページ座標系)を計算する ---
+  // 行境界: 各行の中心(line.y)の中間点を境界とし、先頭行の上端・末尾行の下端は
+  // その行のフォント高さの半分ぶん外側に置く。
+  const rowBoundariesY: number[] = [];
+  lines.forEach((line, i) => {
+    if (i === 0) {
+      rowBoundariesY.push(line.y + averageItemFontHeight(line.items) * 0.6);
+    } else {
+      rowBoundariesY.push((lines[i - 1].y + line.y) / 2);
+    }
+  });
+  const lastLine = lines[lines.length - 1];
+  rowBoundariesY.push(lastLine.y - averageItemFontHeight(lastLine.items) * 0.6);
+
+  // 列境界: breaks(列と列の間の中点)をそのまま内側の境界とし、左端・右端は
+  // 実際のテキスト内容の外側に小さな余白を加えた位置に置く。
+  const allItems = lines.flatMap((l) => l.items);
+  const minX = Math.min(...allItems.map((it) => it.x));
+  const maxX = Math.max(...allItems.map((it) => it.x + it.width));
+  const colBoundariesX = [minX - 4, ...breaks, maxX + 4];
+
+  return { rows, columnCount, rowBoundariesY, colBoundariesX, columnSpans };
 }
 
 // ---------------------------------------------------------------------------

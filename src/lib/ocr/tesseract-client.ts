@@ -1,4 +1,5 @@
 import type { Worker } from "tesseract.js";
+import type { PositionedTextItem } from "@/lib/pdf/pdfjs-client";
 
 /**
  * OCR基盤（Phase 2-D ■OCR）。
@@ -186,6 +187,29 @@ export async function recognizeImageWithWords(
   } finally {
     currentProgressCallback = null;
   }
+}
+
+/**
+ * OCRの単語（画像ピクセル座標、原点は左上・下方向がy増加）を、
+ * table-reconstruction.ts / paragraph-reconstruction.ts が期待する
+ * PositionedTextItem 形状（行のグルーピングは「上ほど大きいy」を前提にしている）へ
+ * 変換する共通ヘルパー。元々は記入済みPDF→Excel(filled-pdf-to-excel.ts)専用の
+ * ローカル関数だったが、PDF→Word(pdf-to-word.ts)のスキャンPDF対応
+ * （外出先PC修正指示書§27-28）でも全く同じ変換が必要になったため、OCR基盤
+ * （このファイル）へ共通化した（開発指示書■21の「共通のPDF解析基盤として集約する」
+ * 方針を踏襲）。ページごとに単独で使う値のため、PDFの実座標系と一致させる必要はなく、
+ * 「同じページ内で一貫している」ことだけが重要。
+ */
+export function ocrWordsToPositionedTextItems(words: OcrWord[]): PositionedTextItem[] {
+  return words.map((w) => ({
+    str: w.text,
+    x: w.x0,
+    y: -w.y0,
+    width: Math.max(0, w.x1 - w.x0),
+    height: Math.max(1, w.y1 - w.y0),
+    fontHeight: Math.max(1, w.y1 - w.y0),
+    hasEOL: false,
+  }));
 }
 
 /** OCR用Workerを終了する（キャンセル・後始末用のベストエフォート実装） */

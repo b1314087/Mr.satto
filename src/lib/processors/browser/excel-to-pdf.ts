@@ -1,4 +1,13 @@
-import { PDFDocument, type PDFFont, type PDFPage, rgb } from "pdf-lib";
+import {
+  PDFDocument,
+  type PDFFont,
+  type PDFPage,
+  rgb,
+  setLineWidth,
+  setStrokingRgbColor,
+  setTextRenderingMode,
+  TextRenderingMode,
+} from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { BrowserProcessor } from "../types";
 import type { PdfProcessorOutput } from "../types";
@@ -19,7 +28,17 @@ import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
  * 目標は「Excelの印刷設定でPDF保存したときの結果にできるだけ近づける」こと
  * （開発指示書B-1）であり、Microsoft Excelとの100%同一を保証するものではない
  * （開発指示書E章）。取得できなかった情報（列の結合・数式の再計算結果・
- * チャート/図形・セルの塗りつぶし色等）は無理に再現しない。
+ * チャート/図形等）は無理に再現しない。
+ *
+ * セルの背景色・文字色・太字（外出先PC修正指示書§29-31）: 以前のバージョンは
+ * これらを一切読み取らずLINE_COLOR/TEXT_COLOR/MUTED_COLORの3色固定で描画していた
+ * （＝Excel側でどんな色を設定してもPDFには反映されなかった）。styles.xmlの
+ * <fills>/<fonts>と各セルのスタイル番号(s属性)から、ooxml-page-settings.ts
+ * (parseCellStyles)が実際の背景色(patternType="solid"のfgColorのみ対応)・
+ * 文字色・太字を解決するようにし、ここではその結果をセル背景の矩形描画・
+ * 文字色・疑似ボールド(word-to-pdf.tsと同じFillAndOutlineによる近似。太字専用の
+ * フォント資産が無いため)へ反映する。indexed color・theme colorによる色指定、
+ * パターン塗りつぶし(縞模様等)は今回は対象外（明示的なrgb値を持つ色のみ対応）。
  */
 
 const PAPER_SIZES_PT: Record<string, { width: number; height: number }> = {
@@ -167,6 +186,14 @@ function inchesToPt(inches: number): number {
   return inches * 72;
 }
 
+/** "#RRGGBB" を pdf-lib の rgb() が使う0〜1範囲へ変換する（開発指示書§29-31） */
+function hexToRgb01(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
+  if (!m) return TEXT_COLOR;
+  const n = parseInt(m[1], 16);
+  return [((n >> 16) & 0xff) / 255, ((n >> 8) & 0xff) / 255, (n & 0xff) / 255];
+}
+
 /** 元の行/列インデックス配列（印刷範囲・非表示行列を反映済み）から、
  *  OOXMLの改ページ位置（元インデックス基準）をローカルインデックス基準へ変換する */
 function mapBreaksToLocalIndex(breaksAfterOriginal: number[], localToOriginal: number[]): Set<number> {
@@ -253,11 +280,32 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
      * 描画すると、PDFのテキスト情報だけが無関係な文字に化ける現象への対処
      * （実機検証済み、Phase 9からの既存の対処をそのまま踏襲）。
      */
-    function drawTextRobust(page: PDFPage, text: string, x: number, y: number, size: number, color: ReturnType<typeof rgb>, embedFont: PDFFont): number {
+    function drawTextRobust(
+      page: PDFPage,
+      text: string,
+      x: number,
+      y: number,
+      size: number,
+      color: ReturnType<typeof rgb>,
+      embedFont: PDFFont,
+      bold = false
+    ): number {
+      // 太字フォント資産は無い(既存資産はNoto Sans JP Regularのみ)ため、word-to-pdf.tsと
+      // 同じ「塗り+縁取り(FillAndOutline)」による疑似ボールドで近似する(開発指示書§29-31)。
+      if (bold) {
+        page.pushOperators(
+          setLineWidth(size * 0.028),
+          setStrokingRgbColor(color.red, color.green, color.blue),
+          setTextRenderingMode(TextRenderingMode.FillAndOutline)
+        );
+      }
       let cx = x;
       for (const ch of Array.from(text)) {
         page.drawText(ch, { x: cx, y, size, font: embedFont, color });
         cx += embedFont.widthOfTextAtSize(ch, size);
+      }
+      if (bold) {
+        page.pushOperators(setTextRenderingMode(TextRenderingMode.Fill));
       }
       return cx - x;
     }
@@ -423,6 +471,21 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       function borderFor(origRow: number, origCol: number) {
         return settings?.cellBorders.get(`${origRow}:${origCol}`) ?? null;
       }
+      function fillFor(origRow: number, origCol: number): string | null {
+        return settings?.cellFills.get(`${origRow}:${origCol}`) ?? null;
+      }
+      function fontColorFor(origRow: number, origCol: number): string | null {
+        return settings?.cellFontColors.get(`${origRow}:${origCol}`) ?? null;
+      }
+      function boldFor(origRow: number, origCol: number): boolean {
+        return settings?.cellBold.get(`${origRow}:${origCol}`) ?? false;
+      }
+
+      function drawCellFill(page: PDFPage, x: number, yTop: number, width: number, height: number, origRow: number, origCol: number) {
+        const fill = fillFor(origRow, origCol);
+        if (!fill) return;
+        page.drawRectangle({ x, y: yTop - height, width, height, color: rgb(...hexToRgb01(fill)) });
+      }
 
       function drawCellBorders(page: PDFPage, x: number, yTop: number, width: number, height: number, origRow: number, origCol: number, s: number) {
         const b = borderFor(origRow, origCol);
@@ -446,10 +509,23 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         colGroup.forEach((localColIdx) => {
           const origCol = localToOriginalCol[localColIdx];
           const w = colWidths[localColIdx] * s;
+          drawCellFill(page, x, top, w, rowH, origRow, origCol);
           const text = cellToDisplayString(row[origCol] ?? null);
           const wrapped = wrapByWidth(text, font, fontSize * s, w - cellPadding * 2 * s);
+          const explicitFontColor = fontColorFor(origRow, origCol);
+          const cellColor = explicitFontColor ? rgb(...hexToRgb01(explicitFontColor)) : color;
+          const cellBoldFlag = boldFor(origRow, origCol);
           wrapped.slice(0, Math.max(1, Math.floor(rowH / (lineHeight * s)))).forEach((line, li) => {
-            drawTextRobust(page, line, x + cellPadding * s, top - cellPadding * s - (li + 1) * lineHeight * s + 3 * s, fontSize * s, color, font);
+            drawTextRobust(
+              page,
+              line,
+              x + cellPadding * s,
+              top - cellPadding * s - (li + 1) * lineHeight * s + 3 * s,
+              fontSize * s,
+              cellColor,
+              font,
+              cellBoldFlag
+            );
           });
           drawCellBorders(page, x, top, w, rowH, origRow, origCol, s);
           x += w;

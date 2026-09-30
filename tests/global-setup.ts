@@ -7,7 +7,7 @@ import writeExcelFile from "write-excel-file/node";
 import { zipSync, strToU8 } from "fflate";
 import { fixtures } from "./fixtures/paths";
 import { buildMinimalXlsx, type XlsxSheetSpec, type XlsxCellSpec } from "./fixtures/xlsx-writer";
-import { buildMinimalDocx, type DocxDocumentSpec } from "./fixtures/docx-writer";
+import { buildMinimalDocx, type DocxDocumentSpec, type DocxParagraphSpec } from "./fixtures/docx-writer";
 import { tools } from "@/lib/tools/data";
 import { categories } from "@/lib/tools/categories";
 import {
@@ -58,6 +58,8 @@ export default async function globalSetup() {
   await generateCheckboxAndAdjacentTemplateFixtures();
   generateExcelToPdfFixtures();
   generateWordToPdfFixtures();
+  await generatePdfToExcelFixtures();
+  await generatePdfToWordScannedFixture();
   await warmupRoutes();
 }
 
@@ -932,9 +934,10 @@ function generateWordToPdfFixtures() {
   // P-Q間は空行なし、Q-R間は空行1つ、R-S間は空行2つ、というように空行の数を
   // 変えて並べる(1文字にするのは、既存の余白テストと同じく
   // pdf.pages[0].items.find(it => it.str === "P") で個々の文字の実座標を
-  // そのまま取得するため)。word-to-pdf.tsの行送り計算(LINE_HEIGHT=15,
-  // PARAGRAPH_GAP=6)から、空行なしの段落間隔は21pt、空行1つぶんの間隔は
-  // 42pt(21の2倍)、空行2つぶんの間隔は63pt(21の3倍)になるはずで、これによって
+  // そのまま取得するため)。空行なし・空行1つ・空行2つの段落間隔が、
+  // word-to-pdf.tsのresolveLineHeight()/resolveParagraphGap()が計算する
+  // 1段落ぶんの間隔のちょうど1倍・2倍・3倍になるはずで(具体的な値は
+  // tests/tools/word-to-pdf-phase22.spec.ts側のコメント参照)、これによって
   // 「空行が実際に1行分として積み増しされているか」をピクセル単位で検証できる。
   write(fixtures.wordBlankLinesDocx, {
     blocks: [
@@ -947,4 +950,179 @@ function generateWordToPdfFixtures() {
       { kind: "paragraph", runs: [{ text: "S" }] },
     ],
   });
+
+  // 外出先PC修正指示書§32-35: word-to-pdfのページ溢れ根本原因修正の回帰テスト。
+  //
+  // 修正前は行間(LINE_HEIGHT=15固定)・段落間隔(PARAGRAPH_GAP=6固定)が
+  // Wordの実際の既定値(1行=フォントサイズの約1.15倍)より大きすぎたため、
+  // 本来1ページに収まるはずの文書が2ページのPDFになってしまっていた。
+  // 指示書が明示的に要求する5パターン(1ページ・文章のみ/1ページ+表/
+  // 1ページ+画像/本当に2ページ/A4標準余白)を、いずれも明示的な改ページ
+  // (w:br type="page"・w:pageBreakBefore)を使わずに用意する。段落数だけで
+  // 自然にページが溢れるかどうかを見るのが目的のため。
+  //
+  // 段落数の計算根拠: このdocx-writer.tsはword/styles.xmlを一切出力しないため、
+  // word-to-pdf.ts側はdefaultSpacingが取得できず、フォールバック値
+  // (SINGLE_LINE_SPACING_FACTOR=1.15・PARAGRAPH_GAP=6)を使う。本文サイズ
+  // BODY_SIZE=10.5ptなので、1段落(1行)あたりの専有高さは
+  // 10.5*1.15+6=18.075pt(tests/tools/word-to-pdf-phase22.spec.tsの
+  // PARAGRAPH_PITCH定数と同じ値)。A4縦(841.89pt)から既定余白(sectPrXmlの
+  // 既定値1417twips=約70.85pt)を上下に引いた本文高さは
+  // 841.89-70.85*2=700.19pt、700.19/18.075≈38.7段落で1ページ分となる。
+  // 「明確に1ページに収まる」には少数(5段落)、「明確に2ページに溢れる」には
+  // 余裕を持って50段落を使う。
+  const shortTextParagraphs = (n: number, prefix: string) =>
+    Array.from({ length: n }, (_, i): DocxParagraphSpec => ({ kind: "paragraph", runs: [{ text: `${prefix}_LINE_${i + 1}` }] }));
+
+  // 1ページ(文章のみ、表・画像なし): 5段落だけの短い文書。標準A4縦・既定余白のまま
+  // (§32-35が要求する「A4標準余白」の確認も、この最も単純なフィクスチャで兼ねる)。
+  // word-to-pdf.tsは1文字ずつdrawTextを呼び出す実装のため(683行目付近のコメント
+  // 参照)、pdfjs側のテキスト項目(items)も1文字単位になる。既存のword-margins
+  // フィクスチャと同じく、余白位置を座標で確認したい先頭段落だけは単一文字"M"にする。
+  write(fixtures.wordOnePageTextDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "M" }] },
+      { kind: "paragraph", runs: [{ text: "OVERFLOW_ONEPAGE_TEXT_FIRST" }] },
+      ...shortTextParagraphs(3, "OVERFLOW_ONEPAGE_TEXT"),
+      { kind: "paragraph", runs: [{ text: "OVERFLOW_ONEPAGE_TEXT_LAST" }] },
+    ],
+  });
+
+  // 1ページ+表: 短い文章のあとに小さな表(2行×2列)を1つ置いただけの文書。
+  write(fixtures.wordOnePageWithTableDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "OVERFLOW_TABLE_INTRO_TEXT" }] },
+      { kind: "table", rows: [["OVERFLOW_TABLE_A1", "OVERFLOW_TABLE_B1"], ["OVERFLOW_TABLE_A2", "OVERFLOW_TABLE_B2"]] },
+      { kind: "paragraph", runs: [{ text: "OVERFLOW_TABLE_OUTRO_TEXT" }] },
+    ],
+  });
+
+  // 1ページ+画像: 短い文章のあとに小さな画像を1つ置いただけの文書。
+  write(fixtures.wordOnePageWithImageDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "OVERFLOW_IMAGE_INTRO_TEXT" }] },
+      { kind: "image", pngBase64: TINY_PNG_BASE64, widthPt: 80, heightPt: 40 },
+      { kind: "paragraph", runs: [{ text: "OVERFLOW_IMAGE_OUTRO_TEXT" }] },
+    ],
+  });
+
+  // 本当に2ページの文書: 明示的な改ページを一切使わず、段落数だけで自然に
+  // 2ページ目へ溢れることを確認する(50段落。上記コメントの計算根拠を参照)。
+  write(fixtures.wordGenuineTwoPageDocx, {
+    blocks: [
+      { kind: "paragraph", runs: [{ text: "OVERFLOW_GENUINE_FIRST_TEXT" }] },
+      ...shortTextParagraphs(48, "OVERFLOW_GENUINE"),
+      { kind: "paragraph", runs: [{ text: "OVERFLOW_GENUINE_LAST_TEXT" }] },
+    ],
+  });
+}
+
+/**
+ * 外出先PC修正指示書§21-26: pdf-to-excelの罫線検出テスト用フィクスチャ生成。
+ *
+ * 2列×3行(見出し+データ2行)の単純な表を、実際に線分(page.drawLine)で
+ * 罫線を描画したPDFと、全く同じテキスト配置で罫線だけを描画していないPDFの
+ * 2種類、対で生成する。罫線の位置は、pdf-to-excel.tsが実際に使う
+ * table-reconstruction.ts の rowBoundariesY/colBoundariesX の計算式
+ * (行境界=行間の中点、列境界=検出された列区切りの中点)に正確に合わせて
+ * 計算する(フォントの実測幅を使い、目分量にしない)ことで、
+ * 「本当に境界線の位置に線があるかどうか」を検出する実装を確実に検証できる
+ * ようにしている。
+ */
+async function generatePdfToExcelFixtures() {
+  const rows: [string, string][] = [
+    ["Name", "Score"],
+    ["Alice", "10"],
+    ["Bob", "20"],
+  ];
+  const col1X = 50;
+  const col2X = 180;
+  const rowYs = [240, 190, 140];
+  const fontSize = 11;
+
+  async function build(withBorders: boolean, outputPath: string) {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([300, 300]);
+
+    rows.forEach(([col1Text, col2Text], i) => {
+      page.drawText(col1Text, { x: col1X, y: rowYs[i], size: fontSize, font, color: rgb(0, 0, 0) });
+      page.drawText(col2Text, { x: col2X, y: rowYs[i], size: fontSize, font, color: rgb(0, 0, 0) });
+    });
+
+    if (withBorders) {
+      // table-reconstruction.tsのrowBoundariesYと同じ式(行の中点。先頭行の上端・
+      // 末尾行の下端はフォント高さの0.6倍ぶん外側)で、線を引く位置を計算する。
+      const halfFont = fontSize * 0.6;
+      const rowBoundaries = [
+        rowYs[0] + halfFont,
+        (rowYs[0] + rowYs[1]) / 2,
+        (rowYs[1] + rowYs[2]) / 2,
+        rowYs[2] - halfFont,
+      ];
+      // colBoundariesXと同じ式(列区切りは列間の空白の中点)で、実測した文字幅から
+      // 列区切りの位置を計算する。
+      const col1MaxRight = Math.max(...rows.map(([c1]) => col1X + font.widthOfTextAtSize(c1, fontSize)));
+      const col2MinLeft = col2X;
+      const colBreakX = (col1MaxRight + col2MinLeft) / 2;
+      const leftX = col1X - 6;
+      const rightX = col2X + Math.max(...rows.map(([, c2]) => font.widthOfTextAtSize(c2, fontSize))) + 6;
+
+      for (const y of rowBoundaries) {
+        page.drawLine({ start: { x: leftX, y }, end: { x: rightX, y }, thickness: 1, color: rgb(0, 0, 0) });
+      }
+      page.drawLine({
+        start: { x: colBreakX, y: rowBoundaries[rowBoundaries.length - 1] },
+        end: { x: colBreakX, y: rowBoundaries[0] },
+        thickness: 1,
+        color: rgb(0, 0, 0),
+      });
+    }
+
+    fs.writeFileSync(outputPath, await doc.save());
+  }
+
+  await build(true, fixtures.pdfToExcelBorderedTablePdf);
+  await build(false, fixtures.pdfToExcelBorderlessTablePdf);
+}
+
+/**
+ * 外出先PC修正指示書§27-28: pdf-to-wordのスキャンPDF(OCR)対応テスト用フィクスチャ生成。
+ *
+ * 文字レイヤーを持たない、画像だけのPDF(Chromiumでcanvasに文字を描画→PNG化→
+ * PDFへ画像として埋め込む)。認識精度を安定させるため、内容は大きく明瞭な
+ * 英数字のみにしている(日本語OCRの精度検証自体が目的ではなく、あくまで
+ * 「テキストレイヤーが無いページでOCR経路が正しく動くこと」の検証が目的のため。
+ * templateFilledScannedPdf等と同じ方針)。
+ */
+async function generatePdfToWordScannedFixture() {
+  const w = 900;
+  const h = 400;
+  const browser = await chromium.launch(launchOptions);
+  try {
+    const page = await browser.newPage({ viewport: { width: w, height: h } });
+    await page.setContent(
+      `<html><body style="margin:0"><canvas id="c" width="${w}" height="${h}"></canvas>
+       <script>
+         const ctx = document.getElementById('c').getContext('2d');
+         ctx.fillStyle = '#ffffff';
+         ctx.fillRect(0, 0, ${w}, ${h});
+         ctx.fillStyle = '#000000';
+         ctx.font = 'bold 48px sans-serif';
+         ctx.textBaseline = 'alphabetic';
+         ctx.fillText('MRSATTO OCR SCAN TEST', 40, 150);
+         ctx.fillText('HELLO WORLD', 40, 260);
+       </script></body></html>`
+    );
+    const dataUrl = await page.$eval("#c", (el) => (el as HTMLCanvasElement).toDataURL("image/png"));
+    const pngBytes = Buffer.from(dataUrl.split(",")[1], "base64");
+
+    const doc = await PDFDocument.create();
+    const pdfPage = doc.addPage([w, h]);
+    const embedded = await doc.embedPng(pngBytes);
+    pdfPage.drawImage(embedded, { x: 0, y: 0, width: w, height: h });
+    fs.writeFileSync(fixtures.pdfToWordScannedPdf, await doc.save());
+  } finally {
+    await browser.close();
+  }
 }

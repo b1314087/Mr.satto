@@ -100,4 +100,25 @@ export const fixtures = {
 
   // Phase 22: word-to-pdfの空白行・連続空行保持テスト用フィクスチャ。
   wordBlankLinesDocx: path.join(GENERATED_DIR, "word-blank-lines.docx"),
+
+  // 外出先PC修正指示書§21-26: pdf-to-excelの罫線検出テスト用フィクスチャ。
+  // 実際に罫線(線分)を描画したPDFと、全く同じレイアウトで罫線だけを
+  // 描画していないPDFを対にして用意し、「線がある場合だけ罫線を出力し、
+  // 無い場合には出力しない」ことの両方を確認する。
+  pdfToExcelBorderedTablePdf: path.join(GENERATED_DIR, "pdf-to-excel-bordered-table.pdf"),
+  pdfToExcelBorderlessTablePdf: path.join(GENERATED_DIR, "pdf-to-excel-borderless-table.pdf"),
+
+  // 外出先PC修正指示書§27-28: pdf-to-wordのスキャンPDF(OCR)対応テスト用フィクスチャ。
+  // 文字レイヤーを持たない画像のみのPDF（英数字のみ。日本語OCR精度の検証自体が
+  // 目的ではなく、OCR経路が正しく動作することの確認が目的のため）。
+  pdfToWordScannedPdf: path.join(GENERATED_DIR, "pdf-to-word-scanned.pdf"),
+
+  // 外出先PC修正指示書§32-35: word-to-pdfのページ溢れ(1ページのWordが2ページの
+  // PDFになる)根本原因修正の回帰テスト用フィクスチャ。指示書が明示的に要求する
+  // 「1ページ(文章のみ)/1ページ+表/1ページ+画像/本当に2ページの文書/A4標準余白」
+  // の組み合わせを、いずれも明示的な改ページを使わずに用意する。
+  wordOnePageTextDocx: path.join(GENERATED_DIR, "word-overflow-one-page-text.docx"),
+  wordOnePageWithTableDocx: path.join(GENERATED_DIR, "word-overflow-one-page-table.docx"),
+  wordOnePageWithImageDocx: path.join(GENERATED_DIR, "word-overflow-one-page-image.docx"),
+  wordGenuineTwoPageDocx: path.join(GENERATED_DIR, "word-overflow-genuine-two-page.docx"),
 };

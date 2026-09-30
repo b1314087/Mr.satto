@@ -42,7 +42,13 @@ export function PdfToWordTool() {
       const output = await new PdfToWordProcessor().process({
         file,
         onPageProgress: (info) => {
-          setProgressLabel(`ページを解析中 ${info.currentPage} / ${info.totalPages}`);
+          if (info.method === "ocr") {
+            setProgressLabel(
+              `ページを画像認識(OCR)中 ${info.currentPage} / ${info.totalPages}（${Math.round((info.ocrProgress ?? 0) * 100)}%）`
+            );
+          } else {
+            setProgressLabel(`ページを解析中 ${info.currentPage} / ${info.totalPages}`);
+          }
         },
       });
       setResult(output);
@@ -72,6 +78,10 @@ export function PdfToWordTool() {
           2段組・ヘッダーやフッター・特殊なフォント・画像を含む複雑なレイアウトは、
           元のPDFどおりに再現されない場合があります（画像の埋め込みは今回のバージョンでは未対応です）。
           まずは「文字が編集できる状態にすること」を優先しています。
+        </p>
+        <p>
+          文字情報を持たないスキャン画像のPDFにも対応しています（自動的に画像認識(OCR)へ切り替わります）。
+          OCRは手書き文字や画質の悪いスキャンでは誤認識が発生する場合があるため、変換後は内容をご確認ください。
         </p>
       </div>
 
@@ -112,7 +122,21 @@ export function PdfToWordTool() {
             <span>見出し数: {result.headingCount}</span>
             <span>表: {result.tableCount}個</span>
             <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
+            {result.usedOcr && (
+              <span>
+                OCR使用{result.ocrConfidence !== null ? `（信頼度目安: ${Math.round(result.ocrConfidence)}%）` : ""}
+              </span>
+            )}
           </div>
+
+          {result.usedOcr && (
+            <div className="flex items-start gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+              <span>
+                文字レイヤーの無いページを画像認識(OCR)でテキスト化しました。OCRの精度は元画像の解像度・
+                文字の状態に依存するため、誤認識がないか変換後の文書をご確認ください。
+              </span>
+            </div>
+          )}
 
           <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
             <svg

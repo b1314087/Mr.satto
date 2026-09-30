@@ -1,7 +1,7 @@
 import { BrowserProcessor } from "../types";
 import { loadPdfDocument, getPositionedTextItems, pageHasText, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
 import { reconstructTable, tryParseNumberCell, tryParseDateCell } from "@/lib/pdf/table-reconstruction";
-import { recognizeImageWithWords, type OcrLanguageOption, type OcrWord } from "@/lib/ocr/tesseract-client";
+import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 
 /**
  * 記入済みPDF→Excel Processor（Phase 11 ツール①）。
@@ -92,25 +92,6 @@ function toExcelCell(text: string): ExcelCell {
   const date = tryParseDateCell(trimmed);
   if (date !== null) return { value: date, type: Date, format: "yyyy-mm-dd" };
   return trimmed;
-}
-
-/**
- * OCRの単語（画像ピクセル座標、原点は左上・下方向がy増加）を、
- * table-reconstruction.ts が期待する PositionedTextItem 形状
- * （行のグルーピングは「上ほど大きいy」を前提にしている）へ変換する。
- * ページごとに単独で使う値のため、PDFの実座標系と一致させる必要はなく、
- * 「同じページ内で一貫している」ことだけが重要。
- */
-function ocrWordsToPositionedItems(words: OcrWord[]): PositionedTextItem[] {
-  return words.map((w) => ({
-    str: w.text,
-    x: w.x0,
-    y: -w.y0,
-    width: Math.max(0, w.x1 - w.x0),
-    height: Math.max(1, w.y1 - w.y0),
-    fontHeight: Math.max(1, w.y1 - w.y0),
-    hasEOL: false,
-  }));
 }
 
 export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcelInput, FilledPdfToExcelOutput> {
@@ -221,7 +202,7 @@ export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcel
             });
           });
           confidence = result.confidence;
-          items = ocrWordsToPositionedItems(result.words);
+          items = ocrWordsToPositionedTextItems(result.words);
         }
 
         const table = reconstructTable(items);

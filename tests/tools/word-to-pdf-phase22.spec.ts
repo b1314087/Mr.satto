@@ -70,18 +70,25 @@ test("空白行・連続空行: 空行の数に比例して段落間隔が広が
   expect(r, "R(空行1つを挟んだ行)が見つかりません").toBeTruthy();
   expect(s, "S(空行2つを挟んだ行)が見つかりません").toBeTruthy();
 
-  // word-to-pdf.tsのLINE_HEIGHT(15)+PARAGRAPH_GAP(6)=21ptが「段落1つぶん」の間隔。
-  // 空行なし(P→Q)は21pt、空行1つ(Q→R)は42pt(21の2倍)、空行2つ(R→S)は63pt
-  // (21の3倍)になるはず。空行を1行分として積んでいない場合(修正前の
-  // lineHeight*0.6=9ptのみを消費する実装)は、Q→Rが30pt・R→Sが39ptなど、
-  // 21の整数倍からずれた値になり、このテストで検出できる。
+  // 段落1つぶんの間隔は resolveLineHeight()+resolveParagraphGap()（外出先PC
+  // 修正指示書§32-35でword-to-pdf.tsに追加）で決まる。この固定fixtureのように
+  // 文書側にw:spacingの既定値が無い場合、BODY_SIZE(10.5)*SINGLE_LINE_SPACING_FACTOR
+  // (1.15)+PARAGRAPH_GAP(6) = 18.075ptになる（旧実装の固定値21pt=LINE_HEIGHT(15)+
+  // PARAGRAPH_GAP(6)から、Wordの実際の単一行間隔により近い値へ変更した。
+  // 「Wordで1ページの文書がPDFで2ページになる」不具合の主要因への対処のため、
+  // 意図した変更。詳細はword-to-pdf.tsのresolveLineHeight()のコメント参照）。
+  // 空行なし(P→Q)はこの1段落ぶん、空行1つ(Q→R)はその2倍、空行2つ(R→S)は
+  // その3倍になるはず。空行を1行分として積んでいない場合(修正前の
+  // lineHeight*0.6=9ptのみを消費する実装)は、整数倍からずれた値になり、
+  // このテストで検出できる。
+  const PARAGRAPH_PITCH = 18.075;
   const gapPQ = p!.y - q!.y;
   const gapQR = q!.y - r!.y;
   const gapRS = r!.y - s!.y;
 
-  expect(gapPQ).toBeCloseTo(21, 0);
-  expect(gapQR).toBeCloseTo(42, 0);
-  expect(gapRS).toBeCloseTo(63, 0);
+  expect(gapPQ).toBeCloseTo(PARAGRAPH_PITCH, 0);
+  expect(gapQR).toBeCloseTo(PARAGRAPH_PITCH * 2, 0);
+  expect(gapRS).toBeCloseTo(PARAGRAPH_PITCH * 3, 0);
 
   // 比率としても「空行の数に比例して増える」ことを確認する(定数の細かな
   // チューニングが将来入っても、この比例関係だけは崩れてはいけない)。
