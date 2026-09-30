@@ -5,23 +5,13 @@ import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { signOutAction } from "@/lib/auth/actions";
 import { PortalLinkButton } from "@/components/account/portal-link-button";
 import { isStripeConfigured } from "@/lib/stripe/config";
+import { SUBSCRIPTION_STATUS_LABEL as STATUS_LABEL } from "@/lib/plans/status-labels";
 
 // 個人の契約情報を含むページのため検索エンジンには公開しない（Phase 3 spec 25章）。
 export const metadata: Metadata = {
   title: "アカウント",
   description: "現在のプラン・契約状況を確認できます。",
   robots: { index: false, follow: false },
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  active: "有効",
-  trialing: "トライアル中",
-  past_due: "お支払いの確認中",
-  canceled: "解約済み",
-  unpaid: "未払い",
-  incomplete: "手続き未完了",
-  incomplete_expired: "手続き期限切れ",
-  paused: "一時停止中",
 };
 
 function formatDate(iso: string | null): string {
