@@ -42,6 +42,12 @@ export const fixtures = {
   zip: path.join(GENERATED_DIR, "sample.zip"),
   webm: path.join(GENERATED_DIR, "sample.webm"),
 
+  // 動画メタデータ削除ツール検証用。タイトル・作成者・コメント（位置情報を
+  // 模した文字列を含む）を明示的に埋め込んだMP4。システムのffmpegで生成し、
+  // 処理後にffprobeでこれらのタグが実際に消えていることを確認する
+  // （実在の人物・位置情報は一切使用しない、ダミー座標のみ）。
+  videoWithMetadataMp4: path.join(GENERATED_DIR, "video-with-metadata.mp4"),
+
   // Phase 16: 電子印鑑生成（印影取り込み）テスト用フィクスチャ。
   // 実在の印鑑・個人情報は一切使用せず、すべてCanvasで合成した架空の図形。
   stampPng: path.join(GENERATED_DIR, "stamp.png"),

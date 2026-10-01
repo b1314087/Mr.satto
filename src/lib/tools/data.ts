@@ -809,6 +809,16 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["サムネイル", "静止画抽出", "フレーム抽出", "png", "jpeg"],
   },
+  {
+    id: "video-metadata-remove",
+    name: "動画メタデータ削除",
+    category: "video",
+    description: "動画に含まれる撮影日時・位置情報(GPS)・タイトルなどのメタデータを削除します",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["メタデータ削除", "GPS削除", "位置情報削除", "個人情報削除", "撮影情報削除"],
+  },
 
   // ------------------------------------------------------------------
   // 学生向け

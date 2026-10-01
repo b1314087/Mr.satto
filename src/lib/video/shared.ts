@@ -55,6 +55,7 @@ import {
   type ConversionAudioOptions,
   type ConversionVideoOptions,
   type InputVideoTrack,
+  type MetadataTags,
 } from "mediabunny";
 
 /** このアプリが「対応形式」として明示的にサポートする入力コンテナ */
@@ -107,6 +108,7 @@ export const VIDEO_SIZE_LIMITS = {
   frameRate: 150,
   h264: 150,
   thumbnail: 300,
+  metadataRemove: 150,
 } as const satisfies Record<string, number>;
 
 export function outputFormatFor(container: OutputContainer) {
@@ -346,6 +348,14 @@ export interface RunConversionParams {
   container: OutputContainer;
   video?: ConversionVideoOptions;
   audio?: ConversionAudioOptions;
+  /**
+   * 出力に付与するメタデータタグ。省略時はmediabunnyの既定動作
+   * （入力のメタデータタグをそのまま出力にコピーする）となる。
+   * メタデータ削除ツールのみ、空オブジェクト {} を明示的に渡すことで
+   * タイトル・作成者・コメント等の記述系メタデータを除去する
+   * （開発指示書「単なるリネームではなく実際に除去する」に対応）。
+   */
+  tags?: MetadataTags;
   onProgress?: (progress: number) => void;
 }
 
@@ -369,6 +379,7 @@ export async function runConversion({
   container,
   video,
   audio,
+  tags,
   onProgress,
 }: RunConversionParams): Promise<RunConversionResult> {
   const target = new BufferTarget();
@@ -382,6 +393,7 @@ export async function runConversion({
     output,
     video,
     audio,
+    tags,
   });
 
   if (!conversion.isValid) {

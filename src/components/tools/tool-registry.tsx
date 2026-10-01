@@ -238,6 +238,9 @@ const VideoH264Tool = dynamic(() =>
 const VideoThumbnailTool = dynamic(() =>
   import("./implementations/video-thumbnail-tool").then((m) => m.VideoThumbnailTool)
 );
+const VideoMetadataRemoveTool = dynamic(() =>
+  import("./implementations/video-metadata-remove-tool").then((m) => m.VideoMetadataRemoveTool)
+);
 // Phase 11: OCR(tesseract.js)を内部で使うため、既存のOCRツールと同様の
 // チャンク境界問題が起きないか実機検証したが、こちらは問題なく動作した
 // （OCRツール自体を静的importのまま保護する既存の対応方針は変更していない）。
@@ -455,6 +458,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <VideoH264Tool />;
     case "video-thumbnail":
       return <VideoThumbnailTool />;
+    case "video-metadata-remove":
+      return <VideoMetadataRemoveTool />;
     case "filled-pdf-to-excel":
       return <FilledPdfToExcelTool />;
     case "form-to-individual-pdfs":

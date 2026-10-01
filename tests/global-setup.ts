@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { chromium } from "@playwright/test";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
@@ -52,7 +53,14 @@ const launchOptions = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
 export default async function globalSetup() {
   fs.mkdirSync(fixtures.dir.generated, { recursive: true });
 
-  await Promise.all([generatePdfs(), generateXlsx(), generateZip(), generateImages(), generateVideo()]);
+  await Promise.all([
+    generatePdfs(),
+    generateXlsx(),
+    generateZip(),
+    generateImages(),
+    generateVideo(),
+    generateVideoWithMetadata(),
+  ]);
   await generateStampFixtures();
   await generateTemplateFixtures();
   await generateCheckboxAndAdjacentTemplateFixtures();
@@ -238,6 +246,53 @@ async function generateVideo() {
   } finally {
     await browser.close();
   }
+}
+
+/**
+ * 動画メタデータ削除ツール検証用フィクスチャ。
+ *
+ * システムにインストール済みのffmpeg（Playwrightの動画録画機能が内部で
+ * 使っているものと同一。新規依存は追加しない）を直接呼び出し、タイトル・
+ * 作成者・コメント（位置情報を模したダミー座標を含む文字列）を明示的に
+ * 埋め込んだ短いMP4を生成する。実在の人物・位置情報は一切使用しない。
+ *
+ * これにより、video-metadata-removeツールのE2Eテストで「処理後に
+ * これらのメタデータタグが実際に消えている」ことをffprobeで検証できる
+ * （ボタンを押せたかどうかだけでなく、実際の効果を確認する方針）。
+ */
+async function generateVideoWithMetadata() {
+  execFileSync(
+    "ffmpeg",
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=blue:s=160x120:d=1:r=10",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:duration=1",
+      "-metadata",
+      "title=TestTitle",
+      "-metadata",
+      "artist=TestArtist",
+      "-metadata",
+      "comment=TestComment 35.6895,139.6917",
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-shortest",
+      fixtures.videoWithMetadataMp4,
+    ],
+    { stdio: "ignore" }
+  );
 }
 
 /**
