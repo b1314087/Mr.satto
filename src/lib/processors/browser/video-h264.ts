@@ -1,6 +1,7 @@
 import { BrowserProcessor } from "../types";
 import {
   VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
   checkH264EncodeSupport,
   inspectVideoFile,
   runConversion,
@@ -9,6 +10,7 @@ import {
 export interface VideoH264Input {
   file: File;
   onProgress?: (progress: number) => void;
+  cancelSignal?: AbortSignal;
 }
 
 export interface VideoH264Output {
@@ -39,20 +41,30 @@ export interface VideoH264Output {
  * （出力は最終的に必ずH.264/MP4になっている。開発指示書 67章9項）。
  */
 export class VideoH264Processor extends BrowserProcessor<VideoH264Input, VideoH264Output> {
-  async process({ file, onProgress }: VideoH264Input): Promise<VideoH264Output> {
+  async process({ file, onProgress, cancelSignal }: VideoH264Input): Promise<VideoH264Output> {
     if (file.size > VIDEO_SIZE_LIMITS.h264 * 1024 * 1024) {
       throw new Error(
         `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.h264}MB）。ファイルを確認してください。`
       );
     }
+    if (cancelSignal?.aborted) {
+      throw new VideoCanceledByUserError();
+    }
 
     const info = await inspectVideoFile(file);
     try {
+      if (cancelSignal?.aborted) {
+        throw new VideoCanceledByUserError();
+      }
+
       const supported = await checkH264EncodeSupport(info.displayWidth, info.displayHeight);
       if (!supported) {
         throw new Error(
           "このブラウザではH.264変換を利用できません。別のブラウザ（最新のChrome等）でお試しください。"
         );
+      }
+      if (cancelSignal?.aborted) {
+        throw new VideoCanceledByUserError();
       }
 
       const { blob, sizeBytes } = await runConversion({
@@ -60,6 +72,7 @@ export class VideoH264Processor extends BrowserProcessor<VideoH264Input, VideoH2
         container: "mp4",
         video: { codec: "avc" },
         onProgress,
+        cancelSignal,
       });
 
       return {

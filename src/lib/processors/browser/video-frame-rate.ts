@@ -1,6 +1,7 @@
 import { BrowserProcessor } from "../types";
 import {
   VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
   getAvailableFrameRates,
   inspectVideoFile,
   runConversion,
@@ -12,6 +13,7 @@ export interface VideoFrameRateInput {
   targetFps: number;
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
+  cancelSignal?: AbortSignal;
 }
 
 export interface VideoFrameRateOutput {
@@ -41,15 +43,23 @@ export class VideoFrameRateProcessor extends BrowserProcessor<VideoFrameRateInpu
     targetFps,
     outputContainer,
     onProgress,
+    cancelSignal,
   }: VideoFrameRateInput): Promise<VideoFrameRateOutput> {
     if (file.size > VIDEO_SIZE_LIMITS.frameRate * 1024 * 1024) {
       throw new Error(
         `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.frameRate}MB）。ファイルを確認してください。`
       );
     }
+    if (cancelSignal?.aborted) {
+      throw new VideoCanceledByUserError();
+    }
 
     const info = await inspectVideoFile(file);
     try {
+      if (cancelSignal?.aborted) {
+        throw new VideoCanceledByUserError();
+      }
+
       const available = getAvailableFrameRates(info.bestGuessFrameRate);
       if (!available.includes(targetFps)) {
         throw new Error(
@@ -62,6 +72,7 @@ export class VideoFrameRateProcessor extends BrowserProcessor<VideoFrameRateInpu
         container: outputContainer,
         video: { frameRate: targetFps },
         onProgress,
+        cancelSignal,
       });
 
       return {

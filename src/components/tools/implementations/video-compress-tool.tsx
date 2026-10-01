@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -12,6 +12,7 @@ import {
   OUTPUT_CONTAINER_OPTIONS,
   VIDEO_INPUT_ACCEPT,
   VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
   type CompressionLevel,
   type OutputContainer,
 } from "@/lib/video/shared";
@@ -34,8 +35,19 @@ export function VideoCompressTool() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VideoCompressOutput | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  const [wasCanceled, setWasCanceled] = useState(false);
+  const cancelControllerRef = useRef<AbortController | null>(null);
 
   useRevokeObjectUrlOnChange(result?.url);
+
+  // タブ遷移やアンマウント時にも、実行中の処理を実際に中断する
+  // （UI表示を消すだけでなく、バックグラウンドのmediabunny処理自体を止める）。
+  useEffect(() => {
+    return () => {
+      cancelControllerRef.current?.abort();
+    };
+  }, []);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -43,14 +55,19 @@ export function VideoCompressTool() {
     setStatus("idle");
     setError(null);
     setProgress(0);
+    setWasCanceled(false);
   }
 
   async function handleRun() {
     if (!file) return;
+    const controller = new AbortController();
+    cancelControllerRef.current = controller;
     setStatus("processing");
     setError(null);
     setResult(null);
     setProgress(0);
+    setWasCanceled(false);
+    setCanceling(false);
 
     try {
       const output = await new VideoCompressProcessor().process({
@@ -58,13 +75,28 @@ export function VideoCompressTool() {
         level,
         outputContainer: container,
         onProgress: setProgress,
+        cancelSignal: controller.signal,
       });
       setResult(output);
       setStatus("success");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
+      if (e instanceof VideoCanceledByUserError) {
+        setWasCanceled(true);
+        setStatus("idle");
+      } else {
+        setError(e instanceof Error ? e.message : "処理に失敗しました");
+        setStatus("error");
+      }
+    } finally {
+      setCanceling(false);
+      cancelControllerRef.current = null;
     }
+  }
+
+  function handleCancel() {
+    if (!cancelControllerRef.current) return;
+    setCanceling(true);
+    cancelControllerRef.current.abort();
   }
 
   function handleDownload() {
@@ -157,14 +189,28 @@ export function VideoCompressTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          圧縮する
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            圧縮する
+          </button>
+          {status === "processing" && !canceling && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="w-fit rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-600 transition-colors hover:border-red-400 hover:text-red-600 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-red-500 dark:hover:text-red-400"
+            >
+              キャンセル
+            </button>
+          )}
+          {canceling && (
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">キャンセル処理中...</span>
+          )}
+        </div>
       )}
 
       <ProcessingStatus
@@ -172,6 +218,11 @@ export function VideoCompressTool() {
         processingLabel={`圧縮中... ${Math.round(progress * 100)}%`}
         successLabel="圧縮が完了しました"
       />
+      {wasCanceled && (
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+          処理をキャンセルしました。設定を確認して、もう一度実行できます。
+        </div>
+      )}
       {error && <ErrorMessage message={error} />}
 
       {result && (

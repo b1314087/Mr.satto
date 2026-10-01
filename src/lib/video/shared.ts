@@ -343,6 +343,19 @@ export async function inspectOutputDimensions(
   }
 }
 
+/**
+ * ユーザーの明示的な操作（キャンセルボタン）によって処理が中断されたことを
+ * 示すエラー。通常の変換失敗（Error）とは区別して扱うため専用のクラスにする
+ * （UI側で instanceof 判定し、エラー表示ではなく「キャンセルしました」の
+ * 中立な通知に振り分ける。Phase 27・第4段階）。
+ */
+export class VideoCanceledByUserError extends Error {
+  constructor(message = "処理をキャンセルしました。") {
+    super(message);
+    this.name = "VideoCanceledByUserError";
+  }
+}
+
 export interface RunConversionParams {
   input: Input;
   container: OutputContainer;
@@ -357,6 +370,14 @@ export interface RunConversionParams {
    */
   tags?: MetadataTags;
   onProgress?: (progress: number) => void;
+  /**
+   * ユーザーによるキャンセル要求を伝えるシグナル（Phase 27・第4段階）。
+   * abort された時点で、保持している Conversion を実際に cancel() し、
+   * execute() の終了を待ってから VideoCanceledByUserError を投げる。
+   * mediabunnyのpauseSignalは「一時停止（再開可能）」用のAPIであり、
+   * 本機能が必要とする「完全に中断して結果を破棄する」用途には使わない。
+   */
+  cancelSignal?: AbortSignal;
 }
 
 export interface RunConversionResult {
@@ -381,7 +402,12 @@ export async function runConversion({
   audio,
   tags,
   onProgress,
+  cancelSignal,
 }: RunConversionParams): Promise<RunConversionResult> {
+  if (cancelSignal?.aborted) {
+    throw new VideoCanceledByUserError();
+  }
+
   const target = new BufferTarget();
   const output = new Output({
     format: outputFormatFor(container),
@@ -409,7 +435,39 @@ export async function runConversion({
     conversion.onProgress = (progress) => onProgress(progress);
   }
 
-  await conversion.execute();
+  // キャンセル要求が来たら実際に conversion.cancel() を呼ぶ。mediabunnyの
+  // 実装（dist/modules/src/conversion.js）では、cancel() 呼び出し後は
+  // 内部状態が 'canceled' になり、実行中の execute() は必ず
+  // ConversionCanceledError を throw して終了することをソース確認済み
+  // （古い結果が成功としてUIに届くレースは発生しない）。
+  // ここでは「ユーザー操作によるキャンセルかどうか」をこのフラグで
+  // 自前管理する（mediabunny内部が本当のエラーを検知して自動的に
+  // cancel() するケースでは、投げ直されるのは元のエラーであって
+  // ConversionCanceledError ではないため、instanceof 判定だけでは
+  // 両者を正しく区別できない）。
+  let canceledByUser = false;
+  const onAbort = () => {
+    canceledByUser = true;
+    void conversion.cancel();
+  };
+  cancelSignal?.addEventListener("abort", onAbort);
+
+  try {
+    await conversion.execute();
+  } catch (e) {
+    if (canceledByUser) {
+      throw new VideoCanceledByUserError();
+    }
+    throw e;
+  } finally {
+    cancelSignal?.removeEventListener("abort", onAbort);
+  }
+
+  if (canceledByUser) {
+    // execute() が例外を投げずに終わる経路は実装上ないはずだが、念のため
+    // キャンセル済みの場合は結果を使わずキャンセル扱いにする。
+    throw new VideoCanceledByUserError();
+  }
 
   if (!target.buffer) {
     throw new Error("動画の生成に失敗しました。");

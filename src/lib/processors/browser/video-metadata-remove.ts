@@ -2,6 +2,7 @@ import { WEBM } from "mediabunny";
 import { BrowserProcessor } from "../types";
 import {
   VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
   inspectVideoFile,
   runConversion,
   type OutputContainer,
@@ -10,6 +11,7 @@ import {
 export interface VideoMetadataRemoveInput {
   file: File;
   onProgress?: (progress: number) => void;
+  cancelSignal?: AbortSignal;
 }
 
 export interface VideoMetadataRemoveOutput {
@@ -56,15 +58,26 @@ export class VideoMetadataRemoveProcessor extends BrowserProcessor<
   VideoMetadataRemoveInput,
   VideoMetadataRemoveOutput
 > {
-  async process({ file, onProgress }: VideoMetadataRemoveInput): Promise<VideoMetadataRemoveOutput> {
+  async process({
+    file,
+    onProgress,
+    cancelSignal,
+  }: VideoMetadataRemoveInput): Promise<VideoMetadataRemoveOutput> {
     if (file.size > VIDEO_SIZE_LIMITS.metadataRemove * 1024 * 1024) {
       throw new Error(
         `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.metadataRemove}MB）。ファイルを確認してください。`
       );
     }
+    if (cancelSignal?.aborted) {
+      throw new VideoCanceledByUserError();
+    }
 
     const info = await inspectVideoFile(file);
     try {
+      if (cancelSignal?.aborted) {
+        throw new VideoCanceledByUserError();
+      }
+
       const inputFormat = await info.input.getFormat();
       const outputContainer: OutputContainer = inputFormat === WEBM ? "webm" : "mp4";
 
@@ -73,6 +86,7 @@ export class VideoMetadataRemoveProcessor extends BrowserProcessor<
         container: outputContainer,
         tags: {},
         onProgress,
+        cancelSignal,
       });
 
       return {

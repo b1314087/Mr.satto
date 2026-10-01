@@ -1,6 +1,7 @@
 import { BrowserProcessor } from "../types";
 import {
   VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
   inspectVideoFile,
   qualityFor,
   runConversion,
@@ -13,6 +14,7 @@ export interface VideoCompressInput {
   level: CompressionLevel;
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
+  cancelSignal?: AbortSignal;
 }
 
 export interface VideoCompressOutput {
@@ -46,15 +48,23 @@ export class VideoCompressProcessor extends BrowserProcessor<VideoCompressInput,
     level,
     outputContainer,
     onProgress,
+    cancelSignal,
   }: VideoCompressInput): Promise<VideoCompressOutput> {
     if (file.size > VIDEO_SIZE_LIMITS.compress * 1024 * 1024) {
       throw new Error(
         `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.compress}MB）。ファイルを確認してください。`
       );
     }
+    if (cancelSignal?.aborted) {
+      throw new VideoCanceledByUserError();
+    }
 
     const info = await inspectVideoFile(file);
     try {
+      if (cancelSignal?.aborted) {
+        throw new VideoCanceledByUserError();
+      }
+
       const { blob, sizeBytes } = await runConversion({
         input: info.input,
         container: outputContainer,
@@ -63,6 +73,7 @@ export class VideoCompressProcessor extends BrowserProcessor<VideoCompressInput,
           forceTranscode: true,
         },
         onProgress,
+        cancelSignal,
       });
 
       return {

@@ -1,6 +1,7 @@
 import { BrowserProcessor } from "../types";
 import {
   VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
   inspectVideoFile,
   runConversion,
   type OutputContainer,
@@ -10,6 +11,7 @@ export interface VideoConvertInput {
   file: File;
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
+  cancelSignal?: AbortSignal;
 }
 
 export interface VideoConvertOutput {
@@ -34,19 +36,32 @@ export interface VideoConvertOutput {
  * 画質やコーデックへの意図しない介入を避けるため。
  */
 export class VideoConvertProcessor extends BrowserProcessor<VideoConvertInput, VideoConvertOutput> {
-  async process({ file, outputContainer, onProgress }: VideoConvertInput): Promise<VideoConvertOutput> {
+  async process({
+    file,
+    outputContainer,
+    onProgress,
+    cancelSignal,
+  }: VideoConvertInput): Promise<VideoConvertOutput> {
     if (file.size > VIDEO_SIZE_LIMITS.convert * 1024 * 1024) {
       throw new Error(
         `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.convert}MB）。ファイルを確認してください。`
       );
     }
+    if (cancelSignal?.aborted) {
+      throw new VideoCanceledByUserError();
+    }
 
     const info = await inspectVideoFile(file);
     try {
+      if (cancelSignal?.aborted) {
+        throw new VideoCanceledByUserError();
+      }
+
       const { blob, sizeBytes } = await runConversion({
         input: info.input,
         container: outputContainer,
         onProgress,
+        cancelSignal,
       });
 
       return {

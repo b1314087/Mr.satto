@@ -1,6 +1,7 @@
 import { BrowserProcessor } from "../types";
 import {
   VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
   createThumbnailCanvasSink,
   inspectVideoFile,
 } from "@/lib/video/shared";
@@ -13,6 +14,17 @@ export interface VideoThumbnailInput {
   format: ThumbnailImageFormat;
   /** JPEG時の品質(0-1)。PNG時は無視される */
   jpegQuality: number;
+  /**
+   * ユーザーによるキャンセル要求を伝えるシグナル（Phase 27・第4段階）。
+   * このツールは Conversion を使わないため、6ツール共通の
+   * conversion.cancel() は使えない。CanvasSink.getCanvas() 自体には
+   * 中断用のAPIがない（PacketRetrievalOptions型を確認済み）ため、
+   * mediabunnyのInput.disposeが「進行中の読み取り処理・メディアシンク
+   * 操作をキャンセルする」とドキュメントに明記されている挙動を使って
+   * 停止する。Input.dispose()は冪等なので、既存のfinally節とこの
+   * キャンセル処理が二重に呼んでも問題ない。
+   */
+  cancelSignal?: AbortSignal;
 }
 
 export interface VideoThumbnailOutput {
@@ -39,24 +51,57 @@ export class VideoThumbnailProcessor extends BrowserProcessor<VideoThumbnailInpu
     timestampSec,
     format,
     jpegQuality,
+    cancelSignal,
   }: VideoThumbnailInput): Promise<VideoThumbnailOutput> {
     if (file.size > VIDEO_SIZE_LIMITS.thumbnail * 1024 * 1024) {
       throw new Error(
         `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.thumbnail}MB）。ファイルを確認してください。`
       );
     }
+    if (cancelSignal?.aborted) {
+      throw new VideoCanceledByUserError();
+    }
 
     const info = await inspectVideoFile(file);
+
+    let canceledByUser = false;
+    const onAbort = () => {
+      canceledByUser = true;
+      // getCanvas()で進行中の読み取りを中断させる（InputDisposedErrorでの
+      // reject、または取得済みフレームの破棄につながる）。
+      info.input.dispose();
+    };
+    cancelSignal?.addEventListener("abort", onAbort);
+
     try {
+      if (canceledByUser) {
+        throw new VideoCanceledByUserError();
+      }
+
       const clampedTimestamp = Math.max(0, Math.min(timestampSec, Math.max(info.durationSec - 0.001, 0)));
       const sink = createThumbnailCanvasSink(info.videoTrack, info.displayWidth, info.displayHeight);
-      const wrapped = await sink.getCanvas(clampedTimestamp);
+
+      let wrapped: Awaited<ReturnType<typeof sink.getCanvas>>;
+      try {
+        wrapped = await sink.getCanvas(clampedTimestamp);
+      } catch (e) {
+        if (canceledByUser) {
+          throw new VideoCanceledByUserError();
+        }
+        throw e;
+      }
+      if (canceledByUser) {
+        throw new VideoCanceledByUserError();
+      }
       if (!wrapped) {
         throw new Error("指定した時点のフレームを取得できませんでした。別の時点をお試しください。");
       }
 
       const mimeType = format === "png" ? "image/png" : "image/jpeg";
       const blob = await canvasToBlob(wrapped.canvas, mimeType, format === "jpeg" ? jpegQuality : undefined);
+      if (canceledByUser) {
+        throw new VideoCanceledByUserError();
+      }
       if (!blob) {
         throw new Error("画像の生成に失敗しました。");
       }
@@ -71,6 +116,7 @@ export class VideoThumbnailProcessor extends BrowserProcessor<VideoThumbnailInpu
         format,
       };
     } finally {
+      cancelSignal?.removeEventListener("abort", onAbort);
       info.input.dispose();
     }
   }

@@ -1,6 +1,7 @@
 import { BrowserProcessor } from "../types";
 import {
   VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
   getAvailableResolutionPresets,
   inspectOutputDimensions,
   inspectVideoFile,
@@ -15,6 +16,7 @@ export interface VideoResizeInput {
   shortSideTarget: number;
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
+  cancelSignal?: AbortSignal;
 }
 
 export interface VideoResizeOutput {
@@ -47,15 +49,23 @@ export class VideoResizeProcessor extends BrowserProcessor<VideoResizeInput, Vid
     shortSideTarget,
     outputContainer,
     onProgress,
+    cancelSignal,
   }: VideoResizeInput): Promise<VideoResizeOutput> {
     if (file.size > VIDEO_SIZE_LIMITS.resize * 1024 * 1024) {
       throw new Error(
         `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.resize}MB）。ファイルを確認してください。`
       );
     }
+    if (cancelSignal?.aborted) {
+      throw new VideoCanceledByUserError();
+    }
 
     const info = await inspectVideoFile(file);
     try {
+      if (cancelSignal?.aborted) {
+        throw new VideoCanceledByUserError();
+      }
+
       const available = getAvailableResolutionPresets(info.displayWidth, info.displayHeight);
       if (!available.includes(shortSideTarget)) {
         throw new Error(
@@ -68,6 +78,7 @@ export class VideoResizeProcessor extends BrowserProcessor<VideoResizeInput, Vid
         container: outputContainer,
         video: resolutionOptionsFor(info.displayWidth, info.displayHeight, shortSideTarget),
         onProgress,
+        cancelSignal,
       });
 
       const outputDims = await inspectOutputDimensions(blob, outputContainer);

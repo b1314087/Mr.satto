@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { VideoH264Processor, type VideoH264Output } from "@/lib/processors/browser/video-h264";
-import { VIDEO_INPUT_ACCEPT, VIDEO_SIZE_LIMITS, checkH264EncodeSupport } from "@/lib/video/shared";
+import {
+  VIDEO_INPUT_ACCEPT,
+  VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
+  checkH264EncodeSupport,
+} from "@/lib/video/shared";
 import { useRevokeObjectUrlOnChange } from "@/lib/video/use-video-preview";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -27,6 +32,9 @@ export function VideoH264Tool() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<VideoH264Output | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  const [wasCanceled, setWasCanceled] = useState(false);
+  const cancelControllerRef = useRef<AbortController | null>(null);
 
   useRevokeObjectUrlOnChange(result?.url);
 
@@ -34,6 +42,9 @@ export function VideoH264Tool() {
     let cancelled = false;
     // 汎用的な解像度(1280x720)でこのブラウザのH.264エンコード対応を事前確認する。
     // ファイル選択後、実際の解像度でも再度確認する（Processor内部）。
+    // ※この cancelled はこのeffect専用の既存の中断フラグであり、下の
+    //   キャンセル機能（cancelControllerRef）とは無関係。混同しないよう
+    //   キャンセル機能側は別名の状態・refを使う。
     checkH264EncodeSupport(1280, 720).then((ok) => {
       if (!cancelled) {
         setSupported(ok);
@@ -45,29 +56,59 @@ export function VideoH264Tool() {
     };
   }, []);
 
+  // タブ遷移やアンマウント時にも、実行中の変換処理を実際に中断する。
+  useEffect(() => {
+    return () => {
+      cancelControllerRef.current?.abort();
+    };
+  }, []);
+
   function handleSelect(files: File[]) {
     setFile(files[0]);
     setResult(null);
     setStatus("idle");
     setError(null);
     setProgress(0);
+    setWasCanceled(false);
   }
 
   async function handleRun() {
     if (!file) return;
+    const controller = new AbortController();
+    cancelControllerRef.current = controller;
     setStatus("processing");
     setError(null);
     setResult(null);
     setProgress(0);
+    setWasCanceled(false);
+    setCanceling(false);
 
     try {
-      const output = await new VideoH264Processor().process({ file, onProgress: setProgress });
+      const output = await new VideoH264Processor().process({
+        file,
+        onProgress: setProgress,
+        cancelSignal: controller.signal,
+      });
       setResult(output);
       setStatus("success");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
+      if (e instanceof VideoCanceledByUserError) {
+        setWasCanceled(true);
+        setStatus("idle");
+      } else {
+        setError(e instanceof Error ? e.message : "処理に失敗しました");
+        setStatus("error");
+      }
+    } finally {
+      setCanceling(false);
+      cancelControllerRef.current = null;
     }
+  }
+
+  function handleCancel() {
+    if (!cancelControllerRef.current) return;
+    setCanceling(true);
+    cancelControllerRef.current.abort();
   }
 
   function handleDownload() {
@@ -109,14 +150,28 @@ export function VideoH264Tool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          H.264に変換する
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            H.264に変換する
+          </button>
+          {status === "processing" && !canceling && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="w-fit rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-600 transition-colors hover:border-red-400 hover:text-red-600 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-red-500 dark:hover:text-red-400"
+            >
+              キャンセル
+            </button>
+          )}
+          {canceling && (
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">キャンセル処理中...</span>
+          )}
+        </div>
       )}
 
       <ProcessingStatus
@@ -124,6 +179,11 @@ export function VideoH264Tool() {
         processingLabel={`変換中... ${Math.round(progress * 100)}%`}
         successLabel="H.264への変換が完了しました"
       />
+      {wasCanceled && (
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+          処理をキャンセルしました。設定を確認して、もう一度実行できます。
+        </div>
+      )}
       {error && <ErrorMessage message={error} />}
 
       {result && (
