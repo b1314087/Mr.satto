@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
+import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
 import { autoMapColumns } from "@/lib/forms/column-mapping";
 import { buildPhotoLookup, type PhotoLookupEntry } from "@/lib/forms/photo-matching";
@@ -838,13 +839,7 @@ export function FormToIndividualPdfsTool() {
                   写真の識別子が一致しなかった行が{generatedZip.missingPhotoCount}件あります（該当ページの写真欄は空欄です）。
                 </p>
               )}
-              <button
-                type="button"
-                onClick={handleDownloadZip}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                ZIPをダウンロード
-              </button>
+              <RewardedDownloadGate onDownload={handleDownloadZip} label="ZIPをダウンロード" />
             </div>
           )}
         </section>

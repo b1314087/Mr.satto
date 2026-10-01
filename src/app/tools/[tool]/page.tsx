@@ -39,8 +39,8 @@ const BYPASS_ACCESS_GATE_TOOL_ID = "filled-pdf-to-excel";
  * 両方を担う（Phase 5）。Next.jsは同じ階層に異なる名前の動的セグメント
  * （例: [tool] と [category]）を共存させられないため、既存の[tool]セグメントを
  * そのまま使い、値がカテゴリIDと一致するかどうかで内部的に分岐する。
- * カテゴリIDとツールIDは重複しない（カテゴリIDは image/pdf/file/csv-excel/
- * student/work/creator/other の8種のみで、ツールIDは全て "image-resize" のような
+ * カテゴリIDとツールIDは重複しない（カテゴリIDは image/pdf/csv-excel/word/
+ * video/file/generator/other の8種のみで、ツールIDは全て "image-resize" のような
  * 複合語のため衝突しない）。
  */
 function findCategoryByParam(param: string) {

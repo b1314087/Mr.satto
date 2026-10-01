@@ -191,7 +191,7 @@ export function computeDashboardStats(members: MemberRow[]): AdminDashboardStats
 // 重要な制約：tool_usage_daily（supabase/migrations/0002_tool_usage_daily.sql）は
 // Mr.Satto全体のアクセスログではない。「記入済みPDF→Excel」1ツールの
 // Standardプラン向け「1日10回まで」制限を数えるためだけに使われている
-// （src/lib/tools/filled-pdf-to-excel/daily-usage.ts）。他の97ツールは
+// （src/lib/tools/filled-pdf-to-excel/daily-usage.ts）。他の98ツールは
 // ブラウザ内完結・サーバー非送信という設計方針そのものにより、利用回数を
 // サーバー側で記録していない。そのため、ここで表示できるのは
 // 「利用ログが存在するツールの利用回数」のみであり、サイト全体のツール
