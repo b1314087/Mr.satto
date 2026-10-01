@@ -38,7 +38,6 @@ export interface RosterTemplateInput {
 
 export interface RosterTemplateOutput {
   blob: Blob;
-  url?: string;
   pageCount?: number;
 }
 
@@ -215,7 +214,7 @@ export class RosterTemplateProcessor extends BrowserProcessor<RosterTemplateInpu
       return { blob };
     }
     const { blob, pageCount } = await buildPdf(input);
-    return { blob, url: URL.createObjectURL(blob), pageCount };
+    return { blob, pageCount };
   }
 }
 

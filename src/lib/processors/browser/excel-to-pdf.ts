@@ -176,7 +176,7 @@ export interface ExcelToPdfInput {
   repeatHeaderRow: boolean;
 }
 
-export interface ExcelToPdfOutput extends PdfProcessorOutput {
+export interface ExcelToPdfOutput extends Omit<PdfProcessorOutput, "url"> {
   warnings: string[];
   sheetCount: number;
   totalRowCount: number;
@@ -608,7 +608,6 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
     const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
     return {
       blob,
-      url: URL.createObjectURL(blob),
       pageCount: doc.getPageCount(),
       sizeBytes: blob.size,
       warnings: Array.from(new Set(warnings)),

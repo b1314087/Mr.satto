@@ -553,7 +553,7 @@ export interface WordToPdfInput {
   file: File;
 }
 
-export interface WordToPdfOutput extends PdfProcessorOutput {
+export interface WordToPdfOutput extends Omit<PdfProcessorOutput, "url"> {
   warnings: string[];
   paragraphCount: number;
   tableCount: number;
@@ -884,7 +884,6 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
     return {
       blob,
-      url: URL.createObjectURL(blob),
       pageCount: doc.getPageCount(),
       sizeBytes: blob.size,
       warnings: Array.from(new Set(warnings)),

@@ -40,7 +40,6 @@ export interface EnvelopeAddressInput {
 
 export interface EnvelopeAddressOutput {
   blob: Blob;
-  url: string;
   pageCount: number;
 }
 
@@ -251,7 +250,7 @@ export class EnvelopeAddressProcessor extends BrowserProcessor<EnvelopeAddressIn
       throw new Error("PDFの書き出しに失敗しました");
     }
     const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
-    return { blob, url: URL.createObjectURL(blob), pageCount: doc.getPageCount() };
+    return { blob, pageCount: doc.getPageCount() };
   }
 }
 

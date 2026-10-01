@@ -50,7 +50,6 @@ export interface TicketVoucherInput {
 
 export interface TicketVoucherOutput {
   blob: Blob;
-  url: string;
   pageCount: number;
   ticketsPerPage: number;
 }
@@ -252,7 +251,7 @@ export class TicketVoucherProcessor extends BrowserProcessor<TicketVoucherInput,
       throw new Error("PDFの書き出しに失敗しました");
     }
     const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
-    return { blob, url: URL.createObjectURL(blob), pageCount: doc.getPageCount(), ticketsPerPage };
+    return { blob, pageCount: doc.getPageCount(), ticketsPerPage };
   }
 }
 

@@ -8,7 +8,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ImageAdjustProcessor } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { downloadBlob, formatBytes, sanitizeFileName } from "@/lib/utils/format";
 
 /**
  * 明るさ・コントラストはスライダーをドラッグするたびに全ピクセルを
@@ -52,7 +52,7 @@ export function ImageAdjustTool() {
     }
   }
 
-  const downloadName = file ? file.name : "adjusted.png";
+  const downloadName = file ? sanitizeFileName(file.name) : "adjusted.png";
 
   return (
     <div className="flex flex-col gap-6">

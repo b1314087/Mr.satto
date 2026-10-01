@@ -8,7 +8,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ImageFlipProcessor } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { downloadBlob, formatBytes, sanitizeFileName } from "@/lib/utils/format";
 
 export function ImageFlipTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -45,7 +45,7 @@ export function ImageFlipTool() {
     }
   }
 
-  const downloadName = file ? file.name : "flipped.png";
+  const downloadName = file ? sanitizeFileName(file.name) : "flipped.png";
 
   return (
     <div className="flex flex-col gap-6">
