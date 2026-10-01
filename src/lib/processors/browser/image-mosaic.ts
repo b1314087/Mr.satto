@@ -165,6 +165,11 @@ export class ImageMosaicProcessor extends BrowserProcessor<ImageMosaicInput, Ima
     if (regions.length > MAX_REGIONS) {
       throw new Error(`範囲が多すぎます（最大${MAX_REGIONS}個まで）`);
     }
+    // 個人情報等を隠すためのツールのため、UI側のボタン無効化だけに頼らず、
+    // 範囲が1つも指定されていない場合はProcessor側でも未加工画像の書き出しを拒否する。
+    if (regions.length === 0) {
+      throw new Error("モザイク領域を1つ以上指定してください");
+    }
 
     const canvas = document.createElement("canvas");
     canvas.width = width;

@@ -8,7 +8,13 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ImageGrayscaleProcessor } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes, sanitizeFileName } from "@/lib/utils/format";
+import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
+
+const EXT_BY_MIME: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
 
 export function ImageGrayscaleTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -44,7 +50,9 @@ export function ImageGrayscaleTool() {
     }
   }
 
-  const downloadName = file ? sanitizeFileName(file.name) : "grayscale.png";
+  const downloadName = file
+    ? replaceExtension(file.name, result ? EXT_BY_MIME[result.mimeType] ?? "png" : "png")
+    : "grayscale.png";
 
   return (
     <div className="flex flex-col gap-6">

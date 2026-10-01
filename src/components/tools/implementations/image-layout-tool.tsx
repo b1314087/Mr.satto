@@ -140,11 +140,19 @@ export function ImageLayoutTool() {
     };
   }, [result]);
 
+  // アンマウント時に、このツールで作成した全Object URLをまとめて解放する。
+  // クリーンアップ関数は空の依存配列のクロージャ内にあるとマウント時点の
+  // 古いfileUrls（常に空配列）しか参照できないため、refで常に最新の値を
+  // 保持しておき、クリーンアップはそのrefから読む
+  // （pdf-fill-annotate-tool.tsxのobjectsRefと同じパターン）。
+  const fileUrlsRef = useRef(fileUrls);
+  useEffect(() => {
+    fileUrlsRef.current = fileUrls;
+  }, [fileUrls]);
   useEffect(() => {
     return () => {
-      fileUrls.forEach((url) => URL.revokeObjectURL(url));
+      fileUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedItem = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);

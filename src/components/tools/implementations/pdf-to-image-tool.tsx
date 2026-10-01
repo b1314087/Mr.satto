@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -24,12 +24,20 @@ export function PdfToImageTool() {
   const [zipBlob, setZipBlob] = useState<Blob | null>(null);
   const [thumbUrls, setThumbUrls] = useState<string[]>([]);
 
+  // アンマウント時に、最後に生成されたサムネイル用Object URLを解放する。
+  // 空の依存配列のクロージャはマウント時点の古いthumbUrls（常に空配列）しか
+  // 参照できないため、refで常に最新の値を保持し、クリーンアップはそこから読む
+  // （pdf-fill-annotate-tool.tsxのobjectsRefと同じパターン、image-layout-tool.tsxの
+  // fileUrlsRefも同様）。再実行時の解放は従来通りhandleRun内で行う
+  // （handleRunは毎レンダーで新しいクロージャのため、こちらは元々最新値を正しく参照できていた）。
+  const thumbUrlsRef = useRef(thumbUrls);
+  useEffect(() => {
+    thumbUrlsRef.current = thumbUrls;
+  }, [thumbUrls]);
   useEffect(() => {
     return () => {
-      thumbUrls.forEach((url) => URL.revokeObjectURL(url));
+      thumbUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     };
-    // アンマウント時のみ解放すればよい（更新のたびの解放は下のhandleRunで行う）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleRun() {

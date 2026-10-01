@@ -138,7 +138,12 @@ export function ImageMosaicTool() {
   // ライブプレビュー: 範囲のドラッグ中は枠線の再描画だけ（軽量）に留め、
   // 操作が止まって500ms経ってから実際のProcessorを1回だけ呼ぶ。
   useEffect(() => {
-    if (!canProcess || !file) {
+    // 範囲が1つもない場合は、Processorが例外を投げるようになった（保存時の
+    // 安全対策）ため、ここでも処理自体をスキップし、プレビューは元画像
+    // （stageImageUrlのフォールバック）にそのまま戻す。こうしないと、範囲を
+    // 最後の1つまで削除した際に、直前の（モザイク適用済みの）古いプレビュー画像が
+    // 残り続けてしまう。
+    if (!canProcess || !file || regions.length === 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPreviewResult((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
@@ -316,6 +321,10 @@ export function ImageMosaicTool() {
 
   async function handleSave(format: "png" | "jpeg") {
     if (!file) return;
+    if (regions.length === 0) {
+      setError("モザイク領域を1つ以上指定してください");
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -627,7 +636,7 @@ export function ImageMosaicTool() {
             <button
               type="button"
               onClick={() => void handleSave("png")}
-              disabled={status === "processing"}
+              disabled={status === "processing" || regions.length === 0}
               className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             >
               PNGで保存
@@ -635,7 +644,7 @@ export function ImageMosaicTool() {
             <button
               type="button"
               onClick={() => void handleSave("jpeg")}
-              disabled={status === "processing"}
+              disabled={status === "processing" || regions.length === 0}
               className="w-fit rounded-lg bg-neutral-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
             >
               JPEGで保存

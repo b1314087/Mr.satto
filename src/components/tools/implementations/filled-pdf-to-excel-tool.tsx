@@ -147,17 +147,22 @@ function AutoExtractSection() {
     if (files.length === 0 || totalPages === null) return;
     setError(null);
 
-    const consumeResult = await consumeUsage(totalPages);
-    if (!consumeResult.allowed) {
-      setError(describeConsumeFailure(consumeResult));
-      return;
-    }
-
-    setStatus("processing");
-    setResult(null);
-    setProgressLabel("解析中...");
-
+    // 利用量チェック（consumeUsage、サーバーアクション呼び出し）もtry/catchの
+    // 対象に含める。ここが従来tryの外にあったため、一時的なネットワーク障害等で
+    // 例外が発生すると、エラー表示も処理状態のリセットも行われないまま
+    // 何も起きなかったように見えてしまっていた（テンプレートモード側の
+    // handleRunExtractionと同じ形に揃える）。
     try {
+      const consumeResult = await consumeUsage(totalPages);
+      if (!consumeResult.allowed) {
+        setError(describeConsumeFailure(consumeResult));
+        return;
+      }
+
+      setStatus("processing");
+      setResult(null);
+      setProgressLabel("解析中...");
+
       const output = await new FilledPdfToExcelProcessor().process({
         files,
         language,
