@@ -3,7 +3,7 @@ import "server-only";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * 記入済みPDF→Excel（Standardプラン: 1日10回まで・広告なし）の
+ * 記入済みPDF→Excel（Standardプラン: 1日5回まで・広告なし）の
  * 利用回数を、supabase/migrations/0002_tool_usage_daily.sql の
  * SECURITY DEFINER関数経由で読み書きするラッパー。
  *
@@ -11,15 +11,21 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
  * （開発指示書10章）。ここで扱うのは user_id・tool_id・日付・回数のみで、
  * PDFの中身やOCR結果は一切関与しない（そもそもサーバーに送られない）。
  *
+ * 利用制限見直し（2026）：上限を10回→5回に変更。また、上限到達後の
+ * 「広告視聴で引き続き利用できる」フォールバックは廃止した（新仕様では
+ * Standardは「広告なし・1日5回まで」で完結し、6回目以降は翌日までの
+ * 利用不可とする。フォールバック判定はusage-status-actions.ts側で行う）。
+ *
  * Supabase未設定の環境では、既存の getServerPlan() 等と同じ
  * 「if (!supabase) return <安全な既定値>」パターンで穏やかに縮退する
- * （回数管理が使えない＝毎回Free相当の広告視聴を要求する、安全側の既定値）。
+ * （回数管理が使えない＝安全側に倒して当日は利用不可として扱う。
+ * 旧仕様にあった「広告視聴へのフォールバック」は行わない）。
  */
 
 const TOOL_ID = "filled-pdf-to-excel";
 
-/** Standardプランで1日に無償利用できる回数の上限 */
-export const STANDARD_DAILY_FREE_USES = 10;
+/** Standardプランで1日に利用できる回数の上限（広告なし。これを超えると翌日まで利用不可） */
+export const STANDARD_DAILY_FREE_USES = 5;
 
 /** 当日の利用回数を取得する（加算しない）。Supabase未設定・エラー時は0を返す */
 export async function getStandardDailyUsageCount(): Promise<number> {

@@ -25,3 +25,19 @@ export const PDF_TO_EXCEL_CREDIT_DURATION_MS = 10 * 60 * 1000;
 
 /** この一時利用権1回で処理できる最大ページ数（Free・Standardの超過分共通） */
 export const PDF_TO_EXCEL_CREDIT_MAX_PAGES = 3;
+
+/**
+ * Free（匿名・未ログイン）ユーザーの、1日あたりの無償利用回数上限（利用制限
+ * 見直しで追加）。匿名ユーザーにはアカウント単位の管理ができないため、
+ * free-daily-usage-token.ts の署名付きCookieで管理する（daily-usage.tsの
+ * Supabaseテーブルとは別の仕組み。未ログインユーザーはauth.uid()を持たず
+ * そちらのテーブルの対象外のため）。
+ *
+ * Standardの有償回数上限（5回/日）より明確に少ない値とし、Standard/Premiumへの
+ * 加入動機を保つ（値自体は本仕様書で具体的な指定が無かったための判断。
+ * 最終報告に理由を明記する）。
+ */
+export const PDF_TO_EXCEL_FREE_DAILY_USES = 3;
+
+/** Free匿名ユーザーの1日あたり利用回数を保持するCookie名 */
+export const PDF_TO_EXCEL_FREE_DAILY_COOKIE_NAME = "mrsatto_pdf2excel_free_daily";

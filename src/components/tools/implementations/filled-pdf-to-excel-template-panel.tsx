@@ -19,7 +19,7 @@ import { exportPersonsToExcel } from "@/lib/pdf-template/excel-export";
 import { FilledPdfToExcelTemplateProcessor } from "@/lib/processors/browser/filled-pdf-to-excel-template";
 import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, sanitizeFileName, stripExtension } from "@/lib/utils/format";
-import { useFilledPdfToExcelUsage, UsageGatePanel } from "./filled-pdf-to-excel/usage-gate";
+import { useFilledPdfToExcelUsage, UsageGatePanel, describeConsumeFailure } from "./filled-pdf-to-excel/usage-gate";
 
 /**
  * 記入されたPDF→Excel「テンプレートモード」（Phase 18）。
@@ -449,11 +449,7 @@ export function FilledPdfToExcelTemplatePanel() {
     try {
       const consumeResult = await consumeUsage(totalPages);
       if (!consumeResult.allowed) {
-        setError(
-          consumeResult.reason === "page-limit-exceeded"
-            ? `現在の利用条件で処理できるページ数の上限は合計${consumeResult.maxPages}ページです（選択したファイルの合計は${totalPages}ページです）。`
-            : "広告の視聴が必要です。下の「広告を見て利用する」ボタンからお試しください。"
-        );
+        setError(describeConsumeFailure(consumeResult));
         return;
       }
 

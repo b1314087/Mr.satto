@@ -4,39 +4,44 @@ import { getServerPlan } from "@/lib/plans/current-plan";
 import type { Plan } from "@/lib/plans/types";
 import { checkPageCredit, consumePageCredit } from "./credit-actions";
 import { getStandardDailyUsageCount, incrementStandardDailyUsage, STANDARD_DAILY_FREE_USES } from "./daily-usage";
-import { PDF_TO_EXCEL_CREDIT_MAX_PAGES } from "./usage-cookie";
+import { getFreeDailyUsageCount, incrementFreeDailyUsage } from "./free-daily-usage-actions";
+import { PDF_TO_EXCEL_CREDIT_MAX_PAGES, PDF_TO_EXCEL_FREE_DAILY_USES } from "./usage-cookie";
 
 /**
  * 記入済みPDF→Excel専用の利用可否判定をまとめたServer Actions。
  *
  * この1ツールは、既存の汎用 <ToolAccessGate>（Standard対象ツール全体・
- * 15分間のリワード広告ゲート）とは条件が根本的に異なる
- * （ツール専用・ページ数ベース・Standardは1日10回まで無償）ため、
+ * 15分間のリワード広告ゲート）とは条件が根本的に異なるため、
  * src/app/tools/[tool]/page.tsx でこのツールIDのみ <ToolAccessGate> を
  * バイパスし、ツール自身のクライアントコンポーネントがここのServer Actionsを
  * 直接呼び出して可否を判定する（Client ComponentからServer Actionを
  * 直接呼ぶのはNext.jsの標準的な構成であり、tool-registry.tsxの
  * dynamic importの形は変更不要）。
  *
- * 料金プラン別の実際の挙動（開発指示書4〜9章）:
- *   Free      : 常にリワード広告視聴 → 最大3ページの一時利用権が必要
- *   Standard  : 1日10回まで広告不要（1回あたり最大3ページ）。
- *               11回目以降はFreeと同じ「広告視聴→3ページ」条件にフォールバック
- *   Premium   : ページ数・回数の制限なし。広告不要
+ * 料金プラン別の実際の挙動（利用制限見直しで確定した仕様）:
+ *   Free      : 常にリワード広告視聴 → 最大3ページの一時利用権が必要。
+ *               さらに1日あたりの回数上限（PDF_TO_EXCEL_FREE_DAILY_USES）を
+ *               超えた場合は、その日はもう広告を視聴しても利用できない。
+ *   Standard  : 1日5回まで広告不要（1回あたり最大3ページ）。
+ *               6回目以降は広告視聴によるフォールバックを行わず、
+ *               翌日まで利用不可（旧仕様の「広告視聴で延長できる」挙動は廃止）。
+ *   Premium   : ページ数・回数の制限なし。広告不要。
  */
 
 export interface FilledPdfToExcelUsageStatus {
   plan: Plan;
   /** 1回の処理で許可される最大ページ数。Premiumはnull（制限なし） */
   maxPagesPerUse: number | null;
-  /** この状態のまま処理を始めようとした場合、広告視聴が必要か */
+  /** 今、広告視聴によって新たな利用権を得られる状態か（1日の上限に達した後はfalseになる） */
   requiresAd: boolean;
   /** 既に有効な（広告視聴済みの）page creditを保持しているか */
   creditActive: boolean;
-  /** Standardプランの当日利用回数（それ以外のプランではnull） */
+  /** Free・Standardの当日利用回数（Premiumではnull） */
   dailyUsed: number | null;
-  /** Standardプランの1日あたり無償回数上限（それ以外のプランではnull） */
+  /** Free・Standardの1日あたり回数上限（Premiumではnull） */
   dailyLimit: number | null;
+  /** 1日あたりの回数上限に達しているか（Free・Standard共通。Premiumでは常にfalse） */
+  dailyLimitReached: boolean;
 }
 
 /** ツールのマウント時など、状態表示のためだけに呼ぶ（何も消費しない） */
@@ -52,34 +57,43 @@ export async function getFilledPdfToExcelUsageStatus(): Promise<FilledPdfToExcel
       creditActive: credit.active,
       dailyUsed: null,
       dailyLimit: null,
+      dailyLimitReached: false,
     };
   }
 
   if (plan === "standard") {
     const dailyUsed = await getStandardDailyUsageCount();
-    const withinDailyQuota = dailyUsed < STANDARD_DAILY_FREE_USES;
+    const dailyLimitReached = dailyUsed >= STANDARD_DAILY_FREE_USES;
     return {
       plan,
       maxPagesPerUse: PDF_TO_EXCEL_CREDIT_MAX_PAGES,
-      requiresAd: !withinDailyQuota && !credit.active,
+      // Standardは新仕様で「広告なし」固定のため、1日の上限に達しても
+      // 広告への切り替えは提示しない（翌日まで利用不可）。
+      requiresAd: false,
       creditActive: credit.active,
       dailyUsed,
       dailyLimit: STANDARD_DAILY_FREE_USES,
+      dailyLimitReached,
     };
   }
 
   // free（未ログイン含む）
+  const dailyUsed = await getFreeDailyUsageCount();
+  const dailyLimitReached = dailyUsed >= PDF_TO_EXCEL_FREE_DAILY_USES;
   return {
     plan,
     maxPagesPerUse: PDF_TO_EXCEL_CREDIT_MAX_PAGES,
-    requiresAd: !credit.active,
+    // 1日の上限に達した後は、新たに広告を見ても利用権を得られないようにする
+    // （「広告を見れば無限に使える」状態を避ける）。
+    requiresAd: !credit.active && !dailyLimitReached,
     creditActive: credit.active,
-    dailyUsed: null,
-    dailyLimit: null,
+    dailyUsed,
+    dailyLimit: PDF_TO_EXCEL_FREE_DAILY_USES,
+    dailyLimitReached,
   };
 }
 
-export type ConsumeFilledPdfToExcelFailureReason = "page-limit-exceeded" | "ad-required";
+export type ConsumeFilledPdfToExcelFailureReason = "page-limit-exceeded" | "ad-required" | "daily-limit-exceeded";
 
 export type ConsumeFilledPdfToExcelResult =
   | { allowed: true; maxPages: number | null }
@@ -110,21 +124,32 @@ export async function consumeFilledPdfToExcelUsage(pageCount: number): Promise<C
 
   if (plan === "standard") {
     const dailyUsed = await getStandardDailyUsageCount();
-    if (dailyUsed < STANDARD_DAILY_FREE_USES) {
-      const result = await incrementStandardDailyUsage();
-      if (result !== null) {
-        return { allowed: true, maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
-      }
-      // 利用回数管理サービスが利用できない場合は、安全側に倒して
-      // Freeと同じ「広告視聴が必要」条件へフォールバックする
-      // （無制限に許可してしまうことを避ける）。
+    if (dailyUsed >= STANDARD_DAILY_FREE_USES) {
+      // 新仕様: 上限到達後は広告へのフォールバックを行わず、ここで確定的に拒否する。
+      return { allowed: false, reason: "daily-limit-exceeded", maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
     }
+    const result = await incrementStandardDailyUsage();
+    if (result !== null) {
+      return { allowed: true, maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
+    }
+    // 利用回数管理サービス（Supabase RPC）が利用できない場合は、安全側に倒して
+    // 「本日は利用不可」として扱う（旧仕様にあった広告視聴へのフォールバックは
+    // 新仕様の「Standardは広告なし」と矛盾するため行わない）。
+    return { allowed: false, reason: "daily-limit-exceeded", maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
   }
 
-  // Free、またはStandardで1日の無償回数を使い切った/回数管理が利用できない場合
+  // free（未ログイン含む）: 1日の回数上限に達している場合は、広告視聴による
+  // 利用権の消費自体を行わせない（上限到達後は新たな広告視聴を提示しない）。
+  const dailyUsed = await getFreeDailyUsageCount();
+  if (dailyUsed >= PDF_TO_EXCEL_FREE_DAILY_USES) {
+    return { allowed: false, reason: "daily-limit-exceeded", maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
+  }
+
   const creditConsumed = await consumePageCredit();
   if (!creditConsumed) {
     return { allowed: false, reason: "ad-required", maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
   }
+
+  await incrementFreeDailyUsage();
   return { allowed: true, maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
 }

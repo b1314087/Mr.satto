@@ -13,15 +13,21 @@ import {
 } from "@/lib/tools/filled-pdf-to-excel/usage-status-actions";
 
 /**
- * 記入済みPDF→Excelの利用制限（広告視聴ゲート・ページ数上限）UI（Phase 18）。
+ * 記入済みPDF→Excelの利用制限（広告視聴ゲート・ページ数上限・1日回数上限）UI。
  *
  * Phase 11で実装された自動抽出モードの利用制限ロジック・UIをそのまま
  * テンプレートモードでも使えるよう、フック(useFilledPdfToExcelUsage)と
  * 表示コンポーネント(UsageGatePanel)として切り出したもの。
- * 料金体系・利用制限のルール自体は一切変更していない（開発指示書42章：
- * テンプレートモード追加を理由に新しい料金プランは作らない）。
- * どちらのモードも同じServer Actions（usage-status-actions.ts/credit-actions.ts）
- * を呼ぶため、消費した利用回数・ページ数はモード間で共有される。
+ * どちらのモードも同じServer Actions（usage-status-actions.ts/credit-actions.ts/
+ * free-daily-usage-actions.ts）を呼ぶため、消費した利用回数・ページ数は
+ * モード間で共有される。
+ *
+ * 利用制限見直し（2026）で、Standardの1日上限到達後の「広告視聴で延長できる」
+ * フォールバックを廃止し（新仕様は「Standardは広告なし・1日5回で完結」）、
+ * 代わりにFree（匿名）側に1日あたりの回数上限を新設した。どちらも
+ * usage.dailyLimitReached で判定し、ad-watchパネルとは別の「本日は終了」
+ * パネルを表示する（needsAdBeforeRunはdailyLimitReachedの場合に自動的に
+ * falseになるよう、usage-status-actions.ts側のrequiresAdで制御している）。
  */
 
 export type AdPhase = "idle" | "loading" | "ready" | "showing" | "granting" | "unavailable" | "denied" | "error";
@@ -126,6 +132,24 @@ export function useFilledPdfToExcelUsage() {
   return { usage, usageLoading, adPhase, isAdBusy, needsAdBeforeRun, handleWatchAd, refreshUsage, consumeUsage };
 }
 
+/**
+ * consumeFilledPdfToExcelUsage() が allowed:false を返した理由を、
+ * ユーザー向けの日本語メッセージに変換する（tool.tsx / template-panel.tsx の
+ * 両方から共通で使い、文言の重複・食い違いを避ける）。
+ */
+export function describeConsumeFailure(
+  result: Extract<ConsumeFilledPdfToExcelResult, { allowed: false }>
+): string {
+  switch (result.reason) {
+    case "page-limit-exceeded":
+      return `Free・Standardプランでは、1回につき最大${result.maxPages}ページまで処理できます。ページ数を減らすか、Premiumプランをご利用ください。`;
+    case "daily-limit-exceeded":
+      return "本日のご利用回数の上限に達しました。明日またお試しいただくか、Premiumプランもご検討ください。";
+    case "ad-required":
+      return "広告の視聴が必要です。下の「広告を見て利用する」ボタンからお試しください。";
+  }
+}
+
 export function UsageGatePanel({
   usage,
   usageLoading,
@@ -142,6 +166,10 @@ export function UsageGatePanel({
   onWatchAd: () => void;
 }) {
   const needsAdBeforeRun = !usageLoading && usage !== null && usage.requiresAd;
+  // Standardは新仕様で上限到達後も広告を提示しない（usage.requiresAdが常にfalseのため
+  // needsAdBeforeRunは発生しない）。Freeは上限到達後、同じ理由でneedsAdBeforeRunが
+  // falseになる代わりにこちらが表示される。
+  const dailyLimitReached = !usageLoading && usage !== null && usage.dailyLimitReached;
   const overPageLimit = totalPages !== null && usage?.maxPagesPerUse != null && totalPages > usage.maxPagesPerUse;
 
   return (
@@ -155,8 +183,8 @@ export function UsageGatePanel({
 
       {overPageLimit && (
         <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
-          現在の利用条件で処理できるページ数の上限は合計{usage?.maxPagesPerUse}ページです（選択したファイルの合計は
-          {totalPages}ページです）。ファイルを減らすか、プランをご確認ください。
+          Free・Standardプランでは、1回につき最大{usage?.maxPagesPerUse}ページまで処理できます（選択したファイルの合計は
+          {totalPages}ページです）。ページ数を減らすか、Premiumプランをご利用ください。
         </div>
       )}
 
@@ -165,14 +193,32 @@ export function UsageGatePanel({
           {usage.plan === "premium" && <p>Premiumプランのため、ページ数・回数の制限なくご利用いただけます。</p>}
           {usage.plan === "standard" && usage.dailyUsed !== null && usage.dailyLimit !== null && (
             <p>
-              Standardプラン: 本日は{usage.dailyLimit}回中 {usage.dailyUsed}回 利用済みです（1回あたり最大
+              Standardプラン（広告なし）: 本日は{usage.dailyLimit}回中 {usage.dailyUsed}回 利用済みです（1回あたり最大
               {usage.maxPagesPerUse}ページ）。
-              {usage.dailyUsed >= usage.dailyLimit &&
-                "本日の無償回数を使い切ったため、広告の視聴で引き続きご利用いただけます。"}
             </p>
           )}
-          {usage.plan === "free" && <p>無料プランでは、広告を見ると1回・最大{usage.maxPagesPerUse}ページまで処理できます。</p>}
+          {usage.plan === "free" && usage.dailyUsed !== null && usage.dailyLimit !== null && (
+            <p>
+              無料プラン: 本日は{usage.dailyLimit}回中 {usage.dailyUsed}回 利用済みです。広告を見ると1回・最大
+              {usage.maxPagesPerUse}ページまで処理できます。
+            </p>
+          )}
           {usage.creditActive && <p className="text-green-700 dark:text-green-400">広告視聴による利用権が有効です。</p>}
+        </div>
+      )}
+
+      {dailyLimitReached && (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-6 py-8 text-center dark:border-neutral-800 dark:bg-neutral-900">
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            本日のご利用回数（{usage?.dailyLimit}回）の上限に達しました。明日また{usage?.plan === "free" ? "広告の視聴で" : ""}
+            ご利用いただけます。
+          </p>
+          <Link
+            href="/pricing"
+            className="text-xs text-neutral-400 underline-offset-2 hover:text-blue-600 hover:underline dark:text-neutral-500 dark:hover:text-blue-400"
+          >
+            回数・ページ数の制限なく使いたい場合はこちら（料金プラン）
+          </Link>
         </div>
       )}
 
@@ -180,9 +226,7 @@ export function UsageGatePanel({
         <div className="flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-6 py-8 text-center dark:border-neutral-800 dark:bg-neutral-900">
           <AdSlot placement="tool-page" />
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            {usage?.plan === "standard"
-              ? "本日の無償回数を使い切りました。広告を見ると、最大3ページまで引き続き処理できます。"
-              : "無料で使うには広告をご覧ください。広告を見ると1回・最大3ページまで処理できます。"}
+            無料で使うには広告をご覧ください。広告を見ると1回・最大3ページまで処理できます。
           </p>
           <button
             type="button"
