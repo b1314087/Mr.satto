@@ -234,11 +234,63 @@ function parsePrintAreaRef(defined: string): CellRangeRef | null {
   };
 }
 
-/** Excelの列幅（文字単位・既定フォントの最大数字幅を7pxと仮定した近似）をpt単位へ変換する */
-function excelColumnWidthToPt(charWidth: number): number {
-  const MDW = 7; // 既定フォント(Calibri 11等)での半角数字の最大幅(px)の一般的な近似値
-  const px = Math.floor(((256 * charWidth + Math.floor(128 / MDW)) / 256) * MDW);
+/**
+ * Excelの列幅（文字単位）をpt単位へ変換する。
+ * mdwは「Normalスタイルのフォントでの半角数字の最大幅(px)」(Maximum Digit
+ * Width)。この値はシートのNormalスタイルのフォントによって変わるため、
+ * 呼び出し側(resolveMaximumDigitWidth)で実際のフォント名から推定した値を渡す。
+ */
+function excelColumnWidthToPt(charWidth: number, mdw: number): number {
+  const px = Math.floor(((256 * charWidth + Math.floor(128 / mdw)) / 256) * mdw);
   return px * 0.75; // px(96dpi) → pt(72dpi)
+}
+
+/**
+ * styles.xmlの<fonts>の0番目(Normalスタイル＝既定フォント)の名前から、列幅の
+ * pt変換で使うMDW(Maximum Digit Width)を推定する。
+ *
+ * OOXMLの列幅(文字単位)は「Normalスタイルのフォントでの半角数字0の幅」を
+ * 1文字分の基準とする仕様のため、既定フォントがCalibri系(MDW=7px、本関数の
+ * フォールバック値)以外の場合、特に游ゴシック等の日本語Excelで標準的に
+ * 使われるフォントの場合、Calibri基準のMDW=7のままだと列幅合計・ひいては
+ * Fit to Widthの縮小率やページ分割がExcel実際の計算から数%ずれることが
+ * 判明した(「Excel通りになってない」調査、ページ数が1枚多くなる不具合)。
+ *
+ * 游ゴシック等の正確なMDWはExcel/フォントの内部実装に依存し一次情報を
+ * 入手できていないため、公開されている実測報告(標準の列幅が游ゴシック
+ * 11pt≈8.1文字、ＭＳ Ｐゴシック11pt≈8.11文字、メイリオ11pt≈8.09文字。
+ * 対してCalibri 11ptは8.43文字=MDW7px)から比率的に逆算した近似値
+ * (7.3px)を使う。OS・Excelのバージョン・画面スケーリングによる実際の
+ * ばらつきもあるため、この近似だけで常にExcelと完全に一致するとは限らない
+ * （開発指示書E章「完全再現は保証しない」の方針どおり）。
+ */
+// 比較対象(fontName)は必ず.toLowerCase()を通すため、ここに置くキーも
+// 同じ変換結果に揃える(全角英字は.toLowerCase()で全角小文字になる点に注意。
+// 例: "ＭＳ Ｐゴシック" → "ｍｓ　ｐゴシック"ではなく実際には全角スペースを
+// 含むため、半角・全角どちらの表記揺れも個別に列挙する)。
+const JP_GOTHIC_DEFAULT_FONT_NAMES = new Set([
+  "游ゴシック",
+  "yu gothic",
+  "メイリオ",
+  "meiryo",
+  "ｍｓ ｐゴシック",
+  "ms pゴシック",
+  "ms pgothic",
+  "ｍｓ ゴシック",
+  "ms ゴシック",
+  "ms gothic",
+]);
+
+function resolveMaximumDigitWidth(stylesXmlText: string | null): number {
+  const CALIBRI_MDW = 7;
+  const JP_GOTHIC_MDW = 7.3;
+  if (!stylesXmlText) return CALIBRI_MDW;
+  const doc = parseXml(stylesXmlText);
+  if (!doc) return CALIBRI_MDW;
+  const firstFont = doc.getElementsByTagName("fonts")[0]?.getElementsByTagName("font")[0];
+  const fontName = firstFont?.getElementsByTagName("name")[0]?.getAttribute("val")?.trim().toLowerCase() ?? null;
+  if (fontName && JP_GOTHIC_DEFAULT_FONT_NAMES.has(fontName)) return JP_GOTHIC_MDW;
+  return CALIBRI_MDW;
 }
 
 async function readEntryText(entries: Record<string, Uint8Array>, path: string): Promise<string | null> {
@@ -511,7 +563,7 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
 }
 
 /** 1つのワークシートXML(sheetN.xml)から、そのシートの印刷関連情報を読み取る */
-function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[]): Partial<SheetPageSettings> {
+function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[], mdw: number): Partial<SheetPageSettings> {
   const doc = parseXml(sheetXmlText);
   if (!doc) return {};
   const result: Partial<SheetPageSettings> = {};
@@ -590,7 +642,7 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[]): P
       const width = col.getAttribute("width");
       for (let c = min; c <= max && c <= min + 1000; c++) {
         if (hidden) hiddenCols.add(c - 1);
-        if (width) columnWidthsPt.set(c - 1, excelColumnWidthToPt(Number(width)));
+        if (width) columnWidthsPt.set(c - 1, excelColumnWidthToPt(Number(width), mdw));
       }
     }
   }
@@ -736,6 +788,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
 
     const themeColors = parseThemeColors(themeXmlText);
     const cellStyles = parseCellStyles(stylesXmlText, themeColors);
+    const mdw = resolveMaximumDigitWidth(stylesXmlText);
 
     for (let i = 0; i < sheetNamesInOrder.length; i++) {
       const name = sheetNamesInOrder[i];
@@ -744,7 +797,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
       const sheetXmlText = await readEntryText(entries, target);
       if (!sheetXmlText) continue;
 
-      const parsed = parseSheetXml(sheetXmlText, cellStyles);
+      const parsed = parseSheetXml(sheetXmlText, cellStyles, mdw);
       const settings: SheetPageSettings = { ...emptySheetSettings(), ...parsed };
       settings.printArea = printAreaBySheetIndex.get(i) ?? null;
       result.set(name, settings);
