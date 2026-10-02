@@ -42,7 +42,12 @@ export interface SheetPageSettings {
   orientation: "portrait" | "landscape" | null;
   /** sheetPr/pageSetUpPr@fitToPage が true のとき、fitToWidth/fitToHeightを優先する */
   fitToPageEnabled: boolean;
-  /** 0 = 制限なし（列/行方向は内容量に任せる）、null = 情報取得不可 */
+  /**
+   * 0 = 制限なし（列/行方向は内容量に任せる）。
+   * null = <pageSetup>要素自体が存在せず本当に情報が取得できない場合のみ
+   * （<pageSetup>はあるがfitToWidth/fitToHeight属性だけが省略されている場合は、
+   * OOXML既定値の1として解決済みの値が入る。parseSheetXml参照）。
+   */
   fitToWidth: number | null;
   fitToHeight: number | null;
   /** pageSetup@scale（%）。fitToPageEnabledがtrueの場合は無視してfitToWidth/Heightを優先する（実際のExcelの優先順位） */
@@ -378,8 +383,20 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[]): P
     result.orientation = orientationAttr === "landscape" || orientationAttr === "portrait" ? orientationAttr : null;
     const fitToWidthAttr = pageSetup.getAttribute("fitToWidth");
     const fitToHeightAttr = pageSetup.getAttribute("fitToHeight");
-    result.fitToWidth = fitToWidthAttr !== null ? Number(fitToWidthAttr) : null;
-    result.fitToHeight = fitToHeightAttr !== null ? Number(fitToHeightAttr) : null;
+    // OOXML(ECMA-376 §18.3.1.63 pageSetup)の既定値：fitToWidth/fitToHeightは
+    // どちらも省略時は1。Excelは値が既定値(1)のとき属性自体を書き出さないことが
+    // 多く、実際に「ページ設定→拡大縮小印刷→次のページ数に合わせて印刷：横1×縦任意」
+    // で保存したファイルでも、<pageSetup>にfitToHeightだけが明示され(自動=0)、
+    // fitToWidthは省略されたまま、ということが普通に起こる。
+    // これを「情報取得不可（=呼び出し側が無制限として扱う）」のnullにしてしまうと、
+    // fitToPageEnabled=trueなのに横方向だけ無制限と誤認し、本来1ページ幅に
+    // 収まるはずの表が複数の「列ページ群」に分割されてしまう
+    // （実際にこの不具合でExcel→PDF変換の列ズレが発生した。属性が存在しない
+    // 場合は仕様どおり1を既定値として補う。<pageSetup>要素自体が存在しない
+    // 場合は、この関数のifブロックに入らずemptySheetSettings()のnullのままになる
+    // ので、「本当に情報が取れない」ケースとは区別される）。
+    result.fitToWidth = fitToWidthAttr !== null ? Number(fitToWidthAttr) : 1;
+    result.fitToHeight = fitToHeightAttr !== null ? Number(fitToHeightAttr) : 1;
     const scaleAttr = pageSetup.getAttribute("scale");
     result.scalePercent = scaleAttr !== null ? Number(scaleAttr) : null;
   }
