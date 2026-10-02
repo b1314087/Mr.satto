@@ -35,6 +35,14 @@ export interface SectionSettings {
   orientation: "portrait" | "landscape";
   /** pt単位 */
   margins: SectionMargins;
+  /**
+   * 行グリッド線のピッチ(pt単位。w:docGrid@w:linePitch)。日本語のWord文書で
+   * 「文字数と行数を指定する」(w:docGrid@w:type="lines"または"linesAndChars")が
+   * 有効な場合のみ値を持つ。この設定が有効な文書では、段落の行間に明示的な
+   * exact指定が無い限り、実際の行の高さはフォントサイズに関わらずこのピッチの
+   * 倍数へ切り上げられる(Word自体の挙動)。取得できない・該当しない場合はnull。
+   */
+  docGridLinePitchPt: number | null;
 }
 
 /** 文書本文(w:body)の直下の子要素のうち、段落(w:p)・表(w:tbl)だけを対象に、
@@ -112,6 +120,16 @@ function parseSectPr(sectPrEl: Element): SectionSettings {
     return v !== null && v !== undefined ? twipsToPt(Number(v)) : fallback;
   };
 
+  // w:docGrid@w:type="lines"/"linesAndChars"の場合のみ、行の高さがこのピッチへ
+  // 切り上げられる(w:type="default"・"snapToChars"は行の高さへ影響しないため対象外)。
+  const docGrid = sectPrEl.getElementsByTagName("w:docGrid")[0];
+  const docGridType = docGrid?.getAttribute("w:type");
+  const linePitchAttr = docGrid?.getAttribute("w:linePitch");
+  const docGridLinePitchPt =
+    (docGridType === "lines" || docGridType === "linesAndChars") && linePitchAttr !== null
+      ? twipsToPt(Number(linePitchAttr))
+      : null;
+
   return {
     pageWidthPt: twipsToPt(wTwips),
     pageHeightPt: twipsToPt(hTwips),
@@ -122,6 +140,7 @@ function parseSectPr(sectPrEl: Element): SectionSettings {
       left: marginAttr("w:left", 56.7),
       right: marginAttr("w:right", 56.7),
     },
+    docGridLinePitchPt,
   };
 }
 

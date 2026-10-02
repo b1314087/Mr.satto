@@ -85,29 +85,46 @@ const PARAGRAPH_GAP = 6;
 const SINGLE_LINE_SPACING_FACTOR = 1.15;
 
 /**
- * 実際の行の高さ(pt)を、文書既定の行間設定(DefaultParagraphSpacing)と
- * 描画するテキストのフォントサイズから計算する（外出先PC修正指示書§32-35）。
+ * 実際の行の高さ(pt)を、文書既定の行間設定(DefaultParagraphSpacing)・
+ * 描画するテキストのフォントサイズ・行グリッド線のピッチ(gridLinePitchPt)から
+ * 計算する（外出先PC修正指示書§32-35、および「Excel通りになってない」調査の
+ * 過程で判明した日本語文書の行グリッド未対応の追加修正）。
  *
- * 【背景】以前は本文の行間を、フォントサイズに関係なく常に15pt固定で計算していた。
+ * 【背景1】以前は本文の行間を、フォントサイズに関係なく常に15pt固定で計算していた。
  * 10.5pt本文に対する15pt行間は倍率にして約1.43倍であり、
  * Wordの「単一行間隔」(概ね1.1〜1.2倍)よりも常に広い。これが積み重なることで
  * 「Wordでは1ページに収まる文書がPDFでは2ページ目にあふれる」不具合の
  * 主要因の1つになっていた（もう1つの要因はparagraphGap、下記参照）。
+ *
+ * 【背景2】日本語のWord文書で「ページ設定→文字数と行数を指定する」が有効な
+ * 場合(w:docGrid@w:type="lines"/"linesAndChars")、段落のw:spacingにexact指定が
+ * 無い限り、実際の行の高さはフォントサイズに関わらずこのグリッドのピッチ
+ * (多くは18pt前後)の倍数に切り上げられる。この挙動を反映していなかったため、
+ * グリッド線を使う文書では行間を実際より狭く見積もり、本来のWordより多くの
+ * 行が1ページに収まってしまい、ページの区切り位置がずれる不具合があった
+ * （個々の段落のw:snapToGrid無効化までは追跡しない。ほとんどの文書では
+ * 既定どおり全段落で有効なため、この近似で実用上は十分カバーできる）。
  */
-function resolveLineHeight(spacing: DefaultParagraphSpacing, size: number): number {
+function resolveLineHeight(spacing: DefaultParagraphSpacing, size: number, gridLinePitchPt: number | null): number {
   if (spacing.lineRule === "exact" && spacing.lineValue !== null) {
+    // exact指定は行グリッドより優先される(Word自体の挙動)
     return spacing.lineValue;
   }
+  let natural: number;
   if (spacing.lineRule === "atLeast" && spacing.lineValue !== null) {
-    return Math.max(spacing.lineValue, size * SINGLE_LINE_SPACING_FACTOR);
-  }
-  if (spacing.lineRule === "auto" && spacing.lineValue !== null) {
+    natural = Math.max(spacing.lineValue, size * SINGLE_LINE_SPACING_FACTOR);
+  } else if (spacing.lineRule === "auto" && spacing.lineValue !== null) {
     const multiplier = spacing.lineValue / 240; // 240 = 1行(単一間隔)
-    return size * SINGLE_LINE_SPACING_FACTOR * multiplier;
+    natural = size * SINGLE_LINE_SPACING_FACTOR * multiplier;
+  } else {
+    // 文書側から行間情報が全く取得できなかった場合: 従来の固定値(15pt)ではなく、
+    // Wordの単一行間隔によりまだ近いフォントサイズ比例の値にフォールバックする
+    natural = size * SINGLE_LINE_SPACING_FACTOR;
   }
-  // 文書側から行間情報が全く取得できなかった場合: 従来の固定値(15pt)ではなく、
-  // Wordの単一行間隔によりまだ近いフォントサイズ比例の値にフォールバックする
-  return size * SINGLE_LINE_SPACING_FACTOR;
+  if (gridLinePitchPt && gridLinePitchPt > 0) {
+    return Math.ceil(natural / gridLinePitchPt) * gridLinePitchPt;
+  }
+  return natural;
 }
 
 /**
@@ -725,7 +742,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       // 本文の行間は文書既定の設定(structure.defaultSpacing)から計算する(§32-35)。
       // 見出しは既存どおりサイズ+6ptの固定比を維持する(見出しは通常文書全体の
       // ページ数へ与える影響が小さく、今回の不具合報告の主要因ではないため)。
-      const lineHeight = isHeading ? size + 6 : resolveLineHeight(structure.defaultSpacing, size);
+      const lineHeight = isHeading ? size + 6 : resolveLineHeight(structure.defaultSpacing, size, section?.docGridLinePitchPt ?? null);
       const effectiveRuns: TextRun[] = isHeading ? runs.map((r) => ({ ...r, bold: true })) : runs;
 
       const indent = block.list ? 16 + block.list.level * 16 : 0;
