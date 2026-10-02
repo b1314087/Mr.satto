@@ -62,6 +62,12 @@ export interface SheetPageSettings {
   columnWidthsPt: Map<number, number>;
   /** pt単位。key=0始まり行番号 */
   rowHeightsPt: Map<number, number>;
+  /**
+   * シートの既定の行の高さ(pt単位。sheetFormatPr@defaultRowHeight)。
+   * 明示的な高さ(row@ht)を持たない行はこの高さで描画される（Excel自体の
+   * 挙動）。取得できない場合はnull（呼び出し側は従来どおり内容量から見積もる）。
+   */
+  defaultRowHeightPt: number | null;
   /** 明示的な改ページの直前の行番号（0始まり。「この行の後で改ページ」の意味） */
   rowBreaksAfter: number[];
   colBreaksAfter: number[];
@@ -119,6 +125,7 @@ function emptySheetSettings(): SheetPageSettings {
     hiddenCols: new Set(),
     columnWidthsPt: new Map(),
     rowHeightsPt: new Map(),
+    defaultRowHeightPt: null,
     rowBreaksAfter: [],
     colBreaksAfter: [],
     cellBorders: new Map(),
@@ -512,6 +519,11 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[]): P
   // sheetPr/pageSetUpPr@fitToPage
   const pageSetUpPr = doc.getElementsByTagName("pageSetUpPr")[0];
   result.fitToPageEnabled = pageSetUpPr?.getAttribute("fitToPage") === "1";
+
+  // sheetFormatPr@defaultRowHeight（明示的なht指定の無い行の実際の高さ）
+  const sheetFormatPr = doc.getElementsByTagName("sheetFormatPr")[0];
+  const defaultRowHeightAttr = sheetFormatPr?.getAttribute("defaultRowHeight") ?? null;
+  result.defaultRowHeightPt = defaultRowHeightAttr !== null ? Number(defaultRowHeightAttr) : null;
 
   // pageSetup
   const pageSetup = doc.getElementsByTagName("pageSetup")[0];

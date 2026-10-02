@@ -416,7 +416,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       const cellPadding = 4;
       const lineHeight = fontSize + 3;
 
-      // 行の高さ: Excel実測値があれば使い、無ければラップ後の行数から見積もる
+      // 行の高さ: Excel実測値(row@ht)があれば使い、無ければシートの既定行高さ
+      // (sheetFormatPr@defaultRowHeight)を使う。既定行高さも取得できない場合、
+      // またはラップにより既定より多くの行数が必要な場合のみ、ラップ後の行数から
+      // 見積もる(Excelも、折り返しで既定の高さに収まらない場合は自動で広げるため、
+      // 既定値を下回ることはあっても「必要な行数分」を下回ることは無い)。
       const rowHeights = localToOriginalRow.map((origRow) => {
         const known = settings?.rowHeightsPt.get(origRow);
         if (known) return known;
@@ -425,6 +429,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           1,
           ...localToOriginalCol.map((origCol, i) => wrapByWidth(cellToDisplayString(row[origCol] ?? null), font, fontSize, colWidths[i] - cellPadding * 2).length)
         );
+        if (lineCount <= 1 && settings?.defaultRowHeightPt) return settings.defaultRowHeightPt;
         return lineCount * lineHeight + cellPadding * 2;
       });
 
