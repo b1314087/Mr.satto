@@ -480,6 +480,12 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       function boldFor(origRow: number, origCol: number): boolean {
         return settings?.cellBold.get(`${origRow}:${origCol}`) ?? false;
       }
+      function hAlignFor(origRow: number, origCol: number): "center" | "right" | null {
+        return settings?.cellHAlign.get(`${origRow}:${origCol}`) ?? null;
+      }
+      function vAlignFor(origRow: number, origCol: number): "center" | "bottom" | null {
+        return settings?.cellVAlign.get(`${origRow}:${origCol}`) ?? null;
+      }
 
       function drawCellFill(page: PDFPage, x: number, yTop: number, width: number, height: number, origRow: number, origCol: number) {
         const fill = fillFor(origRow, origCol);
@@ -515,12 +521,30 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           const explicitFontColor = fontColorFor(origRow, origCol);
           const cellColor = explicitFontColor ? rgb(...hexToRgb01(explicitFontColor)) : color;
           const cellBoldFlag = boldFor(origRow, origCol);
-          wrapped.slice(0, Math.max(1, Math.floor(rowH / (lineHeight * s)))).forEach((line, li) => {
+          const linesToDraw = wrapped.slice(0, Math.max(1, Math.floor(rowH / (lineHeight * s))));
+          // 垂直方向の配置(B-31/「Excel通りになってない」対応): Excel側で
+          // vertical="center"等が明示されている場合のみ、行の高さに対する
+          // テキストブロックの余白を上下に分配する。未指定時は既存どおり上詰め
+          // (offsetTop=0)のままとし、他の挙動に影響を与えない。
+          const textBlockHeight = linesToDraw.length * lineHeight * s;
+          const vAlign = vAlignFor(origRow, origCol);
+          const freeSpace = Math.max(0, rowH - textBlockHeight - cellPadding * 2 * s);
+          const offsetTop = vAlign === "center" ? freeSpace / 2 : vAlign === "bottom" ? freeSpace : 0;
+          const hAlign = hAlignFor(origRow, origCol);
+          linesToDraw.forEach((line, li) => {
+            const lineWidth = font.widthOfTextAtSize(line, fontSize * s);
+            const availableWidth = w - cellPadding * 2 * s;
+            const lineX =
+              hAlign === "center"
+                ? x + cellPadding * s + Math.max(0, (availableWidth - lineWidth) / 2)
+                : hAlign === "right"
+                  ? x + cellPadding * s + Math.max(0, availableWidth - lineWidth)
+                  : x + cellPadding * s;
             drawTextRobust(
               page,
               line,
-              x + cellPadding * s,
-              top - cellPadding * s - (li + 1) * lineHeight * s + 3 * s,
+              lineX,
+              top - cellPadding * s - offsetTop - (li + 1) * lineHeight * s + 3 * s,
               fontSize * s,
               cellColor,
               font,

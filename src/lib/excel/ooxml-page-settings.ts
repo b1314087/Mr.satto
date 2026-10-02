@@ -71,13 +71,20 @@ export interface SheetPageSettings {
    * セルの背景色・文字色・太字（開発指示書§29-31「Excelの色がPDFに反映されない」対応）。
    * 取得できる／実際に指定されている場合のみキーを持つ（既定色・塗りつぶしなしのセルは
    * 記録しない。cellBordersと同じ「差分だけを持つ」方針で、巨大シートでのMapサイズを
-   * 抑える）。値は"#RRGGBB"形式。indexed color・theme colorは今回のバージョンでは
-   * 対応しない（rgb属性で明示的に指定された色のみ。取得できなかった色は無理に
-   * 再現しない方針を踏襲）。
+   * 抑える）。値は"#RRGGBB"形式。rgb属性による明示指定に加え、theme属性(tint込み)の
+   * 色解決にも対応する(xl/theme/theme1.xmlのclrSchemeから解決。詳細はparseThemeColors
+   * 参照)。indexed color(indexedColors.xml相当の固定パレット)のみ今回は未対応。
    */
   cellFills: Map<string, string>;
   cellFontColors: Map<string, string>;
   cellBold: Map<string, boolean>;
+  /**
+   * セルの配置（開発指示書「Excel通りになってない」対応の一環）。明示的に
+   * horizontal/verticalが指定されているセルのみキーを持つ（"general"・"left"・
+   * "top"は既存の描画(左詰め・上詰め)と同じ結果になるため記録しない）。
+   */
+  cellHAlign: Map<string, "center" | "right">;
+  cellVAlign: Map<string, "center" | "bottom">;
   /**
    * ヘッダー/フッター(開発指示書B-9・B-10、Phase 22)。Excel側で設定されている
    * 場合のみ値を持つ(未設定ならnull)。oddHeader/oddFooter(既定のヘッダー/
@@ -118,6 +125,8 @@ function emptySheetSettings(): SheetPageSettings {
     cellFills: new Map(),
     cellFontColors: new Map(),
     cellBold: new Map(),
+    cellHAlign: new Map(),
+    cellVAlign: new Map(),
     header: null,
     footer: null,
   };
@@ -259,14 +268,14 @@ interface ResolvedCellStyle {
   fillRgb: string | null;
   fontRgb: string | null;
   bold: boolean;
+  /** <alignment horizontal="..."/>。"general"・未指定・"left"は既存の左詰め描画と同じ結果になるためnullのまま扱う */
+  hAlign: "center" | "right" | null;
+  /** <alignment vertical="..."/>。未指定・"top"は既存の上詰め描画と同じ結果になるためnullのまま扱う */
+  vAlign: "center" | "bottom" | null;
 }
 
 /**
  * OOXMLの色（ARGBの8桁16進、まれに6桁もそのまま許容）を"#RRGGBB"へ変換する。
- * indexed属性・theme属性による色指定（パレット番号・テーマカラー参照）は
- * 今回のバージョンでは解決しない（テーマのxml解析まで踏み込むと対応範囲が
- * 大きく広がるため、開発指示書の「無理に再現しない」方針に沿って明示的な
- * rgb属性を持つ色のみを対象とする）。
  */
 function argbToRgbHex(argb: string | null | undefined): string | null {
   if (!argb) return null;
@@ -276,10 +285,133 @@ function argbToRgbHex(argb: string | null | undefined): string | null {
   return null;
 }
 
-/** <color rgb="FFRRGGBB"/> のような要素から解決できる色（rgb属性のみ対応）を読む */
-function readColorEl(colorEl: Element | undefined): string | null {
+/**
+ * xl/theme/theme1.xml の <a:clrScheme> から、テーマカラー12色を読み取り、
+ * Excelが実際に使う theme属性のインデックス順（0=lt1,1=dk1,2=lt2,3=dk2,
+ * 4〜9=accent1〜6,10=hlink,11=folHlink）に並べ替えて返す。
+ *
+ * 注意：<a:clrScheme>要素そのものの子要素の並び順は dk1,lt1,dk2,lt2,accent1〜6,
+ * hlink,folHlink だが、セルの書式(styles.xml)が参照する theme="N" のインデックスは
+ * これとは異なり、1番目と2番目（dk1とlt1）・3番目と4番目（dk2とlt2）が入れ替わった
+ * 順序になる（ECMA-376では明記されているが見落としやすい、実装上よく知られた注意点）。
+ * ここを間違えると「文字色のtheme=1（本来は黒=dk1）」のような基本的な色まで
+ * 誤って解決してしまうため、Excelの実際の挙動に合わせた順序でマッピングする。
+ */
+function parseThemeColors(themeXmlText: string | null): string[] | null {
+  if (!themeXmlText) return null;
+  const doc = parseXml(themeXmlText);
+  if (!doc) return null;
+  const clrScheme = doc.getElementsByTagName("a:clrScheme")[0] ?? doc.getElementsByTagName("clrScheme")[0];
+  if (!clrScheme) return null;
+
+  const readOne = (tag: string): string | null => {
+    const el = Array.from(clrScheme.children).find((c) => c.tagName === tag || c.tagName === `a:${tag}`);
+    if (!el) return null;
+    const srgb = el.getElementsByTagName("a:srgbClr")[0] ?? el.getElementsByTagName("srgbClr")[0];
+    if (srgb) return argbToRgbHex(srgb.getAttribute("val"));
+    const sysClr = el.getElementsByTagName("a:sysClr")[0] ?? el.getElementsByTagName("sysClr")[0];
+    if (sysClr) return argbToRgbHex(sysClr.getAttribute("lastClr"));
+    return null;
+  };
+
+  const dk1 = readOne("dk1");
+  const lt1 = readOne("lt1");
+  const dk2 = readOne("dk2");
+  const lt2 = readOne("lt2");
+  const accents = [1, 2, 3, 4, 5, 6].map((n) => readOne(`accent${n}`));
+  const hlink = readOne("hlink");
+  const folHlink = readOne("folHlink");
+
+  // Excelのtheme属性インデックス順（dk1/lt1・dk2/lt2が入れ替わる点に注意）
+  return [lt1, dk1, lt2, dk2, ...accents, hlink, folHlink].map((c) => c ?? "#000000");
+}
+
+/**
+ * "#RRGGBB"をRGB(0-1)→HSLへ変換し、Lを調整してからRGBへ戻す（ECMA-376の
+ * テーマカラーtint適用アルゴリズム）。tint<0で暗く、tint>0で明るく（白に近づく
+ * 方向へ）補正する。単純にRGB各チャンネルへ同じ式を適用する簡易近似ではなく、
+ * 実際にExcelが行うHSLの明度(L)調整を再現する。
+ */
+function applyTint(hex: string, tint: number): string {
+  if (!tint) return hex;
+  const h = hex.replace(/^#/, "");
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let hDeg = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d !== 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        hDeg = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        hDeg = (b - r) / d + 2;
+        break;
+      default:
+        hDeg = (r - g) / d + 4;
+    }
+    hDeg /= 6;
+  }
+
+  const newL = tint < 0 ? l * (1 + tint) : l * (1 - tint) + tint;
+
+  const hue2rgb = (p: number, q: number, t: number): number => {
+    let tt = t;
+    if (tt < 0) tt += 1;
+    if (tt > 1) tt -= 1;
+    if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+    if (tt < 1 / 2) return q;
+    if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+    return p;
+  };
+
+  let nr: number;
+  let ng: number;
+  let nb: number;
+  if (s === 0) {
+    nr = ng = nb = newL;
+  } else {
+    const q = newL < 0.5 ? newL * (1 + s) : newL + s - newL * s;
+    const p = 2 * newL - q;
+    nr = hue2rgb(p, q, hDeg + 1 / 3);
+    ng = hue2rgb(p, q, hDeg);
+    nb = hue2rgb(p, q, hDeg - 1 / 3);
+  }
+
+  const toHex = (v: number) =>
+    Math.round(Math.min(1, Math.max(0, v)) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${toHex(nr)}${toHex(ng)}${toHex(nb)}`;
+}
+
+/**
+ * <color rgb="FFRRGGBB"/>（明示的な色）または
+ * <color theme="N" tint="..."/>（テーマカラー参照）から解決できる色を読む。
+ * indexed属性（パレット番号による色指定）は今回のバージョンでは解決しない
+ * （実用上の出現頻度が低く、固定パレットの再現まで踏み込むと対応範囲が
+ * 大きく広がるため、開発指示書の「無理に再現しない」方針を踏襲する）。
+ */
+function readColorEl(colorEl: Element | undefined, themeColors: string[] | null): string | null {
   if (!colorEl) return null;
-  return argbToRgbHex(colorEl.getAttribute("rgb"));
+  const explicit = argbToRgbHex(colorEl.getAttribute("rgb"));
+  if (explicit) return explicit;
+  const themeAttr = colorEl.getAttribute("theme");
+  if (themeAttr !== null && themeColors) {
+    const idx = Number(themeAttr);
+    const base = themeColors[idx];
+    if (!base) return null;
+    const tintAttr = colorEl.getAttribute("tint");
+    return tintAttr !== null ? applyTint(base, Number(tintAttr)) : base;
+  }
+  return null;
 }
 
 /**
@@ -287,7 +419,7 @@ function readColorEl(colorEl: Element | undefined): string | null {
  * style index(s、セル側のs属性の値＝cellXfs内でのxf要素の出現順) → 罫線有無・
  * 背景色・文字色・太字 の対応表を作る（開発指示書§21-26・§29-31）。
  */
-function parseCellStyles(stylesXmlText: string | null): ResolvedCellStyle[] {
+function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | null): ResolvedCellStyle[] {
   if (!stylesXmlText) return [];
   const doc = parseXml(stylesXmlText);
   if (!doc) return [];
@@ -321,7 +453,7 @@ function parseCellStyles(stylesXmlText: string | null): ResolvedCellStyle[] {
       const patternFill = fill.getElementsByTagName("patternFill")[0];
       const patternType = patternFill?.getAttribute("patternType");
       if (patternType === "solid") {
-        fillRgbs.push(readColorEl(patternFill?.getElementsByTagName("fgColor")[0]));
+        fillRgbs.push(readColorEl(patternFill?.getElementsByTagName("fgColor")[0], themeColors));
       } else {
         fillRgbs.push(null);
       }
@@ -333,7 +465,7 @@ function parseCellStyles(stylesXmlText: string | null): ResolvedCellStyle[] {
   const fontsEl = doc.getElementsByTagName("fonts")[0];
   if (fontsEl) {
     for (const fontEl of Array.from(fontsEl.getElementsByTagName("font"))) {
-      const rgb = readColorEl(fontEl.getElementsByTagName("color")[0]);
+      const rgb = readColorEl(fontEl.getElementsByTagName("color")[0], themeColors);
       const bold = fontEl.getElementsByTagName("b").length > 0;
       fontDefs.push({ rgb, bold });
     }
@@ -353,11 +485,18 @@ function parseCellStyles(stylesXmlText: string | null): ResolvedCellStyle[] {
       const applyFillExplicit = xf.getAttribute("applyFill");
       const fillRgb = applyFillExplicit === "0" ? null : (fillRgbs[fillId ? Number(fillId) : 0] ?? null);
       const fontDef = fontDefs[fontId ? Number(fontId) : 0];
+      const alignmentEl = xf.getElementsByTagName("alignment")[0];
+      const hAttr = alignmentEl?.getAttribute("horizontal") ?? null;
+      const vAttr = alignmentEl?.getAttribute("vertical") ?? null;
+      const hAlign: "center" | "right" | null = hAttr === "center" ? "center" : hAttr === "right" ? "right" : null;
+      const vAlign: "center" | "bottom" | null = vAttr === "center" ? "center" : vAttr === "bottom" ? "bottom" : null;
       result.push({
         border,
         fillRgb,
         fontRgb: fontDef?.rgb ?? null,
         bold: fontDef?.bold ?? false,
+        hAlign,
+        vAlign,
       });
     }
   }
@@ -427,6 +566,8 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[]): P
   const cellFills = new Map<string, string>();
   const cellFontColors = new Map<string, string>();
   const cellBold = new Map<string, boolean>();
+  const cellHAlign = new Map<string, "center" | "right">();
+  const cellVAlign = new Map<string, "center" | "bottom">();
 
   const colsEl = doc.getElementsByTagName("cols")[0];
   if (colsEl) {
@@ -468,6 +609,8 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[]): P
         if (style.fillRgb) cellFills.set(key, style.fillRgb);
         if (style.fontRgb) cellFontColors.set(key, style.fontRgb);
         if (style.bold) cellBold.set(key, true);
+        if (style.hAlign) cellHAlign.set(key, style.hAlign);
+        if (style.vAlign) cellVAlign.set(key, style.vAlign);
       }
     }
   }
@@ -480,6 +623,8 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[]): P
   result.cellFills = cellFills;
   result.cellFontColors = cellFontColors;
   result.cellBold = cellBold;
+  result.cellHAlign = cellHAlign;
+  result.cellVAlign = cellVAlign;
 
   // 明示的な改ページ（手動のみ。man="1"）
   const rowBreaksAfter: number[] = [];
@@ -525,12 +670,16 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const entries = unzipSync(bytes, {
-      filter: (info) => /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|styles\.xml|worksheets\/.*\.xml)$/.test(info.name),
+      filter: (info) =>
+        /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|styles\.xml|theme\/theme1\.xml|worksheets\/.*\.xml)$/.test(
+          info.name
+        ),
     });
 
     const workbookXmlText = await readEntryText(entries, "xl/workbook.xml");
     const relsXmlText = await readEntryText(entries, "xl/_rels/workbook.xml.rels");
     const stylesXmlText = await readEntryText(entries, "xl/styles.xml");
+    const themeXmlText = await readEntryText(entries, "xl/theme/theme1.xml");
     if (!workbookXmlText || !relsXmlText) return result;
 
     const workbookDoc = parseXml(workbookXmlText);
@@ -573,7 +722,8 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
       }
     }
 
-    const cellStyles = parseCellStyles(stylesXmlText);
+    const themeColors = parseThemeColors(themeXmlText);
+    const cellStyles = parseCellStyles(stylesXmlText, themeColors);
 
     for (let i = 0; i < sheetNamesInOrder.length; i++) {
       const name = sheetNamesInOrder[i];
