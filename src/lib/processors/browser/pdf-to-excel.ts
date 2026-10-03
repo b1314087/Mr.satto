@@ -2,6 +2,8 @@ import { BrowserProcessor } from "../types";
 import { loadPdfDocument, getPositionedTextItems, renderPageToCanvas, type PdfjsPage } from "@/lib/pdf/pdfjs-client";
 import {
   reconstructTable,
+  groupIntoLines,
+  computeColumnBreaksAcrossPages,
   tryParseNumberCell,
   tryParseDateCell,
   type ColumnSpanHint,
@@ -24,6 +26,16 @@ import type { Row as ExcelRow, Cell as ExcelCellValue } from "write-excel-file/u
  * 複雑な表・複数の独立した表が混在するPDFで100%正しく構造化できることは
  * 保証しない（開発指示書の「どんなPDFでも完全にExcel化できる、という
  * 表現は禁止」を踏まえ、UI側でも実用上の限界を案内する）。
+ *
+ * 複数ページにまたがる1つの表について: 以前は各ページが独立に
+ * reconstructTable(items)を呼んでおり、ページごとに個別に列区切りを
+ * 推定していたため、同じ表の続きのはずなのにページごとに列数・区切り
+ * 位置が食い違うことがあった。そこで、process()はまず全ページの
+ * 座標付きテキストとgroupIntoLinesによる行分割だけを先に集め
+ * （Pass 1）、computeColumnBreaksAcrossPagesで全ページの行をまとめて
+ * 列区切りを1回だけ推定し、その結果(sharedBreaks)を各ページの
+ * reconstructTableへ渡すことで（Pass 2）、全ページで一貫した列数・
+ * 区切り位置になるようにしている。
  *
  * 罫線・結合セル(§21-26)について: 以前のバージョンはテキストの位置だけから
  * 行・列を推定し、罫線情報も結合セルも一切出力していなかった（write-excel-file
@@ -266,6 +278,13 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
     let totalRowCount = 0;
     let anyTextFound = false;
 
+    // Pass 1: 全ページの座標付きテキストを先に集める。複数ページにまたがる
+    // 1つの表で、ページごとに列数・区切り位置がばらつかないようにするには
+    // 列区切りを全ページの行をまとめて1回だけ推定する必要がある
+    // (computeColumnBreaksAcrossPages)ため、ここでは各ページのテキスト取得・
+    // 進捗通知・文字有無の判定のみ行い、表への再構築(reconstructTable)は
+    // Pass 2 にまわす。
+    const pageData: { pageNumber: number; page: PdfjsPage; items: Awaited<ReturnType<typeof getPositionedTextItems>> }[] = [];
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages });
 
@@ -279,7 +298,18 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
       const items = await getPositionedTextItems(page);
       if (items.some((i) => i.str.trim() !== "")) anyTextFound = true;
 
-      const table = reconstructTable(items);
+      pageData.push({ pageNumber, page, items });
+    }
+
+    const linesByPage = pageData.map((p) => groupIntoLines(p.items));
+    const sharedBreaks = computeColumnBreaksAcrossPages(linesByPage);
+
+    // Pass 2: 全ページで共通の列区切り(sharedBreaks)を使って各ページの表を
+    // 再構築する。これにより、あるページでは記入が少なく単独では十分な
+    // 根拠が得られない列でも、他のページの内容と合わせて正しく列として
+    // 検出され、かつ全ページで同じ列数・区切り位置になる。
+    for (const { pageNumber, page, items } of pageData) {
+      const table = reconstructTable(items, sharedBreaks);
       if (table.rows.length === 0) {
         pages.push({ pageNumber, rowCount: 0, columnCount: 0 });
         continue;
