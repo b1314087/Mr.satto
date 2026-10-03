@@ -53,6 +53,18 @@ export interface BodyChildHint {
   tag: "p" | "tbl";
   /** その段落(w:p)が <w:pPr><w:pageBreakBefore/></w:pPr> を持つか */
   pageBreakBefore: boolean;
+  /**
+   * 段落に本物のぶら下げインデント(w:ind w:hanging/w:hangingChars > 0)が
+   * 設定されている場合、継続行(w:brによる改行後の行、および自然な折返しに
+   * よる2行目以降)に適用すべき左インデント量(pt単位。w:ind@w:leftから算出)。
+   * 無い場合はnull。
+   *
+   * 「・項目名<w:br/>説明文」のように1つの段落内で改行し、ぶら下げ
+   * インデントで2行目以降を字下げする書式（本文側のネイティブな
+   * リスト機能(w:numPr)を使わない書式）で、mammothがリストとして
+   * 認識せずインデント情報を読み捨ててしまうため、別途ここで取得する。
+   */
+  hangingIndentPt: number | null;
 }
 
 /**
@@ -152,6 +164,33 @@ function hasPageBreakBefore(pEl: Element): boolean {
   // w:val="0"/"false" の場合のみ無効。属性自体が無ければ有効(既定true)とみなす(OOXML仕様どおり)。
   const val = el.getAttribute("w:val");
   return val === null || !(val === "0" || val.toLowerCase() === "false");
+}
+
+/**
+ * 段落(w:p)のw:pPr/w:indから、本物のぶら下げインデント(w:hangingまたは
+ * w:hangingCharsが正の値)が設定されている場合の、継続行用の左インデント量
+ * (pt単位)を読み取る。w:leftが無い、またはw:hanging/hangingCharsが
+ * どちらも無い・0以下の場合はnull(通常の段落として扱う。既存の挙動を
+ * 変えない安全側のフォールバック)。
+ *
+ * w:leftChars(文字数単位)しか無い場合は、フォント幅に依存し正確な変換が
+ * 難しいため対象外とする(null)。実務上はw:left(twips)とw:hanging/
+ * hangingCharsが併記されるケースが大半のため、このスコープで十分カバーできる。
+ */
+function parseHangingIndentPt(pEl: Element): number | null {
+  const pPr = pEl.getElementsByTagName("w:pPr")[0];
+  const ind = pPr?.getElementsByTagName("w:ind")[0];
+  if (!ind) return null;
+  const hangingAttr = ind.getAttribute("w:hanging");
+  const hangingCharsAttr = ind.getAttribute("w:hangingChars");
+  const hasHanging =
+    (hangingAttr !== null && Number(hangingAttr) > 0) || (hangingCharsAttr !== null && Number(hangingCharsAttr) > 0);
+  if (!hasHanging) return null;
+  const leftAttr = ind.getAttribute("w:left") ?? ind.getAttribute("w:start");
+  if (leftAttr === null) return null;
+  const leftTwips = Number(leftAttr);
+  if (!Number.isFinite(leftTwips) || leftTwips <= 0) return null;
+  return twipsToPt(leftTwips);
 }
 
 const EMPTY_DEFAULT_SPACING: DefaultParagraphSpacing = {
@@ -262,13 +301,13 @@ export function parseWordDocumentStructure(arrayBuffer: ArrayBuffer): WordDocume
     for (const child of Array.from(body.children)) {
       const tag = child.tagName;
       if (tag === "w:p") {
-        bodyChildren.push({ tag: "p", pageBreakBefore: hasPageBreakBefore(child) });
+        bodyChildren.push({ tag: "p", pageBreakBefore: hasPageBreakBefore(child), hangingIndentPt: parseHangingIndentPt(child) });
         // 段落内に埋め込まれたw:sectPr(セクション区切り)があれば、そのセクションの設定を記録する
         const pPr = child.getElementsByTagName("w:pPr")[0];
         const embeddedSectPr = pPr?.getElementsByTagName("w:sectPr")[0];
         if (embeddedSectPr) sections.push(parseSectPr(embeddedSectPr));
       } else if (tag === "w:tbl") {
-        bodyChildren.push({ tag: "tbl", pageBreakBefore: false });
+        bodyChildren.push({ tag: "tbl", pageBreakBefore: false, hangingIndentPt: null });
       }
       // それ以外(bookmarkStart等)はmammoth側でも中間モデルへ現れないため、記録しない
       // （インデックスの対応関係を崩さないため、意図的に読み飛ばす）。

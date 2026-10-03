@@ -132,9 +132,22 @@ function resolveLineHeight(spacing: DefaultParagraphSpacing, size: number, gridL
  * 個々の段落単位のw:after上書きまでは追跡しないため(段落ごとのインデックス対応が
  * 難しいため。section-settings.tsのコメント参照)、文書既定(Normalスタイル)の値を
  * 全ての本文段落に適用する。取得できなければ従来の固定値(6pt)にフォールバックする。
+ *
+ * 【行グリッド(w:docGrid type="lines"/"linesAndChars")が有効な文書での例外】
+ * このグリッドが有効な日本語文書では、行の高さ自体がグリッドのピッチ(多くは
+ * 18pt前後)へ切り上げられる(resolveLineHeight参照)。このグリッドは本来、
+ * 段落間の目に見える間隔そのものを行間隔(=ピッチ)でまかなう設計であり、
+ * 明示的なw:afterが無い場合にまで追加で固定値(6pt)を上乗せすると、
+ * 「行の高さの底上げ」と「段落間隔の上乗せ」が二重に効いてしまい、実際の
+ * Wordより大幅にページが増えてしまう不具合が実測で確認された（2ページの
+ * 文書が3ページになる）。そのため、グリッドが有効かつw:afterの明示指定が
+ * 無い場合に限り、フォールバックを0ptとする(明示指定があれば従来どおり
+ * その値を優先する。グリッド無効の文書は従来の6ptのまま、挙動を変えない)。
  */
-function resolveParagraphGap(spacing: DefaultParagraphSpacing): number {
-  return spacing.afterPt ?? PARAGRAPH_GAP;
+function resolveParagraphGap(spacing: DefaultParagraphSpacing, gridLinePitchPt: number | null): number {
+  if (spacing.afterPt !== null) return spacing.afterPt;
+  if (gridLinePitchPt && gridLinePitchPt > 0) return 0;
+  return PARAGRAPH_GAP;
 }
 
 /** 未検証のDOCXを信頼しないための安全策（■18・■34）。妥当なDOCXは通常これより
@@ -159,6 +172,16 @@ const EMPTY_PARAGRAPH_MARKER = "MRSATTO_EMPTY_PARAGRAPH";
 
 const PAGE_BREAK_MARKER = "MRSATTO_PAGE_BREAK";
 
+/**
+ * ぶら下げインデント(w:ind w:hanging/hangingChars)を持つ段落の継続行に
+ * 適用すべき左インデント量(pt)を、mammothのHTML変換を経由して
+ * drawParagraphまで伝えるためのマーカー接頭辞・接尾辞（他のMRSATTO_*マーカーと
+ * 同様にPUA文字で囲み、段落の先頭にテキストとして埋め込んで、htmlToBlocks側で
+ * 検出・除去する）。
+ */
+const HANGING_INDENT_MARKER_PREFIX = "MRSATTO_HANGING_INDENT:";
+const HANGING_INDENT_MARKER_SUFFIX = "";
+
 // ---------------------------------------------------------------------------
 // 内部ドキュメントモデル
 // ---------------------------------------------------------------------------
@@ -179,6 +202,8 @@ interface ParagraphBlock {
   runs: TextRun[];
   heading: number; // 0 = 通常段落, 1-6 = 見出しレベル
   list?: ListMeta;
+  /** ぶら下げインデントの継続行用左インデント(pt)。HANGING_INDENT_MARKER_PREFIX参照 */
+  hangingIndentPt?: number | null;
 }
 interface TableBlock {
   kind: "table";
@@ -267,13 +292,21 @@ function injectPageBreakBeforeMarkers(documentNode: unknown, bodyHints: BodyChil
   let hintIndex = 0;
   const nextChildren: unknown[] = [];
   for (const child of obj.children) {
-    const isTopLevelContentNode =
-      child !== null && typeof child === "object" && ((child as Record<string, unknown>).type === "paragraph" || (child as Record<string, unknown>).type === "table");
+    const isParagraphNode = child !== null && typeof child === "object" && (child as Record<string, unknown>).type === "paragraph";
+    const isTopLevelContentNode = isParagraphNode || (child !== null && typeof child === "object" && (child as Record<string, unknown>).type === "table");
     if (isTopLevelContentNode) {
       const hint = bodyHints[hintIndex];
       hintIndex += 1;
       if (hint?.pageBreakBefore && nextChildren.length > 0) {
         nextChildren.push(makePageBreakMarkerParagraph());
+      }
+      // ぶら下げインデント(w:ind)を持つ段落には、継続行の左インデント量を
+      // 伝えるマーカーrunを段落の先頭へ追加する(htmlToBlocks側で検出・除去)。
+      if (isParagraphNode && hint?.hangingIndentPt != null) {
+        const pObj = child as Record<string, unknown>;
+        const existingChildren = Array.isArray(pObj.children) ? pObj.children : [];
+        nextChildren.push({ ...pObj, children: [makeHangingIndentMarkerRun(hint.hangingIndentPt), ...existingChildren] });
+        continue;
       }
     }
     nextChildren.push(child);
@@ -300,6 +333,29 @@ function makeEmptyParagraphMarkerRun(): Record<string, unknown> {
     fontSize: null,
     highlight: null,
     children: [{ type: "text", value: EMPTY_PARAGRAPH_MARKER }],
+  };
+}
+
+/**
+ * ぶら下げインデントマーカー用のrunノードを1つ生成する
+ * (makeEmptyParagraphMarkerRunと対の関数、HANGING_INDENT_MARKER_PREFIX参照)。
+ */
+function makeHangingIndentMarkerRun(indentPt: number): Record<string, unknown> {
+  return {
+    type: "run",
+    styleId: null,
+    styleName: null,
+    isBold: false,
+    isUnderline: false,
+    isItalic: false,
+    isStrikethrough: false,
+    isAllCaps: false,
+    isSmallCaps: false,
+    verticalAlignment: "baseline",
+    font: null,
+    fontSize: null,
+    highlight: null,
+    children: [{ type: "text", value: `${HANGING_INDENT_MARKER_PREFIX}${indentPt}${HANGING_INDENT_MARKER_SUFFIX}` }],
   };
 }
 
@@ -378,6 +434,29 @@ function isPageBreakParagraph(runs: TextRun[]): boolean {
 function isEmptyParagraphMarker(runs: TextRun[]): boolean {
   const joined = runs.map((r) => r.text).join("");
   return joined.trim() === EMPTY_PARAGRAPH_MARKER.trim() || joined.includes(EMPTY_PARAGRAPH_MARKER);
+}
+
+/**
+ * runs配列の先頭からHANGING_INDENT_MARKER_PREFIX/SUFFIXで囲まれたマーカーを
+ * 検出・除去し、埋め込まれていた継続行用インデント値(pt)を取り出す
+ * (injectPageBreakBeforeMarkers/makeHangingIndentMarkerRunと対の関数)。
+ * マーカーが無い場合はrunsをそのまま返しhangingIndentPt: nullとする。
+ */
+function extractHangingIndentMarker(runs: TextRun[]): { runs: TextRun[]; hangingIndentPt: number | null } {
+  const first = runs[0];
+  if (!first || !first.text.startsWith(HANGING_INDENT_MARKER_PREFIX)) {
+    return { runs, hangingIndentPt: null };
+  }
+  const withoutPrefix = first.text.slice(HANGING_INDENT_MARKER_PREFIX.length);
+  const suffixIndex = withoutPrefix.indexOf(HANGING_INDENT_MARKER_SUFFIX);
+  if (suffixIndex === -1) return { runs, hangingIndentPt: null };
+  const valueText = withoutPrefix.slice(0, suffixIndex);
+  const rest = withoutPrefix.slice(suffixIndex + HANGING_INDENT_MARKER_SUFFIX.length);
+  const value = Number(valueText);
+  if (!Number.isFinite(value)) return { runs, hangingIndentPt: null };
+  const newFirst: TextRun = { ...first, text: rest };
+  const newRuns = rest === "" ? runs.slice(1) : [newFirst, ...runs.slice(1)];
+  return { runs: newRuns, hangingIndentPt: value };
 }
 
 /** <table>を内部モデルのTableBlockへ変換する。colspan/rowspanによる視覚的な
@@ -462,14 +541,15 @@ function htmlToBlocks(html: string): { blocks: DocBlock[]; warnings: string[] } 
           }
         });
         if (!hasImage) {
-          if (isPageBreakParagraph(runs)) {
+          const { runs: strippedRuns, hangingIndentPt } = extractHangingIndentMarker(runs);
+          if (isPageBreakParagraph(strippedRuns)) {
             blocks.push({ kind: "pagebreak" });
-          } else if (isEmptyParagraphMarker(runs)) {
+          } else if (isEmptyParagraphMarker(strippedRuns)) {
             // 開発指示書C-2〜C-4: mammothが本来消してしまう空段落を、
             // markEmptyParagraphsで埋め込んだマーカーから実際の空段落(runs: [])へ戻す。
             blocks.push({ kind: "paragraph", runs: [], heading: 0 });
           } else {
-            blocks.push({ kind: "paragraph", runs, heading: 0 });
+            blocks.push({ kind: "paragraph", runs: strippedRuns, heading: 0, hangingIndentPt });
           }
         }
         return;
@@ -759,9 +839,17 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       // 狭く詰まって見える不具合があった。
       const lines = wrapFlatChars(chars, font, size, maxWidth);
 
+      // ぶら下げインデント(w:ind、block.hangingIndentPt)を持つ段落では、
+      // 1行目(lineIdx===0。<w:br/>で改行する前の先頭行)はindentのまま、
+      // 2行目以降(自然な折返し・<w:br/>による改行のどちらも含む全ての継続行)に
+      // だけその左インデントを適用する(Wordのぶら下げインデントの挙動どおり)。
+      // 「・項目名<w:br/>説明文」のように段落内改行で項目名+説明を1段落に
+      // まとめる書式で、mammothがリスト(block.list)として認識しないため
+      // 継続行のインデントが失われていた不具合への対応。
       lines.forEach((lineChars, lineIdx) => {
         ensureSpace(lineHeight);
-        let x = marginLeft + indent;
+        const lineIndent = lineIdx === 0 ? indent : (block.hangingIndentPt ?? indent);
+        let x = marginLeft + lineIndent;
         if (block.list && lineIdx === 0) {
           const prefix = block.list.ordered ? `${block.list.number ?? 1}. ` : "・";
           page.drawText(prefix, { x: marginLeft + block.list.level * 16, y: cursorY - size, size, font, color: rgb(0.12, 0.12, 0.14) });
@@ -773,7 +861,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         }
         cursorY -= lineHeight;
       });
-      cursorY -= isHeading ? 6 : resolveParagraphGap(structure.defaultSpacing);
+      cursorY -= isHeading ? 6 : resolveParagraphGap(structure.defaultSpacing, section?.docGridLinePitchPt ?? null);
     }
 
     function drawTable(block: TableBlock) {
