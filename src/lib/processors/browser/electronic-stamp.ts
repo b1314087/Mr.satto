@@ -156,7 +156,13 @@ function drawStampText(
   ctx.font = `bold ${fontPx}px ${CANVAS_FONT_FAMILY}`;
 
   columns.forEach((col, ci) => {
-    const colX = cx + offsetX - (colWidth * (colCount - 1)) / 2 + ci * colWidth;
+    // 縦書きの伝統的な読み順（右の列から左の列へ）に合わせるため、
+    // 分割後の最初の列（姓など、文字列の前半）を右側、後の列（名など、
+    // 後半）を左側に配置する。ci(配列のインデックス)をそのままx座標の
+    // 順序に使うと左→右になってしまい、2列の印影で姓と名の位置が
+    // 入れ替わって見える不具合があったため、表示上の列順を反転する。
+    const visualColIndex = colCount - 1 - ci;
+    const colX = cx + offsetX - (colWidth * (colCount - 1)) / 2 + visualColIndex * colWidth;
     const lineHeight = fontPx * 1.08;
     const totalH = col.length * lineHeight;
     col.forEach((ch, ri) => {
