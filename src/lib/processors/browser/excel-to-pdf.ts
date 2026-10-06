@@ -1,7 +1,12 @@
 import {
+  clip,
+  endPath,
   PDFDocument,
   type PDFFont,
   type PDFPage,
+  popGraphicsState,
+  pushGraphicsState,
+  rectangle,
   rgb,
   setLineWidth,
   setStrokingRgbColor,
@@ -12,7 +17,8 @@ import fontkit from "@pdf-lib/fontkit";
 import { BrowserProcessor } from "../types";
 import type { PdfProcessorOutput } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
-import { parseWorkbookPageSettings, type SheetPageSettings } from "@/lib/excel/ooxml-page-settings";
+import { parseWorkbookPageSettings, type CellRangeRef, type SheetPageSettings } from "@/lib/excel/ooxml-page-settings";
+import { formatExcelDate } from "@/lib/excel/excel-date-format";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
 
 /**
@@ -39,6 +45,16 @@ import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
  * 文字色・疑似ボールド(word-to-pdf.tsと同じFillAndOutlineによる近似。太字専用の
  * フォント資産が無いため)へ反映する。indexed color・theme colorによる色指定、
  * パターン塗りつぶし(縞模様等)は今回は対象外（明示的なrgb値を持つ色のみ対応）。
+ *
+ * 結合セル・配置・文字サイズ・日付の表示書式・行の標準の高さ（外出先PC修正指示書
+ * 「Excel→PDFがまだ綺麗に反映できていない」対応）: 以前のバージョンはこれらを
+ * 一切読み取らず、(1)結合セル(A1:J1等)の中央揃えタイトルが最初の1セル分の幅で
+ * 切れる、(2)全セル9ptの左上揃えで見出し(14pt・12pt)の大きさも中央/右揃えも
+ * 反映されない、(3)日付が「2026-09-25 09:00:00」のように日本時間でずれた形式に
+ * なる、(4)行に高さが保存されていない行がExcelの標準の高さより高く見積もられ、
+ * 表全体が縦に伸びてページ下端からはみ出す、という状態だった。
+ * ooxml-page-settings.tsが<mergeCells>・<alignment>・フォントのsz・numFmt・
+ * sheetFormatPr@defaultRowHeightを読み取り、ここでそれを描画へ反映する。
  */
 
 const PAPER_SIZES_PT: Record<string, { width: number; height: number }> = {
@@ -97,18 +113,12 @@ export async function readExcelSheets(file: File): Promise<RawExcelSheet[]> {
   return sheetsData.map((s) => ({ name: s.sheet, rows: s.data as RawCellValue[][] }));
 }
 
-function cellToDisplayString(value: RawCellValue): string {
+function cellToDisplayString(value: RawCellValue, dateFormatCode: string | null = null): string {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) {
-    const y = value.getFullYear();
-    const m = String(value.getMonth() + 1).padStart(2, "0");
-    const d = String(value.getDate()).padStart(2, "0");
-    const hh = value.getHours();
-    const mm = value.getMinutes();
-    const ss = value.getSeconds();
-    const datePart = `${y}-${m}-${d}`;
-    if (hh === 0 && mm === 0 && ss === 0) return datePart;
-    return `${datePart} ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    // read-excel-fileはExcelの日付をUTC基準のDateで返す。ローカル時刻(getHours等)で読むと
+    // 日本時間では9時間ずれて「09:00:00」が付いてしまうため、UTCで読み、Excelの表示書式で整形する。
+    return formatExcelDate(value, dateFormatCode);
   }
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
   // 文字列として保存されている「先頭ゼロ」等の値は、read-excel-fileが返した
@@ -356,10 +366,25 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
 
       // --- 1. 印刷範囲(B-5): Excel側で明示的に指定されていればその範囲だけを対象にする ---
       const totalColCount = Math.max(...sheet.rows.map((r) => r.length), 1);
+      // read-excel-fileは末尾の空行・空列(値が無いセル)を返さないが、罫線や背景色だけが設定された
+      // セルはExcelでは印刷される(例: 表の最終行の下罫線が、値の無い最後の行にだけ引かれている)。
+      // 印刷範囲が指定されている場合は、書式が設定されたセルの範囲までを描画対象に含める。
+      let styledLastRow = -1;
+      let styledLastCol = -1;
+      for (const map of [settings?.cellBorders, settings?.cellFills]) {
+        if (!map) continue;
+        for (const key of map.keys()) {
+          const [r, c] = key.split(":").map(Number);
+          if (r > styledLastRow) styledLastRow = r;
+          if (c > styledLastCol) styledLastCol = c;
+        }
+      }
+      const contentLastRow = Math.max(sheet.rows.length - 1, styledLastRow);
+      const contentLastCol = Math.max(totalColCount - 1, styledLastCol);
       const rangeStartRow = settings?.printArea ? Math.max(0, settings.printArea.startRow) : 0;
-      const rangeEndRow = settings?.printArea ? Math.min(sheet.rows.length - 1, settings.printArea.endRow) : sheet.rows.length - 1;
+      const rangeEndRow = settings?.printArea ? Math.min(contentLastRow, settings.printArea.endRow) : sheet.rows.length - 1;
       const rangeStartCol = settings?.printArea ? Math.max(0, settings.printArea.startCol) : 0;
-      const rangeEndCol = settings?.printArea ? Math.min(totalColCount - 1, settings.printArea.endCol) : totalColCount - 1;
+      const rangeEndCol = settings?.printArea ? Math.min(contentLastCol, settings.printArea.endCol) : totalColCount - 1;
       if (settings?.printArea) {
         warnings.push(`「${sheet.name}」はExcelの印刷範囲(${rangeStartRow + 1}〜${rangeEndRow + 1}行目)だけをPDF化しました`);
       }
@@ -412,25 +437,57 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
                 scalePercent: settings?.scalePercent ?? null,
               };
 
-      const fontSize = 9;
+      // 文字サイズ: セルごとの実際のサイズ(styles.xmlのfonts[]のsz)を使う。取得できなければ
+      // ブック既定フォントのサイズ、それも無ければ従来どおり9pt。
+      const fallbackFontSize = 9;
+      const defaultFontSize = settings?.defaultFontSizePt ?? fallbackFontSize;
       const cellPadding = 4;
-      const lineHeight = fontSize + 3;
+      const defaultRowPt = settings?.defaultRowHeightPt ?? null;
 
-      // 行の高さ: Excel実測値(row@ht)があれば使い、無ければシートの既定行高さ
-      // (sheetFormatPr@defaultRowHeight)を使う。既定行高さも取得できない場合、
-      // またはラップにより既定より多くの行数が必要な場合のみ、ラップ後の行数から
-      // 見積もる(Excelも、折り返しで既定の高さに収まらない場合は自動で広げるため、
-      // 既定値を下回ることはあっても「必要な行数分」を下回ることは無い)。
+      function fontSizeFor(origRow: number, origCol: number): number {
+        return settings?.cellFontSizePt.get(`${origRow}:${origCol}`) ?? defaultFontSize;
+      }
+      /** 1行ぶんの高さ。Excelの標準の行の高さ(defaultRowHeight)があれば文字サイズに比例させ、無ければ従来の「文字サイズ+3」 */
+      function lineHeightFor(fs: number): number {
+        return defaultRowPt ? (defaultRowPt * fs) / defaultFontSize : fs + 3;
+      }
+      function cellDisplayText(row: RawCellValue[], origRow: number, origCol: number): string {
+        return cellToDisplayString(row[origCol] ?? null, settings?.cellDateFormat.get(`${origRow}:${origCol}`) ?? null);
+      }
+
+      // --- 結合セル: アンカー(左上)セルの文字を結合範囲全体にまたがって描画する ---
+      const mergeByCell = new Map<string, { range: CellRangeRef; isAnchor: boolean }>();
+      for (const range of settings?.merges ?? []) {
+        // 極端に巨大な結合範囲(列全体・シート全体等)は、セルごとの索引を作るコストが
+        // 大きいため対象外とする(通常の帳票の結合セルは数十セル程度)。
+        if ((range.endRow - range.startRow + 1) * (range.endCol - range.startCol + 1) > 20000) continue;
+        for (let r = range.startRow; r <= range.endRow; r++) {
+          for (let c = range.startCol; c <= range.endCol; c++) {
+            mergeByCell.set(`${r}:${c}`, { range, isAnchor: r === range.startRow && c === range.startCol });
+          }
+        }
+      }
+
+      // 行の高さ: Excel実測値があれば使い、無ければラップ後の行数から見積もる。
+      // 結合セルの文字は、Excelでも行の自動の高さには影響しない(結合セルは自動調整の対象外)ため除外する。
       const rowHeights = localToOriginalRow.map((origRow) => {
         const known = settings?.rowHeightsPt.get(origRow);
         if (known) return known;
         const row = sheet.rows[origRow] ?? [];
-        const lineCount = Math.max(
-          1,
-          ...localToOriginalCol.map((origCol, i) => wrapByWidth(cellToDisplayString(row[origCol] ?? null), font, fontSize, colWidths[i] - cellPadding * 2).length)
-        );
-        if (lineCount <= 1 && settings?.defaultRowHeightPt) return settings.defaultRowHeightPt;
-        return lineCount * lineHeight + cellPadding * 2;
+        let needed = 0;
+        localToOriginalCol.forEach((origCol, i) => {
+          if (mergeByCell.has(`${origRow}:${origCol}`)) return;
+          const text = cellDisplayText(row, origRow, origCol);
+          if (text === "") return;
+          const fs = fontSizeFor(origRow, origCol);
+          const wrap = settings?.cellAlign.get(`${origRow}:${origCol}`)?.wrapText ?? false;
+          const lineCount = wrap ? wrapByWidth(text, font, fs, colWidths[i] - cellPadding * 2).length : 1;
+          needed = Math.max(needed, lineCount * lineHeightFor(fs));
+        });
+        // 標準の行の高さが取得できた場合はそれを下限にする(Excelは何も保存されていない行を標準の高さで描く)。
+        // 取得できない場合は従来の見積もり(行数×行の高さ+上下の余白)を維持する。
+        if (defaultRowPt) return Math.max(defaultRowPt, needed);
+        return Math.max(1, needed / lineHeightFor(defaultFontSize)) * lineHeightFor(defaultFontSize) + cellPadding * 2;
       });
 
       // 見出し行の繰り返し(repeatHeaderRow)は、印刷範囲の最初の行を毎ページの先頭に
@@ -485,12 +542,6 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       function boldFor(origRow: number, origCol: number): boolean {
         return settings?.cellBold.get(`${origRow}:${origCol}`) ?? false;
       }
-      function hAlignFor(origRow: number, origCol: number): "center" | "right" | null {
-        return settings?.cellHAlign.get(`${origRow}:${origCol}`) ?? null;
-      }
-      function vAlignFor(origRow: number, origCol: number): "center" | "bottom" | null {
-        return settings?.cellVAlign.get(`${origRow}:${origCol}`) ?? null;
-      }
 
       function drawCellFill(page: PDFPage, x: number, yTop: number, width: number, height: number, origRow: number, origCol: number) {
         const fill = fillFor(origRow, origCol);
@@ -510,52 +561,114 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         if (b.right) page.drawLine({ start: { x: x + width, y: yBottom }, end: { x: x + width, y: yTop }, thickness, color });
       }
 
-      function drawRow(page: PDFPage, localRowIdx: number, colGroup: number[], top: number, isHeader: boolean) {
+      /** テキスト行(1行ぶん)を、指定の横揃えで描く。textWidthは行の描画幅 */
+      function lineStartX(h: "left" | "center" | "right", boxX: number, boxW: number, textW: number, pad: number): number {
+        if (h === "center") return boxX + (boxW - textW) / 2;
+        if (h === "right") return boxX + boxW - pad - textW;
+        return boxX + pad;
+      }
+
+      /**
+       * rowGroupLocalIdxs: このページに描画する行(localToOriginalRow基準のローカル行番号)。
+       * 縦方向に結合されたセルの高さを、ページ内に実際に含まれる行だけで合計するために使う。
+       */
+      function drawRow(
+        page: PDFPage,
+        localRowIdx: number,
+        colGroup: number[],
+        top: number,
+        isHeader: boolean,
+        rowGroupLocalIdxs: number[],
+        startX: number
+      ) {
         const origRow = localToOriginalRow[localRowIdx];
         const row = sheet.rows[origRow] ?? [];
         const s = grid.scale;
         const rowH = rowHeights[localRowIdx] * s;
-        let x = marginLeft;
-        const color = isHeader ? rgb(...TEXT_COLOR) : rgb(...MUTED_COLOR);
-        colGroup.forEach((localColIdx) => {
+        const pad = cellPadding * s;
+        let x = startX;
+        // 既定の文字色: Excelの「自動」(黒)。以前は本文を薄いグレーで描いていた
+        void isHeader;
+        const color = rgb(...TEXT_COLOR);
+        colGroup.forEach((localColIdx, groupPos) => {
           const origCol = localToOriginalCol[localColIdx];
+          const key = `${origRow}:${origCol}`;
           const w = colWidths[localColIdx] * s;
           drawCellFill(page, x, top, w, rowH, origRow, origCol);
-          const text = cellToDisplayString(row[origCol] ?? null);
-          const wrapped = wrapByWidth(text, font, fontSize * s, w - cellPadding * 2 * s);
-          const explicitFontColor = fontColorFor(origRow, origCol);
-          const cellColor = explicitFontColor ? rgb(...hexToRgb01(explicitFontColor)) : color;
-          const cellBoldFlag = boldFor(origRow, origCol);
-          const linesToDraw = wrapped.slice(0, Math.max(1, Math.floor(rowH / (lineHeight * s))));
-          // 垂直方向の配置(B-31/「Excel通りになってない」対応): Excel側で
-          // vertical="center"等が明示されている場合のみ、行の高さに対する
-          // テキストブロックの余白を上下に分配する。未指定時は既存どおり上詰め
-          // (offsetTop=0)のままとし、他の挙動に影響を与えない。
-          const textBlockHeight = linesToDraw.length * lineHeight * s;
-          const vAlign = vAlignFor(origRow, origCol);
-          const freeSpace = Math.max(0, rowH - textBlockHeight - cellPadding * 2 * s);
-          const offsetTop = vAlign === "center" ? freeSpace / 2 : vAlign === "bottom" ? freeSpace : 0;
-          const hAlign = hAlignFor(origRow, origCol);
-          linesToDraw.forEach((line, li) => {
-            const lineWidth = font.widthOfTextAtSize(line, fontSize * s);
-            const availableWidth = w - cellPadding * 2 * s;
-            const lineX =
-              hAlign === "center"
-                ? x + cellPadding * s + Math.max(0, (availableWidth - lineWidth) / 2)
-                : hAlign === "right"
-                  ? x + cellPadding * s + Math.max(0, availableWidth - lineWidth)
-                  : x + cellPadding * s;
-            drawTextRobust(
-              page,
-              line,
-              lineX,
-              top - cellPadding * s - offsetTop - (li + 1) * lineHeight * s + 3 * s,
-              fontSize * s,
-              cellColor,
-              font,
-              cellBoldFlag
-            );
-          });
+
+          // 結合セル: アンカー以外は文字を描かない。アンカーは結合範囲(このページに含まれる分)全体を文字の領域にする。
+          const merge = mergeByCell.get(key);
+          let boxW = w;
+          let boxH = rowH;
+          let drawText = true;
+          if (merge) {
+            if (!merge.isAnchor) {
+              drawText = false;
+            } else {
+              boxW = colGroup.reduce((sum, lc) => {
+                const oc = localToOriginalCol[lc];
+                return oc >= merge.range.startCol && oc <= merge.range.endCol ? sum + colWidths[lc] * s : sum;
+              }, 0);
+              boxH = rowGroupLocalIdxs.reduce((sum, lr) => {
+                const orow = localToOriginalRow[lr];
+                return orow >= merge.range.startRow && orow <= merge.range.endRow ? sum + rowHeights[lr] * s : sum;
+              }, 0);
+            }
+          }
+
+          const text = drawText ? cellDisplayText(row, origRow, origCol) : "";
+          if (text !== "") {
+            const value = row[origCol] ?? null;
+            const align = settings?.cellAlign.get(key) ?? null;
+            const fs = fontSizeFor(origRow, origCol) * s;
+            const lh = lineHeightFor(fontSizeFor(origRow, origCol)) * s;
+            const wrap = align?.wrapText ?? false;
+            // 横揃えの既定(general): 文字は左、数値・日付は右(Excelと同じ)
+            const horizontal = align?.horizontal ?? (typeof value === "number" || value instanceof Date ? "right" : "left");
+            const vertical = align?.vertical ?? "bottom"; // Excelの既定の縦位置は「下揃え」
+
+            let lines: string[];
+            // 折り返さないセルで文字が描画領域に収まらないとき、文字は削らず全文を描き、はみ出し部分だけクリップで隠す
+            // (Excelの表示と同じ。文字そのものはPDFに残るので、検索・コピーでも欠けない)。
+            let clipWidth: number | null = null;
+            if (wrap) {
+              lines = wrapByWidth(text, font, fs, boxW - pad * 2);
+            } else {
+              // 折り返さないセルは1行で描く。左揃えの文字は、右隣の空セルへはみ出して表示される(Excelと同じ)。
+              let avail = boxW - pad * 2;
+              if (!merge && horizontal === "left") {
+                for (let gp = groupPos + 1; gp < colGroup.length; gp++) {
+                  const nextOrigCol = localToOriginalCol[colGroup[gp]];
+                  if (cellDisplayText(row, origRow, nextOrigCol) !== "" || mergeByCell.has(`${origRow}:${nextOrigCol}`)) break;
+                  avail += colWidths[colGroup[gp]] * s;
+                }
+              }
+              const oneLine = text.replace(/\r\n|\r|\n/g, " ");
+              lines = [oneLine];
+              if (font.widthOfTextAtSize(oneLine, fs) > avail) clipWidth = avail;
+            }
+
+            const fits = Math.max(1, Math.floor(boxH / lh));
+            const visible = lines.slice(0, fits);
+            const blockH = visible.length * lh;
+            let blockTop: number;
+            if (blockH >= boxH - pad || vertical === "top") blockTop = top - (vertical === "top" ? pad : 0);
+            else if (vertical === "center") blockTop = top - (boxH - blockH) / 2;
+            else blockTop = top - boxH + pad + blockH;
+
+            const explicitFontColor = fontColorFor(origRow, origCol);
+            const cellColor = explicitFontColor ? rgb(...hexToRgb01(explicitFontColor)) : color;
+            const cellBoldFlag = boldFor(origRow, origCol);
+            if (clipWidth !== null) {
+              page.pushOperators(pushGraphicsState(), rectangle(x, top - boxH, clipWidth, boxH), clip(), endPath());
+            }
+            visible.forEach((line, li) => {
+              const lineW = font.widthOfTextAtSize(line, fs);
+              const baseline = blockTop - li * lh - (lh - fs) / 2 - 0.88 * fs;
+              drawTextRobust(page, line, lineStartX(horizontal, x, boxW, lineW, pad), baseline, fs, cellColor, font, cellBoldFlag);
+            });
+            if (clipWidth !== null) page.pushOperators(popGraphicsState());
+          }
           drawCellBorders(page, x, top, w, rowH, origRow, origCol, s);
           x += w;
         });
@@ -618,11 +731,21 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
 
           // 見出し行(headerLocalRowIndex)はページ分割の計算から除外しているため、
           // repeatHeaderRow有効時は毎ページ無条件で先頭に描画する。
+          const rowsOnPage = headerLocalRowIndex >= 0 ? [headerLocalRowIndex, ...rowGroup] : rowGroup;
+
+          // 「ページ中央に配置」(printOptions)。表の幅・高さをページの印刷領域内で中央へ寄せる。
+          const tableWidthOnPage = colGroup.reduce((sum, lc) => sum + colWidths[lc] * grid.scale, 0);
+          const startX = settings?.horizontalCentered ? marginLeft + Math.max(0, (contentWidth - tableWidthOnPage) / 2) : marginLeft;
+          if (settings?.verticalCentered) {
+            const tableHeightOnPage = rowsOnPage.reduce((sum, lr) => sum + rowHeights[lr] * grid.scale, 0);
+            cursorY -= Math.max(0, (contentHeightForData - tableHeightOnPage) / 2);
+          }
+
           if (headerLocalRowIndex >= 0) {
-            cursorY = drawRow(page, headerLocalRowIndex, colGroup, cursorY, true);
+            cursorY = drawRow(page, headerLocalRowIndex, colGroup, cursorY, true, rowsOnPage, startX);
           }
           rowGroup.forEach((localRowIdx) => {
-            cursorY = drawRow(page, localRowIdx, colGroup, cursorY, false);
+            cursorY = drawRow(page, localRowIdx, colGroup, cursorY, false, rowsOnPage, startX);
           });
         });
       });

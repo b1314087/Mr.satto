@@ -85,13 +85,6 @@ export interface SheetPageSettings {
   cellFontColors: Map<string, string>;
   cellBold: Map<string, boolean>;
   /**
-   * セルの配置（開発指示書「Excel通りになってない」対応の一環）。明示的に
-   * horizontal/verticalが指定されているセルのみキーを持つ（"general"・"left"・
-   * "top"は既存の描画(左詰め・上詰め)と同じ結果になるため記録しない）。
-   */
-  cellHAlign: Map<string, "center" | "right">;
-  cellVAlign: Map<string, "center" | "bottom">;
-  /**
    * ヘッダー/フッター(開発指示書B-9・B-10、Phase 22)。Excel側で設定されている
    * 場合のみ値を持つ(未設定ならnull)。oddHeader/oddFooter(既定のヘッダー/
    * フッター)のみ対応し、ページ番号ごとに内容が変わるfirstHeader/evenHeader等
@@ -103,6 +96,34 @@ export interface SheetPageSettings {
    */
   header: HeaderFooterSections | null;
   footer: HeaderFooterSections | null;
+  /**
+   * 結合セル(<mergeCells>)。Excelで結合されたセルは、左上セル(アンカー)の値が
+   * 結合範囲全体にまたがって表示される。結合情報が無いと、アンカーの文字が
+   * 結合前の1セル分の幅に押し込められて途中で切れてしまう（例: A1:J1に結合された
+   * 中央揃えのタイトルが、A列の幅だけで切れて「＜」だけになる）。
+   */
+  merges: CellRangeRef[];
+  /** ブックの既定フォント(styles.xmlのfonts[0])のサイズ(pt)。セルごとのサイズが取れない場合の基準 */
+  defaultFontSizePt: number | null;
+  /** セルの配置(横・縦・折り返し)。style(xf)に<alignment>がある場合のみキーを持つ */
+  cellAlign: Map<string, CellAlign>;
+  /** セルの文字サイズ(pt)。fonts[]のsz。 */
+  cellFontSizePt: Map<string, number>;
+  /**
+   * 日付として表示するセルの書式コード(numFmtの定義。組み込みIDは対応する書式コードへ解決済み)。
+   * read-excel-fileは日付セルをDate型で返すが、「どう表示するか」(2026/9/25・2026年9月25日・
+   * 令和8年9月25日 等)の情報は持たないため、styles.xmlから読み取る。
+   */
+  cellDateFormat: Map<string, string>;
+  /** <printOptions horizontalCentered/verticalCentered>: ページ内で表を左右/上下の中央に配置する */
+  horizontalCentered: boolean;
+  verticalCentered: boolean;
+}
+
+export interface CellAlign {
+  horizontal: "left" | "center" | "right" | null;
+  vertical: "top" | "center" | "bottom" | null;
+  wrapText: boolean;
 }
 
 export interface HeaderFooterSections {
@@ -132,10 +153,15 @@ function emptySheetSettings(): SheetPageSettings {
     cellFills: new Map(),
     cellFontColors: new Map(),
     cellBold: new Map(),
-    cellHAlign: new Map(),
-    cellVAlign: new Map(),
     header: null,
     footer: null,
+    merges: [],
+    defaultFontSizePt: null,
+    cellAlign: new Map(),
+    cellFontSizePt: new Map(),
+    cellDateFormat: new Map(),
+    horizontalCentered: false,
+    verticalCentered: false,
   };
 }
 
@@ -327,10 +353,64 @@ interface ResolvedCellStyle {
   fillRgb: string | null;
   fontRgb: string | null;
   bold: boolean;
-  /** <alignment horizontal="..."/>。"general"・未指定・"left"は既存の左詰め描画と同じ結果になるためnullのまま扱う */
-  hAlign: "center" | "right" | null;
-  /** <alignment vertical="..."/>。未指定・"top"は既存の上詰め描画と同じ結果になるためnullのまま扱う */
-  vAlign: "center" | "bottom" | null;
+  /** fonts[]のsz(pt)。取得できなければnull */
+  fontSizePt: number | null;
+  /** <alignment>要素。無ければnull */
+  align: CellAlign | null;
+  /** 日付として解釈できる数値書式(numFmt)の書式コード。日付書式でなければnull */
+  dateFormatCode: string | null;
+}
+
+/** styles.xml全体から読み取った、セルスタイル一覧とブック既定フォントの情報 */
+interface ParsedStyles {
+  cellStyles: ResolvedCellStyle[];
+  defaultFontName: string | null;
+  defaultFontSizePt: number | null;
+}
+
+/**
+ * 組み込みの数値書式ID(ECMA-376)のうち日付・時刻にあたるものを、日本語環境のExcelでの
+ * 表示に合わせた書式コードへ解決する。ID 14(「mm-dd-yy」と記載されることが多い)は、
+ * 実際のExcelでは地域設定に従い日本語環境では「2026/9/25」と表示される。
+ */
+const BUILTIN_DATE_FORMATS: Record<number, string> = {
+  14: "yyyy/m/d",
+  15: "d-mmm-yy",
+  16: "d-mmm",
+  17: "mmm-yy",
+  18: "h:mm AM/PM",
+  19: "h:mm:ss AM/PM",
+  20: "h:mm",
+  21: "h:mm:ss",
+  22: "yyyy/m/d h:mm",
+  27: "[$-411]ge.m.d",
+  28: "[$-411]ggge\"年\"m\"月\"d\"日\"",
+  29: "[$-411]ggge\"年\"m\"月\"d\"日\"",
+  30: "m/d/yy",
+  31: "yyyy\"年\"m\"月\"d\"日\"",
+  32: "h\"時\"mm\"分\"",
+  33: "h\"時\"mm\"分\"ss\"秒\"",
+  34: "yyyy\"年\"m\"月\"",
+  35: "m\"月\"d\"日\"",
+  36: "[$-411]ge.m.d",
+  45: "mm:ss",
+  46: "[h]:mm:ss",
+  47: "mm:ss.0",
+  50: "[$-411]ge.m.d",
+  51: "[$-411]ggge\"年\"m\"月\"d\"日\"",
+  52: "yyyy\"年\"m\"月\"",
+  53: "m\"月\"d\"日\"",
+  54: "[$-411]ggge\"年\"m\"月\"d\"日\"",
+  55: "yyyy\"年\"m\"月\"",
+  56: "m\"月\"d\"日\"",
+  57: "[$-411]ge.m.d",
+  58: "[$-411]ggge\"年\"m\"月\"d\"日\"",
+};
+
+/** 書式コードが「日付・時刻の書式」か(引用符・[]内を除いてy/m/d/h/s/g/eの記号を含むか)を判定する */
+function isDateFormatCode(code: string): boolean {
+  const stripped = code.replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "").replace(/\\./g, "");
+  return /[ymdhsge]/i.test(stripped) && !/^(General|標準)$/i.test(stripped.trim());
 }
 
 /**
@@ -478,10 +558,22 @@ function readColorEl(colorEl: Element | undefined, themeColors: string[] | null)
  * style index(s、セル側のs属性の値＝cellXfs内でのxf要素の出現順) → 罫線有無・
  * 背景色・文字色・太字 の対応表を作る（開発指示書§21-26・§29-31）。
  */
-function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | null): ResolvedCellStyle[] {
-  if (!stylesXmlText) return [];
+function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | null): ParsedStyles {
+  const empty: ParsedStyles = { cellStyles: [], defaultFontName: null, defaultFontSizePt: null };
+  if (!stylesXmlText) return empty;
   const doc = parseXml(stylesXmlText);
-  if (!doc) return [];
+  if (!doc) return empty;
+
+  // <numFmts><numFmt numFmtId="164" formatCode="..."/>（ユーザー定義の数値書式）
+  const customNumFmts = new Map<number, string>();
+  const numFmtsEl = doc.getElementsByTagName("numFmts")[0];
+  if (numFmtsEl) {
+    for (const nf of Array.from(numFmtsEl.getElementsByTagName("numFmt"))) {
+      const id = nf.getAttribute("numFmtId");
+      const code = nf.getAttribute("formatCode");
+      if (id !== null && code !== null) customNumFmts.set(Number(id), code);
+    }
+  }
 
   const borderDefs: BorderDef[] = [];
   const bordersEl = doc.getElementsByTagName("borders")[0];
@@ -520,13 +612,16 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
   }
 
   // <fonts><font><color rgb="FFRRGGBB"/><b/>...
-  const fontDefs: { rgb: string | null; bold: boolean }[] = [];
+  const fontDefs: { rgb: string | null; bold: boolean; sizePt: number | null; name: string | null }[] = [];
   const fontsEl = doc.getElementsByTagName("fonts")[0];
   if (fontsEl) {
     for (const fontEl of Array.from(fontsEl.getElementsByTagName("font"))) {
       const rgb = readColorEl(fontEl.getElementsByTagName("color")[0], themeColors);
       const bold = fontEl.getElementsByTagName("b").length > 0;
-      fontDefs.push({ rgb, bold });
+      const szAttr = fontEl.getElementsByTagName("sz")[0]?.getAttribute("val");
+      const sizePt = szAttr ? Number(szAttr) : null;
+      const name = fontEl.getElementsByTagName("name")[0]?.getAttribute("val") ?? null;
+      fontDefs.push({ rgb, bold, sizePt: sizePt !== null && Number.isFinite(sizePt) && sizePt > 0 ? sizePt : null, name });
     }
   }
 
@@ -544,29 +639,58 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
       const applyFillExplicit = xf.getAttribute("applyFill");
       const fillRgb = applyFillExplicit === "0" ? null : (fillRgbs[fillId ? Number(fillId) : 0] ?? null);
       const fontDef = fontDefs[fontId ? Number(fontId) : 0];
-      const alignmentEl = xf.getElementsByTagName("alignment")[0];
-      const hAttr = alignmentEl?.getAttribute("horizontal") ?? null;
-      const vAttr = alignmentEl?.getAttribute("vertical") ?? null;
-      const hAlign: "center" | "right" | null = hAttr === "center" ? "center" : hAttr === "right" ? "right" : null;
-      const vAlign: "center" | "bottom" | null = vAttr === "center" ? "center" : vAttr === "bottom" ? "bottom" : null;
+
+      // 配置: <alignment horizontal="center" vertical="center" wrapText="1"/>
+      const alignEl = Array.from(xf.children).find((el) => el.tagName === "alignment");
+      let align: CellAlign | null = null;
+      if (alignEl) {
+        const h = alignEl.getAttribute("horizontal");
+        const v = alignEl.getAttribute("vertical");
+        const wrap = alignEl.getAttribute("wrapText");
+        align = {
+          // centerContinuous(選択範囲内で中央)は結合セルの中央揃えに近いためcenter扱いにする。
+          // fill/justify/distributed等は今回は再現せず、既定(null)として扱う。
+          horizontal:
+            h === "center" || h === "centerContinuous" ? "center" : h === "right" ? "right" : h === "left" ? "left" : null,
+          vertical: v === "center" ? "center" : v === "top" ? "top" : v === "bottom" ? "bottom" : null,
+          wrapText: wrap === "1" || wrap === "true",
+        };
+      }
+
+      // 数値書式が日付・時刻か
+      const numFmtIdAttr = xf.getAttribute("numFmtId");
+      let dateFormatCode: string | null = null;
+      if (numFmtIdAttr !== null) {
+        const numFmtId = Number(numFmtIdAttr);
+        const code = customNumFmts.get(numFmtId) ?? BUILTIN_DATE_FORMATS[numFmtId] ?? null;
+        if (code && isDateFormatCode(code)) dateFormatCode = code;
+      }
+
       result.push({
         border,
         fillRgb,
         fontRgb: fontDef?.rgb ?? null,
         bold: fontDef?.bold ?? false,
-        hAlign,
-        vAlign,
+        fontSizePt: fontDef?.sizePt ?? null,
+        align,
+        dateFormatCode,
       });
     }
   }
-  return result;
+  return {
+    cellStyles: result,
+    defaultFontName: fontDefs[0]?.name ?? null,
+    defaultFontSizePt: fontDefs[0]?.sizePt ?? null,
+  };
 }
 
 /** 1つのワークシートXML(sheetN.xml)から、そのシートの印刷関連情報を読み取る */
-function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[], mdw: number): Partial<SheetPageSettings> {
+function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: number): Partial<SheetPageSettings> {
   const doc = parseXml(sheetXmlText);
   if (!doc) return {};
   const result: Partial<SheetPageSettings> = {};
+  const { cellStyles } = parsedStyles;
+  result.defaultFontSizePt = parsedStyles.defaultFontSizePt;
 
   // sheetPr/pageSetUpPr@fitToPage
   const pageSetUpPr = doc.getElementsByTagName("pageSetUpPr")[0];
@@ -604,6 +728,11 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[], md
     result.scalePercent = scaleAttr !== null ? Number(scaleAttr) : null;
   }
 
+  // printOptions(ページ内での中央配置)
+  const printOptions = doc.getElementsByTagName("printOptions")[0];
+  result.horizontalCentered = printOptions?.getAttribute("horizontalCentered") === "1";
+  result.verticalCentered = printOptions?.getAttribute("verticalCentered") === "1";
+
   // pageMargins
   const pageMargins = doc.getElementsByTagName("pageMargins")[0];
   if (pageMargins) {
@@ -630,8 +759,9 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[], md
   const cellFills = new Map<string, string>();
   const cellFontColors = new Map<string, string>();
   const cellBold = new Map<string, boolean>();
-  const cellHAlign = new Map<string, "center" | "right">();
-  const cellVAlign = new Map<string, "center" | "bottom">();
+  const cellAlign = new Map<string, CellAlign>();
+  const cellFontSizePt = new Map<string, number>();
+  const cellDateFormat = new Map<string, string>();
 
   const colsEl = doc.getElementsByTagName("cols")[0];
   if (colsEl) {
@@ -673,8 +803,9 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[], md
         if (style.fillRgb) cellFills.set(key, style.fillRgb);
         if (style.fontRgb) cellFontColors.set(key, style.fontRgb);
         if (style.bold) cellBold.set(key, true);
-        if (style.hAlign) cellHAlign.set(key, style.hAlign);
-        if (style.vAlign) cellVAlign.set(key, style.vAlign);
+        if (style.align) cellAlign.set(key, style.align);
+        if (style.fontSizePt) cellFontSizePt.set(key, style.fontSizePt);
+        if (style.dateFormatCode) cellDateFormat.set(key, style.dateFormatCode);
       }
     }
   }
@@ -687,8 +818,18 @@ function parseSheetXml(sheetXmlText: string, cellStyles: ResolvedCellStyle[], md
   result.cellFills = cellFills;
   result.cellFontColors = cellFontColors;
   result.cellBold = cellBold;
-  result.cellHAlign = cellHAlign;
-  result.cellVAlign = cellVAlign;
+  result.cellAlign = cellAlign;
+  result.cellFontSizePt = cellFontSizePt;
+  result.cellDateFormat = cellDateFormat;
+
+  // 結合セル: <mergeCells><mergeCell ref="A1:J1"/>
+  const merges: CellRangeRef[] = [];
+  for (const mc of Array.from(doc.getElementsByTagName("mergeCell"))) {
+    const ref = mc.getAttribute("ref");
+    const range = ref ? parsePrintAreaRef(ref) : null;
+    if (range && (range.endRow > range.startRow || range.endCol > range.startCol)) merges.push(range);
+  }
+  result.merges = merges;
 
   // 明示的な改ページ（手動のみ。man="1"）
   const rowBreaksAfter: number[] = [];
@@ -787,7 +928,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
     }
 
     const themeColors = parseThemeColors(themeXmlText);
-    const cellStyles = parseCellStyles(stylesXmlText, themeColors);
+    const parsedStyles = parseCellStyles(stylesXmlText, themeColors);
     const mdw = resolveMaximumDigitWidth(stylesXmlText);
 
     for (let i = 0; i < sheetNamesInOrder.length; i++) {
@@ -797,7 +938,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
       const sheetXmlText = await readEntryText(entries, target);
       if (!sheetXmlText) continue;
 
-      const parsed = parseSheetXml(sheetXmlText, cellStyles, mdw);
+      const parsed = parseSheetXml(sheetXmlText, parsedStyles, mdw);
       const settings: SheetPageSettings = { ...emptySheetSettings(), ...parsed };
       settings.printArea = printAreaBySheetIndex.get(i) ?? null;
       result.set(name, settings);
