@@ -68,6 +68,7 @@ export default async function globalSetup() {
   generateWordToPdfFixtures();
   await generatePdfToExcelFixtures();
   await generatePdfToWordScannedFixture();
+  await generatePdfToExcelScannedFixtures();
   await generateLightweightToolsFixtures();
   await warmupRoutes();
 }
@@ -1178,6 +1179,63 @@ async function generatePdfToWordScannedFixture() {
     const embedded = await doc.embedPng(pngBytes);
     pdfPage.drawImage(embedded, { x: 0, y: 0, width: w, height: h });
     fs.writeFileSync(fixtures.pdfToWordScannedPdf, await doc.save());
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * pdf-to-excelのスキャンPDF(OCR)対応テスト用フィクスチャ生成。
+ *
+ * 文字レイヤーを持たない画像だけのPDFに、列の間隔を十分に空けた3行×2列の表
+ * (Name/Score, Alice 10, Bob 20)を大きく明瞭な英数字で描画する。OCRの認識精度自体
+ * ではなく「文字情報の無いページでOCR経路が動き、座標から行・列が組み立てられる」
+ * ことの検証が目的(pdfToWordScannedPdfと同じ方針)。
+ * あわせて、1ページ目がテキストレイヤー(既存の罫線ありフィクスチャ)・2ページ目が
+ * スキャン画像という「混在PDF」も作る(ページごとに処理方法が切り替わることの検証用)。
+ */
+async function generatePdfToExcelScannedFixtures() {
+  const w = 900;
+  const h = 500;
+  const browser = await chromium.launch(launchOptions);
+  try {
+    const page = await browser.newPage({ viewport: { width: w, height: h } });
+    await page.setContent(
+      `<html><body style="margin:0"><canvas id="c" width="${w}" height="${h}"></canvas>
+       <script>
+         const ctx = document.getElementById('c').getContext('2d');
+         ctx.fillStyle = '#ffffff';
+         ctx.fillRect(0, 0, ${w}, ${h});
+         ctx.fillStyle = '#000000';
+         ctx.font = 'bold 52px sans-serif';
+         ctx.textBaseline = 'alphabetic';
+         const rows = [['Name', 'Score'], ['Alice', '10'], ['Bob', '20']];
+         rows.forEach((r, i) => {
+           const y = 130 + i * 110;
+           ctx.fillText(r[0], 80, y);
+           ctx.fillText(r[1], 560, y);
+         });
+       </script></body></html>`
+    );
+    const dataUrl = await page.$eval("#c", (el) => (el as HTMLCanvasElement).toDataURL("image/png"));
+    const pngBytes = Buffer.from(dataUrl.split(",")[1], "base64");
+
+    const doc = await PDFDocument.create();
+    const pdfPage = doc.addPage([w, h]);
+    const embedded = await doc.embedPng(pngBytes);
+    pdfPage.drawImage(embedded, { x: 0, y: 0, width: w, height: h });
+    const scannedBytes = await doc.save();
+    fs.writeFileSync(fixtures.pdfToExcelScannedTablePdf, scannedBytes);
+
+    // 混在PDF: 1ページ目=テキストレイヤーの表、2ページ目=スキャン画像
+    const mixed = await PDFDocument.create();
+    const textDoc = await PDFDocument.load(fs.readFileSync(fixtures.pdfToExcelBorderedTablePdf));
+    const scannedDoc = await PDFDocument.load(scannedBytes);
+    const [textPage] = await mixed.copyPages(textDoc, [0]);
+    const [scanPage] = await mixed.copyPages(scannedDoc, [0]);
+    mixed.addPage(textPage);
+    mixed.addPage(scanPage);
+    fs.writeFileSync(fixtures.pdfToExcelMixedScannedPdf, await mixed.save());
   } finally {
     await browser.close();
   }

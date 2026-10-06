@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfToExcelProcessor, type PdfToExcelOutput } from "@/lib/processors/browser/pdf-to-excel";
+import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -16,6 +17,10 @@ import { downloadBlob, stripExtension } from "@/lib/utils/format";
  * 文字の座標情報から表の行・列構造を推定してExcelのセルへ配置する
  * （src/lib/pdf/table-reconstruction.ts）。複雑な結合セル・複数の独立した表が
  * 混在するレイアウトなどは、実際の構造どおりに再現できない場合がある。
+ *
+ * スキャンした画像のPDF（文字情報のないページ）は、ブラウザ内のOCR(tesseract.js)で
+ * 文字と座標を読み取ってから同じ表認識に渡す。OCRは誤読があり得るため、結果の
+ * ダウンロード前に「内容を確認してください」と案内する。
  */
 export function PdfToExcelTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -23,6 +28,13 @@ export function PdfToExcelTool() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfToExcelOutput | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
+
+  // OCR用のWorker(WASM)はセッション中使い回すため、画面を離れるときに解放する
+  useEffect(() => {
+    return () => {
+      void terminateOcrWorker();
+    };
+  }, []);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -42,7 +54,14 @@ export function PdfToExcelTool() {
       const output = await new PdfToExcelProcessor().process({
         file,
         onPageProgress: (info) => {
-          setProgressLabel(`ページを解析中 ${info.currentPage} / ${info.totalPages}`);
+          if (info.method === "ocr") {
+            const pct = Math.round((info.ocrProgress ?? 0) * 100);
+            setProgressLabel(
+              `スキャン画像を文字認識中(OCR) ${info.currentPage} / ${info.totalPages} ページ（${pct}%）。初回は認識データの読み込みに時間がかかります`
+            );
+          } else {
+            setProgressLabel(`ページを解析中 ${info.currentPage} / ${info.totalPages}`);
+          }
         },
       });
       setResult(output);
@@ -69,8 +88,13 @@ export function PdfToExcelTool() {
         </p>
         <p>
           罫線・結合セルの再現も試みますが（PDFの見た目を解析した推定によるもので、常に完全に正確とは限りません）、
-          複数の表が混在する複雑なレイアウトや、スキャンした画像のPDFでは、正しく変換できない場合があります。
+          複数の表が混在する複雑なレイアウトでは、正しく変換できない場合があります。
           どんなPDFでも完全にExcel化できるものではありません。
+        </p>
+        <p>
+          スキャンした画像のPDF（文字情報のないページ）は、ブラウザ内の文字認識(OCR・日本語と英数字)で読み取ります。
+          OCRは誤読が出ることがあるため、ダウンロード後は必ず内容を確認してください。スキャン画像は最大20ページまでで、
+          罫線は再現されません。画像が鮮明で、傾きや影が少ないほど正確になります。
         </p>
       </div>
 
@@ -110,6 +134,21 @@ export function PdfToExcelTool() {
             <span>検出行数: {result.totalRowCount}</span>
             <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
           </div>
+
+          {result.usedOcr && (
+            <div className="flex items-start gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+              <span>
+                スキャン画像のページ（
+                {result.pages
+                  .filter((p) => p.method === "ocr")
+                  .map((p) => p.pageNumber)
+                  .join(", ")}
+                ページ目）はOCRで読み取りました
+                {result.ocrAverageConfidence !== null && `（信頼度の目安 ${Math.round(result.ocrAverageConfidence)}%）`}
+                。誤読や列のずれがあり得るため、ダウンロード後に内容をご確認ください。
+              </span>
+            </div>
+          )}
 
           {result.pages.some((p) => p.rowCount === 0) && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">

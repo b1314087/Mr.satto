@@ -118,6 +118,8 @@ export const fixtures = {
   // 文字レイヤーを持たない画像のみのPDF（英数字のみ。日本語OCR精度の検証自体が
   // 目的ではなく、OCR経路が正しく動作することの確認が目的のため）。
   pdfToWordScannedPdf: path.join(GENERATED_DIR, "pdf-to-word-scanned.pdf"),
+  pdfToExcelScannedTablePdf: path.join(GENERATED_DIR, "pdf-to-excel-scanned-table.pdf"),
+  pdfToExcelMixedScannedPdf: path.join(GENERATED_DIR, "pdf-to-excel-mixed-scanned.pdf"),
 
   // 外出先PC修正指示書§32-35: word-to-pdfのページ溢れ(1ページのWordが2ページの
   // PDFになる)根本原因修正の回帰テスト用フィクスチャ。指示書が明示的に要求する

@@ -1,5 +1,12 @@
 import { BrowserProcessor } from "../types";
-import { loadPdfDocument, getPositionedTextItems, renderPageToCanvas, type PdfjsPage } from "@/lib/pdf/pdfjs-client";
+import {
+  loadPdfDocument,
+  getPositionedTextItems,
+  pageHasText,
+  renderPageToCanvas,
+  type PdfjsPage,
+} from "@/lib/pdf/pdfjs-client";
+import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import {
   reconstructTable,
   groupIntoLines,
@@ -23,6 +30,14 @@ import type { Row as ExcelRow, Cell as ExcelCellValue } from "write-excel-file/u
  *
  * 複数ページのPDFは、各ページの表を順番にSheet1へ連結する
  * （ページごとに空行を1行はさみ、区切りが分かるようにする）。
+ * スキャンした画像のPDF（文字情報を持たないページ）への対応: ページごとにテキスト
+ * レイヤーの有無を判定し、無いページだけをページ画像化してOCR(tesseract.js、ブラウザ内)
+ * で単語と座標を取得する。取得した座標は、文字情報のあるPDFと同じ決定的な表認識
+ * （table-reconstruction.ts）へそのまま渡す（AIによる推測は行わない）。PDF→Wordや
+ * 記入済みPDF→Excelで既に使っているOCR基盤(tesseract-client.ts)の共通ヘルパーを再利用している。
+ * OCRのページは座標系がPDFと異なる（画像のピクセル）ため、罫線検出(detectTableBorders)は
+ * 行わない（誤った位置の罫線を出力するより、罫線なしで出力する）。
+ *
  * 複雑な表・複数の独立した表が混在するPDFで100%正しく構造化できることは
  * 保証しない（開発指示書の「どんなPDFでも完全にExcel化できる、という
  * 表現は禁止」を踏まえ、UI側でも実用上の限界を案内する）。
@@ -54,6 +69,11 @@ import type { Row as ExcelRow, Cell as ExcelCellValue } from "write-excel-file/u
  */
 
 const MAX_PDF_TO_EXCEL_PAGES = 50;
+/** OCRを行うページ数の上限（OCR自体が重く、スマートフォンでのメモリ・処理時間を考慮。他のOCRツールと同じ値） */
+const MAX_OCR_PAGES = 20;
+/** OCR用にページを描画する倍率と、画像の最長辺の上限(px) */
+const OCR_RENDER_SCALE = 2;
+const MAX_OCR_DIMENSION = 2000;
 const PREVIEW_ROW_LIMIT = 20;
 /** 罫線検出用にページを描画する解像度。OCR用途ほどの高解像度は不要なため控えめにする */
 const BORDER_DETECTION_RENDER_SCALE = 1.5;
@@ -68,11 +88,23 @@ export interface PdfToExcelPageInfo {
   pageNumber: number;
   rowCount: number;
   columnCount: number;
+  /** 文字の取得方法。text-layer=PDF内の文字情報、ocr=画像をOCRで読み取り */
+  method: "text-layer" | "ocr";
+  /** OCRを行ったページのみ0〜100。テキストレイヤーのページはnull */
+  confidence: number | null;
 }
 
 export interface PdfToExcelInput {
   file: File;
-  onPageProgress?: (info: { currentPage: number; totalPages: number }) => void;
+  /** スキャンページのOCR言語。省略時は日本語+英数字 */
+  ocrLanguage?: OcrLanguageOption;
+  onPageProgress?: (info: {
+    currentPage: number;
+    totalPages: number;
+    method?: "text-layer" | "ocr";
+    /** OCR中のページ内進捗(0〜1) */
+    ocrProgress?: number;
+  }) => void;
 }
 
 export interface PdfToExcelOutput {
@@ -83,6 +115,10 @@ export interface PdfToExcelOutput {
   totalRowCount: number;
   /** 画面プレビュー用に先頭数行だけ保持する（全データを画面に保持しすぎないため） */
   previewRows: string[][];
+  /** 1ページでもOCRで読み取った場合はtrue（OCRは誤読があり得るため、UIで確認を促す） */
+  usedOcr: boolean;
+  /** OCRしたページの信頼度の平均(0〜100)。OCRしていなければnull */
+  ocrAverageConfidence: number | null;
 }
 
 /** 抽出したセルのテキストを、確信を持てる場合のみ数値・日付型に変換する */
@@ -257,7 +293,7 @@ function buildExcelRow(
 }
 
 export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfToExcelOutput> {
-  async process({ file, onPageProgress }: PdfToExcelInput): Promise<PdfToExcelOutput> {
+  async process({ file, ocrLanguage, onPageProgress }: PdfToExcelInput): Promise<PdfToExcelOutput> {
     if (file.size === 0) {
       throw new Error("空のファイルは処理できません。別のファイルを選択してください。");
     }
@@ -276,7 +312,8 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
     const pages: PdfToExcelPageInfo[] = [];
     const previewRows: string[][] = [];
     let totalRowCount = 0;
-    let anyTextFound = false;
+    const ocrConfidences: number[] = [];
+    const language = ocrLanguage ?? "ja+en";
 
     // Pass 1: 全ページの座標付きテキストを先に集める。複数ページにまたがる
     // 1つの表で、ページごとに列数・区切り位置がばらつかないようにするには
@@ -284,7 +321,13 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
     // (computeColumnBreaksAcrossPages)ため、ここでは各ページのテキスト取得・
     // 進捗通知・文字有無の判定のみ行い、表への再構築(reconstructTable)は
     // Pass 2 にまわす。
-    const pageData: { pageNumber: number; page: PdfjsPage; items: Awaited<ReturnType<typeof getPositionedTextItems>> }[] = [];
+    const pageData: {
+      pageNumber: number;
+      page: PdfjsPage;
+      items: Awaited<ReturnType<typeof getPositionedTextItems>>;
+      method: "text-layer" | "ocr";
+      confidence: number | null;
+    }[] = [];
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages });
 
@@ -295,23 +338,55 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
         throw new Error(`${pageNumber}ページ目の読み込みに失敗しました`);
       }
 
-      const items = await getPositionedTextItems(page);
-      if (items.some((i) => i.str.trim() !== "")) anyTextFound = true;
+      let items = await getPositionedTextItems(page);
+      let method: "text-layer" | "ocr" = "text-layer";
+      let confidence: number | null = null;
+      if (!pageHasText(items)) {
+        // 文字情報を持たないページ（スキャン画像等）は、ページを画像化してOCRで文字と座標を取得する。
+        // 全ページ分の画像を同時に保持せず、1ページずつ処理する。
+        if (ocrConfidences.length >= MAX_OCR_PAGES) {
+          throw new Error(
+            `スキャン画像(文字情報のないページ)のOCR変換は最大${MAX_OCR_PAGES}ページまでです。ページ数を減らしてから再度お試しください。`
+          );
+        }
+        method = "ocr";
+        onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method, ocrProgress: 0 });
+        let canvas: HTMLCanvasElement;
+        try {
+          canvas = (await renderPageToCanvas(page, OCR_RENDER_SCALE, MAX_OCR_DIMENSION)).canvas;
+        } catch {
+          throw new Error(`${pageNumber}ページ目の画像化に失敗しました`);
+        }
+        const result = await recognizeImageWithWords(canvas, language, (p) => {
+          onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method, ocrProgress: p.progress });
+        });
+        confidence = result.confidence;
+        ocrConfidences.push(result.confidence);
+        items = ocrWordsToPositionedTextItems(result.words);
+      }
 
-      pageData.push({ pageNumber, page, items });
+      pageData.push({ pageNumber, page, items, method, confidence });
     }
 
-    const linesByPage = pageData.map((p) => groupIntoLines(p.items));
-    const sharedBreaks = computeColumnBreaksAcrossPages(linesByPage);
+    // 列区切りの共有は、座標系が同じページ同士(文字情報のページ=PDFの座標、OCRのページ=画像のピクセル座標)
+    // でだけ行う。文字情報のあるページとスキャンのページが混在するPDFで、座標系の違うページの
+    // 位置を混ぜて推定しないため、方式ごとに別々に推定する。
+    const sharedBreaksByMethod = new Map<"text-layer" | "ocr", ReturnType<typeof computeColumnBreaksAcrossPages>>();
+    for (const m of ["text-layer", "ocr"] as const) {
+      const group = pageData.filter((p) => p.method === m);
+      if (group.length > 0) {
+        sharedBreaksByMethod.set(m, computeColumnBreaksAcrossPages(group.map((p) => groupIntoLines(p.items))));
+      }
+    }
 
     // Pass 2: 全ページで共通の列区切り(sharedBreaks)を使って各ページの表を
     // 再構築する。これにより、あるページでは記入が少なく単独では十分な
     // 根拠が得られない列でも、他のページの内容と合わせて正しく列として
     // 検出され、かつ全ページで同じ列数・区切り位置になる。
-    for (const { pageNumber, page, items } of pageData) {
-      const table = reconstructTable(items, sharedBreaks);
+    for (const { pageNumber, page, items, method, confidence } of pageData) {
+      const table = reconstructTable(items, sharedBreaksByMethod.get(method));
       if (table.rows.length === 0) {
-        pages.push({ pageNumber, rowCount: 0, columnCount: 0 });
+        pages.push({ pageNumber, rowCount: 0, columnCount: 0, method, confidence });
         continue;
       }
 
@@ -322,7 +397,8 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
 
       // 罫線検出(§21-26)は行数が2以上(=表らしい構造)のページに限って行う
       // (1行だけのページに罫線検出コストをかけても実益が薄いため)。
-      const borders = table.rows.length >= 2 ? await detectTableBorders(page, table.rowBoundariesY, table.colBoundariesX) : null;
+      // (OCRのページは座標系が画像のピクセルでPDFの座標と一致しないため、罫線検出は行わない)
+      const borders = table.rows.length >= 2 && method === "text-layer" ? await detectTableBorders(page, table.rowBoundariesY, table.colBoundariesX) : null;
 
       table.rows.forEach((row, rowIndex) => {
         const spansInRow = table.columnSpans.filter((s) => s.row === rowIndex);
@@ -330,17 +406,16 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
         if (previewRows.length < PREVIEW_ROW_LIMIT) previewRows.push(row);
       });
 
-      pages.push({ pageNumber, rowCount: table.rows.length, columnCount: table.columnCount });
+      pages.push({ pageNumber, rowCount: table.rows.length, columnCount: table.columnCount, method, confidence });
       totalRowCount += table.rows.length;
     }
 
-    if (!anyTextFound) {
-      throw new Error(
-        "このPDFから文字情報を抽出できませんでした。スキャンした画像のPDFの可能性があります（画像PDFの表認識は今回のバージョンでは未対応です。OCRツールでのテキスト化をお試しください）。"
-      );
-    }
     if (sheetRows.length === 0) {
-      throw new Error("表として認識できる内容が見つかりませんでした。");
+      throw new Error(
+        ocrConfidences.length > 0
+          ? "スキャン画像から表として認識できる文字を読み取れませんでした。画像が鮮明か、傾きや影が大きくないかをご確認ください。"
+          : "表として認識できる内容が見つかりませんでした。"
+      );
     }
 
     const { default: writeXlsxFile } = await import("write-excel-file/universal");
@@ -358,6 +433,9 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
       pages,
       totalRowCount,
       previewRows,
+      usedOcr: ocrConfidences.length > 0,
+      ocrAverageConfidence:
+        ocrConfidences.length > 0 ? ocrConfidences.reduce((a, b) => a + b, 0) / ocrConfidences.length : null,
     };
   }
 }
