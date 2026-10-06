@@ -11,12 +11,12 @@ import path from "node:path";
  * 「正しい形式のファイルが壊れずに生成される」ことを確認する範囲にとどめる。
  */
 
-test.describe("excel-label", () => {
-  test("既定値のままExcelラベルシートを作成してダウンロードできる", async ({ page }) => {
+test.describe("excel-label(ラベル作成)", () => {
+  test("既定値のままラベルシート(Word)を作成してダウンロードできる", async ({ page }) => {
     await page.goto("/tools/excel-label");
-    await page.getByRole("button", { name: "Excelを作成" }).click();
+    await page.getByRole("button", { name: "Wordを作成" }).click();
     await expect(page.getByText("ラベルシートを作成しました")).toBeVisible({ timeout: 15_000 });
-    const download = await clickAndDownload(page, /Excelファイルをダウンロード/);
+    const download = await clickAndDownload(page, /Wordファイルをダウンロード/);
     await assertDownloadedFile(download, { format: "zip", minBytes: 500 });
   });
 });

@@ -66,7 +66,8 @@ test.describe("Phase 21: Tool Registryとtool-content.tsの整合性", () => {
     // 出てこないが、featured:true としてホームページの「おすすめツール」から
     // 既にリンクされているため、内部リンク上は孤立していない既知の残存ケース。
     // これ以外のツールが新たに孤立した場合はこのテストが失敗する。
-    expect(orphans).toEqual(["pomodoro-timer"]);
+    // (学生向けカテゴリのツールが増えると pomodoro-timer も関連ツールとして選ばれ、孤立しなくなる)
+    expect(orphans.filter((id) => id !== "pomodoro-timer")).toEqual([]);
   });
 });
 

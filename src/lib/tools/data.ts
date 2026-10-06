@@ -1123,13 +1123,13 @@ export const tools: Tool[] = [
   {
     // 次工程・印刷帳票4ツール追加フェーズ
     id: "excel-label",
-    name: "Excelラベル作成",
-    category: "csv-excel",
-    description: "ラベルの幅・高さ・行数・列数・余白をmm指定し、同じ文字を並べたラベルシートをExcelで作成します",
+    name: "ラベル作成",
+    category: "word",
+    description: "ラベル用紙の寸法(mm)に合わせて、全ラベル同じ内容／ラベルごとに違う内容のラベルシートをWord・Excelで作成します",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["ラベル", "宛名ラベル", "シール", "印刷"],
+    keywords: ["ラベル", "宛名ラベル", "シール", "印刷", "Word", "Excel", "名簿", "ラベル用紙"],
   },
   {
     id: "envelope-address",
