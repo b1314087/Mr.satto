@@ -1,6 +1,5 @@
 import { BrowserProcessor } from "../types";
 import {
-  VIDEO_SIZE_LIMITS,
   VideoCanceledByUserError,
   getAvailableResolutionPresets,
   inspectOutputDimensions,
@@ -51,11 +50,6 @@ export class VideoResizeProcessor extends BrowserProcessor<VideoResizeInput, Vid
     onProgress,
     cancelSignal,
   }: VideoResizeInput): Promise<VideoResizeOutput> {
-    if (file.size > VIDEO_SIZE_LIMITS.resize * 1024 * 1024) {
-      throw new Error(
-        `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.resize}MB）。ファイルを確認してください。`
-      );
-    }
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
     }

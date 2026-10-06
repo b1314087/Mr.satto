@@ -1,13 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { QrCodeProcessor } from "@/lib/processors/browser/qrcode";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { SliderField } from "@/components/common/slider-field";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob, dataUrlToBlob } from "@/lib/utils/format";
+import {
+  DEFAULT_MARK_DATA_URL,
+  QR_LOGO_DEFAULT_PCT,
+  QR_LOGO_MAX_PCT,
+  QR_LOGO_MIN_PCT,
+  fileToMarkDataUrl,
+  type QrLogo,
+  type QrLogoPosition,
+} from "@/lib/qr/logo";
 import { useLiveQr } from "./shared/use-live-qr";
+
+type MarkKind = "default" | "custom" | "none";
 
 type Ecl = "L" | "M" | "Q" | "H";
 
@@ -49,9 +60,30 @@ export function QrGeneratorTool() {
   const [bg, setBg] = useState("#ffffff");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [markKind, setMarkKind] = useState<MarkKind>("default");
+  const [customMark, setCustomMark] = useState<string | null>(null);
+  const [markPosition, setMarkPosition] = useState<QrLogoPosition>("center");
+  const [markPct, setMarkPct] = useState(QR_LOGO_DEFAULT_PCT);
+
+  const markSrc = markKind === "default" ? DEFAULT_MARK_DATA_URL : markKind === "custom" ? customMark : null;
+  const logo: QrLogo | null = useMemo(
+    () => (markSrc ? { src: markSrc, position: markPosition, sizePct: markPct } : null),
+    [markSrc, markPosition, markPct]
+  );
+
+  async function handleMarkFile(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    try {
+      setCustomMark(await fileToMarkDataUrl(file));
+      setMarkKind("custom");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "画像を読み込めませんでした");
+    }
+  }
 
   // 入力・設定を変えるたびにその場で再生成する（ボタンを押さなくても見える）
-  const options = { size, errorCorrectionLevel: ecl, darkColor: fg, lightColor: bg };
+  const options = { size, errorCorrectionLevel: ecl, darkColor: fg, lightColor: bg, logo };
   const live = useLiveQr(text, options);
 
   async function handleGenerate() {
@@ -107,9 +139,10 @@ export function QrGeneratorTool() {
         <label className="flex flex-col gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200">
           誤り訂正レベル
           <select
-            value={ecl}
+            value={logo ? "H" : ecl}
+            disabled={!!logo}
             onChange={(e) => setEcl(e.target.value as Ecl)}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-normal dark:border-neutral-700 dark:bg-neutral-900"
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-normal disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900"
           >
             {ECL_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
@@ -128,6 +161,94 @@ export function QrGeneratorTool() {
         </label>
       </div>
       {warning && <p className="text-xs text-amber-600 dark:text-amber-400">{warning}</p>}
+
+      <section className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">QRコードのマーク（ロゴ）</p>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="マークの種類">
+          {(
+            [
+              { value: "default", label: "Mr.Sattoのアイコン" },
+              { value: "custom", label: "自分の画像" },
+              { value: "none", label: "マークなし" },
+            ] as { value: MarkKind; label: string }[]
+          ).map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={markKind === o.value}
+              onClick={() => setMarkKind(o.value)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                markKind === o.value
+                  ? "bg-blue-600 text-white"
+                  : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+
+        {markKind === "custom" && (
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="text-neutral-600 dark:text-neutral-300">マークにする画像（PNG・JPEG・SVGなど）</span>
+            <input
+              type="file"
+              accept="image/*"
+              aria-label="マークにする画像"
+              onChange={(e) => {
+                void handleMarkFile(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+              className="text-sm"
+            />
+            {!customMark && (
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">画像を選ぶとQRコードに表示されます。</span>
+            )}
+          </label>
+        )}
+
+        {markKind !== "none" && (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5" role="group" aria-label="マークの位置">
+              <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">マークの位置</p>
+              <div className="flex gap-2">
+                {(
+                  [
+                    { value: "center", label: "真ん中" },
+                    { value: "bottomRight", label: "右下" },
+                  ] as { value: QrLogoPosition; label: string }[]
+                ).map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    aria-pressed={markPosition === o.value}
+                    onClick={() => setMarkPosition(o.value)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                      markPosition === o.value
+                        ? "bg-blue-600 text-white"
+                        : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <SliderField
+              label="マークの大きさ"
+              value={markPct}
+              min={QR_LOGO_MIN_PCT}
+              max={QR_LOGO_MAX_PCT}
+              unit="%"
+              hint="QRコードの一辺に対する割合です。大きいほど読み取りにくくなります。"
+              onChange={setMarkPct}
+            />
+          </div>
+        )}
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          マークを付けると、読み取れるように誤り訂正レベルが自動で「H（最高）」になります。印刷や配布の前に、スマートフォンで読み取れることを必ず確認してください。
+        </p>
+      </section>
 
       <button
         type="button"
@@ -156,7 +277,7 @@ export function QrGeneratorTool() {
               style={{ backgroundColor: bg }}
             />
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              出力サイズ: {size}×{size}px ／ 誤り訂正: {ecl}
+              出力サイズ: {size}×{size}px ／ 誤り訂正: {logo ? "H（マーク付きのため自動）" : ecl}
             </p>
             <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" disabled={!live.fresh} />
           </>

@@ -74,42 +74,48 @@ export const OUTPUT_CONTAINER_OPTIONS: { value: OutputContainer; label: string; 
 ];
 
 /**
- * 動画は画像よりはるかに重いため、ツールごとに実測に基づいた上限を設ける
- * （開発指示書 28-29章）。
+ * 動画の読み込みサイズに上限は設けない(読み込みを止めない)。
  *
- * 実測（Phase 10テスト。GPUアクセラレーションのないサンドボックス環境の
- * ヘッドレスChromium、1280x720/30fpsの高複雑度な合成テスト映像で計測）：
- * 約48MB（再生時間180秒）の変換・圧縮は約71秒で完走。一方、約238MB
- * （再生時間900秒）は10分以内に完走を確認できなかった（ハングしたのか、
- * 単に非常に時間がかかっているのかは切り分けられていない）。
+ * 動画はブラウザのメモリ上で処理し、出力もメモリ上(BufferTarget)に保持するため、とても大きいファイルは
+ * 時間がかかったり、メモリ不足で失敗したりすることがある。そのため上限で止める代わりに、
+ * 一定サイズ以上のときは警告だけを表示し、ユーザーの判断で続行できるようにする。
  *
- * この結果は「ソフトウェアのみ・GPU不使用・かつ最も圧縮しにくい合成映像」
- * という悪条件下の実測であり、実際のユーザーのブラウザ（多くはハードウェア
- * アクセラレーションが効く）や、より圧縮しやすい実写コンテンツでは
- * これより大幅に高速になる可能性が高い。ただし本サンドボックスでは
- * 実機（ハードウェアアクセラレーション有効なブラウザ）での再測定ができない
- * ため、「実測で確実に速く完走する」と言い切れる範囲を上限の目安とし、
- * 実測できなかった250MB/500MB相当の値をそのまま採用することは避けた
- * （最終報告に詳細を記載。開発指示書「それ以上は環境依存が大きいので
- * 無理をしない」に対応）。
- *
- * - 変換系（形式変換・圧縮・解像度変更・フレームレート変更・H.264変換）は
- *   デコード→エンコードの全パイプラインを完走させる必要があり、出力も
- *   BufferTarget（メモリ上のArrayBuffer）に保持するため、重い方の上限とする。
- * - サムネイル抽出は指定した1時点のフレームをシークして取り出すだけで、
- *   動画全体をデコード・再エンコードしないため、より大きなファイルでも扱える
- *   （ただし際限なく大きくできるわけではないため、変換系よりは高いが
- *   無制限ではない値とする）。
+ * 目安の根拠(Phase 10の実測。GPUのないヘッドレスChromiumで、圧縮しにくい合成映像による悪条件):
+ * 約48MBの変換・圧縮は約71秒で完走、約238MBは10分以内に完走を確認できなかった。
+ * 実際のブラウザ(ハードウェア支援あり)ではこれより速いことが多いが、環境による差が大きい。
  */
-export const VIDEO_SIZE_LIMITS = {
-  convert: 150,
-  compress: 150,
-  resize: 150,
-  frameRate: 150,
-  h264: 150,
-  thumbnail: 300,
-  metadataRemove: 150,
-} as const satisfies Record<string, number>;
+export const VIDEO_SIZE_WARN_MB = 300;
+/** この大きさを超えると、メモリ不足で失敗する可能性が特に高い(ブラウザが1ファイルに確保できるメモリの目安) */
+export const VIDEO_SIZE_STRONG_WARN_MB = 1500;
+
+/** FileDropzoneに渡す、読み込みサイズの上限(上限なし) */
+export const VIDEO_DROPZONE_MAX_MB = Number.POSITIVE_INFINITY;
+
+/** サイズが大きい動画に表示する警告文。警告が不要なサイズならnull */
+export function videoSizeWarning(sizeBytes: number): string | null {
+  const mb = sizeBytes / (1024 * 1024);
+  if (mb >= VIDEO_SIZE_STRONG_WARN_MB) {
+    return `ファイルがとても大きい（約${(mb / 1024).toFixed(1)}GB）ため、処理に非常に長い時間がかかったり、ブラウザのメモリ不足で失敗したりする可能性が高いです。このまま続行することもできます。うまくいかない場合は、動画を分割してからお試しください。`;
+  }
+  if (mb >= VIDEO_SIZE_WARN_MB) {
+    return `ファイルが大きい（約${Math.round(mb)}MB）ため、処理に時間がかかったり、お使いの端末やブラウザによってはメモリ不足で失敗したりする場合があります。このまま続行できます。`;
+  }
+  return null;
+}
+
+/** メモリ不足など、大きいファイルで起きやすい失敗を、分かりやすい日本語のエラーにする */
+export function toFriendlyVideoError(e: unknown): Error {
+  const message = e instanceof Error ? e.message : String(e);
+  if (
+    (e instanceof RangeError && /allocation|array buffer|invalid (typed )?array length/i.test(message)) ||
+    /out of memory|allocation failed|QuotaExceeded/i.test(message)
+  ) {
+    return new Error(
+      "メモリが足りず、処理を完了できませんでした。ファイルが大きすぎる可能性があります。他のタブやアプリを閉じて再度お試しいただくか、動画を短く分割してからお試しください。"
+    );
+  }
+  return e instanceof Error ? e : new Error(message);
+}
 
 export function outputFormatFor(container: OutputContainer) {
   return container === "mp4" ? new Mp4OutputFormat() : new WebMOutputFormat();
@@ -133,9 +139,33 @@ export function createVideoInput(file: File): Input {
   });
 }
 
+/** 映像コーデックの表示名(ユーザー向け) */
+export function videoCodecLabel(codec: string | null | undefined): string {
+  switch (codec) {
+    case "avc":
+      return "H.264（AVC）";
+    case "hevc":
+      return "H.265（HEVC）";
+    case "vp8":
+      return "VP8";
+    case "vp9":
+      return "VP9";
+    case "av1":
+      return "AV1";
+    default:
+      return codec ? codec.toUpperCase() : "不明";
+  }
+}
+
+/** H.265(HEVC)をこのブラウザで読み込めないときの案内 */
+export const HEVC_UNSUPPORTED_MESSAGE =
+  "この動画はH.265（HEVC）形式ですが、お使いのブラウザでは読み込めません。H.265の読み込みには、Safari、またはH.265に対応したパソコン・スマートフォンの最新のChrome・Edgeが必要です（Firefoxは非対応）。対応ブラウザでお試しください。";
+
 export interface VideoInputInfo {
   input: Input;
   videoTrack: InputVideoTrack;
+  /** 映像コーデック("avc" / "hevc" / "vp9" など) */
+  codec: string | null;
   displayWidth: number;
   displayHeight: number;
   durationSec: number;
@@ -176,11 +206,14 @@ export async function inspectVideoFile(file: File): Promise<VideoInputInfo> {
     throw new Error("この動画ファイルには映像トラックが含まれていません。");
   }
 
+  const codec = await videoTrack.getCodec().catch(() => null);
   const canDecode = await videoTrack.canDecode().catch(() => false);
   if (!canDecode) {
     input.dispose();
     throw new Error(
-      "この動画のコーデックはお使いのブラウザでデコードできません。別の形式のファイルをお試しください。"
+      codec === "hevc"
+        ? HEVC_UNSUPPORTED_MESSAGE
+        : `この動画のコーデック（${videoCodecLabel(codec)}）はお使いのブラウザでデコードできません。別の形式のファイルをお試しください。`
     );
   }
 
@@ -195,12 +228,41 @@ export async function inspectVideoFile(file: File): Promise<VideoInputInfo> {
   return {
     input,
     videoTrack,
+    codec,
     displayWidth,
     displayHeight,
     durationSec,
     bestGuessFrameRate: frameRateMetrics?.bestGuessFrameRate ?? 30,
     hasAudio: audioTrack !== null,
   };
+}
+
+export interface VideoCodecProbe {
+  codec: string | null;
+  /** このブラウザで映像をデコード(読み込み)できるか */
+  canDecode: boolean;
+}
+
+/**
+ * ファイルを選んだ直後に、映像コーデックと、このブラウザで読み込めるかだけを軽く調べる(変換はしない)。
+ * 読み取れないファイルは null。
+ */
+export async function probeVideoCodec(file: File): Promise<VideoCodecProbe | null> {
+  const input = createVideoInput(file);
+  try {
+    if (!(await input.canRead())) return null;
+    const track = await input.getPrimaryVideoTrack();
+    if (!track) return null;
+    const [codec, canDecode] = await Promise.all([
+      track.getCodec().catch(() => null),
+      track.canDecode().catch(() => false),
+    ]);
+    return { codec, canDecode };
+  } catch {
+    return null;
+  } finally {
+    input.dispose();
+  }
 }
 
 /**
@@ -245,6 +307,13 @@ export const COMPRESSION_LEVEL_OPTIONS: {
     quality: "low",
   },
 ];
+
+/** 画質の指定("high"=高画質 / "medium"=標準 / "low"=ファイルサイズ優先) */
+export type VideoQualityName = "high" | "medium" | "low";
+
+export function qualityFromName(name: VideoQualityName): Quality {
+  return new Quality(name);
+}
 
 export function qualityFor(level: CompressionLevel): Quality {
   const opt = COMPRESSION_LEVEL_OPTIONS.find((o) => o.value === level);
@@ -458,7 +527,7 @@ export async function runConversion({
     if (canceledByUser) {
       throw new VideoCanceledByUserError();
     }
-    throw e;
+    throw toFriendlyVideoError(e);
   } finally {
     cancelSignal?.removeEventListener("abort", onAbort);
   }

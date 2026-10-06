@@ -1,6 +1,5 @@
 import { BrowserProcessor } from "../types";
 import {
-  VIDEO_SIZE_LIMITS,
   VideoCanceledByUserError,
   getAvailableFrameRates,
   inspectVideoFile,
@@ -45,11 +44,6 @@ export class VideoFrameRateProcessor extends BrowserProcessor<VideoFrameRateInpu
     onProgress,
     cancelSignal,
   }: VideoFrameRateInput): Promise<VideoFrameRateOutput> {
-    if (file.size > VIDEO_SIZE_LIMITS.frameRate * 1024 * 1024) {
-      throw new Error(
-        `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.frameRate}MB）。ファイルを確認してください。`
-      );
-    }
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
     }

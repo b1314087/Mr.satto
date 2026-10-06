@@ -1,6 +1,5 @@
 import { BrowserProcessor } from "../types";
 import {
-  VIDEO_SIZE_LIMITS,
   VideoCanceledByUserError,
   inspectVideoFile,
   runConversion,
@@ -42,11 +41,6 @@ export class VideoConvertProcessor extends BrowserProcessor<VideoConvertInput, V
     onProgress,
     cancelSignal,
   }: VideoConvertInput): Promise<VideoConvertOutput> {
-    if (file.size > VIDEO_SIZE_LIMITS.convert * 1024 * 1024) {
-      throw new Error(
-        `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.convert}MB）。ファイルを確認してください。`
-      );
-    }
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
     }

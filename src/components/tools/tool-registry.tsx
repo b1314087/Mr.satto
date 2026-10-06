@@ -145,6 +145,9 @@ const PdfToTextTool = dynamic(() =>
 const EstimateGeneratorTool = dynamic(() =>
   import("./implementations/estimate-generator-tool").then((m) => m.EstimateGeneratorTool)
 );
+const QuoteOrderGeneratorTool = dynamic(() =>
+  import("./implementations/quote-order-generator-tool").then((m) => m.QuoteOrderGeneratorTool)
+);
 const InvoiceGeneratorTool = dynamic(() =>
   import("./implementations/invoice-generator-tool").then((m) => m.InvoiceGeneratorTool)
 );
@@ -195,9 +198,6 @@ const FileUnzipTool = dynamic(() =>
 );
 const FileHashTool = dynamic(() =>
   import("./implementations/file-hash-tool").then((m) => m.FileHashTool)
-);
-const FileInspectorTool = dynamic(() =>
-  import("./implementations/file-inspector-tool").then((m) => m.FileInspectorTool)
 );
 const PdfResizePagesTool = dynamic(() =>
   import("./implementations/pdf-resize-pages-tool").then((m) => m.PdfResizePagesTool)
@@ -412,6 +412,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfToTextTool />;
     case "estimate-generator":
       return <EstimateGeneratorTool />;
+    case "quote-order-generator":
+      return <QuoteOrderGeneratorTool />;
     case "invoice-generator":
       return <InvoiceGeneratorTool />;
     case "order-generator":
@@ -448,8 +450,6 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <FileUnzipTool />;
     case "file-hash":
       return <FileHashTool />;
-    case "file-inspector":
-      return <FileInspectorTool />;
     case "pdf-resize-pages":
       return <PdfResizePagesTool />;
     case "pdf-metadata-remove":

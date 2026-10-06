@@ -17,15 +17,15 @@ interface LiveQrState {
  * text が空の場合は null を返す。
  */
 export function useLiveQr(text: string, options: LiveQrOptions) {
-  const { size, errorCorrectionLevel, darkColor, lightColor } = options;
-  const key = JSON.stringify([text, size, errorCorrectionLevel, darkColor, lightColor]);
+  const { size, errorCorrectionLevel, darkColor, lightColor, logo } = options;
+  const key = JSON.stringify([text, size, errorCorrectionLevel, darkColor, lightColor, logo ?? null]);
   const [state, setState] = useState<LiveQrState | null>(null);
 
   useEffect(() => {
     if (!text.trim()) return;
     let cancelled = false;
     new QrCodeProcessor()
-      .process({ text, size, errorCorrectionLevel, darkColor, lightColor })
+      .process({ text, size, errorCorrectionLevel, darkColor, lightColor, logo })
       .then((r) => {
         if (!cancelled) setState({ key, dataUrl: r.dataUrl, error: null });
       })
@@ -37,7 +37,7 @@ export function useLiveQr(text: string, options: LiveQrOptions) {
     return () => {
       cancelled = true;
     };
-  }, [key, text, size, errorCorrectionLevel, darkColor, lightColor]);
+  }, [key, text, size, errorCorrectionLevel, darkColor, lightColor, logo]);
 
   const hasText = text.trim().length > 0;
   // 再生成中は直前の画像を残して、ちらつきを防ぐ(fresh=false の間はダウンロード不可にする)

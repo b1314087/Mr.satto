@@ -20,6 +20,8 @@ export function PasswordGeneratorTool() {
   const [useLowercase, setUseLowercase] = useState(true);
   const [useNumbers, setUseNumbers] = useState(true);
   const [useSymbols, setUseSymbols] = useState(true);
+  const [customChars, setCustomChars] = useState("");
+  const customActive = Array.from(customChars.replace(/\s/g, "")).length > 0;
 
   const [password, setPassword] = useState("");
   const [strength, setStrength] = useState(0);
@@ -32,7 +34,7 @@ export function PasswordGeneratorTool() {
   useEffect(() => {
     let cancelled = false;
     new PasswordGenerateProcessor()
-      .process({ length, useUppercase, useLowercase, useNumbers, useSymbols })
+      .process({ length, useUppercase, useLowercase, useNumbers, useSymbols, customChars })
       .then((result) => {
         if (cancelled) return;
         setPassword(result.password);
@@ -48,7 +50,7 @@ export function PasswordGeneratorTool() {
     return () => {
       cancelled = true;
     };
-  }, [length, useUppercase, useLowercase, useNumbers, useSymbols]);
+  }, [length, useUppercase, useLowercase, useNumbers, useSymbols, customChars]);
 
   async function handleGenerate() {
     if (status === "processing") return;
@@ -62,6 +64,7 @@ export function PasswordGeneratorTool() {
         useLowercase,
         useNumbers,
         useSymbols,
+        customChars,
       });
       setPassword(result.password);
       setStrength(result.strength);
@@ -87,6 +90,21 @@ export function PasswordGeneratorTool() {
     { label: "記号 (!@#$ など)", checked: useSymbols, setter: setUseSymbols },
   ];
 
+  const presets: { label: string; upper: boolean; lower: boolean; numbers: boolean; symbols: boolean }[] = [
+    { label: "英字のみ", upper: true, lower: true, numbers: false, symbols: false },
+    { label: "数字のみ", upper: false, lower: false, numbers: true, symbols: false },
+    { label: "英数字のみ", upper: true, lower: true, numbers: true, symbols: false },
+    { label: "すべて", upper: true, lower: true, numbers: true, symbols: true },
+  ];
+
+  function applyPreset(p: (typeof presets)[number]) {
+    setCustomChars("");
+    setUseUppercase(p.upper);
+    setUseLowercase(p.lower);
+    setUseNumbers(p.numbers);
+    setUseSymbols(p.symbols);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <label className="flex flex-col gap-1.5 text-sm">
@@ -100,14 +118,54 @@ export function PasswordGeneratorTool() {
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-        {checkboxes.map((c) => (
-          <label key={c.label} className="flex items-center gap-2">
-            <input type="checkbox" checked={c.checked} onChange={(e) => c.setter(e.target.checked)} />
-            {c.label}
-          </label>
-        ))}
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">使う文字の種類</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">ワンタッチで選ぶ:</span>
+          {presets.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => applyPreset(p)}
+              className="rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className={`grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 ${customActive ? "opacity-40" : ""}`}>
+          {checkboxes.map((c) => (
+            <label key={c.label} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={c.checked}
+                disabled={customActive}
+                onChange={(e) => c.setter(e.target.checked)}
+              />
+              {c.label}
+            </label>
+          ))}
+        </div>
       </div>
+
+      <label className="flex flex-col gap-1.5 text-sm">
+        <span className="font-medium text-neutral-700 dark:text-neutral-200">
+          使う文字を自分で指定する（入力すると、この文字だけで作成します）
+        </span>
+        <input
+          type="text"
+          value={customChars}
+          onChange={(e) => setCustomChars(e.target.value)}
+          placeholder="例: abcdef0123456789"
+          aria-label="使う文字を指定"
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 font-mono text-sm dark:border-neutral-700 dark:bg-neutral-900"
+        />
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+          {customActive
+            ? `指定した文字（重複を除いて${Array.from(new Set(Array.from(customChars.replace(/\s/g, "")))).length}種類）だけを使います。上のチェックは無効になります。`
+            : "空欄のときは、上で選んだ文字の種類から作成します。"}
+        </span>
+      </label>
 
       <button
         type="button"

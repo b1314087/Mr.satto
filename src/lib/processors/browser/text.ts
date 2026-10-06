@@ -186,11 +186,30 @@ export class TextLineCleanerProcessor extends BrowserProcessor<
 // ---------------------------------------------------------------------------
 // テキスト大文字・小文字変換（Phase 8）
 // ---------------------------------------------------------------------------
-export type TextCaseMode = "upper" | "lower" | "title" | "sentence";
+export type TextCaseMode = "none" | "upper" | "lower" | "title" | "sentence";
+
+/** 数字の変換: "keep"=そのまま / "toHalf"=全角→半角 / "toFull"=半角→全角 */
+export type TextDigitMode = "keep" | "toHalf" | "toFull";
 
 export interface TextCaseConvertInput {
   text: string;
   mode: TextCaseMode;
+  /** 省略時は数字を変換しない */
+  digits?: TextDigitMode;
+}
+
+/**
+ * すべての数字(0〜9)を全角⇄半角に変換する。数字以外(記号・英字・日本語)は変更しない。
+ * 全角数字は U+FF10〜U+FF19、半角数字は U+0030〜U+0039。
+ */
+export function convertDigitWidth(text: string, digits: TextDigitMode): string {
+  if (digits === "toHalf") {
+    return text.replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xff10 + 0x30));
+  }
+  if (digits === "toFull") {
+    return text.replace(/[0-9]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x30 + 0xff10));
+  }
+  return text;
 }
 
 export interface TextCaseConvertOutput {
@@ -236,7 +255,12 @@ export class TextCaseConvertProcessor extends BrowserProcessor<
   TextCaseConvertInput,
   TextCaseConvertOutput
 > {
-  async process({ text, mode }: TextCaseConvertInput): Promise<TextCaseConvertOutput> {
+  async process({ text, mode, digits = "keep" }: TextCaseConvertInput): Promise<TextCaseConvertOutput> {
+    const cased = await this.convertCase(text, mode);
+    return { result: convertDigitWidth(cased.result, digits) };
+  }
+
+  private async convertCase(text: string, mode: TextCaseMode): Promise<TextCaseConvertOutput> {
     switch (mode) {
       case "upper":
         return { result: text.toUpperCase() };

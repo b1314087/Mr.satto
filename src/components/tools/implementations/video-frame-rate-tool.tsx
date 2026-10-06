@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
+import { VideoSizeWarning } from "@/components/tools/implementations/shared/video-size-warning";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -10,7 +11,7 @@ import { VideoFrameRateProcessor, type VideoFrameRateOutput } from "@/lib/proces
 import {
   OUTPUT_CONTAINER_OPTIONS,
   VIDEO_INPUT_ACCEPT,
-  VIDEO_SIZE_LIMITS,
+  VIDEO_DROPZONE_MAX_MB,
   VideoCanceledByUserError,
   getAvailableFrameRates,
   inspectVideoFile,
@@ -137,14 +138,15 @@ export function VideoFrameRateTool() {
 
       <FileDropzone
         accept={VIDEO_INPUT_ACCEPT}
-        maxSizeMB={VIDEO_SIZE_LIMITS.frameRate}
+        maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
-        hint={`またはタップして選択（MP4 / MOV / WebM、上限${VIDEO_SIZE_LIMITS.frameRate}MB）`}
+        hint="またはタップして選択（MP4 / MOV / WebM。サイズの上限はありません）"
         onFilesSelected={handleSelect}
         onError={setError}
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <VideoSizeWarning sizeBytes={file.size} />}
 
       {detecting && <p className="text-xs text-neutral-500 dark:text-neutral-400">動画情報を読み込み中...</p>}
 

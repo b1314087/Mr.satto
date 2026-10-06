@@ -574,16 +574,6 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["hash", "ハッシュ", "sha256", "sha-256", "checksum"],
   },
-  {
-    id: "file-inspector",
-    name: "ファイル情報確認",
-    category: "file",
-    description: "ファイル名・種類・サイズなどの基本情報を確認します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["ファイル情報", "メタ情報", "プロパティ"],
-  },
 
   // ------------------------------------------------------------------
   // CSV・Excel
@@ -788,13 +778,13 @@ export const tools: Tool[] = [
   },
   {
     id: "video-h264",
-    name: "H.264変換",
+    name: "H.264変換（H.265対応）",
     category: "video",
-    description: "動画をH.264(AVC)コーデック・MP4形式に変換します",
+    description: "H.265(HEVC)などの動画をH.264(AVC)コーデック・MP4形式に変換します（iPhoneの動画にも）",
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
-    keywords: ["h264", "avc", "コーデック変換"],
+    keywords: ["h264", "avc", "h265", "hevc", "コーデック変換", "iPhone", "動画変換"],
   },
   {
     id: "video-thumbnail",
@@ -885,6 +875,16 @@ export const tools: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["見積書", "estimate", "帳票"],
+  },
+  {
+    id: "quote-order-generator",
+    name: "見積書・注文書の一体作成",
+    category: "other",
+    description: "A4の1枚に、上が見積書・下が注文書。1回の入力で両方を作れます",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["見積書", "注文書", "一体", "複合", "帳票", "発注書"],
   },
   {
     id: "invoice-generator",
@@ -1057,13 +1057,13 @@ export const tools: Tool[] = [
   },
   {
     id: "text-case-converter",
-    name: "大文字・小文字変換",
+    name: "大文字・小文字・数字の全角半角変換",
     category: "other",
-    description: "英字テキストを大文字・小文字・先頭大文字に変換します",
+    description: "英字を大文字・小文字・先頭大文字に変換し、数字を全角⇄半角にそろえます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["大文字", "小文字", "uppercase", "lowercase", "case"],
+    keywords: ["大文字", "小文字", "uppercase", "lowercase", "case", "全角", "半角", "数字", "全角数字", "半角数字"],
   },
   {
     // 次工程・軽量便利ツール一括追加（Tool 1）

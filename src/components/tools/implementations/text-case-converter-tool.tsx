@@ -1,19 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TextCaseConvertProcessor, type TextCaseMode } from "@/lib/processors/browser/text";
+import { TextCaseConvertProcessor, type TextCaseMode, type TextDigitMode } from "@/lib/processors/browser/text";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob } from "@/lib/utils/format";
 
 const MODE_OPTIONS: { value: TextCaseMode; label: string; hint: string }[] = [
+  { value: "none", label: "英字は変換しない", hint: "そのまま" },
   { value: "upper", label: "すべて大文字", hint: "ABC" },
   { value: "lower", label: "すべて小文字", hint: "abc" },
   { value: "title", label: "単語の先頭を大文字", hint: "Hello World" },
   { value: "sentence", label: "文の先頭を大文字", hint: "Hello world. Next." },
 ];
 
+const DIGIT_OPTIONS: { value: TextDigitMode; label: string; hint: string }[] = [
+  { value: "keep", label: "数字は変換しない", hint: "そのまま" },
+  { value: "toHalf", label: "数字を半角にする", hint: "１２３ → 123" },
+  { value: "toFull", label: "数字を全角にする", hint: "123 → １２３" },
+];
+
 /**
- * テキスト大文字・小文字変換（Phase 8）。
+ * テキスト大文字・小文字変換（Phase 8）。数字の全角⇄半角変換も同じ画面でできる。
  * 入力するたびに即座に変換結果を表示する（char-count-toolと同じ「都度実行」方式）。
  * 日本語（ひらがな・カタカナ・漢字）はアルファベットではないため、
  * どのモードでも変換されずそのまま残る。
@@ -21,18 +28,19 @@ const MODE_OPTIONS: { value: TextCaseMode; label: string; hint: string }[] = [
 export function TextCaseConverterTool() {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<TextCaseMode>("upper");
+  const [digits, setDigits] = useState<TextDigitMode>("keep");
   const [output, setOutput] = useState("");
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    new TextCaseConvertProcessor().process({ text: input, mode }).then((r) => {
+    new TextCaseConvertProcessor().process({ text: input, mode, digits }).then((r) => {
       if (!cancelled) setOutput(r.result);
     });
     return () => {
       cancelled = true;
     };
-  }, [input, mode]);
+  }, [input, mode, digits]);
 
   async function handleCopy() {
     if (!output) return;
@@ -77,22 +85,48 @@ export function TextCaseConverterTool() {
       </label>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {MODE_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => setMode(opt.value)}
-            className={`flex flex-col items-start gap-0.5 rounded-lg border-2 px-3 py-2 text-left text-sm transition-colors ${
-              mode === opt.value
-                ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
-                : "border-neutral-200 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300"
-            }`}
-          >
-            <span className="font-medium">{opt.label}</span>
-            <span className="text-xs text-neutral-400">{opt.hint}</span>
-          </button>
-        ))}
+      <div className="flex flex-col gap-1.5">
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">英字の大文字・小文字</p>
+        <div className="flex flex-wrap gap-2">
+          {MODE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={mode === opt.value}
+              onClick={() => setMode(opt.value)}
+              className={`flex flex-col items-start gap-0.5 rounded-lg border-2 px-3 py-2 text-left text-sm transition-colors ${
+                mode === opt.value
+                  ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                  : "border-neutral-200 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300"
+              }`}
+            >
+              <span className="font-medium">{opt.label}</span>
+              <span className="text-xs text-neutral-400">{opt.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">数字の全角・半角</p>
+        <div className="flex flex-wrap gap-2">
+          {DIGIT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={digits === opt.value}
+              onClick={() => setDigits(opt.value)}
+              className={`flex flex-col items-start gap-0.5 rounded-lg border-2 px-3 py-2 text-left text-sm transition-colors ${
+                digits === opt.value
+                  ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                  : "border-neutral-200 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300"
+              }`}
+            >
+              <span className="font-medium">{opt.label}</span>
+              <span className="text-xs text-neutral-400">{opt.hint}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

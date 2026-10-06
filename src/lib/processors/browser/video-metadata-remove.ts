@@ -1,7 +1,6 @@
 import { WEBM } from "mediabunny";
 import { BrowserProcessor } from "../types";
 import {
-  VIDEO_SIZE_LIMITS,
   VideoCanceledByUserError,
   inspectVideoFile,
   runConversion,
@@ -63,11 +62,6 @@ export class VideoMetadataRemoveProcessor extends BrowserProcessor<
     onProgress,
     cancelSignal,
   }: VideoMetadataRemoveInput): Promise<VideoMetadataRemoveOutput> {
-    if (file.size > VIDEO_SIZE_LIMITS.metadataRemove * 1024 * 1024) {
-      throw new Error(
-        `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.metadataRemove}MB）。ファイルを確認してください。`
-      );
-    }
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
     }

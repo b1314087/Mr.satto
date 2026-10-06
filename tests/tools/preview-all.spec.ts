@@ -44,7 +44,6 @@ const CASES: [string, Input][] = [
   ["file-bulk-rename", csv],
   ["file-sequential-rename", csv],
   ["file-hash", csv],
-  ["file-inspector", img],
   // 動画(video-h264 はヘッドレスChromiumがH.264エンコード非対応のため、この環境では対象外)
   ...(["video-convert", "video-compress", "video-resize", "video-frame-rate", "video-thumbnail", "video-metadata-remove"] as const).map((id) => [id, video] as [string, Input]),
   // 文字・数値
@@ -61,6 +60,7 @@ const CASES: [string, Input][] = [
   ["time-calculator", none],
   ["color-palette-generator", none],
   ["estimate-generator", none],
+  ["quote-order-generator", none],
   ["invoice-generator", none],
   ["order-generator", none],
   ["envelope-address", none],

@@ -1,6 +1,5 @@
 import { BrowserProcessor } from "../types";
 import {
-  VIDEO_SIZE_LIMITS,
   VideoCanceledByUserError,
   createThumbnailCanvasSink,
   inspectVideoFile,
@@ -53,11 +52,6 @@ export class VideoThumbnailProcessor extends BrowserProcessor<VideoThumbnailInpu
     jpegQuality,
     cancelSignal,
   }: VideoThumbnailInput): Promise<VideoThumbnailOutput> {
-    if (file.size > VIDEO_SIZE_LIMITS.thumbnail * 1024 * 1024) {
-      throw new Error(
-        `ファイルサイズが大きすぎます（上限 ${VIDEO_SIZE_LIMITS.thumbnail}MB）。ファイルを確認してください。`
-      );
-    }
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
     }

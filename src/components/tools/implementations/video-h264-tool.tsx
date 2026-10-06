@@ -3,15 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
+import { VideoSizeWarning } from "@/components/tools/implementations/shared/video-size-warning";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { VideoH264Processor, type VideoH264Output } from "@/lib/processors/browser/video-h264";
 import {
   VIDEO_INPUT_ACCEPT,
-  VIDEO_SIZE_LIMITS,
+  VIDEO_DROPZONE_MAX_MB,
   VideoCanceledByUserError,
   checkH264EncodeSupport,
+  HEVC_UNSUPPORTED_MESSAGE,
+  probeVideoCodec,
+  videoCodecLabel,
+  type VideoCodecProbe,
+  type VideoQualityName,
 } from "@/lib/video/shared";
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
 import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
@@ -38,6 +44,10 @@ export function VideoH264Tool() {
   const [canceling, setCanceling] = useState(false);
   const [wasCanceled, setWasCanceled] = useState(false);
   const cancelControllerRef = useRef<AbortController | null>(null);
+  const [quality, setQuality] = useState<VideoQualityName>("high");
+  // 選んだファイルの映像コーデックと、このブラウザで読み込めるか(ファイルごとに保持し、調べ終わるまでは undefined)
+  const [probe, setProbe] = useState<{ file: File; result: VideoCodecProbe | null } | null>(null);
+  const probeResult = file && probe?.file === file ? probe.result : undefined;
 
   useRevokeObjectUrlOnChange(result?.url);
   const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
@@ -59,6 +69,17 @@ export function VideoH264Tool() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    probeVideoCodec(file).then((result) => {
+      if (!cancelled) setProbe({ file, result });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
 
   // タブ遷移やアンマウント時にも、実行中の変換処理を実際に中断する。
   useEffect(() => {
@@ -90,6 +111,7 @@ export function VideoH264Tool() {
     try {
       const output = await new VideoH264Processor().process({
         file,
+        quality,
         onProgress: setProgress,
         cancelSignal: controller.signal,
       });
@@ -133,25 +155,65 @@ export function VideoH264Tool() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
         <p>
-          動画をH.264（AVC）コーデック・MP4形式に変換します。この動画はブラウザ上で処理され、Mr.Sattoの
-          サーバーへアップロードされることはありません。
+          動画をH.264（AVC）コーデック・MP4形式に変換します。iPhoneなどで撮影したH.265（HEVC）の動画も、どこでも
+          再生しやすいH.264のMP4にできます。この動画はブラウザ上で処理され、Mr.Sattoのサーバーへアップロードされることはありません。
         </p>
         <p>
           元の動画がすでにH.264の場合は再エンコードせずにそのままMP4化するため、画質の劣化はありません。
-          それ以外のコーデックの場合は再エンコードが発生し、多少の画質差が生じる場合があります。
+          H.265などそれ以外のコーデックの場合は再エンコードが発生し、多少の画質差が生じる場合があります。
+          H.265はH.264より同じ画質でもファイルが小さいため、H.264にするとファイルサイズが大きくなることがあります。
         </p>
       </div>
 
       <FileDropzone
         accept={VIDEO_INPUT_ACCEPT}
-        maxSizeMB={VIDEO_SIZE_LIMITS.h264}
+        maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
-        hint={`またはタップして選択（MP4 / MOV / WebM、上限${VIDEO_SIZE_LIMITS.h264}MB）`}
+        hint="またはタップして選択（MP4 / MOV / WebM。H.265の動画も選べます。サイズの上限はありません）"
         onFilesSelected={handleSelect}
         onError={setError}
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <VideoSizeWarning sizeBytes={file.size} />}
+
+      {file && probeResult && (
+        <div
+          data-testid="video-codec-info"
+          className={`flex flex-col gap-1 rounded-lg border px-4 py-3 text-sm ${
+            probeResult.canDecode
+              ? "border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200"
+              : "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
+          }`}
+        >
+          <p className="font-medium">元の動画のコーデック: {videoCodecLabel(probeResult.codec)}</p>
+          <p className="text-xs">
+            {!probeResult.canDecode
+              ? probeResult.codec === "hevc"
+                ? HEVC_UNSUPPORTED_MESSAGE
+                : "このブラウザではこの動画のコーデックを読み込めません。別の形式の動画をお試しください。"
+              : probeResult.codec === "avc"
+                ? "すでにH.264です。再エンコードせずにMP4へ入れ直すため、画質は変わりません。"
+                : `${videoCodecLabel(probeResult.codec)} から H.264（AVC）へ再エンコードします。`}
+          </p>
+        </div>
+      )}
+
+      {file && probeResult?.canDecode && probeResult.codec !== "avc" && (
+        <label className="flex w-fit flex-col gap-1.5 text-sm">
+          <span className="font-medium text-neutral-700 dark:text-neutral-200">再エンコードの画質</span>
+          <select
+            aria-label="再エンコードの画質"
+            value={quality}
+            onChange={(e) => setQuality(e.target.value as VideoQualityName)}
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            <option value="high">高画質（ファイルは大きめ）</option>
+            <option value="medium">標準</option>
+            <option value="low">ファイルサイズ優先（画質は下がります）</option>
+          </select>
+        </label>
+      )}
 
       {file && (
         <VideoPreviewPanel
@@ -171,7 +233,7 @@ export function VideoH264Tool() {
             },
             { label: "サイズの目安", value: `${formatBytes(file.size)} 前後` },
           ]}
-          outputNote="すでにH.264の動画は再エンコードせずに変換します。それ以外はサイズが変わる場合があります。"
+          outputNote="すでにH.264の動画は再エンコードせずに変換します。H.265などそれ以外はサイズが変わる場合があります。"
         />
       )}
 
@@ -180,7 +242,7 @@ export function VideoH264Tool() {
           <button
             type="button"
             onClick={handleRun}
-            disabled={status === "processing"}
+            disabled={status === "processing" || probeResult?.canDecode === false}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             H.264に変換する
@@ -214,6 +276,11 @@ export function VideoH264Tool() {
 
       {result && (
         <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200" data-testid="video-h264-result">
+            {result.reencoded
+              ? `${videoCodecLabel(result.sourceCodec)} から H.264（AVC）へ再エンコードしました`
+              : "すでにH.264だったため、再エンコードせずにMP4へ入れ直しました"}
+          </p>
           <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
             <span>
               サイズ: {formatBytes(result.inputSizeBytes)} → {formatBytes(result.sizeBytes)}
