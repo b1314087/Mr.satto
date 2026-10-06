@@ -1,5 +1,5 @@
 import { BrowserProcessor } from "../types";
-import { readXlsxSheets, writeXlsxSheets, type XlsxCellValue } from "@/lib/excel/xlsx-simple-io";
+import { readXlsxSheets, writeXlsxSheets, type XlsxCellValue, type XlsxSheet } from "@/lib/excel/xlsx-simple-io";
 
 /**
  * Excel日付一括変更（次工程・軽量便利ツール一括追加 Tool 8）。
@@ -87,7 +87,8 @@ function formatDateString(date: Date, separator: "/" | "-"): string {
   return `${y}${separator}${m}${separator}${d}`;
 }
 
-function validateInput(input: ExcelDateShiftInput) {
+/** 入力値の検証(出力とプレビューで共通)。問題があれば日本語のエラーを throw する */
+export function validateDateShiftInput(input: Pick<ExcelDateShiftInput, "mode" | "value">) {
   if (!Number.isFinite(input.value)) throw new Error("値を入力してください");
   if (input.mode === "set-month" && (input.value < 1 || input.value > 12)) {
     throw new Error("月は1〜12の範囲で入力してください");
@@ -103,24 +104,36 @@ function validateInput(input: ExcelDateShiftInput) {
   }
 }
 
+/**
+ * 全シートの日付セルをずらす(出力とプレビューで共通)。
+ * 入力 sheets は変更せず、新しいシートの配列と変更したセル数を返す。
+ */
+export function shiftDatesInSheets(
+  sheets: XlsxSheet[],
+  mode: DateShiftMode,
+  value: number
+): { sheets: XlsxSheet[]; changedCellCount: number } {
+  let changedCellCount = 0;
+  const outputSheets = sheets.map((sheet) => {
+    const rows: XlsxCellValue[][] = sheet.rows.map((row) =>
+      row.map((cell) => {
+        const parsed = tryParseDateCell(cell);
+        if (!parsed) return cell;
+        const shifted = applyShift(parsed.date, mode, value);
+        changedCellCount++;
+        return parsed.isString ? formatDateString(shifted, parsed.separator) : shifted;
+      })
+    );
+    return { name: sheet.name, rows };
+  });
+  return { sheets: outputSheets, changedCellCount };
+}
+
 export class ExcelDateShiftProcessor extends BrowserProcessor<ExcelDateShiftInput, ExcelDateShiftOutput> {
   async process(input: ExcelDateShiftInput): Promise<ExcelDateShiftOutput> {
-    validateInput(input);
+    validateDateShiftInput(input);
     const sheets = await readXlsxSheets(input.file);
-    let changedCellCount = 0;
-
-    const outputSheets = sheets.map((sheet) => {
-      const rows: XlsxCellValue[][] = sheet.rows.map((row) =>
-        row.map((cell) => {
-          const parsed = tryParseDateCell(cell);
-          if (!parsed) return cell;
-          const shifted = applyShift(parsed.date, input.mode, input.value);
-          changedCellCount++;
-          return parsed.isString ? formatDateString(shifted, parsed.separator) : shifted;
-        })
-      );
-      return { name: sheet.name, rows };
-    });
+    const { sheets: outputSheets, changedCellCount } = shiftDatesInSheets(sheets, input.mode, input.value);
 
     const blob = await writeXlsxSheets(outputSheets);
     return { blob, changedCellCount };

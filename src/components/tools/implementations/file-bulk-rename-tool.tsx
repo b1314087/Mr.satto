@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { FileRenameProcessor, buildSequentialBaseNames } from "@/lib/processors/browser/file-ops";
+import {
+  FileRenameProcessor,
+  buildSequentialBaseNames,
+  planFileRenames,
+} from "@/lib/processors/browser/file-ops";
+import { RenamePreviewList } from "@/components/tools/implementations/shared/rename-preview-list";
 import type { NamedFileOutput } from "@/lib/processors/types";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, getExtension, stripExtension } from "@/lib/utils/format";
@@ -29,6 +34,9 @@ export function FileBulkRenameTool() {
   const [downloadBlobData, setDownloadBlobData] = useState<{ blob: Blob; name: string } | null>(
     null
   );
+
+  // 実際のリネームと同じ planFileRenames() でライブプレビューを作る
+  const plan = useMemo(() => planFileRenames(files, newBaseNames), [files, newBaseNames]);
 
   function addFiles(newFiles: File[]) {
     setFiles((prev) => [...prev, ...newFiles]);
@@ -169,6 +177,8 @@ export function FileBulkRenameTool() {
           })}
         </ul>
       )}
+
+      {files.length > 0 && <RenamePreviewList files={files} plan={plan} />}
 
       {files.length > 0 && (
         <button

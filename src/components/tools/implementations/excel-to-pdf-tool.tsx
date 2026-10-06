@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -14,6 +14,14 @@ import {
   type FitOption,
   type RawExcelSheet,
 } from "@/lib/processors/browser/excel-to-pdf";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
+import {
+  PreviewGrid,
+  PreviewShell,
+  SheetTabs,
+  toGridRows,
+  xlsxRowsToText,
+} from "@/components/tools/implementations/shared/before-after-table";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -62,6 +70,18 @@ export function ExcelToPdfTool() {
       setLoadingSheets(false);
     }
   }
+
+  // プレビュー: 変換前は読み込んだシートの中身(表)、変換後は生成したPDFの1ページ目を表示する(変換処理そのものは変更しない)
+  const [tab, setTab] = useState(0);
+  const resultPdf = useMemo(
+    () => (result ? new File([result.blob], "converted-preview.pdf", { type: "application/pdf" }) : null),
+    [result]
+  );
+  const previewIndex = sheets ? Math.min(tab, sheets.length - 1) : 0;
+  const previewRows = useMemo(
+    () => (sheets && sheets.length > 0 ? toGridRows(xlsxRowsToText(sheets[previewIndex].rows.slice(0, 10))) : null),
+    [sheets, previewIndex]
+  );
 
   function toggleSheet(name: string) {
     setSelectedSheets((prev) => {
@@ -212,6 +232,21 @@ export function ExcelToPdfTool() {
             先頭行を見出し行としてページ上部に繰り返す
           </label>
         </div>
+      )}
+
+      {sheets && sheets.length > 0 && (
+        <PreviewShell
+          title="Excelの内容とPDFのプレビュー"
+          notes={[
+            "変換前はシートの内容(表)を表示しています。PDFの見た目は、変換したあとに1ページ目の画像で確認できます。",
+          ]}
+        >
+          <SheetTabs names={sheets.map((s) => s.name)} active={previewIndex} onChange={setTab} />
+          {previewRows && (
+            <PreviewGrid rows={previewRows} totalRows={sheets[previewIndex].rows.length} maxRows={10} maxCols={8} headerRow={false} />
+          )}
+          {resultPdf && <PdfThumbnails file={resultPdf} maxPages={1} width={260} title="変換後PDFの1ページ目" />}
+        </PreviewShell>
       )}
 
       {sheets && (

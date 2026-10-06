@@ -3,12 +3,16 @@
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
+import { usePdfPageAspects } from "@/components/tools/implementations/shared/use-pdf-page-aspects";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfRotateProcessor } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+
+const PREVIEW_MAX_PAGES = 40;
 
 export function PdfRotateTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -25,6 +29,9 @@ export function PdfRotateTool() {
       if (result) URL.revokeObjectURL(result.url);
     };
   }, [result]);
+
+  // 縦長ページを90°/270°回転すると枠の幅をはみ出すため、縦横比から縮小率を求めて枠に収める
+  const aspects = usePdfPageAspects(file, PREVIEW_MAX_PAGES);
 
   async function handleRun() {
     if (!file) return;
@@ -77,6 +84,26 @@ export function PdfRotateTool() {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {file && (
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
+          <PdfThumbnails
+            file={file}
+            maxPages={PREVIEW_MAX_PAGES}
+            width={96}
+            title={`${rotateBy}°回転後のプレビュー`}
+            pageStyle={(page) => {
+              const ratio = aspects[page];
+              const sideways = rotateBy !== 180;
+              const scale = sideways && ratio && ratio > 1 ? 1 / ratio : 1;
+              return { transform: `rotate(${rotateBy}deg) scale(${scale})` };
+            }}
+          />
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            すべてのページが時計回りに{rotateBy}°回転します（元の向きに追加で回転）。
+          </p>
         </div>
       )}
 

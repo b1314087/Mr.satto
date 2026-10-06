@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ImageFlipProcessor } from "@/lib/processors/browser/image";
+import { ImageFlipProcessor, drawFlipped } from "@/lib/processors/browser/image";
+import { useDownscaledImage, useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
 
@@ -15,6 +16,9 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
   "image/webp": "webp",
 };
+
+/** プレビュー用に縮小する最長辺(px) */
+const PREVIEW_MAX_SIDE = 640;
 
 export function ImageFlipTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -29,6 +33,21 @@ export function ImageFlipTool() {
       if (result) URL.revokeObjectURL(result.url);
     };
   }, [result]);
+
+  // --- ライブプレビュー: 元画像と反転後を並べる(反転の描画は書き出しと同じ drawFlipped) ---
+  const originalUrl = useObjectUrl(file);
+  const { canvas: scaled, error: previewError } = useDownscaledImage(file, PREVIEW_MAX_SIDE);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const target = previewCanvasRef.current;
+    if (!scaled || !target) return;
+    target.width = scaled.width;
+    target.height = scaled.height;
+    const ctx = target.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, target.width, target.height);
+    drawFlipped(ctx, scaled, scaled.width, scaled.height, direction);
+  }, [scaled, direction]);
 
   function handleFile(files: File[]) {
     setFile(files[0]);
@@ -91,6 +110,39 @@ export function ImageFlipTool() {
           >
             上下反転
           </button>
+        </div>
+      )}
+
+      {file && (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（{direction === "horizontal" ? "左右反転" : "上下反転"}・選ぶとすぐ変わります）
+          </p>
+          {previewError && <ErrorMessage message={previewError} />}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">元の画像</figcaption>
+              {originalUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={originalUrl}
+                  alt="元の画像"
+                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              )}
+            </figure>
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">反転後</figcaption>
+              <canvas
+                ref={previewCanvasRef}
+                aria-label="反転後のプレビュー"
+                className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </figure>
+          </div>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { BrowserProcessor } from "../types";
-import { readXlsxSheets, writeXlsxSheets, type XlsxCellValue } from "@/lib/excel/xlsx-simple-io";
+import { readXlsxSheets, writeXlsxSheets, type XlsxCellValue, type XlsxSheet } from "@/lib/excel/xlsx-simple-io";
 
 /**
  * Excel横セル結合・中央揃え（次工程・軽量便利ツール一括追加 Tool 7）。
@@ -58,56 +58,75 @@ function styledCell(
   return cell;
 }
 
+export type ExcelMergeCenterOptions = Omit<ExcelMergeCenterInput, "file">;
+
+/** write-excel-file へ渡す(または画面に表示する)セル。値のみ・書式付き(CellObject)・null のいずれか */
+export type MergeCenterCell = WritableCell;
+
+/**
+ * 対象シートの指定範囲を結合/中央揃えにする(出力とプレビューで共通)。
+ * 入力 sheets は変更せず、書き出し用のシート配列を返す。
+ * 設定が正しくない場合は日本語のエラーを throw する。
+ */
+export function applyMergeCenter(
+  sheets: XlsxSheet[],
+  input: ExcelMergeCenterOptions
+): { sheets: { name: string; rows: WritableCell[][] }[]; processedRowCount: number } {
+  if (input.sheetIndex < 0 || input.sheetIndex >= sheets.length) {
+    throw new Error("対象のシートが見つかりません");
+  }
+  if (input.startRow < 1 || input.endRow < input.startRow) {
+    throw new Error("対象行の範囲が正しくありません");
+  }
+  if (input.startCol < 1 || input.endCol < input.startCol) {
+    throw new Error("対象列の範囲が正しくありません");
+  }
+  if (!input.merge && !input.horizontalCenter && !input.verticalCenter) {
+    throw new Error("結合するか、中央揃えのいずれかを選択してください");
+  }
+
+  const rStart = input.startRow - 1;
+  const rEnd = input.endRow - 1;
+  const cStart = input.startCol - 1;
+  const cEnd = input.endCol - 1;
+  const span = cEnd - cStart + 1;
+
+  let processedRowCount = 0;
+
+  const outputSheets = sheets.map((sheet, sheetIdx) => {
+    if (sheetIdx !== input.sheetIndex) return { name: sheet.name, rows: sheet.rows as WritableCell[][] };
+
+    const rows: WritableCell[][] = sheet.rows.map((row, rowIndex) => {
+      if (rowIndex < rStart || rowIndex > rEnd) return row;
+      processedRowCount++;
+      const newRow: WritableCell[] = [...row];
+      // 対象列範囲を超える行の場合に備え、必要な列数まで埋める
+      while (newRow.length <= cEnd) newRow.push(null);
+
+      if (input.merge) {
+        const leadValue = row[cStart] ?? null;
+        newRow[cStart] = styledCell(leadValue, input.horizontalCenter, input.verticalCenter, span);
+        for (let c = cStart + 1; c <= cEnd; c++) {
+          newRow[c] = null;
+        }
+      } else {
+        for (let c = cStart; c <= cEnd; c++) {
+          newRow[c] = styledCell(row[c] ?? null, input.horizontalCenter, input.verticalCenter);
+        }
+      }
+      return newRow;
+    });
+
+    return { name: sheet.name, rows };
+  });
+
+  return { sheets: outputSheets, processedRowCount };
+}
+
 export class ExcelMergeCenterProcessor extends BrowserProcessor<ExcelMergeCenterInput, ExcelMergeCenterOutput> {
   async process(input: ExcelMergeCenterInput): Promise<ExcelMergeCenterOutput> {
     const sheets = await readXlsxSheets(input.file);
-    if (input.sheetIndex < 0 || input.sheetIndex >= sheets.length) {
-      throw new Error("対象のシートが見つかりません");
-    }
-    if (input.startRow < 1 || input.endRow < input.startRow) {
-      throw new Error("対象行の範囲が正しくありません");
-    }
-    if (input.startCol < 1 || input.endCol < input.startCol) {
-      throw new Error("対象列の範囲が正しくありません");
-    }
-    if (!input.merge && !input.horizontalCenter && !input.verticalCenter) {
-      throw new Error("結合するか、中央揃えのいずれかを選択してください");
-    }
-
-    const rStart = input.startRow - 1;
-    const rEnd = input.endRow - 1;
-    const cStart = input.startCol - 1;
-    const cEnd = input.endCol - 1;
-    const span = cEnd - cStart + 1;
-
-    let processedRowCount = 0;
-
-    const outputSheets = sheets.map((sheet, sheetIdx) => {
-      if (sheetIdx !== input.sheetIndex) return { name: sheet.name, rows: sheet.rows };
-
-      const rows: WritableCell[][] = sheet.rows.map((row, rowIndex) => {
-        if (rowIndex < rStart || rowIndex > rEnd) return row;
-        processedRowCount++;
-        const newRow: WritableCell[] = [...row];
-        // 対象列範囲を超える行の場合に備え、必要な列数まで埋める
-        while (newRow.length <= cEnd) newRow.push(null);
-
-        if (input.merge) {
-          const leadValue = row[cStart] ?? null;
-          newRow[cStart] = styledCell(leadValue, input.horizontalCenter, input.verticalCenter, span);
-          for (let c = cStart + 1; c <= cEnd; c++) {
-            newRow[c] = null;
-          }
-        } else {
-          for (let c = cStart; c <= cEnd; c++) {
-            newRow[c] = styledCell(row[c] ?? null, input.horizontalCenter, input.verticalCenter);
-          }
-        }
-        return newRow;
-      });
-
-      return { name: sheet.name, rows };
-    });
+    const { sheets: outputSheets, processedRowCount } = applyMergeCenter(sheets, input);
 
     const blob = await writeXlsxSheets(outputSheets);
     return { blob, processedRowCount };

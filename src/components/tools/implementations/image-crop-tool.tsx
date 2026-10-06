@@ -7,7 +7,8 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ImageCropProcessor, type CropRegion } from "@/lib/processors/browser/image";
+import { ImageCropProcessor, resolveCropRect, type CropRegion } from "@/lib/processors/browser/image";
+import { useLoadedImage } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -36,6 +37,19 @@ const EXT_BY_MIME: Record<string, string> = {
 
 const CORNERS = ["nw", "ne", "sw", "se"] as const;
 type Corner = (typeof CORNERS)[number];
+
+/** 切り抜き枠(%)を元画像のピクセル範囲へ変換する(書き出しとプレビューで共通) */
+function boxToCrop(box: Box, naturalSize: { width: number; height: number }): CropRegion {
+  return {
+    x: Math.round((box.xPct / 100) * naturalSize.width),
+    y: Math.round((box.yPct / 100) * naturalSize.height),
+    width: Math.round((box.wPct / 100) * naturalSize.width),
+    height: Math.round((box.hPct / 100) * naturalSize.height),
+  };
+}
+
+/** 切り抜き結果プレビューの最長辺(px) */
+const RESULT_PREVIEW_MAX_SIDE = 360;
 
 function clampBox(next: Box): Box {
   const wPct = Math.min(Math.max(next.wPct, MIN_SIZE_PCT), 100);
@@ -93,6 +107,32 @@ export function ImageCropTool() {
       if (result) URL.revokeObjectURL(result.url);
     };
   }, [result]);
+
+  // --- ライブプレビュー: 切り抜き範囲の結果(書き出しと同じ範囲計算 resolveCropRect) ---
+  const { img: loadedImg } = useLoadedImage(file);
+  const resultCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCrop =
+    loadedImg && naturalSize
+      ? resolveCropRect(loadedImg.naturalWidth, loadedImg.naturalHeight, boxToCrop(box, {
+          width: loadedImg.naturalWidth,
+          height: loadedImg.naturalHeight,
+        }))
+      : null;
+  const pcX = previewCrop?.x ?? 0;
+  const pcY = previewCrop?.y ?? 0;
+  const pcW = previewCrop?.width ?? 0;
+  const pcH = previewCrop?.height ?? 0;
+  useEffect(() => {
+    const canvas = resultCanvasRef.current;
+    if (!loadedImg || !canvas || pcW <= 0 || pcH <= 0) return;
+    const frame = requestAnimationFrame(() => {
+      const scale = Math.min(1, RESULT_PREVIEW_MAX_SIDE / Math.max(pcW, pcH));
+      canvas.width = Math.max(1, Math.round(pcW * scale));
+      canvas.height = Math.max(1, Math.round(pcH * scale));
+      canvas.getContext("2d")?.drawImage(loadedImg, pcX, pcY, pcW, pcH, 0, 0, canvas.width, canvas.height);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loadedImg, pcX, pcY, pcW, pcH]);
 
   function applyRatio(b: Box, r: number | null): Box {
     if (!r || !naturalSize) return b;
@@ -175,12 +215,7 @@ export function ImageCropTool() {
     setStatus("processing");
     setError(null);
     try {
-      const crop: CropRegion = {
-        x: Math.round((box.xPct / 100) * naturalSize.width),
-        y: Math.round((box.yPct / 100) * naturalSize.height),
-        width: Math.round((box.wPct / 100) * naturalSize.width),
-        height: Math.round((box.hPct / 100) * naturalSize.height),
-      };
+      const crop: CropRegion = boxToCrop(box, naturalSize);
       const output = await new ImageCropProcessor().process({ file, crop });
       setResult(output);
       setStatus("success");
@@ -265,6 +300,26 @@ export function ImageCropTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             枠をドラッグして移動、四隅のハンドルでサイズ変更できます。
           </p>
+
+          <div
+            data-testid="tool-preview"
+            className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+          >
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+              プレビュー（枠を動かすと切り抜き結果がすぐ変わります）
+            </p>
+            <canvas
+              ref={resultCanvasRef}
+              aria-label="切り抜き後のプレビュー"
+              className="h-auto max-w-full self-start rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900"
+            />
+            {previewCrop && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                切り抜きサイズ: {previewCrop.width} × {previewCrop.height}px
+                {loadedImg ? `（元 ${loadedImg.naturalWidth} × ${loadedImg.naturalHeight}px）` : ""}
+              </p>
+            )}
+          </div>
         </div>
       )}
 

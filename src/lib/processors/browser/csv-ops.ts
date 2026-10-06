@@ -35,6 +35,38 @@ export interface CsvMergeOutput {
   fileCount: number;
 }
 
+/**
+ * 複数CSVの行データを結合する(CSV結合ツールの出力とプレビューで共通に使う)。
+ * 列数が合わない場合は日本語のエラーを throw する。
+ */
+export function mergeCsvRowSets(parsedFiles: { name: string; rows: string[][] }[]): string[][] {
+  const header = parsedFiles[0].rows[0];
+  const expectedColumns = header.length;
+
+  for (const { name, rows } of parsedFiles) {
+    const actualColumns = rows[0].length;
+    if (actualColumns !== expectedColumns) {
+      throw new Error(
+        `列数が一致しないため結合できません（${parsedFiles[0].name}: ${expectedColumns}列 / ${name}: ${actualColumns}列）。列構成をそろえてから再度お試しください。`
+      );
+    }
+  }
+
+  const merged: string[][] = [header];
+  parsedFiles.forEach(({ rows }, index) => {
+    if (index === 0) {
+      merged.push(...rows.slice(1));
+      return;
+    }
+    // 2個目以降は、先頭行が1個目のヘッダーと完全一致する場合のみ
+    // 「ヘッダー行」とみなして重複追加しない。一致しない場合は
+    // データを失わないよう、先頭行も含めてすべて結合する。
+    const dataRows = rowsEqual(rows[0], header) ? rows.slice(1) : rows;
+    merged.push(...dataRows);
+  });
+  return merged;
+}
+
 export class CsvMergeProcessor extends BrowserProcessor<CsvMergeInput, CsvMergeOutput> {
   async process({ files }: CsvMergeInput): Promise<CsvMergeOutput> {
     if (files.length < 2) {
@@ -51,30 +83,7 @@ export class CsvMergeProcessor extends BrowserProcessor<CsvMergeInput, CsvMergeO
       parsedFiles.push({ name: file.name, rows });
     }
 
-    const header = parsedFiles[0].rows[0];
-    const expectedColumns = header.length;
-
-    for (const { name, rows } of parsedFiles) {
-      const actualColumns = rows[0].length;
-      if (actualColumns !== expectedColumns) {
-        throw new Error(
-          `列数が一致しないため結合できません（${parsedFiles[0].name}: ${expectedColumns}列 / ${name}: ${actualColumns}列）。列構成をそろえてから再度お試しください。`
-        );
-      }
-    }
-
-    const merged: string[][] = [header];
-    parsedFiles.forEach(({ rows }, index) => {
-      if (index === 0) {
-        merged.push(...rows.slice(1));
-        return;
-      }
-      // 2個目以降は、先頭行が1個目のヘッダーと完全一致する場合のみ
-      // 「ヘッダー行」とみなして重複追加しない。一致しない場合は
-      // データを失わないよう、先頭行も含めてすべて結合する。
-      const dataRows = rowsEqual(rows[0], header) ? rows.slice(1) : rows;
-      merged.push(...dataRows);
-    });
+    const merged = mergeCsvRowSets(parsedFiles);
 
     const blob = csvRowsToBlob(merged);
     return { blob, rowCount: merged.length, fileCount: files.length };
@@ -95,6 +104,35 @@ export interface CsvDedupeOutput {
   removedCount: number;
 }
 
+/**
+ * 1行目(見出し)を残し、データ行の完全一致の重複を削除する(出力とプレビューで共通)。
+ * removedRowIndexes は、入力 rows 上で削除される行のインデックス。
+ */
+export function dedupeCsvRows(rows: string[][]): {
+  rows: string[][];
+  removedCount: number;
+  removedRowIndexes: Set<number>;
+} {
+  const [header, ...dataRows] = rows;
+  const seen = new Set<string>();
+  const deduped: string[][] = [];
+  const removedRowIndexes = new Set<number>();
+  dataRows.forEach((row, i) => {
+    const key = JSON.stringify(row);
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(row);
+    } else {
+      removedRowIndexes.add(i + 1);
+    }
+  });
+  return {
+    rows: header ? [header, ...deduped] : [],
+    removedCount: dataRows.length - deduped.length,
+    removedRowIndexes,
+  };
+}
+
 export class CsvDedupeProcessor extends BrowserProcessor<CsvDedupeInput, CsvDedupeOutput> {
   async process({ file }: CsvDedupeInput): Promise<CsvDedupeOutput> {
     const text = await readTextOrThrow(file);
@@ -103,23 +141,14 @@ export class CsvDedupeProcessor extends BrowserProcessor<CsvDedupeInput, CsvDedu
       throw new Error("CSVの内容が空です。ファイルを確認してください。");
     }
 
-    const [header, ...dataRows] = rows;
-    const seen = new Set<string>();
-    const deduped: string[][] = [];
-    for (const row of dataRows) {
-      const key = JSON.stringify(row);
-      if (!seen.has(key)) {
-        seen.add(key);
-        deduped.push(row);
-      }
-    }
+    const { rows: dedupedRows, removedCount } = dedupeCsvRows(rows);
 
-    const blob = csvRowsToBlob([header, ...deduped]);
+    const blob = csvRowsToBlob(dedupedRows);
     return {
       blob,
-      beforeCount: dataRows.length,
-      afterCount: deduped.length,
-      removedCount: dataRows.length - deduped.length,
+      beforeCount: rows.length - 1,
+      afterCount: dedupedRows.length - 1,
+      removedCount,
     };
   }
 }
@@ -139,6 +168,24 @@ export interface CsvReplaceOutput {
   rowCount: number;
 }
 
+/** 全セルの search を replace に置き換える(出力とプレビューで共通) */
+export function replaceCsvRows(
+  rows: string[][],
+  search: string,
+  replace: string
+): { rows: string[][]; replacedCount: number } {
+  let replacedCount = 0;
+  const resultRows = rows.map((row) =>
+    row.map((cell) => {
+      if (!cell.includes(search)) return cell;
+      const parts = cell.split(search);
+      replacedCount += parts.length - 1;
+      return parts.join(replace);
+    })
+  );
+  return { rows: resultRows, replacedCount };
+}
+
 export class CsvReplaceProcessor extends BrowserProcessor<CsvReplaceInput, CsvReplaceOutput> {
   async process({ file, search, replace }: CsvReplaceInput): Promise<CsvReplaceOutput> {
     if (search === "") {
@@ -150,15 +197,7 @@ export class CsvReplaceProcessor extends BrowserProcessor<CsvReplaceInput, CsvRe
       throw new Error("CSVの内容が空です。ファイルを確認してください。");
     }
 
-    let replacedCount = 0;
-    const resultRows = rows.map((row) =>
-      row.map((cell) => {
-        if (!cell.includes(search)) return cell;
-        const parts = cell.split(search);
-        replacedCount += parts.length - 1;
-        return parts.join(replace);
-      })
-    );
+    const { rows: resultRows, replacedCount } = replaceCsvRows(rows, search, replace);
 
     const blob = csvRowsToBlob(resultRows);
     return { blob, replacedCount, rowCount: rows.length };
@@ -188,6 +227,39 @@ export interface CsvColumnEditOutput {
 }
 
 /**
+ * 列の選択・削除・リネーム・並び替えを行う(出力とプレビューで共通)。
+ * 列の指定が不正な場合は日本語のエラーを throw する。
+ */
+export function editCsvColumnRows(
+  rows: string[][],
+  columnOrder: number[],
+  renames: Record<number, string> | undefined,
+  hasHeader: boolean
+): string[][] {
+  if (columnOrder.length === 0) {
+    throw new Error("残す列を1つ以上選択してください");
+  }
+  const originalColumnCount = rows[0]?.length ?? 0;
+  const hasInvalidIndex = columnOrder.some(
+    (i) => !Number.isInteger(i) || i < 0 || i >= originalColumnCount
+  );
+  if (hasInvalidIndex) {
+    throw new Error("列の指定が正しくありません。ファイルを選び直してください。");
+  }
+
+  return rows.map((row, rowIndex) => {
+    const isHeaderRow = hasHeader && rowIndex === 0;
+    return columnOrder.map((colIndex) => {
+      const rename = renames?.[colIndex];
+      if (isHeaderRow && rename !== undefined && rename.trim() !== "") {
+        return rename;
+      }
+      return row[colIndex] ?? "";
+    });
+  });
+}
+
+/**
  * 列の選択・削除・リネーム・並び替えのいずれも、既存のRFC4180準拠パーサー/
  * シリアライザ（parseCsv/csvRowsToBlob）を経由する。カンマ区切りの文字列
  * split/joinを独自実装しないため、セル内のカンマ・改行・ダブルクォート・
@@ -212,24 +284,7 @@ export class CsvColumnEditProcessor extends BrowserProcessor<
       throw new Error("CSVの内容が空です。ファイルを確認してください。");
     }
 
-    const originalColumnCount = rows[0].length;
-    const hasInvalidIndex = columnOrder.some(
-      (i) => !Number.isInteger(i) || i < 0 || i >= originalColumnCount
-    );
-    if (hasInvalidIndex) {
-      throw new Error("列の指定が正しくありません。ファイルを選び直してください。");
-    }
-
-    const resultRows = rows.map((row, rowIndex) => {
-      const isHeaderRow = hasHeader && rowIndex === 0;
-      return columnOrder.map((colIndex) => {
-        const rename = renames?.[colIndex];
-        if (isHeaderRow && rename !== undefined && rename.trim() !== "") {
-          return rename;
-        }
-        return row[colIndex] ?? "";
-      });
-    });
+    const resultRows = editCsvColumnRows(rows, columnOrder, renames, hasHeader);
 
     const blob = csvRowsToBlob(resultRows);
     return { blob, rowCount: resultRows.length, columnCount: columnOrder.length };

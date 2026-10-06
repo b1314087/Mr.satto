@@ -5,6 +5,7 @@ import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { FilledPdfToExcelProcessor, type FilledPdfToExcelOutput } from "@/lib/processors/browser/filled-pdf-to-excel";
 import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
 import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
@@ -221,6 +222,18 @@ function AutoExtractSection() {
 
       {files.length > 0 && <FileList files={files} onRemove={handleRemove} />}
       {pageCountError && <ErrorMessage message={pageCountError} />}
+
+      {files.length > 0 && (
+        <div data-testid="tool-preview">
+          <PdfThumbnails
+            file={files[0]}
+            pages={[1]}
+            maxPages={1}
+            width={160}
+            title={files.length > 1 ? `読み取るPDFの1ページ目(1/${files.length}ファイル目)` : "読み取るPDFの1ページ目"}
+          />
+        </div>
+      )}
 
       <UsageGatePanel usage={usage} usageLoading={usageLoading} totalPages={totalPages} adPhase={adPhase} isAdBusy={isAdBusy} onWatchAd={() => void handleWatchAd()} />
 

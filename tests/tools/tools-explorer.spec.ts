@@ -32,10 +32,14 @@ test("一覧ページが表示され、件数がRegistry上の実装済みツー
   await expect(main.getByRole("heading", { name: "ツール一覧" })).toBeVisible();
 
   await expect(main.getByText(`${expectedAvailable}件のツール`, { exact: true })).toBeVisible();
-  // 絞り込みなしの初期表示では、準備中のツールも（別セクションとして）全件表示される
-  await expect(
-    main.getByRole("heading", { name: `準備中のツール（${expectedComingSoon}件）` })
-  ).toBeVisible();
+  // 絞り込みなしの初期表示では、準備中のツールも（別セクションとして）全件表示される。
+  // 準備中のツールが1つも無い場合は、このセクション自体が表示されない。
+  const comingSoonHeading = main.getByRole("heading", { name: `準備中のツール（${expectedComingSoon}件）` });
+  if (expectedComingSoon > 0) {
+    await expect(comingSoonHeading).toBeVisible();
+  } else {
+    await expect(main.getByRole("heading", { name: /^準備中のツール/ })).toHaveCount(0);
+  }
 });
 
 test("キーワード検索: 単一語（PDF）で絞り込める", async ({ page }) => {
@@ -124,13 +128,19 @@ test("絞り込み前は「絞り込みを解除」ボタンが表示されな�
   await expect(page.locator("main").getByRole("button", { name: "絞り込みを解除" })).toHaveCount(0);
 });
 
+// 準備中のツールは「全ツール実装」により現在0件になった。今後また準備中のツールが追加されたときに
+// 表示の区別(別セクション・アクセシブルな名前)が保たれているかを確認するため、
+// 準備中のツールがある場合だけ実行する(無いときはスキップ)。
+const firstComingSoon = tools.find((t) => t.status === "coming-soon");
+
 test("準備中(Coming Soon)ツールは実装済みツールと別セクションに分けて表示される", async ({ page }) => {
+  test.skip(!firstComingSoon, "現在、準備中のツールはありません");
   await page.goto("/tools");
   const main = page.locator("main");
-  // pdf-password-protect は準備中のPDFツール（他に一致するツールがない語で検索する）
-  await main.getByRole("searchbox", { name: "ツールを検索" }).fill("パスワード保護");
+  // 準備中のツール名だけで検索する
+  await main.getByRole("searchbox", { name: "ツールを検索" }).fill(firstComingSoon!.name);
 
-  await expect(main.getByRole("heading", { name: "準備中のツール（1件）" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: /^準備中のツール（\d+件）/ })).toBeVisible();
   await expect(main.getByText("準備中").first()).toBeVisible();
   // メインの件数表示（実装済みツール数）は0のまま
   await expect(main.getByText("0件のツール", { exact: true })).toBeVisible();
@@ -140,11 +150,12 @@ test("Coming Soonカードのアクセシブルな名前が実装済みツール
   // Phase 19 10章: 実装済みツールと同じクリック体験にしない。
   // カード自体のaria-labelで「準備中・まだ利用できません」であることが
   // スクリーンリーダー利用者にも伝わることを確認する。
+  test.skip(!firstComingSoon, "現在、準備中のツールはありません");
   await page.goto("/tools");
   const main = page.locator("main");
-  await main.getByRole("searchbox", { name: "ツールを検索" }).fill("パスワード保護");
+  await main.getByRole("searchbox", { name: "ツールを検索" }).fill(firstComingSoon!.name);
 
-  const comingSoonLink = main.getByRole("link", { name: "PDFパスワード保護（準備中・まだ利用できません）" });
+  const comingSoonLink = main.getByRole("link", { name: `${firstComingSoon!.name}（準備中・まだ利用できません）` });
   await expect(comingSoonLink).toBeVisible();
 });
 

@@ -1,12 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { CsvToJsonProcessor, type CsvToJsonOutput } from "@/lib/processors/browser/csv-json";
+import {
+  PreviewColumn,
+  PreviewColumns,
+  PreviewGrid,
+  PreviewNotice,
+  PreviewShell,
+  PreviewText,
+  toGridRows,
+} from "@/components/tools/implementations/shared/before-after-table";
+import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
+import { CsvToJsonProcessor, csvRowsToJsonObjects, type CsvToJsonOutput } from "@/lib/processors/browser/csv-json";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 export function CsvToJsonTool() {
@@ -14,6 +24,18 @@ export function CsvToJsonTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CsvToJsonOutput | null>(null);
+
+  // プレビュー: 出力と同じ csvRowsToJsonObjects で変換し、先頭の数件だけをJSONで表示する
+  const { data: rows, error: previewError, loading } = useAsyncFileData(file, loadCsvRows);
+  const preview = useMemo(() => {
+    if (!rows) return null;
+    try {
+      const objects = csvRowsToJsonObjects(rows);
+      return { error: null as string | null, objects: objects.slice(0, 3), total: objects.length };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "JSONに変換できませんでした", objects: [], total: 0 };
+    }
+  }, [rows]);
 
   function handleFile(files: File[]) {
     setFile(files[0]);
@@ -54,6 +76,31 @@ export function CsvToJsonTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (rows || previewError || loading) && (
+        <PreviewShell
+          title="JSONへの変換プレビュー"
+          loading={loading}
+          summary={preview && !preview.error && <span>1行目を見出し(キー名)として、{preview.total}件のオブジェクトになります（値はすべて文字列）</span>}
+          notes={preview && !preview.error && preview.total > 3 ? ["JSONは先頭3件のみ表示しています。"] : undefined}
+        >
+          {previewError && <PreviewNotice message={previewError} />}
+          {rows && (
+            <PreviewColumns>
+              <PreviewColumn label="CSV(元の表)">
+                <PreviewGrid rows={toGridRows(rows.slice(0, 6))} totalRows={rows.length} maxRows={6} maxCols={6} />
+              </PreviewColumn>
+              <PreviewColumn label="JSON(先頭)">
+                {preview?.error ? (
+                  <PreviewNotice message={preview.error} />
+                ) : (
+                  preview && <PreviewText text={JSON.stringify(preview.objects, null, 2)} maxLines={30} label="JSONのプレビュー" />
+                )}
+              </PreviewColumn>
+            </PreviewColumns>
+          )}
+        </PreviewShell>
+      )}
 
       {file && (
         <button

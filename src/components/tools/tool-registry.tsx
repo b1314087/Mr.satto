@@ -61,6 +61,24 @@ const CsvFormatTool = dynamic(() =>
 const PomodoroTimerTool = dynamic(() =>
   import("./implementations/pomodoro-timer-tool").then((m) => m.PomodoroTimerTool)
 );
+const UnitConverterTool = dynamic(() =>
+  import("./implementations/unit-converter-tool").then((m) => m.UnitConverterTool)
+);
+const GradientGeneratorTool = dynamic(() =>
+  import("./implementations/gradient-generator-tool").then((m) => m.GradientGeneratorTool)
+);
+const CitationFormatterTool = dynamic(() =>
+  import("./implementations/citation-formatter-tool").then((m) => m.CitationFormatterTool)
+);
+const MeetingNotesTool = dynamic(() =>
+  import("./implementations/meeting-notes-tool").then((m) => m.MeetingNotesTool)
+);
+const BackgroundRemoverTool = dynamic(() =>
+  import("./implementations/background-remover-tool").then((m) => m.BackgroundRemoverTool)
+);
+const PdfPasswordProtectTool = dynamic(() =>
+  import("./implementations/pdf-password-protect-tool").then((m) => m.PdfPasswordProtectTool)
+);
 const ColorPaletteTool = dynamic(() =>
   import("./implementations/color-palette-tool").then((m) => m.ColorPaletteTool)
 );
@@ -338,6 +356,18 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <CsvFormatTool />;
     case "pomodoro-timer":
       return <PomodoroTimerTool />;
+    case "unit-converter":
+      return <UnitConverterTool />;
+    case "gradient-generator":
+      return <GradientGeneratorTool />;
+    case "citation-formatter":
+      return <CitationFormatterTool />;
+    case "meeting-notes-template":
+      return <MeetingNotesTool />;
+    case "background-remover":
+      return <BackgroundRemoverTool />;
+    case "pdf-password-protect":
+      return <PdfPasswordProtectTool />;
     case "color-palette-generator":
       return <ColorPaletteTool />;
     case "image-sns-size":

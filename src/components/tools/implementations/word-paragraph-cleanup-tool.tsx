@@ -1,13 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
+  ParagraphCompare,
+  ParagraphLegend,
+  SpaceLegend,
+  type ParagraphItem,
+} from "@/components/tools/implementations/shared/paragraph-compare";
+import { PreviewNotice, PreviewShell } from "@/components/tools/implementations/shared/before-after-table";
+import { useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
+import { loadDocxPackage } from "@/lib/word/docx-text-ops";
+import {
   WordParagraphCleanupProcessor,
+  previewParagraphCleanup,
   type ParagraphCleanupOptions,
 } from "@/lib/processors/browser/word-paragraph-cleanup";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
@@ -42,6 +52,26 @@ export function WordParagraphCleanupTool() {
     afterText: string;
     removedParagraphCount: number;
   } | null>(null);
+
+  // プレビュー: 出力と同じ整理処理(applyParagraphCleanup)を、読み込んだdocument.xmlに適用して段落を並べる
+  const { data: pkg, error: previewError, loading } = useAsyncFileData(file, loadDocxPackage);
+  const preview = useMemo(() => {
+    if (!pkg) return null;
+    try {
+      const result = previewParagraphCleanup(pkg.documentXmlText, options);
+      const before: ParagraphItem[] = result.paragraphs.map((p) => ({
+        text: p.before,
+        removed: p.after === null,
+        changed: p.after !== null && p.after !== p.before,
+      }));
+      const after: ParagraphItem[] = result.paragraphs
+        .filter((p) => p.after !== null)
+        .map((p) => ({ text: p.after as string, changed: p.after !== p.before }));
+      return { error: null as string | null, before, after, removed: result.removedParagraphCount };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "プレビューを作成できませんでした", before: [], after: [], removed: 0 };
+    }
+  }, [pkg, options]);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -105,6 +135,25 @@ export function WordParagraphCleanupTool() {
             ))}
           </div>
         </div>
+      )}
+
+      {file && (preview || previewError || loading) && (
+        <PreviewShell
+          title="整理後の文章プレビュー(選択に合わせて更新されます)"
+          loading={loading}
+          summary={preview && !preview.error && <span>削除される空白行: {preview.removed}行</span>}
+          notes={["本文直下の段落のテキストを表示しています(表の中の文字は整形のみ反映され、ここには表示されません)。"]}
+        >
+          {previewError && <PreviewNotice message={previewError} />}
+          {preview?.error && <PreviewNotice message={preview.error} />}
+          {preview && !preview.error && (
+            <>
+              <ParagraphCompare before={preview.before} after={preview.after} beforeLabel="整理前" afterLabel="整理後" />
+              <ParagraphLegend items={[{ kind: "changed", label: "文字が変わる段落" }, { kind: "removed", label: "削除される空白行" }]} />
+              <SpaceLegend />
+            </>
+          )}
+        </PreviewShell>
       )}
 
       {file && (

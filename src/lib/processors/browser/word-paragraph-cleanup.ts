@@ -53,61 +53,90 @@ function joinParagraphTexts(paragraphs: Element[]): string {
   return paragraphs.map((p) => getParagraphText(p)).join("\n");
 }
 
+/**
+ * 解析済みのdocument.xml(DOM)に整理を適用する(出力とプレビューで共通)。
+ * doc は直接書き換えられる。
+ */
+export function applyParagraphCleanup(
+  doc: Document,
+  options: ParagraphCleanupOptions
+): {
+  beforeText: string;
+  afterText: string;
+  removedParagraphCount: number;
+  /** 本文直下の段落ごとの処理前テキストと処理後テキスト(削除された段落は after が null) */
+  paragraphs: { before: string; after: string | null }[];
+} {
+  const body = getBodyElement(doc);
+
+  const originalParagraphs = getTopLevelParagraphs(body);
+  const originalTexts = originalParagraphs.map((p) => getParagraphText(p));
+  const beforeText = originalTexts.join("\n");
+
+  // 1) テキストレベルの整形（文書全体、表のセル内も含む）
+  if (options.fullToHalfSpace || options.halfToFullSpace || options.collapseRepeatedSpaces) {
+    for (const run of getAllTextRuns(doc)) {
+      const original = run.textContent ?? "";
+      const updated = normalizeTextRun(original, options);
+      if (updated !== original) run.textContent = updated;
+    }
+  }
+
+  // 2) 段落レベルの整理（本文直下の段落のみ）
+  let removedParagraphCount = 0;
+  if (options.collapseConsecutiveBlankLines || options.removeBlankLines) {
+    const paragraphs = getTopLevelParagraphs(body);
+    const blankFlags = paragraphs.map((p) => isParagraphBlank(p));
+
+    if (options.collapseConsecutiveBlankLines) {
+      let previousWasBlank = false;
+      for (let i = 0; i < paragraphs.length; i++) {
+        if (blankFlags[i] && previousWasBlank) {
+          body.removeChild(paragraphs[i]);
+          removedParagraphCount++;
+        } else if (blankFlags[i]) {
+          previousWasBlank = true;
+        } else {
+          previousWasBlank = false;
+        }
+      }
+    }
+
+    if (options.removeBlankLines) {
+      // 上のステップで一部が既にDOMから除去されている可能性があるため、
+      // 現時点でまだ本文に残っている段落だけを対象に再評価する
+      const remaining = getTopLevelParagraphs(body);
+      for (const p of remaining) {
+        if (isParagraphBlank(p)) {
+          body.removeChild(p);
+          removedParagraphCount++;
+        }
+      }
+    }
+  }
+
+  const afterText = joinParagraphTexts(getTopLevelParagraphs(body));
+  const paragraphs = originalParagraphs.map((p, i) => ({
+    before: originalTexts[i],
+    after: p.parentNode === body ? getParagraphText(p) : null,
+  }));
+  return { beforeText, afterText, removedParagraphCount, paragraphs };
+}
+
+/** document.xmlのテキストから、整理後の段落テキスト(処理前→処理後)だけを求める(プレビュー用) */
+export function previewParagraphCleanup(documentXmlText: string, options: ParagraphCleanupOptions) {
+  return applyParagraphCleanup(parseDocumentXml(documentXmlText), options);
+}
+
 export class WordParagraphCleanupProcessor extends BrowserProcessor<
   WordParagraphCleanupInput,
   WordParagraphCleanupOutput
 > {
   async process(input: WordParagraphCleanupInput): Promise<WordParagraphCleanupOutput> {
-    const { options } = input;
     const pkg = await loadDocxPackage(input.file);
     const doc = parseDocumentXml(pkg.documentXmlText);
-    const body = getBodyElement(doc);
 
-    const beforeText = joinParagraphTexts(getTopLevelParagraphs(body));
-
-    // 1) テキストレベルの整形（文書全体、表のセル内も含む）
-    if (options.fullToHalfSpace || options.halfToFullSpace || options.collapseRepeatedSpaces) {
-      for (const run of getAllTextRuns(doc)) {
-        const original = run.textContent ?? "";
-        const updated = normalizeTextRun(original, options);
-        if (updated !== original) run.textContent = updated;
-      }
-    }
-
-    // 2) 段落レベルの整理（本文直下の段落のみ）
-    let removedParagraphCount = 0;
-    if (options.collapseConsecutiveBlankLines || options.removeBlankLines) {
-      const paragraphs = getTopLevelParagraphs(body);
-      const blankFlags = paragraphs.map((p) => isParagraphBlank(p));
-
-      if (options.collapseConsecutiveBlankLines) {
-        let previousWasBlank = false;
-        for (let i = 0; i < paragraphs.length; i++) {
-          if (blankFlags[i] && previousWasBlank) {
-            body.removeChild(paragraphs[i]);
-            removedParagraphCount++;
-          } else if (blankFlags[i]) {
-            previousWasBlank = true;
-          } else {
-            previousWasBlank = false;
-          }
-        }
-      }
-
-      if (options.removeBlankLines) {
-        // 上のステップで一部が既にDOMから除去されている可能性があるため、
-        // 現時点でまだ本文に残っている段落だけを対象に再評価する
-        const remaining = getTopLevelParagraphs(body);
-        for (const p of remaining) {
-          if (isParagraphBlank(p)) {
-            body.removeChild(p);
-            removedParagraphCount++;
-          }
-        }
-      }
-    }
-
-    const afterText = joinParagraphTexts(getTopLevelParagraphs(body));
+    const { beforeText, afterText, removedParagraphCount } = applyParagraphCleanup(doc, input.options);
 
     const newXml = serializeDocumentXml(doc, pkg.xmlDeclaration);
     const blob = buildDocxBlob(pkg, newXml);

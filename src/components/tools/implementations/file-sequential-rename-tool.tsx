@@ -6,10 +6,15 @@ import { ReorderableFileList } from "@/components/tools/implementations/shared/r
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { FileRenameProcessor, buildSequentialBaseNames } from "@/lib/processors/browser/file-ops";
+import {
+  FileRenameProcessor,
+  buildSequentialBaseNames,
+  planFileRenames,
+} from "@/lib/processors/browser/file-ops";
+import { RenamePreviewList } from "@/components/tools/implementations/shared/rename-preview-list";
 import type { NamedFileOutput } from "@/lib/processors/types";
 import { createZip } from "@/lib/utils/zip";
-import { downloadBlob, formatBytes, getExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 /**
  * ファイル連番リネーム。
@@ -32,15 +37,16 @@ export function FileSequentialRenameTool() {
     null
   );
 
-  const { previewNames, validationError } = useMemo(() => {
-    if (files.length === 0) return { previewNames: [] as string[], validationError: null };
+  // 実際のリネームと同じ buildSequentialBaseNames() / planFileRenames() でライブプレビューを作る
+  const { plan, validationError } = useMemo(() => {
+    if (files.length === 0) return { plan: null, validationError: null };
     const startNumber = Number(startNumberInput);
     const digits = Number(digitsInput);
     if (startNumberInput.trim() === "" || !Number.isInteger(startNumber) || startNumber < 0) {
-      return { previewNames: [], validationError: "開始番号は0以上の整数で入力してください" };
+      return { plan: null, validationError: "開始番号は0以上の整数で入力してください" };
     }
     if (digitsInput.trim() === "" || !Number.isInteger(digits) || digits < 1 || digits > 10) {
-      return { previewNames: [], validationError: "桁数は1〜10の範囲の整数で入力してください" };
+      return { plan: null, validationError: "桁数は1〜10の範囲の整数で入力してください" };
     }
     try {
       const bases = buildSequentialBaseNames({
@@ -50,14 +56,10 @@ export function FileSequentialRenameTool() {
         digits,
         suffix,
       });
-      const names = bases.map((base, i) => {
-        const ext = getExtension(files[i].name);
-        return ext ? `${base}.${ext}` : base;
-      });
-      return { previewNames: names, validationError: null };
+      return { plan: planFileRenames(files, bases), validationError: null };
     } catch (e) {
       return {
-        previewNames: [],
+        plan: null,
         validationError: e instanceof Error ? e.message : "入力内容を確認してください",
       };
     }
@@ -163,29 +165,11 @@ export function FileSequentialRenameTool() {
             </label>
           </div>
 
-          {validationError ? (
-            <ErrorMessage message={validationError} />
-          ) : (
-            previewNames.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                  プレビュー
-                </p>
-                <ul className="flex flex-col gap-0.5 text-xs text-neutral-600 dark:text-neutral-300">
-                  {previewNames.slice(0, 5).map((name, i) => (
-                    <li key={i} className="truncate">
-                      {files[i]?.name} → {name}
-                    </li>
-                  ))}
-                  {previewNames.length > 5 && (
-                    <li className="text-neutral-400">他 {previewNames.length - 5} 件…</li>
-                  )}
-                </ul>
-              </div>
-            )
-          )}
+          {validationError && <ErrorMessage message={validationError} />}
         </div>
       )}
+
+      {plan && <RenamePreviewList files={files} plan={plan} />}
 
       {files.length > 0 && (
         <button

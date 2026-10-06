@@ -6,6 +6,13 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { SliderField } from "@/components/common/slider-field";
+import {
+  PdfOverlayPreview,
+  usePdfFont,
+} from "@/components/tools/implementations/shared/pdf-overlay-preview";
+import { WATERMARK_COLOR, watermarkPlacement } from "@/lib/pdf/overlay-layout";
+import { WATERMARK_PREVIEW_FONT_FAMILY, getWatermarkFont } from "@/lib/pdf/overlay-fonts";
 import { PdfWatermarkProcessor, type WatermarkPosition } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
@@ -17,6 +24,75 @@ const POSITIONS: { value: WatermarkPosition; label: string }[] = [
   { value: "bottom-left", label: "左下" },
   { value: "bottom-right", label: "右下" },
 ];
+
+/**
+ * 透かしのプレビュー。実際の出力と同じ日本語フォント(Noto Sans JP)で文字の大きさを測り、
+ * 位置の計算も出力と共通(overlay-layout)。フォント(約5MB)はファイルを選んだ後に初めて読み込む。
+ */
+function WatermarkPreview({
+  file,
+  text,
+  opacityPercent,
+  fontSize,
+  position,
+  rotation,
+}: {
+  file: File;
+  text: string;
+  opacityPercent: number;
+  fontSize: number;
+  position: WatermarkPosition;
+  rotation: number;
+}) {
+  const { font: previewFont, failed: fontFailed } = usePdfFont(getWatermarkFont);
+  return (
+    <PdfOverlayPreview
+      file={file}
+      width={260}
+      title="透かしのプレビュー"
+      caption={
+        fontFailed
+          ? "プレビュー用の日本語フォントを読み込めませんでした(出力には影響しません)。"
+          : previewFont
+            ? "設定を変えると、表示がすぐに変わります。全ページに同じ位置で入ります。"
+            : "プレビュー用の日本語フォントを読み込み中…(初回のみ少し時間がかかります)"
+      }
+    >
+      {({ geometry, sy }) => {
+        if (!previewFont || text.trim() === "") return null;
+        let textWidth: number;
+        try {
+          textWidth = previewFont.widthOfTextAtSize(text, fontSize);
+        } catch {
+          return null;
+        }
+        const textHeight = previewFont.heightAtSize(fontSize);
+        const { x, y } = watermarkPlacement(
+          geometry.media.width,
+          geometry.media.height,
+          textWidth,
+          textHeight,
+          position
+        );
+        const baseline = sy(y);
+        return (
+          <text
+            x={x}
+            y={baseline}
+            transform={`rotate(${-rotation} ${x} ${baseline})`}
+            fontSize={fontSize}
+            fontFamily={`${WATERMARK_PREVIEW_FONT_FAMILY}, sans-serif`}
+            fill={`rgb(${WATERMARK_COLOR.r * 255}, ${WATERMARK_COLOR.g * 255}, ${WATERMARK_COLOR.b * 255})`}
+            fillOpacity={opacityPercent / 100}
+            style={{ whiteSpace: "pre" }}
+          >
+            {text}
+          </text>
+        );
+      }}
+    </PdfOverlayPreview>
+  );
+}
 
 export function PdfWatermarkTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -113,39 +189,46 @@ export function PdfWatermarkTool() {
             </div>
           </div>
 
-          <label className="flex flex-col gap-1 text-sm">
-            不透明度: {opacityPercent}%
-            <input
-              type="range"
-              min={5}
-              max={100}
-              value={opacityPercent}
-              onChange={(e) => setOpacityPercent(Number(e.target.value))}
-            />
-          </label>
+          <SliderField
+            label="不透明度"
+            value={opacityPercent}
+            min={5}
+            max={100}
+            unit="%"
+            onChange={setOpacityPercent}
+          />
 
-          <label className="flex flex-col gap-1 text-sm">
-            フォントサイズ: {fontSize}pt
-            <input
-              type="range"
-              min={12}
-              max={120}
-              value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
-            />
-          </label>
+          <SliderField
+            label="フォントサイズ"
+            value={fontSize}
+            min={12}
+            max={120}
+            inputMax={200}
+            unit="pt"
+            onChange={setFontSize}
+          />
 
-          <label className="flex flex-col gap-1 text-sm">
-            回転角度: {rotation}°
-            <input
-              type="range"
-              min={-90}
-              max={90}
-              value={rotation}
-              onChange={(e) => setRotation(Number(e.target.value))}
-            />
-          </label>
+          <SliderField
+            label="回転角度"
+            value={rotation}
+            min={-90}
+            max={90}
+            unit="°"
+            onChange={setRotation}
+            onReset={() => setRotation(-45)}
+          />
         </div>
+      )}
+
+      {file && (
+        <WatermarkPreview
+          file={file}
+          text={text}
+          opacityPercent={opacityPercent}
+          fontSize={fontSize}
+          position={position}
+          rotation={rotation}
+        />
       )}
 
       {file && (

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -9,6 +10,18 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfMergeProcessor } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+
+// 並べ替えてもサムネイルを作り直さないよう、Fileごとに固定のキーを割り当てる
+const fileKeys = new WeakMap<File, number>();
+let nextFileKey = 1;
+function fileKey(file: File): number {
+  let key = fileKeys.get(file);
+  if (key === undefined) {
+    key = nextFileKey++;
+    fileKeys.set(file, key);
+  }
+  return key;
+}
 
 export function PdfMergeTool() {
   const [files, setFiles] = useState<File[]>([]);
@@ -67,6 +80,27 @@ export function PdfMergeTool() {
 
       {files.length > 0 && (
         <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />
+      )}
+
+      {files.length > 0 && (
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            結合のプレビュー（各PDFの先頭ページ。上から順に結合されます）
+          </p>
+          <ol className="flex flex-wrap gap-3">
+            {files.map((file, index) => (
+              <li key={fileKey(file)} className="flex w-[calc(140px+2rem+2px)] max-w-full flex-col gap-1">
+                <p className="truncate text-xs text-neutral-600 dark:text-neutral-300" title={file.name}>
+                  <span className="mr-1 inline-block rounded-full bg-blue-600 px-1.5 text-[10px] font-semibold text-white">
+                    {index + 1}
+                  </span>
+                  {file.name}
+                </p>
+                <PdfThumbnails file={file} maxPages={1} title="先頭ページ" />
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
 
       {files.length > 0 && files.length < 2 && (

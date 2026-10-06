@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { EnvelopePreview } from "./shared/envelope-preview";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -70,6 +71,7 @@ export function EnvelopeAddressTool() {
   const [recipients, setRecipients] = useState<EnvelopePerson[]>([emptyPerson()]);
   const [sender, setSender] = useState<EnvelopePerson>(emptyPerson());
   const [useSender, setUseSender] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
 
   const [importTable, setImportTable] = useState<{ headers: string[]; rows: string[][] } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -136,7 +138,12 @@ export function EnvelopeAddressTool() {
     downloadBlob(result, buildEnvelopeFileName(envelopeSize));
   }
 
-  const previewPerson = recipients.find((r) => r.name.trim() || r.address.trim()) ?? recipients[0];
+  // PDFに出力される宛先(空の宛先は除外)を1件ずつプレビューする
+  const validRecipients = recipients.filter(
+    (r) => r.postalCode.trim() || r.address.trim() || r.name.trim()
+  );
+  const safePreviewIndex = Math.min(previewIndex, Math.max(0, validRecipients.length - 1));
+  const previewPerson = validRecipients[safePreviewIndex];
 
   return (
     <div className="flex flex-col gap-6">
@@ -183,23 +190,42 @@ export function EnvelopeAddressTool() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="mb-2 text-sm font-medium">プレビュー（{ENVELOPE_SIZE_LABELS[envelopeSize]}）</p>
-        <div
-          className="relative mx-auto border border-neutral-400 bg-white text-neutral-800"
-          style={{ width: 320, aspectRatio: envelopeSize === "kaku2" ? "332/240" : "235/120" }}
-        >
-          <div
-            className="absolute inset-4 flex items-center justify-center overflow-hidden text-sm"
-            style={writingMode === "vertical" ? { writingMode: "vertical-rl" } : { writingMode: "horizontal-tb" }}
-          >
-            <div className={writingMode === "vertical" ? "text-right" : "text-left"}>
-              <div className="text-xs text-neutral-500">{previewPerson?.postalCode}</div>
-              <div className="text-xs">{previewPerson?.address}</div>
-              <div className="text-base font-semibold">{previewPerson?.name ? `${previewPerson.name} 様` : ""}</div>
+      <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium">プレビュー（{ENVELOPE_SIZE_LABELS[envelopeSize]}）</p>
+          {validRecipients.length > 1 && (
+            <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
+              <button
+                type="button"
+                onClick={() => setPreviewIndex(Math.max(0, safePreviewIndex - 1))}
+                disabled={safePreviewIndex === 0}
+                className="rounded-md bg-neutral-100 px-2 py-1 disabled:opacity-40 dark:bg-neutral-800"
+              >
+                前の宛先
+              </button>
+              <span className="tabular-nums">
+                {safePreviewIndex + 1} / {validRecipients.length}件目
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewIndex(Math.min(validRecipients.length - 1, safePreviewIndex + 1))}
+                disabled={safePreviewIndex >= validRecipients.length - 1}
+                className="rounded-md bg-neutral-100 px-2 py-1 disabled:opacity-40 dark:bg-neutral-800"
+              >
+                次の宛先
+              </button>
             </div>
-          </div>
+          )}
         </div>
+        <EnvelopePreview
+          envelopeSize={envelopeSize}
+          writingMode={writingMode}
+          recipient={previewPerson}
+          sender={useSender ? sender : null}
+        />
+        <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+          PDFと同じ配置で表示しています（フォントは実際のPDFと多少異なります）。
+        </p>
       </div>
 
       <div className="flex flex-col gap-3">

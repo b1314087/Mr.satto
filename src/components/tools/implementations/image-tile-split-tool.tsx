@@ -6,7 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ImageTileSplitProcessor } from "@/lib/processors/browser/image-tile-split";
+import { ImageTileSplitProcessor, computeTileBoundaries } from "@/lib/processors/browser/image-tile-split";
 import { createZip, type ZipEntry } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -89,6 +89,10 @@ export function ImageTileSplitTool() {
         : tooSmallInvalid
           ? "画像が小さすぎて、指定した行数・列数には分割できません。"
           : null;
+
+  // プレビューの分割線は、書き出しと同じ境界計算を使う
+  const xBounds = naturalSize && !colsInvalid ? computeTileBoundaries(naturalSize.width, cols) : [];
+  const yBounds = naturalSize && !rowsInvalid ? computeTileBoundaries(naturalSize.height, rows) : [];
 
   const canProcess = !!file && !!naturalSize && !settingsError;
   const tileCount = !rowsInvalid && !colsInvalid ? rows * cols : 0;
@@ -203,27 +207,35 @@ export function ImageTileSplitTool() {
       {settingsError && <ErrorMessage message={settingsError} />}
 
       {file && imageUrl && naturalSize && !rowsInvalid && !colsInvalid && (
-        <div className="flex flex-col gap-2">
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（{naturalSize.width} × {naturalSize.height}px）
+            プレビュー（{naturalSize.width} × {naturalSize.height}px ・ 1枚あたり約{Math.round(naturalSize.width / cols)} × {Math.round(naturalSize.height / rows)}px）
           </p>
           <div className="relative inline-block w-fit overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={imageUrl} alt="分割対象の画像" className="block max-h-[28rem] max-w-full select-none" />
-            <div
-              className="pointer-events-none absolute inset-0 grid"
-              style={{
-                gridTemplateColumns: `repeat(${cols}, 1fr)`,
-                gridTemplateRows: `repeat(${rows}, 1fr)`,
-              }}
-            >
-              {Array.from({ length: rows * cols }).map((_, i) => (
-                <div key={i} className="flex items-center justify-center border border-blue-400/70">
-                  {showNumbers && (
-                    <span className="rounded bg-black/40 px-1 text-xs text-white/90">{i + 1}</span>
-                  )}
-                </div>
-              ))}
+            <div className="pointer-events-none absolute inset-0">
+              {Array.from({ length: rows * cols }).map((_, i) => {
+                const r = Math.floor(i / cols);
+                const c = i % cols;
+                // 出力と同じ境界(computeTileBoundaries)で分割線を引く
+                return (
+                  <div
+                    key={i}
+                    className="absolute flex items-center justify-center border border-blue-400/70"
+                    style={{
+                      left: `${(xBounds[c] / naturalSize.width) * 100}%`,
+                      width: `${((xBounds[c + 1] - xBounds[c]) / naturalSize.width) * 100}%`,
+                      top: `${(yBounds[r] / naturalSize.height) * 100}%`,
+                      height: `${((yBounds[r + 1] - yBounds[r]) / naturalSize.height) * 100}%`,
+                    }}
+                  >
+                    {showNumbers && (
+                      <span className="rounded bg-black/40 px-1 text-xs text-white/90">{i + 1}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">

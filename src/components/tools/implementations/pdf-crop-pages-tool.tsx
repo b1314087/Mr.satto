@@ -6,6 +6,8 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { PdfOverlayPreview } from "@/components/tools/implementations/shared/pdf-overlay-preview";
+import { croppedBox } from "@/lib/pdf/overlay-layout";
 import { PdfCropPagesProcessor, type PdfCropMargins } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
@@ -64,6 +66,7 @@ export function PdfCropPagesTool() {
   }
 
   const downloadName = file ? `${stripExtension(file.name)}-cropped.pdf` : "cropped.pdf";
+  const marginsValid = Object.values(margins).every((v) => Number.isFinite(v) && v >= 0);
   const marginFields: { key: keyof PdfCropMargins; label: string }[] = [
     { key: "topMm", label: "上" },
     { key: "bottomMm", label: "下" },
@@ -125,6 +128,56 @@ export function PdfCropPagesTool() {
             指定した分だけ表示・印刷される範囲を狭めます（内容自体は削除・再描画されません）。
           </p>
         </div>
+      )}
+
+      {file && (
+        <PdfOverlayPreview
+          file={file}
+          width={260}
+          title="トリミングのプレビュー(1ページ目)"
+          caption={
+            marginsValid
+              ? "点線の内側が残る範囲、暗い部分が切り取られる余白です(赤くなる場合は余白が大きすぎます)。設定を変えるとすぐに変わります。"
+              : "余白は0以上の数値で入力してください。"
+          }
+        >
+          {({ geometry, sy }) => {
+            if (!marginsValid) return null;
+            const box = croppedBox(geometry.crop, margins);
+            if (!box) {
+              return (
+                <rect
+                  x={geometry.crop.x}
+                  y={sy(geometry.crop.y + geometry.crop.height)}
+                  width={geometry.crop.width}
+                  height={geometry.crop.height}
+                  fill="rgb(220, 38, 38)"
+                  fillOpacity={0.35}
+                />
+              );
+            }
+            const outer = geometry.crop;
+            const d =
+              `M${outer.x} ${sy(outer.y + outer.height)}h${outer.width}v${outer.height}h${-outer.width}z` +
+              `M${box.x} ${sy(box.y + box.height)}h${box.width}v${box.height}h${-box.width}z`;
+            return (
+              <>
+                <path d={d} fillRule="evenodd" fill="rgb(0, 0, 0)" fillOpacity={0.4} />
+                <rect
+                  x={box.x}
+                  y={sy(box.y + box.height)}
+                  width={box.width}
+                  height={box.height}
+                  fill="none"
+                  stroke="rgb(37, 99, 235)"
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </>
+            );
+          }}
+        </PdfOverlayPreview>
       )}
 
       {file && (

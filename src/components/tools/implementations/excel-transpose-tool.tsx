@@ -1,12 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ExcelTransposeProcessor } from "@/lib/processors/browser/excel-transpose";
+import {
+  BeforeAfterPreview,
+  PREVIEW_COMPUTE_ROWS,
+  SheetTabs,
+  limitSheetRows,
+  toGridRows,
+  xlsxRowsToText,
+} from "@/components/tools/implementations/shared/before-after-table";
+import { useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
+import { readXlsxSheets } from "@/lib/excel/xlsx-simple-io";
+import { ExcelTransposeProcessor, transposeRows } from "@/lib/processors/browser/excel-transpose";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 const ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -16,6 +26,29 @@ export function ExcelTransposeTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ blob: Blob; sheetCount: number } | null>(null);
+
+  const [tab, setTab] = useState(0);
+  const { data: sheets, error: previewError, loading } = useAsyncFileData(file, readXlsxSheets);
+
+  // プレビュー: 出力と同じ transposeRows で、選んだシートの行と列を入れ替える(大きなシートは先頭の行だけで計算)
+  const preview = useMemo(() => {
+    if (!sheets || sheets.length === 0) return null;
+    const { sheets: limitedSheets, limited } = limitSheetRows(sheets);
+    const index = Math.min(tab, limitedSheets.length - 1);
+    const sheet = limitedSheets[index];
+    const before = xlsxRowsToText(sheet.rows);
+    const after = xlsxRowsToText(transposeRows(sheet.rows));
+    return {
+      names: sheets.map((s) => s.name),
+      index,
+      limited,
+      totalRows: sheets[index].rows.length,
+      beforeSize: [before.length, before[0]?.length ?? 0],
+      afterSize: [after.length, after[0]?.length ?? 0],
+      before: toGridRows(before.slice(0, 10)),
+      after: toGridRows(after.slice(0, 10)),
+    };
+  }, [sheets, tab]);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -56,6 +89,37 @@ export function ExcelTransposeTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (preview || previewError || loading) && (
+        <BeforeAfterPreview
+          title="行と列の入れ替えプレビュー"
+          loading={loading}
+          before={preview?.before ?? null}
+          after={preview?.after ?? null}
+          afterError={previewError}
+          beforeLabel="入れ替え前"
+          afterLabel="入れ替え後"
+          maxRows={10}
+          maxCols={8}
+          headerRow={false}
+          totalRows={preview?.beforeSize[0]}
+          afterTotalRows={preview?.afterSize[0]}
+          header={preview && <SheetTabs names={preview.names} active={preview.index} onChange={setTab} />}
+          summary={
+            preview && (
+              <span>
+                {preview.beforeSize[0]}行 × {preview.beforeSize[1]}列 → {preview.afterSize[0]}行 × {preview.afterSize[1]}列
+                （すべてのシートが同じように入れ替わります）
+              </span>
+            )
+          }
+          notes={
+            preview?.limited
+              ? [`ファイルが大きいため、各シートの先頭${PREVIEW_COMPUTE_ROWS}行で計算したプレビューです(表示中のシートは全${preview.totalRows}行)。実際の処理は全行が対象です。`]
+              : undefined
+          }
+        />
+      )}
 
       {file && (
         <button

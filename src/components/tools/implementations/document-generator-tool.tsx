@@ -93,7 +93,9 @@ export function DocumentGeneratorTool({ type }: { type: DocumentType }) {
         <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
           {previewStep} プレビュー
         </h2>
-        <DocumentPreview form={form} />
+        <div data-testid="tool-preview">
+          <DocumentPreview form={form} />
+        </div>
       </section>
 
       <section className="flex flex-col gap-3">

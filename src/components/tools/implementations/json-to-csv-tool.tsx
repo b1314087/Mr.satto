@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { JsonToCsvProcessor, type JsonToCsvOutput } from "@/lib/processors/browser/csv-json";
+import {
+  PreviewGrid,
+  PreviewNotice,
+  PreviewShell,
+  toGridRows,
+} from "@/components/tools/implementations/shared/before-after-table";
+import { JsonToCsvProcessor, jsonTextToCsvRows, type JsonToCsvOutput } from "@/lib/processors/browser/csv-json";
 import { downloadBlob } from "@/lib/utils/format";
 
 const PLACEHOLDER = `[
@@ -17,6 +23,16 @@ export function JsonToCsvTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<JsonToCsvOutput | null>(null);
+
+  // プレビュー: 出力と同じ jsonTextToCsvRows で、入力に応じてその場で表にする
+  const preview = useMemo(() => {
+    if (!input.trim()) return null;
+    try {
+      return { rows: jsonTextToCsvRows(input), error: null as string | null };
+    } catch (e) {
+      return { rows: null, error: e instanceof Error ? e.message : "CSVに変換できませんでした" };
+    }
+  }, [input]);
 
   async function handleRun() {
     if (status === "processing") return;
@@ -50,6 +66,18 @@ export function JsonToCsvTool() {
           className="rounded-xl border border-neutral-300 px-4 py-3 font-mono text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>
+
+      {preview && (
+        <PreviewShell
+          title="CSVのプレビュー(入力に合わせて更新されます)"
+          summary={preview.rows && <span>{preview.rows.length - 1}行 × {preview.rows[0].length}列の表になります</span>}
+        >
+          {preview.error && <PreviewNotice message={preview.error} />}
+          {preview.rows && (
+            <PreviewGrid rows={toGridRows(preview.rows.slice(0, 10))} totalRows={preview.rows.length} maxRows={10} maxCols={8} />
+          )}
+        </PreviewShell>
+      )}
 
       <button
         type="button"

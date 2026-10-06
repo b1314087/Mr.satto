@@ -245,16 +245,24 @@ export interface ImageCropInput {
   mimeType?: string;
 }
 
+/**
+ * 切り抜き範囲を元画像の内側に収める(最終出力とライブプレビューで同じ計算を使う)。
+ */
+export function resolveCropRect(naturalWidth: number, naturalHeight: number, crop: CropRegion): CropRegion {
+  const x = Math.max(0, Math.min(crop.x, naturalWidth - 1));
+  const y = Math.max(0, Math.min(crop.y, naturalHeight - 1));
+  const width = Math.max(1, Math.min(crop.width, naturalWidth - x));
+  const height = Math.max(1, Math.min(crop.height, naturalHeight - y));
+  return { x, y, width, height };
+}
+
 export class ImageCropProcessor extends BrowserProcessor<ImageCropInput, ImageProcessorOutput> {
   async process({ file, crop, targetWidth, targetHeight, mimeType }: ImageCropInput) {
     if (crop.width <= 0 || crop.height <= 0) {
       throw new Error("切り抜き範囲が正しくありません");
     }
     const img = await loadImage(file);
-    const sx = Math.max(0, Math.min(crop.x, img.naturalWidth - 1));
-    const sy = Math.max(0, Math.min(crop.y, img.naturalHeight - 1));
-    const sw = Math.max(1, Math.min(crop.width, img.naturalWidth - sx));
-    const sh = Math.max(1, Math.min(crop.height, img.naturalHeight - sy));
+    const { x: sx, y: sy, width: sw, height: sh } = resolveCropRect(img.naturalWidth, img.naturalHeight, crop);
 
     const outWidth = Math.round(targetWidth ?? sw);
     const outHeight = Math.round(targetHeight ?? sh);
@@ -283,6 +291,27 @@ export interface ImageFlipInput {
   direction: "horizontal" | "vertical";
 }
 
+/**
+ * 画像を左右または上下に反転してctxへ描画する(最終出力とライブプレビューで同じ描画を使う)。
+ * プレビューでは縮小したキャンバスをsourceに、そのサイズをwidth/heightに渡す。
+ */
+export function drawFlipped(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  direction: "horizontal" | "vertical"
+): void {
+  if (direction === "horizontal") {
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+  } else {
+    ctx.translate(0, height);
+    ctx.scale(1, -1);
+  }
+  ctx.drawImage(source, 0, 0, width, height);
+}
+
 export class ImageFlipProcessor extends BrowserProcessor<ImageFlipInput, ImageProcessorOutput> {
   async process({ file, direction }: ImageFlipInput) {
     const img = await loadImage(file);
@@ -295,14 +324,7 @@ export class ImageFlipProcessor extends BrowserProcessor<ImageFlipInput, ImagePr
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvasの初期化に失敗しました");
 
-    if (direction === "horizontal") {
-      ctx.translate(width, 0);
-      ctx.scale(-1, 1);
-    } else {
-      ctx.translate(0, height);
-      ctx.scale(1, -1);
-    }
-    ctx.drawImage(img, 0, 0);
+    drawFlipped(ctx, img, width, height, direction);
 
     const outType = file.type || "image/png";
     const blob = await canvasToBlob(canvas, outType, 0.92);
@@ -315,6 +337,21 @@ export class ImageFlipProcessor extends BrowserProcessor<ImageFlipInput, ImagePr
 // ---------------------------------------------------------------------------
 export interface ImageGrayscaleInput {
   file: File;
+}
+
+/**
+ * RGBA配列(ImageData.data)をグレースケールに書き換える(アルファ=透過は変更しない)。
+ * 最終出力とライブプレビューで同じ計算を使うため、関数として切り出している。
+ */
+export function applyGrayscale(data: Uint8ClampedArray): void {
+  for (let i = 0; i < data.length; i += 4) {
+    // 知覚輝度に近い重み付け（ITU-R BT.601）でグレー値を求める
+    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    data[i] = gray;
+    data[i + 1] = gray;
+    data[i + 2] = gray;
+    // data[i + 3]（アルファ）はそのまま
+  }
 }
 
 export class ImageGrayscaleProcessor extends BrowserProcessor<
@@ -330,15 +367,7 @@ export class ImageGrayscaleProcessor extends BrowserProcessor<
     // 元画像を直接書き換えず、Canvas上の複製に対してのみ処理する。
     // アルファチャンネル（透過）は変更しない。
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      // 知覚輝度に近い重み付け（ITU-R BT.601）でグレー値を求める
-      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-      data[i] = gray;
-      data[i + 1] = gray;
-      data[i + 2] = gray;
-      // data[i + 3]（アルファ）はそのまま
-    }
+    applyGrayscale(imageData.data);
     ctx.putImageData(imageData, 0, 0);
 
     const outType = file.type || "image/png";
@@ -362,16 +391,32 @@ function clampByte(value: number): number {
   return Math.min(255, Math.max(0, value));
 }
 
+/** 明るさ・コントラストの値(-100〜100)が有効か */
+export function isValidAdjustValue(value: number): boolean {
+  return Number.isFinite(value) && value >= -100 && value <= 100;
+}
+
+/**
+ * RGBA配列(ImageData.data)へ明るさ・コントラストを適用する（アルファは変更しない）。
+ * 最終出力とリアルタイムプレビューの両方で同じ計算を使うため、関数として切り出している。
+ *
+ * UIの -100〜100 を、-255〜255 の内部値へ変換してから既知のコントラスト式を適用する。
+ * 極端な値（±100）でも式自体は破綻しない（±255の範囲で必ず有限の値になる）。
+ */
+export function applyBrightnessContrast(data: Uint8ClampedArray, brightness: number, contrast: number): void {
+  const brightnessShift = brightness * 2.55;
+  const contrastValue = contrast * 2.55;
+  const contrastFactor = (259 * (contrastValue + 255)) / (255 * (259 - contrastValue));
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = clampByte(contrastFactor * (data[i] - 128) + 128 + brightnessShift);
+    data[i + 1] = clampByte(contrastFactor * (data[i + 1] - 128) + 128 + brightnessShift);
+    data[i + 2] = clampByte(contrastFactor * (data[i + 2] - 128) + 128 + brightnessShift);
+  }
+}
+
 export class ImageAdjustProcessor extends BrowserProcessor<ImageAdjustInput, ImageProcessorOutput> {
   async process({ file, brightness, contrast }: ImageAdjustInput) {
-    if (
-      !Number.isFinite(brightness) ||
-      !Number.isFinite(contrast) ||
-      brightness < -100 ||
-      brightness > 100 ||
-      contrast < -100 ||
-      contrast > 100
-    ) {
+    if (!isValidAdjustValue(brightness) || !isValidAdjustValue(contrast)) {
       throw new Error("明るさ・コントラストは-100〜100の範囲で指定してください");
     }
     const img = await loadImage(file);
@@ -379,19 +424,8 @@ export class ImageAdjustProcessor extends BrowserProcessor<ImageAdjustInput, Ima
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvasの初期化に失敗しました");
 
-    // UIの -100〜100 を、-255〜255 の内部値へ変換してから既知のコントラスト式を適用する。
-    // 極端な値（±100）でも式自体は破綻しない（±255の範囲で必ず有限の値になる）。
-    const brightnessShift = brightness * 2.55;
-    const contrastValue = contrast * 2.55;
-    const contrastFactor = (259 * (contrastValue + 255)) / (255 * (259 - contrastValue));
-
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      data[i] = clampByte(contrastFactor * (data[i] - 128) + 128 + brightnessShift);
-      data[i + 1] = clampByte(contrastFactor * (data[i + 1] - 128) + 128 + brightnessShift);
-      data[i + 2] = clampByte(contrastFactor * (data[i + 2] - 128) + 128 + brightnessShift);
-    }
+    applyBrightnessContrast(imageData.data, brightness, contrast);
     ctx.putImageData(imageData, 0, 0);
 
     const outType = file.type || "image/png";
@@ -413,6 +447,11 @@ export interface ImageMetadataRemoveInput {
 
 const CANVAS_REENCODABLE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+/** メタデータ削除の出力形式(Canvasが再エンコードできない形式はPNG)。プレビュー表示と実処理で共有する */
+export function resolveMetadataRemoveOutputType(requested: string): "image/jpeg" | "image/png" | "image/webp" {
+  return CANVAS_REENCODABLE_TYPES.has(requested) ? (requested as "image/jpeg" | "image/png" | "image/webp") : "image/png";
+}
+
 /**
  * Canvasへ描画し直して再エンコードすることで、元ファイルのバイト列に
  * 含まれていたEXIF等の付随データを持ち越さない（=結果のBlobは常に
@@ -432,8 +471,7 @@ export class ImageMetadataRemoveProcessor extends BrowserProcessor<
   async process({ file, outputMimeType, quality }: ImageMetadataRemoveInput) {
     const img = await loadImage(file);
     const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
-    const requested = outputMimeType ?? file.type;
-    const outType = CANVAS_REENCODABLE_TYPES.has(requested) ? requested : "image/png";
+    const outType = resolveMetadataRemoveOutputType(outputMimeType ?? file.type);
     const blob = await canvasToBlob(canvas, outType, quality ?? 0.92);
     return toOutput(blob, canvas.width, canvas.height);
   }
@@ -460,6 +498,75 @@ export interface ImageWatermarkInput {
   rotation: number;
 }
 
+/** ウォーターマークの文字サイズ(px)の下限・上限。上限は4K〜8Kクラスの写真でも十分大きく出せる値 */
+export const WATERMARK_FONT_SIZE_MIN = 6;
+export const WATERMARK_FONT_SIZE_MAX = 2000;
+
+export interface WatermarkDrawOptions {
+  text: string;
+  position: ImageWatermarkPosition;
+  /** 0〜1 */
+  opacity: number;
+  /** 描画先キャンバス上のpx */
+  fontSize: number;
+  /** 度数（時計回り） */
+  rotation: number;
+}
+
+/**
+ * キャンバスへ透かし文字を描画する(最終出力とリアルタイムプレビューで同じ描画を使う)。
+ * プレビューでは縮小したキャンバスを使うため、fontSizeは呼び出し側で縮小率を掛けて渡す。
+ */
+export function drawWatermarkText(
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  canvasHeight: number,
+  { text, position, opacity, fontSize, rotation }: WatermarkDrawOptions
+): void {
+  ctx.font = `${fontSize}px sans-serif`;
+  const textWidth = ctx.measureText(text).width;
+  const margin = Math.max(8, Math.round(Math.min(canvasWidth, canvasHeight) * 0.03));
+
+  let x: number;
+  let y: number;
+  switch (position) {
+    case "top-left":
+      x = margin;
+      y = margin + fontSize;
+      break;
+    case "top-right":
+      x = canvasWidth - margin - textWidth;
+      y = margin + fontSize;
+      break;
+    case "bottom-left":
+      x = margin;
+      y = canvasHeight - margin;
+      break;
+    case "bottom-right":
+      x = canvasWidth - margin - textWidth;
+      y = canvasHeight - margin;
+      break;
+    case "center":
+    default:
+      x = (canvasWidth - textWidth) / 2;
+      y = (canvasHeight + fontSize) / 2;
+      break;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.translate(x + textWidth / 2, y - fontSize / 2);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.translate(-(x + textWidth / 2), -(y - fontSize / 2));
+  ctx.font = `${fontSize}px sans-serif`;
+  ctx.lineWidth = Math.max(1, fontSize / 16);
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
 /**
  * Canvasへテキストを描画してから再書き出しする。元のFile/Blobは一切変更せず、
  * 新しいBlobを結果として返す（開発指示書■12）。
@@ -478,56 +585,15 @@ export class ImageWatermarkProcessor extends BrowserProcessor<
     if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) {
       throw new Error("不透明度は0〜1の範囲で指定してください");
     }
-    if (!Number.isFinite(fontSize) || fontSize < 6 || fontSize > 400) {
-      throw new Error("フォントサイズは6〜400の範囲で指定してください");
+    if (!Number.isFinite(fontSize) || fontSize < WATERMARK_FONT_SIZE_MIN || fontSize > WATERMARK_FONT_SIZE_MAX) {
+      throw new Error(`フォントサイズは${WATERMARK_FONT_SIZE_MIN}〜${WATERMARK_FONT_SIZE_MAX}の範囲で指定してください`);
     }
     const img = await loadImage(file);
     const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvasの初期化に失敗しました");
 
-    ctx.font = `${fontSize}px sans-serif`;
-    const textWidth = ctx.measureText(text).width;
-    const margin = Math.max(8, Math.round(Math.min(canvas.width, canvas.height) * 0.03));
-
-    let x: number;
-    let y: number;
-    switch (position) {
-      case "top-left":
-        x = margin;
-        y = margin + fontSize;
-        break;
-      case "top-right":
-        x = canvas.width - margin - textWidth;
-        y = margin + fontSize;
-        break;
-      case "bottom-left":
-        x = margin;
-        y = canvas.height - margin;
-        break;
-      case "bottom-right":
-        x = canvas.width - margin - textWidth;
-        y = canvas.height - margin;
-        break;
-      case "center":
-      default:
-        x = (canvas.width - textWidth) / 2;
-        y = (canvas.height + fontSize) / 2;
-        break;
-    }
-
-    ctx.save();
-    ctx.globalAlpha = opacity;
-    ctx.translate(x + textWidth / 2, y - fontSize / 2);
-    ctx.rotate((rotation * Math.PI) / 180);
-    ctx.translate(-(x + textWidth / 2), -(y - fontSize / 2));
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.lineWidth = Math.max(1, fontSize / 16);
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeText(text, x, y);
-    ctx.fillText(text, x, y);
-    ctx.restore();
+    drawWatermarkText(ctx, canvas.width, canvas.height, { text, position, opacity, fontSize, rotation });
 
     const outType = file.type || "image/png";
     const blob = await canvasToBlob(canvas, outType, 0.92);

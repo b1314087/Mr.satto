@@ -1,5 +1,5 @@
 import { BrowserProcessor } from "../types";
-import { readXlsxSheets, writeXlsxSheets, columnLetterToIndex, type XlsxCellValue } from "@/lib/excel/xlsx-simple-io";
+import { readXlsxSheets, writeXlsxSheets, columnLetterToIndex, type XlsxCellValue, type XlsxSheet } from "@/lib/excel/xlsx-simple-io";
 
 /**
  * Excel文字削除・置換（次工程・軽量便利ツール一括追加 Tool 6）。
@@ -53,7 +53,7 @@ function replaceInString(value: string, find: string, replaceWith: string, caseS
   return value.replace(new RegExp(escaped, "gi"), replaceWith);
 }
 
-function isTargetCell(rowIndex: number, colIndex: number, input: ExcelReplaceInput): boolean {
+function isTargetCell(rowIndex: number, colIndex: number, input: Omit<ExcelReplaceInput, "file">): boolean {
   if (input.scope === "all") return true;
   if (input.scope === "column") {
     if (!input.columnLetter) return false;
@@ -67,34 +67,54 @@ function isTargetCell(rowIndex: number, colIndex: number, input: ExcelReplaceInp
   return rowIndex >= rStart && rowIndex <= rEnd && colIndex >= cStart && colIndex <= cEnd;
 }
 
+/**
+ * 検索・置換の入力検証(出力とプレビューで共通)。問題があれば日本語のエラーを throw する。
+ */
+export function validateExcelReplaceInput(input: Pick<ExcelReplaceInput, "find" | "scope" | "columnLetter">) {
+  if (input.find === "") {
+    throw new Error("検索する文字列を入力してください");
+  }
+  if (input.scope === "column" && !input.columnLetter) {
+    throw new Error("対象の列を指定してください（例: B）");
+  }
+}
+
+/**
+ * 全シートに同じ置換を適用する(出力とプレビューで共通)。
+ * 入力 sheets は変更せず、新しいシートの配列と置換件数を返す。
+ */
+export function replaceInSheets(
+  sheets: XlsxSheet[],
+  input: Omit<ExcelReplaceInput, "file">
+): { sheets: XlsxSheet[]; replacedCount: number } {
+  validateExcelReplaceInput(input);
+
+  const replaceWith = input.mode === "delete" ? "" : input.replaceWith;
+  const countOccurrences = buildFinder(input.find, input.caseSensitive);
+  let replacedCount = 0;
+
+  const outputSheets = sheets.map((sheet) => {
+    const rows: XlsxCellValue[][] = sheet.rows.map((row, rowIndex) =>
+      row.map((cell, colIndex) => {
+        if (typeof cell !== "string") return cell;
+        if (!isTargetCell(rowIndex, colIndex, input)) return cell;
+        const occurrences = countOccurrences(cell);
+        if (occurrences === 0) return cell;
+        replacedCount += occurrences;
+        return replaceInString(cell, input.find, replaceWith, input.caseSensitive);
+      })
+    );
+    return { name: sheet.name, rows };
+  });
+  return { sheets: outputSheets, replacedCount };
+}
+
 export class ExcelReplaceProcessor extends BrowserProcessor<ExcelReplaceInput, ExcelReplaceOutput> {
   async process(input: ExcelReplaceInput): Promise<ExcelReplaceOutput> {
-    if (input.find === "") {
-      throw new Error("検索する文字列を入力してください");
-    }
-    if (input.scope === "column" && !input.columnLetter) {
-      throw new Error("対象の列を指定してください（例: B）");
-    }
-
-    const replaceWith = input.mode === "delete" ? "" : input.replaceWith;
-    const countOccurrences = buildFinder(input.find, input.caseSensitive);
+    validateExcelReplaceInput(input);
 
     const sheets = await readXlsxSheets(input.file);
-    let replacedCount = 0;
-
-    const outputSheets = sheets.map((sheet) => {
-      const rows: XlsxCellValue[][] = sheet.rows.map((row, rowIndex) =>
-        row.map((cell, colIndex) => {
-          if (typeof cell !== "string") return cell;
-          if (!isTargetCell(rowIndex, colIndex, input)) return cell;
-          const occurrences = countOccurrences(cell);
-          if (occurrences === 0) return cell;
-          replacedCount += occurrences;
-          return replaceInString(cell, input.find, replaceWith, input.caseSensitive);
-        })
-      );
-      return { name: sheet.name, rows };
-    });
+    const { sheets: outputSheets, replacedCount } = replaceInSheets(sheets, input);
 
     const blob = await writeXlsxSheets(outputSheets);
     return { blob, replacedCount };

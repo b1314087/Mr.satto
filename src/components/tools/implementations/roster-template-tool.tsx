@@ -14,6 +14,7 @@ import {
 } from "@/lib/processors/browser/roster-template";
 import { parseTableFile, type ParsedTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
+import { RosterPreview } from "./shared/roster-preview";
 
 const ACCEPT = ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
 
@@ -169,46 +170,20 @@ export function RosterTemplateTool() {
             </div>
           </div>
 
-          {activeColumns.length > 0 && (
-            <div>
-              <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">プレビュー（先頭5行）</p>
-              <div className="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
-                <table className="border-collapse text-sm">
-                  <thead>
-                    <tr>
-                      {activeColumns.map((c) => (
-                        <th
-                          key={c.sourceHeader}
-                          style={{ width: `${c.widthMm * 3.6}px`, height: `${headerHeightMm * 3.6}px` }}
-                          className="border border-neutral-300 bg-neutral-100 px-2 text-xs font-semibold dark:border-neutral-700 dark:bg-neutral-800"
-                        >
-                          {c.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {table.rows.slice(0, 5).map((row, ri) => (
-                      <tr key={ri}>
-                        {activeColumns.map((c) => {
-                          const idx = table.headers.indexOf(c.sourceHeader);
-                          return (
-                            <td
-                              key={c.sourceHeader}
-                              style={{ width: `${c.widthMm * 3.6}px`, height: `${rowHeightMm * 3.6}px` }}
-                              className="border border-neutral-200 px-2 text-xs dark:border-neutral-700"
-                            >
-                              {idx >= 0 ? row[idx] : ""}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+            <p className="mb-2 text-sm font-medium">プレビュー（出力と同じレイアウト）</p>
+            {activeColumns.length > 0 ? (
+              <RosterPreview
+                headers={table.headers}
+                rows={table.rows}
+                columns={activeColumns}
+                rowHeightMm={rowHeightMm}
+                headerHeightMm={headerHeightMm}
+              />
+            ) : (
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">使用する列を選ぶと、ここにプレビューが表示されます。</p>
+            )}
+          </div>
 
           {previewValidationError && <ErrorMessage message={previewValidationError} />}
 

@@ -36,21 +36,23 @@ export interface JsonFormatOutput {
   formatted: string;
 }
 
+/** JSONを整形/圧縮する(出力とプレビューで共通)。不正なJSONは日本語のエラーを throw する */
+export function formatJsonText(text: string, indent: number, minify: boolean): string {
+  if (!text.trim()) {
+    throw new Error("JSON文字列を入力してください");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("JSONの形式が正しくありません。構文を確認してください。");
+  }
+  return minify ? JSON.stringify(parsed) : JSON.stringify(parsed, null, indent);
+}
+
 export class JsonFormatProcessor extends BrowserProcessor<JsonFormatInput, JsonFormatOutput> {
   async process({ text, indent, minify }: JsonFormatInput) {
-    if (!text.trim()) {
-      throw new Error("JSON文字列を入力してください");
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error("JSONの形式が正しくありません。構文を確認してください。");
-    }
-    const formatted = minify
-      ? JSON.stringify(parsed)
-      : JSON.stringify(parsed, null, indent);
-    return { formatted };
+    return { formatted: formatJsonText(text, indent, minify ?? false) };
   }
 }
 
@@ -68,30 +70,39 @@ export interface CsvFormatOutput {
   rowCount: number;
 }
 
+/** CSV(テキスト)の整形(出力とプレビューで共通)。空の入力は日本語のエラーを throw する */
+export function formatCsvText(
+  text: string,
+  trimCells: boolean,
+  removeEmptyLines: boolean
+): CsvFormatOutput {
+  if (!text.trim()) {
+    throw new Error("CSVの内容を入力してください");
+  }
+
+  let lines = text.split(/\r\n|\r|\n/);
+
+  if (removeEmptyLines) {
+    lines = lines.filter((line) => line.trim() !== "");
+  }
+
+  const processedLines = lines.map((line) => {
+    if (!trimCells) return line;
+    return line
+      .split(",")
+      .map((cell) => cell.trim())
+      .join(",");
+  });
+
+  return {
+    formatted: processedLines.join("\n"),
+    rowCount: processedLines.length,
+  };
+}
+
 export class CsvFormatProcessor extends BrowserProcessor<CsvFormatInput, CsvFormatOutput> {
   async process({ text, trimCells, removeEmptyLines }: CsvFormatInput) {
-    if (!text.trim()) {
-      throw new Error("CSVの内容を入力してください");
-    }
-
-    let lines = text.split(/\r\n|\r|\n/);
-
-    if (removeEmptyLines) {
-      lines = lines.filter((line) => line.trim() !== "");
-    }
-
-    const processedLines = lines.map((line) => {
-      if (!trimCells) return line;
-      return line
-        .split(",")
-        .map((cell) => cell.trim())
-        .join(",");
-    });
-
-    return {
-      formatted: processedLines.join("\n"),
-      rowCount: processedLines.length,
-    };
+    return formatCsvText(text, trimCells, removeEmptyLines);
   }
 }
 

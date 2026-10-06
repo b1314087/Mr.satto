@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -8,10 +8,44 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   FileUnzipProcessor,
+  listZipContents,
   type UnzippedFileEntry,
+  type ZipListing,
+  type ZipListingEntry,
 } from "@/lib/processors/browser/file-unzip";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+
+/** プレビュー用の画像サムネイル（Object URLはこのコンポーネントが破棄する） */
+function ZipEntryThumb({ blob, alt }: { blob: Blob; alt: string }) {
+  const url = useMemo(() => URL.createObjectURL(blob), [blob]);
+  useEffect(() => {
+    return () => URL.revokeObjectURL(url);
+  }, [url]);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- ブラウザ内で生成したObject URLのため next/image は不要
+    <img src={url} alt={alt} className="h-12 w-12 shrink-0 rounded-md border border-neutral-200 object-cover dark:border-neutral-700" />
+  );
+}
+
+function ZipListingRow({ entry }: { entry: ZipListingEntry }) {
+  return (
+    <li className="flex items-start gap-3 py-2">
+      {entry.imageBlob && <ZipEntryThumb blob={entry.imageBlob} alt={entry.name} />}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="min-w-0 break-all font-medium text-neutral-700 dark:text-neutral-200">{entry.name}</span>
+          <span className="shrink-0 text-neutral-400">{formatBytes(entry.sizeBytes)}</span>
+        </div>
+        {entry.textHead && entry.textHead.length > 0 && (
+          <pre className="mt-1 max-h-20 overflow-hidden whitespace-pre-wrap break-all rounded-md bg-neutral-100 px-2 py-1 text-[11px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+            {entry.textHead.join("\n")}
+          </pre>
+        )}
+      </div>
+    </li>
+  );
+}
 
 /**
  * ZIP解凍（Phase 8）。
@@ -27,6 +61,29 @@ export function FileUnzipTool() {
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<UnzippedFileEntry[] | null>(null);
   const [skippedCount, setSkippedCount] = useState(0);
+
+  // ZIPを選んだ時点で中身の一覧をライブ表示する（結果はファイルごとに紐づけて導出）
+  const [listing, setListing] = useState<{ file: File; data: ZipListing | null; error: string | null } | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    listZipContents(file)
+      .then((data) => {
+        if (!cancelled) setListing({ file, data, error: null });
+      })
+      .catch((e) => {
+        if (!cancelled)
+          setListing({ file, data: null, error: e instanceof Error ? e.message : "中身を読み込めませんでした" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+
+  const currentListing = file && listing && listing.file === file ? listing : null;
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -70,6 +127,40 @@ export function FileUnzipTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            ZIPの中身
+            {currentListing?.data ? `（${currentListing.data.entries.length}件）` : ""}
+          </p>
+          {!currentListing && <p className="text-xs text-neutral-500 dark:text-neutral-400">中身を読み込み中...</p>}
+          {currentListing?.error && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">{currentListing.error}</p>
+          )}
+          {currentListing?.data && (
+            <>
+              {currentListing.data.skippedEntryCount > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  サイズ・件数の上限、または対応していない圧縮方式のため{currentListing.data.skippedEntryCount}
+                  件のファイルは解凍されません。
+                </p>
+              )}
+              <ul className="flex flex-col divide-y divide-neutral-200 text-xs dark:divide-neutral-800">
+                {currentListing.data.entries.slice(0, 200).map((entry, i) => (
+                  <ZipListingRow key={`${entry.name}-${i}`} entry={entry} />
+                ))}
+                {currentListing.data.entries.length > 200 && (
+                  <li className="py-2 text-neutral-400">他 {currentListing.data.entries.length - 200} 件…</li>
+                )}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       {file && (
         <button

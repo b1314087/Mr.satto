@@ -509,6 +509,7 @@ export function ImageLayoutTool() {
 
         <div
           ref={canvasRef}
+          data-testid="tool-preview"
           onPointerMove={onCanvasPointerMove}
           onPointerUp={onCanvasPointerUp}
           onPointerCancel={onCanvasPointerUp}

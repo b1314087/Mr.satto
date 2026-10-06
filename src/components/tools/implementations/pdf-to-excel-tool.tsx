@@ -6,9 +6,13 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { PdfToExcelProcessor, type PdfToExcelOutput } from "@/lib/processors/browser/pdf-to-excel";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
+import { CsvPreviewTable } from "@/components/tools/implementations/shared/csv-preview-table";
+import { PdfToExcelProcessor, previewPdfToExcelRows, type PdfToExcelOutput } from "@/lib/processors/browser/pdf-to-excel";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+
+type TablePreview = { file: File; hasTextLayer: boolean; rows: string[][] } | { file: File; error: string };
 
 /**
  * PDF→Excel（Phase 2-D）。
@@ -35,6 +39,24 @@ export function PdfToExcelTool() {
       void terminateOcrWorker();
     };
   }, []);
+
+  // ファイルを選んだ時点で、先頭ページから作られるExcelの表をプレビューする(変換と同じ表の推定)
+  const [preview, setPreview] = useState<TablePreview | null>(null);
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    previewPdfToExcelRows(file)
+      .then((o) => {
+        if (!cancelled) setPreview({ file, hasTextLayer: o.hasTextLayer, rows: o.rows });
+      })
+      .catch((e) => {
+        if (!cancelled) setPreview({ file, error: e instanceof Error ? e.message : "プレビューを作成できませんでした" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+  const currentPreview = file && preview && preview.file === file ? preview : null;
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -108,6 +130,35 @@ export function PdfToExcelTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (
+        <div data-testid="tool-preview" className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <PdfThumbnails file={file} pages={[1]} maxPages={1} width={160} title="先頭ページ(元のPDF)" className="sm:shrink-0" />
+          <section
+            aria-label="Excelの表のプレビュー"
+            className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+          >
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+              Excelの表の先頭ページのプレビュー
+            </p>
+            {!currentPreview ? (
+              <p className="text-xs text-neutral-400">読み込み中…</p>
+            ) : "error" in currentPreview ? (
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400">{currentPreview.error}</p>
+            ) : currentPreview.hasTextLayer ? (
+              currentPreview.rows.length > 0 ? (
+                <CsvPreviewTable rows={currentPreview.rows} maxRows={10} maxCols={8} />
+              ) : (
+                <p className="text-xs text-amber-700 dark:text-amber-400">先頭ページから表として認識できる内容が見つかりませんでした。</p>
+              )
+            ) : (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                先頭ページに文字情報がないため(スキャン画像のPDFなど)、プレビューでは読み取りません。変換を実行すると画像認識で文字を読み取ります。
+              </p>
+            )}
+          </section>
+        </div>
+      )}
 
       {file && (
         <button

@@ -4,37 +4,81 @@ import { useState } from "react";
 import { QrCodeProcessor } from "@/lib/processors/browser/qrcode";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
+import { SliderField } from "@/components/common/slider-field";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob, dataUrlToBlob } from "@/lib/utils/format";
+import { useLiveQr } from "./shared/use-live-qr";
+
+type Ecl = "L" | "M" | "Q" | "H";
+
+const ECL_OPTIONS: { value: Ecl; label: string }[] = [
+  { value: "L", label: "L（約7%を復元）" },
+  { value: "M", label: "M（約15%を復元）" },
+  { value: "Q", label: "Q（約25%を復元）" },
+  { value: "H", label: "H（約30%を復元）" },
+];
+
+const DEFAULT_SIZE = 320;
+
+/** 相対輝度(0〜1)。コントラスト警告の判定に使う */
+function luminance(hex: string): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return 0;
+  const n = parseInt(m[1], 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+
+function contrastWarning(fg: string, bg: string): string | null {
+  const a = luminance(fg);
+  const b = luminance(bg);
+  const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  if (ratio < 3) return "前景色と背景色の差が小さく、読み取れない可能性があります。";
+  if (a > b) return "前景色が背景色より明るいと、読み取れないスキャナーがあります。";
+  return null;
+}
 
 export function QrGeneratorTool() {
   const [text, setText] = useState("");
+  const [size, setSize] = useState(DEFAULT_SIZE);
+  const [ecl, setEcl] = useState<Ecl>("M");
+  const [fg, setFg] = useState("#000000");
+  const [bg, setBg] = useState("#ffffff");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  // 入力・設定を変えるたびにその場で再生成する（ボタンを押さなくても見える）
+  const options = { size, errorCorrectionLevel: ecl, darkColor: fg, lightColor: bg };
+  const live = useLiveQr(text, options);
 
   async function handleGenerate() {
     setStatus("processing");
     setError(null);
     try {
-      const { dataUrl } = await new QrCodeProcessor().process({ text });
-      setDataUrl(dataUrl);
+      // プレビューと同じ処理・同じ設定で生成する
+      await new QrCodeProcessor().process({ text, ...options });
       setStatus("success");
     } catch (e) {
       setError(e instanceof Error ? e.message : "生成に失敗しました");
       setStatus("error");
-      setDataUrl(null);
     }
   }
 
   function handleDownload() {
-    if (!dataUrl) return;
+    if (!live.dataUrl) return;
     // data URLはfetch()を使わずに直接Blobへ変換する（CSPのconnect-srcに
     // data:を含めていないため、fetch(dataUrl)は失敗する。詳細はformat.tsの
     // dataUrlToBlob()のコメントを参照）。
-    const blob = dataUrlToBlob(dataUrl);
+    const blob = dataUrlToBlob(live.dataUrl);
     downloadBlob(blob, "qrcode.png");
   }
+
+  const warning = contrastWarning(fg, bg);
+  const colorInputClass =
+    "h-9 w-12 cursor-pointer rounded-md border border-neutral-300 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900";
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,6 +93,42 @@ export function QrGeneratorTool() {
         />
       </label>
 
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <SliderField
+          label="サイズ"
+          value={size}
+          min={128}
+          max={1024}
+          step={32}
+          unit="px"
+          onChange={setSize}
+          onReset={size !== DEFAULT_SIZE ? () => setSize(DEFAULT_SIZE) : undefined}
+        />
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          誤り訂正レベル
+          <select
+            value={ecl}
+            onChange={(e) => setEcl(e.target.value as Ecl)}
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-normal dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            {ECL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-3 text-sm">
+          <input type="color" value={fg} onChange={(e) => setFg(e.target.value)} className={colorInputClass} />
+          前景色（QRの色）
+        </label>
+        <label className="flex items-center gap-3 text-sm">
+          <input type="color" value={bg} onChange={(e) => setBg(e.target.value)} className={colorInputClass} />
+          背景色
+        </label>
+      </div>
+      {warning && <p className="text-xs text-amber-600 dark:text-amber-400">{warning}</p>}
+
       <button
         type="button"
         onClick={handleGenerate}
@@ -59,15 +139,33 @@ export function QrGeneratorTool() {
       </button>
 
       <ProcessingStatus state={status} successLabel="生成しました" />
-      {error && <ErrorMessage message={error} />}
+      {(error || live.error) && <ErrorMessage message={(error ?? live.error)!} />}
 
-      {dataUrl && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={dataUrl} alt="生成されたQRコード" className="h-48 w-48 rounded-lg bg-white p-2" />
-          <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" />
-        </div>
-      )}
+      <div
+        data-testid="tool-preview"
+        className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+      >
+        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">プレビュー（入力や設定に合わせて自動で更新されます）</p>
+        {live.dataUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={live.dataUrl}
+              alt="生成されたQRコード"
+              className="h-48 w-48 rounded-lg p-2"
+              style={{ backgroundColor: bg }}
+            />
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              出力サイズ: {size}×{size}px ／ 誤り訂正: {ecl}
+            </p>
+            <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" disabled={!live.fresh} />
+          </>
+        ) : (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            URLやテキストを入力すると、ここにQRコードが表示されます。
+          </p>
+        )}
+      </div>
     </div>
   );
 }

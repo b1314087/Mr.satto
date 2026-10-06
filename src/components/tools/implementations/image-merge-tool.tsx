@@ -452,8 +452,16 @@ export function ImageMergeTool() {
       {settingsError && <ErrorMessage message={settingsError} />}
 
       {files.length >= 2 && !settingsError && (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー
+            {previewResult && (
+              <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
+                {previewResult.width} × {previewResult.height}px
+                {previewLoading ? "・更新中…" : ""}
+              </span>
+            )}
+          </p>
           <div
             className="flex min-h-[8rem] items-center justify-center rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
             style={background === "transparent" ? CHECKER_STYLE : { backgroundColor: "#f5f5f5" }}

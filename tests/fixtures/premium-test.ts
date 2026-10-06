@@ -27,6 +27,28 @@ export const test = base.extend({
     await setDevPlanOverride(context, "premium", baseURL!);
     await runFixture(context);
   },
+  // page.goto() は load イベントで戻るが、開発サーバー(Turbopack)では初回コンパイル直後などに
+  // Reactの準備(hydration)がその後に完了することがある。準備前に入力・クリックすると
+  // 状態に反映されず、テストが不安定になるため、goto の直後にhydration完了まで待つ。
+  // 待ってもhydrationしないページ(静的ページ等)では、上限時間で待つのをやめてそのまま続行する。
+  page: async ({ page }, runFixture) => {
+    const originalGoto = page.goto.bind(page);
+    page.goto = (async (...args: Parameters<typeof page.goto>) => {
+      const response = await originalGoto(...args);
+      await page
+        .waitForFunction(
+          () => {
+            const el = document.querySelector("main input, main textarea, main select, main button, main a");
+            return !el || Object.keys(el).some((k) => k.startsWith("__reactProps$"));
+          },
+          null,
+          { timeout: 30_000 }
+        )
+        .catch(() => undefined);
+      return response;
+    }) as typeof page.goto;
+    await runFixture(page);
+  },
 });
 
 export { expect } from "@playwright/test";

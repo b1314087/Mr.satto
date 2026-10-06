@@ -7,6 +7,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { OcrProcessor, type OcrOutput } from "@/lib/processors/browser/ocr";
 import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
@@ -16,6 +17,10 @@ const LANGUAGE_OPTIONS: { value: OcrLanguageOption; label: string }[] = [
   { value: "ja", label: "日本語のみ" },
   { value: "en", label: "英語のみ" },
 ];
+
+function isPdfFile(f: File): boolean {
+  return f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+}
 
 /**
  * OCR（Phase 2-D）。
@@ -39,6 +44,9 @@ export function OcrTool() {
   const [copied, setCopied] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const cancelRef = useRef(false);
+  // 入力のプレビュー用: 画像ファイルは選択時にObject URLを作り、差し替え・離脱時に解放する
+  const [imagePreview, setImagePreview] = useState<{ file: File; url: string } | null>(null);
+  const imageUrlRef = useRef<string | null>(null);
 
   // Phase 7: OCR用Tesseract.js Workerは一度生成されるとページ内で使い回される
   // 設計だが、terminateOcrWorker()がこれまでどこからも呼ばれておらず、
@@ -48,10 +56,23 @@ export function OcrTool() {
   useEffect(() => {
     return () => {
       void terminateOcrWorker();
+      if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
     };
   }, []);
 
   function handleSelect(files: File[]) {
+    if (imageUrlRef.current) {
+      URL.revokeObjectURL(imageUrlRef.current);
+      imageUrlRef.current = null;
+    }
+    const picked = files[0];
+    if (picked && !isPdfFile(picked)) {
+      const url = URL.createObjectURL(picked);
+      imageUrlRef.current = url;
+      setImagePreview({ file: picked, url });
+    } else {
+      setImagePreview(null);
+    }
     setFile(files[0]);
     setResult(null);
     setStatus("idle");
@@ -150,6 +171,29 @@ export function OcrTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (
+        <div data-testid="tool-preview">
+          {isPdfFile(file) ? (
+            <PdfThumbnails file={file} pages={[1]} maxPages={1} width={200} title="読み取るPDFの1ページ目" />
+          ) : (
+            <section
+              aria-label="読み取る画像のプレビュー"
+              className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+            >
+              <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">読み取る画像</p>
+              {imagePreview && imagePreview.file === file && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={imagePreview.url}
+                  alt="読み取る画像"
+                  className="max-h-72 w-auto max-w-full self-start rounded-md border border-neutral-200 object-contain dark:border-neutral-700"
+                />
+              )}
+            </section>
+          )}
+        </div>
+      )}
 
       {file && (
         <fieldset className="flex flex-col gap-2">

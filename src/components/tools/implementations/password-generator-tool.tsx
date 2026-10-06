@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PasswordGenerateProcessor } from "@/lib/processors/browser/password";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -27,6 +27,29 @@ export function PasswordGeneratorTool() {
   const [copied, setCopied] = useState(false);
   const [status, setStatus] = useState<ProcessingState>("idle");
 
+  // 長さ・文字種を変えるたびに、その設定で自動的に新しいパスワードを生成して表示する（プレビュー）。
+  // 「パスワードを生成する」ボタンは同じ設定で作り直す（別の候補を出す）操作。
+  useEffect(() => {
+    let cancelled = false;
+    new PasswordGenerateProcessor()
+      .process({ length, useUppercase, useLowercase, useNumbers, useSymbols })
+      .then((result) => {
+        if (cancelled) return;
+        setPassword(result.password);
+        setStrength(result.strength);
+        setError(null);
+        setCopied(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setPassword("");
+        setError(e instanceof Error ? e.message : "生成に失敗しました");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [length, useUppercase, useLowercase, useNumbers, useSymbols]);
+
   async function handleGenerate() {
     if (status === "processing") return;
     setStatus("processing");
@@ -44,6 +67,7 @@ export function PasswordGeneratorTool() {
       setStrength(result.strength);
       setStatus("success");
     } catch (e) {
+      setPassword("");
       setError(e instanceof Error ? e.message : "生成に失敗しました");
       setStatus("error");
     }
@@ -98,7 +122,13 @@ export function PasswordGeneratorTool() {
       {error && <ErrorMessage message={error} />}
 
       {password && (
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            プレビュー（設定を変えると自動で作り直されます）
+          </p>
           <div className="flex items-center justify-between gap-3">
             <code className="break-all text-lg font-semibold text-neutral-800 dark:text-neutral-100">
               {password}
@@ -123,9 +153,12 @@ export function PasswordGeneratorTool() {
               ))}
             </div>
             <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              {STRENGTH_LABEL[strength]}
+              強度: {STRENGTH_LABEL[strength]}
             </span>
           </div>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {Array.from(password).length}文字 ／ 12文字以上・3種類以上の文字種で強度が上がります
+          </p>
         </div>
       )}
     </div>

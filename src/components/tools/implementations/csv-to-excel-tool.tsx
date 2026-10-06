@@ -3,36 +3,35 @@
 import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
-import { CsvPreviewTable } from "@/components/tools/implementations/shared/csv-preview-table";
+import {
+  PreviewGrid,
+  PreviewNotice,
+  PreviewShell,
+  toGridRows,
+} from "@/components/tools/implementations/shared/before-after-table";
+import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { CsvToExcelProcessor } from "@/lib/processors/browser/csv-excel";
-import { parseCsv, isBlankRow } from "@/lib/utils/csv";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 export function CsvToExcelTool() {
   const [file, setFile] = useState<File | null>(null);
-  const [previewRows, setPreviewRows] = useState<string[][]>([]);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ blob: Blob; rowCount: number } | null>(null);
 
-  async function handleSelect(files: File[]) {
-    const selected = files[0];
-    setFile(selected);
+  // プレビュー: 変換処理(CsvToExcelProcessor)と同じ読み方(parseCsv + 空行除外)でシートの中身を表示する
+  const { data: rows, error: previewError, loading } = useAsyncFileData(file, loadCsvRows);
+  const columnCount = rows ? rows.reduce((max, r) => Math.max(max, r.length), 0) : 0;
+
+  function handleSelect(files: File[]) {
+    setFile(files[0]);
     setResult(null);
     setStatus("idle");
     setError(null);
-    setPreviewRows([]);
-    try {
-      const text = await selected.text();
-      const rows = parseCsv(text).filter((row) => !isBlankRow(row));
-      setPreviewRows(rows);
-    } catch {
-      setError("CSVの内容を読み込めませんでした");
-    }
   }
 
   async function handleRun() {
@@ -65,11 +64,17 @@ export function CsvToExcelTool() {
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
-      {previewRows.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">内容の確認</p>
-          <CsvPreviewTable rows={previewRows} />
-        </div>
+      {file && (rows || previewError || loading) && (
+        <PreviewShell
+          title="Excelに変換される内容(プレビュー)"
+          loading={loading}
+          summary={rows && <span>{rows.length}行 × {columnCount}列のシートが作られます（空行は取り除かれます）</span>}
+        >
+          {previewError && <PreviewNotice message={previewError} />}
+          {rows && (
+            <PreviewGrid rows={toGridRows(rows.slice(0, 10))} totalRows={rows.length} maxRows={10} maxCols={8} headerRow={false} />
+          )}
+        </PreviewShell>
       )}
 
       {file && (

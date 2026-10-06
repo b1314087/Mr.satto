@@ -6,6 +6,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob, dataUrlToBlob } from "@/lib/utils/format";
+import { useLiveQr } from "./shared/use-live-qr";
 
 function buildVCard(fields: Record<string, string>): string {
   const lines = [
@@ -33,15 +34,21 @@ export function BusinessCardQrTool() {
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  // 入力のたびにvCardを組み立て直し、その場でQRコードを更新する（氏名が空の間は表示しない）
+  const vcard = name.trim() ? buildVCard({ name, org, title, tel, email, url }) : "";
+  const live = useLiveQr(vcard, { errorCorrectionLevel: "Q" });
+  const dataUrl = live.dataUrl;
 
   async function handleGenerate() {
     setStatus("processing");
     setError(null);
     try {
-      const vcard = buildVCard({ name, org, title, tel, email, url });
-      const result = await new QrCodeProcessor().process({ text: vcard, errorCorrectionLevel: "Q" });
-      setDataUrl(result.dataUrl);
+      // プレビューと同じvCard・同じ設定で生成する
+      await new QrCodeProcessor().process({
+        text: buildVCard({ name, org, title, tel, email, url }),
+        errorCorrectionLevel: "Q",
+      });
       setStatus("success");
     } catch (e) {
       setError(e instanceof Error ? e.message : "生成に失敗しました");
@@ -98,13 +105,43 @@ export function BusinessCardQrTool() {
       <ProcessingStatus state={status} successLabel="生成しました" />
       {error && <ErrorMessage message={error} />}
 
-      {dataUrl && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={dataUrl} alt="生成された名刺QRコード" className="h-48 w-48 rounded-lg bg-white p-2" />
-          <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" />
-        </div>
-      )}
+      <div
+        data-testid="tool-preview"
+        className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+      >
+        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">プレビュー（入力に合わせて自動で更新されます）</p>
+        {dataUrl ? (
+          <div className="flex flex-col items-start gap-4 sm:flex-row">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={dataUrl} alt="生成された名刺QRコード" className="h-48 w-48 rounded-lg bg-white p-2" />
+            <div className="flex flex-col gap-1 text-sm">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">読み取ると次の連絡先が登録されます</p>
+              {[
+                ["氏名", name],
+                ["会社名", org],
+                ["役職", title],
+                ["電話番号", tel],
+                ["メール", email],
+                ["Web", url],
+              ]
+                .filter(([, v]) => v.trim())
+                .map(([k, v]) => (
+                  <p key={k} className="break-all">
+                    <span className="mr-2 text-xs text-neutral-500 dark:text-neutral-400">{k}</span>
+                    {v}
+                  </p>
+                ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            氏名を入力すると、ここに名刺QRコードが表示されます。
+          </p>
+        )}
+        {dataUrl && (
+          <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" disabled={!live.fresh} />
+        )}
+      </div>
     </div>
   );
 }

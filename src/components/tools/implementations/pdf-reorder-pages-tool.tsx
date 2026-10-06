@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -10,6 +11,8 @@ import { PdfPageOrderList } from "@/components/tools/implementations/shared/pdf-
 import { PdfReorderPagesProcessor, getPdfPageCount } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+
+const PREVIEW_MAX_PAGES = 40;
 
 export function PdfReorderPagesTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -90,6 +93,27 @@ export function PdfReorderPagesTool() {
             ↑↓ ボタンでページの順序を並び替えられます（{order.length}ページ）
           </p>
           <PdfPageOrderList order={order} onReorder={setOrder} />
+          <div data-testid="tool-preview" className="flex flex-col gap-2">
+            <PdfThumbnails
+              file={file}
+              maxPages={PREVIEW_MAX_PAGES}
+              width={96}
+              title="並び替え後のプレビュー"
+              // 現在の並び順(先頭から)に並べる。サムネイルを作るのは先頭 PREVIEW_MAX_PAGES ページ(元の番号)まで
+              pages={order.filter((p) => p <= PREVIEW_MAX_PAGES)}
+              overlay={(page) => (
+                <span className="absolute left-1 top-1 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  {order.indexOf(page) + 1}番目
+                </span>
+              )}
+            />
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {isUnchanged
+                ? "現在は元の順序です。↑↓で並び替えると、ここに結果が反映されます。"
+                : "この順序で出力されます。バッジは新しい位置、サムネイル下の数字は元のページ番号です。"}
+              {order.length > PREVIEW_MAX_PAGES && `（サムネイルは元の先頭${PREVIEW_MAX_PAGES}ページ分のみ表示）`}
+            </p>
+          </div>
         </div>
       )}
 

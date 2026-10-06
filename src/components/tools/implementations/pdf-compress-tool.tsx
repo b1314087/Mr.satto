@@ -1,14 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { usePdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { PdfCompressProcessor } from "@/lib/processors/browser/pdf";
 import type { PdfCompressOutput } from "@/lib/processors/browser/pdf";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+
+/** 1つのPDFの先頭ページの縮小表示(圧縮前・圧縮後で同じ形式) */
+function FirstPageThumb({ file, label, sizeBytes }: { file: File; label: string; sizeBytes: number }) {
+  const { urls, loading, error } = usePdfThumbnails(file, 1, 200);
+  return (
+    <figure className="flex flex-col items-center gap-1.5">
+      <div className="flex min-h-40 w-[200px] max-w-full items-center justify-center overflow-hidden rounded-md border border-neutral-200 bg-white dark:border-neutral-700">
+        {urls[1] ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={urls[1]} alt={`${label}の先頭ページ`} data-testid="pdf-thumb" className="h-auto w-full" />
+        ) : error ? (
+          <span className="px-2 text-center text-xs text-red-600 dark:text-red-400">{error}</span>
+        ) : (
+          <span className="text-xs text-neutral-400">{loading ? "読み込み中…" : "…"}</span>
+        )}
+      </div>
+      <figcaption className="text-xs text-neutral-600 dark:text-neutral-300">
+        {label}: {formatBytes(sizeBytes)}
+      </figcaption>
+    </figure>
+  );
+}
 
 /**
  * PDF圧縮。
@@ -53,6 +76,12 @@ export function PdfCompressTool() {
     }
   }
 
+  // 圧縮後のPDFの先頭ページを表示するため、結果のBlobをFileにする
+  const compressedFile = useMemo(
+    () => (result ? new File([result.blob], "compressed.pdf", { type: "application/pdf" }) : null),
+    [result]
+  );
+
   const reductionPercent = result
     ? ((result.originalSizeBytes - result.compressedSizeBytes) / result.originalSizeBytes) * 100
     : 0;
@@ -73,6 +102,49 @@ export function PdfCompressTool() {
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
         このツールはPDFの内部構造を最適化します。画像の再圧縮は行わないため、写真など画像が中心のPDFでは削減効果がほとんど出ない場合があります。
       </p>
+
+      {file && (
+        <section
+          aria-label="圧縮前後のプレビュー"
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">圧縮前後の比較(先頭ページ)</p>
+          <div className="flex flex-wrap items-start gap-6">
+            <FirstPageThumb file={file} label="圧縮前" sizeBytes={file.size} />
+            {result && compressedFile ? (
+              <FirstPageThumb file={compressedFile} label="圧縮後" sizeBytes={result.compressedSizeBytes} />
+            ) : (
+              <div className="flex min-h-40 w-[200px] max-w-full items-center justify-center rounded-md border border-dashed border-neutral-300 px-3 text-center text-xs text-neutral-400 dark:border-neutral-700">
+                「圧縮する」を押すと、圧縮後の先頭ページとサイズがここに表示されます
+              </div>
+            )}
+          </div>
+          {result && (
+            <div className="flex flex-col gap-1" aria-label="サイズの比較">
+              <div className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800">
+                <div
+                  className="h-2 rounded-full bg-neutral-400 dark:bg-neutral-500"
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800">
+                <div
+                  className={`h-2 rounded-full ${
+                    result.compressedSizeBytes <= result.originalSizeBytes ? "bg-green-600" : "bg-amber-500"
+                  }`}
+                  style={{
+                    width: `${Math.min(100, (result.compressedSizeBytes / Math.max(1, result.originalSizeBytes)) * 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                上が圧縮前、下が圧縮後のサイズです。圧縮しても、ページの見た目は変わりません。
+              </p>
+            </div>
+          )}
+        </section>
+      )}
 
       {file && (
         <button

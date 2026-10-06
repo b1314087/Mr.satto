@@ -28,6 +28,40 @@ export interface CsvToJsonOutput {
   objectCount: number;
 }
 
+/**
+ * CSVの行データ(1行目=見出し)をオブジェクトの配列へ変換する(出力とプレビューで共通)。
+ * 見出しの空欄・重複や列数の不一致は日本語のエラーを throw する。
+ */
+export function csvRowsToJsonObjects(rows: string[][]): Record<string, string>[] {
+  const [header, ...dataRows] = rows;
+  const emptyHeaderIndex = header.findIndex((cell) => cell.trim() === "");
+  if (emptyHeaderIndex !== -1) {
+    throw new Error(
+      `1行目（ヘッダー）の${emptyHeaderIndex + 1}列目が空です。すべての列に見出しを付けてください。`
+    );
+  }
+  const duplicated = header.find((name, i) => header.indexOf(name) !== i);
+  if (duplicated) {
+    throw new Error(`ヘッダーに同じ名前が重複しています（${duplicated}）。列名を一意にしてください。`);
+  }
+
+  dataRows.forEach((row, index) => {
+    if (row.length !== header.length) {
+      throw new Error(
+        `${index + 2}行目の列数がヘッダー（${header.length}列）と一致しません（${row.length}列）。CSVの内容を確認してください。`
+      );
+    }
+  });
+
+  return dataRows.map((row) => {
+    const obj: Record<string, string> = {};
+    header.forEach((key, i) => {
+      obj[key] = row[i];
+    });
+    return obj;
+  });
+}
+
 export class CsvToJsonProcessor extends BrowserProcessor<CsvToJsonInput, CsvToJsonOutput> {
   async process({ file }: CsvToJsonInput): Promise<CsvToJsonOutput> {
     let text: string;
@@ -41,33 +75,7 @@ export class CsvToJsonProcessor extends BrowserProcessor<CsvToJsonInput, CsvToJs
       throw new Error("CSVの内容が空です。ファイルを確認してください。");
     }
 
-    const [header, ...dataRows] = rows;
-    const emptyHeaderIndex = header.findIndex((cell) => cell.trim() === "");
-    if (emptyHeaderIndex !== -1) {
-      throw new Error(
-        `1行目（ヘッダー）の${emptyHeaderIndex + 1}列目が空です。すべての列に見出しを付けてください。`
-      );
-    }
-    const duplicated = header.find((name, i) => header.indexOf(name) !== i);
-    if (duplicated) {
-      throw new Error(`ヘッダーに同じ名前が重複しています（${duplicated}）。列名を一意にしてください。`);
-    }
-
-    dataRows.forEach((row, index) => {
-      if (row.length !== header.length) {
-        throw new Error(
-          `${index + 2}行目の列数がヘッダー（${header.length}列）と一致しません（${row.length}列）。CSVの内容を確認してください。`
-        );
-      }
-    });
-
-    const objects = dataRows.map((row) => {
-      const obj: Record<string, string> = {};
-      header.forEach((key, i) => {
-        obj[key] = row[i];
-      });
-      return obj;
-    });
+    const objects = csvRowsToJsonObjects(rows);
 
     const json = JSON.stringify(objects, null, 2);
     const blob = new Blob([json], { type: "application/json" });
@@ -94,70 +102,79 @@ function cellToString(value: unknown): string {
   return String(value);
 }
 
-export class JsonToCsvProcessor extends BrowserProcessor<JsonToCsvInput, JsonToCsvOutput> {
-  async process({ text }: JsonToCsvInput): Promise<JsonToCsvOutput> {
-    if (!text.trim()) {
-      throw new Error("JSON文字列を入力してください");
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error("JSONの形式が正しくありません。構文を確認してください。");
-    }
-    if (!Array.isArray(parsed)) {
+/**
+ * JSON配列(オブジェクトの配列)を表の行データ(1行目=見出し)へ変換する(出力とプレビューで共通)。
+ * 形式が正しくない場合は日本語のエラーを throw する。
+ */
+export function jsonTextToCsvRows(text: string): string[][] {
+  if (!text.trim()) {
+    throw new Error("JSON文字列を入力してください");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("JSONの形式が正しくありません。構文を確認してください。");
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(
+      'JSONの配列（例: [{"name":"A","age":20}, ...]）を入力してください。オブジェクト単体はCSVへ変換できません。'
+    );
+  }
+  if (parsed.length === 0) {
+    throw new Error("配列の中身が空です。1件以上のオブジェクトを含めてください。");
+  }
+
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+
+  parsed.forEach((item, index) => {
+    if (!isPlainObject(item)) {
       throw new Error(
-        'JSONの配列（例: [{"name":"A","age":20}, ...]）を入力してください。オブジェクト単体はCSVへ変換できません。'
+        `${index + 1}番目の要素がオブジェクトではありません。配列の各要素は {"key":"value"} の形にしてください。`
       );
     }
-    if (parsed.length === 0) {
-      throw new Error("配列の中身が空です。1件以上のオブジェクトを含めてください。");
+  });
+  const objects = parsed as Record<string, unknown>[];
+
+  // 最初のオブジェクトのキーだけでなく、全オブジェクトのキーを収集する
+  // （オブジェクトごとにキーが異なっていても、欠けている項目は空欄として扱う）。
+  const columns: string[] = [];
+  const columnSet = new Set<string>();
+  for (const obj of objects) {
+    for (const key of Object.keys(obj)) {
+      if (!columnSet.has(key)) {
+        columnSet.add(key);
+        columns.push(key);
+      }
     }
+  }
+  if (columns.length === 0) {
+    throw new Error("オブジェクトにキーがありません。変換できる項目がありませんでした。");
+  }
 
-    const isPlainObject = (v: unknown): v is Record<string, unknown> =>
-      typeof v === "object" && v !== null && !Array.isArray(v);
-
-    parsed.forEach((item, index) => {
-      if (!isPlainObject(item)) {
+  // ネストしたobject/arrayは無理に文字列化せず、明確なエラーにする
+  for (let i = 0; i < objects.length; i++) {
+    const obj = objects[i];
+    for (const key of columns) {
+      const value = obj[key];
+      if (typeof value === "object" && value !== null) {
         throw new Error(
-          `${index + 1}番目の要素がオブジェクトではありません。配列の各要素は {"key":"value"} の形にしてください。`
+          `${i + 1}番目の要素の "${key}" がネストしたオブジェクト/配列のため、表形式に変換できません。ネストのないデータに整えてから再度お試しください。`
         );
       }
-    });
-    const objects = parsed as Record<string, unknown>[];
-
-    // 最初のオブジェクトのキーだけでなく、全オブジェクトのキーを収集する
-    // （オブジェクトごとにキーが異なっていても、欠けている項目は空欄として扱う）。
-    const columns: string[] = [];
-    const columnSet = new Set<string>();
-    for (const obj of objects) {
-      for (const key of Object.keys(obj)) {
-        if (!columnSet.has(key)) {
-          columnSet.add(key);
-          columns.push(key);
-        }
-      }
     }
-    if (columns.length === 0) {
-      throw new Error("オブジェクトにキーがありません。変換できる項目がありませんでした。");
-    }
+  }
 
-    // ネストしたobject/arrayは無理に文字列化せず、明確なエラーにする
-    for (let i = 0; i < objects.length; i++) {
-      const obj = objects[i];
-      for (const key of columns) {
-        const value = obj[key];
-        if (typeof value === "object" && value !== null) {
-          throw new Error(
-            `${i + 1}番目の要素の "${key}" がネストしたオブジェクト/配列のため、表形式に変換できません。ネストのないデータに整えてから再度お試しください。`
-          );
-        }
-      }
-    }
+  const rows: string[][] = [columns, ...objects.map((obj) => columns.map((key) => cellToString(obj[key])))];
+  return rows;
+}
 
-    const rows: string[][] = [columns, ...objects.map((obj) => columns.map((key) => cellToString(obj[key])))];
+export class JsonToCsvProcessor extends BrowserProcessor<JsonToCsvInput, JsonToCsvOutput> {
+  async process({ text }: JsonToCsvInput): Promise<JsonToCsvOutput> {
+    const rows = jsonTextToCsvRows(text);
     const csvText = serializeCsv(rows, { includeBom: true });
     const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
-    return { blob, csvText, rowCount: objects.length, columnCount: columns.length };
+    return { blob, csvText, rowCount: rows.length - 1, columnCount: rows[0].length };
   }
 }

@@ -16,7 +16,9 @@ import {
   inspectVideoFile,
   type OutputContainer,
 } from "@/lib/video/shared";
-import { useRevokeObjectUrlOnChange } from "@/lib/video/use-video-preview";
+import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
+import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
+import { estimateFrameRateBytes, formatDuration } from "@/lib/video/estimate";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -41,6 +43,7 @@ export function VideoFrameRateTool() {
   const cancelControllerRef = useRef<AbortController | null>(null);
 
   useRevokeObjectUrlOnChange(result?.url);
+  const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
 
   useEffect(() => {
     return () => {
@@ -210,6 +213,45 @@ export function VideoFrameRateTool() {
       )}
 
       {file && (
+        <VideoPreviewPanel
+          file={file}
+          previewUrl={previewUrl}
+          meta={meta}
+          onLoadedMetadata={handleLoadedMetadata}
+          fps={sourceFps}
+          outputTitle="変更後の予定"
+          outputRows={[
+            { label: "形式", value: container.toUpperCase() },
+            {
+              label: "解像度",
+              value: meta && meta.width > 0 ? `${meta.width}×${meta.height}（変更なし）` : "元の動画と同じ",
+            },
+            ...(sourceFps !== null
+              ? [
+                  {
+                    label: "フレームレート",
+                    value:
+                      target === null
+                        ? `約${sourceFps.toFixed(1)}fps（上で変更後のfpsを選んでください）`
+                        : `約${sourceFps.toFixed(1)}fps → ${target}fps`,
+                  },
+                ]
+              : []),
+            ...(meta && meta.durationSec > 0 ? [{ label: "長さ", value: formatDuration(meta.durationSec) }] : []),
+            ...(sourceFps !== null && target !== null
+              ? [
+                  {
+                    label: "サイズの目安",
+                    value: `約 ${formatBytes(estimateFrameRateBytes(file.size, sourceFps, target))}`,
+                  },
+                ]
+              : []),
+          ]}
+          outputNote="サイズはフレーム数からの目安です。実際のサイズは変更後に表示されます。"
+        />
+      )}
+
+      {file && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -256,6 +298,7 @@ export function VideoFrameRateTool() {
               フレームレート: 約{result.sourceFps.toFixed(1)}fps → {target}fps
             </span>
           </div>
+          <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </div>
       )}

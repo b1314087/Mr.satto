@@ -292,6 +292,28 @@ function buildExcelRow(
   return cells;
 }
 
+/**
+ * 画面のプレビュー用: 先頭ページの文字情報から、Excelの表になる行を取り出す
+ * (変換本体と同じ getPositionedTextItems → reconstructTable を使う。列の区切りは先頭3ページ分から推定)。
+ * 文字情報が無いページ(スキャン画像)はOCRが必要で重いため、プレビューでは読み取らず
+ * hasTextLayer: false を返す(変換を実行したときにOCRされる)。
+ */
+export async function previewPdfToExcelRows(
+  file: File
+): Promise<{ pageCount: number; hasTextLayer: boolean; rows: string[][] }> {
+  const pdf = await loadPdfDocument(file);
+  if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+  const itemsByPage: Awaited<ReturnType<typeof getPositionedTextItems>>[] = [];
+  for (let n = 1; n <= Math.min(pdf.numPages, 3); n++) {
+    itemsByPage.push(await getPositionedTextItems(await pdf.getPage(n)));
+  }
+  if (!pageHasText(itemsByPage[0])) return { pageCount: pdf.numPages, hasTextLayer: false, rows: [] };
+  const textPages = itemsByPage.filter((items) => pageHasText(items));
+  const breaks = computeColumnBreaksAcrossPages(textPages.map((items) => groupIntoLines(items)));
+  const table = reconstructTable(itemsByPage[0], breaks);
+  return { pageCount: pdf.numPages, hasTextLayer: true, rows: table.rows };
+}
+
 export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfToExcelOutput> {
   async process({ file, ocrLanguage, onPageProgress }: PdfToExcelInput): Promise<PdfToExcelOutput> {
     if (file.size === 0) {

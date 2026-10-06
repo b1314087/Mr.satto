@@ -37,7 +37,7 @@ export function CharCountTool() {
         className="rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div data-testid="tool-preview" className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {stats.map((s) => (
           <div
             key={s.label}

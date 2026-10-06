@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { CsvPreviewTable } from "@/components/tools/implementations/shared/csv-preview-table";
+import { SheetFilePreview } from "@/components/common/sheet-preview";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -69,6 +70,17 @@ export function ExcelToCsvTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && !sheets && (
+        <div data-testid="tool-preview">
+          <SheetFilePreview
+            file={file}
+            title="CSVに変換される内容(プレビュー)"
+            maxRows={10}
+            maxCols={8}
+          />
+        </div>
+      )}
+
+      {file && !sheets && (
         <button
           type="button"
           onClick={handleRun}
@@ -109,7 +121,7 @@ export function ExcelToCsvTool() {
           )}
 
           {selectedSheet && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2" data-testid="tool-preview">
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 「{selectedSheet.name}」・{selectedSheet.rows.length}行
               </p>

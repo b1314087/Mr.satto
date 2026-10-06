@@ -36,9 +36,9 @@ export interface ExcelLabelOutput {
 
 const MAX_LABELS = 500;
 
-type AxisSegment = { kind: "margin" | "gap" | "label"; mm: number };
+export type AxisSegment = { kind: "margin" | "gap" | "label"; mm: number };
 
-function buildAxisPlan(count: number, labelMm: number, gapMm: number, marginStartMm: number, marginEndMm: number): AxisSegment[] {
+export function buildAxisPlan(count: number, labelMm: number, gapMm: number, marginStartMm: number, marginEndMm: number): AxisSegment[] {
   const plan: AxisSegment[] = [{ kind: "margin", mm: marginStartMm }];
   for (let i = 0; i < count; i++) {
     if (i > 0) plan.push({ kind: "gap", mm: gapMm });

@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ExcelLabelProcessor, validateExcelLabelInput, type ExcelLabelInput } from "@/lib/processors/browser/excel-label";
+import {
+  ExcelLabelProcessor,
+  buildAxisPlan,
+  validateExcelLabelInput,
+  type AxisSegment,
+  type ExcelLabelInput,
+} from "@/lib/processors/browser/excel-label";
 import { downloadBlob } from "@/lib/utils/format";
 
 const DEFAULTS: ExcelLabelInput = {
@@ -82,8 +88,26 @@ export function ExcelLabelTool() {
     downloadBlob(result, "ラベルシート.xlsx");
   }
 
-  const previewCells = Array.from({ length: Math.min(form.rows, 8) * Math.min(form.columns, 6) });
-  const previewCols = Math.min(form.columns, 6);
+  // プレビュー: Excel出力と同じ配置計画(buildAxisPlan: 余白・ラベル・間隔の並び)から、mmの比率どおりに描く
+  const layout = useMemo(() => {
+    if (validateExcelLabelInput(form)) return null;
+    const rowPlan = buildAxisPlan(form.rows, form.labelHeightMm, form.gapVMm, form.marginTopMm, form.marginBottomMm);
+    const colPlan = buildAxisPlan(form.columns, form.labelWidthMm, form.gapHMm, form.marginLeftMm, form.marginRightMm);
+    const place = (plan: AxisSegment[]) => {
+      let offset = 0;
+      const total = plan.reduce((sum, seg) => sum + seg.mm, 0);
+      const labels: { start: number; size: number }[] = [];
+      for (const seg of plan) {
+        if (seg.kind === "label") labels.push({ start: offset, size: seg.mm });
+        offset += seg.mm;
+      }
+      return { total, labels };
+    };
+    const rowsPlaced = place(rowPlan);
+    const colsPlaced = place(colPlan);
+    if (!(rowsPlaced.total > 0) || !(colsPlaced.total > 0)) return null;
+    return { widthMm: colsPlaced.total, heightMm: rowsPlaced.total, rows: rowsPlaced.labels, cols: colsPlaced.labels };
+  }, [form]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -110,22 +134,52 @@ export function ExcelLabelTool() {
         />
       </label>
 
-      <div>
-        <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">プレビュー（実際の配置イメージ・8行6列まで表示）</p>
-        <div
-          className="grid gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-neutral-900"
-          style={{ gridTemplateColumns: `repeat(${previewCols}, minmax(0, 1fr))` }}
-        >
-          {previewCells.map((_, i) => (
-            <div
-              key={i}
-              className="flex aspect-[3/2] items-center justify-center rounded border border-dashed border-neutral-400 bg-white p-1 text-center text-[10px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-            >
-              {form.text || "（空）"}
+      <section
+        aria-label="ラベルシートのプレビュー"
+        data-testid="tool-preview"
+        className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+      >
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          ラベルシートのプレビュー(設定の変更に合わせて更新されます)
+        </p>
+        {layout ? (
+          <>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              全体 約{Math.round(layout.widthMm * 10) / 10}×{Math.round(layout.heightMm * 10) / 10}mm ・ ラベル{form.rows * form.columns}枚（{form.columns}列×{form.rows}行）
+            </p>
+            <div className="w-full max-w-sm" style={{ containerType: "inline-size" }}>
+              <div
+                className="relative w-full overflow-hidden rounded border border-neutral-300 bg-white dark:border-neutral-600 dark:bg-neutral-100"
+                style={{ aspectRatio: `${layout.widthMm} / ${layout.heightMm}` }}
+              >
+                {layout.rows.map((r, ri) =>
+                  layout.cols.map((c, ci) => (
+                    <div
+                      key={`${ri}-${ci}`}
+                      className="absolute flex items-center justify-center overflow-hidden border border-neutral-400 bg-neutral-50 p-px text-center text-neutral-700"
+                      style={{
+                        left: `${(c.start / layout.widthMm) * 100}%`,
+                        top: `${(r.start / layout.heightMm) * 100}%`,
+                        width: `${(c.size / layout.widthMm) * 100}%`,
+                        height: `${(r.size / layout.heightMm) * 100}%`,
+                        fontSize: "clamp(5px, 2.2cqw, 11px)",
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      <span className="line-clamp-3 whitespace-pre-wrap break-all">{form.text || "（空）"}</span>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500">
+              余白・間隔・ラベルの大きさをmmの比率どおりに描いた配置イメージです。実際のExcelでは列幅が文字数単位の近似になるため、見た目が多少前後します。
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-neutral-400">設定が正しくないため、プレビューを表示できません。</p>
+        )}
+      </section>
 
       {validationError && <ErrorMessage message={validationError} />}
 

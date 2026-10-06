@@ -6,6 +6,7 @@ import {
   buildDocxBlob,
   getBodyElement,
   getTopLevelParagraphs,
+  getParagraphText,
 } from "@/lib/word/docx-text-ops";
 
 /**
@@ -101,45 +102,91 @@ const HANDLERS: Record<NumberingFormat, FormatHandler> = {
   },
 };
 
+/** 番号形式の組み合わせが正しいか検証する(出力とプレビューで共通) */
+function getHandlers(source: NumberingFormat, target: NumberingFormat) {
+  const sourceHandler = HANDLERS[source];
+  const targetHandler = HANDLERS[target];
+  if (!sourceHandler || !targetHandler) {
+    throw new Error("変換元・変換先の形式を選択してください");
+  }
+  return { sourceHandler, targetHandler };
+}
+
+/**
+ * 解析済みのdocument.xml(DOM)の段落先頭の番号を振り直す(出力とプレビューで共通)。
+ * doc は直接書き換えられる。paragraphs は本文直下の段落ごとの「処理前/処理後テキスト」と変換有無。
+ */
+export function applyRenumber(
+  doc: Document,
+  source: NumberingFormat,
+  target: NumberingFormat
+): {
+  convertedCount: number;
+  skippedCount: number;
+  paragraphs: { before: string; after: string; converted: boolean }[];
+} {
+  const { sourceHandler, targetHandler } = getHandlers(source, target);
+  const body = getBodyElement(doc);
+  const paragraphs = getTopLevelParagraphs(body);
+  const beforeTexts = paragraphs.map((p) => getParagraphText(p));
+  const convertedFlags: boolean[] = [];
+
+  let convertedCount = 0;
+  let skippedCount = 0;
+
+  for (const p of paragraphs) {
+    const runs = Array.from(p.getElementsByTagName("w:t"));
+    const firstRun = runs.find((r) => (r.textContent ?? "") !== "");
+    if (!firstRun) {
+      convertedFlags.push(false);
+      continue;
+    }
+
+    const text = firstRun.textContent ?? "";
+    const detected = sourceHandler.detect(text);
+    if (!detected) {
+      // このパターンにマッチしない段落（本文段落など）は変換対象外として数える
+      skippedCount++;
+      convertedFlags.push(false);
+      continue;
+    }
+
+    const rendered = targetHandler.render(detected.n);
+    if (rendered === null) {
+      // 対応範囲外（例: 丸数字は21以上に対応する文字が無い）。本文を壊さないため変更しない
+      skippedCount++;
+      convertedFlags.push(false);
+      continue;
+    }
+
+    firstRun.textContent = rendered + text.slice(detected.matched.length);
+    convertedCount++;
+    convertedFlags.push(true);
+  }
+
+  return {
+    convertedCount,
+    skippedCount,
+    paragraphs: paragraphs.map((p, i) => ({
+      before: beforeTexts[i],
+      after: getParagraphText(p),
+      converted: convertedFlags[i],
+    })),
+  };
+}
+
+/** document.xmlのテキストから、番号を振り直した後の段落テキストを求める(プレビュー用) */
+export function previewRenumber(documentXmlText: string, source: NumberingFormat, target: NumberingFormat) {
+  return applyRenumber(parseDocumentXml(documentXmlText), source, target);
+}
+
 export class WordRenumberProcessor extends BrowserProcessor<WordRenumberInput, WordRenumberOutput> {
   async process(input: WordRenumberInput): Promise<WordRenumberOutput> {
-    const sourceHandler = HANDLERS[input.sourceFormat];
-    const targetHandler = HANDLERS[input.targetFormat];
-    if (!sourceHandler || !targetHandler) {
-      throw new Error("変換元・変換先の形式を選択してください");
-    }
+    getHandlers(input.sourceFormat, input.targetFormat);
 
     const pkg = await loadDocxPackage(input.file);
     const doc = parseDocumentXml(pkg.documentXmlText);
-    const body = getBodyElement(doc);
-    const paragraphs = getTopLevelParagraphs(body);
-
-    let convertedCount = 0;
-    let skippedCount = 0;
-
-    for (const p of paragraphs) {
-      const runs = Array.from(p.getElementsByTagName("w:t"));
-      const firstRun = runs.find((r) => (r.textContent ?? "") !== "");
-      if (!firstRun) continue;
-
-      const text = firstRun.textContent ?? "";
-      const detected = sourceHandler.detect(text);
-      if (!detected) {
-        // このパターンにマッチしない段落（本文段落など）は変換対象外として数える
-        skippedCount++;
-        continue;
-      }
-
-      const rendered = targetHandler.render(detected.n);
-      if (rendered === null) {
-        // 対応範囲外（例: 丸数字は21以上に対応する文字が無い）。本文を壊さないため変更しない
-        skippedCount++;
-        continue;
-      }
-
-      firstRun.textContent = rendered + text.slice(detected.matched.length);
-      convertedCount++;
-    }
+    const { convertedCount, skippedCount } = applyRenumber(doc, input.sourceFormat, input.targetFormat);
 
     const newXml = serializeDocumentXml(doc, pkg.xmlDeclaration);
     const blob = buildDocxBlob(pkg, newXml);

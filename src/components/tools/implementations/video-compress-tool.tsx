@@ -16,7 +16,10 @@ import {
   type CompressionLevel,
   type OutputContainer,
 } from "@/lib/video/shared";
-import { useRevokeObjectUrlOnChange } from "@/lib/video/use-video-preview";
+import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
+import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
+import { COMPRESSION_RATIO_RANGE, estimateCompressedRange } from "@/lib/video/estimate";
+
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -40,6 +43,7 @@ export function VideoCompressTool() {
   const cancelControllerRef = useRef<AbortController | null>(null);
 
   useRevokeObjectUrlOnChange(result?.url);
+  const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
 
   // タブ遷移やアンマウント時にも、実行中の処理を実際に中断する
   // （UI表示を消すだけでなく、バックグラウンドのmediabunny処理自体を止める）。
@@ -189,6 +193,36 @@ export function VideoCompressTool() {
       )}
 
       {file && (
+        <VideoPreviewPanel
+          file={file}
+          previewUrl={previewUrl}
+          meta={meta}
+          onLoadedMetadata={handleLoadedMetadata}
+          outputTitle="圧縮後の予定"
+          outputRows={(() => {
+            const [lo, hi] = estimateCompressedRange(file.size, level);
+            const [loRatio, hiRatio] = COMPRESSION_RATIO_RANGE[level];
+            return [
+              {
+                label: "圧縮レベル",
+                value: COMPRESSION_LEVEL_OPTIONS.find((o) => o.value === level)?.label ?? "",
+              },
+              { label: "形式", value: container.toUpperCase() },
+              {
+                label: "解像度",
+                value: meta && meta.width > 0 ? `${meta.width}×${meta.height}（変更なし）` : "元の動画と同じ",
+              },
+              {
+                label: "サイズの目安",
+                value: `約 ${formatBytes(lo)}〜${formatBytes(hi)}（元の ${Math.round(loRatio * 100)}〜${Math.round(hiRatio * 100)}%）`,
+              },
+            ];
+          })()}
+          outputNote="サイズは目安です。元の動画の画質・内容によって大きく前後し、増える場合もあります。"
+        />
+      )}
+
+      {file && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -241,6 +275,7 @@ export function VideoCompressTool() {
               解像度: {result.width}×{result.height}
             </span>
           </div>
+          <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </div>
       )}

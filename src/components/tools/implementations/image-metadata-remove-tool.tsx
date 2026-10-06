@@ -6,7 +6,9 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ImageMetadataRemoveProcessor } from "@/lib/processors/browser/image";
+import { ImageMetadataRemoveProcessor, resolveMetadataRemoveOutputType } from "@/lib/processors/browser/image";
+import { inspectImageMetadata, hasAnyMetadata, type ImageMetadataReport } from "@/lib/utils/image-metadata";
+import { useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
 
@@ -15,6 +17,46 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
   "image/webp": "webp",
 };
+
+const FORMAT_LABEL: Record<string, string> = {
+  "image/jpeg": "JPG",
+  "image/png": "PNG",
+  "image/webp": "WebP",
+};
+
+/** 取り除かれる情報の一覧(検出結果から作る) */
+function buildMetadataRows(report: ImageMetadataReport): { label: string; present: boolean; detail?: string }[] {
+  return [
+    { label: "撮影日時", present: report.dateTime !== null, detail: report.dateTime ?? undefined },
+    { label: "位置情報（GPS）", present: report.gps },
+    { label: "カメラ・機種", present: report.camera !== null, detail: report.camera ?? undefined },
+    { label: "編集ソフト", present: report.software !== null, detail: report.software ?? undefined },
+    { label: "その他のEXIF情報", present: report.exif },
+    { label: "XMP・IPTC（著作権・キャプション等）", present: report.xmp || report.iptc || report.textChunks },
+    { label: "カラープロファイル（ICC）", present: report.icc },
+  ];
+}
+
+function MetadataRows({ report }: { report: ImageMetadataReport }) {
+  return (
+    <ul className="flex flex-col gap-1 text-sm">
+      {buildMetadataRows(report).map((row) => (
+        <li key={row.label} className="flex items-baseline justify-between gap-3">
+          <span className="text-neutral-600 dark:text-neutral-300">{row.label}</span>
+          <span
+            className={
+              row.present
+                ? "text-right font-medium text-amber-700 dark:text-amber-400"
+                : "text-right text-neutral-400 dark:text-neutral-500"
+            }
+          >
+            {row.present ? (row.detail ? `あり（${row.detail}）` : "あり") : "なし"}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * 画像メタデータ削除（Phase 8）。
@@ -34,6 +76,41 @@ export function ImageMetadataRemoveTool() {
       if (result) URL.revokeObjectURL(result.url);
     };
   }, [result]);
+
+  // --- プレビュー: 画像と、取り除かれる情報(撮影日時・GPS等)の有無 ---
+  const previewUrl = useObjectUrl(file);
+  const [inspected, setInspected] = useState<{ file: File; report: ImageMetadataReport } | null>(null);
+  const [inspectedResult, setInspectedResult] = useState<{ blob: Blob; report: ImageMetadataReport } | null>(null);
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    inspectImageMetadata(file).then(
+      (report) => {
+        if (!cancelled) setInspected({ file, report });
+      },
+      () => {}
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+  // 書き出した後は、出力ファイルにも同じ検査をかけて「残っていないこと」を確認する
+  useEffect(() => {
+    if (!result) return;
+    let cancelled = false;
+    inspectImageMetadata(result.blob).then(
+      (report) => {
+        if (!cancelled) setInspectedResult({ blob: result.blob, report });
+      },
+      () => {}
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [result]);
+  const report = file && inspected?.file === file ? inspected.report : null;
+  const resultReport = result && inspectedResult?.blob === result.blob ? inspectedResult.report : null;
+  const outputLabel = file ? FORMAT_LABEL[resolveMetadataRemoveOutputType(file.type)] : null;
 
   async function handleRun() {
     if (!file) return;
@@ -76,6 +153,43 @@ export function ImageMetadataRemoveTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（取り除かれる情報）</p>
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+            {previewUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={previewUrl}
+                alt="選択した画像"
+                className="max-h-56 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            )}
+            <div className="flex flex-col gap-2">
+              {report ? (
+                <>
+                  <MetadataRows report={report} />
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {hasAnyMetadata(report)
+                      ? "「あり」の情報は、書き出した画像には含まれなくなります。"
+                      : "この画像からは、取り除く対象の情報は検出されませんでした。"}
+                    出力形式: {outputLabel}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">情報を調べています...</p>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500">
+            代表的な情報(JPG・PNG・WebPのEXIF・XMP・IPTC・ICC等)を調べた結果で、すべてのメタデータを網羅するものではありません。
+          </p>
+        </div>
+      )}
+
+      {file && (
         <button
           type="button"
           onClick={handleRun}
@@ -100,6 +214,13 @@ export function ImageMetadataRemoveTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px ・ {formatBytes(result.sizeBytes)} ・ {result.mimeType}
           </p>
+          {resultReport && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {hasAnyMetadata(resultReport)
+                ? "書き出した画像にも一部の付随情報が検出されました（上記の検査結果は代表的な項目のみです）。"
+                : "書き出した画像を検査し、撮影日時・GPS・EXIF等が含まれていないことを確認しました。"}
+            </p>
+          )}
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ColorPaletteProcessor, type ColorPaletteInput } from "@/lib/processors/browser/color";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -19,6 +19,26 @@ export function ColorPaletteTool() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [status, setStatus] = useState<ProcessingState>("idle");
+
+  // ベースカラー・配色パターンを変えるたびに、その場でパレットを更新する（プレビュー）。
+  // 「パレットを生成する」ボタンも同じ ColorPaletteProcessor・同じ設定を使う。
+  useEffect(() => {
+    let cancelled = false;
+    new ColorPaletteProcessor()
+      .process({ baseColorHex: baseColor, mode })
+      .then((result) => {
+        if (cancelled) return;
+        setColors(result.colors);
+        setError(null);
+      })
+      .catch((e) => {
+        // 入力途中の不正なカラーコードでは、直前のパレットを残してメッセージだけ出す
+        if (!cancelled) setError(e instanceof Error ? e.message : "生成に失敗しました");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseColor, mode]);
 
   async function generate(nextMode = mode, nextColor = baseColor) {
     if (status === "processing") return;
@@ -95,6 +115,15 @@ export function ColorPaletteTool() {
       {error && <ErrorMessage message={error} />}
 
       {colors.length > 0 && (
+        <div data-testid="tool-preview" className="flex flex-col gap-4">
+          <div
+            aria-label="パレットのプレビュー"
+            className="flex h-16 overflow-hidden rounded-xl border border-black/5"
+          >
+            {colors.map((hex, i) => (
+              <span key={`${hex}-${i}`} className="flex-1" style={{ backgroundColor: hex }} />
+            ))}
+          </div>
         <div className="flex flex-wrap gap-3">
           {colors.map((hex, i) => (
             <button
@@ -112,6 +141,7 @@ export function ColorPaletteTool() {
               </span>
             </button>
           ))}
+        </div>
         </div>
       )}
     </div>

@@ -1,12 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ExcelBlankRemoveProcessor, type BlankRemoveMode } from "@/lib/processors/browser/excel-blank-remove";
+import {
+  BeforeAfterPreview,
+  PREVIEW_COMPUTE_ROWS,
+  SheetTabs,
+  limitSheetRows,
+  toGridRows,
+  xlsxRowsToText,
+} from "@/components/tools/implementations/shared/before-after-table";
+import { useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
+import { columnIndexToLetter, readXlsxSheets } from "@/lib/excel/xlsx-simple-io";
+import {
+  ExcelBlankRemoveProcessor,
+  removeBlanksFromSheetRows,
+  type BlankRemoveMode,
+} from "@/lib/processors/browser/excel-blank-remove";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 const ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -29,6 +43,72 @@ export function ExcelBlankRemoveTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ blob: Blob; removedRows: number; removedColumns: number } | null>(null);
+
+  const [tab, setTab] = useState(0);
+  const { data: sheets, error: previewError, loading } = useAsyncFileData(file, readXlsxSheets);
+
+  // プレビュー: 出力と同じ removeBlanksFromSheetRows で、選んだシートの空白行・空白列を取り除く
+  const preview = useMemo(() => {
+    if (!sheets || sheets.length === 0) return null;
+    const { sheets: limitedSheets, limited } = limitSheetRows(sheets);
+    const index = Math.min(tab, limitedSheets.length - 1);
+    const names = sheets.map((s) => s.name);
+    try {
+      const result = removeBlanksFromSheetRows(limitedSheets[index].rows, {
+        mode,
+        ...(useRange ? { rangeStartRow, rangeEndRow, rangeStartCol, rangeEndCol } : {}),
+      });
+      const source = xlsxRowsToText(result.source);
+      const removedRowList = Array.from(result.removedRowIndexes).map((r) => r + 1);
+      const removedColList = Array.from(result.removedColumnIndexes).map((c) => columnIndexToLetter(c));
+      // 削除される行がある場合は、その周辺が見えるよう、削除行を含む行を優先して表示する
+      const shownIdx: number[] = [];
+      const wanted = new Set<number>();
+      for (const r of result.removedRowIndexes) {
+        if (wanted.size >= 4) break;
+        wanted.add(r);
+        if (r > 0) wanted.add(r - 1);
+      }
+      for (let r = 0; r < source.length && shownIdx.length < 10; r++) {
+        if (r < 4 || wanted.has(r)) shownIdx.push(r);
+      }
+      const afterText = xlsxRowsToText(result.rows);
+      return {
+        error: null as string | null,
+        names,
+        index,
+        limited,
+        totalRows: sheets[index].rows.length,
+        removedRowList,
+        removedColList,
+        shownRowNumbers: shownIdx.map((r) => r + 1),
+        before: shownIdx.map(
+          (r) =>
+            toGridRows([source[r]], (_, c) =>
+              result.removedRowIndexes.has(r) || result.removedColumnIndexes.has(c) ? "removed" : undefined
+            )[0]
+        ),
+        after: toGridRows(afterText.slice(0, 10)),
+        afterSize: [afterText.length, afterText[0]?.length ?? 0],
+        beforeSize: [source.length, source[0]?.length ?? 0],
+      };
+    } catch (e) {
+      return {
+        error: e instanceof Error ? e.message : "プレビューを作成できませんでした",
+        names,
+        index,
+        limited,
+        totalRows: 0,
+        removedRowList: [] as number[],
+        removedColList: [] as string[],
+        shownRowNumbers: [] as number[],
+        before: null,
+        after: null,
+        afterSize: [0, 0],
+        beforeSize: [0, 0],
+      };
+    }
+  }, [sheets, tab, mode, useRange, rangeStartRow, rangeEndRow, rangeStartCol, rangeEndCol]);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -145,6 +225,44 @@ export function ExcelBlankRemoveTool() {
             </div>
           )}
         </div>
+      )}
+
+      {file && (preview || previewError || loading) && (
+        <BeforeAfterPreview
+          title="空白削除のプレビュー"
+          loading={loading}
+          before={preview?.before ?? null}
+          after={preview?.after ?? null}
+          afterError={previewError ?? preview?.error ?? null}
+          beforeLabel="削除前"
+          afterLabel="削除後"
+          maxRows={10}
+          maxCols={8}
+          headerRow={false}
+          afterTotalRows={preview?.afterSize[0]}
+          beforeRowLabels={preview?.shownRowNumbers}
+          header={preview && <SheetTabs names={preview.names} active={preview.index} onChange={setTab} />}
+          summary={
+            preview &&
+            !preview.error && (
+              <span>
+                {preview.beforeSize[0]}行 × {preview.beforeSize[1]}列 → {preview.afterSize[0]}行 × {preview.afterSize[1]}列
+                {preview.removedRowList.length > 0 &&
+                  ` ／ 除去される行: ${preview.removedRowList.slice(0, 8).join("、")}${preview.removedRowList.length > 8 ? "…" : ""}行目`}
+                {preview.removedColList.length > 0 &&
+                  ` ／ 除去される列: ${preview.removedColList.slice(0, 8).join("、")}${preview.removedColList.length > 8 ? "…" : ""}列`}
+                （すべてのシートに同じ設定を適用）
+              </span>
+            )
+          }
+          legend={[{ mark: "removed", label: "削除される空白の行・列" }]}
+          notes={[
+            "削除される行がある場合は、その周辺の行を優先して表示しています(左端の数字は元の行番号)。",
+            ...(preview?.limited
+              ? [`ファイルが大きいため、各シートの先頭${PREVIEW_COMPUTE_ROWS}行で計算したプレビューです(表示中のシートは全${preview.totalRows}行)。実際の処理は全行が対象です。`]
+              : []),
+          ]}
+        />
       )}
 
       {file && (

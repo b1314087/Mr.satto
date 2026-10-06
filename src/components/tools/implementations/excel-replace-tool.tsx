@@ -1,12 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ExcelReplaceProcessor, type ExcelReplaceScope } from "@/lib/processors/browser/excel-replace";
+import {
+  BeforeAfterPreview,
+  PREVIEW_COMPUTE_ROWS,
+  SheetTabs,
+  limitSheetRows,
+  pickPreviewRowIndexes,
+  toGridRows,
+  xlsxCellToText,
+  xlsxRowsToText,
+} from "@/components/tools/implementations/shared/before-after-table";
+import { useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
+import { readXlsxSheets } from "@/lib/excel/xlsx-simple-io";
+import { ExcelReplaceProcessor, replaceInSheets, type ExcelReplaceScope } from "@/lib/processors/browser/excel-replace";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 const ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -33,6 +45,71 @@ export function ExcelReplaceTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ blob: Blob; replacedCount: number } | null>(null);
+
+  const [tab, setTab] = useState(0);
+  const { data: sheets, error: previewError, loading } = useAsyncFileData(file, readXlsxSheets);
+
+  // プレビュー: 出力と同じ replaceInSheets で、現在の設定を全シートに適用した結果を表示する
+  const preview = useMemo(() => {
+    if (!sheets || sheets.length === 0) return null;
+    const { sheets: limitedSheets, limited } = limitSheetRows(sheets);
+    const index = Math.min(tab, limitedSheets.length - 1);
+    const names = sheets.map((s) => s.name);
+    const base = { names, index, limited, totalRows: sheets[index].rows.length };
+    const sourceRows = limitedSheets[index].rows;
+    if (find === "") {
+      return {
+        ...base,
+        error: null as string | null,
+        replacedCount: null as number | null,
+        rowNumbers: sourceRows.slice(0, 10).map((_, i) => i + 1),
+        before: toGridRows(xlsxRowsToText(sourceRows.slice(0, 10))),
+        after: null,
+      };
+    }
+    try {
+      const result = replaceInSheets(limitedSheets, {
+        find,
+        replaceWith,
+        mode: operation,
+        caseSensitive,
+        scope,
+        columnLetter: scope === "column" ? columnLetter : undefined,
+        ...(scope === "range" ? { rangeStartRow, rangeEndRow, rangeStartCol, rangeEndCol } : {}),
+      });
+      const afterRows = result.sheets[index].rows;
+      const cols = sourceRows.reduce((max, r) => Math.max(max, r.length), 0);
+      const changedRows = new Set<number>();
+      sourceRows.forEach((row, r) => {
+        for (let c = 0; c < cols; c++) {
+          if (xlsxCellToText(row[c]) !== xlsxCellToText(afterRows[r]?.[c])) {
+            changedRows.add(r);
+            break;
+          }
+        }
+      });
+      const picked = pickPreviewRowIndexes(changedRows, sourceRows.length, 10);
+      const changed = (r: number, c: number) =>
+        xlsxCellToText(sourceRows[r]?.[c]) !== xlsxCellToText(afterRows[r]?.[c]) ? ("changed" as const) : undefined;
+      return {
+        ...base,
+        error: null,
+        replacedCount: result.replacedCount,
+        rowNumbers: picked.map((r) => r + 1),
+        before: picked.map((r) => toGridRows([xlsxRowsToText([sourceRows[r]], cols)[0]], (_, c) => changed(r, c))[0]),
+        after: picked.map((r) => toGridRows([xlsxRowsToText([afterRows[r] ?? []], cols)[0]], (_, c) => changed(r, c))[0]),
+      };
+    } catch (e) {
+      return {
+        ...base,
+        error: e instanceof Error ? e.message : "プレビューを作成できませんでした",
+        replacedCount: null,
+        rowNumbers: sourceRows.slice(0, 10).map((_, i) => i + 1),
+        before: toGridRows(xlsxRowsToText(sourceRows.slice(0, 10))),
+        after: null,
+      };
+    }
+  }, [sheets, tab, find, replaceWith, operation, caseSensitive, scope, columnLetter, rangeStartRow, rangeEndRow, rangeStartCol, rangeEndCol]);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -218,6 +295,40 @@ export function ExcelReplaceTool() {
             </div>
           )}
         </div>
+      )}
+
+      {file && (preview || previewError || loading) && (
+        <BeforeAfterPreview
+          title={operation === "delete" ? "削除のプレビュー" : "置換のプレビュー"}
+          loading={loading}
+          before={preview?.before ?? null}
+          after={preview?.after ?? null}
+          afterError={previewError ?? preview?.error ?? null}
+          beforeLabel={operation === "delete" ? "削除前" : "置換前"}
+          afterLabel={operation === "delete" ? "削除後" : "置換後"}
+          maxRows={10}
+          maxCols={8}
+          headerRow={false}
+          beforeRowLabels={preview?.rowNumbers}
+          afterRowLabels={preview?.rowNumbers}
+          header={preview && <SheetTabs names={preview.names} active={preview.index} onChange={setTab} />}
+          summary={
+            preview &&
+            (preview.replacedCount === null ? (
+              !preview.error && <span>「検索する文字列」を入力すると、{operation === "delete" ? "削除" : "置換"}後の表がここに表示されます。</span>
+            ) : (
+              <span>
+                {operation === "delete" ? "削除" : "置換"}される見込み: {preview.replacedCount}箇所（文字列のセルだけが対象。全シートに同じ設定を適用）
+              </span>
+            ))
+          }
+          legend={preview?.replacedCount != null ? [{ mark: "changed", label: "変更されるセル(変更のある行を優先して表示。左端の数字は元の行番号)" }] : undefined}
+          notes={
+            preview?.limited
+              ? [`ファイルが大きいため、各シートの先頭${PREVIEW_COMPUTE_ROWS}行で計算したプレビューです(表示中のシートは全${preview.totalRows}行)。実際の処理は全行が対象です。`]
+              : undefined
+          }
+        />
       )}
 
       {file && (

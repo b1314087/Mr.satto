@@ -84,6 +84,8 @@ export class PdfToImageProcessor extends BrowserProcessor<
 // ---------------------------------------------------------------------------
 export interface PdfToTextInput {
   file: File;
+  /** 指定すると先頭からこのページ数だけ抽出する(画面のプレビュー用)。省略時は全ページ */
+  maxPages?: number;
 }
 
 export interface PdfToTextPage {
@@ -110,7 +112,7 @@ export interface PdfToTextOutput {
  * UI側でその旨を案内する（OCRは今回のスコープ外）。
  */
 export class PdfToTextProcessor extends BrowserProcessor<PdfToTextInput, PdfToTextOutput> {
-  async process({ file }: PdfToTextInput): Promise<PdfToTextOutput> {
+  async process({ file, maxPages }: PdfToTextInput): Promise<PdfToTextOutput> {
     const pdf = await loadPdfDocument(file);
 
     if (pdf.numPages === 0) {
@@ -119,7 +121,7 @@ export class PdfToTextProcessor extends BrowserProcessor<PdfToTextInput, PdfToTe
 
     const pages: PdfToTextPage[] = [];
     try {
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+      for (let pageNumber = 1; pageNumber <= Math.min(pdf.numPages, maxPages ?? pdf.numPages); pageNumber++) {
         const page = await pdf.getPage(pageNumber);
         const textContent = await page.getTextContent();
 

@@ -6,6 +6,9 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { PdfOverlayPreview, usePdfFont } from "@/components/tools/implementations/shared/pdf-overlay-preview";
+import { PAGE_NUMBER_COLOR, pageNumberLabel, pageNumberPlacement } from "@/lib/pdf/overlay-layout";
+import { getHelveticaFont } from "@/lib/pdf/overlay-fonts";
 import {
   PdfAddPageNumbersProcessor,
   type PageNumberPosition,
@@ -24,6 +27,8 @@ export function PdfAddPageNumbersTool() {
   const [startNumber, setStartNumber] = useState(1);
   const [position, setPosition] = useState<PageNumberPosition>("bottom-center");
   const [fontSize, setFontSize] = useState(10);
+  // プレビュー用: 実際の出力と同じフォント(Helvetica)で文字幅を測る
+  const { font: previewFont } = usePdfFont(getHelveticaFont);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +125,39 @@ export function PdfAddPageNumbersTool() {
             />
           </label>
         </div>
+      )}
+
+      {file && (
+        <PdfOverlayPreview
+          file={file}
+          pages={[1, 2, 3]}
+          width={160}
+          title="ページ番号のプレビュー"
+          caption={
+            Number.isInteger(startNumber)
+              ? "設定を変えると、表示がすぐに変わります。出力されるPDFの位置・書式と同じ計算で表示しています。"
+              : "開始番号は整数で入力してください。"
+          }
+        >
+          {({ page, geometry, sy }) => {
+            if (!previewFont || !Number.isInteger(startNumber)) return null;
+            const label = pageNumberLabel(startNumber, page - 1);
+            const textWidth = previewFont.widthOfTextAtSize(label, fontSize);
+            const { x, y } = pageNumberPlacement(geometry.media.width, textWidth, position);
+            return (
+              <text
+                x={x}
+                y={sy(y)}
+                fontSize={fontSize}
+                fontFamily="Helvetica, Arial, sans-serif"
+                fill={`rgb(${PAGE_NUMBER_COLOR.r * 255}, ${PAGE_NUMBER_COLOR.g * 255}, ${PAGE_NUMBER_COLOR.b * 255})`}
+                style={{ whiteSpace: "pre" }}
+              >
+                {label}
+              </text>
+            );
+          }}
+        </PdfOverlayPreview>
       )}
 
       {file && (

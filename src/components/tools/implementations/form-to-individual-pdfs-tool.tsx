@@ -424,7 +424,7 @@ export function FormToIndividualPdfsTool() {
             </p>
           )}
 
-          <div ref={canvasWrapRef} className="w-full">
+          <div ref={canvasWrapRef} data-testid="tool-preview" className="w-full">
             <div
               className="relative select-none border border-neutral-300 dark:border-neutral-700"
               style={{ width: "fit-content", cursor: placingFieldId ? "crosshair" : "default" }}

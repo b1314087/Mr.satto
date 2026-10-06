@@ -12,6 +12,7 @@ import {
 } from "@/lib/processors/browser/ticket-voucher";
 import { PAPER_SIZE_IDS, PAPER_SIZE_LABELS, type PaperSizeId, type PaperOrientation } from "@/lib/print/paper-sizes";
 import { downloadBlob } from "@/lib/utils/format";
+import { TicketPreview } from "./shared/ticket-preview";
 
 const DEFAULTS: TicketVoucherInput = {
   paperSizeId: "A4",
@@ -182,26 +183,9 @@ export function TicketVoucherTool() {
         )}
       </div>
 
-      <div>
-        <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">プレビュー（1枚分のイメージ）</p>
-        <div
-          className="relative mx-auto flex flex-col justify-between border border-dashed border-neutral-400 bg-white p-2 text-neutral-800"
-          style={{ width: 280, aspectRatio: `${form.cellWidthMm} / ${form.cellHeightMm}` }}
-        >
-          <div>
-            {form.title && <p className="text-sm font-semibold">{form.title}</p>}
-            {form.date && <p className="text-[10px] text-neutral-500">{form.date}</p>}
-            {form.amount && <p className="text-base font-bold">{form.amount}</p>}
-            {form.freeText && <p className="text-[10px] text-neutral-500">{form.freeText}</p>}
-          </div>
-          <div className="flex items-end justify-between">
-            {form.showSerial && <p className="text-[10px] text-neutral-500">No. {String(form.serialStart).padStart(form.serialDigits, "0")}</p>}
-            <div className="flex items-center gap-1">
-              {form.showQr && <div className="h-8 w-8 border border-neutral-400 text-center text-[8px] leading-8">QR</div>}
-              {form.showBarcode && <div className="h-4 w-12 border border-neutral-400 text-center text-[7px] leading-4">|||||</div>}
-            </div>
-          </div>
-        </div>
+      <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <p className="mb-2 text-sm font-medium">プレビュー（PDFと同じ配置・1ページ分）</p>
+        <TicketPreview form={form} />
       </div>
 
       {validationError && <ErrorMessage message={validationError} />}

@@ -1,7 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { JsonFormatProcessor } from "@/lib/processors/browser/text";
+import { useMemo, useState } from "react";
+import { JsonFormatProcessor, formatJsonText } from "@/lib/processors/browser/text";
+import {
+  PreviewColumn,
+  PreviewColumns,
+  PreviewNotice,
+  PreviewShell,
+  PreviewText,
+} from "@/components/tools/implementations/shared/before-after-table";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 
@@ -11,6 +18,20 @@ export function JsonFormatterTool() {
   const [indent, setIndent] = useState(2);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<ProcessingState>("idle");
+
+  // プレビュー: 出力と同じ formatJsonText で、入力・インデントに合わせてその場で整形/圧縮した結果を表示する
+  const preview = useMemo(() => {
+    if (!input.trim()) return null;
+    try {
+      return {
+        formatted: formatJsonText(input, indent, false),
+        minified: formatJsonText(input, indent, true),
+        error: null as string | null,
+      };
+    } catch (e) {
+      return { formatted: null, minified: null, error: e instanceof Error ? e.message : "整形できませんでした" };
+    }
+  }, [input, indent]);
 
   async function run(minify = false) {
     if (status === "processing") return;
@@ -95,6 +116,31 @@ export function JsonFormatterTool() {
           </button>
         )}
       </div>
+
+      {preview && (
+        <PreviewShell
+          title="整形のプレビュー(入力・インデントに合わせて更新されます)"
+          summary={
+            preview.formatted !== null && preview.minified !== null ? (
+              <span>
+                整形後 {preview.formatted.split("\n").length}行 ・ 圧縮すると{preview.minified.length}文字
+              </span>
+            ) : undefined
+          }
+        >
+          {preview.error && <PreviewNotice message={preview.error} />}
+          {preview.formatted !== null && preview.minified !== null && (
+            <PreviewColumns>
+              <PreviewColumn label="整形した場合">
+                <PreviewText text={preview.formatted} maxLines={30} label="整形後のプレビュー" />
+              </PreviewColumn>
+              <PreviewColumn label="圧縮(minify)した場合">
+                <PreviewText text={preview.minified.length > 600 ? `${preview.minified.slice(0, 600)}…` : preview.minified} maxLines={30} label="圧縮後のプレビュー" />
+              </PreviewColumn>
+            </PreviewColumns>
+          )}
+        </PreviewShell>
+      )}
 
       <ProcessingStatus state={status} processingLabel="処理中..." successLabel="整形が完了しました" />
       {error && <ErrorMessage message={error} />}

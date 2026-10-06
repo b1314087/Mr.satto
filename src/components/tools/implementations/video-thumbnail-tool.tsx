@@ -11,7 +11,12 @@ import {
   type ThumbnailImageFormat,
   type VideoThumbnailOutput,
 } from "@/lib/processors/browser/video-thumbnail";
-import { VIDEO_INPUT_ACCEPT, VIDEO_SIZE_LIMITS, VideoCanceledByUserError } from "@/lib/video/shared";
+import {
+  VIDEO_INPUT_ACCEPT,
+  VIDEO_SIZE_LIMITS,
+  VideoCanceledByUserError,
+  thumbnailCanvasOptionsFor,
+} from "@/lib/video/shared";
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -49,6 +54,37 @@ export function VideoThumbnailTool() {
   const cancelControllerRef = useRef<AbortController | null>(null);
 
   const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // 出力画像の解像度（長辺が上限を超える場合は縮小される。抽出処理と同じ規則）
+  const outputSize = (() => {
+    if (!meta || meta.width <= 0) return { width: 0, height: 0 };
+    const opt = thumbnailCanvasOptionsFor(meta.width, meta.height);
+    if (opt.width !== undefined) {
+      return { width: opt.width, height: Math.round((meta.height * opt.width) / meta.width) };
+    }
+    if (opt.height !== undefined) {
+      return { width: Math.round((meta.width * opt.height) / meta.height), height: opt.height };
+    }
+    return { width: meta.width, height: meta.height };
+  })();
+  const outputWidth = outputSize.width;
+  const outputHeight = outputSize.height;
+
+  // スライダーを動かすと、その時点のフレームを<video>に表示する（抽出する時点と一致）
+  function seekTo(t: number) {
+    setTimestamp(t);
+    const v = videoRef.current;
+    if (v) {
+      v.pause();
+      v.currentTime = t;
+    }
+  }
+
+  // 動画側の操作（再生・シークバー）でも抽出する時点を同期する
+  function syncTimestampFromVideo(e: React.SyntheticEvent<HTMLVideoElement>) {
+    setTimestamp(e.currentTarget.currentTime);
+  }
   useRevokeObjectUrlOnChange(result?.url);
 
   // タブ遷移やアンマウント時にも、実行中の処理を実際に中断する。
@@ -132,30 +168,51 @@ export function VideoThumbnailTool() {
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
-      {previewUrl && (
-        <video
-          src={previewUrl}
-          onLoadedMetadata={handleLoadedMetadata}
-          controls
-          className="max-h-64 w-full rounded-lg bg-black"
-        />
-      )}
-
-      {file && meta && meta.durationSec > 0 && (
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            抽出する時点: {formatTime(timestamp)} / {formatTime(meta.durationSec)}
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={meta.durationSec}
-            step={0.1}
-            value={timestamp}
-            onChange={(e) => setTimestamp(Number(e.target.value))}
-            className="w-full"
+      {file && previewUrl && (
+        <section
+          data-testid="tool-preview"
+          aria-label="抽出するフレームのプレビュー"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            この時点のフレーム（スライダーを動かすと切り替わります）
+          </p>
+          <video
+            ref={videoRef}
+            src={previewUrl}
+            onLoadedMetadata={handleLoadedMetadata}
+            onSeeked={syncTimestampFromVideo}
+            onTimeUpdate={syncTimestampFromVideo}
+            controls
+            playsInline
+            preload="auto"
+            className="max-h-64 w-full rounded-lg bg-black"
           />
-        </div>
+
+          {meta && meta.durationSec > 0 && (
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+                抽出する時点: {formatTime(timestamp)} / {formatTime(meta.durationSec)}
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={meta.durationSec}
+                step={0.1}
+                value={timestamp}
+                onChange={(e) => seekTo(Number(e.target.value))}
+                aria-label="抽出する時点"
+                className="w-full"
+              />
+            </div>
+          )}
+
+          {meta && meta.width > 0 && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              出力画像: {outputWidth}×{outputHeight}（{format === "png" ? "PNG" : `JPEG・品質${Math.round(jpegQuality * 100)}%`}）
+            </p>
+          )}
+        </section>
       )}
 
       {file && (

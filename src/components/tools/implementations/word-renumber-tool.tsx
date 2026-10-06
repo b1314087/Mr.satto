@@ -1,12 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { WordRenumberProcessor, type NumberingFormat } from "@/lib/processors/browser/word-renumber";
+import {
+  ParagraphCompare,
+  ParagraphLegend,
+  type ParagraphItem,
+} from "@/components/tools/implementations/shared/paragraph-compare";
+import { PreviewNotice, PreviewShell } from "@/components/tools/implementations/shared/before-after-table";
+import { useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
+import { loadDocxPackage } from "@/lib/word/docx-text-ops";
+import { WordRenumberProcessor, previewRenumber, type NumberingFormat } from "@/lib/processors/browser/word-renumber";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 const ACCEPT = ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -53,6 +61,38 @@ export function WordRenumberTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ blob: Blob; convertedCount: number; skippedCount: number } | null>(null);
+
+  // プレビュー: 出力と同じ番号の振り直し(applyRenumber)を、読み込んだdocument.xmlに適用して段落を並べる
+  const { data: pkg, error: previewError, loading } = useAsyncFileData(file, loadDocxPackage);
+  const preview = useMemo(() => {
+    if (!pkg) return null;
+    try {
+      const result = previewRenumber(pkg.documentXmlText, sourceFormat, targetFormat);
+      const nonBlank = result.paragraphs.filter((p) => p.before.trim() !== "");
+      const converted = nonBlank.filter((p) => p.converted);
+      // 番号が変わる段落があればそれを優先して表示し、無ければ先頭の段落を表示する
+      const list = converted.length > 0 ? converted : nonBlank;
+      const before: ParagraphItem[] = list.map((p) => ({ text: p.before, changed: p.converted }));
+      const after: ParagraphItem[] = list.map((p) => ({ text: p.after, changed: p.converted }));
+      return {
+        error: null as string | null,
+        before,
+        after,
+        converted: result.convertedCount,
+        skipped: result.skippedCount,
+        onlyConverted: converted.length > 0,
+      };
+    } catch (e) {
+      return {
+        error: e instanceof Error ? e.message : "プレビューを作成できませんでした",
+        before: [],
+        after: [],
+        converted: 0,
+        skipped: 0,
+        onlyConverted: false,
+      };
+    }
+  }, [pkg, sourceFormat, targetFormat]);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -108,6 +148,39 @@ export function WordRenumberTool() {
             段落の先頭がこの形式の番号になっている行だけを対象に変換します。本文そのものは変更しません。Wordの自動採番（アウトライン）機能には対応していません。
           </p>
         </div>
+      )}
+
+      {file && (preview || previewError || loading) && (
+        <PreviewShell
+          title="番号の振り直しプレビュー(選択に合わせて更新されます)"
+          loading={loading}
+          summary={
+            preview &&
+            !preview.error && (
+              <span>
+                変わる段落: {preview.converted} ・ 対象外の段落: {preview.skipped}
+              </span>
+            )
+          }
+          notes={
+            preview && !preview.error
+              ? [
+                  preview.onlyConverted
+                    ? "番号が変わる段落だけを表示しています。"
+                    : "この番号形式で始まる段落が見つかりません。「変換前の番号形式」を確認してください(先頭の段落を表示しています)。",
+                ]
+              : undefined
+          }
+        >
+          {previewError && <PreviewNotice message={previewError} />}
+          {preview?.error && <PreviewNotice message={preview.error} />}
+          {preview && !preview.error && (
+            <>
+              <ParagraphCompare before={preview.before} after={preview.after} beforeLabel="変換前" afterLabel="変換後" />
+              <ParagraphLegend items={[{ kind: "changed", label: "番号が変わる段落" }]} />
+            </>
+          )}
+        </PreviewShell>
       )}
 
       {file && (

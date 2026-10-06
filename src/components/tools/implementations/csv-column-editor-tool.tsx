@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { CsvColumnEditProcessor } from "@/lib/processors/browser/csv-ops";
-import { readCsvFile, isBlankRow } from "@/lib/utils/csv";
+import {
+  BeforeAfterPreview,
+  PREVIEW_COMPUTE_ROWS,
+  toGridRows,
+} from "@/components/tools/implementations/shared/before-after-table";
+import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
+import { CsvColumnEditProcessor, editCsvColumnRows } from "@/lib/processors/browser/csv-ops";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 interface ColumnState {
@@ -55,14 +60,9 @@ export function CsvColumnEditorTool() {
     setError(null);
     setStatus("idle");
 
-    readCsvFile(file)
-      .then((rows) => {
+    loadCsvRows(file)
+      .then((dataRows) => {
         if (cancelled) return;
-        const dataRows = rows.filter((row) => !isBlankRow(row));
-        if (dataRows.length === 0) {
-          setPreviewError("CSVの内容が空です。ファイルを確認してください。");
-          return;
-        }
         const columnCount = dataRows[0].length;
         setRowCount(dataRows.length);
         setColumns(
@@ -83,6 +83,40 @@ export function CsvColumnEditorTool() {
     };
     // hasHeaderが変わった時も見出し候補を作り直すため依存に含める
   }, [file, hasHeader]);
+
+  // プレビュー: 出力と同じ editCsvColumnRows で、現在の設定(残す列・順序・列名)を適用した表を作る
+  const { data: sourceRows } = useAsyncFileData(file, loadCsvRows);
+  const preview = useMemo(() => {
+    if (!sourceRows || !columns) return null;
+    const limited = sourceRows.length > PREVIEW_COMPUTE_ROWS;
+    const rows = limited ? sourceRows.slice(0, PREVIEW_COMPUTE_ROWS) : sourceRows;
+    const included = columns.filter((c) => c.included);
+    const excluded = new Set(columns.filter((c) => !c.included).map((c) => c.originalIndex));
+    const renames: Record<number, string> = {};
+    for (const c of included) {
+      if (c.renameValue.trim() !== "") renames[c.originalIndex] = c.renameValue.trim();
+    }
+    let after: string[][] | null = null;
+    let afterError: string | null = null;
+    try {
+      after = editCsvColumnRows(rows, included.map((c) => c.originalIndex), renames, hasHeader);
+    } catch (e) {
+      afterError = e instanceof Error ? e.message : "プレビューを作成できませんでした";
+    }
+    const renamedCols = new Set(Object.keys(renames).map(Number));
+    return {
+      limited,
+      total: sourceRows.length,
+      before: toGridRows(rows.slice(0, 10), (_, c) => (excluded.has(c) ? "removed" : undefined)),
+      after: after
+        ? toGridRows(after.slice(0, 10), (r, c) =>
+            hasHeader && r === 0 && renamedCols.has(included[c]?.originalIndex) ? "changed" : undefined
+          )
+        : null,
+      afterError,
+      rowCount: rows.length,
+    };
+  }, [sourceRows, columns, hasHeader]);
 
   function toggleColumn(index: number) {
     setColumns((prev) =>
@@ -209,6 +243,30 @@ export function CsvColumnEditorTool() {
             ))}
           </ul>
         </div>
+      )}
+
+      {preview && (
+        <BeforeAfterPreview
+          title="列編集のプレビュー"
+          before={preview.before}
+          after={preview.after}
+          afterError={preview.afterError}
+          beforeLabel="編集前"
+          afterLabel="編集後"
+          maxRows={10}
+          maxCols={8}
+          totalRows={preview.rowCount}
+          afterTotalRows={preview.rowCount}
+          legend={[
+            { mark: "removed", label: "削除される列" },
+            ...(hasHeader ? [{ mark: "changed" as const, label: "名前を変更する列" }] : []),
+          ]}
+          notes={
+            preview.limited
+              ? [`ファイルが大きいため、先頭${PREVIEW_COMPUTE_ROWS}行で計算したプレビューです(全${preview.total}行)。実際の処理は全行が対象です。`]
+              : undefined
+          }
+        />
       )}
 
       {columns && (

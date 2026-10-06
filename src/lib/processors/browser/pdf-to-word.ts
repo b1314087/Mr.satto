@@ -159,6 +159,23 @@ export class PdfToWordProcessor extends BrowserProcessor<PdfToWordInput, PdfToWo
   }
 }
 
+/**
+ * 画面のプレビュー用: 先頭ページの文字レイヤーから、Word文書になる段落・見出し・表を取り出す
+ * (変換本体と同じ getPositionedTextItems → reconstructParagraphs を使う)。
+ * 文字レイヤーが無いページ(スキャン画像)はOCRが必要で重いため、プレビューでは読み取らず
+ * hasTextLayer: false を返す(変換ボタンを押したときにOCRされる)。
+ */
+export async function previewPdfToWordBlocks(
+  file: File
+): Promise<{ pageCount: number; hasTextLayer: boolean; blocks: DocumentBlock[] }> {
+  const pdf = await loadPdfDocument(file);
+  if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+  const page = await pdf.getPage(1);
+  const textItems = await getPositionedTextItems(page);
+  if (!pageHasText(textItems)) return { pageCount: pdf.numPages, hasTextLayer: false, blocks: [] };
+  return { pageCount: pdf.numPages, hasTextLayer: true, blocks: reconstructParagraphs(textItems) };
+}
+
 async function buildDocxBlob(blocks: DocumentBlock[]): Promise<Blob> {
   const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell } =
     await import("docx");

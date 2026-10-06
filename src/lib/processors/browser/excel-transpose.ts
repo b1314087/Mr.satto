@@ -17,7 +17,8 @@ export interface ExcelTransposeOutput {
   sheetCount: number;
 }
 
-function transposeRows(rows: XlsxCellValue[][]): XlsxCellValue[][] {
+/** 行と列を入れ替える(出力とプレビューで共通) */
+export function transposeRows(rows: XlsxCellValue[][]): XlsxCellValue[][] {
   if (rows.length === 0) return [];
   const maxCols = Math.max(...rows.map((r) => r.length));
   const transposed: XlsxCellValue[][] = [];

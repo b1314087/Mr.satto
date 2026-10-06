@@ -16,7 +16,9 @@ import {
   VIDEO_SIZE_LIMITS,
   VideoCanceledByUserError,
 } from "@/lib/video/shared";
-import { useRevokeObjectUrlOnChange } from "@/lib/video/use-video-preview";
+import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
+import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
+
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -38,6 +40,7 @@ export function VideoMetadataRemoveTool() {
   const cancelControllerRef = useRef<AbortController | null>(null);
 
   useRevokeObjectUrlOnChange(result?.url);
+  const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
 
   useEffect(() => {
     return () => {
@@ -126,6 +129,30 @@ export function VideoMetadataRemoveTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
+        <VideoPreviewPanel
+          file={file}
+          previewUrl={previewUrl}
+          meta={meta}
+          onLoadedMetadata={handleLoadedMetadata}
+          outputTitle="削除後の予定"
+          outputRows={[
+            {
+              label: "形式",
+              value:
+                file.type === "video/webm" || file.name.toLowerCase().endsWith(".webm") ? "WebM" : "MP4",
+            },
+            {
+              label: "解像度",
+              value: meta && meta.width > 0 ? `${meta.width}×${meta.height}（変更なし）` : "元の動画と同じ",
+            },
+            { label: "削除される情報", value: "撮影日時・位置情報（GPS）・タイトル・作成者・コメントなど" },
+            { label: "サイズの目安", value: "ほぼ同じ（メタデータの分だけ小さくなります）" },
+          ]}
+          outputNote="映像・音声は可能な限り再エンコードせずに維持します。"
+        />
+      )}
+
+      {file && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -173,6 +200,7 @@ export function VideoMetadataRemoveTool() {
             </span>
             <span>長さ: {result.durationSec.toFixed(1)}秒</span>
           </div>
+          <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </div>
       )}

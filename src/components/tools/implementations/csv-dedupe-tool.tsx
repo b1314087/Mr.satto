@@ -1,19 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { CsvPreviewTable } from "@/components/tools/implementations/shared/csv-preview-table";
+import {
+  BeforeAfterPreview,
+  PREVIEW_COMPUTE_ROWS,
+  PreviewColumn,
+  PreviewGrid,
+  toGridRows,
+} from "@/components/tools/implementations/shared/before-after-table";
+import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { CsvDedupeProcessor } from "@/lib/processors/browser/csv-ops";
-import { parseCsv, isBlankRow } from "@/lib/utils/csv";
+import { CsvDedupeProcessor, dedupeCsvRows } from "@/lib/processors/browser/csv-ops";
+import { parseCsv } from "@/lib/utils/csv";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 export function CsvDedupeTool() {
   const [file, setFile] = useState<File | null>(null);
-  const [previewRows, setPreviewRows] = useState<string[][]>([]);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -25,19 +32,34 @@ export function CsvDedupeTool() {
     previewRows: string[][];
   } | null>(null);
 
-  async function handleSelect(files: File[]) {
-    const selected = files[0];
-    setFile(selected);
+  const { data: sourceRows, error: previewError, loading } = useAsyncFileData(file, loadCsvRows);
+
+  // プレビュー: 出力と同じ dedupeCsvRows で処理する(大きなファイルは先頭の行だけで計算)
+  const preview = useMemo(() => {
+    if (!sourceRows) return null;
+    const limited = sourceRows.length > PREVIEW_COMPUTE_ROWS;
+    const rows = limited ? sourceRows.slice(0, PREVIEW_COMPUTE_ROWS) : sourceRows;
+    const deduped = dedupeCsvRows(rows);
+    const removedRows = Array.from(deduped.removedRowIndexes)
+      .slice(0, 5)
+      .map((i) => rows[i]);
+    return {
+      limited,
+      total: sourceRows.length,
+      before: toGridRows(rows, (r) => (deduped.removedRowIndexes.has(r) ? "removed" : undefined)),
+      after: toGridRows(deduped.rows),
+      removedCount: deduped.removedCount,
+      beforeCount: rows.length - 1,
+      afterCount: deduped.rows.length - 1,
+      removedExamples: rows.length > 0 ? toGridRows([rows[0], ...removedRows]) : [],
+    };
+  }, [sourceRows]);
+
+  function handleSelect(files: File[]) {
+    setFile(files[0]);
     setResult(null);
     setStatus("idle");
     setError(null);
-    setPreviewRows([]);
-    try {
-      const text = await selected.text();
-      setPreviewRows(parseCsv(text).filter((row) => !isBlankRow(row)));
-    } catch {
-      setError("CSVの内容を読み込めませんでした");
-    }
   }
 
   async function handleRun() {
@@ -69,11 +91,37 @@ export function CsvDedupeTool() {
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
-      {previewRows.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">内容の確認</p>
-          <CsvPreviewTable rows={previewRows} />
-        </div>
+      {file && (preview || previewError || loading) && (
+        <BeforeAfterPreview
+          title="重複削除のプレビュー"
+          loading={loading}
+          before={preview?.before ?? null}
+          after={preview?.after ?? null}
+          afterError={previewError}
+          beforeLabel="削除前"
+          afterLabel="削除後"
+          summary={
+            preview && (
+              <span>
+                重複として削除される行: {preview.removedCount}行（データ行 {preview.beforeCount}行 → {preview.afterCount}行）
+              </span>
+            )
+          }
+          legend={[{ mark: "removed", label: "重複として削除される行" }]}
+          notes={[
+            "1行目を見出しとして残し、すべての列が同じ内容の行を2行目以降から削除します。",
+            ...(preview?.limited
+              ? [`ファイルが大きいため、先頭${PREVIEW_COMPUTE_ROWS}行で計算したプレビューです(全${preview.total}行)。実際の処理は全行が対象です。`]
+              : []),
+          ]}
+          extra={
+            preview && preview.removedCount > 0 ? (
+              <PreviewColumn label="重複として削除される行の例(先頭5件)">
+                <PreviewGrid rows={preview.removedExamples} maxRows={6} />
+              </PreviewColumn>
+            ) : null
+          }
+        />
       )}
 
       {file && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   TextLineCleanerProcessor,
   type TextLineSort,
@@ -18,16 +18,46 @@ const SORT_OPTIONS: { value: TextLineSort; label: string }[] = [
 
 export function TextLineCleanerTool() {
   const [input, setInput] = useState("");
-  const [output, setOutput] = useState("");
   const [removeEmptyLines, setRemoveEmptyLines] = useState(true);
   const [trimLines, setTrimLines] = useState(true);
   const [collapseSpaces, setCollapseSpaces] = useState(false);
   const [dedupeLines, setDedupeLines] = useState(false);
   const [sort, setSort] = useState<TextLineSort>("none");
-  const [counts, setCounts] = useState<{ before: number; after: number } | null>(null);
+  const [live, setLive] = useState<{
+    key: string;
+    result: string;
+    before: number;
+    after: number;
+  } | null>(null);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  // 入力・設定を変えるたびに、その場で整理後のテキストを更新する（プレビュー）。
+  // 「整理する」ボタンも同じ TextLineCleanerProcessor・同じ設定を使うので、結果は一致する。
+  const liveKey = JSON.stringify([input, removeEmptyLines, trimLines, collapseSpaces, dedupeLines, sort]);
+  useEffect(() => {
+    if (!input.trim()) return;
+    let cancelled = false;
+    new TextLineCleanerProcessor()
+      .process({ text: input, removeEmptyLines, trimLines, collapseSpaces, dedupeLines, sort })
+      .then((r) => {
+        if (!cancelled) {
+          setLive({ key: liveKey, result: r.result, before: r.lineCountBefore, after: r.lineCountAfter });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLive(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [liveKey, input, removeEmptyLines, trimLines, collapseSpaces, dedupeLines, sort]);
+
+  const hasInput = input.trim().length > 0;
+  const counts = hasInput && live ? { before: live.before, after: live.after } : null;
+  const output = hasInput && live ? live.result : "";
+  const fresh = hasInput && live !== null && live.key === liveKey;
 
   async function handleRun() {
     if (status === "processing") return;
@@ -42,12 +72,9 @@ export function TextLineCleanerTool() {
         dedupeLines,
         sort,
       });
-      setOutput(result.result);
-      setCounts({ before: result.lineCountBefore, after: result.lineCountAfter });
+      setLive({ key: liveKey, result: result.result, before: result.lineCountBefore, after: result.lineCountAfter });
       setStatus("success");
     } catch (e) {
-      setOutput("");
-      setCounts(null);
       setError(e instanceof Error ? e.message : "処理に失敗しました");
       setStatus("error");
     }
@@ -65,6 +92,7 @@ export function TextLineCleanerTool() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <label className="flex flex-col gap-1.5 text-sm">
         入力テキスト
         <textarea
@@ -75,6 +103,18 @@ export function TextLineCleanerTool() {
           className="rounded-xl border border-neutral-300 px-4 py-3 font-mono text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>
+
+      <label data-testid="tool-preview" className="flex flex-col gap-1.5 text-sm">
+        {counts ? `整理後のプレビュー（${counts.before}行 → ${counts.after}行）` : "整理後のプレビュー"}
+        <textarea
+          value={output}
+          readOnly
+          rows={10}
+          placeholder="入力すると、整理後のテキストがここに表示されます"
+          className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 font-mono text-xs outline-none dark:border-neutral-700 dark:bg-neutral-900"
+        />
+      </label>
+      </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
@@ -144,18 +184,6 @@ export function TextLineCleanerTool() {
       {error && <ErrorMessage message={error} />}
 
       {counts && (
-        <label className="flex flex-col gap-1.5 text-sm">
-          結果（{counts.before}行 → {counts.after}行）
-          <textarea
-            value={output}
-            readOnly
-            rows={10}
-            className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 font-mono text-xs outline-none dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
-      )}
-
-      {counts && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -164,7 +192,7 @@ export function TextLineCleanerTool() {
           >
             コピー
           </button>
-          <RewardedDownloadGate onDownload={handleDownload} label=".txtをダウンロード" />
+          <RewardedDownloadGate onDownload={handleDownload} label=".txtをダウンロード" disabled={!fresh} />
         </div>
       )}
     </div>

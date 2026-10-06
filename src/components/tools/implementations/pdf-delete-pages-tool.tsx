@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -10,6 +11,8 @@ import { PdfPageCheckList } from "@/components/tools/implementations/shared/pdf-
 import { PdfDeletePagesProcessor, getPdfPageCount } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+
+const PREVIEW_MAX_PAGES = 40;
 
 export function PdfDeletePagesTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -104,6 +107,29 @@ export function PdfDeletePagesTool() {
             削除するページをタップして選択してください（{pageCount}ページ中{selected.size}ページを選択）
           </p>
           <PdfPageCheckList pageCount={pageCount} selected={selected} onToggle={togglePage} />
+          <div data-testid="tool-preview" className="flex flex-col gap-2">
+            <PdfThumbnails
+              file={file}
+              maxPages={PREVIEW_MAX_PAGES}
+              width={96}
+              title="削除のプレビュー"
+              onPageClick={togglePage}
+              pageStyle={(page) => (selected.has(page) ? { opacity: 0.35 } : undefined)}
+              overlay={(page) =>
+                selected.has(page) ? (
+                  <span className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 border-2 border-red-500 bg-red-500/30 text-red-700 dark:text-red-200">
+                    <span aria-hidden className="text-3xl font-bold leading-none">×</span>
+                    <span className="rounded bg-red-600 px-1.5 text-[10px] font-semibold text-white">削除</span>
+                  </span>
+                ) : null
+              }
+            />
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {selected.size === 0
+                ? "サムネイルをタップしても削除するページを選べます。"
+                : `赤く表示されたページが削除され、${Math.max(pageCount - selected.size, 0)}ページが残ります。`}
+            </p>
+          </div>
           {willDeleteAll && (
             <p className="text-xs text-red-600 dark:text-red-400">
               すべてのページを削除することはできません。少なくとも1ページは残してください。

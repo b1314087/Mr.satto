@@ -29,7 +29,8 @@ export interface ExcelBlankRemoveOutput {
   removedColumns: number;
 }
 
-function sliceRange(
+/** 範囲指定で行列を切り出す(出力とプレビューで共通) */
+export function sliceRange(
   rows: XlsxCellValue[][],
   rangeStartRow?: number,
   rangeEndRow?: number,
@@ -58,14 +59,24 @@ function sliceRange(
   return sliced;
 }
 
-function removeBlanks(rows: XlsxCellValue[][], mode: BlankRemoveMode) {
+/**
+ * 空白行・空白列を取り除く(出力とプレビューで共通)。
+ * removedRowIndexes / removedColumnIndexes は、入力 rows 上で削除される行・列(0始まり)。
+ */
+export function removeBlanks(rows: XlsxCellValue[][], mode: BlankRemoveMode) {
   let result = rows;
   let removedRows = 0;
   let removedColumns = 0;
+  const removedRowIndexes = new Set<number>();
+  const removedColumnIndexes = new Set<number>();
 
   if (mode === "rows" || mode === "both") {
     const before = result.length;
-    result = result.filter((row) => !isBlankRow(row));
+    result = result.filter((row, i) => {
+      const blank = isBlankRow(row);
+      if (blank) removedRowIndexes.add(i);
+      return !blank;
+    });
     removedRows = before - result.length;
   }
 
@@ -74,12 +85,29 @@ function removeBlanks(rows: XlsxCellValue[][], mode: BlankRemoveMode) {
     const keepCols: number[] = [];
     for (let c = 0; c < maxCols; c++) {
       if (!isBlankColumn(result, c)) keepCols.push(c);
+      else removedColumnIndexes.add(c);
     }
     removedColumns = maxCols - keepCols.length;
     result = result.map((row) => keepCols.map((c) => row[c] ?? null));
   }
 
-  return { rows: result, removedRows, removedColumns };
+  return { rows: result, removedRows, removedColumns, removedRowIndexes, removedColumnIndexes };
+}
+
+/** 範囲指定の有無を判定して、切り出し→空白除去をシート1枚に行う(出力とプレビューで共通) */
+export function removeBlanksFromSheetRows(
+  sheetRows: XlsxCellValue[][],
+  options: Pick<ExcelBlankRemoveInput, "mode" | "rangeStartRow" | "rangeEndRow" | "rangeStartCol" | "rangeEndCol">
+) {
+  const hasRange =
+    options.rangeStartRow !== undefined ||
+    options.rangeEndRow !== undefined ||
+    options.rangeStartCol !== undefined ||
+    options.rangeEndCol !== undefined;
+  const source = hasRange
+    ? sliceRange(sheetRows, options.rangeStartRow, options.rangeEndRow, options.rangeStartCol, options.rangeEndCol)
+    : sheetRows;
+  return { source, ...removeBlanks(source, options.mode) };
 }
 
 export class ExcelBlankRemoveProcessor extends BrowserProcessor<ExcelBlankRemoveInput, ExcelBlankRemoveOutput> {
@@ -89,15 +117,7 @@ export class ExcelBlankRemoveProcessor extends BrowserProcessor<ExcelBlankRemove
     let totalRemovedColumns = 0;
 
     const outputSheets = sheets.map((sheet) => {
-      const hasRange =
-        input.rangeStartRow !== undefined ||
-        input.rangeEndRow !== undefined ||
-        input.rangeStartCol !== undefined ||
-        input.rangeEndCol !== undefined;
-      const source = hasRange
-        ? sliceRange(sheet.rows, input.rangeStartRow, input.rangeEndRow, input.rangeStartCol, input.rangeEndCol)
-        : sheet.rows;
-      const { rows, removedRows, removedColumns } = removeBlanks(source, input.mode);
+      const { rows, removedRows, removedColumns } = removeBlanksFromSheetRows(sheet.rows, input);
       totalRemovedRows += removedRows;
       totalRemovedColumns += removedColumns;
       return { name: sheet.name, rows };

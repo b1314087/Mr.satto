@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TimeToolsProcessor, type TimeToolMode } from "@/lib/processors/browser/time-tools";
 import { ErrorMessage } from "@/components/common/error-message";
 
@@ -23,6 +23,68 @@ function parseDurationStr(input: string): number | null {
   return h * 60 + min;
 }
 
+interface TimeParams {
+  tab: TimeToolMode;
+  start: string;
+  end: string;
+  breakMinutes: number;
+  base: string;
+  deltaHours: number;
+  deltaMinutes: number;
+  sumText: string;
+  convertDirection: "toDecimal" | "toClock";
+  convertHours: number;
+  convertMinutes: number;
+  convertDecimal: number;
+}
+
+interface TimeView {
+  durationLabel?: string | null;
+  decimalHours?: number | null;
+  resultTime?: string | null;
+  convertResult?: string | null;
+}
+
+async function computeTimeView(p: TimeParams): Promise<{ result: TimeView | null; error: string | null }> {
+  try {
+    const processor = new TimeToolsProcessor();
+    const { tab } = p;
+    if (tab === "diff") {
+      const r = await processor.process({ mode: "diff", start: p.start, end: p.end });
+      return { error: null, result: { durationLabel: r.durationLabel ?? null, decimalHours: r.decimalHours ?? null } };
+    }
+    if (tab === "add" || tab === "subtract") {
+      const r = await processor.process({ mode: tab, base: p.base, deltaMinutes: p.deltaHours * 60 + p.deltaMinutes });
+      return { error: null, result: { resultTime: r.resultTime ?? null } };
+    }
+    if (tab === "sum") {
+      const lines = p.sumText.split(/\r\n|\r|\n/).map((l) => l.trim()).filter(Boolean);
+      const durations: number[] = [];
+      for (const line of lines) {
+        const mins = parseDurationStr(line);
+        if (mins === null) {
+          throw new Error(`「${line}」を時間として読み取れませんでした（例: 2:30）`);
+        }
+        durations.push(mins);
+      }
+      const r = await processor.process({ mode: "sum", durationsMinutes: durations });
+      return { error: null, result: { durationLabel: r.durationLabel ?? null, decimalHours: r.decimalHours ?? null } };
+    }
+    if (tab === "work") {
+      const r = await processor.process({ mode: "work", start: p.start, end: p.end, breakMinutes: p.breakMinutes });
+      return { error: null, result: { durationLabel: r.durationLabel ?? null, decimalHours: r.decimalHours ?? null } };
+    }
+    if (p.convertDirection === "toDecimal") {
+      const r = await processor.process({ mode: "convert", hours: p.convertHours, minutes: p.convertMinutes });
+      return { error: null, result: { convertResult: `${r.decimalHours}時間` } };
+    }
+    const r = await processor.process({ mode: "convert", decimalHours: p.convertDecimal });
+    return { error: null, result: { convertResult: r.durationLabel ?? null } };
+  } catch (e) {
+    return { result: null, error: e instanceof Error ? e.message : "計算に失敗しました" };
+  }
+}
+
 export function TimeCalculatorTool() {
   const [tab, setTab] = useState<TimeToolMode>("diff");
 
@@ -38,64 +100,41 @@ export function TimeCalculatorTool() {
   const [convertMinutes, setConvertMinutes] = useState(30);
   const [convertDecimal, setConvertDecimal] = useState(7.5);
 
-  const [error, setError] = useState<string | null>(null);
-  const [durationLabel, setDurationLabel] = useState<string | null>(null);
-  const [decimalHours, setDecimalHours] = useState<number | null>(null);
-  const [resultTime, setResultTime] = useState<string | null>(null);
-  const [convertResult, setConvertResult] = useState<string | null>(null);
+  const [live, setLive] = useState<{ key: string; result: TimeView | null; error: string | null } | null>(null);
 
-  function resetResults() {
-    setError(null);
-    setDurationLabel(null);
-    setDecimalHours(null);
-    setResultTime(null);
-    setConvertResult(null);
-  }
+  // 入力・タブを変えるたびに、その場で結果を再計算して表示する（プレビュー）。
+  // 「計算する」ボタンも同じ computeTimeView を使う。
+  const params: TimeParams = {
+    tab, start, end, breakMinutes, base, deltaHours, deltaMinutes, sumText,
+    convertDirection, convertHours, convertMinutes, convertDecimal,
+  };
+  const liveKey = JSON.stringify(params);
+  useEffect(() => {
+    let cancelled = false;
+    computeTimeView({
+      tab, start, end, breakMinutes, base, deltaHours, deltaMinutes, sumText,
+      convertDirection, convertHours, convertMinutes, convertDecimal,
+    }).then((r) => {
+      if (!cancelled) setLive({ key: liveKey, ...r });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    liveKey, tab, start, end, breakMinutes, base, deltaHours, deltaMinutes, sumText,
+    convertDirection, convertHours, convertMinutes, convertDecimal,
+  ]);
+
+  const view = live && live.key === liveKey ? live : null;
+  const error = view?.error ?? null;
+  const durationLabel = view?.result?.durationLabel ?? null;
+  const decimalHours = view?.result?.decimalHours ?? null;
+  const resultTime = view?.result?.resultTime ?? null;
+  const convertResult = view?.result?.convertResult ?? null;
 
   async function handleRun() {
-    resetResults();
-    try {
-      const processor = new TimeToolsProcessor();
-      if (tab === "diff") {
-        const r = await processor.process({ mode: "diff", start, end });
-        setDurationLabel(r.durationLabel ?? null);
-        setDecimalHours(r.decimalHours ?? null);
-      } else if (tab === "add" || tab === "subtract") {
-        const r = await processor.process({
-          mode: tab,
-          base,
-          deltaMinutes: deltaHours * 60 + deltaMinutes,
-        });
-        setResultTime(r.resultTime ?? null);
-      } else if (tab === "sum") {
-        const lines = sumText.split(/\r\n|\r|\n/).map((l) => l.trim()).filter(Boolean);
-        const durations: number[] = [];
-        for (const line of lines) {
-          const mins = parseDurationStr(line);
-          if (mins === null) {
-            throw new Error(`「${line}」を時間として読み取れませんでした（例: 2:30）`);
-          }
-          durations.push(mins);
-        }
-        const r = await processor.process({ mode: "sum", durationsMinutes: durations });
-        setDurationLabel(r.durationLabel ?? null);
-        setDecimalHours(r.decimalHours ?? null);
-      } else if (tab === "work") {
-        const r = await processor.process({ mode: "work", start, end, breakMinutes });
-        setDurationLabel(r.durationLabel ?? null);
-        setDecimalHours(r.decimalHours ?? null);
-      } else if (tab === "convert") {
-        if (convertDirection === "toDecimal") {
-          const r = await processor.process({ mode: "convert", hours: convertHours, minutes: convertMinutes });
-          setConvertResult(`${r.decimalHours}時間`);
-        } else {
-          const r = await processor.process({ mode: "convert", decimalHours: convertDecimal });
-          setConvertResult(r.durationLabel ?? null);
-        }
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "計算に失敗しました");
-    }
+    const r = await computeTimeView(params);
+    setLive({ key: liveKey, ...r });
   }
 
   return (
@@ -107,7 +146,6 @@ export function TimeCalculatorTool() {
             type="button"
             onClick={() => {
               setTab(t.value);
-              resetResults();
             }}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               tab === t.value
@@ -279,19 +317,28 @@ export function TimeCalculatorTool() {
       {error && <ErrorMessage message={error} />}
 
       {resultTime && (
-        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <div
+          data-testid="tool-preview"
+          className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        >
           <p className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">{resultTime}</p>
         </div>
       )}
 
       {convertResult && (
-        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <div
+          data-testid="tool-preview"
+          className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        >
           <p className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">{convertResult}</p>
         </div>
       )}
 
       {durationLabel && !resultTime && !convertResult && (
-        <div className="flex flex-col gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        >
           <p className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">{durationLabel}</p>
           {decimalHours !== null && (
             <p className="text-xs text-neutral-500 dark:text-neutral-400">小数表記: {decimalHours}時間</p>

@@ -75,6 +75,16 @@ export const tools: Tool[] = [
     keywords: ["webp", "変換"],
   },
   {
+    id: "pdf-to-image",
+    name: "PDF→画像",
+    category: "image",
+    description: "PDFの各ページを画像として書き出します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["image", "画像化", "pdf", "jpeg", "jpg", "png", "PDF→JPEG", "PDF→JPG", "PDF→PNG"],
+  },
+  {
     id: "image-sns-size",
     name: "SNSサイズ変換",
     category: "image",
@@ -348,16 +358,6 @@ export const tools: Tool[] = [
     keywords: ["compress", "軽量化"],
   },
   {
-    id: "pdf-to-image",
-    name: "PDF→画像",
-    category: "pdf",
-    description: "PDFの各ページを画像として書き出します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["image", "画像化"],
-  },
-  {
     id: "image-to-pdf",
     name: "画像→PDF",
     category: "pdf",
@@ -478,17 +478,14 @@ export const tools: Tool[] = [
     ],
   },
   {
-    // Phase 6で検討したが、現在の依存ライブラリ(pdf-lib)はPDFの暗号化(パスワード保護)の
-    // 書き込みを公式にサポートしておらず(README「Encryption Handling」参照)、
-    // 代替ライブラリも(a)出所不明で信頼できない、(b)単一メンテナのWASMラッパーで
-    // バンドルサイズが大きい、(c)AGPLライセンスで商用利用と非互換、という理由で
-    // いずれも採用を見送った。「見た目だけのパスワード入力欄」を作ることを避けるため、
-    // このツールは今回 available にしない（最終報告を参照）。
+    // pdf-libは暗号化の書き込みに対応していないため、Web Crypto APIを使い
+    // PDF 2.0標準(V5/R6, AES-256)の暗号化を src/lib/pdf/encrypt.ts で自前実装している。
+    // 暗号化後のファイルはqpdfで検証済みで、画面上でもPDF.jsで開き直して確認する。
     id: "pdf-password-protect",
     name: "PDFパスワード保護",
     category: "pdf",
-    description: "PDFにパスワードを設定して保護します",
-    status: "coming-soon",
+    description: "PDFにパスワードを設定します(AES-256)。印刷・コピー・編集の制限もかけられます",
+    status: "available",
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["password", "パスワード", "暗号化", "保護"],
@@ -838,21 +835,21 @@ export const tools: Tool[] = [
     id: "unit-converter",
     name: "単位変換",
     category: "other",
-    description: "長さ・重さ・温度などの単位を変換します",
-    status: "coming-soon",
+    description: "長さ・重さ・温度・面積（坪・畳）・体積・速度・時間・データ容量の単位を変換します",
+    status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["単位", "換算"],
+    keywords: ["単位", "換算", "長さ", "重さ", "温度", "面積", "坪", "畳", "インチ", "ポンド"],
   },
   {
     id: "citation-formatter",
     name: "参考文献リスト整形",
     category: "other",
-    description: "レポート用の参考文献リストを整形します",
-    status: "coming-soon",
+    description: "レポート・論文用の参考文献リストを日本語形式・APA・IEEEで整形します",
+    status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["レポート", "引用"],
+    keywords: ["レポート", "引用", "参考文献", "APA", "IEEE", "論文", "文献リスト"],
   },
 
   // ------------------------------------------------------------------
@@ -873,11 +870,11 @@ export const tools: Tool[] = [
     id: "meeting-notes-template",
     name: "議事録テンプレート生成",
     category: "other",
-    description: "会議の議事録テンプレートを自動生成します",
-    status: "coming-soon",
+    description: "会議名・参加者・議題を入力するだけで、議事録のひな形を作成します",
+    status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["議事録", "会議"],
+    keywords: ["議事録", "会議", "テンプレート", "ひな形", "ミーティング"],
   },
   {
     id: "estimate-generator",
@@ -966,20 +963,20 @@ export const tools: Tool[] = [
     id: "gradient-generator",
     name: "グラデーション生成",
     category: "generator",
-    description: "CSS用のグラデーションを作成します",
-    status: "coming-soon",
+    description: "CSSコードとPNG画像で使えるグラデーションを、プレビューを見ながら作成します",
+    status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["gradient", "css"],
+    keywords: ["gradient", "css", "グラデーション", "背景", "壁紙", "配色"],
   },
   {
     id: "background-remover",
     name: "背景透過（背景除去）",
     category: "image",
-    description: "AIを使って画像の背景を自動的に除去します",
-    status: "coming-soon",
+    description: "AIが画像の背景を自動で透明にします。画像は端末の外へ送信されません",
+    status: "available",
     requiredPlan: "standard",
-    processor: "server",
+    processor: "browser",
     keywords: ["背景除去", "透過", "ai"],
   },
   {

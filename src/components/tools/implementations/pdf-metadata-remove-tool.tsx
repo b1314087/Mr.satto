@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import {
   PdfMetadataRemoveProcessor,
   readPdfMetadata,
@@ -106,20 +107,39 @@ export function PdfMetadataRemoveTool() {
 
       {beforeError && <ErrorMessage message={beforeError} />}
 
-      {before && (
-        <div className="rounded-xl border border-neutral-200 p-4 text-sm dark:border-neutral-800">
-          <p className="mb-2 font-medium text-neutral-700 dark:text-neutral-200">現在のメタデータ</p>
-          {hasAnyBeforeValue ? (
-            <ul className="flex flex-col gap-1 text-neutral-600 dark:text-neutral-300">
-              {FIELD_LABELS.filter((f) => before[f.key]).map((f) => (
-                <li key={f.key} className="flex gap-2">
-                  <span className="w-32 shrink-0 text-neutral-400">{f.label}</span>
-                  <span className="break-all">{before[f.key]}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-neutral-400">標準的なメタデータは設定されていません。</p>
+      {file && (
+        <div data-testid="tool-preview" className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <PdfThumbnails file={file} pages={[1]} maxPages={1} width={140} title="先頭ページ" className="sm:shrink-0" />
+          {before && (
+            <div className="min-w-0 flex-1 rounded-xl border border-neutral-200 p-4 text-sm dark:border-neutral-800">
+              <p className="mb-2 font-medium text-neutral-700 dark:text-neutral-200">
+                {result ? "メタデータの削除前と削除後" : "現在のメタデータ"}
+              </p>
+              {hasAnyBeforeValue ? (
+                <ul className="flex flex-col gap-2 text-neutral-600 dark:text-neutral-300">
+                  {FIELD_LABELS.filter((f) => before[f.key]).map((f) => (
+                    <li key={f.key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
+                      <span className="w-32 shrink-0 text-neutral-400">{f.label}</span>
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className={`break-all ${result ? "line-through decoration-neutral-400" : ""}`}>
+                          {before[f.key]}
+                        </span>
+                        {result &&
+                          (result.remainingMetadata[f.key] ? (
+                            <span className="break-all text-red-600 dark:text-red-400">
+                              削除後も残っています: {result.remainingMetadata[f.key]}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-green-700 dark:text-green-400">削除済み(削除後は空)</span>
+                          ))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-neutral-400">標準的なメタデータは設定されていません。</p>
+              )}
+            </div>
           )}
         </div>
       )}

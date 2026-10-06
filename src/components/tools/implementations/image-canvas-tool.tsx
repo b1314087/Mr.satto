@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -40,6 +40,42 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/webp": "webp",
 };
 
+interface ImageRunSettings {
+  width: number;
+  height: number;
+  quality: number;
+  targetKB: number;
+  rotateDegrees: 90 | 180 | 270;
+}
+
+/**
+ * 実行ボタンとライブプレビューで共通に使う処理。
+ * プレビューも実際のProcessorで同じ設定を処理するため、プレビューどおりの結果が書き出される。
+ */
+async function runImageProcessor(
+  spec: ImageToolSpec,
+  file: File,
+  s: ImageRunSettings
+): Promise<ImageProcessorOutput> {
+  switch (spec.mode) {
+    case "resize":
+      return new ImageResizeProcessor().process({ file, width: s.width, height: s.height });
+    case "compress":
+      return new ImageCompressProcessor().process({ file, quality: s.quality / 100 });
+    case "compress-to-size":
+      return new ImageCompressToSizeProcessor().process({ file, targetKB: s.targetKB });
+    case "convert":
+      return new ImageConvertProcessor().process({ file, mimeType: spec.targetFormat! });
+    case "rotate":
+      return new ImageRotateProcessor().process({ file, degrees: s.rotateDegrees });
+  }
+}
+
+/** プレビューで処理する最大ピクセル数(これを超えるリサイズ指定はプレビューを省略する) */
+const PREVIEW_MAX_PIXELS = 40_000_000;
+/** 設定変更後、プレビューを再計算するまでの待ち時間(ms) */
+const PREVIEW_DEBOUNCE_MS = 250;
+
 export function ImageCanvasTool({ toolId }: { toolId: string }) {
   const spec = IMAGE_TOOL_CONFIG[toolId];
   const [file, setFile] = useState<File | null>(null);
@@ -54,6 +90,73 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImageProcessorOutput | null>(null);
+  const [preview, setPreview] = useState<{ key: string; file: File; output: ImageProcessorOutput } | null>(null);
+  const [previewError, setPreviewError] = useState<{ key: string; message: string } | null>(null);
+
+  const originalUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => {
+    return () => {
+      if (originalUrl) URL.revokeObjectURL(originalUrl);
+    };
+  }, [originalUrl]);
+
+  // 設定が処理可能な値かどうか(リサイズの幅・高さ、目標KB)
+  const settingsValid =
+    spec?.mode === "resize"
+      ? Number.isFinite(width) && Number.isFinite(height) && width >= 1 && height >= 1
+      : spec?.mode === "compress-to-size"
+        ? Number.isFinite(targetKB) && targetKB >= 1
+        : true;
+  const tooLarge = spec?.mode === "resize" && settingsValid && Math.round(width) * Math.round(height) > PREVIEW_MAX_PIXELS;
+  // プレビューが「どのファイル・どの設定」の結果かを識別するキー
+  const previewKey = !file || !spec
+    ? ""
+    : [
+        toolId,
+        file.name,
+        file.size,
+        file.lastModified,
+        spec.mode === "resize" ? `${Math.round(width)}x${Math.round(height)}` : "",
+        spec.mode === "compress" ? quality : "",
+        spec.mode === "compress-to-size" ? targetKB : "",
+        spec.mode === "rotate" ? rotateDegrees : "",
+      ].join("|");
+
+  // 設定を変えるたびに、実際のProcessorで処理した結果をプレビューとして更新する
+  useEffect(() => {
+    if (!file || !spec || !settingsValid || tooLarge) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const output = await runImageProcessor(spec, file, { width, height, quality, targetKB, rotateDegrees });
+        if (cancelled) {
+          URL.revokeObjectURL(output.url);
+          return;
+        }
+        setPreviewError(null);
+        setPreview({ key: previewKey, file, output });
+      } catch (e) {
+        if (!cancelled) {
+          setPreviewError({ key: previewKey, message: e instanceof Error ? e.message : "プレビューを作成できませんでした" });
+        }
+      }
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [file, spec, settingsValid, tooLarge, width, height, quality, targetKB, rotateDegrees, previewKey]);
+
+  // プレビュー用Object URLは、差し替わる時・アンマウント時に解放する
+  const previewOutput = preview?.output ?? null;
+  const shownPreview = preview && preview.file === file ? preview : null;
+  const previewStale = shownPreview !== null && shownPreview.key !== previewKey;
+  const shownError = previewError && previewError.key === previewKey ? previewError.message : null;
+  useEffect(() => {
+    return () => {
+      if (previewOutput) URL.revokeObjectURL(previewOutput.url);
+    };
+  }, [previewOutput]);
 
   useEffect(() => {
     if (!file) {
@@ -111,30 +214,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     setStatus("processing");
     setError(null);
     try {
-      let output: ImageProcessorOutput;
-      switch (spec.mode) {
-        case "resize":
-          output = await new ImageResizeProcessor().process({ file, width, height });
-          break;
-        case "compress":
-          output = await new ImageCompressProcessor().process({
-            file,
-            quality: quality / 100,
-          });
-          break;
-        case "compress-to-size":
-          output = await new ImageCompressToSizeProcessor().process({ file, targetKB });
-          break;
-        case "convert":
-          output = await new ImageConvertProcessor().process({
-            file,
-            mimeType: spec.targetFormat!,
-          });
-          break;
-        case "rotate":
-          output = await new ImageRotateProcessor().process({ file, degrees: rotateDegrees });
-          break;
-      }
+      const output = await runImageProcessor(spec, file, { width, height, quality, targetKB, rotateDegrees });
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -243,6 +323,59 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
       )}
 
       {file && (
+        <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（設定を変えると結果が更新されます）
+          </p>
+          {shownError && <ErrorMessage message={shownError} />}
+          {tooLarge && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              指定サイズが大きすぎるため、プレビューは表示できません（書き出しは実行できます）。
+            </p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="flex min-w-0 flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
+                元の画像{naturalSize ? ` ・ ${naturalSize.width} × ${naturalSize.height}px` : ""} ・ {formatBytes(file.size)}
+              </figcaption>
+              {originalUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={originalUrl}
+                  alt="元の画像"
+                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              )}
+            </figure>
+            <figure className="flex min-w-0 flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
+                {shownPreview
+                  ? `処理後 ・ ${shownPreview.output.width} × ${shownPreview.output.height}px ・ ${formatBytes(shownPreview.output.sizeBytes)}${
+                      file.size > 0 ? `（元の${Math.round((shownPreview.output.sizeBytes / file.size) * 100)}%）` : ""
+                    }`
+                  : "処理後"}
+                {previewStale ? " ・ 更新中..." : ""}
+              </figcaption>
+              {shownPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={shownPreview.output.url}
+                  alt="処理後のプレビュー"
+                  className={`max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain transition-opacity dark:border-neutral-700 dark:bg-neutral-900 ${
+                    previewStale ? "opacity-50" : ""
+                  }`}
+                />
+              ) : (
+                <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-neutral-300 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+                  {tooLarge || shownError ? "プレビューなし" : "プレビューを作成中..."}
+                </div>
+              )}
+            </figure>
+          </div>
+        </div>
+      )}
+
+      {file && (
         <button
           type="button"
           onClick={handleRun}
@@ -258,12 +391,6 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
 
       {result && (
         <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={result.url}
-            alt="処理結果のプレビュー"
-            className="max-h-64 rounded-lg border border-neutral-200 object-contain dark:border-neutral-700"
-          />
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px ・ {formatBytes(result.sizeBytes)}
           </p>

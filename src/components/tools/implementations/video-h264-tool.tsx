@@ -13,7 +13,10 @@ import {
   VideoCanceledByUserError,
   checkH264EncodeSupport,
 } from "@/lib/video/shared";
-import { useRevokeObjectUrlOnChange } from "@/lib/video/use-video-preview";
+import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
+import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
+import { formatDuration } from "@/lib/video/estimate";
+
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -37,6 +40,7 @@ export function VideoH264Tool() {
   const cancelControllerRef = useRef<AbortController | null>(null);
 
   useRevokeObjectUrlOnChange(result?.url);
+  const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +154,28 @@ export function VideoH264Tool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
+        <VideoPreviewPanel
+          file={file}
+          previewUrl={previewUrl}
+          meta={meta}
+          onLoadedMetadata={handleLoadedMetadata}
+          outputRows={[
+            { label: "形式", value: "MP4（H.264）" },
+            {
+              label: "解像度",
+              value: meta && meta.width > 0 ? `${meta.width}×${meta.height}（変更なし）` : "元の動画と同じ",
+            },
+            {
+              label: "長さ",
+              value: meta && meta.durationSec > 0 ? formatDuration(meta.durationSec) : "元の動画と同じ",
+            },
+            { label: "サイズの目安", value: `${formatBytes(file.size)} 前後` },
+          ]}
+          outputNote="すでにH.264の動画は再エンコードせずに変換します。それ以外はサイズが変わる場合があります。"
+        />
+      )}
+
+      {file && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -197,6 +223,7 @@ export function VideoH264Tool() {
             </span>
             <span>長さ: {result.durationSec.toFixed(1)}秒</span>
           </div>
+          <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </div>
       )}

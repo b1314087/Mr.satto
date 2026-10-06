@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -36,6 +37,29 @@ function parseRanges(text: string, totalPages: number): { start: number; end: nu
     }
     return { start, end };
   });
+}
+
+const PREVIEW_MAX_PAGES = 40;
+
+/** 実行時と同じ解釈(parseRanges)で、分割後の各ファイルのページ範囲を求める。入力途中の不正な値はエラー文にする */
+function planSplit(
+  mode: SplitMode,
+  rangeText: string,
+  totalPages: number
+): { ranges: { start: number; end: number }[]; error: string | null } {
+  if (mode === "each-page") {
+    return { ranges: Array.from({ length: totalPages }, (_, i) => ({ start: i + 1, end: i + 1 })), error: null };
+  }
+  if (rangeText.trim() === "") return { ranges: [], error: null };
+  try {
+    return { ranges: parseRanges(rangeText, totalPages), error: null };
+  } catch (e) {
+    return { ranges: [], error: e instanceof Error ? e.message : "ページ範囲を解釈できません" };
+  }
+}
+
+function formatRange(r: { start: number; end: number }): string {
+  return r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`;
 }
 
 export function PdfSplitTool() {
@@ -75,6 +99,11 @@ export function PdfSplitTool() {
       cancelled = true;
     };
   }, [file]);
+
+  const plan = useMemo(
+    () => (pageCount === null ? null : planSplit(mode, rangeText, pageCount)),
+    [mode, rangeText, pageCount]
+  );
 
   function setResult(next: NamedFileOutput[] | null) {
     setOutputs(next);
@@ -168,6 +197,50 @@ export function PdfSplitTool() {
                 className="w-full rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
               />
             </label>
+          )}
+        </div>
+      )}
+
+      {file && pageCount !== null && plan && (
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
+          <PdfThumbnails
+            file={file}
+            maxPages={PREVIEW_MAX_PAGES}
+            width={96}
+            title="分割位置のプレビュー"
+            overlay={(page) => {
+              const owners = plan.ranges.flatMap((r, i) => (page >= r.start && page <= r.end ? [i + 1] : []));
+              const isCut = plan.ranges.some((r) => r.end === page);
+              if (plan.ranges.length > 0 && owners.length === 0) {
+                return (
+                  <span className="absolute inset-0 flex items-center justify-center bg-white/75 text-[10px] font-medium text-neutral-500 dark:bg-neutral-900/75 dark:text-neutral-400">
+                    出力されない
+                  </span>
+                );
+              }
+              if (owners.length === 0) return null;
+              return (
+                <>
+                  <span className="absolute left-1 top-1 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    {owners.length > 3 ? `${owners.slice(0, 3).join(",")}…` : owners.join(",")}
+                  </span>
+                  {isCut && <span aria-hidden className="absolute inset-y-0 right-0 border-r-2 border-dashed border-red-500" />}
+                </>
+              );
+            }}
+          />
+          {plan.error ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">{plan.error}</p>
+          ) : mode === "range" && plan.ranges.length === 0 ? (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              ページ範囲を入力すると、どこで区切られるかをここに表示します。
+            </p>
+          ) : (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {plan.ranges.length}個のPDFに分割されます
+              {mode === "range" && `（${plan.ranges.slice(0, 10).map(formatRange).join(" / ")}${plan.ranges.length > 10 ? " …" : ""}）`}
+              。バッジの数字は出力ファイルの番号、赤い点線が区切り位置です。
+            </p>
           )}
         </div>
       )}

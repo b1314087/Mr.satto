@@ -71,6 +71,40 @@ export interface FileRenameInput {
   newBaseNames: string[];
 }
 
+/** リネーム結果の1件分の計画（プレビュー表示と実際のリネームで共通） */
+export interface FileRenamePlanItem {
+  /** 実際に出力されるファイル名（サニタイズ・重複解消済み） */
+  finalName: string;
+  /** 使えない文字（\ / : * ? " < > | や制御文字）が含まれていて置き換えられた */
+  hadForbiddenChars: boolean;
+  /** 新しい名前が空欄のため、元のファイル名を使う */
+  usedOriginalName: boolean;
+  /** 他のファイルと名前が重複したため、末尾に連番が付いた */
+  dedupedFromDuplicate: boolean;
+}
+
+/**
+ * 各ファイルの最終的な名前を決める純粋関数。
+ * 実際のリネーム処理（FileRenameProcessor）とUIのライブプレビューの
+ * 両方がこの関数を使うため、プレビューどおりの名前で出力される。
+ */
+export function planFileRenames(files: File[], newBaseNames: string[]): FileRenamePlanItem[] {
+  const requested = files.map((_, i) => newBaseNames[i]?.trim() ?? "");
+  const rawNames = files.map((file, i) => {
+    const ext = getExtension(file.name);
+    const requestedBase = requested[i];
+    const base = sanitizeFileName(requestedBase || stripExtension(file.name));
+    return ext ? `${base}.${ext}` : base;
+  });
+  const uniqueNames = dedupeFileNames(rawNames);
+  return files.map((_, i) => ({
+    finalName: uniqueNames[i],
+    hadForbiddenChars: /[\\/:*?"<>|\x00-\x1f]/.test(requested[i]),
+    usedOriginalName: requested[i] === "",
+    dedupedFromDuplicate: uniqueNames[i] !== rawNames[i],
+  }));
+}
+
 export class FileRenameProcessor extends BrowserProcessor<FileRenameInput, NamedFileOutput[]> {
   async process({ files, newBaseNames }: FileRenameInput): Promise<NamedFileOutput[]> {
     if (files.length === 0) {
@@ -80,14 +114,7 @@ export class FileRenameProcessor extends BrowserProcessor<FileRenameInput, Named
       throw new Error("ファイル数と新しい名前の数が一致しません");
     }
 
-    const rawNames = files.map((file, i) => {
-      const ext = getExtension(file.name);
-      const requestedBase = newBaseNames[i]?.trim();
-      const base = sanitizeFileName(requestedBase || stripExtension(file.name));
-      return ext ? `${base}.${ext}` : base;
-    });
-
-    const uniqueNames = dedupeFileNames(rawNames);
+    const uniqueNames = planFileRenames(files, newBaseNames).map((p) => p.finalName);
 
     // 元のFileオブジェクトを書き換えず、新しいファイル名の情報だけを
     // 新規オブジェクトとして返す（内容Blobは共有してよい。不変なため）。
@@ -111,12 +138,20 @@ export interface FileZipOutput {
   sizeBytes: number;
 }
 
+/**
+ * ZIP内でのファイル名（サニタイズ・重複解消済み）を決める純粋関数。
+ * 実際のZIP化（FileZipProcessor）とUIのプレビューの両方で使う。
+ */
+export function planZipEntryNames(files: File[]): string[] {
+  return dedupeFileNames(files.map((file) => sanitizeFileName(file.name)));
+}
+
 export class FileZipProcessor extends BrowserProcessor<FileZipInput, FileZipOutput> {
   async process({ files }: FileZipInput): Promise<FileZipOutput> {
     if (files.length === 0) {
       throw new Error("ZIP化するファイルを選択してください");
     }
-    const names = dedupeFileNames(files.map((file) => sanitizeFileName(file.name)));
+    const names = planZipEntryNames(files);
     const blob = await createZip(files.map((file, i) => ({ name: names[i], blob: file })));
     return { blob, sizeBytes: blob.size };
   }

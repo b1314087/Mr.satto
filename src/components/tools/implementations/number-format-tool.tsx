@@ -122,7 +122,7 @@ export function NumberFormatTool() {
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      <label className="flex flex-col gap-1.5 text-sm">
+      <label data-testid="tool-preview" className="flex flex-col gap-1.5 text-sm">
         変換結果
         <textarea
           value={output}

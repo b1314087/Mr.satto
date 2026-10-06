@@ -53,6 +53,7 @@ export function TextCaseConverterTool() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <label className="flex flex-col gap-1.5 text-sm">
         入力テキスト
         <textarea
@@ -63,6 +64,18 @@ export function TextCaseConverterTool() {
           className="rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>
+
+      <label data-testid="tool-preview" className="flex flex-col gap-1.5 text-sm">
+        変換結果
+        <textarea
+          value={output}
+          readOnly
+          rows={8}
+          placeholder="入力すると、変換後のテキストがここに表示されます"
+          className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 text-sm outline-none dark:border-neutral-700 dark:bg-neutral-900"
+        />
+      </label>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         {MODE_OPTIONS.map((opt) => (
@@ -81,16 +94,6 @@ export function TextCaseConverterTool() {
           </button>
         ))}
       </div>
-
-      <label className="flex flex-col gap-1.5 text-sm">
-        変換結果
-        <textarea
-          value={output}
-          readOnly
-          rows={8}
-          className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 text-sm outline-none dark:border-neutral-700 dark:bg-neutral-900"
-        />
-      </label>
 
       <div className="flex flex-wrap items-center gap-3">
         <button

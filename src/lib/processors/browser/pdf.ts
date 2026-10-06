@@ -2,9 +2,25 @@ import { PDFDocument, StandardFonts, degrees as pdfDegrees, rgb } from "pdf-lib"
 import fontkit from "@pdf-lib/fontkit";
 import { BrowserProcessor, type PdfProcessorOutput, type NamedFileOutput } from "../types";
 import { loadImage, canvasToBlob } from "./image";
+import { computeImagePageLayout } from "./image-to-pdf-layout";
 import { stripExtension } from "@/lib/utils/format";
 import { parsePageSelection } from "@/lib/pdf/page-selection";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
+import {
+  PAGE_NUMBER_COLOR,
+  WATERMARK_COLOR,
+  croppedBox,
+  pageNumberLabel,
+  pageNumberPlacement,
+  resizeContentRect,
+  resizeTargetSize,
+  watermarkPlacement,
+  type PageNumberPosition as LayoutPageNumberPosition,
+  type PageOrientation,
+  type PageSizePreset,
+  type ResizeContentMode,
+  type WatermarkPosition as LayoutWatermarkPosition,
+} from "@/lib/pdf/overlay-layout";
 
 /**
  * PDF系Processor（Phase 2-A）。
@@ -364,9 +380,6 @@ async function toEmbeddableImage(
   return { bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: "image/png" };
 }
 
-const A4_WIDTH_PT = 595.28;
-const A4_HEIGHT_PT = 841.89;
-
 export interface ImageToPdfInput {
   /** PDFに追加する順序 = 配列の順序 */
   files: File[];
@@ -392,21 +405,10 @@ export class ImagesToPdfProcessor extends BrowserProcessor<ImageToPdfInput, PdfP
           ? await doc.embedPng(embeddable.bytes)
           : await doc.embedJpg(embeddable.bytes);
 
-      if (pageSize === "a4") {
-        const page = doc.addPage([A4_WIDTH_PT, A4_HEIGHT_PT]);
-        const scale = Math.min(A4_WIDTH_PT / image.width, A4_HEIGHT_PT / image.height, 1);
-        const w = image.width * scale;
-        const h = image.height * scale;
-        page.drawImage(image, {
-          x: (A4_WIDTH_PT - w) / 2,
-          y: (A4_HEIGHT_PT - h) / 2,
-          width: w,
-          height: h,
-        });
-      } else {
-        const page = doc.addPage([image.width, image.height]);
-        page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
-      }
+      // ページ配置はライブプレビュー(image-to-pdf-tool)と共通の計算を使う
+      const layout = computeImagePageLayout(image.width, image.height, pageSize);
+      const page = doc.addPage([layout.pageWidth, layout.pageHeight]);
+      page.drawImage(image, { x: layout.x, y: layout.y, width: layout.width, height: layout.height });
     }
     return finalizePdf(doc);
   }
@@ -446,7 +448,7 @@ export class PdfExtractPagesProcessor extends BrowserProcessor<
 // ---------------------------------------------------------------------------
 // PDFページ番号追加（Phase 6）
 // ---------------------------------------------------------------------------
-export type PageNumberPosition = "bottom-left" | "bottom-center" | "bottom-right";
+export type PageNumberPosition = LayoutPageNumberPosition;
 
 export interface PdfAddPageNumbersInput {
   file: File;
@@ -455,8 +457,6 @@ export interface PdfAddPageNumbersInput {
   position: PageNumberPosition;
   fontSize: number;
 }
-
-const PAGE_NUMBER_MARGIN = 24;
 
 export class PdfAddPageNumbersProcessor extends BrowserProcessor<
   PdfAddPageNumbersInput,
@@ -485,23 +485,17 @@ export class PdfAddPageNumbersProcessor extends BrowserProcessor<
     }
 
     pages.forEach((page, index) => {
-      const label = String(startNumber + index);
+      // 位置の計算はプレビュー(overlay-layout)と共通
+      const label = pageNumberLabel(startNumber, index);
       const width = font.widthOfTextAtSize(label, fontSize);
       const { width: pageWidth } = page.getSize();
-      let x: number;
-      if (position === "bottom-left") {
-        x = PAGE_NUMBER_MARGIN;
-      } else if (position === "bottom-right") {
-        x = pageWidth - PAGE_NUMBER_MARGIN - width;
-      } else {
-        x = (pageWidth - width) / 2;
-      }
+      const { x, y } = pageNumberPlacement(pageWidth, width, position);
       page.drawText(label, {
         x,
-        y: PAGE_NUMBER_MARGIN * 0.6,
+        y,
         size: fontSize,
         font,
-        color: rgb(0.3, 0.3, 0.32),
+        color: rgb(PAGE_NUMBER_COLOR.r, PAGE_NUMBER_COLOR.g, PAGE_NUMBER_COLOR.b),
       });
     });
 
@@ -512,7 +506,7 @@ export class PdfAddPageNumbersProcessor extends BrowserProcessor<
 // ---------------------------------------------------------------------------
 // PDF透かし（Phase 6）
 // ---------------------------------------------------------------------------
-export type WatermarkPosition = "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+export type WatermarkPosition = LayoutWatermarkPosition;
 
 export interface PdfWatermarkInput {
   file: File;
@@ -524,8 +518,6 @@ export interface PdfWatermarkInput {
   /** 度数（反時計回り） */
   rotation: number;
 }
-
-const WATERMARK_MARGIN = 32;
 
 export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, PdfProcessorOutput> {
   async process({ file, text, opacity, fontSize, position, rotation }: PdfWatermarkInput) {
@@ -576,38 +568,15 @@ export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, P
 
     for (const page of pages) {
       const { width: pageWidth, height: pageHeight } = page.getSize();
-      let x: number;
-      let y: number;
-      switch (position) {
-        case "top-left":
-          x = WATERMARK_MARGIN;
-          y = pageHeight - WATERMARK_MARGIN - height;
-          break;
-        case "top-right":
-          x = pageWidth - WATERMARK_MARGIN - width;
-          y = pageHeight - WATERMARK_MARGIN - height;
-          break;
-        case "bottom-left":
-          x = WATERMARK_MARGIN;
-          y = WATERMARK_MARGIN;
-          break;
-        case "bottom-right":
-          x = pageWidth - WATERMARK_MARGIN - width;
-          y = WATERMARK_MARGIN;
-          break;
-        case "center":
-        default:
-          x = (pageWidth - width) / 2;
-          y = (pageHeight - height) / 2;
-          break;
-      }
+      // 位置の計算はプレビュー(overlay-layout)と共通
+      const { x, y } = watermarkPlacement(pageWidth, pageHeight, width, height, position);
       try {
         page.drawText(text, {
           x,
           y,
           size: fontSize,
           font,
-          color: rgb(0.5, 0.5, 0.5),
+          color: rgb(WATERMARK_COLOR.r, WATERMARK_COLOR.g, WATERMARK_COLOR.b),
           opacity,
           rotate: pdfDegrees(rotation),
         });
@@ -625,20 +594,14 @@ export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, P
 // ---------------------------------------------------------------------------
 // PDFページサイズ変更（Phase 8）
 // ---------------------------------------------------------------------------
-export type PdfPageSizePreset = "a4" | "a3" | "letter" | "original";
-export type PdfPageOrientation = "portrait" | "landscape";
+export type PdfPageSizePreset = PageSizePreset;
+export type PdfPageOrientation = PageOrientation;
 /**
  * "fit"   = 内容を新しいページサイズに合わせて拡大縮小する（アスペクト比維持・中央配置）
  * "keep"  = 内容の大きさ・位置は変えず、ページのサイズ（MediaBox/CropBox）だけを変更する
  * UIでは必ずこの2つの違いを明示し、どちらが選ばれているか曖昧にしない（開発指示書■9）。
  */
-export type PdfResizeContentMode = "fit" | "keep";
-
-const PDF_PAGE_SIZE_PT: Record<Exclude<PdfPageSizePreset, "original">, { width: number; height: number }> = {
-  a4: { width: 595.28, height: 841.89 },
-  a3: { width: 841.89, height: 1190.55 },
-  letter: { width: 612, height: 792 },
-};
+export type PdfResizeContentMode = ResizeContentMode;
 
 export interface PdfResizePagesInput {
   file: File;
@@ -669,23 +632,20 @@ export class PdfResizePagesProcessor extends BrowserProcessor<
       return finalizePdf(doc);
     }
 
-    const base = PDF_PAGE_SIZE_PT[pageSize];
-    const [newWidth, newHeight] =
-      orientation === "landscape"
-        ? [Math.max(base.width, base.height), Math.min(base.width, base.height)]
-        : [Math.min(base.width, base.height), Math.max(base.width, base.height)];
+    // 変更後のサイズ・内容の配置はプレビュー(overlay-layout)と共通
+    const target = resizeTargetSize(pageSize, orientation);
+    if (!target) return finalizePdf(doc);
+    const { width: newWidth, height: newHeight } = target;
 
     for (const page of pages) {
       const { width: oldWidth, height: oldHeight } = page.getSize();
       if (oldWidth <= 0 || oldHeight <= 0) continue;
 
       if (contentMode === "fit") {
-        const scale = Math.min(newWidth / oldWidth, newHeight / oldHeight);
-        page.scaleContent(scale, scale);
-        const scaledWidth = oldWidth * scale;
-        const scaledHeight = oldHeight * scale;
+        const rect = resizeContentRect(oldWidth, oldHeight, newWidth, newHeight, "fit");
+        page.scaleContent(rect.scale, rect.scale);
         page.setSize(newWidth, newHeight);
-        page.translateContent((newWidth - scaledWidth) / 2, (newHeight - scaledHeight) / 2);
+        page.translateContent(rect.x, rect.y);
       } else {
         // ページの原点（左下）は変えず、幅と高さだけを変更する。
         // 拡大した場合は右上方向に余白が増え、縮小した場合は内容の右上側が
@@ -824,8 +784,6 @@ export class PdfMetadataRemoveProcessor extends BrowserProcessor<
 // ---------------------------------------------------------------------------
 // PDF余白・ページ範囲調整（クロップ）（Phase 8）
 // ---------------------------------------------------------------------------
-const MM_TO_PT = 2.8346456693;
-
 export interface PdfCropMargins {
   topMm: number;
   bottomMm: number;
@@ -856,21 +814,15 @@ export class PdfCropPagesProcessor extends BrowserProcessor<PdfCropPagesInput, P
       throw new Error("このPDFにはページがありません");
     }
 
-    const topPt = topMm * MM_TO_PT;
-    const bottomPt = bottomMm * MM_TO_PT;
-    const leftPt = leftMm * MM_TO_PT;
-    const rightPt = rightMm * MM_TO_PT;
-
     for (const page of pages) {
-      const { x, y, width, height } = page.getCropBox();
-      const newWidth = width - leftPt - rightPt;
-      const newHeight = height - topPt - bottomPt;
-      if (newWidth <= 1 || newHeight <= 1) {
+      // トリミング後の範囲の計算はプレビュー(overlay-layout)と共通
+      const next = croppedBox(page.getCropBox(), { topMm, bottomMm, leftMm, rightMm });
+      if (!next) {
         throw new Error(
           "指定した余白がページサイズに対して大きすぎます。余白の値を小さくしてください。"
         );
       }
-      page.setCropBox(x + leftPt, y + bottomPt, newWidth, newHeight);
+      page.setCropBox(next.x, next.y, next.width, next.height);
     }
 
     return finalizePdf(doc);

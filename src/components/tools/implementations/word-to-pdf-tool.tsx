@@ -1,13 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
+import { ParagraphList } from "@/components/tools/implementations/shared/paragraph-compare";
+import { PreviewColumn, PreviewNotice, PreviewShell } from "@/components/tools/implementations/shared/before-after-table";
+import { extractBodyTexts } from "@/components/tools/implementations/shared/docx-preview";
+import { useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
+import { loadDocxPackage } from "@/lib/word/docx-text-ops";
 import { WordToPdfProcessor, type WordToPdfOutput } from "@/lib/processors/browser/word-to-pdf";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+
+async function loadDocxBodyTexts(file: File): Promise<string[]> {
+  const pkg = await loadDocxPackage(file);
+  return extractBodyTexts(pkg.documentXmlText);
+}
 
 /**
  * Word（DOCX）→ PDF（Phase 9）。
@@ -21,6 +32,17 @@ export function WordToPdfTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WordToPdfOutput | null>(null);
+
+  // プレビュー: 変換前は文書の本文(段落・表)のテキスト、変換後は生成したPDFの1ページ目を表示する
+  const { data: bodyTexts, error: previewError, loading } = useAsyncFileData(file, loadDocxBodyTexts);
+  const resultPdf = useMemo(
+    () => (result ? new File([result.blob], "converted-preview.pdf", { type: "application/pdf" }) : null),
+    [result]
+  );
+  const paragraphItems = useMemo(
+    () => (bodyTexts ?? []).filter((t) => t.trim() !== "").map((text) => ({ text })),
+    [bodyTexts]
+  );
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -75,6 +97,24 @@ export function WordToPdfTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (bodyTexts || previewError || loading || resultPdf) && (
+        <PreviewShell
+          title="変換内容のプレビュー"
+          loading={loading}
+          notes={[
+            "変換前は文書内のテキストを表示しています(書式・画像は反映されません)。変換後のPDFの見た目は、変換したあとに1ページ目の画像で確認できます。",
+          ]}
+        >
+          {previewError && <PreviewNotice message={previewError} />}
+          {bodyTexts && (
+            <PreviewColumn label="Word文書の本文(先頭の段落・表)">
+              <ParagraphList items={paragraphItems} maxItems={20} label="Word文書の本文" />
+            </PreviewColumn>
+          )}
+          {resultPdf && <PdfThumbnails file={resultPdf} maxPages={1} width={260} title="変換後PDFの1ページ目" />}
+        </PreviewShell>
+      )}
 
       {file && (
         <button

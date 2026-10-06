@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ImageConvertProcessor } from "@/lib/processors/browser/image";
+import type { ImageProcessorOutput } from "@/lib/processors/types";
+import { useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -26,6 +28,49 @@ export function ImageBatchConvertTool() {
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [resultLabel, setResultLabel] = useState<string | null>(null);
   const [downloadName, setDownloadName] = useState("images.zip");
+
+  // --- プレビュー: 先頭の画像を、選んだ形式へ実際に変換した結果(書き出しと同じ ImageConvertProcessor) ---
+  const firstFile = files[0] ?? null;
+  const originalUrl = useObjectUrl(firstFile);
+  const [converted, setConverted] = useState<
+    { file: File; format: TargetFormat; output: ImageProcessorOutput } | { file: File; format: TargetFormat; error: string } | null
+  >(null);
+  useEffect(() => {
+    if (!firstFile) return;
+    let cancelled = false;
+    const holder: { output: ImageProcessorOutput | null } = { output: null };
+    new ImageConvertProcessor().process({ file: firstFile, mimeType: targetFormat }).then(
+      (output) => {
+        if (cancelled) {
+          URL.revokeObjectURL(output.url);
+          return;
+        }
+        holder.output = output;
+        setConverted({ file: firstFile, format: targetFormat, output });
+      },
+      (e) => {
+        if (!cancelled) {
+          setConverted({
+            file: firstFile,
+            format: targetFormat,
+            error: e instanceof Error ? e.message : "プレビューを作成できませんでした",
+          });
+        }
+      }
+    );
+    return () => {
+      cancelled = true;
+      if (holder.output) URL.revokeObjectURL(holder.output.url);
+    };
+  }, [firstFile, targetFormat]);
+  const current = firstFile && converted && converted.file === firstFile && converted.format === targetFormat ? converted : null;
+  const convertedOutput = current && "output" in current ? current.output : null;
+  const convertedError = current && "error" in current ? current.error : null;
+  const formatLabel = FORMAT_OPTIONS.find((f) => f.value === targetFormat)?.label ?? "";
+  const sizeDiffPercent =
+    firstFile && convertedOutput && firstFile.size > 0
+      ? Math.round(((convertedOutput.sizeBytes - firstFile.size) / firstFile.size) * 100)
+      : null;
 
   function addFiles(newFiles: File[]) {
     setFiles((prev) => [...prev, ...newFiles]);
@@ -114,6 +159,68 @@ export function ImageBatchConvertTool() {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {firstFile && (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（先頭の画像を{formatLabel}に変換した結果）
+          </p>
+          {convertedError && <ErrorMessage message={convertedError} />}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
+                元の画像 ・ {firstFile.type.replace("image/", "").toUpperCase() || "不明"} ・ {formatBytes(firstFile.size)}
+              </figcaption>
+              {originalUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={originalUrl}
+                  alt="変換前の画像"
+                  className="max-h-64 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              )}
+            </figure>
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
+                {formatLabel}に変換後
+                {convertedOutput ? ` ・ ${formatBytes(convertedOutput.sizeBytes)}` : ""}
+              </figcaption>
+              {convertedOutput ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={convertedOutput.url}
+                  alt="変換後の画像"
+                  className="max-h-64 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              ) : (
+                !convertedError && (
+                  <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-neutral-300 text-xs text-neutral-400 dark:border-neutral-700">
+                    変換しています...
+                  </div>
+                )
+              )}
+            </figure>
+          </div>
+          {convertedOutput && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {convertedOutput.width} × {convertedOutput.height}px ・ {formatBytes(firstFile.size)} →{" "}
+              {formatBytes(convertedOutput.sizeBytes)}
+              {sizeDiffPercent !== null && sizeDiffPercent !== 0
+                ? `（${sizeDiffPercent > 0 ? "+" : ""}${sizeDiffPercent}%）`
+                : ""}
+              {targetFormat === "image/jpeg" ? " ・ 透過部分は白になります" : ""}
+            </p>
+          )}
+          {files.length > 1 && (
+            <p className="text-xs text-neutral-400 dark:text-neutral-500">
+              ほかの{files.length - 1}枚も同じ形式で変換されます。サイズは画像ごとに異なります。
+            </p>
+          )}
         </div>
       )}
 

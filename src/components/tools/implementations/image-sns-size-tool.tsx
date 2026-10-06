@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -9,7 +9,9 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   ImageCropProcessor,
   computeCenterCropForAspect,
+  resolveCropRect,
 } from "@/lib/processors/browser/image";
+import { useLoadedImage, useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -33,6 +35,9 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
   "image/webp": "webp",
 };
+
+/** 変換結果プレビューの最長辺(px) */
+const RESULT_PREVIEW_MAX_SIDE = 360;
 
 export function ImageSnsSizeTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -76,6 +81,34 @@ export function ImageSnsSizeTool() {
   const activePreset = PRESETS.find((p) => p.id === presetId);
   const targetWidth = presetId === "custom" ? customWidth : activePreset?.width ?? 1080;
   const targetHeight = presetId === "custom" ? customHeight : activePreset?.height ?? 1080;
+
+  // --- ライブプレビュー: 元画像のどこが残るか(枠)と、変換後の見た目 ---
+  // 切り抜き範囲は書き出しと同じ computeCenterCropForAspect / resolveCropRect で求める
+  const originalUrl = useObjectUrl(file);
+  const { img: loadedImg, error: previewError } = useLoadedImage(file);
+  const resultCanvasRef = useRef<HTMLCanvasElement>(null);
+  const validTarget = Number.isFinite(targetWidth) && Number.isFinite(targetHeight) && targetWidth > 0 && targetHeight > 0;
+  const cropRect =
+    loadedImg && validTarget
+      ? resolveCropRect(
+          loadedImg.naturalWidth,
+          loadedImg.naturalHeight,
+          computeCenterCropForAspect(loadedImg.naturalWidth, loadedImg.naturalHeight, targetWidth / targetHeight)
+        )
+      : null;
+  const cropX = cropRect?.x ?? 0;
+  const cropY = cropRect?.y ?? 0;
+  const cropW = cropRect?.width ?? 0;
+  const cropH = cropRect?.height ?? 0;
+  useEffect(() => {
+    const canvas = resultCanvasRef.current;
+    if (!loadedImg || !canvas || cropW <= 0 || cropH <= 0) return;
+    const scale = Math.min(1, RESULT_PREVIEW_MAX_SIDE / Math.max(targetWidth, targetHeight));
+    canvas.width = Math.max(1, Math.round(targetWidth * scale));
+    canvas.height = Math.max(1, Math.round(targetHeight * scale));
+    canvas.getContext("2d")?.drawImage(loadedImg, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+  }, [loadedImg, cropX, cropY, cropW, cropH, targetWidth, targetHeight]);
+  const upscaled = cropRect !== null && (cropRect.width < targetWidth || cropRect.height < targetHeight);
 
   async function handleRun() {
     if (!file || !naturalSize) return;
@@ -182,6 +215,62 @@ export function ImageSnsSizeTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             出力サイズ: {targetWidth} × {targetHeight}px（中央を基準に必要な範囲だけ切り抜き、引き伸ばしは行いません）
           </p>
+        </div>
+      )}
+
+      {file && (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（{targetWidth} × {targetHeight}px の枠に収めた結果）
+          </p>
+          {previewError && <ErrorMessage message={previewError} />}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
+                元の画像（明るい枠の中が残ります）
+              </figcaption>
+              {originalUrl && (
+                <div className="relative mx-auto w-fit max-w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={originalUrl} alt="元の画像" draggable={false} className="block max-h-64 max-w-full" />
+                  {cropRect && loadedImg && (
+                    <div
+                      aria-hidden="true"
+                      data-testid="sns-crop-frame"
+                      className="pointer-events-none absolute border-2 border-blue-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
+                      style={{
+                        left: `${(cropRect.x / loadedImg.naturalWidth) * 100}%`,
+                        top: `${(cropRect.y / loadedImg.naturalHeight) * 100}%`,
+                        width: `${(cropRect.width / loadedImg.naturalWidth) * 100}%`,
+                        height: `${(cropRect.height / loadedImg.naturalHeight) * 100}%`,
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </figure>
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">変換後</figcaption>
+              <canvas
+                ref={resultCanvasRef}
+                aria-label="変換後のプレビュー"
+                className="mx-auto h-auto max-w-full rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </figure>
+          </div>
+          {loadedImg && cropRect && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              元 {loadedImg.naturalWidth} × {loadedImg.naturalHeight}px → 切り抜き {cropRect.width} × {cropRect.height}px →
+              出力 {targetWidth} × {targetHeight}px
+              {upscaled ? "（元の画像が小さいため、拡大されます）" : ""}
+            </p>
+          )}
+          {!validTarget && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">幅と高さは1以上を指定してください</p>
+          )}
         </div>
       )}
 

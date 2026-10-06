@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { ImageGrayscaleProcessor } from "@/lib/processors/browser/image";
+import { ImageGrayscaleProcessor, applyGrayscale } from "@/lib/processors/browser/image";
+import { useDownscaledImage, useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
 
@@ -15,6 +16,9 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
   "image/webp": "webp",
 };
+
+/** プレビュー用に縮小する最長辺(px) */
+const PREVIEW_MAX_SIDE = 640;
 
 export function ImageGrayscaleTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -28,6 +32,23 @@ export function ImageGrayscaleTool() {
       if (result) URL.revokeObjectURL(result.url);
     };
   }, [result]);
+
+  // --- ライブプレビュー: 元画像と白黒化後を並べる(計算は書き出しと同じ applyGrayscale) ---
+  const originalUrl = useObjectUrl(file);
+  const { canvas: scaled, error: previewError } = useDownscaledImage(file, PREVIEW_MAX_SIDE);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const target = previewCanvasRef.current;
+    if (!scaled || !target) return;
+    const sourceCtx = scaled.getContext("2d");
+    const ctx = target.getContext("2d");
+    if (!sourceCtx || !ctx) return;
+    const data = sourceCtx.getImageData(0, 0, scaled.width, scaled.height);
+    applyGrayscale(data.data);
+    target.width = scaled.width;
+    target.height = scaled.height;
+    ctx.putImageData(data, 0, 0);
+  }, [scaled]);
 
   function handleFile(files: File[]) {
     setFile(files[0]);
@@ -65,6 +86,37 @@ export function ImageGrayscaleTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（元の画像と白黒化後）</p>
+          {previewError && <ErrorMessage message={previewError} />}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">元の画像</figcaption>
+              {originalUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={originalUrl}
+                  alt="元の画像"
+                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              )}
+            </figure>
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">グレースケール後</figcaption>
+              <canvas
+                ref={previewCanvasRef}
+                aria-label="グレースケール後のプレビュー"
+                className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </figure>
+          </div>
+        </div>
+      )}
 
       {file && (
         <button

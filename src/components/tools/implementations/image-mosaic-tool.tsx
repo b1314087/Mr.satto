@@ -434,6 +434,7 @@ export function ImageMosaicTool() {
 
           <div
             ref={containerRef}
+            data-testid="tool-preview"
             className="w-full max-w-full overflow-auto rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700"
             style={{ maxHeight: "32rem" }}
           >

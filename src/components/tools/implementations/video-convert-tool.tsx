@@ -14,7 +14,10 @@ import {
   VideoCanceledByUserError,
   type OutputContainer,
 } from "@/lib/video/shared";
-import { useRevokeObjectUrlOnChange } from "@/lib/video/use-video-preview";
+import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
+import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
+import { formatDuration, inputFormatLabel } from "@/lib/video/estimate";
+
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -36,6 +39,7 @@ export function VideoConvertTool() {
   const cancelControllerRef = useRef<AbortController | null>(null);
 
   useRevokeObjectUrlOnChange(result?.url);
+  const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
 
   useEffect(() => {
     return () => {
@@ -151,6 +155,28 @@ export function VideoConvertTool() {
       )}
 
       {file && (
+        <VideoPreviewPanel
+          file={file}
+          previewUrl={previewUrl}
+          meta={meta}
+          onLoadedMetadata={handleLoadedMetadata}
+          outputRows={[
+            { label: "形式", value: `${inputFormatLabel(file)} → ${container.toUpperCase()}` },
+            {
+              label: "解像度",
+              value: meta && meta.width > 0 ? `${meta.width}×${meta.height}（変更なし）` : "元の動画と同じ",
+            },
+            {
+              label: "長さ",
+              value: meta && meta.durationSec > 0 ? formatDuration(meta.durationSec) : "元の動画と同じ",
+            },
+            { label: "サイズの目安", value: `${formatBytes(file.size)} 前後` },
+          ]}
+          outputNote="サイズは目安です。実際のサイズは変換後に表示されます。"
+        />
+      )}
+
+      {file && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -198,6 +224,7 @@ export function VideoConvertTool() {
             </span>
             <span>長さ: {result.durationSec.toFixed(1)}秒</span>
           </div>
+          <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </div>
       )}

@@ -313,19 +313,24 @@ export function ImagePassportPhotoTool() {
   // 用紙・余白・写真間隔・写真サイズから、最大何枚配置できるかを求める
   // （固定サイズのセルを敷き詰めるcomputeFixedSizeGridを利用。列数×行数を
   // 引き伸ばして埋めるcomputeGridCellsとは異なり、写真の物理サイズ(mm)を
-  // 厳密に保つ）。
-  const maxSheetCells = useMemo(() => {
-    if (sizeError) return 0;
+  // 厳密に保つ）。PDF書き出しと配置プレビューで同じ結果を使う。
+  const sheetLayout = useMemo(() => {
     const paperSizePt = resolvePaperSizePt(paperId, orientation);
-    return computeFixedSizeGrid({
-      canvasWidthPx: Math.round(paperSizePt.width),
-      canvasHeightPx: Math.round(paperSizePt.height),
-      marginPx: mmToPt(marginMm),
-      gapPx: mmToPt(gapMm),
-      cellWidthPx: mmToPt(widthMm),
-      cellHeightPx: mmToPt(heightMm),
-    }).length;
+    const canvasWidthPx = Math.round(paperSizePt.width);
+    const canvasHeightPx = Math.round(paperSizePt.height);
+    const cells = sizeError
+      ? []
+      : computeFixedSizeGrid({
+          canvasWidthPx,
+          canvasHeightPx,
+          marginPx: mmToPt(marginMm),
+          gapPx: mmToPt(gapMm),
+          cellWidthPx: mmToPt(widthMm),
+          cellHeightPx: mmToPt(heightMm),
+        });
+    return { canvasWidthPx, canvasHeightPx, cells };
   }, [paperId, orientation, marginMm, gapMm, widthMm, heightMm, sizeError]);
+  const maxSheetCells = sheetLayout.cells.length;
 
   const effectiveSheetCount = Math.max(1, Math.min(countOverride ?? maxSheetCells, maxSheetCells || 1));
 
@@ -352,17 +357,7 @@ export function ImagePassportPhotoTool() {
       });
       const photoFile = new File([cropped.blob], "passport-photo.jpg", { type: cropped.blob.type });
 
-      const paperSizePt = resolvePaperSizePt(paperId, orientation);
-      const canvasWidthPx = Math.round(paperSizePt.width);
-      const canvasHeightPx = Math.round(paperSizePt.height);
-      const allCells = computeFixedSizeGrid({
-        canvasWidthPx,
-        canvasHeightPx,
-        marginPx: mmToPt(marginMm),
-        gapPx: mmToPt(gapMm),
-        cellWidthPx: mmToPt(widthMm),
-        cellHeightPx: mmToPt(heightMm),
-      });
+      const { canvasWidthPx, canvasHeightPx, cells: allCells } = sheetLayout;
       const cells = allCells.slice(0, effectiveSheetCount);
       const items: ImageLayoutItem[] = cells.map((cell, i) => ({
         id: `passport-photo-${i}`,
@@ -517,7 +512,7 @@ export function ImagePassportPhotoTool() {
       )}
 
       {file && imageUrl && naturalSize && !sizeError && (
-        <div className="flex flex-col gap-3">
+        <div data-testid="tool-preview" className="flex flex-col gap-3">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">トリミング・位置調整</p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
             <div
@@ -759,6 +754,45 @@ export function ImagePassportPhotoTool() {
               自動（最大枚数）
             </button>
           </div>
+          {imageUrl && naturalSize && (
+            <div className="flex flex-col gap-1" data-testid="sheet-preview">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                配置プレビュー（{PAPER_SIZE_LABELS[paperId]}・{maxSheetCells === 0 ? "配置できません" : `${effectiveSheetCount}枚`}）
+              </p>
+              <div
+                className="relative w-full max-w-[16rem] overflow-hidden border border-neutral-300 bg-white shadow-sm dark:border-neutral-600"
+                style={{ aspectRatio: `${sheetLayout.canvasWidthPx} / ${sheetLayout.canvasHeightPx}` }}
+              >
+                {sheetLayout.cells.slice(0, effectiveSheetCount).map((cell, i) => (
+                  <div
+                    key={i}
+                    className="absolute overflow-hidden bg-neutral-200"
+                    style={{
+                      left: `${(cell.x / sheetLayout.canvasWidthPx) * 100}%`,
+                      top: `${(cell.y / sheetLayout.canvasHeightPx) * 100}%`,
+                      width: `${(cell.width / sheetLayout.canvasWidthPx) * 100}%`,
+                      height: `${(cell.height / sheetLayout.canvasHeightPx) * 100}%`,
+                    }}
+                  >
+                    {/* 実際のトリミング範囲を各マスへ表示する(出力と同じ位置・枚数) */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imageUrl}
+                      alt=""
+                      draggable={false}
+                      className="absolute max-w-none select-none"
+                      style={{
+                        width: `${(100 / box.wPct) * 100}%`,
+                        height: `${(100 / box.hPct) * 100}%`,
+                        left: `${-(box.xPct / box.wPct) * 100}%`,
+                        top: `${-(box.yPct / box.hPct) * 100}%`,
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <button
             type="button"
             onClick={handleSheetOutput}

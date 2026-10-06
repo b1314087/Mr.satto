@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DateToolsProcessor, dateListToCsvBlob, type DateListItem } from "@/lib/processors/browser/date-tools";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -34,6 +34,48 @@ function todayIso(): string {
   return `${y}-${m}-${d}`;
 }
 
+interface DateView {
+  resultDate?: string;
+  resultWeekday?: string;
+  monthRange?: { start: string; end: string };
+  list?: DateListItem[];
+}
+
+async function computeDateView(p: {
+  tab: Tab;
+  baseDate: string;
+  days: number;
+  rangeEnd: string;
+  excludeWeekends: boolean;
+  selectedWeekdays: number[];
+}): Promise<{ result: DateView | null; error: string | null }> {
+  try {
+    const processor = new DateToolsProcessor();
+    const { tab, baseDate, days, rangeEnd, excludeWeekends, selectedWeekdays } = p;
+    if (tab === "weekday" || tab === "shift" || tab === "business") {
+      const r =
+        tab === "weekday"
+          ? await processor.process({ mode: "weekday", baseDate })
+          : await processor.process({ mode: tab === "shift" ? "shift" : "business-shift", baseDate, days });
+      return {
+        error: null,
+        result: {
+          resultDate: r.resultDate,
+          resultWeekday: r.resultWeekday,
+          monthRange: tab === "weekday" && r.monthStart && r.monthEnd ? { start: r.monthStart, end: r.monthEnd } : undefined,
+        },
+      };
+    }
+    const r =
+      tab === "list"
+        ? await processor.process({ mode: "list", baseDate, rangeEnd, excludeWeekends })
+        : await processor.process({ mode: "list", baseDate, rangeEnd, weekdayFilter: selectedWeekdays });
+    return { error: null, result: { list: r.list ?? [] } };
+  } catch (e) {
+    return { result: null, error: e instanceof Error ? e.message : "計算に失敗しました" };
+  }
+}
+
 /**
  * 日付・曜日ツール（次工程・軽量便利ツール一括追加 Tool 1）。
  * タブ切り替えで5つの機能（曜日確認/日付計算/日付一覧/曜日抽出/営業日計算）
@@ -47,54 +89,32 @@ export function DateWeekdayTool() {
   const [excludeWeekends, setExcludeWeekends] = useState(false);
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1, 2, 3, 4, 5]);
 
-  const [error, setError] = useState<string | null>(null);
-  const [resultDate, setResultDate] = useState<string | null>(null);
-  const [resultWeekday, setResultWeekday] = useState<string | null>(null);
-  const [monthRange, setMonthRange] = useState<{ start: string; end: string } | null>(null);
-  const [list, setList] = useState<DateListItem[] | null>(null);
+  const [live, setLive] = useState<{ key: string; result: DateView | null; error: string | null } | null>(null);
   const [copied, setCopied] = useState(false);
 
-  function resetResults() {
-    setError(null);
-    setResultDate(null);
-    setResultWeekday(null);
-    setMonthRange(null);
-    setList(null);
-    setCopied(false);
-  }
+  // 入力・タブを変えるたびに、その場で結果を再計算して表示する（プレビュー）。
+  // 「計算する」ボタンも同じ computeDateView を使う。
+  const liveKey = JSON.stringify([tab, baseDate, days, rangeEnd, excludeWeekends, selectedWeekdays]);
+  useEffect(() => {
+    let cancelled = false;
+    computeDateView({ tab, baseDate, days, rangeEnd, excludeWeekends, selectedWeekdays }).then((r) => {
+      if (!cancelled) setLive({ key: liveKey, ...r });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [liveKey, tab, baseDate, days, rangeEnd, excludeWeekends, selectedWeekdays]);
+
+  const view = live && live.key === liveKey ? live : null;
+  const error = view?.error ?? null;
+  const resultDate = view?.result?.resultDate ?? null;
+  const resultWeekday = view?.result?.resultWeekday ?? null;
+  const monthRange = view?.result?.monthRange ?? null;
+  const list = view?.result?.list ?? null;
 
   async function handleRun() {
-    resetResults();
-    try {
-      const processor = new DateToolsProcessor();
-      if (tab === "weekday") {
-        const r = await processor.process({ mode: "weekday", baseDate });
-        setResultDate(r.resultDate ?? null);
-        setResultWeekday(r.resultWeekday ?? null);
-        if (r.monthStart && r.monthEnd) setMonthRange({ start: r.monthStart, end: r.monthEnd });
-      } else if (tab === "shift") {
-        const r = await processor.process({ mode: "shift", baseDate, days });
-        setResultDate(r.resultDate ?? null);
-        setResultWeekday(r.resultWeekday ?? null);
-      } else if (tab === "business") {
-        const r = await processor.process({ mode: "business-shift", baseDate, days });
-        setResultDate(r.resultDate ?? null);
-        setResultWeekday(r.resultWeekday ?? null);
-      } else if (tab === "list") {
-        const r = await processor.process({ mode: "list", baseDate, rangeEnd, excludeWeekends });
-        setList(r.list ?? []);
-      } else if (tab === "extract") {
-        const r = await processor.process({
-          mode: "list",
-          baseDate,
-          rangeEnd,
-          weekdayFilter: selectedWeekdays,
-        });
-        setList(r.list ?? []);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "計算に失敗しました");
-    }
+    const r = await computeDateView({ tab, baseDate, days, rangeEnd, excludeWeekends, selectedWeekdays });
+    setLive({ key: liveKey, ...r });
   }
 
   async function handleCopyList() {
@@ -132,7 +152,6 @@ export function DateWeekdayTool() {
             type="button"
             onClick={() => {
               setTab(t.value);
-              resetResults();
             }}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               tab === t.value
@@ -225,7 +244,10 @@ export function DateWeekdayTool() {
       {error && <ErrorMessage message={error} />}
 
       {(resultDate || resultWeekday) && (
-        <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        >
           <p className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
             {resultDate}
             {resultWeekday && `（${resultWeekday}）`}
@@ -239,7 +261,10 @@ export function DateWeekdayTool() {
       )}
 
       {list && (
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        >
           <p className="text-xs text-neutral-500 dark:text-neutral-400">{list.length}件</p>
           {list.length > 0 ? (
             <div className="max-h-72 overflow-y-auto rounded-lg border border-neutral-200 dark:border-neutral-800">

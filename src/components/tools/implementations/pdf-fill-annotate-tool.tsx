@@ -1250,7 +1250,7 @@ export function PdfFillAnnotateTool() {
             </p>
           )}
 
-          <div ref={canvasWrapRef} className="w-full">
+          <div ref={canvasWrapRef} data-testid="tool-preview" className="w-full">
             <div
               data-testid="pdf-annotate-canvas"
               className="relative select-none border border-neutral-300 dark:border-neutral-700"

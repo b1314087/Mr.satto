@@ -1,13 +1,57 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { PdfToWordProcessor, type PdfToWordOutput } from "@/lib/processors/browser/pdf-to-word";
+import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
+import { PdfToWordProcessor, previewPdfToWordBlocks, type PdfToWordOutput } from "@/lib/processors/browser/pdf-to-word";
+import type { DocumentBlock } from "@/lib/pdf/paragraph-reconstruction";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+
+/** プレビューに出す先頭ページのブロック数の上限(重くならないよう先頭だけ) */
+const PREVIEW_MAX_BLOCKS = 30;
+
+type WordPreview =
+  | { file: File; hasTextLayer: boolean; blocks: DocumentBlock[] }
+  | { file: File; error: string };
+
+/** 変換後のWord文書の先頭ページのイメージ(見出し・段落・表を、変換と同じ構造推定で表示) */
+function WordPagePreview({ blocks }: { blocks: DocumentBlock[] }) {
+  return (
+    <div className="max-h-96 overflow-y-auto rounded-md border border-neutral-200 bg-white p-4 text-neutral-800 shadow-sm dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100">
+      {blocks.slice(0, PREVIEW_MAX_BLOCKS).map((b, i) => {
+        if (b.type === "heading1") return <h3 key={i} className="mb-2 text-lg font-bold">{b.text}</h3>;
+        if (b.type === "heading2") return <h4 key={i} className="mb-2 text-base font-bold">{b.text}</h4>;
+        if (b.type === "table") {
+          return (
+            <div key={i} className="mb-2 overflow-x-auto">
+              <table className="border-collapse text-xs">
+                <tbody>
+                  {b.rows.map((row, r) => (
+                    <tr key={r}>
+                      {row.map((cell, c) => (
+                        <td key={c} className="border border-neutral-300 px-2 py-1 dark:border-neutral-600">{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        return (
+          <p key={i} className="mb-2 min-h-[1em] whitespace-pre-wrap break-words text-sm">
+            {b.text}
+          </p>
+        );
+      })}
+      {blocks.length > PREVIEW_MAX_BLOCKS && <p className="text-xs text-neutral-400">…(以降は省略)</p>}
+    </div>
+  );
+}
 
 /**
  * PDF→Word（Phase 2-D）。
@@ -23,6 +67,24 @@ export function PdfToWordTool() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfToWordOutput | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
+
+  // ファイルを選んだ時点で、先頭ページの文字から作られるWord文書の見た目をプレビューする
+  const [preview, setPreview] = useState<WordPreview | null>(null);
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    previewPdfToWordBlocks(file)
+      .then((o) => {
+        if (!cancelled) setPreview({ file, hasTextLayer: o.hasTextLayer, blocks: o.blocks });
+      })
+      .catch((e) => {
+        if (!cancelled) setPreview({ file, error: e instanceof Error ? e.message : "プレビューを作成できませんでした" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+  const currentPreview = file && preview && preview.file === file ? preview : null;
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -95,6 +157,31 @@ export function PdfToWordTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (
+        <div data-testid="tool-preview" className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <PdfThumbnails file={file} pages={[1]} maxPages={1} width={160} title="先頭ページ(元のPDF)" className="sm:shrink-0" />
+          <section
+            aria-label="変換後の文章のプレビュー"
+            className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+          >
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+              Word文書の先頭ページのプレビュー(文字・見出し・表のみ)
+            </p>
+            {!currentPreview ? (
+              <p className="text-xs text-neutral-400">読み込み中…</p>
+            ) : "error" in currentPreview ? (
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400">{currentPreview.error}</p>
+            ) : currentPreview.hasTextLayer ? (
+              <WordPagePreview blocks={currentPreview.blocks} />
+            ) : (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                先頭ページに文字情報がないため(スキャン画像のPDFなど)、プレビューでは読み取りません。変換を実行すると画像認識で文字を読み取ります。
+              </p>
+            )}
+          </section>
+        </div>
+      )}
 
       {file && (
         <button

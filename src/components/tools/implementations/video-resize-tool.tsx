@@ -16,6 +16,8 @@ import {
   type OutputContainer,
 } from "@/lib/video/shared";
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
+import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
+import { estimateResizedBytes, formatDuration, resizedDimensions } from "@/lib/video/estimate";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 /**
@@ -125,15 +127,6 @@ export function VideoResizeTool() {
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
-      {previewUrl && (
-        <video
-          src={previewUrl}
-          onLoadedMetadata={handleLoadedMetadata}
-          controls
-          className="max-h-64 w-full rounded-lg bg-black"
-        />
-      )}
-
       {file && meta && (
         <fieldset className="flex flex-col gap-2">
           <legend className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
@@ -199,6 +192,37 @@ export function VideoResizeTool() {
       )}
 
       {file && (
+        <VideoPreviewPanel
+          file={file}
+          previewUrl={previewUrl}
+          meta={meta}
+          onLoadedMetadata={handleLoadedMetadata}
+          outputTitle="変更後の予定"
+          outputRows={(() => {
+            const rows = [{ label: "形式", value: container.toUpperCase() }];
+            if (!meta || meta.width <= 0) return rows;
+            if (target === null) {
+              return [
+                ...rows,
+                { label: "解像度", value: "上で解像度を選ぶと、変更後の解像度とサイズの目安が表示されます" },
+              ];
+            }
+            const out = resizedDimensions(meta.width, meta.height, target);
+            return [
+              ...rows,
+              { label: "解像度", value: `${meta.width}×${meta.height} → ${out.width}×${out.height}` },
+              ...(meta.durationSec > 0 ? [{ label: "長さ", value: formatDuration(meta.durationSec) }] : []),
+              {
+                label: "サイズの目安",
+                value: `約 ${formatBytes(estimateResizedBytes(file.size, meta.width, meta.height, out.width, out.height))}`,
+              },
+            ];
+          })()}
+          outputNote="サイズは画素数からの目安です。実際のサイズは変更後に表示されます。"
+        />
+      )}
+
+      {file && (
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -245,6 +269,7 @@ export function VideoResizeTool() {
               解像度: {result.inputWidth}×{result.inputHeight} → {result.outputWidth}×{result.outputHeight}
             </span>
           </div>
+          <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </div>
       )}
