@@ -69,6 +69,88 @@ function get2dContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 }
 
 // ---------------------------------------------------------------------------
+// カスタムフォント（篆書体・印相体・古印体・隷書体など）の読み込み
+// ---------------------------------------------------------------------------
+//
+// 篆書体・印相体・古印体・隷書体は実印・銀行印などに使われる専門的な書体だが、
+// 調査の結果、これらを無料で「アプリに組み込んでWeb配布」できるライセンスの
+// フォントはほぼ存在しないことが分かった。個人利用は無料でも「フォント
+// ファイル自体の再配布を禁止」という条件が一般的で、Webサイトに埋め込んで
+// 訪問者のブラウザへ配信することは、たとえ表示用途であっても再配布に
+// 当たってしまう。本物に近い書体を使うには、有料のWeb埋め込みライセンス
+// （書体メーカーとの契約）が必要になる。
+//
+// そのため本ツールでは、特定の書体をあらかじめ同梱するのではなく、
+// ユーザー自身が別途入手・契約したフォントファイル(.ttf/.otf/.woff/.woff2)を
+// その場でブラウザのFontFace APIに読み込み、Canvas描画に使う方式を取る。
+// ファイルは常にブラウザ内のメモリ上でのみ扱われ、サーバーへ送信される
+// ことは一切ない（本ファイル冒頭の設計方針のとおり）。
+
+export const STAMP_FONT_LIMITS = {
+  /** フォントファイルの最大サイズ。極端に大きいファイルでのブラウザ負荷を防ぐための実用上の上限 */
+  maxFontFileSizeBytes: 20 * 1024 * 1024,
+} as const;
+
+export interface LoadedCustomFont {
+  /** generateStampCanvasのfontFamilyにそのまま渡す、ブラウザに登録済みのfont-family名 */
+  cssFontFamily: string;
+  /** UI表示用の元のファイル名 */
+  fileName: string;
+}
+
+let customFontSeq = 0;
+
+/**
+ * ユーザーが選択したフォントファイルをFontFace APIでブラウザに読み込み、
+ * Canvas描画で使えるようにする。読み込んだフォントはページ（タブ）を
+ * 閉じる・リロードするまでの間、このブラウザタブ内でのみ有効。
+ */
+export async function loadCustomStampFont(file: File): Promise<LoadedCustomFont> {
+  if (file.size > STAMP_FONT_LIMITS.maxFontFileSizeBytes) {
+    const maxMb = Math.round(STAMP_FONT_LIMITS.maxFontFileSizeBytes / (1024 * 1024));
+    throw new Error(`フォントファイルが大きすぎます（上限${maxMb}MB）。`);
+  }
+  if (!/\.(ttf|otf|woff2?|ttc)$/i.test(file.name)) {
+    throw new Error(
+      "対応していないファイル形式です。.ttf / .otf / .woff / .woff2 のフォントファイルを選択してください。"
+    );
+  }
+
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch {
+    throw new Error("フォントファイルを読み込めませんでした。");
+  }
+
+  customFontSeq += 1;
+  const cssFontFamily = `StampCustomFont${customFontSeq}`;
+  const face = new FontFace(cssFontFamily, buffer);
+  try {
+    await face.load();
+  } catch {
+    throw new Error(
+      "フォントファイルを読み込めませんでした。ファイルが壊れているか、対応していない形式の可能性があります。"
+    );
+  }
+  document.fonts.add(face);
+  return { cssFontFamily, fileName: file.name };
+}
+
+/** 読み込み済みのカスタムフォントをブラウザの登録から解除する（別のフォントに差し替える際の解放用） */
+export function unloadCustomStampFont(cssFontFamily: string): void {
+  for (const face of Array.from(document.fonts)) {
+    if (face.family === cssFontFamily) document.fonts.delete(face);
+  }
+}
+
+/** Canvasのctx.fontに渡す実際のfont-family文字列を組み立てる（カスタムフォント未指定時は従来どおり） */
+function resolveFontFamily(customFontFamily?: string): string {
+  if (!customFontFamily) return CANVAS_FONT_FAMILY;
+  return `"${customFontFamily}", ${CANVAS_FONT_FAMILY}`;
+}
+
+// ---------------------------------------------------------------------------
 // A. 文字から印影を生成
 // ---------------------------------------------------------------------------
 
@@ -89,6 +171,10 @@ export interface StampTextGenerateInput {
   offsetXPct: number;
   /** 文字位置の垂直方向オフセット（サイズに対する割合、-20〜20を想定） */
   offsetYPct: number;
+  /** loadCustomStampFontで読み込んだカスタムフォントのfont-family名。未指定時は標準の明朝/ゴシック系フォントを使う */
+  fontFamily?: string;
+  /** 文字の太さ。未指定時は"bold"（カスタムフォント使用時は、書体本来の形を崩す合成太字を避けるため"normal"を推奨） */
+  fontWeight?: "normal" | "bold";
 }
 
 function splitIntoColumns(chars: string[]): string[][] {
@@ -103,13 +189,14 @@ function fitFontSize(
   text: string,
   startPx: number,
   maxWidth: number,
-  weight = "bold"
+  weight: string,
+  fontFamily: string
 ): number {
   let fontPx = startPx;
-  ctx.font = `${weight} ${fontPx}px ${CANVAS_FONT_FAMILY}`;
+  ctx.font = `${weight} ${fontPx}px ${fontFamily}`;
   while (fontPx > 8 && ctx.measureText(text).width > maxWidth) {
     fontPx -= 1;
-    ctx.font = `${weight} ${fontPx}px ${CANVAS_FONT_FAMILY}`;
+    ctx.font = `${weight} ${fontPx}px ${fontFamily}`;
   }
   return fontPx;
 }
@@ -127,9 +214,11 @@ function drawStampText(
     offsetXPct: number;
     offsetYPct: number;
     color: string;
+    fontFamily: string;
+    fontWeight: string;
   }
 ) {
-  const { text, layout, cx, cy, innerBoxSize, fontScale, offsetXPct, offsetYPct, color } = params;
+  const { text, layout, cx, cy, innerBoxSize, fontScale, offsetXPct, offsetYPct, color, fontFamily, fontWeight } = params;
   const chars = Array.from(text);
   if (chars.length === 0) return;
 
@@ -140,8 +229,8 @@ function drawStampText(
   ctx.textBaseline = "middle";
 
   if (layout === "horizontal" || chars.length === 1) {
-    const fontPx = fitFontSize(ctx, text, innerBoxSize * 0.62 * fontScale, innerBoxSize * 0.92);
-    ctx.font = `bold ${fontPx}px ${CANVAS_FONT_FAMILY}`;
+    const fontPx = fitFontSize(ctx, text, innerBoxSize * 0.62 * fontScale, innerBoxSize * 0.92, fontWeight, fontFamily);
+    ctx.font = `${fontWeight} ${fontPx}px ${fontFamily}`;
     ctx.fillText(text, cx + offsetX, cy + offsetY);
     return;
   }
@@ -153,7 +242,7 @@ function drawStampText(
   const longestCol = Math.max(...columns.map((c) => c.length));
   let fontPx = Math.min(colWidth * 0.85, (innerBoxSize * 0.9) / longestCol) * fontScale;
   fontPx = Math.max(8, fontPx);
-  ctx.font = `bold ${fontPx}px ${CANVAS_FONT_FAMILY}`;
+  ctx.font = `${fontWeight} ${fontPx}px ${fontFamily}`;
 
   columns.forEach((col, ci) => {
     // 縦書きの伝統的な読み順（右の列から左の列へ）に合わせるため、
@@ -217,6 +306,8 @@ export function generateStampCanvas(input: StampTextGenerateInput): HTMLCanvasEl
     offsetXPct: input.offsetXPct,
     offsetYPct: input.offsetYPct,
     color,
+    fontFamily: resolveFontFamily(input.fontFamily),
+    fontWeight: input.fontWeight ?? "bold",
   });
 
   return canvas;

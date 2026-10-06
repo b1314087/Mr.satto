@@ -13,11 +13,13 @@ import {
   autoTrimTransparentMargins,
   cropCanvasRegion,
   generateStampCanvas,
+  loadCustomStampFont,
   loadStampImageToCanvas,
   loadStampPdf,
   removeLightBackground,
   renderStampPdfPage,
   resizeCanvasByScale,
+  unloadCustomStampFont,
   type StampColorId,
   type StampShape,
   type StampTextLayout,
@@ -203,6 +205,52 @@ function TextStampPanel({
   const previewRef = useRef<HTMLCanvasElement>(null);
   const latestCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // カスタムフォント（篆書体・印相体・古印体・隷書体など、ユーザー自身が
+  // 入手したフォントファイル）の読み込み状態。本ツールは特定の印影用書体を
+  // 同梱していない（無料で配布できるライセンスのものがほぼ存在しないため。
+  // electronic-stamp.tsのloadCustomStampFont冒頭コメント参照）。
+  const [customFont, setCustomFont] = useState<{ cssFontFamily: string; fileName: string } | null>(null);
+  const [fontLoading, setFontLoading] = useState(false);
+  const [fontError, setFontError] = useState<string | null>(null);
+  const [boldText, setBoldText] = useState(true);
+  const customFontRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    customFontRef.current = customFont?.cssFontFamily ?? null;
+  }, [customFont]);
+
+  // アンマウント時に読み込んだカスタムフォントをブラウザの登録から解放する
+  useEffect(() => {
+    return () => {
+      if (customFontRef.current) unloadCustomStampFont(customFontRef.current);
+    };
+  }, []);
+
+  async function handleFontFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 同じファイルを選び直しても onChange が発火するようにする
+    if (!file) return;
+    setFontError(null);
+    setFontLoading(true);
+    try {
+      const loaded = await loadCustomStampFont(file);
+      if (customFontRef.current) unloadCustomStampFont(customFontRef.current);
+      setCustomFont(loaded);
+      setBoldText(false); // 印影用フォントは書体自体が太いことが多く、合成太字で形が崩れるのを避ける
+    } catch (err) {
+      setFontError(err instanceof Error ? err.message : "フォントファイルを読み込めませんでした。");
+    } finally {
+      setFontLoading(false);
+    }
+  }
+
+  function resetToDefaultFont() {
+    if (customFontRef.current) unloadCustomStampFont(customFontRef.current);
+    setCustomFont(null);
+    setBoldText(true);
+    setFontError(null);
+  }
+
   useEffect(() => {
     const target = previewRef.current;
     if (!target) return;
@@ -217,6 +265,8 @@ function TextStampPanel({
       color,
       offsetXPct,
       offsetYPct,
+      fontFamily: customFont?.cssFontFamily,
+      fontWeight: boldText ? "bold" : "normal",
     });
     latestCanvasRef.current = generated;
     target.width = generated.width;
@@ -226,7 +276,20 @@ function TextStampPanel({
       ctx.clearRect(0, 0, target.width, target.height);
       ctx.drawImage(generated, 0, 0);
     }
-  }, [text, shape, layout, sizePx, fontScale, borderWidthRatio, paddingRatio, color, offsetXPct, offsetYPct]);
+  }, [
+    text,
+    shape,
+    layout,
+    sizePx,
+    fontScale,
+    borderWidthRatio,
+    paddingRatio,
+    color,
+    offsetXPct,
+    offsetYPct,
+    customFont,
+    boldText,
+  ]);
 
   const textTooLong = Array.from(text).length > STAMP_LIMITS.maxTextLength;
 
@@ -342,6 +405,48 @@ function TextStampPanel({
             onChange={(e) => setFontScale(Number(e.target.value))}
           />
         </label>
+
+        <fieldset className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+          <legend className="mb-1 px-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">フォント</legend>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            標準では一般的なゴシック体で描画します。篆書体・印相体・古印体・隷書体などをお使いになりたい場合は、
+            お手持ちのフォントファイル（.ttf / .otf / .woff / .woff2）を選択してください。これらの書体は無料で
+            アプリに組み込んで配布できるライセンスのものがほぼ無いため、本ツールにはあらかじめ同梱していません。
+            選択したファイルはこのブラウザの中だけで処理され、サーバーには送信されません。
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="w-fit cursor-pointer rounded-lg bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700">
+              フォントファイルを選択
+              <input
+                type="file"
+                accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+                className="hidden"
+                onChange={handleFontFileChange}
+                disabled={fontLoading}
+              />
+            </label>
+            {customFont && (
+              <button
+                type="button"
+                onClick={resetToDefaultFont}
+                className="rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+              >
+                標準フォントに戻す
+              </button>
+            )}
+          </div>
+          {fontLoading && <p className="text-xs text-neutral-500 dark:text-neutral-400">読み込み中...</p>}
+          {customFont && !fontLoading && (
+            <p className="text-xs text-neutral-600 dark:text-neutral-300">使用中: {customFont.fileName}</p>
+          )}
+          {fontError && <p className="text-xs text-red-600 dark:text-red-400">{fontError}</p>}
+          {customFont && (
+            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+              <input type="checkbox" checked={boldText} onChange={(e) => setBoldText(e.target.checked)} />
+              太字で描画する
+            </label>
+          )}
+        </fieldset>
 
         <details className="rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-700">
           <summary className="cursor-pointer font-medium text-neutral-700 dark:text-neutral-200">
