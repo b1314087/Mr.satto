@@ -19,6 +19,7 @@ import type { PdfProcessorOutput } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { parseWorkbookPageSettings, type CellRangeRef, type SheetPageSettings } from "@/lib/excel/ooxml-page-settings";
 import { formatExcelDate } from "@/lib/excel/excel-date-format";
+import { formatExcelNumber } from "@/lib/excel/excel-number-format";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
 
 /**
@@ -113,7 +114,11 @@ export async function readExcelSheets(file: File): Promise<RawExcelSheet[]> {
   return sheetsData.map((s) => ({ name: s.sheet, rows: s.data as RawCellValue[][] }));
 }
 
-function cellToDisplayString(value: RawCellValue, dateFormatCode: string | null = null): string {
+function cellToDisplayString(
+  value: RawCellValue,
+  dateFormatCode: string | null = null,
+  numFormatCode: string | null = null
+): string {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) {
     // read-excel-fileはExcelの日付をUTC基準のDateで返す。ローカル時刻(getHours等)で読むと
@@ -121,6 +126,11 @@ function cellToDisplayString(value: RawCellValue, dateFormatCode: string | null 
     return formatExcelDate(value, dateFormatCode);
   }
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  // 数値はExcelの表示書式(桁区切り・小数桁・%・通貨記号など)で整形する。解釈できない書式は元の値のまま。
+  if (typeof value === "number" && numFormatCode) {
+    const formatted = formatExcelNumber(value, numFormatCode);
+    if (formatted !== null) return formatted;
+  }
   // 文字列として保存されている「先頭ゼロ」等の値は、read-excel-fileが返した
   // 型(string)をそのまま尊重する（勝手にNumber()変換しない）。
   return String(value);
@@ -452,7 +462,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         return defaultRowPt ? (defaultRowPt * fs) / defaultFontSize : fs + 3;
       }
       function cellDisplayText(row: RawCellValue[], origRow: number, origCol: number): string {
-        return cellToDisplayString(row[origCol] ?? null, settings?.cellDateFormat.get(`${origRow}:${origCol}`) ?? null);
+        return cellToDisplayString(
+          row[origCol] ?? null,
+          settings?.cellDateFormat.get(`${origRow}:${origCol}`) ?? null,
+          settings?.cellNumFormat.get(`${origRow}:${origCol}`) ?? null
+        );
       }
 
       // --- 結合セル: アンカー(左上)セルの文字を結合範囲全体にまたがって描画する ---
@@ -569,6 +583,27 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       }
 
       /**
+       * ページ内の全セルの背景色を、文字より先にまとめて塗る。セルごとに「塗る→文字」を繰り返すと、
+       * 結合セルの文字(右隣・下隣のセルへまたがる部分)を、後から塗る隣のセルの背景色が上から隠してしまう。
+       */
+      function drawPageFills(page: PDFPage, colGroup: number[], rowsOnPage: number[], startTop: number, startX: number) {
+        let top = startTop;
+        const s = grid.scale;
+        for (const localRowIdx of rowsOnPage) {
+          const origRow = localToOriginalRow[localRowIdx];
+          const rowH = rowHeights[localRowIdx] * s;
+          let fx = startX;
+          for (const localColIdx of colGroup) {
+            const origCol = localToOriginalCol[localColIdx];
+            const w = colWidths[localColIdx] * s;
+            drawCellFill(page, fx, top, w, rowH, origRow, origCol);
+            fx += w;
+          }
+          top -= rowH;
+        }
+      }
+
+      /**
        * rowGroupLocalIdxs: このページに描画する行(localToOriginalRow基準のローカル行番号)。
        * 縦方向に結合されたセルの高さを、ページ内に実際に含まれる行だけで合計するために使う。
        */
@@ -590,11 +625,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         // 既定の文字色: Excelの「自動」(黒)。以前は本文を薄いグレーで描いていた
         void isHeader;
         const color = rgb(...TEXT_COLOR);
+        // 背景色は、ページ全体ぶんを先にまとめて塗ってある(drawPageFills)。
         colGroup.forEach((localColIdx, groupPos) => {
           const origCol = localToOriginalCol[localColIdx];
           const key = `${origRow}:${origCol}`;
           const w = colWidths[localColIdx] * s;
-          drawCellFill(page, x, top, w, rowH, origRow, origCol);
 
           // 結合セル: アンカー以外は文字を描かない。アンカーは結合範囲(このページに含まれる分)全体を文字の領域にする。
           const merge = mergeByCell.get(key);
@@ -620,11 +655,16 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           if (text !== "") {
             const value = row[origCol] ?? null;
             const align = settings?.cellAlign.get(key) ?? null;
-            const fs = fontSizeFor(origRow, origCol) * s;
+            let fs = fontSizeFor(origRow, origCol) * s;
             const lh = lineHeightFor(fontSizeFor(origRow, origCol)) * s;
             const wrap = align?.wrapText ?? false;
+            // 「縮小して全体を表示」のセルは幅が狭いことが多い(1文字ぶんの欄など)ため、左右の余白を小さくして文字を大きく保つ
+            const padH = align?.shrinkToFit ? Math.min(pad, 1.5 * s) : pad;
             // 横揃えの既定(general): 文字は左、数値・日付は右(Excelと同じ)
-            const horizontal = align?.horizontal ?? (typeof value === "number" || value instanceof Date ? "right" : "left");
+            const horizontalRaw = align?.horizontal ?? (typeof value === "number" || value instanceof Date ? "right" : "left");
+            // 均等割り付け(distributed)は、文字を領域の幅いっぱいに均等に並べる(下の描画で処理する)。ここでは左寄せ扱い。
+            const distributed = horizontalRaw === "distributed";
+            const horizontal: "left" | "center" | "right" = distributed ? "left" : horizontalRaw;
             const vertical = align?.vertical ?? "bottom"; // Excelの既定の縦位置は「下揃え」
 
             let lines: string[];
@@ -632,10 +672,10 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             // (Excelの表示と同じ。文字そのものはPDFに残るので、検索・コピーでも欠けない)。
             let clipWidth: number | null = null;
             if (wrap) {
-              lines = wrapByWidth(text, font, fs, boxW - pad * 2);
+              lines = wrapByWidth(text, font, fs, boxW - padH * 2);
             } else {
               // 折り返さないセルは1行で描く。左揃えの文字は、右隣の空セルへはみ出して表示される(Excelと同じ)。
-              let avail = boxW - pad * 2;
+              let avail = boxW - padH * 2;
               if (!merge && horizontal === "left") {
                 for (let gp = groupPos + 1; gp < colGroup.length; gp++) {
                   const nextOrigCol = localToOriginalCol[colGroup[gp]];
@@ -645,7 +685,12 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
               }
               const oneLine = text.replace(/\r\n|\r|\n/g, " ");
               lines = [oneLine];
-              if (font.widthOfTextAtSize(oneLine, fs) > avail) clipWidth = avail;
+              const oneLineW = font.widthOfTextAtSize(oneLine, fs);
+              if (oneLineW > avail && align?.shrinkToFit && avail > 0) {
+                // 「縮小して全体を表示」: セルの幅に収まるよう文字を小さくする(Excelと同じ。小さくしすぎないよう下限あり)
+                fs = Math.max(fs * 0.3, (fs * avail) / oneLineW);
+              }
+              if (font.widthOfTextAtSize(oneLine, fs) > avail + 0.01) clipWidth = avail;
             }
 
             const fits = Math.max(1, Math.floor(boxH / lh));
@@ -660,12 +705,25 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             const cellColor = explicitFontColor ? rgb(...hexToRgb01(explicitFontColor)) : color;
             const cellBoldFlag = boldFor(origRow, origCol);
             if (clipWidth !== null) {
-              page.pushOperators(pushGraphicsState(), rectangle(x, top - boxH, clipWidth, boxH), clip(), endPath());
+              // クリップ範囲はセルの左端(x)から、文字領域の右端(左右の余白ぶんを含む)まで。
+              // 余白ぶんを含めないと、右揃えの文字(例: 幅の狭いセルの「年」「月」)の端が欠ける。
+              page.pushOperators(pushGraphicsState(), rectangle(x, top - boxH, clipWidth + padH, boxH), clip(), endPath());
             }
             visible.forEach((line, li) => {
               const lineW = font.widthOfTextAtSize(line, fs);
               const baseline = blockTop - li * lh - (lh - fs) / 2 - 0.88 * fs;
-              drawTextRobust(page, line, lineStartX(horizontal, x, boxW, lineW, pad), baseline, fs, cellColor, font, cellBoldFlag);
+              const chars = Array.from(line);
+              if (distributed && !wrap && chars.length > 1 && lineW < boxW - padH * 2) {
+                // 均等割り付け: 文字の間隔を均等にあけて、領域の幅いっぱいに並べる
+                const gap = (boxW - padH * 2 - lineW) / (chars.length - 1);
+                let cx = x + padH;
+                for (const ch of chars) {
+                  drawTextRobust(page, ch, cx, baseline, fs, cellColor, font, cellBoldFlag);
+                  cx += font.widthOfTextAtSize(ch, fs) + gap;
+                }
+              } else {
+                drawTextRobust(page, line, lineStartX(horizontal, x, boxW, lineW, padH), baseline, fs, cellColor, font, cellBoldFlag);
+              }
             });
             if (clipWidth !== null) page.pushOperators(popGraphicsState());
           }
@@ -741,6 +799,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             cursorY -= Math.max(0, (contentHeightForData - tableHeightOnPage) / 2);
           }
 
+          drawPageFills(page, colGroup, rowsOnPage, cursorY, startX);
           if (headerLocalRowIndex >= 0) {
             cursorY = drawRow(page, headerLocalRowIndex, colGroup, cursorY, true, rowsOnPage, startX);
           }

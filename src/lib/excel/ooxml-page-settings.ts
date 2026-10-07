@@ -115,15 +115,20 @@ export interface SheetPageSettings {
    * 令和8年9月25日 等)の情報は持たないため、styles.xmlから読み取る。
    */
   cellDateFormat: Map<string, string>;
+  /** 数値として表示するセルの書式コード(日付以外。General・@は含まない) */
+  cellNumFormat: Map<string, string>;
   /** <printOptions horizontalCentered/verticalCentered>: ページ内で表を左右/上下の中央に配置する */
   horizontalCentered: boolean;
   verticalCentered: boolean;
 }
 
 export interface CellAlign {
-  horizontal: "left" | "center" | "right" | null;
+  /** distributed = 均等割り付け(文字を領域の幅いっぱいに均等に並べる) */
+  horizontal: "left" | "center" | "right" | "distributed" | null;
   vertical: "top" | "center" | "bottom" | null;
   wrapText: boolean;
+  /** 縮小して全体を表示（セルの幅に収まるよう文字を小さくする） */
+  shrinkToFit: boolean;
 }
 
 export interface HeaderFooterSections {
@@ -160,6 +165,7 @@ function emptySheetSettings(): SheetPageSettings {
     cellAlign: new Map(),
     cellFontSizePt: new Map(),
     cellDateFormat: new Map(),
+    cellNumFormat: new Map(),
     horizontalCentered: false,
     verticalCentered: false,
   };
@@ -359,6 +365,8 @@ interface ResolvedCellStyle {
   align: CellAlign | null;
   /** 日付として解釈できる数値書式(numFmt)の書式コード。日付書式でなければnull */
   dateFormatCode: string | null;
+  /** 日付以外の数値書式の書式コード(General・@なら null) */
+  numFormatCode: string | null;
 }
 
 /** styles.xml全体から読み取った、セルスタイル一覧とブック既定フォントの情報 */
@@ -373,6 +381,20 @@ interface ParsedStyles {
  * 表示に合わせた書式コードへ解決する。ID 14(「mm-dd-yy」と記載されることが多い)は、
  * 実際のExcelでは地域設定に従い日本語環境では「2026/9/25」と表示される。
  */
+/** 組み込みの数値書式ID(ECMA-376)のうち、日付以外でよく使われるもの */
+const BUILTIN_NUMBER_FORMATS: Record<number, string> = {
+  1: "0",
+  2: "0.00",
+  3: "#,##0",
+  4: "#,##0.00",
+  9: "0%",
+  10: "0.00%",
+  37: "#,##0_);(#,##0)",
+  38: "#,##0_);[Red](#,##0)",
+  39: "#,##0.00_);(#,##0.00)",
+  40: "#,##0.00_);[Red](#,##0.00)",
+};
+
 const BUILTIN_DATE_FORMATS: Record<number, string> = {
   14: "yyyy/m/d",
   15: "d-mmm-yy",
@@ -647,23 +669,35 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
         const h = alignEl.getAttribute("horizontal");
         const v = alignEl.getAttribute("vertical");
         const wrap = alignEl.getAttribute("wrapText");
+        const shrink = alignEl.getAttribute("shrinkToFit");
         align = {
           // centerContinuous(選択範囲内で中央)は結合セルの中央揃えに近いためcenter扱いにする。
           // fill/justify/distributed等は今回は再現せず、既定(null)として扱う。
           horizontal:
-            h === "center" || h === "centerContinuous" ? "center" : h === "right" ? "right" : h === "left" ? "left" : null,
+            h === "center" || h === "centerContinuous"
+              ? "center"
+              : h === "right"
+                ? "right"
+                : h === "left"
+                  ? "left"
+                  : h === "distributed"
+                    ? "distributed"
+                    : null,
           vertical: v === "center" ? "center" : v === "top" ? "top" : v === "bottom" ? "bottom" : null,
           wrapText: wrap === "1" || wrap === "true",
+          shrinkToFit: shrink === "1" || shrink === "true",
         };
       }
 
       // 数値書式が日付・時刻か
       const numFmtIdAttr = xf.getAttribute("numFmtId");
       let dateFormatCode: string | null = null;
+      let numFormatCode: string | null = null;
       if (numFmtIdAttr !== null) {
         const numFmtId = Number(numFmtIdAttr);
-        const code = customNumFmts.get(numFmtId) ?? BUILTIN_DATE_FORMATS[numFmtId] ?? null;
+        const code = customNumFmts.get(numFmtId) ?? BUILTIN_DATE_FORMATS[numFmtId] ?? BUILTIN_NUMBER_FORMATS[numFmtId] ?? null;
         if (code && isDateFormatCode(code)) dateFormatCode = code;
+        else if (code && code !== "General" && code !== "@") numFormatCode = code;
       }
 
       result.push({
@@ -674,6 +708,7 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
         fontSizePt: fontDef?.sizePt ?? null,
         align,
         dateFormatCode,
+        numFormatCode,
       });
     }
   }
@@ -762,6 +797,7 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
   const cellAlign = new Map<string, CellAlign>();
   const cellFontSizePt = new Map<string, number>();
   const cellDateFormat = new Map<string, string>();
+  const cellNumFormat = new Map<string, string>();
 
   const colsEl = doc.getElementsByTagName("cols")[0];
   if (colsEl) {
@@ -806,6 +842,7 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
         if (style.align) cellAlign.set(key, style.align);
         if (style.fontSizePt) cellFontSizePt.set(key, style.fontSizePt);
         if (style.dateFormatCode) cellDateFormat.set(key, style.dateFormatCode);
+        if (style.numFormatCode) cellNumFormat.set(key, style.numFormatCode);
       }
     }
   }
@@ -821,6 +858,7 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
   result.cellAlign = cellAlign;
   result.cellFontSizePt = cellFontSizePt;
   result.cellDateFormat = cellDateFormat;
+  result.cellNumFormat = cellNumFormat;
 
   // 結合セル: <mergeCells><mergeCell ref="A1:J1"/>
   const merges: CellRangeRef[] = [];
@@ -896,7 +934,13 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
     for (const rel of Array.from(relsDoc.getElementsByTagName("Relationship"))) {
       const id = rel.getAttribute("Id");
       const target = rel.getAttribute("Target");
-      if (id && target) ridToTarget.set(id, target.replace(/^\.?\//, ""));
+      // Target が "/xl/worksheets/sheet1.xml" のように先頭が「/」の場合は、ファイル全体(パッケージ)の
+      // ルートからの絶対パス(openpyxl等の一部のソフトがこの形式で書き出す)。Excel本体が書き出す
+      // "worksheets/sheet1.xml" のような相対パスと区別して、最終的に「xl/」からの相対へそろえる。
+      if (id && target) {
+        const normalized = target.startsWith("/") ? target.replace(/^\/xl\//, "").replace(/^\//, "") : target.replace(/^\.\//, "");
+        ridToTarget.set(id, normalized);
+      }
     }
 
     // シート名の並び順(workbook.xmlの<sheets>順)。definedNamesのlocalSheetIdはこの順序のインデックス。
