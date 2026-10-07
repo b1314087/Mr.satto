@@ -61,6 +61,7 @@ test("敬称なしにすると、宛名に様も御中も付かない。横向�
   await page.goto("/tools/envelope-address");
   await fillRecipient(page);
   await page.getByRole("button", { name: "横書き" }).click();
+  await page.getByRole("button", { name: "横向き" }).click();
   await page.getByRole("button", { name: "なし", exact: true }).click();
   const pdf = await makePdf(page);
   const size = pageSize(pdf);
@@ -135,4 +136,17 @@ test("宛先は郵便番号・住所・氏名に分けず、1つの枠に自由�
   await expect(page.locator('input[placeholder="住所"]')).toHaveCount(0);
   await expect(page.getByLabel("宛先1")).toBeVisible();
   await expect(page.getByLabel("宛先のX位置の数値")).toHaveCount(1);
+});
+
+test("書字方向を切り替えても、封筒の向きは勝手に変わらない", async ({ page }) => {
+  await page.goto("/tools/envelope-address");
+  await fillRecipient(page);
+  const preview = page.getByTestId("tool-preview");
+  await expect(preview).toContainText("縦向き");
+  await page.getByRole("button", { name: "横書き" }).click();
+  await expect(preview).toContainText("縦向き");
+  await page.getByRole("button", { name: "横向き" }).click();
+  await expect(preview).toContainText("横向き");
+  await page.getByRole("button", { name: "縦書き" }).click();
+  await expect(preview).toContainText("横向き");
 });

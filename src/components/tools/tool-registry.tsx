@@ -67,12 +67,6 @@ const UnitConverterTool = dynamic(() =>
 const GradientGeneratorTool = dynamic(() =>
   import("./implementations/gradient-generator-tool").then((m) => m.GradientGeneratorTool)
 );
-const CitationFormatterTool = dynamic(() =>
-  import("./implementations/citation-formatter-tool").then((m) => m.CitationFormatterTool)
-);
-const MeetingNotesTool = dynamic(() =>
-  import("./implementations/meeting-notes-tool").then((m) => m.MeetingNotesTool)
-);
 const BackgroundRemoverTool = dynamic(() =>
   import("./implementations/background-remover-tool").then((m) => m.BackgroundRemoverTool)
 );
@@ -360,10 +354,6 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <UnitConverterTool />;
     case "gradient-generator":
       return <GradientGeneratorTool />;
-    case "citation-formatter":
-      return <CitationFormatterTool />;
-    case "meeting-notes-template":
-      return <MeetingNotesTool />;
     case "background-remover":
       return <BackgroundRemoverTool />;
     case "pdf-password-protect":

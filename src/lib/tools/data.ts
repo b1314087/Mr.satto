@@ -831,16 +831,6 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["単位", "換算", "長さ", "重さ", "温度", "面積", "坪", "畳", "インチ", "ポンド"],
   },
-  {
-    id: "citation-formatter",
-    name: "参考文献リスト整形",
-    category: "other",
-    description: "レポート・論文用の参考文献リストを日本語形式・APA・IEEEで整形します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["レポート", "引用", "参考文献", "APA", "IEEE", "論文", "文献リスト"],
-  },
 
   // ------------------------------------------------------------------
   // 仕事
@@ -855,16 +845,6 @@ export const tools: Tool[] = [
     processor: "browser",
     keywords: ["qr", "QRコード", "二次元コード", "名刺", "連絡先", "vcard"],
     featured: true,
-  },
-  {
-    id: "meeting-notes-template",
-    name: "議事録テンプレート生成",
-    category: "other",
-    description: "会議名・参加者・議題を入力するだけで、議事録のひな形を作成します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["議事録", "会議", "テンプレート", "ひな形", "ミーティング"],
   },
   {
     id: "estimate-generator",

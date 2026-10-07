@@ -325,10 +325,7 @@ export function EnvelopeAddressTool() {
                   onClick={() => {
                     setWritingMode(mode);
                     resetBlockPositions();
-                    // 縦書きは封筒を縦長に、横書きは横長にするのが一般的なため、向きも合わせる(あとから自由に変更できる)
-                    setOrientation(
-                      mode === "vertical" ? "portrait" : "landscape",
-                    );
+                    // 封筒の向きは書字方向とは独立。ここでは変えない
                     clearResult();
                   }}
                   className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
