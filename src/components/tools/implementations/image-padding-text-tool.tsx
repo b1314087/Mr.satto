@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
+import { SliderField } from "@/components/common/slider-field";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
@@ -228,18 +229,9 @@ function SettingsFields({
           className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
         />
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-300">
-            サイズ
-            <input
-              type="number"
-              min={6}
-              max={MAX_FONT_SIZE}
-              value={values.fontSize}
-              onChange={(e) => onChange("fontSize", Number(e.target.value))}
-              className="w-16 rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            />
-            px
-          </label>
+          <div className="w-full sm:w-72">
+            <SliderField label="文字サイズ" value={values.fontSize} min={6} max={MAX_FONT_SIZE} unit="px" onChange={(v) => onChange("fontSize", v)} />
+          </div>
           <label className="flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-300">
             色
             <input

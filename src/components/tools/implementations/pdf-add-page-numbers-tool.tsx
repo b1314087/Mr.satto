@@ -15,6 +15,7 @@ import {
 } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { SliderField } from "@/components/common/slider-field";
 
 const POSITIONS: { value: PageNumberPosition; label: string }[] = [
   { value: "bottom-left", label: "左下" },
@@ -114,16 +115,7 @@ export function PdfAddPageNumbersTool() {
             </div>
           </div>
 
-          <label className="flex flex-col gap-1 text-sm">
-            フォントサイズ: {fontSize}pt
-            <input
-              type="range"
-              min={6}
-              max={24}
-              value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
-            />
-          </label>
+          <SliderField label="フォントサイズ" value={fontSize} min={6} max={24} unit="pt" onChange={setFontSize} />
         </div>
       )}
 

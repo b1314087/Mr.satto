@@ -13,6 +13,7 @@ import { createEmptyField, type ColumnMapping, type FieldDefinition, type Parsed
 import { FormToIndividualPdfsProcessor, type FilenameStrategy } from "@/lib/processors/browser/form-to-individual-pdfs";
 import { readCsvFile } from "@/lib/utils/csv";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
+import { SliderField } from "@/components/common/slider-field";
 
 /**
  * フォーム回答から個別PDFを一括作成（Phase 11 ツール②）。
@@ -523,15 +524,17 @@ export function FormToIndividualPdfsTool() {
                     </label>
                     {field.dataType === "text" && (
                       <>
-                        <label className="flex items-center gap-1">
-                          文字サイズ
-                          <input
-                            type="number"
+                        <div className="w-56">
+                          <SliderField
+                            label="文字サイズ"
                             value={field.fontSize}
-                            onChange={(e) => updateField(field.id, { fontSize: Math.max(4, Number(e.target.value)) })}
-                            className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                            min={4}
+                            max={96}
+                            inputMax={400}
+                            unit="pt"
+                            onChange={(v) => updateField(field.id, { fontSize: v })}
                           />
-                        </label>
+                        </div>
                         <select
                           value={field.align}
                           onChange={(e) => updateField(field.id, { align: e.target.value as FieldDefinition["align"] })}

@@ -23,6 +23,7 @@ import {
   type PaperOrientation,
 } from "@/lib/print/paper-sizes";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { SliderField } from "@/components/common/slider-field";
 
 /**
  * 画像レイアウトツール（Mr.Satto 次工程フェーズの中心ツール）。
@@ -626,17 +627,16 @@ export function ImageLayoutTool() {
               className="w-full rounded-md border border-neutral-300 bg-white p-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
             />
             <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2">
-                文字サイズ
-                <input
-                  type="number"
+              <div className="w-full sm:w-72">
+                <SliderField
+                  label="文字サイズ"
+                  value={selectedItem.fontSize ?? 24}
                   min={6}
                   max={400}
-                  value={selectedItem.fontSize ?? 24}
-                  onChange={(e) => updateItem(selectedItem.id, { fontSize: Number(e.target.value) })}
-                  className="w-20 rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                  unit="px"
+                  onChange={(v) => updateItem(selectedItem.id, { fontSize: v })}
                 />
-              </label>
+              </div>
               <label className="flex items-center gap-2">
                 色
                 <input

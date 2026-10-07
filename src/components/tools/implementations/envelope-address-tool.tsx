@@ -14,9 +14,23 @@ import {
   type EnvelopeWritingMode,
   type EnvelopeOrientation,
   type EnvelopeHonorific,
-  type EnvelopeTextStyle,
+  type EnvelopeBlocks,
+  type EnvelopeFreeText,
 } from "@/lib/processors/browser/envelope-address";
-import { DEFAULT_SIZES, DEFAULT_TEXT_STYLE, HONORIFIC_LABELS, MAX_FONT_PT, MIN_FONT_PT } from "@/lib/print/envelope-layout";
+import {
+  defaultBlocks,
+  ENVELOPE_BLOCK_IDS,
+  ENVELOPE_BLOCK_LABELS,
+  HONORIFIC_LABELS,
+  MAX_FONT_PT,
+  MIN_FONT_PT,
+  newFreeText,
+  resolveBlocks,
+  type EnvelopeBlockId,
+} from "@/lib/print/envelope-layout";
+import { resolveEnvelopePageSizePt } from "@/lib/print/envelope-sizes";
+import { approxWidth } from "./shared/approx-text";
+import { SliderField } from "@/components/common/slider-field";
 import { ENVELOPE_SIZE_IDS, ENVELOPE_SIZE_LABELS, type EnvelopeSizeId } from "@/lib/print/envelope-sizes";
 import { parseTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
@@ -72,9 +86,11 @@ function PersonFields({
 export function EnvelopeAddressTool() {
   const [envelopeSize, setEnvelopeSize] = useState<EnvelopeSizeId>("chou3");
   const [writingMode, setWritingMode] = useState<EnvelopeWritingMode>("vertical");
-  const [orientation, setOrientation] = useState<EnvelopeOrientation>("landscape");
+  const [orientation, setOrientation] = useState<EnvelopeOrientation>("portrait");
   const [honorific, setHonorific] = useState<EnvelopeHonorific>("sama");
-  const [style, setStyle] = useState<EnvelopeTextStyle>(DEFAULT_TEXT_STYLE);
+  const [blocks, setBlocks] = useState<EnvelopeBlocks>(defaultBlocks);
+  const [freeTexts, setFreeTexts] = useState<EnvelopeFreeText[]>([]);
+  const [nextFreeId, setNextFreeId] = useState(1);
   const [recipients, setRecipients] = useState<EnvelopePerson[]>([emptyPerson()]);
   const [sender, setSender] = useState<EnvelopePerson>(emptyPerson());
   const [useSender, setUseSender] = useState(false);
@@ -93,6 +109,25 @@ export function EnvelopeAddressTool() {
   function clearResult() {
     setResult(null);
     setStatus("idle");
+  }
+
+  /** 書字方向・封筒の向きが変わると標準の位置も変わるため、位置の指定だけをもとに戻す */
+  function resetBlockPositions() {
+    setBlocks((prev) => {
+      const next = { ...prev };
+      for (const id of ENVELOPE_BLOCK_IDS) next[id] = { ...prev[id], x: null, y: null };
+      return next;
+    });
+  }
+
+  function updateBlock(id: EnvelopeBlockId, patch: Partial<EnvelopeBlocks[EnvelopeBlockId]>) {
+    setBlocks((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+    clearResult();
+  }
+
+  function updateFree(id: string, patch: Partial<EnvelopeFreeText>) {
+    setFreeTexts((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+    clearResult();
   }
 
   async function handleImportFile(files: File[]) {
@@ -123,7 +158,7 @@ export function EnvelopeAddressTool() {
     clearResult();
   }
 
-  const input = { envelopeSize, writingMode, orientation, honorific, style, recipients, sender: useSender ? sender : null };
+  const input = { envelopeSize, writingMode, orientation, honorific, blocks, freeTexts, recipients, sender: useSender ? sender : null };
   const validationError = validateEnvelopeAddressInput(input);
 
   async function handleRun() {
@@ -151,6 +186,23 @@ export function EnvelopeAddressTool() {
   );
   const safePreviewIndex = Math.min(previewIndex, Math.max(0, validRecipients.length - 1));
   const previewPerson = validRecipients[safePreviewIndex];
+
+  // スライダーの現在値（位置を指定していない項目は、標準の位置）
+  const pageSize = resolveEnvelopePageSizePt(envelopeSize, orientation);
+  const placements = resolveBlocks(
+    {
+      width: pageSize.width,
+      height: pageSize.height,
+      writingMode,
+      honorific,
+      blocks,
+      freeTexts,
+      recipient: previewPerson,
+      sender: useSender ? sender : null,
+    },
+    approxWidth
+  );
+  const visibleBlockIds = ENVELOPE_BLOCK_IDS.filter((id) => useSender || !id.startsWith("s"));
 
   return (
     <div className="flex flex-col gap-6">
@@ -184,6 +236,7 @@ export function EnvelopeAddressTool() {
                 type="button"
                 onClick={() => {
                   setWritingMode(mode);
+                  resetBlockPositions();
                   // 縦書きは封筒を縦長に、横書きは横長にするのが一般的なため、向きも合わせる(あとから自由に変更できる)
                   setOrientation(mode === "vertical" ? "portrait" : "landscape");
                   clearResult();
@@ -210,6 +263,7 @@ export function EnvelopeAddressTool() {
                 aria-pressed={orientation === o}
                 onClick={() => {
                   setOrientation(o);
+                  resetBlockPositions();
                   clearResult();
                 }}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -244,50 +298,109 @@ export function EnvelopeAddressTool() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="text-sm font-medium">文字のサイズと太字（サイズを空にすると標準の大きさ）</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {(
-            [
-              { label: "宛名", sizeKey: "nameSize", boldKey: "nameBold", def: DEFAULT_SIZES[writingMode].name },
-              { label: "住所", sizeKey: "addressSize", boldKey: "addressBold", def: DEFAULT_SIZES[writingMode].address },
-              { label: "差出人", sizeKey: "senderSize", boldKey: "senderBold", def: DEFAULT_SIZES[writingMode].sender },
-            ] as const
-          ).map((f) => (
-            <div key={f.label} className="flex flex-col gap-1.5 text-sm">
-              <label className="flex flex-col gap-1 text-neutral-600 dark:text-neutral-300">
-                {f.label}の文字サイズ（pt）
-                <input
-                  type="number"
-                  inputMode="decimal"
+      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <p className="text-sm font-medium">文字の大きさ・位置（スライダーで調整。PDFと同じ配置がプレビューに出ます）</p>
+        {visibleBlockIds.map((id) => {
+          const label = ENVELOPE_BLOCK_LABELS[id];
+          const pl = placements[id];
+          const b = blocks[id];
+          return (
+            <details key={id} open={id === "rName"} className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+              <summary className="cursor-pointer text-sm font-medium">{label}</summary>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <SliderField
+                  label={`${label}の文字サイズ`}
+                  value={pl.size}
                   min={MIN_FONT_PT}
                   max={MAX_FONT_PT}
-                  step={1}
-                  value={style[f.sizeKey] ?? ""}
-                  placeholder={`標準 ${f.def}`}
-                  aria-label={`${f.label}の文字サイズ`}
-                  onChange={(e) => {
-                    const v = e.target.value === "" ? null : e.target.valueAsNumber;
-                    setStyle((prev) => ({ ...prev, [f.sizeKey]: v }));
-                    clearResult();
-                  }}
-                  className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                  unit="pt"
+                  onChange={(v) => updateBlock(id, { size: v })}
                 />
-              </label>
-              <label className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
-                <input
-                  type="checkbox"
-                  checked={style[f.boldKey]}
-                  onChange={(e) => {
-                    setStyle((prev) => ({ ...prev, [f.boldKey]: e.target.checked }));
-                    clearResult();
-                  }}
+                <SliderField
+                  label={`${label}のX位置`}
+                  value={pl.xPct}
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  unit="%"
+                  hint="左右の位置（右へ行くほど大きい）"
+                  onChange={(v) => updateBlock(id, { x: v })}
                 />
-                {f.label}を太字にする
-              </label>
+                <SliderField
+                  label={`${label}のY位置`}
+                  value={pl.yPct}
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  unit="%"
+                  hint="上下の位置（下へ行くほど大きい）"
+                  onChange={(v) => updateBlock(id, { y: v })}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
+                  <input type="checkbox" checked={b.bold} onChange={(e) => updateBlock(id, { bold: e.target.checked })} />
+                  {label}を太字にする
+                </label>
+                <button
+                  type="button"
+                  onClick={() => updateBlock(id, { size: null, x: null, y: null })}
+                  className="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                >
+                  {label}を標準に戻す
+                </button>
+              </div>
+            </details>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <p className="text-sm font-medium">自由に入力するテキスト（「在中」「請求書在中」など。すべての封筒に同じ位置で印刷）</p>
+        {freeTexts.map((f, i) => (
+          <div key={f.id} className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
+            <div className="flex items-start gap-2">
+              <textarea
+                value={f.text}
+                rows={2}
+                aria-label={`自由テキスト${i + 1}の内容`}
+                placeholder="印刷する文字を入力（改行できます）"
+                onChange={(e) => updateFree(f.id, { text: e.target.value })}
+                className="flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setFreeTexts((prev) => prev.filter((x) => x.id !== f.id));
+                  clearResult();
+                }}
+                className="text-xs text-neutral-400 hover:text-red-500"
+              >
+                削除
+              </button>
             </div>
-          ))}
-        </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <SliderField label={`自由テキスト${i + 1}の文字サイズ`} value={f.size} min={MIN_FONT_PT} max={MAX_FONT_PT} unit="pt" onChange={(v) => updateFree(f.id, { size: v })} />
+              <SliderField label={`自由テキスト${i + 1}のX位置`} value={f.x} min={0} max={100} step={0.5} unit="%" onChange={(v) => updateFree(f.id, { x: v })} />
+              <SliderField label={`自由テキスト${i + 1}のY位置`} value={f.y} min={0} max={100} step={0.5} unit="%" onChange={(v) => updateFree(f.id, { y: v })} />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
+              <input type="checkbox" checked={f.bold} onChange={(e) => updateFree(f.id, { bold: e.target.checked })} />
+              自由テキスト{i + 1}を太字にする
+            </label>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            setFreeTexts((prev) => [...prev, newFreeText(`free-${nextFreeId}`, { x: 8, y: 8 + prev.length * 6 })]);
+            setNextFreeId((n) => n + 1);
+            clearResult();
+          }}
+          className="w-fit rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
+        >
+          + 自由に入力するテキストを追加
+        </button>
       </div>
 
       <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -322,7 +435,8 @@ export function EnvelopeAddressTool() {
           writingMode={writingMode}
           orientation={orientation}
           honorific={honorific}
-          style={style}
+          blocks={blocks}
+          freeTexts={freeTexts}
           recipient={previewPerson}
           sender={useSender ? sender : null}
         />

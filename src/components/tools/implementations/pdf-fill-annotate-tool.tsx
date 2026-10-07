@@ -30,6 +30,7 @@ import {
 } from "@/lib/pdf-annotate/types";
 import { rotatePointAround } from "@/lib/pdf-annotate/geometry";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { SliderField } from "@/components/common/slider-field";
 
 /**
  * PDF記入・注釈（Phase 15）。
@@ -1006,17 +1007,9 @@ export function PdfFillAnnotateTool() {
           {mode === "text" && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">
               <span className="text-blue-700 dark:text-blue-300">PDF上をクリックしてテキストを配置してください。</span>
-              <label className="flex items-center gap-1">
-                文字サイズ
-                <input
-                  type="number"
-                  min={6}
-                  max={96}
-                  value={textFontSize}
-                  onChange={(e) => setTextFontSize(Math.min(96, Math.max(6, Number(e.target.value) || 6)))}
-                  className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                />
-              </label>
+              <div className="w-56">
+                <SliderField label="文字サイズ" value={textFontSize} min={6} max={96} unit="pt" onChange={setTextFontSize} />
+              </div>
               <label className="flex items-center gap-1">
                 色
                 <select
@@ -1522,19 +1515,16 @@ export function PdfFillAnnotateTool() {
                           />
                         </label>
                         <DateInsertHelper onInsert={(text) => patchObjectWithHistory(obj.id, { text })} />
-                        <label className="flex items-center gap-1">
-                          文字サイズ
-                          <input
-                            type="number"
+                        <div className="w-56">
+                          <SliderField
+                            label="文字サイズ"
+                            value={obj.fontSize}
                             min={6}
                             max={96}
-                            value={obj.fontSize}
-                            onChange={(e) =>
-                              patchObjectWithHistory(obj.id, { fontSize: Math.min(96, Math.max(6, Number(e.target.value) || 6)) })
-                            }
-                            className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                            unit="pt"
+                            onChange={(v) => patchObjectWithHistory(obj.id, { fontSize: v })}
                           />
-                        </label>
+                        </div>
                         <label className="flex items-center gap-1">
                           <input
                             type="checkbox"

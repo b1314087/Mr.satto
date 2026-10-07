@@ -1135,7 +1135,7 @@ export const tools: Tool[] = [
     id: "envelope-address",
     name: "封筒宛名作成",
     category: "other",
-    description: "長形3号・長形4号・角形2号の封筒に、縦書き/横書き・封筒の向き・様/御中/なし・文字サイズ/太字を選んで宛名・差出人を印刷するPDFを作成します。Excel/CSVからの複数宛先読み込みにも対応",
+    description: "長形3号・長形4号・角形2号の封筒に、縦書き/横書き・封筒の向き・様/御中/なし・文字サイズ/太字を選び、位置と大きさをスライダーで調整して宛名・差出人・自由テキストを印刷するPDFを作成します。Excel/CSVからの複数宛先読み込みにも対応",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",

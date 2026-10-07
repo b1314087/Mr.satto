@@ -28,20 +28,22 @@ import { BrowserProcessor } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { ENVELOPE_SIZES_MM, resolveEnvelopePageSizePt, type EnvelopeSizeId } from "@/lib/print/envelope-sizes";
 import {
-  DEFAULT_TEXT_STYLE,
+  defaultBlocks,
+  ENVELOPE_BLOCK_IDS,
   isPersonEmpty,
   layoutEnvelope,
   MAX_FONT_PT,
   MIN_FONT_PT,
+  type EnvelopeBlocks,
+  type EnvelopeFreeText,
   type EnvelopeHonorific,
   type EnvelopeOrientation,
   type EnvelopePerson,
-  type EnvelopeTextStyle,
   type EnvelopeWritingMode,
 } from "@/lib/print/envelope-layout";
 import { sanitizeFileName } from "@/lib/utils/format";
 
-export type { EnvelopeHonorific, EnvelopeOrientation, EnvelopePerson, EnvelopeTextStyle, EnvelopeWritingMode };
+export type { EnvelopeBlocks, EnvelopeFreeText, EnvelopeHonorific, EnvelopeOrientation, EnvelopePerson, EnvelopeWritingMode };
 
 export interface EnvelopeAddressInput {
   envelopeSize: EnvelopeSizeId;
@@ -50,8 +52,10 @@ export interface EnvelopeAddressInput {
   orientation?: EnvelopeOrientation;
   /** 宛名の敬称(省略時は様) */
   honorific?: EnvelopeHonorific;
-  /** 文字サイズ・太字(省略時は既定) */
-  style?: EnvelopeTextStyle;
+  /** 宛先・差出人の各項目の文字サイズ・太字・位置(省略時は標準) */
+  blocks?: EnvelopeBlocks;
+  /** 自由に入力するテキスト(すべての封筒に印刷) */
+  freeTexts?: EnvelopeFreeText[];
   recipients: EnvelopePerson[];
   sender: EnvelopePerson | null;
 }
@@ -75,10 +79,14 @@ export function validateEnvelopeAddressInput(input: EnvelopeAddressInput): strin
   if (valid.length > MAX_RECIPIENTS) {
     return `宛先が多すぎます（最大${MAX_RECIPIENTS}件まで）`;
   }
-  const style = input.style ?? DEFAULT_TEXT_STYLE;
-  if (!validSize(style.nameSize) || !validSize(style.addressSize) || !validSize(style.senderSize)) {
+  const blocks = input.blocks ?? defaultBlocks();
+  const sizes = [...ENVELOPE_BLOCK_IDS.map((id) => blocks[id].size), ...(input.freeTexts ?? []).map((f) => f.size)];
+  if (sizes.some((v) => !validSize(v))) {
     return `文字サイズは${MIN_FONT_PT}〜${MAX_FONT_PT}ptの範囲で指定してください`;
   }
+  const inPct = (v: number | null) => v === null || (Number.isFinite(v) && v >= 0 && v <= 100);
+  const positions = [...ENVELOPE_BLOCK_IDS.flatMap((id) => [blocks[id].x, blocks[id].y]), ...(input.freeTexts ?? []).flatMap((f) => [f.x, f.y])];
+  if (!positions.every(inPct)) return "位置は0〜100%の範囲で指定してください";
   return null;
 }
 
@@ -116,37 +124,27 @@ export class EnvelopeAddressProcessor extends BrowserProcessor<EnvelopeAddressIn
           height,
           writingMode: input.writingMode,
           honorific: input.honorific ?? "sama",
-          style: input.style ?? DEFAULT_TEXT_STYLE,
+          blocks: input.blocks ?? defaultBlocks(),
+          freeTexts: input.freeTexts ?? [],
           recipient,
           sender: input.sender,
         },
         measure
       );
       for (const op of ops) {
-        if (op.kind === "rect") {
-          page.drawRectangle({
-            x: op.x,
-            y: height - op.y - op.h,
-            width: op.w,
-            height: op.h,
-            borderColor: rgb(...op.stroke),
-            borderWidth: 0.75,
-          });
-        } else {
-          const w = font.widthOfTextAtSize(op.text, op.size);
-          const x = op.align === "center" ? op.x - w / 2 : op.x;
-          const color = rgb(...op.color);
-          if (op.bold) {
-            // 太字専用のフォントが無いため、塗り＋縁取りで疑似的に太くする
-            page.pushOperators(
-              setLineWidth(op.size * 0.028),
-              setStrokingRgbColor(color.red, color.green, color.blue),
-              setTextRenderingMode(TextRenderingMode.FillAndOutline)
-            );
-          }
-          page.drawText(op.text, { x, y: height - op.y, size: op.size, font, color });
-          if (op.bold) page.pushOperators(setTextRenderingMode(TextRenderingMode.Fill));
+        const w = font.widthOfTextAtSize(op.text, op.size);
+        const x = op.align === "center" ? op.x - w / 2 : op.x;
+        const color = rgb(...op.color);
+        if (op.bold) {
+          // 太字専用のフォントが無いため、塗り＋縁取りで疑似的に太くする
+          page.pushOperators(
+            setLineWidth(op.size * 0.028),
+            setStrokingRgbColor(color.red, color.green, color.blue),
+            setTextRenderingMode(TextRenderingMode.FillAndOutline)
+          );
         }
+        page.drawText(op.text, { x, y: height - op.y, size: op.size, font, color });
+        if (op.bold) page.pushOperators(setTextRenderingMode(TextRenderingMode.Fill));
       }
     }
 

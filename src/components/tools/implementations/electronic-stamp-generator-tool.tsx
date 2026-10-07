@@ -26,6 +26,7 @@ import {
 } from "@/lib/processors/browser/electronic-stamp";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob } from "@/lib/utils/format";
+import { SliderField } from "@/components/common/slider-field";
 
 /**
  * 電子印鑑生成ツール（Phase 16）。
@@ -394,17 +395,15 @@ function TextStampPanel({
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
-          文字サイズ
-          <input
-            type="range"
-            min={0.5}
-            max={1.5}
-            step={0.05}
-            value={fontScale}
-            onChange={(e) => setFontScale(Number(e.target.value))}
-          />
-        </label>
+        <SliderField
+          label="文字サイズ"
+          value={Math.round(fontScale * 100)}
+          min={50}
+          max={150}
+          step={5}
+          unit="%"
+          onChange={(v) => setFontScale(v / 100)}
+        />
 
         <fieldset className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
           <legend className="mb-1 px-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">フォント</legend>
