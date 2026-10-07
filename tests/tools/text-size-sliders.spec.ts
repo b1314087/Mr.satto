@@ -14,7 +14,7 @@ test("電子印鑑: 文字サイズがスライダー＋数値入力になって
 
 test("封筒宛名: 文字サイズ・X位置・Y位置がスライダーになっている", async ({ page }) => {
   await page.goto("/tools/envelope-address");
-  for (const name of ["宛名の文字サイズ", "宛名のX位置", "宛名のY位置"]) {
+  for (const name of ["宛先の文字サイズ", "宛先のX位置", "宛先のY位置"]) {
     await expect(page.getByRole("slider", { name })).toBeVisible();
   }
 });

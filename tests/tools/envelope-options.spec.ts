@@ -14,9 +14,11 @@ async function setSlider(page: import("@playwright/test").Page, label: string, v
 
 /** 封筒宛名: 封筒の向き(縦/横)・敬称(様/御中/なし)・文字サイズ・太字 */
 async function fillRecipient(page: import("@playwright/test").Page) {
-  await page.locator('input[placeholder*="郵便番号"]').first().fill("1000001");
-  await page.locator('input[placeholder="住所"]').first().fill("東京都千代田区千代田1-1");
-  await page.locator('input[placeholder="氏名"]').first().fill("山田商事");
+  // 初回表示直後は入力が反映されないことがあるため、プレビューに出るまで入力し直す
+  await expect(async () => {
+    await page.getByLabel("宛先1").fill("〒100-0001\n東京都千代田区千代田1-1\n山田商事");
+    await expect(page.getByTestId("tool-preview").locator("svg")).toContainText("東", { timeout: 1500 });
+  }).toPass({ timeout: 15_000 });
 }
 
 async function makePdf(page: import("@playwright/test").Page): Promise<string> {
@@ -39,8 +41,8 @@ test("封筒の向き(縦向き)・敬称(御中)・文字サイズ・太字を�
   await page.getByRole("button", { name: "横書き" }).click();
   await page.getByRole("button", { name: "縦向き" }).click();
   await page.getByRole("button", { name: "御中", exact: true }).click();
-  await setSlider(page, "宛名の文字サイズ", 30);
-  await page.getByLabel("宛名を太字にする").check();
+  await setSlider(page, "宛先の文字サイズ", 30);
+  await page.getByLabel("宛先を太字にする").check();
 
   // プレビューにも反映されている
   const preview = page.getByTestId("tool-preview");
@@ -71,14 +73,15 @@ test("敬称なしにすると、宛名に様も御中も付かない。横向�
 test("文字サイズの数値が範囲外でも、範囲内に丸められる", async ({ page }) => {
   await page.goto("/tools/envelope-address");
   await fillRecipient(page);
-  await setSlider(page, "宛名の文字サイズ", 200);
-  await expect(page.getByLabel("宛名の文字サイズの数値")).toHaveValue("60");
+  await setSlider(page, "宛先の文字サイズ", 200);
+  await expect(page.getByLabel("宛先の文字サイズの数値")).toHaveValue("60");
   await expect(page.getByRole("button", { name: "PDFを作成" })).toBeEnabled();
 });
 
 test("郵便番号の枠(四角)は描かず、プレビューには背景以外の四角が無い", async ({ page }) => {
   await page.goto("/tools/envelope-address");
   await fillRecipient(page);
+  await page.getByRole("button", { name: "横書き" }).click();
   const svg = page.getByTestId("tool-preview").locator("svg");
   await expect(svg).toContainText("〒100-0001");
   await expect(svg.locator("rect")).toHaveCount(1);
@@ -89,15 +92,16 @@ test("宛名のX・Y位置をスライダーで指定すると、その位置に
   await fillRecipient(page);
   await page.getByRole("button", { name: "横書き" }).click();
   await page.getByRole("button", { name: "横向き" }).click();
-  await setSlider(page, "宛名のX位置", 30);
-  await setSlider(page, "宛名のY位置", 60);
+  await setSlider(page, "宛先のX位置", 30);
+  await setSlider(page, "宛先のY位置", 60);
   const pdf = await makePdf(page);
   const size = pageSize(pdf);
   const bbox = execFileSync("pdftotext", ["-bbox", pdf, "-"]).toString();
   const m = bbox.match(/<word xMin="([\d.]+)" yMin="([\d.]+)"[^>]*>山田商事<\/word>/);
-  expect(m, "宛名の位置が取得できる").toBeTruthy();
+  expect(m, "宛先の位置が取得できる").toBeTruthy();
   expect(Math.abs(Number(m![1]) - size.w * 0.3), "X位置").toBeLessThan(4);
-  expect(Math.abs(Number(m![2]) - size.h * 0.6), "Y位置").toBeLessThan(10);
+  const ys = [...bbox.matchAll(/<word xMin="[\d.]+" yMin="([\d.]+)"/g)].map((x) => Number(x[1]));
+  expect(Math.abs(Math.min(...ys) - size.h * 0.6), "Y位置(1行目の上端)").toBeLessThan(12);
 });
 
 test("自由に入力したテキストを追加でき、位置と文字サイズも決められる", async ({ page }) => {
@@ -112,4 +116,23 @@ test("自由に入力したテキストを追加でき、位置と文字サイ�
   await expect(page.getByTestId("tool-preview")).toContainText("請求書在中");
   const pdf = await makePdf(page);
   expect(execFileSync("pdftotext", ["-layout", pdf, "-"]).toString()).toContain("請求書在中");
+});
+
+test("設定を操作しても、プレビューは常に画面内に見えている", async ({ page }) => {
+  await page.goto("/tools/envelope-address");
+  await fillRecipient(page);
+  const slider = page.getByLabel("宛先のX位置の数値");
+  await slider.scrollIntoViewIfNeeded();
+  await page.mouse.wheel(0, 600);
+  const preview = page.getByTestId("tool-preview");
+  await expect(preview).toBeInViewport({ ratio: 0.9 });
+  await setSlider(page, "宛先のX位置", 20);
+  await expect(preview).toBeInViewport({ ratio: 0.9 });
+});
+
+test("宛先は郵便番号・住所・氏名に分けず、1つの枠に自由に入力できる", async ({ page }) => {
+  await page.goto("/tools/envelope-address");
+  await expect(page.locator('input[placeholder="住所"]')).toHaveCount(0);
+  await expect(page.getByLabel("宛先1")).toBeVisible();
+  await expect(page.getByLabel("宛先のX位置の数値")).toHaveCount(1);
 });

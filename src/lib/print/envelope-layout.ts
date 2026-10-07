@@ -10,8 +10,8 @@
  * 縦書きは、1文字ずつ縦に積み、列が埋まったら1列左へ折り返す単純な方式
  * （半角数字は全角数字へ変換する。縦中横・禁則処理までは行わない）。
  *
- * 郵便番号の枠は描かない。宛先・差出人の各項目と、自由に入力したテキストは、
- * それぞれ文字サイズ・太字・位置(封筒に対する%)を指定できる。位置を指定しない項目は、標準の位置に置く。
+ * 郵便番号の枠は描かない。宛先・差出人・自由に入力したテキストは、それぞれ1つの複数行テキスト枠で、
+ * 枠ごとに文字サイズ・太字・位置(封筒に対する%)を指定できる。位置を指定しない枠は、標準の位置に置く。
  */
 import { mmToPt } from "./paper-sizes";
 
@@ -27,30 +27,20 @@ export const HONORIFIC_LABELS: Record<EnvelopeHonorific, string> = {
   none: "なし",
 };
 
-export interface EnvelopePerson {
-  postalCode: string;
-  address: string;
-  name: string;
-}
+/** 位置・文字サイズを個別に指定できる枠(宛先・差出人) */
+export type EnvelopeBlockId = "recipient" | "sender";
 
-/** 位置・文字サイズを個別に指定できる項目 */
-export type EnvelopeBlockId = "rPostal" | "rAddress" | "rName" | "sPostal" | "sAddress" | "sName";
-
-export const ENVELOPE_BLOCK_IDS: EnvelopeBlockId[] = ["rPostal", "rAddress", "rName", "sPostal", "sAddress", "sName"];
+export const ENVELOPE_BLOCK_IDS: EnvelopeBlockId[] = ["recipient", "sender"];
 
 export const ENVELOPE_BLOCK_LABELS: Record<EnvelopeBlockId, string> = {
-  rPostal: "宛先の郵便番号",
-  rAddress: "宛先の住所",
-  rName: "宛名",
-  sPostal: "差出人の郵便番号",
-  sAddress: "差出人の住所",
-  sName: "差出人の名前",
+  recipient: "宛先",
+  sender: "差出人",
 };
 
 /**
- * 1項目の指定。size=null・x=null・y=null は「標準」。
+ * 1つの枠の指定。size=null・x=null・y=null は「標準」。
  * x, y は封筒の幅・高さに対する%(0〜100)。
- * 横書き: x=文字の左端、y=1行目の上端。縦書き: x=1列目の中心、y=上端。
+ * 横書き: x=文字の左端、y=1行目の上端。縦書き: x=1列目(いちばん右)の中心、y=上端。
  */
 export interface EnvelopeBlockStyle {
   size: number | null;
@@ -85,9 +75,9 @@ export function newFreeText(id: string, partial: Partial<EnvelopeFreeText> = {})
 }
 
 /** 書字方向ごとの既定の文字サイズ(pt) */
-export const DEFAULT_SIZES: Record<EnvelopeWritingMode, { name: number; address: number; sender: number }> = {
-  vertical: { name: 18, address: 11, sender: 8 },
-  horizontal: { name: 22, address: 13, sender: 9 },
+export const DEFAULT_SIZES: Record<EnvelopeWritingMode, Record<EnvelopeBlockId, number>> = {
+  vertical: { recipient: 15, sender: 8 },
+  horizontal: { recipient: 16, sender: 9 },
 };
 
 export const MIN_FONT_PT = 6;
@@ -107,33 +97,48 @@ export interface EnvelopeLayoutInput {
   honorific: EnvelopeHonorific;
   blocks: EnvelopeBlocks;
   freeTexts: EnvelopeFreeText[];
-  recipient: EnvelopePerson | undefined;
-  sender: EnvelopePerson | null;
+  /** この封筒の宛先(複数行。郵便番号・住所・氏名を改行で区切って入力する) */
+  recipient: string | undefined;
+  /** 差出人(複数行)。印刷しないときは null */
+  sender: string | null;
 }
 
 export function toFullWidthDigits(s: string): string {
   return s.replace(/[0-9]/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0));
 }
 
-export function isPersonEmpty(p: EnvelopePerson): boolean {
-  return p.postalCode.trim() === "" && p.address.trim() === "" && p.name.trim() === "";
+export function isTextEmpty(t: string): boolean {
+  return t.trim() === "";
 }
 
-/** 宛名に敬称をつけた文字列。横書きは「名前 様」、縦書きは「名前様」（御中も同じ） */
-export function nameWithHonorific(name: string, honorific: EnvelopeHonorific, mode: EnvelopeWritingMode): string {
-  const n = name.trim();
-  if (n === "" || honorific === "none") return n;
+const HONORIFIC_PATTERN = /(様|御中|殿)$/;
+
+/**
+ * 宛先の最後の行に敬称をつける。すでに「様」「御中」「殿」で終わっているときは何もしない。
+ * 横書きは「名前 様」、縦書きは「名前様」（御中も同じ）。
+ */
+export function applyHonorific(text: string, honorific: EnvelopeHonorific, mode: EnvelopeWritingMode): string {
+  if (honorific === "none") return text;
+  const lines = text.split(/\r\n|\r|\n/);
+  let last = lines.length - 1;
+  while (last >= 0 && lines[last].trim() === "") last--;
+  if (last < 0) return text;
+  const line = lines[last].trimEnd();
+  if (HONORIFIC_PATTERN.test(line)) return text;
   const label = HONORIFIC_LABELS[honorific];
-  return mode === "vertical" ? `${n}${label}` : `${n} ${label}`;
+  lines[last] = mode === "vertical" ? `${line}${label}` : `${line} ${label}`;
+  return lines.join("\n");
 }
 
-/** 郵便番号の表示。数字7桁なら「〒123-4567」、それ以外は入力どおりに「〒」をつける */
-export function formatPostal(raw: string): string {
-  const t = raw.trim();
-  if (t === "") return "";
-  const digits = t.replace(/[^0-9]/g, "");
-  if (/^[0-9]{7}$/.test(digits) && !/[^0-9\-ー－\s]/.test(t)) return `〒${digits.slice(0, 3)}-${digits.slice(3)}`;
-  return t.startsWith("〒") ? t : `〒${t}`;
+/** Excel/CSVの列から宛先の文字を作る。郵便番号は数字7桁なら「〒123-4567」にし、空の項目は飛ばして1項目1行にする */
+export function composeRecipientText(parts: { postalCode: string; address: string; name: string }): string {
+  const postal = parts.postalCode.trim();
+  let postalText = postal;
+  if (postal !== "") {
+    const digits = postal.replace(/[^0-9]/g, "");
+    postalText = /^[0-9]{7}$/.test(digits) && !/[^0-9\-ー－\s]/.test(postal) ? `〒${digits.slice(0, 3)}-${digits.slice(3)}` : postal;
+  }
+  return [postalText, parts.address.trim(), parts.name.trim()].filter((v) => v !== "").join("\n");
 }
 
 /** 文字サイズの検証・補正。範囲外・不正な値は既定値にする */
@@ -168,7 +173,7 @@ export function wrapByMeasure(text: string, size: number, maxWidth: number, meas
 const V_LINE = 1.42;
 const V_COL_GAP = 2.05;
 
-/** 縦書きで使う列の数(改行で列を変える。列が埋まったら次の列へ) */
+/** 縦書きで使う列(改行で列を変える。列が埋まったら次の列へ) */
 function verticalColumns(text: string, size: number, maxColumnHeight: number): string[][] {
   const perColumn = Math.max(1, Math.floor(maxColumnHeight / (size * V_LINE)));
   const columns: string[][] = [];
@@ -180,8 +185,8 @@ function verticalColumns(text: string, size: number, maxColumnHeight: number): s
   return columns;
 }
 
-/** 縦書き: 列を右から左へ並べる。startX は1列目の中心。戻り値は使った列数 */
-function pushVertical(ops: EnvelopeOp[], text: string, startX: number, topY: number, size: number, maxColumnHeight: number, bold: boolean): number {
+/** 縦書き: 列を右から左へ並べる。startX は1列目の中心 */
+function pushVertical(ops: EnvelopeOp[], text: string, startX: number, topY: number, size: number, maxColumnHeight: number, bold: boolean): void {
   const columns = verticalColumns(text, size, maxColumnHeight);
   const line = size * V_LINE;
   const gap = size * V_COL_GAP;
@@ -190,16 +195,14 @@ function pushVertical(ops: EnvelopeOp[], text: string, startX: number, topY: num
       ops.push({ kind: "text", x: startX - col * gap, y: topY + (row + 1) * line - (line - size) / 2 - size * 0.12, size, text: ch, bold, color: COLOR_TEXT, align: "center" });
     });
   });
-  return columns.length;
 }
 
-/** 横書き: 折り返しながら行を並べる。y は1行目の上端。戻り値は行数 */
-function pushHorizontal(ops: EnvelopeOp[], text: string, x: number, topY: number, size: number, maxWidth: number, bold: boolean, measure: MeasureFn, step = size * 1.4): number {
+/** 横書き: 折り返しながら行を並べる。topY は1行目の上端 */
+function pushHorizontal(ops: EnvelopeOp[], text: string, x: number, topY: number, size: number, maxWidth: number, bold: boolean, measure: MeasureFn, step: number): void {
   const lines = wrapByMeasure(text, size, maxWidth, measure);
   lines.forEach((line, i) => {
     if (line !== "") ops.push({ kind: "text", x, y: topY + size + i * step, size, text: line, bold, color: COLOR_TEXT, align: "left" });
   });
-  return lines.length;
 }
 
 export interface EnvelopeBlockPlacement {
@@ -209,81 +212,50 @@ export interface EnvelopeBlockPlacement {
   /** 実際に使う位置(封筒に対する%)。指定が無いときは標準の位置 */
   xPct: number;
   yPct: number;
-  /** この項目に表示する文字(空のときは何も描かない) */
+  /** この枠に印刷する文字(敬称つき。空のときは何も描かない) */
   text: string;
 }
 
 const RIGHT_MARGIN_MM = 5;
+const SENDER_WRAP_MM = 70;
+
+/** 横書きの行送り。宛先は文字サイズの1.45倍、差出人は1.33倍 */
+function lineStep(id: EnvelopeBlockId | "free", size: number): number {
+  return size * (id === "sender" ? 1.33 : 1.45);
+}
 
 /**
- * 各項目の「文字・文字サイズ・位置」を決める。位置の指定が無い項目は、
- * 他の項目(住所の行数など)をふまえた標準の位置にする。
+ * 宛先・差出人の「文字・文字サイズ・位置」を決める。位置の指定が無い枠は標準の位置にする。
  * 画面のスライダーの現在値にも使う。
  */
 export function resolveBlocks(input: EnvelopeLayoutInput, measure: MeasureFn): Record<EnvelopeBlockId, EnvelopeBlockPlacement> {
-  const { width: w, height: h, writingMode, honorific, blocks, recipient: r, sender } = input;
-  const d = DEFAULT_SIZES[writingMode];
-  const landscape = w >= h;
+  const { width: w, height: h, writingMode, honorific, blocks } = input;
   const vertical = writingMode === "vertical";
+  const landscape = w >= h;
+  const d = DEFAULT_SIZES[writingMode];
   const size = {
-    rPostal: resolveSize(blocks.rPostal.size, d.address),
-    rAddress: resolveSize(blocks.rAddress.size, d.address),
-    rName: resolveSize(blocks.rName.size, d.name),
-    sPostal: resolveSize(blocks.sPostal.size, d.sender),
-    sAddress: resolveSize(blocks.sAddress.size, d.sender),
-    sName: resolveSize(blocks.sName.size, Math.round(d.sender * 1.1 * 10) / 10),
+    recipient: resolveSize(blocks.recipient.size, d.recipient),
+    sender: resolveSize(blocks.sender.size, d.sender),
   };
-  const text: Record<EnvelopeBlockId, string> = {
-    rPostal: r ? formatPostal(r.postalCode) : "",
-    rAddress: r ? r.address.trim() : "",
-    rName: r ? nameWithHonorific(r.name, honorific, writingMode) : "",
-    sPostal: sender ? formatPostal(sender.postalCode) : "",
-    sAddress: sender ? sender.address.trim() : "",
-    sName: sender ? sender.name.trim() : "",
+  const text = {
+    recipient: input.recipient ? applyHonorific(input.recipient.trim() === "" ? "" : input.recipient, honorific, writingMode) : "",
+    sender: input.sender ?? "",
   };
   const pos = {} as Record<EnvelopeBlockId, { x: number; y: number }>; // pt
   const explicit = (id: EnvelopeBlockId, def: { x: number; y: number }) => ({
     x: blocks[id].x !== null ? (blocks[id].x! / 100) * w : def.x,
     y: blocks[id].y !== null ? (blocks[id].y! / 100) * h : def.y,
   });
-  const maxW = (x: number) => Math.max(mmToPt(20), w - x - mmToPt(RIGHT_MARGIN_MM));
-  const maxCol = (y: number) => Math.max(size.rName, h - y - mmToPt(8));
 
   if (vertical) {
-    const top = mmToPt(18);
-    const postalW = measure(text.rPostal, size.rPostal);
-    pos.rPostal = explicit("rPostal", { x: w - mmToPt(20) - postalW, y: mmToPt(8) });
-    pos.rAddress = explicit("rAddress", { x: w * 0.62, y: top });
-    const addrCols = text.rAddress ? verticalColumns(text.rAddress, size.rAddress, maxCol(pos.rAddress.y)).length : 0;
-    const addrGap = size.rAddress * V_COL_GAP;
-    const nameGap = size.rName * V_COL_GAP;
-    // 住所の列が増えて宛名の列とぶつからないよう、宛名の列を住所の左端より左へ寄せる
-    const addrLeft = pos.rAddress.x - Math.max(0, addrCols - 1) * addrGap;
-    pos.rName = explicit("rName", { x: Math.min(w * 0.46, addrLeft - (addrGap + nameGap) / 2), y: top });
-    pos.sPostal = explicit("sPostal", { x: mmToPt(12), y: h * 0.34 - size.sPostal });
-    pos.sAddress = explicit("sAddress", { x: mmToPt(24), y: h * 0.38 });
-    const sCols = text.sAddress ? verticalColumns(text.sAddress, size.sAddress, maxCol(pos.sAddress.y)).length : 0;
-    const sGap = size.sAddress * V_COL_GAP;
-    pos.sName = explicit("sName", { x: Math.max(size.sName, pos.sAddress.x - sCols * sGap), y: h * 0.38 });
+    pos.recipient = explicit("recipient", { x: w * 0.62, y: mmToPt(16) });
+    pos.sender = explicit("sender", { x: mmToPt(26), y: h * 0.38 });
   } else {
-    const x0 = landscape ? w * 0.4 : w * 0.12;
-    const y0 = landscape ? h * 0.4 : h * 0.22;
-    pos.rPostal = explicit("rPostal", { x: x0, y: y0 });
-    pos.rAddress = explicit("rAddress", { x: x0, y: text.rPostal ? pos.rPostal.y + size.rPostal * 1.9 : y0 });
-    const addrLines = text.rAddress ? wrapByMeasure(text.rAddress, size.rAddress, maxW(pos.rAddress.x), measure).length : 0;
-    pos.rName = explicit("rName", {
-      x: x0,
-      y: text.rAddress ? pos.rAddress.y + addrLines * size.rAddress * 1.4 + size.rAddress * 0.6 : pos.rAddress.y,
-    });
-    // 差出人は、最後の行が封筒の下端から20mmの位置に来るように積む
-    const step = size.sAddress * 1.33;
-    const sLines = text.sAddress ? wrapByMeasure(text.sAddress, size.sAddress, mmToPt(70), measure).length : 0;
-    const total = (text.sPostal ? 1 : 0) + sLines + (text.sName ? 1 : 0);
-    const firstTop = h - mmToPt(20) - step * Math.max(0, total - 1) - size.sPostal;
-    const sx = mmToPt(15);
-    pos.sPostal = explicit("sPostal", { x: sx, y: firstTop });
-    pos.sAddress = explicit("sAddress", { x: sx, y: firstTop + (text.sPostal ? step : 0) });
-    pos.sName = explicit("sName", { x: sx, y: pos.sAddress.y + sLines * step + (text.sAddress ? 0 : 0) });
+    pos.recipient = explicit("recipient", { x: landscape ? w * 0.4 : w * 0.12, y: landscape ? h * 0.38 : h * 0.22 });
+    // 差出人は、最後の行が封筒の下端から20mmの位置に来るように置く
+    const lines = text.sender ? wrapByMeasure(text.sender, size.sender, mmToPt(SENDER_WRAP_MM), measure).length : 1;
+    const step = lineStep("sender", size.sender);
+    pos.sender = explicit("sender", { x: mmToPt(15), y: h - mmToPt(20) - step * Math.max(0, lines - 1) - size.sender });
   }
   const out = {} as Record<EnvelopeBlockId, EnvelopeBlockPlacement>;
   for (const id of ENVELOPE_BLOCK_IDS) {
@@ -306,14 +278,14 @@ export function layoutEnvelope(input: EnvelopeLayoutInput, measure: MeasureFn): 
 
   for (const id of ENVELOPE_BLOCK_IDS) {
     const b = placed[id];
-    if (b.text === "") continue;
+    if (b.text.trim() === "") continue;
     const x = (b.xPct / 100) * w;
     const y = (b.yPct / 100) * h;
-    const postalLike = id === "rPostal" || id === "sPostal";
-    if (vertical && !postalLike) {
+    if (vertical) {
       pushVertical(ops, b.text, x, y, b.size, Math.max(b.size, h - y - mmToPt(8)), blocks[id].bold);
     } else {
-      pushHorizontal(ops, b.text, x, y, b.size, id === "sAddress" && !vertical ? mmToPt(70) : Math.max(mmToPt(20), w - x - mmToPt(RIGHT_MARGIN_MM)), blocks[id].bold, measure, id.startsWith("s") ? b.size * 1.33 : undefined);
+      const maxW = id === "sender" ? mmToPt(SENDER_WRAP_MM) : Math.max(mmToPt(20), w - x - mmToPt(RIGHT_MARGIN_MM));
+      pushHorizontal(ops, b.text, x, y, b.size, maxW, blocks[id].bold, measure, lineStep(id, b.size));
     }
   }
 
@@ -323,7 +295,7 @@ export function layoutEnvelope(input: EnvelopeLayoutInput, measure: MeasureFn): 
     const x = (f.x / 100) * w;
     const y = (f.y / 100) * h;
     if (vertical) pushVertical(ops, f.text, x, y, size, Math.max(size, h - y - mmToPt(8)), f.bold);
-    else pushHorizontal(ops, f.text, x, y, size, Math.max(mmToPt(20), w - x - mmToPt(RIGHT_MARGIN_MM)), f.bold, measure);
+    else pushHorizontal(ops, f.text, x, y, size, Math.max(mmToPt(20), w - x - mmToPt(RIGHT_MARGIN_MM)), f.bold, measure, lineStep("free", size));
   }
   return ops;
 }

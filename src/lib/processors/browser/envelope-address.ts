@@ -30,7 +30,7 @@ import { ENVELOPE_SIZES_MM, resolveEnvelopePageSizePt, type EnvelopeSizeId } fro
 import {
   defaultBlocks,
   ENVELOPE_BLOCK_IDS,
-  isPersonEmpty,
+  isTextEmpty,
   layoutEnvelope,
   MAX_FONT_PT,
   MIN_FONT_PT,
@@ -38,12 +38,11 @@ import {
   type EnvelopeFreeText,
   type EnvelopeHonorific,
   type EnvelopeOrientation,
-  type EnvelopePerson,
   type EnvelopeWritingMode,
 } from "@/lib/print/envelope-layout";
 import { sanitizeFileName } from "@/lib/utils/format";
 
-export type { EnvelopeBlocks, EnvelopeFreeText, EnvelopeHonorific, EnvelopeOrientation, EnvelopePerson, EnvelopeWritingMode };
+export type { EnvelopeBlocks, EnvelopeFreeText, EnvelopeHonorific, EnvelopeOrientation, EnvelopeWritingMode };
 
 export interface EnvelopeAddressInput {
   envelopeSize: EnvelopeSizeId;
@@ -56,8 +55,10 @@ export interface EnvelopeAddressInput {
   blocks?: EnvelopeBlocks;
   /** 自由に入力するテキスト(すべての封筒に印刷) */
   freeTexts?: EnvelopeFreeText[];
-  recipients: EnvelopePerson[];
-  sender: EnvelopePerson | null;
+  /** 宛先(1件につき1ページ)。郵便番号・住所・氏名などを改行で区切った複数行の文字 */
+  recipients: string[];
+  /** 差出人(複数行)。印刷しないときは null */
+  sender: string | null;
 }
 
 export interface EnvelopeAddressOutput {
@@ -72,9 +73,9 @@ function validSize(value: number | null): boolean {
 }
 
 export function validateEnvelopeAddressInput(input: EnvelopeAddressInput): string | null {
-  const valid = input.recipients.filter((r) => !isPersonEmpty(r));
+  const valid = input.recipients.filter((r) => !isTextEmpty(r));
   if (valid.length === 0) {
-    return "宛先を1件以上入力してください（郵便番号・住所・宛名のいずれかが必要です）";
+    return "宛先を1件以上入力してください";
   }
   if (valid.length > MAX_RECIPIENTS) {
     return `宛先が多すぎます（最大${MAX_RECIPIENTS}件まで）`;
@@ -113,7 +114,7 @@ export class EnvelopeAddressProcessor extends BrowserProcessor<EnvelopeAddressIn
     }
 
     const { width, height } = resolveEnvelopePageSizePt(input.envelopeSize, input.orientation ?? "landscape");
-    const recipients = input.recipients.filter((r) => !isPersonEmpty(r));
+    const recipients = input.recipients.filter((r) => !isTextEmpty(r));
     const measure = (t: string, size: number) => font.widthOfTextAtSize(t, size);
 
     for (const recipient of recipients) {

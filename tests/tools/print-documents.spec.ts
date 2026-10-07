@@ -24,12 +24,7 @@ test.describe("excel-label(ラベル作成)", () => {
 test.describe("envelope-address", () => {
   test("1件の宛先を入力して封筒PDFを作成できる", async ({ page }) => {
     await page.goto("/tools/envelope-address");
-    const postal = page.locator('input[placeholder*="郵便番号"]').first();
-    const address = page.locator('input[placeholder="住所"]').first();
-    const name = page.locator('input[placeholder="氏名"]').first();
-    await postal.fill("1000001");
-    await address.fill("東京都千代田区千代田1-1");
-    await name.fill("山田太郎");
+    await page.getByLabel("宛先1").fill("〒100-0001\n東京都千代田区千代田1-1\n山田太郎");
     await page.getByRole("button", { name: "PDFを作成" }).click();
     await expect(page.getByText("封筒PDFを作成しました")).toBeVisible({ timeout: 15_000 });
     const download = await clickAndDownload(page, /PDFをダウンロード/);

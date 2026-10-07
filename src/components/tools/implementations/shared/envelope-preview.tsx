@@ -9,7 +9,6 @@ import {
   type EnvelopeFreeText,
   type EnvelopeHonorific,
   type EnvelopeOrientation,
-  type EnvelopePerson,
   type EnvelopeWritingMode,
 } from "@/lib/print/envelope-layout";
 
@@ -34,8 +33,8 @@ export function EnvelopePreview({
   honorific?: EnvelopeHonorific;
   blocks?: EnvelopeBlocks;
   freeTexts?: EnvelopeFreeText[];
-  recipient: EnvelopePerson | undefined;
-  sender: EnvelopePerson | null;
+  recipient: string | undefined;
+  sender: string | null;
 }) {
   const { width: w, height: h } = resolveEnvelopePageSizePt(envelopeSize, orientation);
   const ops = layoutEnvelope({ width: w, height: h, writingMode, honorific, blocks: blocks ?? defaultBlocks(), freeTexts: freeTexts ?? [], recipient, sender }, approxWidth);
@@ -46,7 +45,7 @@ export function EnvelopePreview({
       viewBox={`0 0 ${w} ${h}`}
       role="img"
       aria-label="封筒の印刷イメージ"
-      className={`mx-auto block w-full border border-neutral-400 bg-white shadow-sm ${orientation === "portrait" ? "max-w-xs" : "max-w-xl"}`}
+      className={`mx-auto block max-h-[38vh] w-auto max-w-full border border-neutral-400 bg-white shadow-sm lg:max-h-[calc(100vh-14rem)]`}
       style={{ fontFamily: "'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif" }}
     >
       <rect x={0} y={0} width={w} height={h} fill="#ffffff" />
