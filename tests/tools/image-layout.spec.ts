@@ -23,7 +23,7 @@ test("image-layout: グリッドに配置してPDFを書き出せる", async ({ 
   await uploadFixture(page, [fixtures.png, fixtures.jpg]);
 
   await page.getByRole("button", { name: "グリッドに配置を適用" }).click();
-  await page.getByRole("button", { name: "PDF", exact: true }).click();
+  await page.getByRole("button", { name: /^pdf$/i }).click();
   await page.getByRole("button", { name: "書き出す" }).click();
   await waitForSuccess(page, "完了");
 

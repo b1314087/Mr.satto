@@ -26,7 +26,7 @@ test("image-merge: ページが表示され、画像を2枚アップロードす
 
   await uploadFixture(page, [fixtures.png, fixtures.jpg]);
 
-  await expect(page.getByText("結合方法")).toBeVisible();
+  await expect(page.getByText("結合方法", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "横結合" })).toBeVisible();
   await expect(page.getByRole("button", { name: "縦結合" })).toBeVisible();
   await expect(page.getByRole("button", { name: "グリッド" })).toBeVisible();
@@ -206,7 +206,7 @@ test("image-merge: JPEGで書き出せる", async ({ page }) => {
 test("image-merge: 未対応ファイル（txt）はエラー表示になる", async ({ page }) => {
   await page.goto("/tools/image-merge");
   await uploadFixture(page, [fixtures.txt]);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-merge: 破損した画像ファイルが混ざるとエラー表示になる", async ({ page }) => {
@@ -214,7 +214,7 @@ test("image-merge: 破損した画像ファイルが混ざるとエラー表示�
   await uploadFixture(page, [fixtures.png, fixtures.corruptedImage]);
 
   await page.getByRole("button", { name: "PNGで保存" }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-merge: ファイル未選択時は保存ボタンが表示されない", async ({ page }) => {
@@ -230,7 +230,7 @@ test("image-merge: 不正なサイズ指定（0px）はエラー表示になり�
   await page.getByRole("button", { name: "サイズを揃える" }).click();
   await page.getByLabel("幅").fill("0");
 
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
   await expect(page.getByRole("button", { name: "PNGで保存" })).toBeDisabled();
 });
 

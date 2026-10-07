@@ -118,13 +118,13 @@ test("passport-photo: 用紙・余白を変更すると最大枚数の表示が�
 test("passport-photo: 未対応ファイル（txt）はエラー表示になる", async ({ page }) => {
   await page.goto("/tools/image-passport-photo");
   await uploadFixture(page, [fixtures.txt]);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("passport-photo: 破損した画像ファイルはエラー表示になる", async ({ page }) => {
   await page.goto("/tools/image-passport-photo");
   await uploadFixture(page, [fixtures.corruptedImage]);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("passport-photo: 不正なカスタムサイズ（0mm）はエラー表示になり、出力ボタンが無効", async ({ page }) => {
@@ -134,7 +134,7 @@ test("passport-photo: 不正なカスタムサイズ（0mm）はエラー表示�
   await page.getByRole("button", { name: "カスタム" }).click();
   await page.getByLabel("幅 (mm)").fill("0");
 
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
   await expect(page.getByRole("button", { name: "画像を書き出す" })).toHaveCount(0);
 });
 
@@ -145,7 +145,7 @@ test("passport-photo: 極端に大きいカスタムサイズはエラー表示�
   await page.getByRole("button", { name: "カスタム" }).click();
   await page.getByLabel("幅 (mm)").fill("9999");
 
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("passport-photo: ファイル未選択時は出力操作が表示されない", async ({ page }) => {

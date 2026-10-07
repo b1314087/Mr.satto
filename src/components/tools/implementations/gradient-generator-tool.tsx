@@ -210,7 +210,7 @@ export function GradientGeneratorTool() {
 
         <ul className="flex flex-col gap-3">
           {spec.stops.map((stop, i) => (
-            <li key={i} className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+            <li key={i} className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[auto_1fr_auto]">
               <div className="flex items-center gap-2">
                 <input
                   type="color"
@@ -234,6 +234,7 @@ export function GradientGeneratorTool() {
               <input
                 type="range"
                 aria-label={`色${i + 1}の位置`}
+                className="w-full min-w-0"
                 min={0}
                 max={100}
                 value={stop.position}

@@ -346,7 +346,7 @@ test.describe("UX", () => {
     // 表示される具体的な文言はpdf.js側のエラーメッセージ次第で変わりうるため、
     // 汎用的なエラー表示領域(role="alert"、tests/components/common/error-message.tsx)
     // が出ること・処理が始められない状態のままであることを確認する。
-    await expect(page.getByRole("alert")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/^合計ページ数: \d+ページ$/)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "抽出する" })).toBeDisabled();
   });

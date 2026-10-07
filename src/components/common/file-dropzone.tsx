@@ -140,6 +140,7 @@ export function FileDropzone({
         id={inputId}
         ref={inputRef}
         type="file"
+        aria-label={label}
         accept={accept}
         multiple={multiple}
         className="hidden"

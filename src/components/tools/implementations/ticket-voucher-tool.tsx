@@ -220,7 +220,7 @@ export function TicketVoucherTool() {
       <div className="flex flex-wrap gap-4">
         <div className="flex flex-col gap-1 text-sm">
           <span className="text-neutral-600 dark:text-neutral-300">用紙サイズ</span>
-          <select value={form.paperSizeId} onChange={(e) => update("paperSizeId", e.target.value as PaperSizeId)} className={inputClass}>
+          <select aria-label="用紙サイズ" value={form.paperSizeId} onChange={(e) => update("paperSizeId", e.target.value as PaperSizeId)} className={inputClass}>
             {PAPER_SIZE_IDS.map((id) => (
               <option key={id} value={id}>{PAPER_SIZE_LABELS[id]}</option>
             ))}

@@ -209,7 +209,7 @@ test("image-tile-split: 行数0はエラー表示になり、分割ボタンが�
   await uploadFixture(page, [fixtures.png]);
 
   await page.getByLabel("行").fill("0");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
   await expect(page.getByRole("button", { name: /枚に分割する/ })).toBeDisabled();
 });
 
@@ -218,7 +218,7 @@ test("image-tile-split: 列数0はエラー表示になる", async ({ page }) =>
   await uploadFixture(page, [fixtures.png]);
 
   await page.getByLabel("列").fill("0");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-tile-split: 上限を超える行数・列数はエラー表示になる", async ({ page }) => {
@@ -226,7 +226,7 @@ test("image-tile-split: 上限を超える行数・列数はエラー表示に�
   await uploadFixture(page, [fixtures.png]);
 
   await page.getByLabel("行").fill("50");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-tile-split: 極端に多い分割数（行列とも上限内だが合計が多すぎる）はエラー表示になる", async ({ page }) => {
@@ -235,19 +235,19 @@ test("image-tile-split: 極端に多い分割数（行列とも上限内だが�
 
   await page.getByLabel("行").fill("20");
   await page.getByLabel("列").fill("20");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-tile-split: 未対応ファイル（txt）はエラー表示になる", async ({ page }) => {
   await page.goto("/tools/image-tile-split");
   await uploadFixture(page, [fixtures.txt]);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-tile-split: 破損した画像ファイルはエラー表示になる", async ({ page }) => {
   await page.goto("/tools/image-tile-split");
   await uploadFixture(page, [fixtures.corruptedImage]);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-tile-split: ファイル未選択時は分割操作が表示されない", async ({ page }) => {

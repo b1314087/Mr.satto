@@ -818,7 +818,7 @@ export const tools: Tool[] = [
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["timer", "タイマー", "勉強", "集中"],
+    keywords: ["timer", "タイマー", "勉強", "集中", "学生"],
     featured: true,
   },
   {
@@ -829,7 +829,7 @@ export const tools: Tool[] = [
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["単位", "換算", "長さ", "重さ", "温度", "面積", "坪", "畳", "インチ", "ポンド"],
+    keywords: ["単位", "換算", "長さ", "重さ", "温度", "面積", "坪", "畳", "インチ", "ポンド", "学生"],
   },
 
   // ------------------------------------------------------------------

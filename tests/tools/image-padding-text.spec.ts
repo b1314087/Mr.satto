@@ -221,7 +221,7 @@ test("image-padding-text: 画像1枚を一括出力するとZIPにならず直�
 test("image-padding-text: 未対応ファイル（txt）はエラー表示になる", async ({ page }) => {
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [fixtures.txt]);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-padding-text: 破損した画像ファイルが混ざるとエラー表示になる", async ({ page }) => {
@@ -229,7 +229,7 @@ test("image-padding-text: 破損した画像ファイルが混ざるとエラー
   await uploadFixture(page, [fixtures.png, fixtures.corruptedImage]);
 
   await page.getByRole("button", { name: "2件を一括出力" }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-padding-text: ファイル未選択時は出力操作が表示されない", async ({ page }) => {

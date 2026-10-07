@@ -61,6 +61,9 @@ export function AdSlot({
   }, [enabled]);
 
   if (!enabled) {
+    // 広告が未設定の本番環境では、使えない機能に見える「（準備中）」の枠を出さない。
+    // 開発・テスト環境では、配置の確認ができるよう枠を表示する。
+    if (process.env.NODE_ENV !== "development" && process.env.NODE_ENV !== "test") return null;
     return (
       <div
         role="complementary"

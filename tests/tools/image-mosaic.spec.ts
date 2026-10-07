@@ -41,13 +41,13 @@ test("image-mosaic: ページが表示され、画像をアップロードする
 test("image-mosaic: 非画像ファイル（txt）はエラー表示になる", async ({ page }) => {
   await page.goto("/tools/image-mosaic");
   await uploadFixture(page, [fixtures.txt]);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-mosaic: 破損した画像ファイルはエラー表示になる", async ({ page }) => {
   await page.goto("/tools/image-mosaic");
   await uploadFixture(page, [fixtures.corruptedImage]);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("image-mosaic: 範囲を追加するとデフォルトでモザイク・選択状態になる", async ({ page }) => {

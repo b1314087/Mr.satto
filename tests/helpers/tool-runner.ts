@@ -36,6 +36,7 @@ const MAGIC_BYTES: Record<string, (buf: Buffer) => boolean> = {
   zip: (buf) => buf[0] === 0x50 && buf[1] === 0x4b,
   png: (buf) => buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47,
   jpg: (buf) => buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff,
+  webp: (buf) => buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WEBP",
 };
 
 export async function assertDownloadedFile(

@@ -43,3 +43,31 @@ test("image-batch-convert: 複数画像を一括変換し、ZIPでダウンロ�
   const { size } = await assertDownloadedFile(download, { minBytes: 10 });
   expect(size).toBeGreaterThan(0);
 });
+
+test("image-compress-to-size: 目標KBを指定して圧縮し、ダウンロードできる", async ({ page }) => {
+  await page.goto("/tools/image-compress-to-size");
+  await uploadFixture(page, fixtures.jpg);
+
+  await page.getByRole("button", { name: "圧縮する" }).click();
+  await waitForSuccess(page, "完了");
+
+  const download = await clickAndDownload(page, "ダウンロード");
+  await assertDownloadedFile(download, { minBytes: 10 });
+});
+
+for (const [id, action, format] of [
+  ["image-jpg-convert", "JPGに変換する", "jpeg"],
+  ["image-png-convert", "PNGに変換する", "png"],
+  ["image-webp-convert", "WebPに変換する", "webp"],
+] as const) {
+  test(`${id}: 画像を${format}に変換してダウンロードできる`, async ({ page }) => {
+    await page.goto(`/tools/${id}`);
+    await uploadFixture(page, fixtures.png);
+
+    await page.getByRole("button", { name: action }).click();
+    await waitForSuccess(page, "完了");
+
+    const download = await clickAndDownload(page, "ダウンロード");
+    await assertDownloadedFile(download, { format: format === "jpeg" ? "jpg" : format, minBytes: 10 });
+  });
+}

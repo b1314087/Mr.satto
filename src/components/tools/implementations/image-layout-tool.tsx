@@ -666,6 +666,7 @@ export function ImageLayoutTool() {
         <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">キャンバスサイズ</h3>
           <select
+            aria-label="キャンバスサイズ"
             value={paperMode}
             onChange={(e) => applyPaperMode(e.target.value as PaperSizeId | "custom", orientation)}
             className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
@@ -699,6 +700,7 @@ export function ImageLayoutTool() {
             <div className="flex items-center gap-2 text-sm">
               <input
                 type="number"
+                aria-label="キャンバスの幅(px)"
                 min={100}
                 max={6000}
                 value={Math.round(canvasWidthPx)}
@@ -708,6 +710,7 @@ export function ImageLayoutTool() {
               <span>×</span>
               <input
                 type="number"
+                aria-label="キャンバスの高さ(px)"
                 min={100}
                 max={6000}
                 value={Math.round(canvasHeightPx)}
