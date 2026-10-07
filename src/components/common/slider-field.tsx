@@ -10,6 +10,7 @@ import { useId } from "react";
  */
 export function SliderField({
   label,
+  ariaLabel,
   value,
   min,
   max,
@@ -21,6 +22,8 @@ export function SliderField({
   hint,
 }: {
   label: string;
+  /** 画面には短い名前(label)だけを出し、読み上げ・テスト用の正式名称を別に付けたいとき */
+  ariaLabel?: string;
   value: number;
   min: number;
   max: number;
@@ -45,7 +48,7 @@ export function SliderField({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
-        <label htmlFor={id} className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+        <label htmlFor={id} className="whitespace-nowrap text-sm font-medium text-neutral-700 dark:text-neutral-200">
           {label}
         </label>
         <div className="flex items-center gap-1.5">
@@ -53,7 +56,7 @@ export function SliderField({
             key={value /* 外部(スライダー等)からの変更を数値欄へ反映する */}
             type="number"
             inputMode="numeric"
-            aria-label={`${label}の数値`}
+            aria-label={`${ariaLabel ?? label}の数値`}
             min={min}
             max={inputMax ?? max}
             step={step}
@@ -79,6 +82,7 @@ export function SliderField({
       <input
         id={id}
         type="range"
+        aria-label={ariaLabel}
         min={min}
         max={max}
         step={step}

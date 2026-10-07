@@ -415,9 +415,10 @@ export function EnvelopeAddressTool() {
                 <summary className="cursor-pointer text-sm font-medium">
                   {label}
                 </summary>
-                <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="mt-3 grid grid-cols-1 gap-3">
                   <SliderField
-                    label={`${label}の文字サイズ`}
+                    label="文字サイズ"
+                    ariaLabel={`${label}の文字サイズ`}
                     value={pl.size}
                     min={MIN_FONT_PT}
                     max={MAX_FONT_PT}
@@ -425,23 +426,23 @@ export function EnvelopeAddressTool() {
                     onChange={(v) => updateBlock(id, { size: v })}
                   />
                   <SliderField
-                    label={`${label}のX位置`}
+                    label="X"
+                    ariaLabel={`${label}のX位置`}
                     value={pl.xPct}
                     min={0}
                     max={100}
                     step={0.5}
                     unit="%"
-                    hint="左右の位置（右へ行くほど大きい）"
                     onChange={(v) => updateBlock(id, { x: v })}
                   />
                   <SliderField
-                    label={`${label}のY位置`}
+                    label="Y"
+                    ariaLabel={`${label}のY位置`}
                     value={pl.yPct}
                     min={0}
                     max={100}
                     step={0.5}
                     unit="%"
-                    hint="上下の位置（下へ行くほど大きい）"
                     onChange={(v) => updateBlock(id, { y: v })}
                   />
                 </div>
@@ -500,9 +501,10 @@ export function EnvelopeAddressTool() {
                   削除
                 </button>
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3">
                 <SliderField
-                  label={`自由テキスト${i + 1}の文字サイズ`}
+                  label="文字サイズ"
+                  ariaLabel={`自由テキスト${i + 1}の文字サイズ`}
                   value={f.size}
                   min={MIN_FONT_PT}
                   max={MAX_FONT_PT}
@@ -510,7 +512,8 @@ export function EnvelopeAddressTool() {
                   onChange={(v) => updateFree(f.id, { size: v })}
                 />
                 <SliderField
-                  label={`自由テキスト${i + 1}のX位置`}
+                  label="X"
+                  ariaLabel={`自由テキスト${i + 1}のX位置`}
                   value={f.x}
                   min={0}
                   max={100}
@@ -519,7 +522,8 @@ export function EnvelopeAddressTool() {
                   onChange={(v) => updateFree(f.id, { x: v })}
                 />
                 <SliderField
-                  label={`自由テキスト${i + 1}のY位置`}
+                  label="Y"
+                  ariaLabel={`自由テキスト${i + 1}のY位置`}
                   value={f.y}
                   min={0}
                   max={100}

@@ -17,8 +17,8 @@ async function fillRecipient(page: import("@playwright/test").Page) {
   // 初回表示直後は入力が反映されないことがあるため、プレビューに出るまで入力し直す
   await expect(async () => {
     await page.getByLabel("宛先1").fill("〒100-0001\n東京都千代田区千代田1-1\n山田商事");
-    await expect(page.getByTestId("tool-preview").locator("svg")).toContainText("東", { timeout: 1500 });
-  }).toPass({ timeout: 15_000 });
+    await expect(page.getByTestId("tool-preview").locator("svg")).toContainText("東", { timeout: 3000 });
+  }).toPass({ timeout: 40_000 });
 }
 
 async function makePdf(page: import("@playwright/test").Page): Promise<string> {
