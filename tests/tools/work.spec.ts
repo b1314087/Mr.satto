@@ -84,10 +84,10 @@ test("filled-pdf-to-excel: PDFを受け付け、ページ数が表示される�
   await expect(page.getByText(/^合計ページ数: \d+ページ$/)).toBeVisible({ timeout: 30_000 });
 });
 
-test("business-card-qr: 連絡先情報を入力してQRコードを生成しダウンロードできる", async ({ page }) => {
+test("business-card-qr: 連絡先情報を入力して二次元コードを生成しダウンロードできる", async ({ page }) => {
   // Phase 14.1: qr-generatorと共通のQrCodeProcessor/handleDownloadパターンを
   // 使っているため、同じ「fetch(dataUrl)がCSPで失敗する」バグが
-  // 名刺QRコード作成にも存在していた。現在提供されているUI項目
+  // 名刺二次元コード作成にも存在していた。現在提供されているUI項目
   // （氏名・会社名・役職・電話番号・メールアドレス・Webサイト）のみを使い、
   // 新しい入力項目は追加しない。
   await page.goto("/tools/business-card-qr");
@@ -98,9 +98,9 @@ test("business-card-qr: 連絡先情報を入力してQRコードを生成しダ
   await page.getByPlaceholder("taro@example.com").fill("test@example.com");
   await page.getByPlaceholder("https://example.com").fill("https://mrmatto.vercel.app/");
 
-  await page.getByRole("button", { name: "名刺QRコードを生成する" }).click();
+  await page.getByRole("button", { name: "名刺二次元コードを生成する" }).click();
   await waitForSuccess(page, "生成しました");
-  await expect(page.getByRole("img", { name: "生成された名刺QRコード" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "生成された名刺二次元コード" })).toBeVisible();
 
   const download = await clickAndDownload(page, "画像としてダウンロード");
   const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 10 });

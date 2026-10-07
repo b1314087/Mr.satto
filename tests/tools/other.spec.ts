@@ -17,14 +17,14 @@ import fs from "node:fs";
  * 成立していること（マジックバイト＋実際の画像寸法）まで確認する。
  */
 
-test("qr-generator: URLからQRコードを生成し画像としてダウンロードできる", async ({ page }) => {
+test("qr-generator: URLから二次元コードを生成し画像としてダウンロードできる", async ({ page }) => {
   await page.goto("/tools/qr-generator");
   await page.getByRole("textbox").first().fill("https://mrmatto.vercel.app/");
 
-  await page.getByRole("button", { name: "QRコードを生成する" }).click();
+  await page.getByRole("button", { name: "二次元コードを生成する" }).click();
   await waitForSuccess(page, "生成しました");
 
-  await expect(page.getByRole("img", { name: "生成されたQRコード" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "生成された二次元コード" })).toBeVisible();
 
   const download = await clickAndDownload(page, "画像としてダウンロード");
   const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 10 });
@@ -36,13 +36,13 @@ test("qr-generator: URLからQRコードを生成し画像としてダウンロ�
   expect(height).toBeGreaterThan(0);
 });
 
-test("qr-generator: 日本語テキストからもQRコードを生成しダウンロードできる", async ({ page }) => {
+test("qr-generator: 日本語テキストからも二次元コードを生成しダウンロードできる", async ({ page }) => {
   await page.goto("/tools/qr-generator");
   await page.getByRole("textbox").first().fill("東京都渋谷区 テスト株式会社 御中");
 
-  await page.getByRole("button", { name: "QRコードを生成する" }).click();
+  await page.getByRole("button", { name: "二次元コードを生成する" }).click();
   await waitForSuccess(page, "生成しました");
-  await expect(page.getByRole("img", { name: "生成されたQRコード" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "生成された二次元コード" })).toBeVisible();
 
   const download = await clickAndDownload(page, "画像としてダウンロード");
   const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 10 });
@@ -53,7 +53,7 @@ test("qr-generator: 日本語テキストからもQRコードを生成しダウ�
 
 test("qr-generator: 空欄では生成ボタンが無効化され、クラッシュしない", async ({ page }) => {
   await page.goto("/tools/qr-generator");
-  await expect(page.getByRole("button", { name: "QRコードを生成する" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "二次元コードを生成する" })).toBeDisabled();
   await expect(page.locator("body")).not.toContainText("Application error");
 });
 

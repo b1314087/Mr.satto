@@ -7,7 +7,7 @@
  *
  * 用紙上への固定サイズセルの敷き詰めは image-layout.ts の computeFixedSizeGrid()
  * をそのまま再利用する（新しいグリッド計算ロジックを増やさない）。
- * QRコードは既存の qrcode パッケージ（qrcode.ts と同じ）、バーコードは
+ * 二次元コードは既存の qrcode パッケージ（qrcode.ts と同じ）、バーコードは
  * このフェーズで新規に追加した jsbarcode（MIT・純JS・ブラウザ完結・
  * 既存ライブラリでは代替できないため新規追加、と判断した）を使う。
  * どちらも生成したPNGをCanvas経由のdata URLとして受け取り、
@@ -21,61 +21,49 @@ import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
 import { BrowserProcessor } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
-import { wrapTextByWidth, createTextDrawer } from "@/lib/pdf/text-draw";
+import { createTextDrawer } from "@/lib/pdf/text-draw";
 import { mmToPt, resolvePaperSizePt, type PaperSizeId, type PaperOrientation } from "@/lib/print/paper-sizes";
 import { computeFixedSizeGrid } from "./image-layout";
 import { dataUrlToBlob, sanitizeFileName } from "@/lib/utils/format";
+import {
+  buildTickets,
+  layoutTicket,
+  validateTicketInput,
+  type TicketCodeSettings,
+  type TicketGroup,
+  type TicketRow,
+} from "@/lib/tickets/ticket-layout";
 
+/**
+ * 券の入力。「券の種類」(groups。タイトル・金額・開始番号〜終了番号)を複数並べるか、
+ * Excelから読み込んだ行(rows。1行=1枚)を使う。どちらの場合も、配置は
+ * src/lib/tickets/ticket-layout.ts で計算する(画面のプレビューと共通)。
+ */
 export interface TicketVoucherInput {
   paperSizeId: PaperSizeId;
   orientation: PaperOrientation;
   cellWidthMm: number;
   cellHeightMm: number;
-  count: number;
-  title: string;
-  date: string;
-  amount: string;
-  freeText: string;
-  showSerial: boolean;
-  serialStart: number;
-  serialDigits: number;
-  showQr: boolean;
-  qrContent: string;
-  showBarcode: boolean;
-  barcodeContent: string;
-  showCutLines: boolean;
   marginMm: number;
   gapMm: number;
+  showSerial: boolean;
+  serialDigits: number;
+  showCutLines: boolean;
+  codes: TicketCodeSettings;
+  groups: TicketGroup[];
+  rows: TicketRow[] | null;
+  rowsSerialStart: number;
 }
 
 export interface TicketVoucherOutput {
   blob: Blob;
   pageCount: number;
   ticketsPerPage: number;
+  ticketCount: number;
 }
-
-const MAX_TICKETS = 2000;
-const COLOR_MUTED: [number, number, number] = [0.45, 0.45, 0.48];
 
 export function validateTicketVoucherInput(input: TicketVoucherInput): string | null {
-  if (!(input.cellWidthMm > 0) || !(input.cellHeightMm > 0)) {
-    return "1枚あたりのサイズは0より大きい値を指定してください";
-  }
-  if (!Number.isInteger(input.count) || input.count < 1) {
-    return "枚数は1以上の整数で指定してください";
-  }
-  if (input.count > MAX_TICKETS) {
-    return `枚数が多すぎます（最大${MAX_TICKETS}枚まで）`;
-  }
-  if (input.marginMm < 0 || input.gapMm < 0) {
-    return "余白・間隔にマイナスの値は指定できません";
-  }
-  return null;
-}
-
-function applySerialTemplate(template: string, serial: number, digits: number): string {
-  if (!template.includes("{n}")) return template;
-  return template.replaceAll("{n}", String(serial).padStart(Math.max(1, digits), "0"));
+  return validateTicketInput(input);
 }
 
 async function renderQrPng(text: string): Promise<Uint8Array> {
@@ -120,29 +108,26 @@ export class TicketVoucherProcessor extends BrowserProcessor<TicketVoucherInput,
     }
 
     const pageSize = resolvePaperSizePt(input.paperSizeId, input.orientation);
-    const marginPt = mmToPt(input.marginMm);
-    const gapPt = mmToPt(input.gapMm);
-    const cellWPt = mmToPt(input.cellWidthMm);
-    const cellHPt = mmToPt(input.cellHeightMm);
-
     const cells = computeFixedSizeGrid({
       canvasWidthPx: pageSize.width,
       canvasHeightPx: pageSize.height,
-      marginPx: marginPt,
-      gapPx: gapPt,
-      cellWidthPx: cellWPt,
-      cellHeightPx: cellHPt,
+      marginPx: mmToPt(input.marginMm),
+      gapPx: mmToPt(input.gapMm),
+      cellWidthPx: mmToPt(input.cellWidthMm),
+      cellHeightPx: mmToPt(input.cellHeightMm),
     });
     if (cells.length === 0) {
       throw new Error("この用紙サイズ・余白では券が1枚も配置できません。サイズまたは余白を見直してください");
     }
     const ticketsPerPage = cells.length;
+    const tickets = buildTickets(input);
+    const measure = (t: string, size: number) => font.widthOfTextAtSize(t, size);
 
-    // 同一内容のQR/バーコードを何度も生成しないよう、内容文字列ごとにキャッシュする
-    const qrCache = new Map<string, PDFImage>();
+    // 同一内容のコードを何度も生成しないよう、内容文字列ごとにキャッシュする
+    const qrCache = new Map<string, PDFImage | null>();
     const barcodeCache = new Map<string, PDFImage | null>();
 
-    const pageCount = Math.ceil(input.count / ticketsPerPage);
+    const pageCount = Math.ceil(tickets.length / ticketsPerPage);
     let ticketIndex = 0;
 
     for (let p = 0; p < pageCount; p++) {
@@ -150,98 +135,57 @@ export class TicketVoucherProcessor extends BrowserProcessor<TicketVoucherInput,
       const { drawText, drawLine } = createTextDrawer(page, font);
 
       for (const cell of cells) {
-        if (ticketIndex >= input.count) break;
-        const serial = input.serialStart + ticketIndex;
-        const topY = pageSize.height - cell.y;
+        if (ticketIndex >= tickets.length) break;
+        const ticket = tickets[ticketIndex];
         const left = cell.x;
-        const w = cell.width;
-        const h = cell.height;
-
-        if (input.showCutLines) {
-          drawLine(left, topY, left + w, topY, COLOR_MUTED, 0.5, [3, 2]);
-          drawLine(left, topY - h, left + w, topY - h, COLOR_MUTED, 0.5, [3, 2]);
-          drawLine(left, topY, left, topY - h, COLOR_MUTED, 0.5, [3, 2]);
-          drawLine(left + w, topY, left + w, topY - h, COLOR_MUTED, 0.5, [3, 2]);
-        }
-
-        const pad = Math.min(w, h) * 0.06;
-        let cursorY = topY - pad - 10;
-        if (input.title.trim()) {
-          const titleLines = wrapTextByWidth(input.title, font, 12, w - pad * 2);
-          for (const line of titleLines.slice(0, 2)) {
-            drawText(line, left + pad, cursorY, 12);
-            cursorY -= 15;
-          }
-        }
-        if (input.date.trim()) {
-          drawText(input.date, left + pad, cursorY, 8, { color: COLOR_MUTED });
-          cursorY -= 12;
-        }
-        if (input.amount.trim()) {
-          drawText(input.amount, left + pad, cursorY, 16);
-          cursorY -= 20;
-        }
-        if (input.freeText.trim()) {
-          const freeLines = wrapTextByWidth(input.freeText, font, 8, w - pad * 2);
-          for (const line of freeLines.slice(0, 3)) {
-            drawText(line, left + pad, cursorY, 8, { color: COLOR_MUTED });
-            cursorY -= 11;
-          }
-        }
-        if (input.showSerial) {
-          const label = `No. ${String(serial).padStart(Math.max(1, input.serialDigits), "0")}`;
-          drawText(label, left + pad, topY - h + pad + 8, 8, { color: COLOR_MUTED });
-        }
-
-        const codeSize = Math.min(w, h) * 0.28;
-        if (input.showQr && codeSize > 8) {
-          const content = applySerialTemplate(input.qrContent || "{n}", serial, input.serialDigits);
-          let img = qrCache.get(content);
-          if (!img) {
-            try {
-              const bytes = await renderQrPng(content);
-              img = await doc.embedPng(bytes);
-              qrCache.set(content, img);
-            } catch {
-              img = undefined;
+        const topY = pageSize.height - cell.y;
+        const ops = layoutTicket(
+          { w: cell.width, h: cell.height, showSerial: input.showSerial, showCutLines: input.showCutLines, codes: input.codes, ticket },
+          measure
+        );
+        for (const op of ops) {
+          if (op.kind === "cutRect") {
+            const x0 = left + op.x;
+            const y0 = topY - op.y;
+            drawLine(x0, y0, x0 + op.w, y0, [0.45, 0.45, 0.48], 0.5, [3, 2]);
+            drawLine(x0, y0 - op.h, x0 + op.w, y0 - op.h, [0.45, 0.45, 0.48], 0.5, [3, 2]);
+            drawLine(x0, y0, x0, y0 - op.h, [0.45, 0.45, 0.48], 0.5, [3, 2]);
+            drawLine(x0 + op.w, y0, x0 + op.w, y0 - op.h, [0.45, 0.45, 0.48], 0.5, [3, 2]);
+          } else if (op.kind === "text") {
+            // 英字・ピリオドの直後の数字は、フォントの文脈置換で別字形になり文字列として抽出できなくなるため、
+            // 数字の連続ごとに分けて描画する（見た目と幅は変わらない）
+            let tx = left + op.x;
+            for (const part of op.text.split(/(\d+)/).filter((t) => t !== "")) {
+              drawText(part, tx, topY - op.y, op.size, { color: op.color });
+              tx += font.widthOfTextAtSize(part, op.size);
             }
-          }
-          if (img) {
-            page.drawImage(img, {
-              x: left + w - pad - codeSize,
-              y: topY - pad - codeSize,
-              width: codeSize,
-              height: codeSize,
-            });
-          }
-        }
-
-        if (input.showBarcode && w > mmToPt(20)) {
-          const content = applySerialTemplate(input.barcodeContent || "{n}", serial, input.serialDigits);
-          let img = barcodeCache.has(content) ? barcodeCache.get(content) : undefined;
-          if (img === undefined) {
-            const bytes = renderBarcodePng(content);
-            if (bytes) {
+          } else if (op.kind === "qr") {
+            let img = qrCache.get(op.content);
+            if (img === undefined) {
               try {
-                img = await doc.embedPng(bytes);
+                img = await doc.embedPng(await renderQrPng(op.content));
               } catch {
                 img = null;
               }
-            } else {
-              img = null;
+              qrCache.set(op.content, img);
             }
-            barcodeCache.set(content, img ?? null);
-          }
-          if (img) {
-            const bw = w - pad * 2;
-            const bh = Math.min(h * 0.18, 28);
-            page.drawImage(img, { x: left + pad, y: topY - h + pad, width: bw, height: bh });
+            if (img) page.drawImage(img, { x: left + op.x, y: topY - op.y - op.size, width: op.size, height: op.size });
+          } else {
+            let img = barcodeCache.get(op.content);
+            if (img === undefined) {
+              const bytes = renderBarcodePng(op.content);
+              try {
+                img = bytes ? await doc.embedPng(bytes) : null;
+              } catch {
+                img = null;
+              }
+              barcodeCache.set(op.content, img);
+            }
+            if (img) page.drawImage(img, { x: left + op.x, y: topY - op.y - op.h, width: op.w, height: op.h });
           }
         }
-
         ticketIndex++;
       }
-      if (ticketIndex >= input.count) break;
     }
 
     let bytes: Uint8Array;
@@ -251,7 +195,7 @@ export class TicketVoucherProcessor extends BrowserProcessor<TicketVoucherInput,
       throw new Error("PDFの書き出しに失敗しました");
     }
     const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
-    return { blob, pageCount: doc.getPageCount(), ticketsPerPage };
+    return { blob, pageCount: doc.getPageCount(), ticketsPerPage, ticketCount: tickets.length };
   }
 }
 

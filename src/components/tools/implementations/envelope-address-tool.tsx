@@ -12,7 +12,11 @@ import {
   buildEnvelopeFileName,
   type EnvelopePerson,
   type EnvelopeWritingMode,
+  type EnvelopeOrientation,
+  type EnvelopeHonorific,
+  type EnvelopeTextStyle,
 } from "@/lib/processors/browser/envelope-address";
+import { DEFAULT_SIZES, DEFAULT_TEXT_STYLE, HONORIFIC_LABELS, MAX_FONT_PT, MIN_FONT_PT } from "@/lib/print/envelope-layout";
 import { ENVELOPE_SIZE_IDS, ENVELOPE_SIZE_LABELS, type EnvelopeSizeId } from "@/lib/print/envelope-sizes";
 import { parseTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
@@ -68,6 +72,9 @@ function PersonFields({
 export function EnvelopeAddressTool() {
   const [envelopeSize, setEnvelopeSize] = useState<EnvelopeSizeId>("chou3");
   const [writingMode, setWritingMode] = useState<EnvelopeWritingMode>("vertical");
+  const [orientation, setOrientation] = useState<EnvelopeOrientation>("landscape");
+  const [honorific, setHonorific] = useState<EnvelopeHonorific>("sama");
+  const [style, setStyle] = useState<EnvelopeTextStyle>(DEFAULT_TEXT_STYLE);
   const [recipients, setRecipients] = useState<EnvelopePerson[]>([emptyPerson()]);
   const [sender, setSender] = useState<EnvelopePerson>(emptyPerson());
   const [useSender, setUseSender] = useState(false);
@@ -116,7 +123,7 @@ export function EnvelopeAddressTool() {
     clearResult();
   }
 
-  const input = { envelopeSize, writingMode, recipients, sender: useSender ? sender : null };
+  const input = { envelopeSize, writingMode, orientation, honorific, style, recipients, sender: useSender ? sender : null };
   const validationError = validateEnvelopeAddressInput(input);
 
   async function handleRun() {
@@ -177,6 +184,8 @@ export function EnvelopeAddressTool() {
                 type="button"
                 onClick={() => {
                   setWritingMode(mode);
+                  // 縦書きは封筒を縦長に、横書きは横長にするのが一般的なため、向きも合わせる(あとから自由に変更できる)
+                  setOrientation(mode === "vertical" ? "portrait" : "landscape");
                   clearResult();
                 }}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -190,9 +199,100 @@ export function EnvelopeAddressTool() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-4">
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-neutral-600 dark:text-neutral-300">封筒の向き</span>
+          <div className="flex gap-2">
+            {(["portrait", "landscape"] as const).map((o) => (
+              <button
+                key={o}
+                type="button"
+                aria-pressed={orientation === o}
+                onClick={() => {
+                  setOrientation(o);
+                  clearResult();
+                }}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  orientation === o ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                }`}
+              >
+                {o === "portrait" ? "縦向き" : "横向き"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1 text-sm">
+          <span className="text-neutral-600 dark:text-neutral-300">宛名の敬称</span>
+          <div className="flex gap-2">
+            {(["sama", "onchu", "none"] as const).map((h) => (
+              <button
+                key={h}
+                type="button"
+                aria-pressed={honorific === h}
+                onClick={() => {
+                  setHonorific(h);
+                  clearResult();
+                }}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  honorific === h ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                }`}
+              >
+                {HONORIFIC_LABELS[h]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <p className="text-sm font-medium">文字のサイズと太字（サイズを空にすると標準の大きさ）</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {(
+            [
+              { label: "宛名", sizeKey: "nameSize", boldKey: "nameBold", def: DEFAULT_SIZES[writingMode].name },
+              { label: "住所", sizeKey: "addressSize", boldKey: "addressBold", def: DEFAULT_SIZES[writingMode].address },
+              { label: "差出人", sizeKey: "senderSize", boldKey: "senderBold", def: DEFAULT_SIZES[writingMode].sender },
+            ] as const
+          ).map((f) => (
+            <div key={f.label} className="flex flex-col gap-1.5 text-sm">
+              <label className="flex flex-col gap-1 text-neutral-600 dark:text-neutral-300">
+                {f.label}の文字サイズ（pt）
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={MIN_FONT_PT}
+                  max={MAX_FONT_PT}
+                  step={1}
+                  value={style[f.sizeKey] ?? ""}
+                  placeholder={`標準 ${f.def}`}
+                  aria-label={`${f.label}の文字サイズ`}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? null : e.target.valueAsNumber;
+                    setStyle((prev) => ({ ...prev, [f.sizeKey]: v }));
+                    clearResult();
+                  }}
+                  className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={style[f.boldKey]}
+                  onChange={(e) => {
+                    setStyle((prev) => ({ ...prev, [f.boldKey]: e.target.checked }));
+                    clearResult();
+                  }}
+                />
+                {f.label}を太字にする
+              </label>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium">プレビュー（{ENVELOPE_SIZE_LABELS[envelopeSize]}）</p>
+          <p className="text-sm font-medium">プレビュー（{ENVELOPE_SIZE_LABELS[envelopeSize]}・{orientation === "portrait" ? "縦向き" : "横向き"}）</p>
           {validRecipients.length > 1 && (
             <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
               <button
@@ -220,6 +320,9 @@ export function EnvelopeAddressTool() {
         <EnvelopePreview
           envelopeSize={envelopeSize}
           writingMode={writingMode}
+          orientation={orientation}
+          honorific={honorific}
+          style={style}
           recipient={previewPerson}
           sender={useSender ? sender : null}
         />

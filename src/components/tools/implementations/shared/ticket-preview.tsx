@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { create as createQr } from "qrcode";
 import JsBarcode from "jsbarcode";
-import { approxWrap } from "./approx-text";
+import { approxWidth } from "./approx-text";
 import { computeFixedSizeGrid } from "@/lib/processors/browser/image-layout";
 import { mmToPt, resolvePaperSizePt } from "@/lib/print/paper-sizes";
 import { validateTicketVoucherInput, type TicketVoucherInput } from "@/lib/processors/browser/ticket-voucher";
+import { buildTickets, layoutTicket } from "@/lib/tickets/ticket-layout";
 
 /**
  * 整理券・金券・引換券のプレビュー。
@@ -17,11 +18,6 @@ import { validateTicketVoucherInput, type TicketVoucherInput } from "@/lib/proce
 
 const COLOR_TEXT = "#212126";
 const COLOR_MUTED = "#73737a";
-
-function applySerialTemplate(template: string, serial: number, digits: number): string {
-  if (!template.includes("{n}")) return template;
-  return template.replaceAll("{n}", String(serial).padStart(Math.max(1, digits), "0"));
-}
 
 const barcodeCache = new Map<string, string | null>();
 
@@ -84,14 +80,12 @@ export function TicketPreview({ form }: { form: TicketVoucherInput }) {
         cellHeightPx: cellHPt,
       })
     : [];
+  const tickets = valid ? buildTickets(form) : [];
   const perPage = cells.length;
-  const pageCount = perPage > 0 ? Math.ceil(form.count / perPage) : 0;
+  const pageCount = perPage > 0 ? Math.ceil(tickets.length / perPage) : 0;
   const safePage = Math.min(page, Math.max(0, pageCount - 1));
   const firstIndex = safePage * perPage;
-  const pageCells = cells.slice(0, Math.max(0, Math.min(perPage, form.count - firstIndex)));
-
-  // PDFと同じく幅20mm超のときだけバーコードを描画する
-  const barcodeEnabled = form.showBarcode && cellWPt > mmToPt(20);
+  const pageCells = cells.slice(0, Math.max(0, Math.min(perPage, tickets.length - firstIndex)));
 
   if (!valid) {
     return <p className="text-sm text-neutral-500 dark:text-neutral-400">入力内容を修正すると、ここにプレビューが表示されます。</p>;
@@ -108,7 +102,7 @@ export function TicketPreview({ form }: { form: TicketVoucherInput }) {
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-600 dark:text-neutral-300">
         <span>
-          1ページに{perPage}枚 ／ 全{form.count}枚 ＝ {pageCount}ページ
+          1ページに{perPage}枚 ／ 全{tickets.length}枚 ＝ {pageCount}ページ
         </span>
         {pageCount > 1 && (
           <div className="flex items-center gap-2">
@@ -144,59 +138,30 @@ export function TicketPreview({ form }: { form: TicketVoucherInput }) {
       >
         <rect x={0} y={0} width={pageSize.width} height={pageSize.height} fill="#fff" />
         {pageCells.map((cell, i) => {
-          const serial = form.serialStart + firstIndex + i;
-          const { x: left, y: top, width: w, height: h } = cell;
-          const pad = Math.min(w, h) * 0.06;
-          let y = top + pad + 10;
-          const texts: React.ReactNode[] = [];
-          if (form.title.trim()) {
-            for (const line of approxWrap(form.title, 12, w - pad * 2).slice(0, 2)) {
-              texts.push(<text key={`t${y}`} x={left + pad} y={y} fontSize={12} fill={COLOR_TEXT}>{line}</text>);
-              y += 15;
-            }
-          }
-          if (form.date.trim()) {
-            texts.push(<text key="d" x={left + pad} y={y} fontSize={8} fill={COLOR_MUTED}>{form.date}</text>);
-            y += 12;
-          }
-          if (form.amount.trim()) {
-            texts.push(<text key="a" x={left + pad} y={y} fontSize={16} fill={COLOR_TEXT}>{form.amount}</text>);
-            y += 20;
-          }
-          if (form.freeText.trim()) {
-            for (const line of approxWrap(form.freeText, 8, w - pad * 2).slice(0, 3)) {
-              texts.push(<text key={`f${y}`} x={left + pad} y={y} fontSize={8} fill={COLOR_MUTED}>{line}</text>);
-              y += 11;
-            }
-          }
-          if (form.showSerial) {
-            texts.push(
-              <text key="s" x={left + pad} y={top + h - pad - 8} fontSize={8} fill={COLOR_MUTED}>
-                {`No. ${String(serial).padStart(Math.max(1, form.serialDigits), "0")}`}
-              </text>
-            );
-          }
-          const codeSize = Math.min(w, h) * 0.28;
-          const barcodeContent = applySerialTemplate(form.barcodeContent || "{n}", serial, form.serialDigits);
-          const barcodeUrl = barcodeEnabled ? getBarcodeDataUrl(barcodeContent) : null;
-          const bh = Math.min(h * 0.18, 28);
+          const ticket = tickets[firstIndex + i];
+          const ops = layoutTicket(
+            { w: cell.width, h: cell.height, showSerial: form.showSerial, showCutLines: form.showCutLines, codes: form.codes, ticket },
+            approxWidth
+          );
           return (
-            <g key={i}>
-              {form.showCutLines && (
-                <rect x={left} y={top} width={w} height={h} fill="none" stroke={COLOR_MUTED} strokeWidth={0.5} strokeDasharray="3 2" />
-              )}
-              {texts}
-              {form.showQr && codeSize > 8 && (
-                <QrMark
-                  content={applySerialTemplate(form.qrContent || "{n}", serial, form.serialDigits)}
-                  x={left + w - pad - codeSize}
-                  y={top + pad}
-                  size={codeSize}
-                />
-              )}
-              {barcodeUrl && (
-                <image href={barcodeUrl} x={left + pad} y={top + h - pad - bh} width={w - pad * 2} height={bh} preserveAspectRatio="none" />
-              )}
+            <g key={i} transform={`translate(${cell.x} ${cell.y})`}>
+              {ops.map((op, j) => {
+                if (op.kind === "cutRect") {
+                  return <rect key={j} x={op.x} y={op.y} width={op.w} height={op.h} fill="none" stroke={COLOR_MUTED} strokeWidth={0.5} strokeDasharray="3 2" />;
+                }
+                if (op.kind === "text") {
+                  return (
+                    <text key={j} x={op.x} y={op.y} fontSize={op.size} fill={op.size >= 12 ? COLOR_TEXT : COLOR_MUTED}>
+                      {op.text}
+                    </text>
+                  );
+                }
+                if (op.kind === "qr") {
+                  return <QrMark key={j} content={op.content} x={op.x} y={op.y} size={op.size} />;
+                }
+                const url = getBarcodeDataUrl(op.content);
+                return url ? <image key={j} href={url} x={op.x} y={op.y} width={op.w} height={op.h} preserveAspectRatio="none" /> : null;
+              })}
             </g>
           );
         })}

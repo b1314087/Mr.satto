@@ -1,8 +1,8 @@
 /**
- * QRコードの上にマーク(ロゴ)を重ねる処理。ブラウザのCanvasだけで完結する。
+ * 二次元コードの上にマーク(ロゴ)を重ねる処理。ブラウザのCanvasだけで完結する。
  *
  * マークの下には背景色の台(角丸の四角)を敷き、マークの周りのQRの点を消して読み取りやすくする。
- * 隠れた部分は QRコードの誤り訂正で補うため、マークを付けるときは誤り訂正レベルを最高の H にする
+ * 隠れた部分は 二次元コードの誤り訂正で補うため、マークを付けるときは誤り訂正レベルを最高の H にする
  * (Hは全体の約30%まで欠けても復元できる)。マークの一辺を QRの一辺の30%以内にすると、
  * 面積は約9%以下で、この範囲に収まる。
  */
@@ -13,7 +13,7 @@ export interface QrLogo {
   /** 画像のdata URL(PNG/JPEG/SVGなど) */
   src: string;
   position: QrLogoPosition;
-  /** マークの一辺が、QRコードの一辺の何%か(10〜30) */
+  /** マークの一辺が、二次元コードの一辺の何%か(10〜30) */
   sizePct: number;
 }
 
@@ -69,7 +69,7 @@ export function logoBox(qrSize: number, logo: Pick<QrLogo, "position" | "sizePct
   return { x: Math.round((qrSize - side) / 2), y: Math.round((qrSize - side) / 2), side };
 }
 
-/** QRコード画像(data URL)にマークを重ねて、PNGのdata URLで返す */
+/** 二次元コード画像(data URL)にマークを重ねて、PNGのdata URLで返す */
 export async function addLogoToQr(qrDataUrl: string, logo: QrLogo, backgroundColor: string): Promise<string> {
   const [qrImg, logoImg] = await Promise.all([loadImage(qrDataUrl), loadImage(logo.src)]);
   const size = qrImg.naturalWidth || qrImg.width;

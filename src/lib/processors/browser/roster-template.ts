@@ -221,3 +221,49 @@ export class RosterTemplateProcessor extends BrowserProcessor<RosterTemplateInpu
 export function buildRosterFileName(format: "excel" | "pdf"): string {
   return sanitizeFileName(`名簿テンプレート.${format === "excel" ? "xlsx" : "pdf"}`);
 }
+
+/** スキャンした名簿の罫線から作る、空欄の枠だけのExcel */
+export interface ScanGridExcelInput {
+  /** 列の幅(mm)。左から右へ */
+  colWidthsMm: number[];
+  /** 行の高さ(mm)。上から下へ */
+  rowHeightsMm: number[];
+}
+
+const MAX_GRID_COLS = 100;
+const MAX_GRID_ROWS = 500;
+/** Excelの行の高さの上限は409pt */
+const MAX_EXCEL_ROW_PT = 409;
+
+export function validateScanGridExcelInput(input: ScanGridExcelInput): string | null {
+  if (input.colWidthsMm.length === 0 || input.rowHeightsMm.length === 0) {
+    return "列と行が1つ以上必要です";
+  }
+  if (input.colWidthsMm.length > MAX_GRID_COLS || input.rowHeightsMm.length > MAX_GRID_ROWS) {
+    return `列は${MAX_GRID_COLS}、行は${MAX_GRID_ROWS}までです`;
+  }
+  if (input.colWidthsMm.some((w) => !(w > 0)) || input.rowHeightsMm.some((h) => !(h > 0))) {
+    return "列の幅・行の高さは0より大きい値を指定してください";
+  }
+  return null;
+}
+
+/** 列幅・行の高さ(mm)のとおりに、罫線だけを引いた空欄のExcelを作る */
+export async function buildScanGridExcel(input: ScanGridExcelInput): Promise<Blob> {
+  const error = validateScanGridExcelInput(input);
+  if (error) throw new Error(error);
+  const columns = input.colWidthsMm.map((w) => ({ width: mmToExcelColumnWidth(w) }));
+  const rows = input.rowHeightsMm.map((h) =>
+    input.colWidthsMm.map((_, i) => ({
+      value: "",
+      borderStyle: "thin" as const,
+      borderColor: "#000000",
+      ...(i === 0 ? { height: Math.min(MAX_EXCEL_ROW_PT, mmToPt(h)) } : {}),
+    }))
+  );
+  return writeXlsxSheets([{ name: "名簿", rows, columns }]);
+}
+
+export function buildScanGridFileName(): string {
+  return sanitizeFileName("名簿テンプレート_スキャン再現.xlsx");
+}

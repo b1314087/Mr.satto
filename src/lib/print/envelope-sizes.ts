@@ -32,10 +32,15 @@ export const ENVELOPE_SIZE_LABELS: Record<EnvelopeSizeId, string> = {
 
 export const ENVELOPE_SIZE_IDS: EnvelopeSizeId[] = ["chou3", "chou4", "kaku2"];
 
-/** 封筒サイズ(mm)をPDFページサイズ(pt)へ変換する。印刷時は封筒を横向き（長辺が横）に給紙することが多いため、常に横向き(width>height)で返す */
-export function resolveEnvelopePageSizePt(id: EnvelopeSizeId): PaperSizePt {
+export type EnvelopePageOrientation = "landscape" | "portrait";
+
+/**
+ * 封筒サイズ(mm)をPDFページサイズ(pt)へ変換する。
+ * orientation: landscape=横長(長辺が横。既定)、portrait=縦長(長辺が縦)。
+ */
+export function resolveEnvelopePageSizePt(id: EnvelopeSizeId, orientation: EnvelopePageOrientation = "landscape"): PaperSizePt {
   const mm = ENVELOPE_SIZES_MM[id];
-  const w = mmToPt(Math.max(mm.width, mm.height));
-  const h = mmToPt(Math.min(mm.width, mm.height));
-  return { width: w, height: h };
+  const long = mmToPt(Math.max(mm.width, mm.height));
+  const short = mmToPt(Math.min(mm.width, mm.height));
+  return orientation === "portrait" ? { width: short, height: long } : { width: long, height: short };
 }

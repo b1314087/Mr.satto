@@ -40,7 +40,7 @@ export const categories: Category[] = [
   {
     id: "generator",
     name: "生成ツール",
-    description: "QRコード・パスワード・配色パレットなどを新規生成するツール",
+    description: "二次元コード・パスワード・配色パレットなどを新規生成するツール",
     icon: "🛠️",
   },
   {

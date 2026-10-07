@@ -35,7 +35,7 @@ export function BusinessCardQrTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  // 入力のたびにvCardを組み立て直し、その場でQRコードを更新する（氏名が空の間は表示しない）
+  // 入力のたびにvCardを組み立て直し、その場で二次元コードを更新する（氏名が空の間は表示しない）
   const vcard = name.trim() ? buildVCard({ name, org, title, tel, email, url }) : "";
   const live = useLiveQr(vcard, { errorCorrectionLevel: "Q" });
   const dataUrl = live.dataUrl;
@@ -77,7 +77,7 @@ export function BusinessCardQrTool() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        入力した連絡先はブラウザ内でQRコード化されるだけで、どこにも送信・保存されません。
+        入力した連絡先はブラウザ内で二次元コード化されるだけで、どこにも送信・保存されません。
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {fields.map((f) => (
@@ -99,7 +99,7 @@ export function BusinessCardQrTool() {
         disabled={!name.trim() || status === "processing"}
         className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
-        名刺QRコードを生成する
+        名刺二次元コードを生成する
       </button>
 
       <ProcessingStatus state={status} successLabel="生成しました" />
@@ -113,7 +113,7 @@ export function BusinessCardQrTool() {
         {dataUrl ? (
           <div className="flex flex-col items-start gap-4 sm:flex-row">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={dataUrl} alt="生成された名刺QRコード" className="h-48 w-48 rounded-lg bg-white p-2" />
+            <img src={dataUrl} alt="生成された名刺二次元コード" className="h-48 w-48 rounded-lg bg-white p-2" />
             <div className="flex flex-col gap-1 text-sm">
               <p className="text-xs text-neutral-500 dark:text-neutral-400">読み取ると次の連絡先が登録されます</p>
               {[
@@ -135,7 +135,7 @@ export function BusinessCardQrTool() {
           </div>
         ) : (
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            氏名を入力すると、ここに名刺QRコードが表示されます。
+            氏名を入力すると、ここに名刺二次元コードが表示されます。
           </p>
         )}
         {dataUrl && (

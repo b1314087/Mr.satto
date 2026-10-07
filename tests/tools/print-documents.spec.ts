@@ -46,9 +46,9 @@ test.describe("ticket-voucher", () => {
     await assertDownloadedFile(download, { format: "pdf", minBytes: 500 });
   });
 
-  test("QRコード・バーコードを有効にしても作成できる", async ({ page }) => {
+  test("二次元コード・バーコードを有効にしても作成できる", async ({ page }) => {
     await page.goto("/tools/ticket-voucher");
-    await page.getByText("QRコードを表示する").click();
+    await page.getByText("二次元コードを表示する").click();
     await page.getByText("バーコードを表示する（CODE128）").click();
     await page.getByRole("button", { name: "PDFを作成" }).click();
     await expect(page.getByText("PDFを作成しました")).toBeVisible({ timeout: 20_000 });

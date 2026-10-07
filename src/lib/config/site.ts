@@ -11,7 +11,7 @@ export const siteConfig = {
   /** キャッチコピー。変更可能性があるため各所にハードコードしない */
   tagline: "面倒な作業を、サッと。",
   description:
-    "画像圧縮・PDF編集・CSV整形・QRコード生成など、面倒なWeb作業をブラウザ上でサッと片付ける無料のオンラインツール集です。ファイルはサーバーに保存されません。",
+    "画像圧縮・PDF編集・CSV整形・二次元コード生成など、面倒なWeb作業をブラウザ上でサッと片付ける無料のオンラインツール集です。ファイルはサーバーに保存されません。",
   // Vercel等にデプロイ後、実際のURLに差し替えてください
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://example.vercel.app",
   contactEmail: "taninpasya@gmail.com",

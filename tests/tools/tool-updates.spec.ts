@@ -9,7 +9,7 @@ import type { Page } from "@playwright/test";
 
 /**
  * 既存ツールの機能追加(大文字小文字+数字の全角半角 / パスワードの文字指定 / ポモドーロの時間設定 /
- * QRコードのマーク)と、ファイル情報確認ツールの削除のテスト。
+ * 二次元コードのマーク)と、ファイル情報確認ツールの削除のテスト。
  */
 
 /** ツール本体(動的読み込み)の水和が終わるまで待つ */
@@ -116,7 +116,7 @@ test.describe("ポモドーロタイマーの時間設定", () => {
   });
 });
 
-/** OpenCVでQRコードを読み取る(クラウド環境の検証用。python3+cv2が無ければnull) */
+/** OpenCVで二次元コードを読み取る(クラウド環境の検証用。python3+cv2が無ければnull) */
 function decodeQr(filePath: string): string | null {
   try {
     const out = execFileSync(
@@ -135,7 +135,7 @@ function decodeQr(filePath: string): string | null {
   }
 }
 
-test.describe("QRコードのマーク", () => {
+test.describe("二次元コードのマーク", () => {
   const URL_TEXT = "https://example.com/mr-satto/qr-test?id=12345";
 
   async function downloadPng(page: Page): Promise<string> {
@@ -148,7 +148,7 @@ test.describe("QRコードのマーク", () => {
   }
 
   test("既定ではMr.Sattoのアイコンが真ん中に入り、誤り訂正はHになり、読み取れる", async ({ page }) => {
-    await openTool(page, "qr-generator", /QRコードを生成する/);
+    await openTool(page, "qr-generator", /二次元コードを生成する/);
     await page.locator("textarea").fill(URL_TEXT);
     await expect(page.getByRole("button", { name: "Mr.Sattoのアイコン" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "真ん中" })).toHaveAttribute("aria-pressed", "true");
@@ -162,7 +162,7 @@ test.describe("QRコードのマーク", () => {
   });
 
   test("マークの有無・位置・大きさ・自分の画像を切り替えられ、どれも読み取れる", async ({ page }) => {
-    await openTool(page, "qr-generator", /QRコードを生成する/);
+    await openTool(page, "qr-generator", /二次元コードを生成する/);
     await page.locator("textarea").fill(URL_TEXT);
 
     // 右下 + 大きさ30%
@@ -173,7 +173,7 @@ test.describe("QRコードのマーク", () => {
     // 自分の画像
     await page.getByRole("button", { name: "自分の画像" }).click();
     await page.getByLabel("マークにする画像").setInputFiles(fixtures.png);
-    await expect(page.getByText("画像を選ぶとQRコードに表示されます。")).toHaveCount(0);
+    await expect(page.getByText("画像を選ぶと二次元コードに表示されます。")).toHaveCount(0);
     await page.getByRole("button", { name: "真ん中" }).click();
     const custom = await downloadPng(page);
     // マークなし: 誤り訂正を選べる

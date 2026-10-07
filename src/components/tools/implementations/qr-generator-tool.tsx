@@ -163,7 +163,7 @@ export function QrGeneratorTool() {
       {warning && <p className="text-xs text-amber-600 dark:text-amber-400">{warning}</p>}
 
       <section className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">QRコードのマーク（ロゴ）</p>
+        <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">二次元コードのマーク（ロゴ）</p>
         <div className="flex flex-wrap gap-2" role="group" aria-label="マークの種類">
           {(
             [
@@ -202,7 +202,7 @@ export function QrGeneratorTool() {
               className="text-sm"
             />
             {!customMark && (
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">画像を選ぶとQRコードに表示されます。</span>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">画像を選ぶと二次元コードに表示されます。</span>
             )}
           </label>
         )}
@@ -240,7 +240,7 @@ export function QrGeneratorTool() {
               min={QR_LOGO_MIN_PCT}
               max={QR_LOGO_MAX_PCT}
               unit="%"
-              hint="QRコードの一辺に対する割合です。大きいほど読み取りにくくなります。"
+              hint="二次元コードの一辺に対する割合です。大きいほど読み取りにくくなります。"
               onChange={setMarkPct}
             />
           </div>
@@ -256,7 +256,7 @@ export function QrGeneratorTool() {
         disabled={!text.trim() || status === "processing"}
         className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
-        QRコードを生成する
+        二次元コードを生成する
       </button>
 
       <ProcessingStatus state={status} successLabel="生成しました" />
@@ -272,7 +272,7 @@ export function QrGeneratorTool() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={live.dataUrl}
-              alt="生成されたQRコード"
+              alt="生成された二次元コード"
               className="h-48 w-48 rounded-lg p-2"
               style={{ backgroundColor: bg }}
             />
@@ -283,7 +283,7 @@ export function QrGeneratorTool() {
           </>
         ) : (
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            URLやテキストを入力すると、ここにQRコードが表示されます。
+            URLやテキストを入力すると、ここに二次元コードが表示されます。
           </p>
         )}
       </div>

@@ -12,7 +12,7 @@ export interface QrCodeInput {
   /** 背景の色。省略時は白 */
   lightColor?: string;
   /**
-   * QRコードの中央または右下に重ねるマーク。指定すると、読み取りやすさのため
+   * 二次元コードの中央または右下に重ねるマーク。指定すると、読み取りやすさのため
    * 誤り訂正レベルは最高の "H" に自動で切り替わる。
    */
   logo?: QrLogo | null;
@@ -24,14 +24,14 @@ export interface QrCodeOutput {
 }
 
 /**
- * QRコード生成。npm の `qrcode` パッケージを使い、
+ * 二次元コード生成。npm の `qrcode` パッケージを使い、
  * 完全にブラウザ内で完結する（外部APIへの通信は発生しない）。
  */
 export class QrCodeProcessor extends BrowserProcessor<QrCodeInput, QrCodeOutput> {
   async process({ text, size = 320, errorCorrectionLevel: requestedEcl = "M", darkColor, lightColor, logo }: QrCodeInput) {
     const errorCorrectionLevel = logo ? "H" : requestedEcl;
     if (!text.trim()) {
-      throw new Error("QRコードに変換する内容を入力してください");
+      throw new Error("二次元コードに変換する内容を入力してください");
     }
     const color =
       darkColor || lightColor ? { dark: darkColor ?? "#000000", light: lightColor ?? "#ffffff" } : undefined;
