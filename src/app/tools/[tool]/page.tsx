@@ -168,7 +168,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6">
+    <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:has-[[data-preview-split]]:max-w-6xl">
       <JsonLd data={buildBreadcrumbList(breadcrumbItems)} />
       {seo && seo.faq.length > 0 && <JsonLd data={buildFaqPage(seo.faq)} />}
 

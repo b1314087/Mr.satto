@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -408,113 +409,12 @@ export function ImagePassportPhotoTool() {
   const previewHeightPx = ratio > 0 ? PREVIEW_WIDTH_PX / ratio : PREVIEW_WIDTH_PX;
 
   return (
-    <div className="flex flex-col gap-6">
-      <FileDropzone
-        accept="image/*"
-        label="画像をドラッグ&ドロップ"
-        hint="またはタップして選択（JPG・PNG・WebPなど）"
-        onFilesSelected={(files) => setFile(files[0])}
-        onError={setPhotoError}
-      />
-
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
-
-      {file && (
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">証明写真サイズ</p>
-          <div className="flex flex-wrap gap-2">
-            {PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => setPresetId(preset.id)}
-                className={`rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-colors ${
-                  presetId === preset.id
-                    ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
-                    : "border-neutral-200 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300"
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setPresetId("custom")}
-              className={`rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-colors ${
-                presetId === "custom"
-                  ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
-                  : "border-neutral-200 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300"
-              }`}
-            >
-              カスタム
-            </button>
-          </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            用途によって必要なサイズ・要件は異なります。提出先の規定を必ずご確認ください。
-          </p>
-
-          {presetId === "custom" && (
-            <div className="flex flex-wrap items-end gap-4">
-              <label className="flex flex-col gap-1 text-sm">
-                幅 (mm)
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_MM}
-                  value={customWidthMm}
-                  onChange={(e) => setCustomWidthMm(Number(e.target.value))}
-                  className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                高さ (mm)
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_MM}
-                  value={customHeightMm}
-                  onChange={(e) => setCustomHeightMm(Number(e.target.value))}
-                  className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
-                />
-              </label>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className="w-fit text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
-          >
-            {showAdvanced ? "詳細設定を閉じる" : "詳細設定（解像度）を表示"}
-          </button>
-          {showAdvanced && (
-            <label className="flex w-fit flex-col gap-1 text-sm">
-              解像度 (dpi・印刷用途は300を推奨)
-              <input
-                type="number"
-                min={MIN_DPI}
-                max={MAX_DPI}
-                value={dpi}
-                onChange={(e) => setDpi(Number(e.target.value))}
-                className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
-              />
-            </label>
-          )}
-
-          {sizeError ? (
-            <ErrorMessage message={sizeError} />
-          ) : (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              出力サイズ: {widthMm} × {heightMm}mm（{mmToPx(widthMm, dpi)} × {mmToPx(heightMm, dpi)}px, {dpi}dpi）
-            </p>
-          )}
-        </div>
-      )}
-
-      {file && imageUrl && naturalSize && !sizeError && (
+    <PreviewSplitLayout
+      preview={
+        file && imageUrl && naturalSize && !sizeError ? (
         <div data-testid="tool-preview" className="flex flex-col gap-3">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">トリミング・位置調整</p>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start lg:flex-col lg:items-start">
             <div
               ref={containerRef}
               className="relative w-full max-w-md touch-none select-none overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700"
@@ -615,6 +515,114 @@ export function ImagePassportPhotoTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             枠をドラッグして位置調整、四隅のハンドルまたは拡大/縮小ボタンでズームできます。
           </p>
+        </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+            {file && sizeError ? "サイズ指定を修正するとプレビューが表示されます。" : "画像を追加すると、ここでトリミング範囲を調整できます。"}
+          </div>
+        )
+      }
+      previewWidth="lg"
+    >
+      <FileDropzone
+        accept="image/*"
+        label="画像をドラッグ&ドロップ"
+        hint="またはタップして選択（JPG・PNG・WebPなど）"
+        onFilesSelected={(files) => setFile(files[0])}
+        onError={setPhotoError}
+      />
+
+      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && (
+        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">証明写真サイズ</p>
+          <div className="flex flex-wrap gap-2">
+            {PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => setPresetId(preset.id)}
+                className={`rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-colors ${
+                  presetId === preset.id
+                    ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                    : "border-neutral-200 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPresetId("custom")}
+              className={`rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-colors ${
+                presetId === "custom"
+                  ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                  : "border-neutral-200 text-neutral-600 hover:border-neutral-300 dark:border-neutral-800 dark:text-neutral-300"
+              }`}
+            >
+              カスタム
+            </button>
+          </div>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            用途によって必要なサイズ・要件は異なります。提出先の規定を必ずご確認ください。
+          </p>
+
+          {presetId === "custom" && (
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="flex flex-col gap-1 text-sm">
+                幅 (mm)
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_MM}
+                  value={customWidthMm}
+                  onChange={(e) => setCustomWidthMm(Number(e.target.value))}
+                  className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                高さ (mm)
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_MM}
+                  value={customHeightMm}
+                  onChange={(e) => setCustomHeightMm(Number(e.target.value))}
+                  className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="w-fit text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+          >
+            {showAdvanced ? "詳細設定を閉じる" : "詳細設定（解像度）を表示"}
+          </button>
+          {showAdvanced && (
+            <label className="flex w-fit flex-col gap-1 text-sm">
+              解像度 (dpi・印刷用途は300を推奨)
+              <input
+                type="number"
+                min={MIN_DPI}
+                max={MAX_DPI}
+                value={dpi}
+                onChange={(e) => setDpi(Number(e.target.value))}
+                className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </label>
+          )}
+
+          {sizeError ? (
+            <ErrorMessage message={sizeError} />
+          ) : (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              出力サイズ: {widthMm} × {heightMm}mm（{mmToPx(widthMm, dpi)} × {mmToPx(heightMm, dpi)}px, {dpi}dpi）
+            </p>
+          )}
         </div>
       )}
 
@@ -813,6 +821,6 @@ export function ImagePassportPhotoTool() {
           )}
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

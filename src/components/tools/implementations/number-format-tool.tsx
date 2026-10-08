@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import { NumberFormatProcessor, type NumberFormatMode } from "@/lib/processors/browser/number-format";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -64,7 +65,33 @@ export function NumberFormatTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      preview={
+      <div className="flex flex-col gap-4">
+      <label data-testid="tool-preview" className="flex flex-col gap-1.5 text-sm">
+        変換結果
+        <textarea
+          value={output}
+          readOnly
+          rows={8}
+          className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 text-sm outline-none dark:border-neutral-700 dark:bg-neutral-900"
+        />
+      </label>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleCopy}
+          disabled={!output}
+          className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+        >
+          {copied ? "コピーしました" : "コピー"}
+        </button>
+        {output && <RewardedDownloadGate onDownload={handleDownload} label=".txtをダウンロード" />}
+      </div>
+      </div>
+      }
+    >
       <label className="flex flex-col gap-1.5 text-sm">
         入力（1行に1件、複数行可）
         <textarea
@@ -121,28 +148,6 @@ export function NumberFormatTool() {
       )}
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-
-      <label data-testid="tool-preview" className="flex flex-col gap-1.5 text-sm">
-        変換結果
-        <textarea
-          value={output}
-          readOnly
-          rows={8}
-          className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 text-sm outline-none dark:border-neutral-700 dark:bg-neutral-900"
-        />
-      </label>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={handleCopy}
-          disabled={!output}
-          className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-        >
-          {copied ? "コピーしました" : "コピー"}
-        </button>
-        {output && <RewardedDownloadGate onDownload={handleDownload} label=".txtをダウンロード" />}
-      </div>
-    </div>
+    </PreviewSplitLayout>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -231,7 +232,61 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     : "output.png";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={file ? (
+        <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（設定を変えると結果が更新されます）
+          </p>
+          {shownError && <ErrorMessage message={shownError} />}
+          {tooLarge && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              指定サイズが大きすぎるため、プレビューは表示できません（書き出しは実行できます）。
+            </p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="flex min-w-0 flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
+                元の画像{naturalSize ? ` ・ ${naturalSize.width} × ${naturalSize.height}px` : ""} ・ {formatBytes(file.size)}
+              </figcaption>
+              {originalUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={originalUrl}
+                  alt="元の画像"
+                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              )}
+            </figure>
+            <figure className="flex min-w-0 flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
+                {shownPreview
+                  ? `処理後 ・ ${shownPreview.output.width} × ${shownPreview.output.height}px ・ ${formatBytes(shownPreview.output.sizeBytes)}${
+                      file.size > 0 ? `（元の${Math.round((shownPreview.output.sizeBytes / file.size) * 100)}%）` : ""
+                    }`
+                  : "処理後"}
+                {previewStale ? " ・ 更新中..." : ""}
+              </figcaption>
+              {shownPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={shownPreview.output.url}
+                  alt="処理後のプレビュー"
+                  className={`max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain transition-opacity dark:border-neutral-700 dark:bg-neutral-900 ${
+                    previewStale ? "opacity-50" : ""
+                  }`}
+                />
+              ) : (
+                <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-neutral-300 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+                  {tooLarge || shownError ? "プレビューなし" : "プレビューを作成中..."}
+                </div>
+              )}
+            </figure>
+          </div>
+        </div>
+      ) : null}
+    >
       <FileDropzone
         accept="image/*"
         label="画像をドラッグ&ドロップ"
@@ -322,58 +377,6 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         </div>
       )}
 
-      {file && (
-        <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（設定を変えると結果が更新されます）
-          </p>
-          {shownError && <ErrorMessage message={shownError} />}
-          {tooLarge && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              指定サイズが大きすぎるため、プレビューは表示できません（書き出しは実行できます）。
-            </p>
-          )}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <figure className="flex min-w-0 flex-col gap-1">
-              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
-                元の画像{naturalSize ? ` ・ ${naturalSize.width} × ${naturalSize.height}px` : ""} ・ {formatBytes(file.size)}
-              </figcaption>
-              {originalUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={originalUrl}
-                  alt="元の画像"
-                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
-                />
-              )}
-            </figure>
-            <figure className="flex min-w-0 flex-col gap-1">
-              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
-                {shownPreview
-                  ? `処理後 ・ ${shownPreview.output.width} × ${shownPreview.output.height}px ・ ${formatBytes(shownPreview.output.sizeBytes)}${
-                      file.size > 0 ? `（元の${Math.round((shownPreview.output.sizeBytes / file.size) * 100)}%）` : ""
-                    }`
-                  : "処理後"}
-                {previewStale ? " ・ 更新中..." : ""}
-              </figcaption>
-              {shownPreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={shownPreview.output.url}
-                  alt="処理後のプレビュー"
-                  className={`max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain transition-opacity dark:border-neutral-700 dark:bg-neutral-900 ${
-                    previewStale ? "opacity-50" : ""
-                  }`}
-                />
-              ) : (
-                <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-neutral-300 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-                  {tooLarge || shownError ? "プレビューなし" : "プレビューを作成中..."}
-                </div>
-              )}
-            </figure>
-          </div>
-        </div>
-      )}
 
       {file && (
         <button
@@ -397,6 +400,6 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

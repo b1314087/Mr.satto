@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
@@ -67,22 +68,10 @@ export function PdfMergeTool() {
   const downloadName = files[0] ? `${stripExtension(files[0].name)}-merged.pdf` : "merged.pdf";
 
   return (
-    <div className="flex flex-col gap-6">
-      <FileDropzone
-        accept="application/pdf,.pdf"
-        multiple
-        maxSizeMB={100}
-        label="PDFをドラッグ&ドロップ（複数可）"
-        hint="またはタップして選択。結合する順序で選択してください"
-        onFilesSelected={addFiles}
-        onError={setError}
-      />
-
-      {files.length > 0 && (
-        <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />
-      )}
-
-      {files.length > 0 && (
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={
+        files.length > 0 ? (
         <div data-testid="tool-preview" className="flex flex-col gap-2">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
             結合のプレビュー（各PDFの先頭ページ。上から順に結合されます）
@@ -101,6 +90,25 @@ export function PdfMergeTool() {
             ))}
           </ol>
         </div>
+        ) : (
+          <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
+            PDFを選ぶと、ここにプレビューが表示されます
+          </div>
+        )
+      }
+    >
+      <FileDropzone
+        accept="application/pdf,.pdf"
+        multiple
+        maxSizeMB={100}
+        label="PDFをドラッグ&ドロップ（複数可）"
+        hint="またはタップして選択。結合する順序で選択してください"
+        onFilesSelected={addFiles}
+        onError={setError}
+      />
+
+      {files.length > 0 && (
+        <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />
       )}
 
       {files.length > 0 && files.length < 2 && (
@@ -131,6 +139,6 @@ export function PdfMergeTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

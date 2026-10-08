@@ -466,6 +466,9 @@ export function ImageLayoutTool() {
           onError={setError}
         />
 
+        {/* PC幅(lg以上)では、アイテム操作ボタン・キャンバス・選択中アイテムの設定をまとめて画面に固定し、
+            右側の設定パネルを操作している間もキャンバスが見え続けるようにする（スマホ幅は固定しない）。 */}
+        <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -660,6 +663,7 @@ export function ImageLayoutTool() {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       <div className="flex w-full flex-col gap-5 lg:w-80">

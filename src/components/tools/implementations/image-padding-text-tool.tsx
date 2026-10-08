@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
@@ -524,7 +525,41 @@ export function ImagePaddingTextTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      preview={
+        files.length > 0 && currentFile ? (
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（{currentIndex + 1}枚目）
+            {previewResult && (
+              <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
+                {previewResult.width} × {previewResult.height}px
+                {previewLoading ? "・更新中…" : ""}
+              </span>
+            )}
+          </p>
+          <div
+            className="flex min-h-[8rem] items-center justify-center rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+            style={currentSettings?.background === "transparent" ? CHECKER_STYLE : { backgroundColor: "#f5f5f5" }}
+          >
+            {previewResult ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={previewResult.url} alt="余白・文字入れ結果のプレビュー" className="max-h-72 max-w-full object-contain" />
+            ) : (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {previewLoading ? "プレビューを作成しています…" : "設定を変更するとプレビューが表示されます"}
+              </p>
+            )}
+          </div>
+        </div>
+      
+        ) : (
+          <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+            画像を追加すると、ここにプレビューが表示されます。
+          </div>
+        )
+      }
+    >
       <FileDropzone
         accept="image/*"
         multiple
@@ -560,33 +595,6 @@ export function ImagePaddingTextTool() {
           >
             次へ →
           </button>
-        </div>
-      )}
-
-      {files.length > 0 && currentFile && (
-        <div data-testid="tool-preview" className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（{currentIndex + 1}枚目）
-            {previewResult && (
-              <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
-                {previewResult.width} × {previewResult.height}px
-                {previewLoading ? "・更新中…" : ""}
-              </span>
-            )}
-          </p>
-          <div
-            className="flex min-h-[8rem] items-center justify-center rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
-            style={currentSettings?.background === "transparent" ? CHECKER_STYLE : { backgroundColor: "#f5f5f5" }}
-          >
-            {previewResult ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={previewResult.url} alt="余白・文字入れ結果のプレビュー" className="max-h-72 max-w-full object-contain" />
-            ) : (
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                {previewLoading ? "プレビューを作成しています…" : "設定を変更するとプレビューが表示されます"}
-              </p>
-            )}
-          </div>
         </div>
       )}
 
@@ -700,6 +708,6 @@ export function ImagePaddingTextTool() {
           />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -76,18 +77,9 @@ export function ImageGrayscaleTool() {
     : "grayscale.png";
 
   return (
-    <div className="flex flex-col gap-6">
-      <FileDropzone
-        accept="image/*"
-        label="画像をドラッグ&ドロップ"
-        hint="またはタップして選択（JPG・PNG・WebPなど）"
-        onFilesSelected={handleFile}
-        onError={setError}
-      />
-
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
-
-      {file && (
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={file ? (      
         <div
           data-testid="tool-preview"
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
@@ -116,7 +108,18 @@ export function ImageGrayscaleTool() {
             </figure>
           </div>
         </div>
-      )}
+      ) : null}
+    >
+      <FileDropzone
+        accept="image/*"
+        label="画像をドラッグ&ドロップ"
+        hint="またはタップして選択（JPG・PNG・WebPなど）"
+        onFilesSelected={handleFile}
+        onError={setError}
+      />
+
+      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
 
       {file && (
         <button
@@ -146,6 +149,6 @@ export function ImageGrayscaleTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

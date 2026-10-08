@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import {
   TextLineCleanerProcessor,
@@ -91,19 +92,9 @@ export function TextLineCleanerTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <label className="flex flex-col gap-1.5 text-sm">
-        入力テキスト
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          rows={10}
-          placeholder={"整理したいテキストを貼り付けてください\n（1行に1項目）"}
-          className="rounded-xl border border-neutral-300 px-4 py-3 font-mono text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
-        />
-      </label>
-
+    <PreviewSplitLayout
+      preview={
+      <div className="flex flex-col gap-4">
       <label data-testid="tool-preview" className="flex flex-col gap-1.5 text-sm">
         {counts ? `整理後のプレビュー（${counts.before}行 → ${counts.after}行）` : "整理後のプレビュー"}
         <textarea
@@ -114,7 +105,32 @@ export function TextLineCleanerTool() {
           className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 font-mono text-xs outline-none dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>
+
+      {counts && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+          >
+            コピー
+          </button>
+          <RewardedDownloadGate onDownload={handleDownload} label=".txtをダウンロード" disabled={!fresh} />
+        </div>
+      )}
       </div>
+      }
+    >
+      <label className="flex flex-col gap-1.5 text-sm">
+        入力テキスト
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          rows={10}
+          placeholder={"整理したいテキストを貼り付けてください\n（1行に1項目）"}
+          className="rounded-xl border border-neutral-300 px-4 py-3 font-mono text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
+        />
+      </label>
 
       <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
@@ -182,19 +198,6 @@ export function TextLineCleanerTool() {
 
       <ProcessingStatus state={status} successLabel="処理が完了しました" />
       {error && <ErrorMessage message={error} />}
-
-      {counts && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-          >
-            コピー
-          </button>
-          <RewardedDownloadGate onDownload={handleDownload} label=".txtをダウンロード" disabled={!fresh} />
-        </div>
-      )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

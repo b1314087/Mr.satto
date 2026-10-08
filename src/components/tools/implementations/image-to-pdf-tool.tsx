@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -133,7 +134,35 @@ export function ImageToPdfTool() {
   const downloadName = files[0] ? `${stripExtension(files[0].name)}-pdf.pdf` : "images.pdf";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="md"
+      preview={files.length > 0 ? (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（{files.length}ページ・{pageSize === "a4" ? "A4に収める" : "画像サイズのまま"}）
+          </p>
+          <ul className="flex flex-wrap gap-3">
+            {files.slice(0, MAX_PREVIEW_PAGES).map((file, index) => (
+              <PdfPageThumb key={`${file.name}-${file.size}-${file.lastModified}-${index}`} file={file} index={index} pageSize={pageSize} />
+            ))}
+          </ul>
+          {files.length > MAX_PREVIEW_PAGES && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              先頭の{MAX_PREVIEW_PAGES}ページだけ表示しています（PDFには{files.length}ページすべてが入ります）。
+            </p>
+          )}
+          <p className="text-xs text-neutral-400 dark:text-neutral-500">
+            {pageSize === "a4"
+              ? "A4（縦）の用紙に、画像が中央に配置されます。大きい画像は用紙に収まるよう縮小され、小さい画像は拡大されません。"
+              : "各ページは、それぞれの画像と同じ大きさ・同じ形になります。"}
+            並び順は上の一覧で変更できます。
+          </p>
+        </div>
+      ) : null}
+    >
       <FileDropzone
         accept="image/*"
         multiple
@@ -180,32 +209,6 @@ export function ImageToPdfTool() {
         </div>
       )}
 
-      {files.length > 0 && (
-        <div
-          data-testid="tool-preview"
-          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
-        >
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（{files.length}ページ・{pageSize === "a4" ? "A4に収める" : "画像サイズのまま"}）
-          </p>
-          <ul className="flex flex-wrap gap-3">
-            {files.slice(0, MAX_PREVIEW_PAGES).map((file, index) => (
-              <PdfPageThumb key={`${file.name}-${file.size}-${file.lastModified}-${index}`} file={file} index={index} pageSize={pageSize} />
-            ))}
-          </ul>
-          {files.length > MAX_PREVIEW_PAGES && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              先頭の{MAX_PREVIEW_PAGES}ページだけ表示しています（PDFには{files.length}ページすべてが入ります）。
-            </p>
-          )}
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">
-            {pageSize === "a4"
-              ? "A4（縦）の用紙に、画像が中央に配置されます。大きい画像は用紙に収まるよう縮小され、小さい画像は拡大されません。"
-              : "各ページは、それぞれの画像と同じ大きさ・同じ形になります。"}
-            並び順は上の一覧で変更できます。
-          </p>
-        </div>
-      )}
 
       {files.length > 0 && (
         <button
@@ -229,6 +232,6 @@ export function ImageToPdfTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

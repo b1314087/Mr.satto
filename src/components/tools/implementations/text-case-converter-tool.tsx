@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import { TextCaseConvertProcessor, type TextCaseMode, type TextDigitMode } from "@/lib/processors/browser/text";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -60,19 +61,9 @@ export function TextCaseConverterTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <label className="flex flex-col gap-1.5 text-sm">
-        入力テキスト
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          rows={8}
-          placeholder="変換したい文章を入力または貼り付けてください"
-          className="rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
-        />
-      </label>
-
+    <PreviewSplitLayout
+      preview={
+      <div className="flex flex-col gap-4">
       <label data-testid="tool-preview" className="flex flex-col gap-1.5 text-sm">
         変換結果
         <textarea
@@ -83,7 +74,33 @@ export function TextCaseConverterTool() {
           className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 text-sm outline-none dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleCopy}
+          disabled={!output}
+          className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+        >
+          {copied ? "コピーしました" : "コピー"}
+        </button>
+        {output && (
+          <RewardedDownloadGate onDownload={handleDownload} label=".txtをダウンロード" />
+        )}
       </div>
+      </div>
+      }
+    >
+      <label className="flex flex-col gap-1.5 text-sm">
+        入力テキスト
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          rows={8}
+          placeholder="変換したい文章を入力または貼り付けてください"
+          className="rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
+        />
+      </label>
 
       <div className="flex flex-col gap-1.5">
         <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">英字の大文字・小文字</p>
@@ -128,20 +145,6 @@ export function TextCaseConverterTool() {
           ))}
         </div>
       </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={handleCopy}
-          disabled={!output}
-          className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-        >
-          {copied ? "コピーしました" : "コピー"}
-        </button>
-        {output && (
-          <RewardedDownloadGate onDownload={handleDownload} label=".txtをダウンロード" />
-        )}
-      </div>
-    </div>
+    </PreviewSplitLayout>
   );
 }

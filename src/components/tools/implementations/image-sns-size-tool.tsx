@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -141,7 +142,64 @@ export function ImageSnsSizeTool() {
     : "sns-image.jpg";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={file ? (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（{targetWidth} × {targetHeight}px の枠に収めた結果）
+          </p>
+          {previewError && <ErrorMessage message={previewError} />}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
+                元の画像（明るい枠の中が残ります）
+              </figcaption>
+              {originalUrl && (
+                <div className="relative mx-auto w-fit max-w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={originalUrl} alt="元の画像" draggable={false} className="block max-h-64 max-w-full" />
+                  {cropRect && loadedImg && (
+                    <div
+                      aria-hidden="true"
+                      data-testid="sns-crop-frame"
+                      className="pointer-events-none absolute border-2 border-blue-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
+                      style={{
+                        left: `${(cropRect.x / loadedImg.naturalWidth) * 100}%`,
+                        top: `${(cropRect.y / loadedImg.naturalHeight) * 100}%`,
+                        width: `${(cropRect.width / loadedImg.naturalWidth) * 100}%`,
+                        height: `${(cropRect.height / loadedImg.naturalHeight) * 100}%`,
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </figure>
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">変換後</figcaption>
+              <canvas
+                ref={resultCanvasRef}
+                aria-label="変換後のプレビュー"
+                className="mx-auto h-auto max-w-full rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </figure>
+          </div>
+          {loadedImg && cropRect && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              元 {loadedImg.naturalWidth} × {loadedImg.naturalHeight}px → 切り抜き {cropRect.width} × {cropRect.height}px →
+              出力 {targetWidth} × {targetHeight}px
+              {upscaled ? "（元の画像が小さいため、拡大されます）" : ""}
+            </p>
+          )}
+          {!validTarget && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">幅と高さは1以上を指定してください</p>
+          )}
+        </div>
+      ) : null}
+    >
       <FileDropzone
         accept="image/*"
         label="画像をドラッグ&ドロップ"
@@ -218,61 +276,6 @@ export function ImageSnsSizeTool() {
         </div>
       )}
 
-      {file && (
-        <div
-          data-testid="tool-preview"
-          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
-        >
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（{targetWidth} × {targetHeight}px の枠に収めた結果）
-          </p>
-          {previewError && <ErrorMessage message={previewError} />}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <figure className="flex flex-col gap-1">
-              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
-                元の画像（明るい枠の中が残ります）
-              </figcaption>
-              {originalUrl && (
-                <div className="relative mx-auto w-fit max-w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={originalUrl} alt="元の画像" draggable={false} className="block max-h-64 max-w-full" />
-                  {cropRect && loadedImg && (
-                    <div
-                      aria-hidden="true"
-                      data-testid="sns-crop-frame"
-                      className="pointer-events-none absolute border-2 border-blue-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
-                      style={{
-                        left: `${(cropRect.x / loadedImg.naturalWidth) * 100}%`,
-                        top: `${(cropRect.y / loadedImg.naturalHeight) * 100}%`,
-                        width: `${(cropRect.width / loadedImg.naturalWidth) * 100}%`,
-                        height: `${(cropRect.height / loadedImg.naturalHeight) * 100}%`,
-                      }}
-                    />
-                  )}
-                </div>
-              )}
-            </figure>
-            <figure className="flex flex-col gap-1">
-              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">変換後</figcaption>
-              <canvas
-                ref={resultCanvasRef}
-                aria-label="変換後のプレビュー"
-                className="mx-auto h-auto max-w-full rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900"
-              />
-            </figure>
-          </div>
-          {loadedImg && cropRect && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              元 {loadedImg.naturalWidth} × {loadedImg.naturalHeight}px → 切り抜き {cropRect.width} × {cropRect.height}px →
-              出力 {targetWidth} × {targetHeight}px
-              {upscaled ? "（元の画像が小さいため、拡大されます）" : ""}
-            </p>
-          )}
-          {!validTarget && (
-            <p className="text-xs text-amber-600 dark:text-amber-400">幅と高さは1以上を指定してください</p>
-          )}
-        </div>
-      )}
 
       {file && (
         <button
@@ -302,6 +305,6 @@ export function ImageSnsSizeTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

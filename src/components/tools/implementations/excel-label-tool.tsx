@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useMemo, useState } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -217,7 +218,97 @@ export function ExcelLabelTool() {
   const justify = style.vAlign === "top" ? "flex-start" : style.vAlign === "bottom" ? "flex-end" : "center";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="md"
+      preview={
+      <section
+        aria-label="ラベルシートのプレビュー"
+        data-testid="tool-preview"
+        className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            ラベルシートのプレビュー(設定の変更に合わせて更新されます)
+          </p>
+          {plan && plan.pages.length > 1 && (
+            <div className="flex items-center gap-2 text-sm">
+              <button
+                type="button"
+                onClick={() => setPageIndex(Math.max(0, safePage - 1))}
+                disabled={safePage === 0}
+                className="rounded-md px-2.5 py-1 ring-1 ring-neutral-300 disabled:opacity-40 dark:ring-neutral-700"
+              >
+                前のページ
+              </button>
+              <span className="tabular-nums" data-testid="label-page-indicator">
+                {safePage + 1} / {plan.pages.length}ページ
+              </span>
+              <button
+                type="button"
+                onClick={() => setPageIndex(Math.min(plan.pages.length - 1, safePage + 1))}
+                disabled={safePage >= plan.pages.length - 1}
+                className="rounded-md px-2.5 py-1 ring-1 ring-neutral-300 disabled:opacity-40 dark:ring-neutral-700"
+              >
+                次のページ
+              </button>
+            </div>
+          )}
+        </div>
+        {placed && pageLabels ? (
+          <>
+            <div className="w-full max-w-md" style={{ containerType: "inline-size" }}>
+              <div
+                className="relative w-full overflow-hidden rounded border border-neutral-300 bg-white shadow-sm dark:border-neutral-600"
+                style={{ aspectRatio: `${paper.widthMm} / ${paper.heightMm}` }}
+              >
+                {placed.rows.map((r, ri) =>
+                  placed.cols.map((c, ci) => {
+                    const text = pageLabels[ri * placed.cols.length + ci] ?? "";
+                    const overflow = labelMayOverflow(text, geometry, style);
+                    return (
+                      <div
+                        key={`${ri}-${ci}`}
+                        data-testid="label-cell"
+                        className="absolute flex flex-col overflow-hidden text-neutral-900"
+                        style={{
+                          left: `${(c.start / paper.widthMm) * 100}%`,
+                          top: `${(r.start / paper.heightMm) * 100}%`,
+                          width: `${(c.size / paper.widthMm) * 100}%`,
+                          height: `${(r.size / paper.heightMm) * 100}%`,
+                          justifyContent: justify,
+                          padding: `${(style.paddingMm / paper.widthMm) * 100}cqw`,
+                          border: overflow ? "1px solid #dc2626" : style.border ? "1px solid #9ca3af" : "1px dashed #e5e7eb",
+                          background: overflow ? "#fef2f2" : undefined,
+                          textAlign: style.hAlign,
+                          fontFamily: font.css,
+                          fontWeight: style.bold ? 700 : 400,
+                          fontSize: `${fontCqw}cqw`,
+                          lineHeight: 1.3 * (style.lineSpacingPct / 100),
+                        }}
+                      >
+                        <span className="whitespace-pre-wrap break-all">{text}</span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            {overflowCount > 0 && (
+              <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
+                赤い枠のラベルは、文字が枠に収まらない可能性があります（約{overflowCount}枚）。文字の大きさを小さくするか、ラベル内の余白を減らしてください。
+              </p>
+            )}
+            <p className="text-xs text-neutral-400 dark:text-neutral-500">
+              用紙（{paper.widthMm}×{paper.heightMm}mm）の中のラベルの位置・大きさをmmの比率どおりに描いた配置イメージです。
+              文字の収まり具合は目安で、実際の折り返しはWord・Excel側で決まります。枠線を印刷しない設定のときは、ラベルの範囲を点線で示しています。
+            </p>
+          </>
+        ) : (
+          <p className="text-xs text-neutral-400">設定が正しくないため、プレビューを表示できません。</p>
+        )}
+      </section>
+      }
+    >
       <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <ChoiceButtons
           label="出力するファイルの形式"
@@ -456,92 +547,6 @@ export function ExcelLabelTool() {
         </label>
       </section>
 
-      <section
-        aria-label="ラベルシートのプレビュー"
-        data-testid="tool-preview"
-        className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            ラベルシートのプレビュー(設定の変更に合わせて更新されます)
-          </p>
-          {plan && plan.pages.length > 1 && (
-            <div className="flex items-center gap-2 text-sm">
-              <button
-                type="button"
-                onClick={() => setPageIndex(Math.max(0, safePage - 1))}
-                disabled={safePage === 0}
-                className="rounded-md px-2.5 py-1 ring-1 ring-neutral-300 disabled:opacity-40 dark:ring-neutral-700"
-              >
-                前のページ
-              </button>
-              <span className="tabular-nums" data-testid="label-page-indicator">
-                {safePage + 1} / {plan.pages.length}ページ
-              </span>
-              <button
-                type="button"
-                onClick={() => setPageIndex(Math.min(plan.pages.length - 1, safePage + 1))}
-                disabled={safePage >= plan.pages.length - 1}
-                className="rounded-md px-2.5 py-1 ring-1 ring-neutral-300 disabled:opacity-40 dark:ring-neutral-700"
-              >
-                次のページ
-              </button>
-            </div>
-          )}
-        </div>
-        {placed && pageLabels ? (
-          <>
-            <div className="w-full max-w-md" style={{ containerType: "inline-size" }}>
-              <div
-                className="relative w-full overflow-hidden rounded border border-neutral-300 bg-white shadow-sm dark:border-neutral-600"
-                style={{ aspectRatio: `${paper.widthMm} / ${paper.heightMm}` }}
-              >
-                {placed.rows.map((r, ri) =>
-                  placed.cols.map((c, ci) => {
-                    const text = pageLabels[ri * placed.cols.length + ci] ?? "";
-                    const overflow = labelMayOverflow(text, geometry, style);
-                    return (
-                      <div
-                        key={`${ri}-${ci}`}
-                        data-testid="label-cell"
-                        className="absolute flex flex-col overflow-hidden text-neutral-900"
-                        style={{
-                          left: `${(c.start / paper.widthMm) * 100}%`,
-                          top: `${(r.start / paper.heightMm) * 100}%`,
-                          width: `${(c.size / paper.widthMm) * 100}%`,
-                          height: `${(r.size / paper.heightMm) * 100}%`,
-                          justifyContent: justify,
-                          padding: `${(style.paddingMm / paper.widthMm) * 100}cqw`,
-                          border: overflow ? "1px solid #dc2626" : style.border ? "1px solid #9ca3af" : "1px dashed #e5e7eb",
-                          background: overflow ? "#fef2f2" : undefined,
-                          textAlign: style.hAlign,
-                          fontFamily: font.css,
-                          fontWeight: style.bold ? 700 : 400,
-                          fontSize: `${fontCqw}cqw`,
-                          lineHeight: 1.3 * (style.lineSpacingPct / 100),
-                        }}
-                      >
-                        <span className="whitespace-pre-wrap break-all">{text}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-            {overflowCount > 0 && (
-              <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
-                赤い枠のラベルは、文字が枠に収まらない可能性があります（約{overflowCount}枚）。文字の大きさを小さくするか、ラベル内の余白を減らしてください。
-              </p>
-            )}
-            <p className="text-xs text-neutral-400 dark:text-neutral-500">
-              用紙（{paper.widthMm}×{paper.heightMm}mm）の中のラベルの位置・大きさをmmの比率どおりに描いた配置イメージです。
-              文字の収まり具合は目安で、実際の折り返しはWord・Excel側で決まります。枠線を印刷しない設定のときは、ラベルの範囲を点線で示しています。
-            </p>
-          </>
-        ) : (
-          <p className="text-xs text-neutral-400">設定が正しくないため、プレビューを表示できません。</p>
-        )}
-      </section>
 
       {validationError && <ErrorMessage message={validationError} />}
 
@@ -566,6 +571,6 @@ export function ExcelLabelTool() {
           />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

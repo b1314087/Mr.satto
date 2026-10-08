@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -122,7 +123,46 @@ export function ImageTileSplitTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={file && imageUrl && naturalSize && !rowsInvalid && !colsInvalid ? (
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（{naturalSize.width} × {naturalSize.height}px ・ 1枚あたり約{Math.round(naturalSize.width / cols)} × {Math.round(naturalSize.height / rows)}px）
+          </p>
+          <div className="relative inline-block w-fit overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageUrl} alt="分割対象の画像" className="block max-h-[28rem] max-w-full select-none" />
+            <div className="pointer-events-none absolute inset-0">
+              {Array.from({ length: rows * cols }).map((_, i) => {
+                const r = Math.floor(i / cols);
+                const c = i % cols;
+                // 出力と同じ境界(computeTileBoundaries)で分割線を引く
+                return (
+                  <div
+                    key={i}
+                    className="absolute flex items-center justify-center border border-blue-400/70"
+                    style={{
+                      left: `${(xBounds[c] / naturalSize.width) * 100}%`,
+                      width: `${((xBounds[c + 1] - xBounds[c]) / naturalSize.width) * 100}%`,
+                      top: `${(yBounds[r] / naturalSize.height) * 100}%`,
+                      height: `${((yBounds[r + 1] - yBounds[r]) / naturalSize.height) * 100}%`,
+                    }}
+                  >
+                    {showNumbers && (
+                      <span className="rounded bg-black/40 px-1 text-xs text-white/90">{i + 1}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            分割線と番号はプレビュー表示専用で、出力画像には焼き込まれません。
+          </p>
+        </div>
+      ) : null}
+    >
       <FileDropzone
         accept="image/*"
         label="画像をドラッグ&ドロップ"
@@ -206,43 +246,6 @@ export function ImageTileSplitTool() {
 
       {settingsError && <ErrorMessage message={settingsError} />}
 
-      {file && imageUrl && naturalSize && !rowsInvalid && !colsInvalid && (
-        <div data-testid="tool-preview" className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（{naturalSize.width} × {naturalSize.height}px ・ 1枚あたり約{Math.round(naturalSize.width / cols)} × {Math.round(naturalSize.height / rows)}px）
-          </p>
-          <div className="relative inline-block w-fit overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="分割対象の画像" className="block max-h-[28rem] max-w-full select-none" />
-            <div className="pointer-events-none absolute inset-0">
-              {Array.from({ length: rows * cols }).map((_, i) => {
-                const r = Math.floor(i / cols);
-                const c = i % cols;
-                // 出力と同じ境界(computeTileBoundaries)で分割線を引く
-                return (
-                  <div
-                    key={i}
-                    className="absolute flex items-center justify-center border border-blue-400/70"
-                    style={{
-                      left: `${(xBounds[c] / naturalSize.width) * 100}%`,
-                      width: `${((xBounds[c + 1] - xBounds[c]) / naturalSize.width) * 100}%`,
-                      top: `${(yBounds[r] / naturalSize.height) * 100}%`,
-                      height: `${((yBounds[r + 1] - yBounds[r]) / naturalSize.height) * 100}%`,
-                    }}
-                  >
-                    {showNumbers && (
-                      <span className="rounded bg-black/40 px-1 text-xs text-white/90">{i + 1}</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            分割線と番号はプレビュー表示専用で、出力画像には焼き込まれません。
-          </p>
-        </div>
-      )}
 
       {file && (
         <button
@@ -269,6 +272,6 @@ export function ImageTileSplitTool() {
           />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

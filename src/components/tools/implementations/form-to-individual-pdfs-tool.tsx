@@ -40,6 +40,11 @@ import { SliderField } from "@/components/common/slider-field";
 type WizardStep = "template" | "fields" | "data" | "mapping" | "photos" | "preview" | "generate";
 
 const PREVIEW_MAX_WIDTH = 640;
+/** プレビュー枠をまだ計測できない最初の描画で使う幅。PC幅(lg以上)では右カラム(最大560px)に収まる幅にする */
+function fallbackPreviewWidth(): number {
+  if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches && !window.matchMedia("(min-width: 1280px)").matches) return 540;
+  return PREVIEW_MAX_WIDTH;
+}
 
 function pdfToScreenX(pdfX: number, scale: number): number {
   return pdfX * scale;
@@ -142,7 +147,7 @@ export function FormToIndividualPdfsTool() {
     pageInfo: TemplatePageInfo
   ) {
     const page = await pdf.getPage(pageNumber);
-    const containerWidth = canvasWrapRef.current?.clientWidth || PREVIEW_MAX_WIDTH;
+    const containerWidth = canvasWrapRef.current?.clientWidth || fallbackPreviewWidth();
     const targetWidth = Math.min(containerWidth, PREVIEW_MAX_WIDTH);
     const scale = targetWidth / pageInfo.width;
     const viewport = page.getViewport({ scale });
@@ -389,7 +394,9 @@ export function FormToIndividualPdfsTool() {
 
       {/* --- 2. フィールド配置 --- */}
       {templateFile && pageImageUrl && (
-        <section className="flex flex-col gap-3">
+        <section data-preview-split className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(360px,560px)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,664px)] lg:grid-rows-[auto_1fr] lg:gap-x-6">
+          {/* PC幅: 左に設定、右にプレビュー(画面に固定)。スマホ幅は従来どおり 設定 → プレビュー → 項目一覧 の順に縦並び */}
+          <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-1">
           <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">2. フィールドを配置</h2>
 
           {pages.length > 1 && (
@@ -424,8 +431,13 @@ export function FormToIndividualPdfsTool() {
               プレビュー上の配置したい位置をクリックしてください（項目の左上になります）。
             </p>
           )}
+          </div>
 
-          <div ref={canvasWrapRef} data-testid="tool-preview" className="w-full">
+          <div
+            ref={canvasWrapRef}
+            data-testid="tool-preview"
+            className="w-full min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
+          >
             <div
               className="relative select-none border border-neutral-300 dark:border-neutral-700"
               style={{ width: "fit-content", cursor: placingFieldId ? "crosshair" : "default" }}
@@ -460,9 +472,11 @@ export function FormToIndividualPdfsTool() {
                     </div>
                   ))}
             </div>
+
           </div>
 
           {fields.length > 0 && (
+            <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-2">
             <ul className="flex flex-col gap-3">
               {fields.map((field) => (
                 <li
@@ -567,9 +581,6 @@ export function FormToIndividualPdfsTool() {
                 </li>
               ))}
             </ul>
-          )}
-
-          {fields.length > 0 && (
             <button
               type="button"
               onClick={() => setStep("data")}
@@ -577,6 +588,7 @@ export function FormToIndividualPdfsTool() {
             >
               次へ（CSV/Excelのアップロード）
             </button>
+            </div>
           )}
         </section>
       )}

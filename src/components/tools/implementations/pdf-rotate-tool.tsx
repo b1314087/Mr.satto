@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -52,7 +53,34 @@ export function PdfRotateTool() {
   const downloadName = file ? `${stripExtension(file.name)}-rotated.pdf` : "rotated.pdf";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={
+        file ? (
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
+          <PdfThumbnails
+            file={file}
+            maxPages={PREVIEW_MAX_PAGES}
+            width={96}
+            title={`${rotateBy}°回転後のプレビュー`}
+            pageStyle={(page) => {
+              const ratio = aspects[page];
+              const sideways = rotateBy !== 180;
+              const scale = sideways && ratio && ratio > 1 ? 1 / ratio : 1;
+              return { transform: `rotate(${rotateBy}deg) scale(${scale})` };
+            }}
+          />
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            すべてのページが時計回りに{rotateBy}°回転します（元の向きに追加で回転）。
+          </p>
+        </div>
+        ) : (
+          <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
+            PDFを選ぶと、ここにプレビューが表示されます
+          </div>
+        )
+      }
+    >
       <FileDropzone
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
@@ -88,26 +116,6 @@ export function PdfRotateTool() {
       )}
 
       {file && (
-        <div data-testid="tool-preview" className="flex flex-col gap-2">
-          <PdfThumbnails
-            file={file}
-            maxPages={PREVIEW_MAX_PAGES}
-            width={96}
-            title={`${rotateBy}°回転後のプレビュー`}
-            pageStyle={(page) => {
-              const ratio = aspects[page];
-              const sideways = rotateBy !== 180;
-              const scale = sideways && ratio && ratio > 1 ? 1 / ratio : 1;
-              return { transform: `rotate(${rotateBy}deg) scale(${scale})` };
-            }}
-          />
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            すべてのページが時計回りに{rotateBy}°回転します（元の向きに追加で回転）。
-          </p>
-        </div>
-      )}
-
-      {file && (
         <button
           type="button"
           onClick={handleRun}
@@ -129,6 +137,6 @@ export function PdfRotateTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -216,7 +217,15 @@ export function TicketVoucherTool() {
   const codes = form.codes;
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={
+      <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <p className="mb-2 text-sm font-medium">プレビュー（PDFと同じ配置）</p>
+        <TicketPreview form={form} />
+      </div>
+      }
+    >
       <div className="flex flex-wrap gap-4">
         <div className="flex flex-col gap-1 text-sm">
           <span className="text-neutral-600 dark:text-neutral-300">用紙サイズ</span>
@@ -432,10 +441,6 @@ export function TicketVoucherTool() {
         )}
       </div>
 
-      <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="mb-2 text-sm font-medium">プレビュー（PDFと同じ配置）</p>
-        <TicketPreview form={form} />
-      </div>
 
       {validationError && <ErrorMessage message={validationError} />}
 
@@ -456,6 +461,6 @@ export function TicketVoucherTool() {
           <RewardedDownloadGate onDownload={handleDownload} label="PDFをダウンロード" />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

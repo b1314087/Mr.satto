@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import { PasswordGenerateProcessor } from "@/lib/processors/browser/password";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -106,7 +107,51 @@ export function PasswordGeneratorTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="md"
+      preview={
+      password ? (
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            プレビュー（設定を変えると自動で作り直されます）
+          </p>
+          <div className="flex items-center justify-between gap-3">
+            <code className="break-all text-lg font-semibold text-neutral-800 dark:text-neutral-100">
+              {password}
+            </code>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+            >
+              {copied ? "コピーしました" : "コピー"}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex h-1.5 flex-1 gap-1">
+              {STRENGTH_COLOR.map((color, i) => (
+                <span
+                  key={i}
+                  className={`h-full flex-1 rounded-full ${
+                    i <= strength ? color : "bg-neutral-200 dark:bg-neutral-700"
+                  }`}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              強度: {STRENGTH_LABEL[strength]}
+            </span>
+          </div>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {Array.from(password).length}文字 ／ 12文字以上・3種類以上の文字種で強度が上がります
+          </p>
+        </div>
+      ) : null
+      }
+    >
       <label className="flex flex-col gap-1.5 text-sm">
         文字数: {length}
         <input
@@ -179,46 +224,6 @@ export function PasswordGeneratorTool() {
       <ProcessingStatus state={status} processingLabel="生成中..." successLabel="パスワードを生成しました" />
       {error && <ErrorMessage message={error} />}
 
-      {password && (
-        <div
-          data-testid="tool-preview"
-          className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
-        >
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            プレビュー（設定を変えると自動で作り直されます）
-          </p>
-          <div className="flex items-center justify-between gap-3">
-            <code className="break-all text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-              {password}
-            </code>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-            >
-              {copied ? "コピーしました" : "コピー"}
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex h-1.5 flex-1 gap-1">
-              {STRENGTH_COLOR.map((color, i) => (
-                <span
-                  key={i}
-                  className={`h-full flex-1 rounded-full ${
-                    i <= strength ? color : "bg-neutral-200 dark:bg-neutral-700"
-                  }`}
-                />
-              ))}
-            </div>
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              強度: {STRENGTH_LABEL[strength]}
-            </span>
-          </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            {Array.from(password).length}文字 ／ 12文字以上・3種類以上の文字種で強度が上がります
-          </p>
-        </div>
-      )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

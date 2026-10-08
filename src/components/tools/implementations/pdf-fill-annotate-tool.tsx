@@ -68,6 +68,11 @@ interface PendingImage {
 }
 
 const PREVIEW_MAX_WIDTH = 640;
+/** キャンバス枠をまだ計測できない最初の描画で使う幅。PC幅(lg以上)では右カラム(最大560px)に収まる幅にする */
+function fallbackPreviewWidth(): number {
+  if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches && !window.matchMedia("(min-width: 1280px)").matches) return 540;
+  return PREVIEW_MAX_WIDTH;
+}
 // Phase 17: 座標変換の検証対象倍率(100/125/150/200%)を含む形へ拡張
 const ZOOM_LEVELS = [50, 75, 100, 125, 150, 200] as const;
 const ROTATE_STEP_DEG = 15;
@@ -437,7 +442,7 @@ export function PdfFillAnnotateTool() {
     zoomPercent: number
   ) {
     const page = await pdf.getPage(pageNumber);
-    const containerWidth = canvasWrapRef.current?.clientWidth || PREVIEW_MAX_WIDTH;
+    const containerWidth = canvasWrapRef.current?.clientWidth || fallbackPreviewWidth();
     const baseWidth = Math.min(containerWidth, PREVIEW_MAX_WIDTH);
     const scale = (baseWidth / pageInfo.width) * (zoomPercent / 100);
     const viewport = page.getViewport({ scale });
@@ -887,7 +892,9 @@ export function PdfFillAnnotateTool() {
       </section>
 
       {file && pageImageUrl && currentPageInfo && (
-        <section className="flex flex-col gap-3">
+        <section data-preview-split className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(360px,560px)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,664px)] lg:grid-rows-[auto_1fr] lg:gap-x-6">
+          {/* PC幅: 左に設定、右にキャンバス(画面に固定)。スマホ幅は従来どおり 設定 → キャンバス → 注釈一覧 の順に縦並び */}
+          <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-1">
           <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">2. 記入・注釈を配置</h2>
 
           <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-600 dark:text-neutral-300">
@@ -1243,7 +1250,13 @@ export function PdfFillAnnotateTool() {
             </p>
           )}
 
-          <div ref={canvasWrapRef} data-testid="tool-preview" className="w-full">
+          </div>
+
+          <div
+            ref={canvasWrapRef}
+            data-testid="tool-preview"
+            className="w-full min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
+          >
             <div
               data-testid="pdf-annotate-canvas"
               className="relative select-none border border-neutral-300 dark:border-neutral-700"
@@ -1471,7 +1484,7 @@ export function PdfFillAnnotateTool() {
           </div>
 
           {objects.length > 0 && (
-            <div className="flex flex-col gap-2">
+            <div className="flex min-w-0 flex-col gap-2 lg:col-start-1 lg:row-start-2">
               <h3 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">配置した注釈（{objects.length}件）</h3>
               <ul className="flex flex-col gap-2" data-testid="pdf-annotate-object-list">
                 {objects.map((obj) => (

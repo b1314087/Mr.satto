@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState, type ReactNode } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -173,7 +174,18 @@ export function PdfResizePagesTool() {
   const downloadName = file ? `${stripExtension(file.name)}-resized.pdf` : "resized.pdf";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="md"
+      preview={
+        file ? (
+        <ResizePreview file={file} pageSize={pageSize} orientation={orientation} contentMode={contentMode} />
+        ) : (
+          <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
+            PDFを選ぶと、ここにプレビューが表示されます
+          </div>
+        )
+      }
+    >
       <FileDropzone
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
@@ -273,10 +285,6 @@ export function PdfResizePagesTool() {
       )}
 
       {file && (
-        <ResizePreview file={file} pageSize={pageSize} orientation={orientation} contentMode={contentMode} />
-      )}
-
-      {file && (
         <button
           type="button"
           onClick={handleRun}
@@ -298,6 +306,6 @@ export function PdfResizePagesTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

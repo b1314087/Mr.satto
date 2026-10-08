@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import { ColorPaletteProcessor, type ColorPaletteInput } from "@/lib/processors/browser/color";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -65,7 +66,41 @@ export function ColorPaletteTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="md"
+      preview={
+      colors.length > 0 ? (
+        <div data-testid="tool-preview" className="flex flex-col gap-4">
+          <div
+            aria-label="パレットのプレビュー"
+            className="flex h-16 overflow-hidden rounded-xl border border-black/5"
+          >
+            {colors.map((hex, i) => (
+              <span key={`${hex}-${i}`} className="flex-1" style={{ backgroundColor: hex }} />
+            ))}
+          </div>
+        <div className="flex flex-wrap gap-3">
+          {colors.map((hex, i) => (
+            <button
+              key={`${hex}-${i}`}
+              type="button"
+              onClick={() => handleCopy(hex)}
+              className="flex w-28 flex-col items-center gap-2 rounded-xl border border-neutral-200 p-2 text-xs dark:border-neutral-800"
+            >
+              <span
+                className="h-16 w-full rounded-lg border border-black/5"
+                style={{ backgroundColor: hex }}
+              />
+              <span className="font-mono text-neutral-600 dark:text-neutral-300">
+                {copied === hex ? "コピーしました" : hex}
+              </span>
+            </button>
+          ))}
+        </div>
+        </div>
+      ) : null
+      }
+    >
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1.5 text-sm">
           ベースカラー
@@ -114,36 +149,6 @@ export function ColorPaletteTool() {
       <ProcessingStatus state={status} processingLabel="生成中..." successLabel="パレットを生成しました" />
       {error && <ErrorMessage message={error} />}
 
-      {colors.length > 0 && (
-        <div data-testid="tool-preview" className="flex flex-col gap-4">
-          <div
-            aria-label="パレットのプレビュー"
-            className="flex h-16 overflow-hidden rounded-xl border border-black/5"
-          >
-            {colors.map((hex, i) => (
-              <span key={`${hex}-${i}`} className="flex-1" style={{ backgroundColor: hex }} />
-            ))}
-          </div>
-        <div className="flex flex-wrap gap-3">
-          {colors.map((hex, i) => (
-            <button
-              key={`${hex}-${i}`}
-              type="button"
-              onClick={() => handleCopy(hex)}
-              className="flex w-28 flex-col items-center gap-2 rounded-xl border border-neutral-200 p-2 text-xs dark:border-neutral-800"
-            >
-              <span
-                className="h-16 w-full rounded-lg border border-black/5"
-                style={{ backgroundColor: hex }}
-              />
-              <span className="font-mono text-neutral-600 dark:text-neutral-300">
-                {copied === hex ? "コピーしました" : hex}
-              </span>
-            </button>
-          ))}
-        </div>
-        </div>
-      )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

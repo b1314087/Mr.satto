@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -347,7 +348,100 @@ export function ImageMosaicTool() {
   const stageImageUrl = previewResult?.url ?? imageUrl;
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      preview={
+        file && imageUrl && naturalSize ? (
+          <div className="flex flex-col gap-4">
+          <div
+            ref={containerRef}
+            data-testid="tool-preview"
+            className="w-full max-w-full overflow-auto rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700"
+            style={{ maxHeight: "32rem" }}
+          >
+            <div
+              className="relative select-none"
+              style={{ width: stageWidth, height: stageHeight }}
+              onPointerDown={handleStageBackgroundPointerDown}
+              onPointerMove={handleStagePointerMove}
+              onPointerUp={handleStagePointerUp}
+              onPointerCancel={handleStagePointerUp}
+            >
+              {stageImageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={stageImageUrl}
+                  alt="モザイク編集対象の画像"
+                  draggable={false}
+                  className="pointer-events-none block select-none"
+                  style={{ width: stageWidth, height: stageHeight }}
+                />
+              )}
+
+              {regions.map((region) => {
+                const selected = region.id === selectedId;
+                const colorClass =
+                  region.kind === "blur"
+                    ? "border-purple-400 bg-purple-400/10"
+                    : "border-blue-400 bg-blue-400/10";
+                return (
+                  <div
+                    key={region.id}
+                    onPointerDown={(e) => handleRegionPointerDown(e, region)}
+                    aria-label={`${KIND_LABEL[region.kind]}の範囲${selected ? "（選択中）" : ""}`}
+                    className={`absolute touch-none cursor-move border-2 ${colorClass} ${
+                      selected ? "ring-2 ring-white/80" : ""
+                    }`}
+                    style={{
+                      left: region.x * scale,
+                      top: region.y * scale,
+                      width: region.width * scale,
+                      height: region.height * scale,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => removeRegion(region.id)}
+                      aria-label={`${KIND_LABEL[region.kind]}の範囲を削除`}
+                      className="absolute -right-2 -top-2 flex h-5 w-5 touch-none items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white shadow"
+                    >
+                      ×
+                    </button>
+                    {selected &&
+                      (["nw", "ne", "sw", "se"] as Corner[]).map((corner) => (
+                        <div
+                          key={corner}
+                          data-corner={corner}
+                          onPointerDown={(e) => handleHandlePointerDown(e, region)}
+                          aria-label={`範囲の${corner}角をドラッグしてサイズ変更`}
+                          className={`absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-white bg-blue-500 shadow ${
+                            corner === "nw"
+                              ? "left-0 top-0 cursor-nwse-resize"
+                              : corner === "ne"
+                                ? "left-full top-0 cursor-nesw-resize"
+                                : corner === "sw"
+                                  ? "left-0 top-full cursor-nesw-resize"
+                                  : "left-full top-full cursor-nwse-resize"
+                          }`}
+                        />
+                      ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            枠をドラッグして移動、四隅のハンドルでサイズ変更できます。ズームしても範囲は元画像上の同じ位置を維持します。
+          </p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+            画像を追加すると、ここで範囲を編集できます。
+          </div>
+        )
+      }
+      previewWidth="lg"
+    >
       <FileDropzone
         accept="image/*"
         label="画像をドラッグ&ドロップ"
@@ -431,88 +525,6 @@ export function ImageMosaicTool() {
               </button>
             ))}
           </div>
-
-          <div
-            ref={containerRef}
-            data-testid="tool-preview"
-            className="w-full max-w-full overflow-auto rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700"
-            style={{ maxHeight: "32rem" }}
-          >
-            <div
-              className="relative select-none"
-              style={{ width: stageWidth, height: stageHeight }}
-              onPointerDown={handleStageBackgroundPointerDown}
-              onPointerMove={handleStagePointerMove}
-              onPointerUp={handleStagePointerUp}
-              onPointerCancel={handleStagePointerUp}
-            >
-              {stageImageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={stageImageUrl}
-                  alt="モザイク編集対象の画像"
-                  draggable={false}
-                  className="pointer-events-none block select-none"
-                  style={{ width: stageWidth, height: stageHeight }}
-                />
-              )}
-
-              {regions.map((region) => {
-                const selected = region.id === selectedId;
-                const colorClass =
-                  region.kind === "blur"
-                    ? "border-purple-400 bg-purple-400/10"
-                    : "border-blue-400 bg-blue-400/10";
-                return (
-                  <div
-                    key={region.id}
-                    onPointerDown={(e) => handleRegionPointerDown(e, region)}
-                    aria-label={`${KIND_LABEL[region.kind]}の範囲${selected ? "（選択中）" : ""}`}
-                    className={`absolute touch-none cursor-move border-2 ${colorClass} ${
-                      selected ? "ring-2 ring-white/80" : ""
-                    }`}
-                    style={{
-                      left: region.x * scale,
-                      top: region.y * scale,
-                      width: region.width * scale,
-                      height: region.height * scale,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={() => removeRegion(region.id)}
-                      aria-label={`${KIND_LABEL[region.kind]}の範囲を削除`}
-                      className="absolute -right-2 -top-2 flex h-5 w-5 touch-none items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white shadow"
-                    >
-                      ×
-                    </button>
-                    {selected &&
-                      (["nw", "ne", "sw", "se"] as Corner[]).map((corner) => (
-                        <div
-                          key={corner}
-                          data-corner={corner}
-                          onPointerDown={(e) => handleHandlePointerDown(e, region)}
-                          aria-label={`範囲の${corner}角をドラッグしてサイズ変更`}
-                          className={`absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-white bg-blue-500 shadow ${
-                            corner === "nw"
-                              ? "left-0 top-0 cursor-nwse-resize"
-                              : corner === "ne"
-                                ? "left-full top-0 cursor-nesw-resize"
-                                : corner === "sw"
-                                  ? "left-0 top-full cursor-nesw-resize"
-                                  : "left-full top-full cursor-nwse-resize"
-                          }`}
-                        />
-                      ))}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            枠をドラッグして移動、四隅のハンドルでサイズ変更できます。ズームしても範囲は元画像上の同じ位置を維持します。
-          </p>
 
           {regions.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -678,6 +690,6 @@ export function ImageMosaicTool() {
           />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

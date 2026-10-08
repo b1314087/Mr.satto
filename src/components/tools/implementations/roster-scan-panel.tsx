@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -193,7 +194,14 @@ export function RosterScanPanel() {
       {scanError && <ErrorMessage message={scanError} />}
 
       {scan && !analyzing && (
-        <>
+          <PreviewSplitLayout
+            preview={
+          <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+            <p className="mb-2 text-sm font-medium">検出した枠（実寸の比率）</p>
+            <GridSchematic colWidthsMm={colWidthsMm} rowHeightsMm={rowHeightsMm} />
+          </div>
+            }
+          >
           <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
             <p className="text-sm font-medium" data-testid="scan-summary">
               {colWidthsMm.length}列 × {rowHeightsMm.length}行を検出しました（表の大きさ 幅{round1(totalW)}mm × 高さ{round1(totalH)}mm
@@ -223,11 +231,6 @@ export function RosterScanPanel() {
                 </button>
               </div>
             )}
-          </div>
-
-          <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-            <p className="mb-2 text-sm font-medium">検出した枠（実寸の比率）</p>
-            <GridSchematic colWidthsMm={colWidthsMm} rowHeightsMm={rowHeightsMm} />
           </div>
 
           <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -266,7 +269,7 @@ export function RosterScanPanel() {
               <RewardedDownloadGate onDownload={() => downloadBlob(result, buildScanGridFileName())} label="Excelファイルをダウンロード" />
             </div>
           )}
-        </>
+          </PreviewSplitLayout>
       )}
     </div>
   );

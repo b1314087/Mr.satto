@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -125,44 +126,9 @@ export function ImageBatchConvertTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <FileDropzone
-        accept="image/*"
-        multiple
-        maxSizeMB={50}
-        label="画像をドラッグ&ドロップ（複数可）"
-        hint="またはタップして選択（JPG・PNG・WebPなど）"
-        onFilesSelected={addFiles}
-        onError={setError}
-      />
-
-      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
-
-      {files.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            変換先の形式
-          </p>
-          <div className="flex gap-2">
-            {FORMAT_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setTargetFormat(opt.value)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  targetFormat === opt.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {firstFile && (
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={firstFile ? (
         <div
           data-testid="tool-preview"
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
@@ -222,7 +188,44 @@ export function ImageBatchConvertTool() {
             </p>
           )}
         </div>
+      ) : null}
+    >
+      <FileDropzone
+        accept="image/*"
+        multiple
+        maxSizeMB={50}
+        label="画像をドラッグ&ドロップ（複数可）"
+        hint="またはタップして選択（JPG・PNG・WebPなど）"
+        onFilesSelected={addFiles}
+        onError={setError}
+      />
+
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+
+      {files.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            変換先の形式
+          </p>
+          <div className="flex gap-2">
+            {FORMAT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setTargetFormat(opt.value)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  targetFormat === opt.value
+                    ? "bg-blue-600 text-white"
+                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
+
 
       {files.length > 0 && (
         <button
@@ -246,6 +249,6 @@ export function ImageBatchConvertTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(resultBlob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

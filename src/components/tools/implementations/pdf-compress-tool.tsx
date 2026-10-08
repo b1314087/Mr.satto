@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -87,23 +88,10 @@ export function PdfCompressTool() {
     : 0;
 
   return (
-    <div className="flex flex-col gap-6">
-      <FileDropzone
-        accept="application/pdf,.pdf"
-        maxSizeMB={100}
-        label="PDFをドラッグ&ドロップ"
-        hint="またはタップして選択"
-        onFilesSelected={handleSelect}
-        onError={setError}
-      />
-
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
-
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        このツールはPDFの内部構造を最適化します。画像の再圧縮は行わないため、写真など画像が中心のPDFでは削減効果がほとんど出ない場合があります。
-      </p>
-
-      {file && (
+    <PreviewSplitLayout
+      previewWidth="md"
+      preview={
+        file ? (
         <section
           aria-label="圧縮前後のプレビュー"
           data-testid="tool-preview"
@@ -144,7 +132,27 @@ export function PdfCompressTool() {
             </div>
           )}
         </section>
-      )}
+        ) : (
+          <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
+            PDFを選ぶと、ここにプレビューが表示されます
+          </div>
+        )
+      }
+    >
+      <FileDropzone
+        accept="application/pdf,.pdf"
+        maxSizeMB={100}
+        label="PDFをドラッグ&ドロップ"
+        hint="またはタップして選択"
+        onFilesSelected={handleSelect}
+        onError={setError}
+      />
+
+      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        このツールはPDFの内部構造を最適化します。画像の再圧縮は行わないため、写真など画像が中心のPDFでは削減効果がほとんど出ない場合があります。
+      </p>
 
       {file && (
         <button
@@ -188,6 +196,6 @@ export function PdfCompressTool() {
           />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

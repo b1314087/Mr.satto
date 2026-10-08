@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -183,7 +184,31 @@ export function RosterTemplateTool() {
           {importError && <ErrorMessage message={importError} />}
 
           {table && (
-            <>
+            <PreviewSplitLayout
+              preview={
+              <div
+                data-testid="tool-preview"
+                className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+              >
+                <p className="mb-2 text-sm font-medium">
+                  プレビュー（出力と同じレイアウト）
+                </p>
+                {activeColumns.length > 0 ? (
+                  <RosterPreview
+                    headers={table.headers}
+                    rows={table.rows}
+                    columns={activeColumns}
+                    rowHeightMm={rowHeightMm}
+                    headerHeightMm={headerHeightMm}
+                  />
+                ) : (
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                    使用する列を選ぶと、ここにプレビューが表示されます。
+                  </p>
+                )}
+              </div>
+              }
+            >
               <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
                 <p className="text-sm font-medium">
                   使用する列を選択・設定（{table.rows.length}行読み込みました）
@@ -264,28 +289,6 @@ export function RosterTemplateTool() {
                 </div>
               </div>
 
-              <div
-                data-testid="tool-preview"
-                className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
-              >
-                <p className="mb-2 text-sm font-medium">
-                  プレビュー（出力と同じレイアウト）
-                </p>
-                {activeColumns.length > 0 ? (
-                  <RosterPreview
-                    headers={table.headers}
-                    rows={table.rows}
-                    columns={activeColumns}
-                    rowHeightMm={rowHeightMm}
-                    headerHeightMm={headerHeightMm}
-                  />
-                ) : (
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                    使用する列を選ぶと、ここにプレビューが表示されます。
-                  </p>
-                )}
-              </div>
-
               {previewValidationError && (
                 <ErrorMessage message={previewValidationError} />
               )}
@@ -332,7 +335,7 @@ export function RosterTemplateTool() {
                   )}
                 </div>
               )}
-            </>
+            </PreviewSplitLayout>
           )}
         </>
       )}

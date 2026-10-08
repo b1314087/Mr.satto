@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -146,7 +147,58 @@ export function PdfSplitTool() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={
+        file && pageCount !== null && plan ? (
+        <div data-testid="tool-preview" className="flex flex-col gap-2">
+          <PdfThumbnails
+            file={file}
+            maxPages={PREVIEW_MAX_PAGES}
+            width={96}
+            title="分割位置のプレビュー"
+            overlay={(page) => {
+              const owners = plan.ranges.flatMap((r, i) => (page >= r.start && page <= r.end ? [i + 1] : []));
+              const isCut = plan.ranges.some((r) => r.end === page);
+              if (plan.ranges.length > 0 && owners.length === 0) {
+                return (
+                  <span className="absolute inset-0 flex items-center justify-center bg-white/75 text-[10px] font-medium text-neutral-500 dark:bg-neutral-900/75 dark:text-neutral-400">
+                    出力されない
+                  </span>
+                );
+              }
+              if (owners.length === 0) return null;
+              return (
+                <>
+                  <span className="absolute left-1 top-1 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    {owners.length > 3 ? `${owners.slice(0, 3).join(",")}…` : owners.join(",")}
+                  </span>
+                  {isCut && <span aria-hidden className="absolute inset-y-0 right-0 border-r-2 border-dashed border-red-500" />}
+                </>
+              );
+            }}
+          />
+          {plan.error ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">{plan.error}</p>
+          ) : mode === "range" && plan.ranges.length === 0 ? (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              ページ範囲を入力すると、どこで区切られるかをここに表示します。
+            </p>
+          ) : (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {plan.ranges.length}個のPDFに分割されます
+              {mode === "range" && `（${plan.ranges.slice(0, 10).map(formatRange).join(" / ")}${plan.ranges.length > 10 ? " …" : ""}）`}
+              。バッジの数字は出力ファイルの番号、赤い点線が区切り位置です。
+            </p>
+          )}
+        </div>
+        ) : (
+          <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
+            PDFを選ぶと、ここにプレビューが表示されます
+          </div>
+        )
+      }
+    >
       <FileDropzone
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
@@ -201,50 +253,6 @@ export function PdfSplitTool() {
         </div>
       )}
 
-      {file && pageCount !== null && plan && (
-        <div data-testid="tool-preview" className="flex flex-col gap-2">
-          <PdfThumbnails
-            file={file}
-            maxPages={PREVIEW_MAX_PAGES}
-            width={96}
-            title="分割位置のプレビュー"
-            overlay={(page) => {
-              const owners = plan.ranges.flatMap((r, i) => (page >= r.start && page <= r.end ? [i + 1] : []));
-              const isCut = plan.ranges.some((r) => r.end === page);
-              if (plan.ranges.length > 0 && owners.length === 0) {
-                return (
-                  <span className="absolute inset-0 flex items-center justify-center bg-white/75 text-[10px] font-medium text-neutral-500 dark:bg-neutral-900/75 dark:text-neutral-400">
-                    出力されない
-                  </span>
-                );
-              }
-              if (owners.length === 0) return null;
-              return (
-                <>
-                  <span className="absolute left-1 top-1 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                    {owners.length > 3 ? `${owners.slice(0, 3).join(",")}…` : owners.join(",")}
-                  </span>
-                  {isCut && <span aria-hidden className="absolute inset-y-0 right-0 border-r-2 border-dashed border-red-500" />}
-                </>
-              );
-            }}
-          />
-          {plan.error ? (
-            <p className="text-xs text-amber-600 dark:text-amber-400">{plan.error}</p>
-          ) : mode === "range" && plan.ranges.length === 0 ? (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              ページ範囲を入力すると、どこで区切られるかをここに表示します。
-            </p>
-          ) : (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {plan.ranges.length}個のPDFに分割されます
-              {mode === "range" && `（${plan.ranges.slice(0, 10).map(formatRange).join(" / ")}${plan.ranges.length > 10 ? " …" : ""}）`}
-              。バッジの数字は出力ファイルの番号、赤い点線が区切り位置です。
-            </p>
-          )}
-        </div>
-      )}
-
       {file && pageCount !== null && (
         <button
           type="button"
@@ -279,6 +287,6 @@ export function PdfSplitTool() {
           />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { DocumentBasicForm } from "./shared/document-basic-form";
 import { PartyInfoForm } from "./shared/party-info-form";
 import { LineItemsEditor } from "./shared/line-items-editor";
@@ -82,46 +83,9 @@ export function QuoteOrderGeneratorTool() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        1回の入力で、A4の1枚に「上=見積書」「下=注文書」を作ります。お客様が注文書の欄に署名・捺印して返送すれば、そのまま注文の控えになります。入力内容はこの画面上でPDFを作るためだけに使われ、サーバーへの送信・保存は行われません。
-      </p>
-
-      <section className="flex flex-col gap-3">
-        <Heading>① 基本情報（見積書・注文書に共通）</Heading>
-        <DocumentBasicForm form={form} onChange={patch} />
-        <label className="flex flex-col gap-1.5 text-sm sm:max-w-sm">
-          注文書に入れる納期（任意）
-          <input
-            value={deliveryDate}
-            onChange={(e) => setDeliveryDate(e.target.value)}
-            placeholder="例: 2026年11月30日 / 受注後2週間"
-            className={inputClass}
-          />
-        </label>
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-3">
-          <Heading>② 宛先（お客様）</Heading>
-          <PartyInfoForm label="宛先情報" party={form.recipient} onChange={(recipient) => patch({ recipient })} />
-        </div>
-        <div className="flex flex-col gap-3">
-          <Heading>③ 発行者（自社情報）</Heading>
-          <PartyInfoForm label="発行者情報" party={form.issuer} onChange={(issuer) => patch({ issuer })} />
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <Heading>④ 明細</Heading>
-        <LineItemsEditor items={form.items} onChange={(items) => patch({ items })} />
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <Heading>⑤ 税・金額</Heading>
-        <TaxSettings taxRatePercent={form.taxRatePercent} taxRounding={form.taxRounding} onChange={patch} />
-      </section>
-
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={
       <section className="flex flex-col gap-3">
         <Heading>⑥ プレビュー（上が見積書・下が注文書）</Heading>
         {warning && (
@@ -183,6 +147,46 @@ export function QuoteOrderGeneratorTool() {
           プレビューの文字の幅は目安です。実際のPDFでは、折り返し位置が少し変わることがあります。
         </p>
       </section>
+      }
+    >
+      <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        1回の入力で、A4の1枚に「上=見積書」「下=注文書」を作ります。お客様が注文書の欄に署名・捺印して返送すれば、そのまま注文の控えになります。入力内容はこの画面上でPDFを作るためだけに使われ、サーバーへの送信・保存は行われません。
+      </p>
+
+      <section className="flex flex-col gap-3">
+        <Heading>① 基本情報（見積書・注文書に共通）</Heading>
+        <DocumentBasicForm form={form} onChange={patch} />
+        <label className="flex flex-col gap-1.5 text-sm sm:max-w-sm">
+          注文書に入れる納期（任意）
+          <input
+            value={deliveryDate}
+            onChange={(e) => setDeliveryDate(e.target.value)}
+            placeholder="例: 2026年11月30日 / 受注後2週間"
+            className={inputClass}
+          />
+        </label>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          <Heading>② 宛先（お客様）</Heading>
+          <PartyInfoForm label="宛先情報" party={form.recipient} onChange={(recipient) => patch({ recipient })} />
+        </div>
+        <div className="flex flex-col gap-3">
+          <Heading>③ 発行者（自社情報）</Heading>
+          <PartyInfoForm label="発行者情報" party={form.issuer} onChange={(issuer) => patch({ issuer })} />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <Heading>④ 明細</Heading>
+        <LineItemsEditor items={form.items} onChange={(items) => patch({ items })} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <Heading>⑤ 税・金額</Heading>
+        <TaxSettings taxRatePercent={form.taxRatePercent} taxRounding={form.taxRounding} onChange={patch} />
+      </section>
 
       <section className="flex flex-col gap-3">
         <Heading>⑦ PDF出力</Heading>
@@ -214,6 +218,6 @@ export function QuoteOrderGeneratorTool() {
           </div>
         )}
       </section>
-    </div>
+    </PreviewSplitLayout>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -90,23 +91,10 @@ export function PdfDeletePagesTool() {
   const willDeleteAll = pageCount !== null && selected.size >= pageCount;
 
   return (
-    <div className="flex flex-col gap-6">
-      <FileDropzone
-        accept="application/pdf,.pdf"
-        label="PDFをドラッグ&ドロップ"
-        hint="またはタップして選択"
-        onFilesSelected={(files) => setFile(files[0])}
-        onError={setError}
-      />
-
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
-
-      {file && pageCount !== null && (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            削除するページをタップして選択してください（{pageCount}ページ中{selected.size}ページを選択）
-          </p>
-          <PdfPageCheckList pageCount={pageCount} selected={selected} onToggle={togglePage} />
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={
+        file && pageCount !== null ? (
           <div data-testid="tool-preview" className="flex flex-col gap-2">
             <PdfThumbnails
               file={file}
@@ -130,6 +118,29 @@ export function PdfDeletePagesTool() {
                 : `赤く表示されたページが削除され、${Math.max(pageCount - selected.size, 0)}ページが残ります。`}
             </p>
           </div>
+        ) : (
+          <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
+            PDFを選ぶと、ここにプレビューが表示されます
+          </div>
+        )
+      }
+    >
+      <FileDropzone
+        accept="application/pdf,.pdf"
+        label="PDFをドラッグ&ドロップ"
+        hint="またはタップして選択"
+        onFilesSelected={(files) => setFile(files[0])}
+        onError={setError}
+      />
+
+      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && pageCount !== null && (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            削除するページをタップして選択してください（{pageCount}ページ中{selected.size}ページを選択）
+          </p>
+          <PdfPageCheckList pageCount={pageCount} selected={selected} onToggle={togglePage} />
           {willDeleteAll && (
             <p className="text-xs text-red-600 dark:text-red-400">
               すべてのページを削除することはできません。少なくとも1ページは残してください。
@@ -160,6 +171,6 @@ export function PdfDeletePagesTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -75,7 +76,41 @@ export function ImageFlipTool() {
     : "flipped.png";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={file ? (      
+        <div
+          data-testid="tool-preview"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            プレビュー（{direction === "horizontal" ? "左右反転" : "上下反転"}・選ぶとすぐ変わります）
+          </p>
+          {previewError && <ErrorMessage message={previewError} />}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">元の画像</figcaption>
+              {originalUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={originalUrl}
+                  alt="元の画像"
+                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              )}
+            </figure>
+            <figure className="flex flex-col gap-1">
+              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">反転後</figcaption>
+              <canvas
+                ref={previewCanvasRef}
+                aria-label="反転後のプレビュー"
+                className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </figure>
+          </div>
+        </div>
+      ) : null}
+    >
       <FileDropzone
         accept="image/*"
         label="画像をドラッグ&ドロップ"
@@ -113,38 +148,6 @@ export function ImageFlipTool() {
         </div>
       )}
 
-      {file && (
-        <div
-          data-testid="tool-preview"
-          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
-        >
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（{direction === "horizontal" ? "左右反転" : "上下反転"}・選ぶとすぐ変わります）
-          </p>
-          {previewError && <ErrorMessage message={previewError} />}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <figure className="flex flex-col gap-1">
-              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">元の画像</figcaption>
-              {originalUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={originalUrl}
-                  alt="元の画像"
-                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
-                />
-              )}
-            </figure>
-            <figure className="flex flex-col gap-1">
-              <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">反転後</figcaption>
-              <canvas
-                ref={previewCanvasRef}
-                aria-label="反転後のプレビュー"
-                className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
-              />
-            </figure>
-          </div>
-        </div>
-      )}
 
       {file && (
         <button
@@ -174,6 +177,6 @@ export function ImageFlipTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

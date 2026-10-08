@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { QrCodeProcessor } from "@/lib/processors/browser/qrcode";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -113,7 +114,35 @@ export function QrGeneratorTool() {
     "h-9 w-12 cursor-pointer rounded-md border border-neutral-300 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      preview={
+      <div
+        data-testid="tool-preview"
+        className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
+      >
+        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">プレビュー（入力や設定に合わせて自動で更新されます）</p>
+        {live.dataUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={live.dataUrl}
+              alt="生成された二次元コード"
+              className="h-48 w-48 rounded-lg p-2"
+              style={{ backgroundColor: bg }}
+            />
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              出力サイズ: {size}×{size}px ／ 誤り訂正: {logo ? "H（マーク付きのため自動）" : ecl}
+            </p>
+            <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" disabled={!live.fresh} />
+          </>
+        ) : (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            URLやテキストを入力すると、ここに二次元コードが表示されます。
+          </p>
+        )}
+      </div>
+      }
+    >
       <label className="flex flex-col gap-1.5 text-sm">
         URLやテキストを入力
         <textarea
@@ -261,32 +290,6 @@ export function QrGeneratorTool() {
 
       <ProcessingStatus state={status} successLabel="生成しました" />
       {(error || live.error) && <ErrorMessage message={(error ?? live.error)!} />}
-
-      <div
-        data-testid="tool-preview"
-        className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
-      >
-        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">プレビュー（入力や設定に合わせて自動で更新されます）</p>
-        {live.dataUrl ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={live.dataUrl}
-              alt="生成された二次元コード"
-              className="h-48 w-48 rounded-lg p-2"
-              style={{ backgroundColor: bg }}
-            />
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              出力サイズ: {size}×{size}px ／ 誤り訂正: {logo ? "H（マーク付きのため自動）" : ecl}
-            </p>
-            <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" disabled={!live.fresh} />
-          </>
-        ) : (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            URLやテキストを入力すると、ここに二次元コードが表示されます。
-          </p>
-        )}
-      </div>
-    </div>
+    </PreviewSplitLayout>
   );
 }

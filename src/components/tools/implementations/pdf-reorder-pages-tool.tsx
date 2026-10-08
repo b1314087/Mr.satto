@@ -1,5 +1,6 @@
 "use client";
 
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -76,23 +77,10 @@ export function PdfReorderPagesTool() {
   const downloadName = file ? `${stripExtension(file.name)}-reordered.pdf` : "reordered.pdf";
 
   return (
-    <div className="flex flex-col gap-6">
-      <FileDropzone
-        accept="application/pdf,.pdf"
-        label="PDFをドラッグ&ドロップ"
-        hint="またはタップして選択"
-        onFilesSelected={(files) => setFile(files[0])}
-        onError={setError}
-      />
-
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
-
-      {file && order && (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            ↑↓ ボタンでページの順序を並び替えられます（{order.length}ページ）
-          </p>
-          <PdfPageOrderList order={order} onReorder={setOrder} />
+    <PreviewSplitLayout
+      previewWidth="lg"
+      preview={
+        file && order ? (
           <div data-testid="tool-preview" className="flex flex-col gap-2">
             <PdfThumbnails
               file={file}
@@ -114,6 +102,29 @@ export function PdfReorderPagesTool() {
               {order.length > PREVIEW_MAX_PAGES && `（サムネイルは元の先頭${PREVIEW_MAX_PAGES}ページ分のみ表示）`}
             </p>
           </div>
+        ) : (
+          <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
+            PDFを選ぶと、ここにプレビューが表示されます
+          </div>
+        )
+      }
+    >
+      <FileDropzone
+        accept="application/pdf,.pdf"
+        label="PDFをドラッグ&ドロップ"
+        hint="またはタップして選択"
+        onFilesSelected={(files) => setFile(files[0])}
+        onError={setError}
+      />
+
+      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+
+      {file && order && (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            ↑↓ ボタンでページの順序を並び替えられます（{order.length}ページ）
+          </p>
+          <PdfPageOrderList order={order} onReorder={setOrder} />
         </div>
       )}
 
@@ -139,6 +150,6 @@ export function PdfReorderPagesTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

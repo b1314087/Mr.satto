@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -230,7 +231,30 @@ export function ImageCropTool() {
     : "cropped.jpg";
 
   return (
-    <div className="flex flex-col gap-6">
+    <PreviewSplitLayout
+      previewWidth="md"
+      preview={file && imageUrl && naturalSize ? (
+          <div
+            data-testid="tool-preview"
+            className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+          >
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+              プレビュー（枠を動かすと切り抜き結果がすぐ変わります）
+            </p>
+            <canvas
+              ref={resultCanvasRef}
+              aria-label="切り抜き後のプレビュー"
+              className="h-auto max-w-full self-start rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900"
+            />
+            {previewCrop && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                切り抜きサイズ: {previewCrop.width} × {previewCrop.height}px
+                {loadedImg ? `（元 ${loadedImg.naturalWidth} × ${loadedImg.naturalHeight}px）` : ""}
+              </p>
+            )}
+          </div>
+      ) : null}
+    >
       <FileDropzone
         accept="image/*"
         label="画像をドラッグ&ドロップ"
@@ -301,25 +325,6 @@ export function ImageCropTool() {
             枠をドラッグして移動、四隅のハンドルでサイズ変更できます。
           </p>
 
-          <div
-            data-testid="tool-preview"
-            className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
-          >
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-              プレビュー（枠を動かすと切り抜き結果がすぐ変わります）
-            </p>
-            <canvas
-              ref={resultCanvasRef}
-              aria-label="切り抜き後のプレビュー"
-              className="h-auto max-w-full self-start rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900"
-            />
-            {previewCrop && (
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                切り抜きサイズ: {previewCrop.width} × {previewCrop.height}px
-                {loadedImg ? `（元 ${loadedImg.naturalWidth} × ${loadedImg.naturalHeight}px）` : ""}
-              </p>
-            )}
-          </div>
         </div>
       )}
 
@@ -351,6 +356,6 @@ export function ImageCropTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </div>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }
