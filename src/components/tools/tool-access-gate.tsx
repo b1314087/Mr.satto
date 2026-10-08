@@ -9,6 +9,7 @@ import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { canUseTool } from "@/lib/plans/access";
 import { getTemporaryAccessService } from "@/lib/plans/temporary-access";
 import { RewardedAdCta } from "@/components/ads/rewarded-ad-cta";
+import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { TemporaryAccessBanner } from "@/components/tools/temporary-access-banner";
 
 /**
@@ -65,7 +66,11 @@ export function ToolAccessGate({
   const access = canUseTool(plan, requiredPlan);
   const [unlockedOptimistically, setUnlockedOptimistically] = useState(false);
 
-  const isGated = access.allowed && access.adRequired && !temporaryAccessActive && !unlockedOptimistically;
+  // 広告(Rewarded Ad)がまだ使えない間(GAMの広告ユニット未設定＝審査中など)は、
+  // 「広告を見ないと使えない」制限をかけず、Freeでも使えるようにする。
+  // 広告ユニットを設定した時点で、自動的に制限が有効になる（src/lib/ads/gam-config.ts 参照）。
+  const adGateActive = isRewardedAdGateActive();
+  const isGated = adGateActive && access.allowed && access.adRequired && !temporaryAccessActive && !unlockedOptimistically;
 
   // 複数タブ間の同期（Phase 4 spec 13章）。
   // 他タブでの広告視聴による付与（BroadcastChannel通知）と、タブが再びアクティブに
