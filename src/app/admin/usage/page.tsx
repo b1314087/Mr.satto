@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { checkAdminAccess } from "@/lib/admin/auth";
 import { fetchToolUsageSummary } from "@/lib/admin/data";
 import { StatCard } from "@/components/admin/stat-card";
+import { formatUsageCount } from "@/lib/admin/stats";
 
 export const metadata: Metadata = {
   title: "利用状況 | 管理画面",
@@ -19,7 +20,10 @@ export default async function AdminUsagePage() {
   if (access.status !== "ok") return null;
 
   const usage = await fetchToolUsageSummary();
-  const maxDailyCount = Math.max(1, ...usage.dailyThisMonth.map((d) => d.count));
+  // 取得状態がok以外のときは、不完全な集計を表に出さない
+  const byTool = usage.status === "ok" ? usage.byTool : [];
+  const dailyThisMonth = usage.status === "ok" ? usage.dailyThisMonth : [];
+  const maxDailyCount = Math.max(1, ...dailyThisMonth.map((d) => d.count));
 
   return (
     <div className="flex flex-col gap-8">
@@ -31,10 +35,11 @@ export default async function AdminUsagePage() {
           （かつて「記入済みPDF→Excel」のStandardプラン向け1日あたり利用制限を管理していた際のログ）の集計のみで、
           サイト全体の利用回数ではありません。
         </p>
-        {!usage.available && (
+        {usage.status !== "ok" && (
           <p className="mt-2 max-w-2xl text-sm font-medium text-amber-600 dark:text-amber-400">
-            利用ログのデータを取得できませんでした（Supabaseの接続設定を確認してください）。
-            下の数値は「0回」という意味ではなく、未取得です。
+            {usage.status === "partial"
+              ? "利用ログの一部しか取得できませんでした。正しい回数を表示できないため、数値は表示していません。"
+              : "利用ログのデータを取得できませんでした（Supabaseの接続設定を確認してください）。下の数値は「0回」という意味ではなく、未取得です。"}
           </p>
         )}
       </div>
@@ -42,11 +47,11 @@ export default async function AdminUsagePage() {
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <StatCard
           label="今日の利用回数（過去ログ）"
-          value={usage.available ? usage.todayTotal.toLocaleString() : "取得できません"}
+          value={formatUsageCount(usage.status, usage.todayTotal)}
         />
         <StatCard
           label="今月の利用回数（過去ログ）"
-          value={usage.available ? usage.monthTotal.toLocaleString() : "取得できません"}
+          value={formatUsageCount(usage.status, usage.monthTotal)}
         />
       </section>
 
@@ -62,17 +67,17 @@ export default async function AdminUsagePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-              {usage.byTool.map((row) => (
+              {byTool.map((row) => (
                 <tr key={row.toolId}>
                   <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">{row.toolName}</td>
                   <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.todayCount.toLocaleString()}</td>
                   <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.monthCount.toLocaleString()}</td>
                 </tr>
               ))}
-              {usage.byTool.length === 0 && (
+              {byTool.length === 0 && (
                 <tr>
                   <td colSpan={3} className="px-4 py-8 text-center text-sm text-neutral-400 dark:text-neutral-500">
-                    {usage.available ? "今月の利用ログはありません" : "利用ログを取得できませんでした"}
+                    {usage.status === "ok" ? "今月の利用ログはありません" : "利用ログを正しく取得できませんでした"}
                   </td>
                 </tr>
               )}
@@ -83,13 +88,13 @@ export default async function AdminUsagePage() {
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-neutral-500 dark:text-neutral-400">日別の利用回数（今月）</h2>
-        {usage.dailyThisMonth.length === 0 ? (
+        {dailyThisMonth.length === 0 ? (
           <p className="text-sm text-neutral-400 dark:text-neutral-500">
-            {usage.available ? "今月の利用ログはありません" : "利用ログを取得できませんでした"}
+            {usage.status === "ok" ? "今月の利用ログはありません" : "利用ログを正しく取得できませんでした"}
           </p>
         ) : (
           <div className="flex items-end gap-1.5 overflow-x-auto rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-            {usage.dailyThisMonth.map((day) => (
+            {dailyThisMonth.map((day) => (
               <div key={day.date} className="flex min-w-[28px] flex-col items-center gap-1">
                 <div
                   className="w-4 rounded-t bg-blue-500/70 dark:bg-blue-500/60"

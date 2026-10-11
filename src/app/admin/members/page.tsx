@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { checkAdminAccess } from "@/lib/admin/auth";
-import { fetchAllMembers, filterMembers, paginate, type MemberRow } from "@/lib/admin/data";
+import { fetchAllMembersResult, filterMembers, paginate, type MemberRow } from "@/lib/admin/data";
+import { describeMembersIssue } from "@/lib/admin/stats";
 import { PLAN_DEFINITIONS, PLAN_IDS, type Plan } from "@/lib/plans/types";
 import { SUBSCRIPTION_STATUS_LABEL } from "@/lib/plans/status-labels";
 
@@ -46,8 +47,17 @@ export default async function AdminMembersPage({
   const statusFilter = params.status && params.status.length > 0 ? params.status : undefined;
   const page = Number.parseInt(params.page ?? "1", 10) || 1;
 
-  const allMembers = await fetchAllMembers();
-  const filtered = filterMembers(allMembers, { query, plan: planFilter, status: statusFilter });
+  const { members: allMembers, profiles: profilesStatus, subscriptions: subscriptionsStatus } =
+    await fetchAllMembersResult();
+  const membersIssue = describeMembersIssue(profilesStatus, subscriptionsStatus);
+  // 契約情報を全件取得できていないとき、プラン・契約状態は「Free/未契約」と誤って計算されるため、
+  // 画面に出さず、それらでの絞り込みも行わない
+  const plansReliable = profilesStatus === "ok" && subscriptionsStatus === "ok";
+  const filtered = filterMembers(allMembers, {
+    query,
+    plan: plansReliable ? planFilter : undefined,
+    status: plansReliable ? statusFilter : undefined,
+  });
   const { items, totalPages, currentPage, totalCount } = paginate<MemberRow>(filtered, page, PAGE_SIZE);
 
   // ページ番号以外のクエリを保持したままページを切り替えるための土台
@@ -61,8 +71,18 @@ export default async function AdminMembersPage({
       <div>
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">会員一覧</h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          全{allMembers.length.toLocaleString()}件中 {totalCount.toLocaleString()}件が条件に一致
+          {profilesStatus === "unavailable"
+            ? "会員データを取得できませんでした"
+            : profilesStatus === "partial"
+              ? `取得できた${allMembers.length.toLocaleString()}件のみを表示しています（全件ではありません）`
+              : `全${allMembers.length.toLocaleString()}件中 ${totalCount.toLocaleString()}件が条件に一致`}
         </p>
+        {membersIssue && (
+          <p className="mt-2 text-sm font-medium text-amber-600 dark:text-amber-400">
+            {membersIssue}
+            {!plansReliable && profilesStatus !== "unavailable" && "プラン・契約状態の列は「-」と表示し、それらでの絞り込みは無効にしています。"}
+          </p>
+        )}
       </div>
 
       <form
@@ -153,20 +173,24 @@ export default async function AdminMembersPage({
               <tr key={m.id}>
                 <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">{m.email ?? "-"}</td>
                 <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">
-                  {PLAN_DEFINITIONS[m.effectivePlan].name}
+                  {plansReliable ? PLAN_DEFINITIONS[m.effectivePlan].name : "-"}
                 </td>
                 <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">
-                  {m.subscription ? (SUBSCRIPTION_STATUS_LABEL[m.subscription.status] ?? m.subscription.status) : "未契約"}
+                  {!plansReliable
+                    ? "-"
+                    : m.subscription
+                      ? (SUBSCRIPTION_STATUS_LABEL[m.subscription.status] ?? m.subscription.status)
+                      : "未契約"}
                 </td>
                 <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">
-                  {formatDate(m.contractStartedAt)}
+                  {plansReliable ? formatDate(m.contractStartedAt) : "-"}
                 </td>
                 <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">
-                  {formatDate(m.subscription?.currentPeriodEnd ?? null)}
+                  {plansReliable ? formatDate(m.subscription?.currentPeriodEnd ?? null) : "-"}
                 </td>
                 <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(m.registeredAt)}</td>
                 <td className="px-4 py-3 font-mono text-xs text-neutral-500 dark:text-neutral-400">
-                  {m.stripeCustomerId ?? "-"}
+                  {plansReliable ? (m.stripeCustomerId ?? "-") : "-"}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-neutral-500 dark:text-neutral-400">{m.id}</td>
               </tr>
@@ -174,7 +198,7 @@ export default async function AdminMembersPage({
             {items.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-sm text-neutral-400 dark:text-neutral-500">
-                  条件に一致する会員がいません
+                  {profilesStatus === "unavailable" ? "会員データを取得できませんでした" : "条件に一致する会員がいません"}
                 </td>
               </tr>
             )}

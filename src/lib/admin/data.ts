@@ -2,7 +2,8 @@ import "server-only";
 
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { resolveEffectivePlan, type SubscriptionSnapshot } from "@/lib/plans/current-plan";
-import { PLAN_DEFINITIONS, type Plan } from "@/lib/plans/types";
+import { type Plan } from "@/lib/plans/types";
+import { classifyQuery, computeDashboardStats, type AdminDashboardStats, type DataStatus } from "./stats";
 import { tools } from "@/lib/tools/data";
 
 /**
@@ -56,31 +57,33 @@ interface RawSubscriptionRow {
   created_at: string;
 }
 
-async function fetchAllProfiles(): Promise<RawProfileRow[]> {
+async function fetchAllProfiles(): Promise<{ rows: RawProfileRow[]; status: DataStatus }> {
   const supabase = getSupabaseServiceClient();
-  if (!supabase) return [];
-  const { data, error } = await supabase
+  if (!supabase) return { rows: [], status: "unavailable" };
+  const result = await supabase
     .from("profiles")
-    .select("id, email, created_at")
+    .select("id, email, created_at", { count: "exact" })
     .order("created_at", { ascending: false });
-  if (error || !data) return [];
-  return data as RawProfileRow[];
+  return classifyQuery<RawProfileRow>({ data: result.data as RawProfileRow[] | null, error: result.error, count: result.count });
 }
 
-async function fetchAllSubscriptions(): Promise<Map<string, RawSubscriptionRow>> {
+async function fetchAllSubscriptions(): Promise<{ map: Map<string, RawSubscriptionRow>; status: DataStatus }> {
   const map = new Map<string, RawSubscriptionRow>();
   const supabase = getSupabaseServiceClient();
-  if (!supabase) return map;
-  const { data, error } = await supabase
+  if (!supabase) return { map, status: "unavailable" };
+  const result = await supabase
     .from("subscriptions")
     .select(
-      "user_id, stripe_customer_id, stripe_subscription_id, plan, status, current_period_end, cancel_at_period_end, created_at"
+      "user_id, stripe_customer_id, stripe_subscription_id, plan, status, current_period_end, cancel_at_period_end, created_at",
+      { count: "exact" }
     );
-  if (error || !data) return map;
-  for (const row of data as RawSubscriptionRow[]) {
-    map.set(row.user_id, row);
-  }
-  return map;
+  const { rows, status } = classifyQuery<RawSubscriptionRow>({
+    data: result.data as RawSubscriptionRow[] | null,
+    error: result.error,
+    count: result.count,
+  });
+  for (const row of rows) map.set(row.user_id, row);
+  return { map, status };
 }
 
 function toSnapshot(row: RawSubscriptionRow | undefined): SubscriptionSnapshot | null {
@@ -93,11 +96,22 @@ function toSnapshot(row: RawSubscriptionRow | undefined): SubscriptionSnapshot |
   };
 }
 
+export interface MembersFetchResult {
+  members: MemberRow[];
+  /** 会員(profiles)の取得状態。unavailableのとき members は空だが、会員が0人という意味ではない */
+  profiles: DataStatus;
+  /**
+   * 契約(subscriptions)の取得状態。ok以外のとき、members の effectivePlan / subscription は
+   * 「契約情報なし＝Free」として計算された不正確な値なので、画面に出してはいけない。
+   */
+  subscriptions: DataStatus;
+}
+
 /** 全会員を取得する（profiles × subscriptions をアプリ側で結合）。管理者判定後にのみ呼ぶこと。 */
-export async function fetchAllMembers(): Promise<MemberRow[]> {
-  const [profiles, subsMap] = await Promise.all([fetchAllProfiles(), fetchAllSubscriptions()]);
-  return profiles.map((profile) => {
-    const raw = subsMap.get(profile.id);
+export async function fetchAllMembersResult(): Promise<MembersFetchResult> {
+  const [profiles, subs] = await Promise.all([fetchAllProfiles(), fetchAllSubscriptions()]);
+  const members = profiles.rows.map((profile) => {
+    const raw = subs.map.get(profile.id);
     const subscription = toSnapshot(raw);
     return {
       id: profile.id,
@@ -109,6 +123,7 @@ export async function fetchAllMembers(): Promise<MemberRow[]> {
       contractStartedAt: raw?.created_at ?? null,
     };
   });
+  return { members, profiles: profiles.status, subscriptions: subs.status };
 }
 
 export interface MemberListFilter {
@@ -149,40 +164,9 @@ export function paginate<T>(items: T[], page: number, pageSize: number): Paginat
   return { items: items.slice(start, start + pageSize), totalPages, currentPage, totalCount };
 }
 
-/** ダッシュボードのKPI集計 */
-export interface AdminDashboardStats {
-  totalUsers: number;
-  freeUsers: number;
-  /** 現在アクティブなStandard契約者数（解約済み等は含まない） */
-  standardUsers: number;
-  /** 現在アクティブなPremium契約者数（解約済み等は含まない） */
-  premiumUsers: number;
-  /** 現在の有料会員数（standard + premium） */
-  payingUsers: number;
-  /**
-   * 現在有効な契約 × 各プラン単価から算出する、見込みの月間経常収益(MRR)。
-   * Stripeへ実際に入金された金額（日割り・クーポン・決済手数料・失敗分等を
-   * 反映した実績値）ではない点に注意。実績の売上額はコード側では保持しておらず
-   * （推測値を表示しない、という指示書の方針により、ここでは表示しない）、
-   * 必要であればStripeダッシュボードのレポートを正とする。
-   */
-  estimatedMonthlyRevenueYen: number;
-}
-
-export function computeDashboardStats(members: MemberRow[]): AdminDashboardStats {
-  const totalUsers = members.length;
-  let standardUsers = 0;
-  let premiumUsers = 0;
-  for (const m of members) {
-    if (m.effectivePlan === "standard") standardUsers += 1;
-    if (m.effectivePlan === "premium") premiumUsers += 1;
-  }
-  const payingUsers = standardUsers + premiumUsers;
-  const freeUsers = totalUsers - payingUsers;
-  const estimatedMonthlyRevenueYen =
-    standardUsers * PLAN_DEFINITIONS.standard.priceYen + premiumUsers * PLAN_DEFINITIONS.premium.priceYen;
-  return { totalUsers, freeUsers, standardUsers, premiumUsers, payingUsers, estimatedMonthlyRevenueYen };
-}
+// ダッシュボードのKPI集計の計算ロジックは ./stats.ts（取得失敗時の表示制御もそこで行う）
+export { computeDashboardStats };
+export type { AdminDashboardStats };
 
 // ============================================================
 // ツール利用状況（tool_usage_daily）
@@ -222,10 +206,11 @@ export interface DailyUsagePoint {
 
 export interface ToolUsageSummary {
   /**
-   * 利用ログを実際に取得できたか。falseの場合（サービスロールキー未設定・DBエラー）は
-   * 下の数値はすべて0だが、「利用回数が0回」という意味ではなく「取得できなかった」という意味。
+   * 利用ログの取得状態。ok以外（サービスロールキー未設定・DBエラー・一部のみ取得）の場合、
+   * 下の数値は「利用回数が0回」という意味ではなく、「取得できなかった（正しい値ではない）」という意味。
+   * 「ok かつ 0件」は、取得できたうえでログが無いことを表す。
    */
-  available: boolean;
+  status: DataStatus;
   todayTotal: number;
   monthTotal: number;
   byTool: ToolUsageRow[];
@@ -247,7 +232,7 @@ function getToolName(toolId: string): string {
 
 // 取得できなかった場合の値。数値の0は「未取得」を表すだけで、利用回数が0回という意味ではない。
 const UNAVAILABLE_USAGE_SUMMARY: ToolUsageSummary = {
-  available: false,
+  status: "unavailable",
   todayTotal: 0,
   monthTotal: 0,
   byTool: [],
@@ -262,15 +247,18 @@ export async function fetchToolUsageSummary(): Promise<ToolUsageSummary> {
   const today = todayInTokyo();
   const monthStart = monthStartInTokyo();
 
-  const { data, error } = await supabase
+  const result = await supabase
     .from("tool_usage_daily")
-    .select("tool_id, usage_date, count")
+    .select("tool_id, usage_date, count", { count: "exact" })
     .gte("usage_date", monthStart)
     .order("usage_date", { ascending: true });
 
-  if (error || !data) return UNAVAILABLE_USAGE_SUMMARY;
-
-  const rows = data as RawUsageRow[];
+  const { rows, status } = classifyQuery<RawUsageRow>({
+    data: result.data as RawUsageRow[] | null,
+    error: result.error,
+    count: result.count,
+  });
+  if (status === "unavailable") return UNAVAILABLE_USAGE_SUMMARY;
   let todayTotal = 0;
   let monthTotal = 0;
   const byToolMap = new Map<string, { today: number; month: number }>();
@@ -297,5 +285,5 @@ export async function fetchToolUsageSummary(): Promise<ToolUsageSummary> {
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  return { available: true, todayTotal, monthTotal, byTool, dailyThisMonth };
+  return { status, todayTotal, monthTotal, byTool, dailyThisMonth };
 }
