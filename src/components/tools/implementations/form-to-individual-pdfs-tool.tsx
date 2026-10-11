@@ -43,6 +43,8 @@ const PREVIEW_MAX_WIDTH = 640;
 /** プレビュー枠をまだ計測できない最初の描画で使う幅。PC幅(lg以上)では右カラム(最大560px)に収まる幅にする */
 function fallbackPreviewWidth(): number {
   if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches && !window.matchMedia("(min-width: 1280px)").matches) return 540;
+  // スマホ幅: 画面の幅に収まるようにする(左右の余白ぶんを引く)。計測できる前でも横にはみ出さないため
+  if (typeof window !== "undefined") return Math.max(240, Math.min(PREVIEW_MAX_WIDTH, window.innerWidth - 56));
   return PREVIEW_MAX_WIDTH;
 }
 
@@ -436,7 +438,7 @@ export function FormToIndividualPdfsTool() {
           <div
             ref={canvasWrapRef}
             data-testid="tool-preview"
-            className="w-full min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
+            className="w-full min-w-0 overflow-x-auto lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
           >
             <div
               className="relative select-none border border-neutral-300 dark:border-neutral-700"
