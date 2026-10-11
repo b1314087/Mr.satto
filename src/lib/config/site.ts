@@ -15,5 +15,7 @@ export const siteConfig = {
   // Vercel等にデプロイ後、実際のURLに差し替えてください
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://example.vercel.app",
   contactEmail: "taninpasya@gmail.com",
+  /** お問い合わせ・不具合報告・改善提案の受付先（Googleフォーム。回答はGoogle側で管理） */
+  contactFormUrl: "https://forms.gle/b9fmLMZw4beCdJf16",
   locale: "ja_JP",
 };

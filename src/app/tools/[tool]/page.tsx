@@ -221,6 +221,23 @@ export default async function ToolPage({ params }: ToolPageProps) {
         )}
       </div>
 
+      {isAvailable && (
+        <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+          お問い合わせ、不具合の報告、機能改善のご提案は
+          <a
+            href={siteConfig.contactFormUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mx-1 text-blue-600 hover:underline dark:text-blue-400"
+          >
+            お問い合わせフォーム
+            <span aria-hidden="true"> ↗</span>
+            <span className="sr-only">（Googleフォーム・新しいタブで開きます）</span>
+          </a>
+          から送信できます。
+        </p>
+      )}
+
       {/* Phase 20: Standard/Premium（広告なし）と分かっている場合は、ツール本体の
           下の通常広告枠も出さない。「広告なし」の説明とページ内の実際の表示が
           矛盾しないようにするため（開発指示書2章・10章）。プラン不明（準備中

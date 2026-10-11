@@ -125,15 +125,29 @@ export default function PrivacyPage() {
             7. お問い合わせ
           </h2>
           <p>
+            お問い合わせ、不具合の報告、機能改善のご提案は、Googleフォームの
+            <a
+              href={siteConfig.contactFormUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mx-1 text-blue-600 hover:underline dark:text-blue-400"
+            >
+              お問い合わせフォーム
+            </a>
+            から受け付けています。フォームに入力された内容は、本サービスのサーバーやデータベースではなく、
+            Googleのサービス上で管理され、お問い合わせへの対応およびサービスの改善のために利用します。
+            フォームで取得する項目は、フォームの画面に表示されるものに限ります。
+          </p>
+          <p className="mt-2">
             本ポリシーに関するお問い合わせは
             <a href={`mailto:${siteConfig.contactEmail}`} className="text-blue-600 hover:underline dark:text-blue-400">
               {siteConfig.contactEmail}
             </a>
-            までご連絡ください。
+            でも受け付けています。
           </p>
         </section>
 
-        <p className="text-xs text-neutral-400">最終更新日: 2026年9月</p>
+        <p className="text-xs text-neutral-400">最終更新日: 2026年10月</p>
       </div>
     </div>
   );

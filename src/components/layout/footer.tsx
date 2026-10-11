@@ -36,6 +36,16 @@ export function Footer() {
           <Link href="/terms" className="hover:text-blue-600 dark:hover:text-blue-400">
             利用規約
           </Link>
+          <a
+            href={siteConfig.contactFormUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-blue-600 dark:hover:text-blue-400"
+          >
+            お問い合わせ
+            <span aria-hidden="true"> ↗</span>
+            <span className="sr-only">（Googleフォーム・新しいタブで開きます）</span>
+          </a>
         </nav>
       </div>
       <div className="border-t border-neutral-200 px-4 py-4 text-center text-xs text-neutral-400 dark:border-neutral-800 sm:px-6">
