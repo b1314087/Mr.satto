@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { siteConfig } from "@/lib/config/site";
 import { loadJapaneseOgFontData } from "@/lib/seo/og-font";
+import { OgMark } from "@/lib/seo/og-mark";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -27,7 +28,7 @@ export default async function Image() {
         }}
       >
         <div style={{ fontSize: 72, fontWeight: 700, display: "flex", alignItems: "center", gap: 20 }}>
-          <span>🧰</span>
+          <OgMark size={84} />
           <span>{siteConfig.shortName}</span>
         </div>
         <div style={{ fontSize: 28, marginTop: 24, opacity: 0.85, maxWidth: 900, textAlign: "center" }}>

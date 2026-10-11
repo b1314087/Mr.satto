@@ -5,6 +5,7 @@ import { getCategorySeoContent } from "@/lib/seo/category-content";
 import { getToolSeoContent } from "@/lib/seo/tool-content";
 import { siteConfig } from "@/lib/config/site";
 import { loadJapaneseOgFontData } from "@/lib/seo/og-font";
+import { OgMark } from "@/lib/seo/og-mark";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -39,19 +40,20 @@ export default async function Image({ params }: ImageProps) {
   const category = categories.find((c) => c.id === param);
   const tool = category ? undefined : getToolById(param);
 
-  let icon = "🧰";
+  // 絵文字はビルド時に外部CDNへ画像を取りに行くため使わず、カテゴリ名の文字で表す。
+  let categoryLabel: string | undefined;
   let heading: string = siteConfig.shortName;
   let description: string = siteConfig.tagline;
 
   if (category) {
     const content = getCategorySeoContent(category.id);
-    icon = category.icon;
+    categoryLabel = category.name;
     heading = content.metaTitle;
     description = content.metaDescription;
   } else if (tool) {
     const seo = getToolSeoContent(tool.id);
     const toolCategory = categories.find((c) => c.id === tool.category);
-    icon = toolCategory?.icon ?? "🧰";
+    categoryLabel = toolCategory?.name;
     heading = seo?.metaTitle ?? tool.name;
     description = seo?.metaDescription ?? tool.description;
   }
@@ -81,7 +83,19 @@ export default async function Image({ params }: ImageProps) {
             maxWidth: 1040,
           }}
         >
-          <div style={{ fontSize: 44 }}>{icon}</div>
+          {categoryLabel ? (
+            <div
+              style={{
+                display: "flex",
+                fontSize: 28,
+                padding: "6px 24px",
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.18)",
+              }}
+            >
+              {categoryLabel}
+            </div>
+          ) : null}
           <div style={{ fontSize: 52, fontWeight: 700, textAlign: "center", lineHeight: 1.3 }}>{heading}</div>
         </div>
         <div style={{ fontSize: 26, marginTop: 28, opacity: 0.85, maxWidth: 960, textAlign: "center", lineHeight: 1.5 }}>
@@ -97,7 +111,7 @@ export default async function Image({ params }: ImageProps) {
             gap: 10,
           }}
         >
-          <span>🧰</span>
+          <OgMark size={30} />
           <span>{siteConfig.shortName}</span>
         </div>
       </div>

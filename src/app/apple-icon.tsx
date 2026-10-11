@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { OgMark } from "@/lib/seo/og-mark";
 
 /**
  * iOSホーム画面追加用アイコン（Phase 12）。icon.tsxと同じ理由・同じ配色で生成する。
@@ -19,7 +20,7 @@ export default function AppleIcon() {
           background: "linear-gradient(135deg, #1d4ed8 0%, #1e293b 100%)",
         }}
       >
-        <span style={{ fontSize: 108 }}>🧰</span>
+        <OgMark size={108} />
       </div>
     ),
     { ...size }
