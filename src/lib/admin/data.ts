@@ -221,6 +221,11 @@ export interface DailyUsagePoint {
 }
 
 export interface ToolUsageSummary {
+  /**
+   * 利用ログを実際に取得できたか。falseの場合（サービスロールキー未設定・DBエラー）は
+   * 下の数値はすべて0だが、「利用回数が0回」という意味ではなく「取得できなかった」という意味。
+   */
+  available: boolean;
   todayTotal: number;
   monthTotal: number;
   byTool: ToolUsageRow[];
@@ -240,12 +245,19 @@ function getToolName(toolId: string): string {
   return tools.find((t) => t.id === toolId)?.name ?? toolId;
 }
 
-const EMPTY_USAGE_SUMMARY: ToolUsageSummary = { todayTotal: 0, monthTotal: 0, byTool: [], dailyThisMonth: [] };
+// 取得できなかった場合の値。数値の0は「未取得」を表すだけで、利用回数が0回という意味ではない。
+const UNAVAILABLE_USAGE_SUMMARY: ToolUsageSummary = {
+  available: false,
+  todayTotal: 0,
+  monthTotal: 0,
+  byTool: [],
+  dailyThisMonth: [],
+};
 
 /** 今月分（Asia/Tokyo基準）のツール利用ログを集計する。管理者判定後にのみ呼ぶこと。 */
 export async function fetchToolUsageSummary(): Promise<ToolUsageSummary> {
   const supabase = getSupabaseServiceClient();
-  if (!supabase) return EMPTY_USAGE_SUMMARY;
+  if (!supabase) return UNAVAILABLE_USAGE_SUMMARY;
 
   const today = todayInTokyo();
   const monthStart = monthStartInTokyo();
@@ -256,7 +268,7 @@ export async function fetchToolUsageSummary(): Promise<ToolUsageSummary> {
     .gte("usage_date", monthStart)
     .order("usage_date", { ascending: true });
 
-  if (error || !data) return EMPTY_USAGE_SUMMARY;
+  if (error || !data) return UNAVAILABLE_USAGE_SUMMARY;
 
   const rows = data as RawUsageRow[];
   let todayTotal = 0;
@@ -285,5 +297,5 @@ export async function fetchToolUsageSummary(): Promise<ToolUsageSummary> {
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  return { todayTotal, monthTotal, byTool, dailyThisMonth };
+  return { available: true, todayTotal, monthTotal, byTool, dailyThisMonth };
 }

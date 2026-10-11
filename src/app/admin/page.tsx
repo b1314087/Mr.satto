@@ -45,15 +45,23 @@ export default async function AdminDashboardPage() {
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-neutral-500 dark:text-neutral-400">
-          ツール利用（利用ログのあるツールのみ）
+          ツール利用（過去の利用ログのみ）
         </h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <StatCard label="今日の利用回数" value={usage.todayTotal.toLocaleString()} />
-          <StatCard label="今月の利用回数" value={usage.monthTotal.toLocaleString()} />
+          <StatCard
+            label="今日の利用回数（過去ログ）"
+            value={usage.available ? usage.todayTotal.toLocaleString() : "取得できません"}
+          />
+          <StatCard
+            label="今月の利用回数（過去ログ）"
+            value={usage.available ? usage.monthTotal.toLocaleString() : "取得できません"}
+          />
         </div>
         <p className="mt-3 text-xs text-neutral-400 dark:text-neutral-500">
-          Mr.Sattoのツールはブラウザ内で処理が完結する設計のため、利用回数をサーバー側で記録しているのは
-          「記入済みPDF→Excel」など一部のツールのみです。詳細は
+          {usage.available
+            ? "Mr.Sattoのツールはブラウザ内で処理が完結する設計のため、現在ツールの利用回数は新たに記録していません。ここに表示されるのは、過去に記録された利用ログの集計のみで、サイト全体の利用回数ではありません。"
+            : "利用ログのデータを取得できませんでした（Supabaseの接続設定を確認してください）。0回という意味ではありません。"}
+          詳細は
           <a href="/admin/usage" className="mx-1 text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
             利用状況
           </a>

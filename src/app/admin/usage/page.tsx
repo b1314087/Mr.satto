@@ -27,15 +27,27 @@ export default async function AdminUsagePage() {
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">利用状況</h1>
         <p className="mt-2 max-w-2xl text-sm text-neutral-500 dark:text-neutral-400">
           Mr.Sattoのツールはブラウザ内で処理が完結し、ファイルの内容やツールの実行結果はサーバーへ送信されません。
-          そのため、ここで確認できるのは「利用回数を記録しているツール」のログのみです（現時点では
-          Standardプランの1日あたり利用制限を管理するため、「記入済みPDF→Excel」のみが対象です）。
-          他のツールの利用回数は、設計上サーバー側に存在しないため表示していません。
+          現在、ツールの利用回数は新たに記録していません。ここに表示されるのは、過去に記録された利用ログ
+          （かつて「記入済みPDF→Excel」のStandardプラン向け1日あたり利用制限を管理していた際のログ）の集計のみで、
+          サイト全体の利用回数ではありません。
         </p>
+        {!usage.available && (
+          <p className="mt-2 max-w-2xl text-sm font-medium text-amber-600 dark:text-amber-400">
+            利用ログのデータを取得できませんでした（Supabaseの接続設定を確認してください）。
+            下の数値は「0回」という意味ではなく、未取得です。
+          </p>
+        )}
       </div>
 
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatCard label="今日の利用回数" value={usage.todayTotal.toLocaleString()} />
-        <StatCard label="今月の利用回数" value={usage.monthTotal.toLocaleString()} />
+        <StatCard
+          label="今日の利用回数（過去ログ）"
+          value={usage.available ? usage.todayTotal.toLocaleString() : "取得できません"}
+        />
+        <StatCard
+          label="今月の利用回数（過去ログ）"
+          value={usage.available ? usage.monthTotal.toLocaleString() : "取得できません"}
+        />
       </section>
 
       <section>
@@ -60,7 +72,7 @@ export default async function AdminUsagePage() {
               {usage.byTool.length === 0 && (
                 <tr>
                   <td colSpan={3} className="px-4 py-8 text-center text-sm text-neutral-400 dark:text-neutral-500">
-                    今月の利用ログはまだありません
+                    {usage.available ? "今月の利用ログはありません" : "利用ログを取得できませんでした"}
                   </td>
                 </tr>
               )}
@@ -72,7 +84,9 @@ export default async function AdminUsagePage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-neutral-500 dark:text-neutral-400">日別の利用回数（今月）</h2>
         {usage.dailyThisMonth.length === 0 ? (
-          <p className="text-sm text-neutral-400 dark:text-neutral-500">今月の利用ログはまだありません</p>
+          <p className="text-sm text-neutral-400 dark:text-neutral-500">
+            {usage.available ? "今月の利用ログはありません" : "利用ログを取得できませんでした"}
+          </p>
         ) : (
           <div className="flex items-end gap-1.5 overflow-x-auto rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
             {usage.dailyThisMonth.map((day) => (
