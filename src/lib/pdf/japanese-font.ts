@@ -24,3 +24,24 @@ export function loadJapaneseFontBytes(): Promise<ArrayBuffer> {
   }
   return fontBytesPromise;
 }
+
+/**
+ * 明朝体(Noto Serif JP)の読み込み。Excelで「MS 明朝」「游明朝」等の明朝系フォントを指定したセルを
+ * 明朝体で描くために、Excel→PDFだけが必要なときに限って取得する(約3MBのため、使わない変換では読み込まない)。
+ */
+let serifFontBytesPromise: Promise<ArrayBuffer> | null = null;
+
+export function loadJapaneseSerifFontBytes(): Promise<ArrayBuffer> {
+  if (!serifFontBytesPromise) {
+    serifFontBytesPromise = fetch("/fonts/NotoSerifJP-Regular.ttf")
+      .then((res) => {
+        if (!res.ok) throw new Error(`serif font fetch failed: ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .catch((e) => {
+        serifFontBytesPromise = null;
+        throw e;
+      });
+  }
+  return serifFontBytesPromise;
+}

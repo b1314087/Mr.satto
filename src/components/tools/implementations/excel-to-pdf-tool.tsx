@@ -14,6 +14,7 @@ import {
   type FitOption,
   type RawExcelSheet,
 } from "@/lib/processors/browser/excel-to-pdf";
+import { readHiddenSheetNames } from "@/lib/excel/ooxml-page-settings";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import {
   PreviewGrid,
@@ -35,8 +36,8 @@ import { downloadBlob, stripExtension } from "@/lib/utils/format";
  * 非表示行列・セルの実際の罫線をExcelファイル自身から読み取って反映する
  * （開発指示書Phase 18.2 B節）。向き・ページの収め方は既定で「自動
  * （Excelの設定を優先）」とし、Excel側に情報が無い場合のみ以下の手動指定へ
- * フォールバックする。取得できないもの（結合セル・チャート・図形・数式の
- * 再計算結果・セルの塗りつぶし色等）は無理に再現しない。
+ * フォールバックする。色・罫線・結合セル・条件付き書式・画像と単純な図形も反映する。
+ * 取得できないもの（チャート・複雑な図形・数式の再計算結果）は無理に再現しない。
  */
 export function ExcelToPdfTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -44,7 +45,7 @@ export function ExcelToPdfTool() {
   const [selectedSheets, setSelectedSheets] = useState<Set<string>>(new Set());
   const [orientation, setOrientation] = useState<OrientationOption>("auto");
   const [fitMode, setFitMode] = useState<FitOption>("auto");
-  const [repeatHeaderRow, setRepeatHeaderRow] = useState(true);
+  const [repeatHeaderRow, setRepeatHeaderRow] = useState(false);
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExcelToPdfOutput | null>(null);
@@ -62,7 +63,15 @@ export function ExcelToPdfTool() {
     try {
       const readSheets = await readExcelSheets(selected);
       setSheets(readSheets);
-      setSelectedSheets(new Set(readSheets.map((s) => s.name)));
+      // Excelで非表示にしているシートは、印刷でも出さないのが普通なので、最初は選ばない(必要ならチェックを入れる)
+      let hidden = new Set<string>();
+      try {
+        hidden = await readHiddenSheetNames(selected);
+      } catch {
+        hidden = new Set();
+      }
+      const visible = readSheets.filter((s) => !hidden.has(s.name));
+      setSelectedSheets(new Set((visible.length > 0 ? visible : readSheets).map((s) => s.name)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "読み込みに失敗しました");
       setFile(null);
@@ -229,7 +238,7 @@ export function ExcelToPdfTool() {
               onChange={(e) => setRepeatHeaderRow(e.target.checked)}
               className="h-4 w-4 rounded border-neutral-300"
             />
-            先頭行を見出し行としてページ上部に繰り返す
+            先頭行を見出し行としてページ上部に繰り返す（Excelの「印刷タイトル」が設定されているシートは、その設定を使います）
           </label>
         </div>
       )}

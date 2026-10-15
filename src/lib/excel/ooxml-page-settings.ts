@@ -1,4 +1,6 @@
 import { unzipSync } from "fflate";
+import { baseCellOf, type ConditionalRule, type DxfStyle } from "@/lib/excel/conditional-format";
+import { parseSheetDrawings, type SheetDrawings } from "@/lib/excel/ooxml-drawings";
 
 /**
  * XLSX（OOXML/SpreadsheetML）内部XMLから、印刷に関わる設定を直接読み取る
@@ -30,15 +32,122 @@ export interface CellRangeRef {
 /** ECMA-376 ST_PaperSize の主要な値のみ対応（それ以外はnull=不明） */
 const PAPER_SIZE_MAP: Record<number, string> = {
   1: "Letter",
+  3: "Tabloid",
   5: "Legal",
+  7: "Executive",
   8: "A3",
   9: "A4",
   11: "A5",
+  12: "B4",
+  13: "B5",
+  66: "A2",
+  70: "A6",
 };
+
+/** 罫線の種類(OOXMLのborder style)。none以外はすべて対応表で描き分ける */
+export type BorderLineStyle =
+  | "hair"
+  | "thin"
+  | "medium"
+  | "thick"
+  | "dotted"
+  | "dashed"
+  | "dashDot"
+  | "dashDotDot"
+  | "mediumDashed"
+  | "mediumDashDot"
+  | "mediumDashDotDot"
+  | "slantDashDot"
+  | "double";
+
+export interface BorderSideStyle {
+  style: BorderLineStyle;
+  /** "#RRGGBB"。自動(黒)・解決できない色はnull */
+  color: string | null;
+}
+
+export interface CellBorderStyles {
+  top?: BorderSideStyle;
+  bottom?: BorderSideStyle;
+  left?: BorderSideStyle;
+  right?: BorderSideStyle;
+}
+
+/** セル内の一部の文字だけ書式が違う「リッチテキスト」の1区間 */
+export interface RichRun {
+  text: string;
+  fontSizePt: number | null;
+  bold: boolean | null;
+  italic: boolean | null;
+  underline: "single" | "double" | null;
+  strike: boolean | null;
+  /** "#RRGGBB"。指定が無ければnull(セルの文字色を使う) */
+  color: string | null;
+  serif: boolean | null;
+  vertAlign: "super" | "sub" | null;
+}
+
+/** セルの文字の装飾(斜体・下線・取り消し線・明朝体・上付き/下付き)。既定値のセルは記録しない */
+export interface CellFontExtras {
+  serif?: boolean;
+  italic?: boolean;
+  underline?: "single" | "double";
+  strike?: boolean;
+  vertAlign?: "super" | "sub";
+}
+
+export interface SheetPicture {
+  /** 配置(0始まりのセル位置＋セル内オフセット(pt))。oneCell/absoluteは終点をext(pt)から求める */
+  fromCol: number;
+  fromRow: number;
+  fromColOffPt: number;
+  fromRowOffPt: number;
+  toCol: number | null;
+  toRow: number | null;
+  toColOffPt: number;
+  toRowOffPt: number;
+  /** 終点が無い(oneCellAnchor/absoluteAnchor)場合の大きさ(pt) */
+  extWidthPt: number | null;
+  extHeightPt: number | null;
+  mime: "image/png" | "image/jpeg";
+  bytes: Uint8Array;
+}
+
+export interface SheetShape {
+  fromCol: number;
+  fromRow: number;
+  fromColOffPt: number;
+  fromRowOffPt: number;
+  toCol: number | null;
+  toRow: number | null;
+  toColOffPt: number;
+  toRowOffPt: number;
+  extWidthPt: number | null;
+  extHeightPt: number | null;
+  kind: "rect" | "roundRect" | "ellipse" | "line";
+  fill: string | null;
+  line: string | null;
+  lineWidthPt: number;
+  text: string;
+  textColor: string | null;
+  fontSizePt: number | null;
+  bold: boolean;
+}
 
 export interface SheetPageSettings {
   printArea: CellRangeRef | null;
+  /** 印刷範囲が複数ある場合のすべて(Excelは範囲ごとに別ページへ印刷する)。1つなら[printArea] */
+  printAreas: CellRangeRef[];
+  /** 印刷タイトル(毎ページに繰り返す行・列)。0始まり・両端を含む */
+  printTitleRows: { start: number; end: number } | null;
+  printTitleCols: { start: number; end: number } | null;
+  /** pageSetup@blackAndWhite: 白黒印刷(色を使わず黒とグレーで印刷) */
+  blackAndWhite: boolean;
+  /** printOptions@gridLines: 枠線を印刷する */
+  printGridLines: boolean;
   paperSize: string | null;
+  /** pageSetup@paperSize(ECMA-376の番号)。未対応の用紙番号を警告するために保持する */
+  paperSizeCode: number | null;
   orientation: "portrait" | "landscape" | null;
   /** sheetPr/pageSetUpPr@fitToPage が true のとき、fitToWidth/fitToHeightを優先する */
   fitToPageEnabled: boolean;
@@ -68,11 +177,21 @@ export interface SheetPageSettings {
    * 挙動）。取得できない場合はnull（呼び出し側は従来どおり内容量から見積もる）。
    */
   defaultRowHeightPt: number | null;
+  /** 列幅が指定されていない列の幅(pt)。sheetFormatPr@defaultColWidth/baseColWidthから求める。取得できなければnull */
+  defaultColumnWidthPt: number | null;
   /** 明示的な改ページの直前の行番号（0始まり。「この行の後で改ページ」の意味） */
   rowBreaksAfter: number[];
   colBreaksAfter: number[];
   /** key: "row:col"(0始まり)。値: その辺に実際に罫線が設定されているか */
   cellBorders: Map<string, { top: boolean; bottom: boolean; left: boolean; right: boolean }>;
+  /** cellBordersと同じキー。辺ごとの罫線の種類(極細・点線・二重線等)と色 */
+  cellBorderStyles: Map<string, CellBorderStyles>;
+  /**
+   * 条件付き書式(<conditionalFormatting>)の規則。Excelでセルの値に応じて背景色・文字色・
+   * 太字が変わる設定(例: 土日の行をグレーにする)で、セルのスタイルとは別に保存されている。
+   * 評価は値が必要なため、描画側(excel-to-pdf.ts)でevaluateConditionalFormatsを呼ぶ。
+   */
+  conditionalRules: ConditionalRule[];
   /**
    * セルの背景色・文字色・太字（開発指示書§29-31「Excelの色がPDFに反映されない」対応）。
    * 取得できる／実際に指定されている場合のみキーを持つ（既定色・塗りつぶしなしのセルは
@@ -96,6 +215,24 @@ export interface SheetPageSettings {
    */
   header: HeaderFooterSections | null;
   footer: HeaderFooterSections | null;
+  /** 先頭ページだけ・偶数ページだけ別のヘッダー/フッターを使う設定(differentFirst/differentOddEven) */
+  differentFirst: boolean;
+  differentOddEven: boolean;
+  firstHeader: HeaderFooterSections | null;
+  firstFooter: HeaderFooterSections | null;
+  evenHeader: HeaderFooterSections | null;
+  evenFooter: HeaderFooterSections | null;
+  /** 斜めの罫線(左下→右上 = up、左上→右下 = down) */
+  cellDiagonals: Map<string, { up?: BorderSideStyle; down?: BorderSideStyle }>;
+  cellFontExtras: Map<string, CellFontExtras>;
+  /** セル内の部分的な書式(リッチテキスト)。キーはcellBordersと同じ */
+  cellRich: Map<string, RichRun[]>;
+  pictures: SheetPicture[];
+  shapes: SheetShape[];
+  /** PNG・JPEG以外の画像(GIF・BMP等)。描画側でブラウザの機能を使ってPNGへ変換して使う */
+  otherImages: SheetDrawings["otherImages"];
+  /** 再現できない図形・グラフ等の数(警告表示用) */
+  unsupportedDrawingCount: number;
   /**
    * 結合セル(<mergeCells>)。Excelで結合されたセルは、左上セル(アンカー)の値が
    * 結合範囲全体にまたがって表示される。結合情報が無いと、アンカーの文字が
@@ -105,6 +242,8 @@ export interface SheetPageSettings {
   merges: CellRangeRef[];
   /** ブックの既定フォント(styles.xmlのfonts[0])のサイズ(pt)。セルごとのサイズが取れない場合の基準 */
   defaultFontSizePt: number | null;
+  /** ブックの既定フォントが明朝系か(スタイル番号の無いセルの書体の判定用) */
+  defaultFontSerif: boolean;
   /** セルの配置(横・縦・折り返し)。style(xf)に<alignment>がある場合のみキーを持つ */
   cellAlign: Map<string, CellAlign>;
   /** セルの文字サイズ(pt)。fonts[]のsz。 */
@@ -129,6 +268,15 @@ export interface CellAlign {
   wrapText: boolean;
   /** 縮小して全体を表示（セルの幅に収まるよう文字を小さくする） */
   shrinkToFit: boolean;
+  /** 字下げ(インデント)の段数 */
+  indent: number;
+  /**
+   * 文字の向き。0=横書き、1〜90=反時計回りの回転角度、-1〜-90=時計回りの回転角度、
+   * 255=縦書き(文字を縦に積む)
+   */
+  textRotation: number;
+  /** 選択範囲内で中央(centerContinuous): 右隣の空きセルにまたがって中央に寄せる */
+  centerContinuous: boolean;
 }
 
 export interface HeaderFooterSections {
@@ -140,7 +288,13 @@ export interface HeaderFooterSections {
 function emptySheetSettings(): SheetPageSettings {
   return {
     printArea: null,
+    printAreas: [],
+    printTitleRows: null,
+    printTitleCols: null,
+    blackAndWhite: false,
+    printGridLines: false,
     paperSize: null,
+    paperSizeCode: null,
     orientation: null,
     fitToPageEnabled: false,
     fitToWidth: null,
@@ -152,16 +306,33 @@ function emptySheetSettings(): SheetPageSettings {
     columnWidthsPt: new Map(),
     rowHeightsPt: new Map(),
     defaultRowHeightPt: null,
+    defaultColumnWidthPt: null,
     rowBreaksAfter: [],
     colBreaksAfter: [],
     cellBorders: new Map(),
+    cellBorderStyles: new Map(),
+    conditionalRules: [],
     cellFills: new Map(),
     cellFontColors: new Map(),
     cellBold: new Map(),
     header: null,
     footer: null,
+    differentFirst: false,
+    differentOddEven: false,
+    firstHeader: null,
+    firstFooter: null,
+    evenHeader: null,
+    evenFooter: null,
+    cellDiagonals: new Map(),
+    cellFontExtras: new Map(),
+    cellRich: new Map(),
+    pictures: [],
+    shapes: [],
+    otherImages: [],
+    unsupportedDrawingCount: 0,
     merges: [],
     defaultFontSizePt: null,
+    defaultFontSerif: false,
     cellAlign: new Map(),
     cellFontSizePt: new Map(),
     cellDateFormat: new Map(),
@@ -350,6 +521,10 @@ interface BorderDef {
   bottom: boolean;
   left: boolean;
   right: boolean;
+  /** 辺ごとの種類・色(罫線がある辺のみ) */
+  styles?: CellBorderStyles;
+  diagonalUp?: BorderSideStyle;
+  diagonalDown?: BorderSideStyle;
 }
 
 /** resolvedスタイル1件分（cellXfsのxf要素1つに対応する、セル1スタイルぶんの情報） */
@@ -367,13 +542,18 @@ interface ResolvedCellStyle {
   dateFormatCode: string | null;
   /** 日付以外の数値書式の書式コード(General・@なら null) */
   numFormatCode: string | null;
+  /** 明朝体・斜体・下線・取り消し線・上付き下付き。既定のセルはnull */
+  fontExtras: CellFontExtras | null;
 }
 
 /** styles.xml全体から読み取った、セルスタイル一覧とブック既定フォントの情報 */
 interface ParsedStyles {
   cellStyles: ResolvedCellStyle[];
+  /** 条件付き書式が参照する差分スタイル(<dxfs>)。インデックスはdxfId */
+  dxfs: DxfStyle[];
   defaultFontName: string | null;
   defaultFontSizePt: number | null;
+  colorCtx: ColorCtx;
 }
 
 /**
@@ -553,26 +733,178 @@ function applyTint(hex: string, tint: number): string {
   return `#${toHex(nr)}${toHex(ng)}${toHex(nb)}`;
 }
 
+/** 色の解決に使う、テーマカラー表とインデックスカラー(パレット)表 */
+interface ColorCtx {
+  theme: string[] | null;
+  /** indexed属性の色(0〜63)。styles.xmlの<indexedColors>があればそれ、無ければExcel標準のパレット */
+  indexed: string[];
+}
+
+/** Excel標準のインデックスカラー(0〜63)。64以降は「システム前景色(自動=黒)」「システム背景色(白)」 */
+const DEFAULT_INDEXED_COLORS: string[] = [
+  "#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF",
+  "#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF",
+  "#800000", "#008000", "#000080", "#808000", "#800080", "#008080", "#C0C0C0", "#808080",
+  "#9999FF", "#993366", "#FFFFCC", "#CCFFFF", "#660066", "#FF8080", "#0066CC", "#CCCCFF",
+  "#000080", "#FF00FF", "#FFFF00", "#00FFFF", "#800080", "#800000", "#008080", "#0000FF",
+  "#00CCFF", "#CCFFFF", "#CCFFCC", "#FFFF99", "#99CCFF", "#FF99CC", "#CC99FF", "#FFCC99",
+  "#3366FF", "#33CCCC", "#99CC00", "#FFCC00", "#FF9900", "#FF6600", "#666699", "#969696",
+  "#003366", "#339966", "#003300", "#333300", "#993300", "#993366", "#333399", "#333333",
+];
+
 /**
- * <color rgb="FFRRGGBB"/>（明示的な色）または
- * <color theme="N" tint="..."/>（テーマカラー参照）から解決できる色を読む。
- * indexed属性（パレット番号による色指定）は今回のバージョンでは解決しない
- * （実用上の出現頻度が低く、固定パレットの再現まで踏み込むと対応範囲が
- * 大きく広がるため、開発指示書の「無理に再現しない」方針を踏襲する）。
+ * <color rgb="FFRRGGBB"/>（明示的な色）、<color theme="N" tint="..."/>（テーマカラー参照）、
+ * <color indexed="N"/>（パレット番号による色指定。64は「自動」でnull）から解決できる色を読む。
  */
-function readColorEl(colorEl: Element | undefined, themeColors: string[] | null): string | null {
+function readColorEl(colorEl: Element | undefined, ctx: ColorCtx): string | null {
   if (!colorEl) return null;
   const explicit = argbToRgbHex(colorEl.getAttribute("rgb"));
   if (explicit) return explicit;
   const themeAttr = colorEl.getAttribute("theme");
-  if (themeAttr !== null && themeColors) {
+  if (themeAttr !== null && ctx.theme) {
     const idx = Number(themeAttr);
-    const base = themeColors[idx];
+    const base = ctx.theme[idx];
     if (!base) return null;
     const tintAttr = colorEl.getAttribute("tint");
     return tintAttr !== null ? applyTint(base, Number(tintAttr)) : base;
   }
+  const indexedAttr = colorEl.getAttribute("indexed");
+  if (indexedAttr !== null) {
+    const idx = Number(indexedAttr);
+    if (idx >= 0 && idx < ctx.indexed.length) return ctx.indexed[idx];
+    return null; // 64=自動(黒)・65=白(システム背景)など。呼び出し側の既定色に任せる
+  }
   return null;
+}
+
+function readIndexedColors(doc: Document): string[] {
+  const el = doc.getElementsByTagName("indexedColors")[0];
+  if (!el) return DEFAULT_INDEXED_COLORS;
+  const custom = Array.from(el.getElementsByTagName("rgbColor")).map((c) => argbToRgbHex(c.getAttribute("rgb")));
+  if (custom.length === 0 || custom.some((c) => c === null)) return DEFAULT_INDEXED_COLORS;
+  return custom as string[];
+}
+
+/** 明朝体系のフォント名か(セルの文字を明朝体で描くかの判定) */
+export function isSerifFontName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return /明朝|mincho|serif|times|georgia|cambria|century|palatino|garamond|book antiqua|batang|song|ming/i.test(name) && !/sans/i.test(name);
+}
+
+/** パターン塗りつぶしの濃さ(0〜1)。縞模様等は同じ濃さの単色で近似する(線の細かい模様までは再現しない) */
+const PATTERN_DENSITY: Record<string, number> = {
+  gray125: 0.125,
+  gray0625: 0.0625,
+  lightGray: 0.25,
+  mediumGray: 0.5,
+  darkGray: 0.75,
+  lightDown: 0.28,
+  lightUp: 0.28,
+  lightHorizontal: 0.28,
+  lightVertical: 0.28,
+  lightGrid: 0.35,
+  lightTrellis: 0.32,
+  darkDown: 0.6,
+  darkUp: 0.6,
+  darkHorizontal: 0.6,
+  darkVertical: 0.6,
+  darkGrid: 0.65,
+  darkTrellis: 0.62,
+};
+
+function blendHex(bg: string, fg: string, t: number): string {
+  const c = (h: string, i: number) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  const mix = (i: number) =>
+    Math.round(c(bg, i) * (1 - t) + c(fg, i) * t)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${mix(0)}${mix(1)}${mix(2)}`;
+}
+
+/** <fill>要素から、描画に使う単色(パターンは濃さで近似)を求める。塗りなしはnull */
+function resolveFillEl(fill: Element, ctx: ColorCtx, preferBg: boolean): string | null {
+  const patternFill = fill.getElementsByTagName("patternFill")[0];
+  if (!patternFill) return null;
+  const patternType = patternFill.getAttribute("patternType");
+  const fg = readColorEl(patternFill.getElementsByTagName("fgColor")[0], ctx);
+  const bg = readColorEl(patternFill.getElementsByTagName("bgColor")[0], ctx);
+  if (patternType === "solid") return preferBg ? (bg ?? fg) : fg;
+  if (patternType && patternType !== "none" && PATTERN_DENSITY[patternType] !== undefined) {
+    return blendHex(bg ?? "#FFFFFF", fg ?? "#000000", PATTERN_DENSITY[patternType]);
+  }
+  // 条件付き書式(dxf)ではpatternType省略で色だけ指定されることがある
+  if (!patternType && preferBg) return bg ?? fg;
+  return null;
+}
+
+function parseBorderSide(b: Element, tag: string, ctx: ColorCtx): BorderSideStyle | null {
+  const el = b.getElementsByTagName(tag)[0];
+  // <top style="thin">...</top> のように style属性を持つ(かつ"none"でない)場合のみ罫線ありとみなす
+  const style = el?.getAttribute("style");
+  if (!el || !style || style === "none") return null;
+  return { style: style as BorderLineStyle, color: readColorEl(el.getElementsByTagName("color")[0], ctx) };
+}
+
+function parseFontEl(fontEl: Element | undefined, ctx: ColorCtx) {
+  const flag = (tag: string) => {
+    const el = fontEl?.getElementsByTagName(tag)[0];
+    return !!el && el.getAttribute("val") !== "0" && el.getAttribute("val") !== "false";
+  };
+  const uEl = fontEl?.getElementsByTagName("u")[0];
+  const uVal = uEl ? (uEl.getAttribute("val") ?? "single") : null;
+  const vertAttr = fontEl?.getElementsByTagName("vertAlign")[0]?.getAttribute("val") ?? null;
+  const szAttr = fontEl?.getElementsByTagName("sz")[0]?.getAttribute("val");
+  const sizePt = szAttr ? Number(szAttr) : null;
+  return {
+    rgb: readColorEl(fontEl?.getElementsByTagName("color")[0], ctx),
+    bold: flag("b"),
+    italic: flag("i"),
+    strike: flag("strike"),
+    underline: (uVal === null || uVal === "none" ? null : uVal === "double" || uVal === "doubleAccounting" ? "double" : "single") as
+      | "single"
+      | "double"
+      | null,
+    vertAlign: (vertAttr === "superscript" ? "super" : vertAttr === "subscript" ? "sub" : null) as "super" | "sub" | null,
+    sizePt: sizePt !== null && Number.isFinite(sizePt) && sizePt > 0 ? sizePt : null,
+    name: fontEl?.getElementsByTagName("name")[0]?.getAttribute("val") ?? fontEl?.getElementsByTagName("rFont")[0]?.getAttribute("val") ?? null,
+  };
+}
+
+/**
+ * styles.xml の <dxfs>(差分スタイル。条件付き書式が「条件に合ったとき上書きする書式」として
+ * 参照する)を読み取る。背景色は<fill><patternFill>のbgColor(Excelは条件付き書式の塗りつぶしの
+ * 色をここに保存する)、無ければfgColor。文字色は<font><color>、太字・斜体・下線・取り消し線は<font>、
+ * 罫線は<border>。
+ */
+function parseDxfs(doc: Document, ctx: ColorCtx): DxfStyle[] {
+  const dxfsEl = doc.getElementsByTagName("dxfs")[0];
+  if (!dxfsEl) return [];
+  return Array.from(dxfsEl.children)
+    .filter((el) => el.tagName === "dxf")
+    .map((dxf) => {
+      const fontEl = Array.from(dxf.children).find((el) => el.tagName === "font");
+      const fillEl = Array.from(dxf.children).find((el) => el.tagName === "fill");
+      const borderEl = Array.from(dxf.children).find((el) => el.tagName === "border");
+      const f = parseFontEl(fontEl, ctx);
+      let borders: CellBorderStyles | null = null;
+      if (borderEl) {
+        const styles: CellBorderStyles = {};
+        for (const side of ["top", "bottom", "left", "right"] as const) {
+          const st = parseBorderSide(borderEl, side, ctx);
+          if (st) styles[side] = st;
+        }
+        if (Object.keys(styles).length > 0) borders = styles;
+      }
+      return {
+        fillRgb: fillEl ? resolveFillEl(fillEl, ctx, true) : null,
+        fontRgb: f.rgb,
+        bold: f.bold,
+        italic: f.italic,
+        underline: f.underline,
+        strike: f.strike,
+        borders,
+      };
+    });
 }
 
 /**
@@ -581,10 +913,11 @@ function readColorEl(colorEl: Element | undefined, themeColors: string[] | null)
  * 背景色・文字色・太字 の対応表を作る（開発指示書§21-26・§29-31）。
  */
 function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | null): ParsedStyles {
-  const empty: ParsedStyles = { cellStyles: [], defaultFontName: null, defaultFontSizePt: null };
+  const empty: ParsedStyles = { cellStyles: [], dxfs: [], defaultFontName: null, defaultFontSizePt: null, colorCtx: { theme: themeColors, indexed: DEFAULT_INDEXED_COLORS } };
   if (!stylesXmlText) return empty;
   const doc = parseXml(stylesXmlText);
   if (!doc) return empty;
+  const ctx: ColorCtx = { theme: themeColors, indexed: readIndexedColors(doc) };
 
   // <numFmts><numFmt numFmtId="164" formatCode="..."/>（ユーザー定義の数値書式）
   const customNumFmts = new Map<number, string>();
@@ -601,50 +934,44 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
   const bordersEl = doc.getElementsByTagName("borders")[0];
   if (bordersEl) {
     for (const b of Array.from(bordersEl.getElementsByTagName("border"))) {
-      const hasSide = (tag: string) => {
-        const el = b.getElementsByTagName(tag)[0];
-        // <top style="thin">...</top> のように style属性を持つ(かつ"none"でない)場合のみ罫線ありとみなす
-        const style = el?.getAttribute("style");
-        return Boolean(style && style !== "none");
-      };
+      const top = parseBorderSide(b, "top", ctx);
+      const bottom = parseBorderSide(b, "bottom", ctx);
+      const left = parseBorderSide(b, "left", ctx);
+      const right = parseBorderSide(b, "right", ctx);
+      const styles: CellBorderStyles = {};
+      if (top) styles.top = top;
+      if (bottom) styles.bottom = bottom;
+      if (left) styles.left = left;
+      if (right) styles.right = right;
+      const diag = parseBorderSide(b, "diagonal", ctx);
+      const diagUp = b.getAttribute("diagonalUp") === "1" || b.getAttribute("diagonalUp") === "true";
+      const diagDown = b.getAttribute("diagonalDown") === "1" || b.getAttribute("diagonalDown") === "true";
       borderDefs.push({
-        top: hasSide("top"),
-        bottom: hasSide("bottom"),
-        left: hasSide("left"),
-        right: hasSide("right"),
+        top: !!top,
+        bottom: !!bottom,
+        left: !!left,
+        right: !!right,
+        styles,
+        diagonalUp: diag && diagUp ? diag : undefined,
+        diagonalDown: diag && diagDown ? diag : undefined,
       });
     }
   }
 
-  // <fills><fill><patternFill patternType="solid"><fgColor rgb="FFRRGGBB"/>...
-  // patternType="solid"のときのみfgColorが実際に見える背景色になる（それ以外の
-  // ハッチング等のパターン塗りつぶしは、今回は色の再現対象外とし無視する）。
+  // <fills><fill><patternFill patternType="solid"><fgColor .../>。縞模様等のパターンは濃さで近似した単色にする。
   const fillRgbs: (string | null)[] = [];
   const fillsEl = doc.getElementsByTagName("fills")[0];
   if (fillsEl) {
     for (const fill of Array.from(fillsEl.getElementsByTagName("fill"))) {
-      const patternFill = fill.getElementsByTagName("patternFill")[0];
-      const patternType = patternFill?.getAttribute("patternType");
-      if (patternType === "solid") {
-        fillRgbs.push(readColorEl(patternFill?.getElementsByTagName("fgColor")[0], themeColors));
-      } else {
-        fillRgbs.push(null);
-      }
+      fillRgbs.push(resolveFillEl(fill, ctx, false));
     }
   }
 
   // <fonts><font><color rgb="FFRRGGBB"/><b/>...
-  const fontDefs: { rgb: string | null; bold: boolean; sizePt: number | null; name: string | null }[] = [];
+  const fontDefs: ReturnType<typeof parseFontEl>[] = [];
   const fontsEl = doc.getElementsByTagName("fonts")[0];
   if (fontsEl) {
-    for (const fontEl of Array.from(fontsEl.getElementsByTagName("font"))) {
-      const rgb = readColorEl(fontEl.getElementsByTagName("color")[0], themeColors);
-      const bold = fontEl.getElementsByTagName("b").length > 0;
-      const szAttr = fontEl.getElementsByTagName("sz")[0]?.getAttribute("val");
-      const sizePt = szAttr ? Number(szAttr) : null;
-      const name = fontEl.getElementsByTagName("name")[0]?.getAttribute("val") ?? null;
-      fontDefs.push({ rgb, bold, sizePt: sizePt !== null && Number.isFinite(sizePt) && sizePt > 0 ? sizePt : null, name });
-    }
+    for (const fontEl of Array.from(fontsEl.getElementsByTagName("font"))) fontDefs.push(parseFontEl(fontEl, ctx));
   }
 
   const cellXfsEl = doc.getElementsByTagName("cellXfs")[0];
@@ -670,9 +997,12 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
         const v = alignEl.getAttribute("vertical");
         const wrap = alignEl.getAttribute("wrapText");
         const shrink = alignEl.getAttribute("shrinkToFit");
+        const rotAttr = Number(alignEl.getAttribute("textRotation") ?? "0");
+        // 1〜90は反時計回り、91〜180は時計回り(角度=値-90。例: 135→-45)、255は縦書き(文字を縦に積む)
+        const textRotation = rotAttr === 255 ? 255 : rotAttr >= 91 && rotAttr <= 180 ? -(rotAttr - 90) : rotAttr >= 0 && rotAttr <= 90 ? rotAttr : 0;
         align = {
-          // centerContinuous(選択範囲内で中央)は結合セルの中央揃えに近いためcenter扱いにする。
-          // fill/justify/distributed等は今回は再現せず、既定(null)として扱う。
+          // centerContinuous(選択範囲内で中央)は、右隣の空きセルにまたがって中央に寄せる(描画側で処理)。
+          // fill/justify等は今回は再現せず、既定(null)として扱う。
           horizontal:
             h === "center" || h === "centerContinuous"
               ? "center"
@@ -686,6 +1016,9 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
           vertical: v === "center" ? "center" : v === "top" ? "top" : v === "bottom" ? "bottom" : null,
           wrapText: wrap === "1" || wrap === "true",
           shrinkToFit: shrink === "1" || shrink === "true",
+          indent: Number(alignEl.getAttribute("indent") ?? "0") || 0,
+          textRotation,
+          centerContinuous: h === "centerContinuous",
         };
       }
 
@@ -700,6 +1033,14 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
         else if (code && code !== "General" && code !== "@") numFormatCode = code;
       }
 
+      const extras: CellFontExtras = {};
+      if (isSerifFontName(fontDef?.name)) extras.serif = true;
+      else if (isSerifFontName(fontDefs[0]?.name)) extras.serif = false; // 既定が明朝のブックで、明朝ではないフォントを指定したセル
+      if (fontDef?.italic) extras.italic = true;
+      if (fontDef?.underline) extras.underline = fontDef.underline;
+      if (fontDef?.strike) extras.strike = true;
+      if (fontDef?.vertAlign) extras.vertAlign = fontDef.vertAlign;
+
       result.push({
         border,
         fillRgb,
@@ -709,23 +1050,76 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
         align,
         dateFormatCode,
         numFormatCode,
+        fontExtras: Object.keys(extras).length > 0 ? extras : null,
       });
     }
   }
   return {
     cellStyles: result,
+    dxfs: parseDxfs(doc, ctx),
     defaultFontName: fontDefs[0]?.name ?? null,
     defaultFontSizePt: fontDefs[0]?.sizePt ?? null,
+    colorCtx: ctx,
   };
 }
 
+/** リッチテキストの1区間(<r>)の書式(<rPr>)。指定が無い項目はnull(セルの書式を使う) */
+function parseRunProps(rPr: Element | undefined, ctx: ColorCtx): Omit<RichRun, "text"> {
+  const has = (tag: string): boolean | null => {
+    const el = rPr?.getElementsByTagName(tag)[0];
+    if (!el) return null;
+    return el.getAttribute("val") !== "0" && el.getAttribute("val") !== "false";
+  };
+  const uEl = rPr?.getElementsByTagName("u")[0];
+  const uVal = uEl ? (uEl.getAttribute("val") ?? "single") : null;
+  const vert = rPr?.getElementsByTagName("vertAlign")[0]?.getAttribute("val") ?? null;
+  const sz = rPr?.getElementsByTagName("sz")[0]?.getAttribute("val");
+  const rFont = rPr?.getElementsByTagName("rFont")[0]?.getAttribute("val") ?? null;
+  return {
+    fontSizePt: sz && Number(sz) > 0 ? Number(sz) : null,
+    bold: has("b"),
+    italic: has("i"),
+    underline: uVal === null || uVal === "none" ? null : uVal === "double" || uVal === "doubleAccounting" ? "double" : "single",
+    strike: has("strike"),
+    color: readColorEl(rPr?.getElementsByTagName("color")[0], ctx),
+    serif: rFont ? isSerifFontName(rFont) : null,
+    vertAlign: vert === "superscript" ? "super" : vert === "subscript" ? "sub" : null,
+  };
+}
+
+/**
+ * <si>(共有文字列)または<is>(インライン文字列)が、書式の違う複数の区間(<r>)で
+ * 構成されていればその区間の配列を返す。単純な文字列(<t>のみ)ならnull。
+ * ふりがな(<rPh>)のテキストは表示されないため含めない。
+ */
+function parseRichRuns(si: Element, ctx: ColorCtx): RichRun[] | null {
+  const runEls = Array.from(si.children).filter((el) => el.tagName === "r");
+  if (runEls.length === 0) return null;
+  const runs: RichRun[] = [];
+  for (const r of runEls) {
+    const text = Array.from(r.children)
+      .filter((el) => el.tagName === "t")
+      .map((el) => el.textContent ?? "")
+      .join("");
+    const rPr = Array.from(r.children).find((el) => el.tagName === "rPr");
+    runs.push({ text, ...parseRunProps(rPr, ctx) });
+  }
+  return runs;
+}
+
 /** 1つのワークシートXML(sheetN.xml)から、そのシートの印刷関連情報を読み取る */
-function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: number): Partial<SheetPageSettings> {
+function parseSheetXml(
+  sheetXmlText: string,
+  parsedStyles: ParsedStyles,
+  mdw: number,
+  sharedRich: (RichRun[] | null)[]
+): Partial<SheetPageSettings> {
   const doc = parseXml(sheetXmlText);
   if (!doc) return {};
   const result: Partial<SheetPageSettings> = {};
   const { cellStyles } = parsedStyles;
   result.defaultFontSizePt = parsedStyles.defaultFontSizePt;
+  result.defaultFontSerif = isSerifFontName(parsedStyles.defaultFontName);
 
   // sheetPr/pageSetUpPr@fitToPage
   const pageSetUpPr = doc.getElementsByTagName("pageSetUpPr")[0];
@@ -735,12 +1129,23 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
   const sheetFormatPr = doc.getElementsByTagName("sheetFormatPr")[0];
   const defaultRowHeightAttr = sheetFormatPr?.getAttribute("defaultRowHeight") ?? null;
   result.defaultRowHeightPt = defaultRowHeightAttr !== null ? Number(defaultRowHeightAttr) : null;
+  // 既定の列幅: defaultColWidth(文字数。パディング込み)があればそれ、無ければbaseColWidth(既定8文字)から求める
+  const defColWidthAttr = sheetFormatPr?.getAttribute("defaultColWidth") ?? null;
+  const baseColWidthAttr = sheetFormatPr?.getAttribute("baseColWidth") ?? null;
+  if (defColWidthAttr !== null && Number(defColWidthAttr) > 0) {
+    result.defaultColumnWidthPt = excelColumnWidthToPt(Number(defColWidthAttr), mdw);
+  } else {
+    const base = baseColWidthAttr !== null ? Number(baseColWidthAttr) : 8;
+    result.defaultColumnWidthPt = Math.trunc((base * mdw + 5) / mdw * 256) / 256 * mdw * 0.75;
+  }
 
   // pageSetup
   const pageSetup = doc.getElementsByTagName("pageSetup")[0];
   if (pageSetup) {
     const paperSizeAttr = pageSetup.getAttribute("paperSize");
     result.paperSize = paperSizeAttr ? (PAPER_SIZE_MAP[Number(paperSizeAttr)] ?? null) : null;
+    result.paperSizeCode = paperSizeAttr ? Number(paperSizeAttr) : null;
+    result.blackAndWhite = pageSetup.getAttribute("blackAndWhite") === "1" || pageSetup.getAttribute("blackAndWhite") === "true";
     const orientationAttr = pageSetup.getAttribute("orientation");
     result.orientation = orientationAttr === "landscape" || orientationAttr === "portrait" ? orientationAttr : null;
     const fitToWidthAttr = pageSetup.getAttribute("fitToWidth");
@@ -767,6 +1172,7 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
   const printOptions = doc.getElementsByTagName("printOptions")[0];
   result.horizontalCentered = printOptions?.getAttribute("horizontalCentered") === "1";
   result.verticalCentered = printOptions?.getAttribute("verticalCentered") === "1";
+  result.printGridLines = printOptions?.getAttribute("gridLines") === "1";
 
   // pageMargins
   const pageMargins = doc.getElementsByTagName("pageMargins")[0];
@@ -791,11 +1197,15 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
   const columnWidthsPt = new Map<number, number>();
   const rowHeightsPt = new Map<number, number>();
   const cellBorders = new Map<string, BorderDef>();
+  const cellBorderStyles = new Map<string, CellBorderStyles>();
   const cellFills = new Map<string, string>();
   const cellFontColors = new Map<string, string>();
   const cellBold = new Map<string, boolean>();
   const cellAlign = new Map<string, CellAlign>();
   const cellFontSizePt = new Map<string, number>();
+  const cellDiagonals = new Map<string, { up?: BorderSideStyle; down?: BorderSideStyle }>();
+  const cellFontExtras = new Map<string, CellFontExtras>();
+  const cellRich = new Map<string, RichRun[]>();
   const cellDateFormat = new Map<string, string>();
   const cellNumFormat = new Map<string, string>();
 
@@ -826,21 +1236,36 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
       for (const cellEl of Array.from(rowEl.getElementsByTagName("c"))) {
         const ref = cellEl.getAttribute("r");
         const sAttr = cellEl.getAttribute("s");
-        if (!ref || !sAttr) continue;
+        if (!ref) continue;
         const parsed = parseCellRef(ref);
         if (!parsed) continue;
+        const key = `${parsed.row}:${parsed.col}`;
+        // セル内の部分的な書式(リッチテキスト)。スタイル番号(s)が無いセルにも付くため、先に読む。
+        const cellType = cellEl.getAttribute("t");
+        if (cellType === "s") {
+          const idx = Number(cellEl.getElementsByTagName("v")[0]?.textContent ?? "-1");
+          const runs = sharedRich[idx];
+          if (runs) cellRich.set(key, runs);
+        } else if (cellType === "inlineStr") {
+          const isEl = cellEl.getElementsByTagName("is")[0];
+          const runs = isEl ? parseRichRuns(isEl, parsedStyles.colorCtx) : null;
+          if (runs) cellRich.set(key, runs);
+        }
+        if (!sAttr) continue;
         const style = cellStyles[Number(sAttr)];
         if (!style) continue;
-        const key = `${parsed.row}:${parsed.col}`;
         const { border } = style;
         if (border.top || border.bottom || border.left || border.right) {
           cellBorders.set(key, border);
+          if (border.styles) cellBorderStyles.set(key, border.styles);
         }
         if (style.fillRgb) cellFills.set(key, style.fillRgb);
         if (style.fontRgb) cellFontColors.set(key, style.fontRgb);
         if (style.bold) cellBold.set(key, true);
         if (style.align) cellAlign.set(key, style.align);
         if (style.fontSizePt) cellFontSizePt.set(key, style.fontSizePt);
+        if (style.fontExtras) cellFontExtras.set(key, style.fontExtras);
+        if (border.diagonalUp || border.diagonalDown) cellDiagonals.set(key, { up: border.diagonalUp, down: border.diagonalDown });
         if (style.dateFormatCode) cellDateFormat.set(key, style.dateFormatCode);
         if (style.numFormatCode) cellNumFormat.set(key, style.numFormatCode);
       }
@@ -852,11 +1277,15 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
   result.columnWidthsPt = columnWidthsPt;
   result.rowHeightsPt = rowHeightsPt;
   result.cellBorders = cellBorders;
+  result.cellBorderStyles = cellBorderStyles;
   result.cellFills = cellFills;
   result.cellFontColors = cellFontColors;
   result.cellBold = cellBold;
   result.cellAlign = cellAlign;
   result.cellFontSizePt = cellFontSizePt;
+  result.cellDiagonals = cellDiagonals;
+  result.cellFontExtras = cellFontExtras;
+  result.cellRich = cellRich;
   result.cellDateFormat = cellDateFormat;
   result.cellNumFormat = cellNumFormat;
 
@@ -868,6 +1297,82 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
     if (range && (range.endRow > range.startRow || range.endCol > range.startCol)) merges.push(range);
   }
   result.merges = merges;
+
+  // 条件付き書式: <conditionalFormatting sqref="B7:C99"><cfRule type="expression" dxfId="21" priority="1"><formula>$V7=1</formula>
+  const conditionalRules: ConditionalRule[] = [];
+  for (const cfEl of Array.from(doc.getElementsByTagName("conditionalFormatting"))) {
+    const ranges = (cfEl.getAttribute("sqref") ?? "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => parsePrintAreaRef(part))
+      .filter((r): r is CellRangeRef => r !== null);
+    if (ranges.length === 0) continue;
+    const base = baseCellOf(ranges);
+    for (const ruleEl of Array.from(cfEl.getElementsByTagName("cfRule"))) {
+      const typeAttr = ruleEl.getAttribute("type") ?? "";
+      const dxfIdAttr = ruleEl.getAttribute("dxfId");
+      const dxf = dxfIdAttr !== null ? (parsedStyles.dxfs[Number(dxfIdAttr)] ?? null) : null;
+      const simpleTypes = [
+        "expression",
+        "cellIs",
+        "containsText",
+        "notContainsText",
+        "beginsWith",
+        "endsWith",
+        "containsBlanks",
+        "notContainsBlanks",
+        "duplicateValues",
+        "uniqueValues",
+        "top10",
+        "aboveAverage",
+      ] as const;
+      type RuleType = ConditionalRule["type"];
+      let type: RuleType = (simpleTypes as readonly string[]).includes(typeAttr) ? (typeAttr as RuleType) : "unsupported";
+      const rule: ConditionalRule = {
+        type,
+        ranges,
+        baseRow: base.row,
+        baseCol: base.col,
+        formulas: Array.from(ruleEl.getElementsByTagName("formula")).map((f) => f.textContent ?? ""),
+        operator: ruleEl.getAttribute("operator"),
+        text: ruleEl.getAttribute("text"),
+        priority: Number(ruleEl.getAttribute("priority") ?? "0"),
+        stopIfTrue: ruleEl.getAttribute("stopIfTrue") === "1",
+        dxf,
+        rank: ruleEl.getAttribute("rank") !== null ? Number(ruleEl.getAttribute("rank")) : undefined,
+        percent: ruleEl.getAttribute("percent") === "1",
+        bottom: ruleEl.getAttribute("bottom") === "1",
+        aboveAverage: ruleEl.getAttribute("aboveAverage") !== "0",
+        equalAverage: ruleEl.getAttribute("equalAverage") === "1",
+      };
+      // 色スケール・データバー
+      const cfvoOf = (el: Element) =>
+        Array.from(el.getElementsByTagName("cfvo")).map((v) => ({
+          type: v.getAttribute("type") ?? "",
+          val: v.getAttribute("val") !== null && Number.isFinite(Number(v.getAttribute("val"))) ? Number(v.getAttribute("val")) : null,
+        }));
+      const scaleEl = ruleEl.getElementsByTagName("colorScale")[0];
+      const barEl = ruleEl.getElementsByTagName("dataBar")[0];
+      if (typeAttr === "colorScale" && scaleEl) {
+        const colors = Array.from(scaleEl.getElementsByTagName("color")).map((c) => readColorEl(c, parsedStyles.colorCtx));
+        if (colors.every((c) => c !== null)) {
+          rule.type = "colorScale";
+          rule.colorScale = { points: cfvoOf(scaleEl), colors: colors as string[] };
+        }
+      } else if (typeAttr === "dataBar" && barEl) {
+        const cfvos = cfvoOf(barEl);
+        const color = readColorEl(barEl.getElementsByTagName("color")[0], parsedStyles.colorCtx);
+        if (cfvos.length >= 2 && color) {
+          rule.type = "dataBar";
+          rule.dataBar = { min: cfvos[0], max: cfvos[1], color };
+        }
+      }
+      type = rule.type;
+      void type;
+      conditionalRules.push(rule);
+    }
+  }
+  result.conditionalRules = conditionalRules;
 
   // 明示的な改ページ（手動のみ。man="1"）
   const rowBreaksAfter: number[] = [];
@@ -894,13 +1399,97 @@ function parseSheetXml(sheetXmlText: string, parsedStyles: ParsedStyles, mdw: nu
   // 呼び出し側が「設定が無ければ何も描画しない」を機械的に判定できるようにする)。
   const headerFooterEl = doc.getElementsByTagName("headerFooter")[0];
   if (headerFooterEl) {
-    const oddHeaderText = headerFooterEl.getElementsByTagName("oddHeader")[0]?.textContent ?? "";
-    const oddFooterText = headerFooterEl.getElementsByTagName("oddFooter")[0]?.textContent ?? "";
-    if (oddHeaderText.trim() !== "") result.header = parseHeaderFooterSections(oddHeaderText);
-    if (oddFooterText.trim() !== "") result.footer = parseHeaderFooterSections(oddFooterText);
+    const pick = (tag: string): HeaderFooterSections | null => {
+      const text = headerFooterEl.getElementsByTagName(tag)[0]?.textContent ?? "";
+      return text.trim() !== "" ? parseHeaderFooterSections(text) : null;
+    };
+    result.header = pick("oddHeader");
+    result.footer = pick("oddFooter");
+    result.differentFirst = headerFooterEl.getAttribute("differentFirst") === "1";
+    result.differentOddEven = headerFooterEl.getAttribute("differentOddEven") === "1";
+    result.firstHeader = pick("firstHeader");
+    result.firstFooter = pick("firstFooter");
+    result.evenHeader = pick("evenHeader");
+    result.evenFooter = pick("evenFooter");
   }
 
   return result;
+}
+
+/**
+ * 列幅(文字単位)の値の集まりから、そのファイルを作ったExcelのMDW(半角数字1文字の幅px)を推定する。
+ * Excelは列幅を「ピクセル数÷MDW」で保存するため、MDW=8のファイルの列幅は1/8の倍数
+ * (7.875・4.25・10.375など)、MDW=7のファイルは1/7の倍数になる。複数の列幅がちょうど
+ * 1つの候補だけで割り切れるときに限り、その値を採用する(整数の列幅だけの場合など、
+ * どの候補でも割り切れるときは判定せずnull=フォントからの推定に任せる)。
+ */
+export function inferMaximumDigitWidth(widths: number[]): number | null {
+  const distinct = Array.from(new Set(widths.filter((w) => w > 0).map((w) => Math.round(w * 1000) / 1000)));
+  if (distinct.length < 2) return null;
+  const candidates = [7, 8, 9];
+  const ok = candidates.filter((m) => distinct.every((w) => Math.abs(w * m - Math.round(w * m)) < 0.025));
+  return ok.length === 1 ? ok[0] : null;
+}
+
+/** 引用符('...')の外側のカンマで分割する(シート名にカンマが含まれる場合の対策) */
+function splitOutsideQuotes(text: string): string[] {
+  const parts: string[] = [];
+  let cur = "";
+  let inQuote = false;
+  for (const ch of text) {
+    if (ch === "'") inQuote = !inQuote;
+    if (ch === "," && !inQuote) {
+      parts.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur) parts.push(cur);
+  return parts;
+}
+
+/** 印刷範囲(複数あれば全部)。例: 'Sheet1'!$A$1:$C$5,'Sheet1'!$E$1:$G$5 */
+function parsePrintAreaRefs(defined: string): CellRangeRef[] {
+  return splitOutsideQuotes(defined)
+    .map((part) => parsePrintAreaRef(part))
+    .filter((r): r is CellRangeRef => r !== null);
+}
+
+/** 印刷タイトル。例: 'Sheet1'!$A:$B,'Sheet1'!$1:$3(列と行はどちらが先でもよい) */
+function parsePrintTitles(defined: string): { rows: { start: number; end: number } | null; cols: { start: number; end: number } | null } {
+  let rows: { start: number; end: number } | null = null;
+  let cols: { start: number; end: number } | null = null;
+  for (const part of splitOutsideQuotes(defined)) {
+    const range = (part.split("!").pop() ?? "").replace(/\$/g, "");
+    const rowMatch = /^(\d+):(\d+)$/.exec(range);
+    const colMatch = /^([A-Z]+):([A-Z]+)$/.exec(range);
+    if (rowMatch) rows = { start: Number(rowMatch[1]) - 1, end: Number(rowMatch[2]) - 1 };
+    else if (colMatch) {
+      const toIdx = (letters: string) => parseCellRef(`${letters}1`)?.col ?? 0;
+      cols = { start: toIdx(colMatch[1]), end: toIdx(colMatch[2]) };
+    }
+  }
+  return { rows, cols };
+}
+
+/** 非表示のシート(状態がhidden・veryHidden)の名前。印刷対象の初期選択から外すために使う */
+export async function readHiddenSheetNames(file: File): Promise<Set<string>> {
+  const hidden = new Set<string>();
+  try {
+    const entries = unzipSync(new Uint8Array(await file.arrayBuffer()), { filter: (info) => info.name === "xl/workbook.xml" });
+    const text = await readEntryText(entries, "xl/workbook.xml");
+    const doc = text ? parseXml(text) : null;
+    if (!doc) return hidden;
+    for (const el of Array.from(doc.getElementsByTagName("sheet"))) {
+      const state = el.getAttribute("state");
+      const name = el.getAttribute("name");
+      if (name && (state === "hidden" || state === "veryHidden")) hidden.add(name);
+    }
+  } catch {
+    // 読めなければ「非表示なし」として扱う
+  }
+  return hidden;
 }
 
 /**
@@ -914,7 +1503,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
     const bytes = new Uint8Array(await file.arrayBuffer());
     const entries = unzipSync(bytes, {
       filter: (info) =>
-        /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|styles\.xml|theme\/theme1\.xml|worksheets\/.*\.xml)$/.test(
+        /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|styles\.xml|sharedStrings\.xml|theme\/theme1\.xml|worksheets\/.*\.(xml|rels)|drawings\/.*|media\/.*)$/.test(
           info.name
         ),
     });
@@ -958,33 +1547,76 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
       if (target) nameToTarget.set(name, `xl/${target}`);
     }
 
-    // definedNames: _xlnm.Print_Area
-    const printAreaBySheetIndex = new Map<number, CellRangeRef>();
+    // definedNames: _xlnm.Print_Area(複数範囲に対応)・_xlnm.Print_Titles
+    const printAreasBySheetIndex = new Map<number, CellRangeRef[]>();
+    const printTitlesBySheetIndex = new Map<number, ReturnType<typeof parsePrintTitles>>();
     const definedNamesEl = workbookDoc.getElementsByTagName("definedNames")[0];
     if (definedNamesEl) {
       for (const dn of Array.from(definedNamesEl.getElementsByTagName("definedName"))) {
-        if (dn.getAttribute("name") !== "_xlnm.Print_Area") continue;
+        const dnName = dn.getAttribute("name");
         const localSheetIdAttr = dn.getAttribute("localSheetId");
         if (localSheetIdAttr === null) continue;
-        const range = parsePrintAreaRef(dn.textContent ?? "");
-        if (range) printAreaBySheetIndex.set(Number(localSheetIdAttr), range);
+        if (dnName === "_xlnm.Print_Area") {
+          const ranges = parsePrintAreaRefs(dn.textContent ?? "");
+          if (ranges.length > 0) printAreasBySheetIndex.set(Number(localSheetIdAttr), ranges);
+        } else if (dnName === "_xlnm.Print_Titles") {
+          printTitlesBySheetIndex.set(Number(localSheetIdAttr), parsePrintTitles(dn.textContent ?? ""));
+        }
       }
     }
 
     const themeColors = parseThemeColors(themeXmlText);
-    const parsedStyles = parseCellStyles(stylesXmlText, themeColors);
-    const mdw = resolveMaximumDigitWidth(stylesXmlText);
 
-    for (let i = 0; i < sheetNamesInOrder.length; i++) {
-      const name = sheetNamesInOrder[i];
+    // シートXMLを先にすべて読み、列幅の傾向から、このファイルのMDW(半角数字の幅)を推定する
+    const sheetXmlByName = new Map<string, string>();
+    const allWidths: number[] = [];
+    for (const name of sheetNamesInOrder) {
       const target = nameToTarget.get(name);
       if (!target) continue;
       const sheetXmlText = await readEntryText(entries, target);
       if (!sheetXmlText) continue;
+      sheetXmlByName.set(name, sheetXmlText);
+      for (const m of sheetXmlText.matchAll(/<col\b[^>]*?\bwidth="([\d.]+)"/g)) allWidths.push(Number(m[1]));
+      const dcw = /<sheetFormatPr\b[^>]*?\bdefaultColWidth="([\d.]+)"/.exec(sheetXmlText);
+      if (dcw) allWidths.push(Number(dcw[1]));
+    }
+    const mdw = inferMaximumDigitWidth(allWidths) ?? resolveMaximumDigitWidth(stylesXmlText);
 
-      const parsed = parseSheetXml(sheetXmlText, parsedStyles, mdw);
+    const parsedStyles = parseCellStyles(stylesXmlText, themeColors);
+
+    // 共有文字列のうち、書式の違う区間を持つもの(リッチテキスト)。インデックスは<si>の出現順。
+    const sharedRich: (RichRun[] | null)[] = [];
+    const sharedXmlText = await readEntryText(entries, "xl/sharedStrings.xml");
+    const sharedDoc = sharedXmlText && sharedXmlText.includes("<r>") ? parseXml(sharedXmlText) : null;
+    if (sharedDoc) {
+      for (const si of Array.from(sharedDoc.documentElement.children)) {
+        sharedRich.push(si.localName === "si" ? parseRichRuns(si, parsedStyles.colorCtx) : null);
+      }
+    }
+
+    for (let i = 0; i < sheetNamesInOrder.length; i++) {
+      const name = sheetNamesInOrder[i];
+      const sheetXmlText = sheetXmlByName.get(name);
+      if (!sheetXmlText) continue;
+
+      const parsed = parseSheetXml(sheetXmlText, parsedStyles, mdw, sharedRich);
       const settings: SheetPageSettings = { ...emptySheetSettings(), ...parsed };
-      settings.printArea = printAreaBySheetIndex.get(i) ?? null;
+      const areas = printAreasBySheetIndex.get(i) ?? [];
+      settings.printAreas = areas;
+      settings.printArea = areas[0] ?? null;
+      const titles = printTitlesBySheetIndex.get(i);
+      settings.printTitleRows = titles?.rows ?? null;
+      settings.printTitleCols = titles?.cols ?? null;
+
+      // 図・画像・図形
+      const target = nameToTarget.get(name);
+      if (target) {
+        const drawings = parseSheetDrawings(entries, target, themeColors);
+        settings.pictures = drawings.pictures;
+        settings.shapes = drawings.shapes;
+        settings.unsupportedDrawingCount = drawings.unsupportedCount;
+        settings.otherImages = drawings.otherImages;
+      }
       result.set(name, settings);
     }
   } catch {
