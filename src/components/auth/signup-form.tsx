@@ -7,6 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { siteConfig } from "@/lib/config/site";
+import { getSignupConsentError } from "@/lib/auth/signup-consent";
 
 const INPUT_CLASS =
   "rounded-xl border border-neutral-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
@@ -27,6 +28,7 @@ export function SignupForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
@@ -34,6 +36,14 @@ export function SignupForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (status === "processing") return;
+
+    // 利用規約・プライバシーポリシーに同意していない場合は、登録を進めない。
+    const consentError = getSignupConsentError(termsAccepted);
+    if (consentError) {
+      setError(consentError);
+      setStatus("error");
+      return;
+    }
 
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`パスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください。`);
@@ -109,9 +119,39 @@ export function SignupForm() {
         />
       </label>
 
+      <label className="flex items-start gap-2 text-xs leading-relaxed text-neutral-600 dark:text-neutral-300">
+        <input
+          type="checkbox"
+          required
+          checked={termsAccepted}
+          onChange={(e) => setTermsAccepted(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-neutral-300"
+        />
+        <span>
+          <Link
+            href="/terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline dark:text-blue-400"
+          >
+            利用規約
+          </Link>
+          と
+          <Link
+            href="/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline dark:text-blue-400"
+          >
+            プライバシーポリシー
+          </Link>
+          （どちらも新しいタブで開きます）を確認し、同意します。
+        </span>
+      </label>
+
       <button
         type="submit"
-        disabled={status === "processing"}
+        disabled={status === "processing" || !termsAccepted}
         className="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
         {status === "processing" ? "登録中..." : "会員登録"}

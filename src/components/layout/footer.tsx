@@ -36,6 +36,9 @@ export function Footer() {
           <Link href="/terms" className="hover:text-blue-600 dark:hover:text-blue-400">
             利用規約
           </Link>
+          <Link href="/tokushoho" className="hover:text-blue-600 dark:hover:text-blue-400">
+            特定商取引法に基づく表記
+          </Link>
           <a
             href={siteConfig.contactFormUrl}
             target="_blank"
