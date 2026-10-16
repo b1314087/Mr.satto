@@ -314,6 +314,34 @@ function normalizeNewlines(text: string): string {
 }
 
 /** 描画できない文字(フォントに無い文字)でも落ちないよう、幅の計算を保護する */
+/**
+ * 外字(私用領域の文字 U+E000〜U+F8FF)かどうか。
+ * 学校・役所などで、人名の異体字のために各パソコンへ登録した「外字」がここに入る。
+ * 外字はそのパソコンの中にしか字形が無いため、Excelファイルには文字コードしか残らず、
+ * 別のパソコンやこのツールでは正しい字形を表示できない(どのフォントにも字形が無い)。
+ */
+function isPrivateUseChar(ch: string): boolean {
+  const code = ch.codePointAt(0) ?? 0;
+  return (code >= 0xe000 && code <= 0xf8ff) || (code >= 0xf0000 && code <= 0xffffd) || (code >= 0x100000 && code <= 0x10fffd);
+}
+
+/** 外字は「〓(げた)」で表示する。印刷物で「字形が出せない文字」を表す慣習の記号で、空白や四角の欠けより見落としにくい */
+const GAIJI_PLACEHOLDER = "〓";
+function displayCharOf(ch: string): string {
+  return isPrivateUseChar(ch) ? GAIJI_PLACEHOLDER : ch;
+}
+
+function columnLetters(index: number): string {
+  let n = index + 1;
+  let out = "";
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    out = String.fromCharCode(65 + r) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
 function safeUnitWidth(font: PDFFont, ch: string): number {
   try {
     return font.widthOfTextAtSize(ch, 1000) / 1000;
@@ -409,6 +437,24 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
     });
     if (sheetsToRender.length === 0) {
       throw new Error("変換できる内容がありませんでした（選択したシートはすべて空です）。");
+    }
+
+    // 外字(そのパソコン専用の文字)を含むセルは、PDFでは正しい字形にならないため、場所を知らせる
+    for (const sheet of sheetsToRender) {
+      const cells: string[] = [];
+      let total = 0;
+      sheet.rows.forEach((row, r) => {
+        row.forEach((value, c) => {
+          if (typeof value !== "string" || !Array.from(value).some(isPrivateUseChar)) return;
+          total++;
+          if (cells.length < 8) cells.push(`${columnLetters(c)}${r + 1}`);
+        });
+      });
+      if (total > 0) {
+        warnings.push(
+          `「${sheet.name}」の${cells.join("・")}${total > cells.length ? `など${total}か所` : ""}に外字(そのパソコン専用の文字)が含まれています。外字はExcelファイルに字形が保存されていないため、PDFでは「〓」で表示されます。正しい字形で出したい場合は、Excelで印刷して「Microsoft Print to PDF」などでPDFにしてください。`
+        );
+      }
     }
 
     // 明朝体を使うセルがあるときだけ、明朝体フォント(約3MB。JIS X 0208の漢字・かな・英数字に絞ったもの)を読み込んで埋め込む。
@@ -801,11 +847,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
               serif: run.serif ?? base.serif,
               vertAlign: run.vertAlign ?? base.vertAlign,
             };
-            for (const ch of Array.from(normalizeNewlines(run.text))) out.push({ ch, style });
+            for (const ch of Array.from(normalizeNewlines(run.text))) out.push({ ch: displayCharOf(ch), style });
           }
           return out;
         }
-        return Array.from(normalized).map((ch) => ({ ch, style: base }));
+        return Array.from(normalized).map((ch) => ({ ch: displayCharOf(ch), style: base }));
       };
       const maxFontSizeOf = (line: Glyph[], fallback: number): number =>
         line.length === 0 ? fallback : Math.max(...line.map((g) => g.style.fs));
@@ -1289,7 +1335,9 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
                 // クリップ範囲はセルの左端から、文字領域の右端(左右の余白ぶんを含む)まで。
                 // 余白ぶんを含めないと、右揃えの文字(例: 幅の狭いセルの「年」「月」)の端が欠ける。
                 const clipX = rotation !== 0 ? x : boxX;
-                const clipW = rotation !== 0 ? boxW : clipWidth !== null ? clipWidth + padH : fullBoxW;
+                // Excelは、はみ出した文字を「セルの右端の罫線」の位置で切る(セル内の余白では切らない)。
+                // 余白で切ると、列の幅にぎりぎり収まる見出し(例: 4文字の「生徒番号」)の最後の字が半分欠けてしまう。
+                const clipW = rotation !== 0 ? boxW : fullBoxW;
                 page.pushOperators(pushGraphicsState(), rectangle(clipX, top - boxH, clipW, boxH), clip(), endPath());
               }
 

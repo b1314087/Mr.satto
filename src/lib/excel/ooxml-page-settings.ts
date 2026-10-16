@@ -471,18 +471,34 @@ function excelColumnWidthToPt(charWidth: number, mdw: number): number {
 // 同じ変換結果に揃える(全角英字は.toLowerCase()で全角小文字になる点に注意。
 // 例: "ＭＳ Ｐゴシック" → "ｍｓ　ｐゴシック"ではなく実際には全角スペースを
 // 含むため、半角・全角どちらの表記揺れも個別に列挙する)。
-const JP_GOTHIC_DEFAULT_FONT_NAMES = new Set([
-  "游ゴシック",
-  "yu gothic",
-  "メイリオ",
-  "meiryo",
-  "ｍｓ ｐゴシック",
-  "ms pゴシック",
-  "ms pgothic",
-  "ｍｓ ゴシック",
-  "ms ゴシック",
-  "ms gothic",
-]);
+const JP_GOTHIC_DEFAULT_FONT_NAMES = new Set(
+  [
+    "游ゴシック",
+    "yu gothic",
+    "メイリオ",
+    "meiryo",
+    "ＭＳ Ｐゴシック",
+    "ms pゴシック",
+    "ms pgothic",
+    "ＭＳ ゴシック",
+    "ms ゴシック",
+    "ms gothic",
+    // 明朝体の既定フォントも、日本語Excelでは同じ標準の列幅(72ピクセル)になる
+    "ＭＳ Ｐ明朝",
+    "ms p明朝",
+    "ms pmincho",
+    "ＭＳ 明朝",
+    "ms 明朝",
+    "ms mincho",
+    "游明朝",
+    "yu mincho",
+  ].map(normalizeFontNameForCompare)
+);
+
+/** フォント名の表記揺れ(全角・半角、大文字・小文字)をそろえて比べるための変換 */
+function normalizeFontNameForCompare(name: string): string {
+  return name.normalize("NFKC").trim().toLowerCase();
+}
 
 function resolveMaximumDigitWidth(stylesXmlText: string | null): number {
   const CALIBRI_MDW = 7;
@@ -491,7 +507,8 @@ function resolveMaximumDigitWidth(stylesXmlText: string | null): number {
   const doc = parseXml(stylesXmlText);
   if (!doc) return CALIBRI_MDW;
   const firstFont = doc.getElementsByTagName("fonts")[0]?.getElementsByTagName("font")[0];
-  const fontName = firstFont?.getElementsByTagName("name")[0]?.getAttribute("val")?.trim().toLowerCase() ?? null;
+  const rawFontName = firstFont?.getElementsByTagName("name")[0]?.getAttribute("val") ?? null;
+  const fontName = rawFontName ? normalizeFontNameForCompare(rawFontName) : null;
   if (fontName && JP_GOTHIC_DEFAULT_FONT_NAMES.has(fontName)) return JP_GOTHIC_MDW;
   return CALIBRI_MDW;
 }
@@ -1136,7 +1153,13 @@ function parseSheetXml(
     result.defaultColumnWidthPt = excelColumnWidthToPt(Number(defColWidthAttr), mdw);
   } else {
     const base = baseColWidthAttr !== null ? Number(baseColWidthAttr) : 8;
-    result.defaultColumnWidthPt = Math.trunc((base * mdw + 5) / mdw * 256) / 256 * mdw * 0.75;
+    // Excelは「標準の列幅」を、(基準の文字数×半角数字の幅＋余白5px)を8ピクセルの倍数に切り上げた幅にする。
+    // Calibri等(MDW=7px): 8×7+5=61 → 64px(8.43文字)、日本語Excelの既定フォント(MDW=8px相当):
+    // 8×8+5=69 → 72px(8.38文字)。切り上げずに61px・約63px等で描くと、列が5〜15%せまくなり、
+    // ふつうに収まるはずの見出しが欠けたり、ページの分かれ方がExcelとずれたりする。
+    const defaultMdw = mdw >= 7.2 ? 8 : mdw;
+    const defaultPx = Math.ceil((base * defaultMdw + 5) / 8) * 8;
+    result.defaultColumnWidthPt = defaultPx * 0.75;
   }
 
   // pageSetup
