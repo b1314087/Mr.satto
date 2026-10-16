@@ -19,6 +19,7 @@ const csv: Input = { kind: "file", files: [fixtures.csv] };
 const xlsx: Input = { kind: "file", files: [fixtures.xlsx] };
 const docx: Input = { kind: "file", files: [fixtures.wordRichContentDocx] };
 const video: Input = { kind: "file", files: [fixtures.webm] };
+const audio: Input = { kind: "file", files: [fixtures.audioWav] };
 const zip: Input = { kind: "file", files: [fixtures.zip] };
 const sample: Input = { kind: "text", text: "テスト入力 test 123\n  2行目の文章  \n\n3行目" };
 const none: Input = { kind: "none" };
@@ -46,6 +47,10 @@ const CASES: [string, Input][] = [
   ["file-hash", csv],
   // 動画(video-h264 はヘッドレスChromiumがH.264エンコード非対応のため、この環境では対象外)
   ...(["video-convert", "video-compress", "video-resize", "video-frame-rate", "video-thumbnail", "video-metadata-remove"] as const).map((id) => [id, video] as [string, Input]),
+  // 音声（音声付き動画から抽出する audio-extract も、プレビュー自体は動画を受け付けた時点で表示される）
+  ...(["audio-convert", "audio-trim", "audio-volume", "audio-compress"] as const).map((id) => [id, audio] as [string, Input]),
+  ["audio-extract", video],
+  ["audio-merge", { kind: "file", files: [fixtures.audioWav, fixtures.audioWavMono] }],
   // 文字・数値
   ["char-count", sample],
   ["text-line-cleaner", sample],

@@ -14,6 +14,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${siteConfig.url}/privacy`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${siteConfig.url}/terms`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${siteConfig.url}/tokushoho`, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${siteConfig.url}/licenses`, changeFrequency: "yearly", priority: 0.2 },
   ];
 
   // Phase 21: カテゴリページ(ハブ)より個別ツールページ(スポーク)のpriorityが

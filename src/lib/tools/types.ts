@@ -19,6 +19,7 @@ export type CategoryId =
   | "csv-excel"
   | "word"
   | "video"
+  | "audio"
   | "file"
   | "generator"
   | "other";

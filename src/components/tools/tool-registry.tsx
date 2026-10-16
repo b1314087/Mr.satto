@@ -253,6 +253,25 @@ const VideoThumbnailTool = dynamic(() =>
 const VideoMetadataRemoveTool = dynamic(() =>
   import("./implementations/video-metadata-remove-tool").then((m) => m.VideoMetadataRemoveTool)
 );
+// 音声ツール（mediabunny。MP3書き出し時のみ LAME/WASM を動的に読み込む）
+const AudioConvertTool = dynamic(() =>
+  import("./implementations/audio-convert-tool").then((m) => m.AudioConvertTool)
+);
+const AudioExtractTool = dynamic(() =>
+  import("./implementations/audio-extract-tool").then((m) => m.AudioExtractTool)
+);
+const AudioTrimTool = dynamic(() =>
+  import("./implementations/audio-trim-tool").then((m) => m.AudioTrimTool)
+);
+const AudioMergeTool = dynamic(() =>
+  import("./implementations/audio-merge-tool").then((m) => m.AudioMergeTool)
+);
+const AudioVolumeTool = dynamic(() =>
+  import("./implementations/audio-volume-tool").then((m) => m.AudioVolumeTool)
+);
+const AudioCompressTool = dynamic(() =>
+  import("./implementations/audio-compress-tool").then((m) => m.AudioCompressTool)
+);
 // Phase 11: OCR(tesseract.js)を内部で使うため、既存のOCRツールと同様の
 // チャンク境界問題が起きないか実機検証したが、こちらは問題なく動作した
 // （OCRツール自体を静的importのまま保護する既存の対応方針は変更していない）。
@@ -480,6 +499,18 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <VideoThumbnailTool />;
     case "video-metadata-remove":
       return <VideoMetadataRemoveTool />;
+    case "audio-convert":
+      return <AudioConvertTool />;
+    case "audio-extract":
+      return <AudioExtractTool />;
+    case "audio-trim":
+      return <AudioTrimTool />;
+    case "audio-merge":
+      return <AudioMergeTool />;
+    case "audio-volume":
+      return <AudioVolumeTool />;
+    case "audio-compress":
+      return <AudioCompressTool />;
     case "filled-pdf-to-excel":
       return <FilledPdfToExcelTool />;
     case "form-to-individual-pdfs":

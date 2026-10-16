@@ -733,6 +733,71 @@ const toolDefinitions: Tool[] = [
   },
 
   // ------------------------------------------------------------------
+  // 音声ツール（mediabunny + WebCodecs。MP3書き出しのみ LAME/WASM を遅延読み込み）。
+  // すべてブラウザ内で完結し、音声ファイルは外部へ送信しない。
+  // 全ツール requiredPlan: "standard"（Freeは広告視聴で利用可能、Standard以上は広告なし）。
+  // ------------------------------------------------------------------
+  {
+    id: "audio-convert",
+    name: "音声形式変換",
+    category: "audio",
+    description: "音声をMP3・WAV・M4A・OGG・FLACに変換します（M4A→MP3も対応）",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["音声変換", "mp3", "wav", "m4a", "aac", "ogg", "flac", "オーディオ", "形式変換", "m4aからmp3"],
+  },
+  {
+    id: "audio-extract",
+    name: "動画から音声を抽出",
+    category: "audio",
+    description: "MP4・MOV・WebMの動画から音声だけを取り出して保存します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["音声抽出", "動画から音声", "mp4からmp3", "音声だけ", "音声取り出し"],
+  },
+  {
+    id: "audio-trim",
+    name: "音声カット",
+    category: "audio",
+    description: "音声の必要な部分だけを切り出します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["音声カット", "音声トリミング", "切り取り", "着信音", "mp3カット"],
+  },
+  {
+    id: "audio-merge",
+    name: "音声結合",
+    category: "audio",
+    description: "複数の音声ファイルを順番に1つへつなげます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["音声結合", "mp3結合", "つなげる", "連結", "マージ"],
+  },
+  {
+    id: "audio-volume",
+    name: "音量調整・ノーマライズ",
+    category: "audio",
+    description: "音声の音量を上げ下げしたり、最大音量を自動で揃えたりします",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["音量調整", "音量アップ", "ノーマライズ", "ボリューム", "音が小さい", "dB"],
+  },
+  {
+    id: "audio-compress",
+    name: "音声圧縮",
+    category: "audio",
+    description: "音声のファイルサイズを小さくします",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["音声圧縮", "mp3圧縮", "軽量化", "容量削減", "ビットレート"],
+  },
+  // ------------------------------------------------------------------
   // 動画（Phase 10）
   //
   // 6ツールすべて BrowserProcessor。動画ファイルはブラウザ内

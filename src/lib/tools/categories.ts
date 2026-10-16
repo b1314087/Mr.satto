@@ -32,6 +32,12 @@ export const categories: Category[] = [
     icon: "🎬",
   },
   {
+    id: "audio",
+    name: "音声",
+    description: "形式変換・カット・結合・音量調整・圧縮などブラウザ完結の音声ツール",
+    icon: "🎧",
+  },
+  {
     id: "file",
     name: "ファイル",
     description: "ファイル名の一括変更やZIP作成など",

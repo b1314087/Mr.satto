@@ -60,6 +60,7 @@ export default async function globalSetup() {
     generateImages(),
     generateVideo(),
     generateVideoWithMetadata(),
+    generateAudio(),
   ]);
   await generateStampFixtures();
   await generateTemplateFixtures();
@@ -247,6 +248,28 @@ async function generateVideo() {
     }
   } finally {
     await browser.close();
+  }
+}
+
+/**
+ * 音声ツール検証用フィクスチャ。システムのffmpegで純音（サイン波）を合成する。
+ * 実在の音源・音声は使わない。MP3 / AAC のエンコーダがffmpegに無い環境でも
+ * 他のテストが動くよう、WAV以外は失敗しても無視する。
+ */
+async function generateAudio() {
+  const run = (args: string[]) =>
+    execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", ...args], { stdio: "ignore" });
+  run(["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=44100", "-ac", "2", fixtures.audioWav]);
+  run(["-f", "lavfi", "-i", "sine=frequency=880:duration=1:sample_rate=22050", "-ac", "1", fixtures.audioWavMono]);
+  try {
+    run(["-i", fixtures.audioWav, "-c:a", "libmp3lame", "-b:a", "128k", fixtures.audioMp3]);
+  } catch {
+    // libmp3lameが無い環境ではMP3フィクスチャを作らない（該当テストは自動でスキップされる）
+  }
+  try {
+    run(["-i", fixtures.audioWav, "-c:a", "aac", "-b:a", "128k", fixtures.audioM4a]);
+  } catch {
+    // AACエンコーダが無い環境ではM4Aフィクスチャを作らない
   }
 }
 

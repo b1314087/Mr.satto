@@ -42,6 +42,13 @@ export const fixtures = {
   zip: path.join(GENERATED_DIR, "sample.zip"),
   webm: path.join(GENERATED_DIR, "sample.webm"),
 
+  // 音声ツール検証用（ffmpegのsineで合成した無音ではない純音。個人情報・実音源は一切使わない）。
+  // audioWav: 2秒・44.1kHz・ステレオ / audioWavMono: 1秒・22.05kHz・モノラル（結合で形式をそろえる検証用）
+  audioWav: path.join(GENERATED_DIR, "audio-sine.wav"),
+  audioWavMono: path.join(GENERATED_DIR, "audio-sine-mono.wav"),
+  audioMp3: path.join(GENERATED_DIR, "audio-sine.mp3"),
+  audioM4a: path.join(GENERATED_DIR, "audio-sine.m4a"),
+
   // 動画メタデータ削除ツール検証用。タイトル・作成者・コメント（位置情報を
   // 模した文字列を含む）を明示的に埋め込んだMP4。システムのffmpegで生成し、
   // 処理後にffprobeでこれらのタグが実際に消えていることを確認する
