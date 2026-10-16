@@ -1,3 +1,5 @@
+import { runWithDownloadAccess } from "@/lib/download/download-gate";
+
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
@@ -9,7 +11,13 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
+/**
+ * Blobを実際にダウンロードとして保存する（広告の関所を通さない）。
+ * ツール側から直接呼ばず、通常は downloadBlob() を使う。
+ * 関所（src/lib/download/download-gate.ts）が、広告視聴後にユーザーの
+ * クリックの中で保留していた保存を実行する際に使う。
+ */
+export function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -19,6 +27,18 @@ export function downloadBlob(blob: Blob, filename: string) {
   a.remove();
   // メモリリークを避けるため少し遅らせて解放する
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/**
+ * 全ツール共通のダウンロード関数。
+ *
+ * 無料ユーザーで有効な利用権がない場合は、保存を保留して広告の確認画面を表示する
+ * （src/lib/download/download-gate.ts、src/components/ads/download-gate-provider.tsx）。
+ * それ以外（Standard/Premium、利用権あり、関所のないページ）は、従来どおりすぐに保存する。
+ * 呼び出し側のAPI（引数・戻り値）は従来から変わらない。
+ */
+export function downloadBlob(blob: Blob, filename: string) {
+  runWithDownloadAccess({ key: blob, label: filename, run: () => saveBlob(blob, filename) });
 }
 
 /**

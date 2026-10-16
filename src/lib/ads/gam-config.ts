@@ -27,11 +27,11 @@ export function isRewardedAdConfigured(): boolean {
 }
 
 /**
- * 「広告を見ないと使えない」制限（Free×Standard対象ツールの広告ゲート）を有効にするか。
+ * 「ダウンロード時に広告を見ないとダウンロードできない」制限（Freeのダウンロード広告ゲート）を有効にするか。
  *
  * - 本番: Rewarded Ad用のGAM広告ユニットが設定されている（＝広告の審査が通り、広告が出せる）ときだけ有効。
- *   未設定の間は、広告を出せないのに「広告を見て」と求めても誰も使えないため、制限をかけず自由に使えるようにする。
- *   審査が通って NEXT_PUBLIC_GAM_REWARDED_AD_UNIT_PATH を設定すると、自動で「広告を見ないと使えない」状態に戻る。
+ *   未設定の間は、広告を出せないのに「広告を見て」と求めても誰もダウンロードできないため、制限をかけず自由に使えるようにする。
+ *   審査が通って NEXT_PUBLIC_GAM_REWARDED_AD_UNIT_PATH を設定すると、自動で「ダウンロード時に広告を見る」状態になる。
  * - 開発・テスト: 擬似の広告サービス(StubRewardedAdService)で広告導線を確認できるよう、常に有効。
  */
 export function isRewardedAdGateActive(): boolean {

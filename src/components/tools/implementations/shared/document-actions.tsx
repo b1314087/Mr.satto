@@ -12,6 +12,7 @@ import {
 import { validateDocumentForm } from "@/lib/documents/validation";
 import { DOCUMENT_TYPE_META, type DocumentFormState } from "@/lib/documents/types";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { runWithDownloadAccess } from "@/lib/download/download-gate";
 
 /**
  * 帳票共通: PDF生成・ダウンロード・印刷導線。
@@ -75,7 +76,14 @@ export function DocumentActions({ form }: { form: DocumentFormState }) {
           />
           <button
             type="button"
-            onClick={() => window.open(result.url, "_blank", "noopener,noreferrer")}
+            onClick={() =>
+              // 新しいタブで開くと、そこから保存できてしまうため、ダウンロードと同じ広告の関所を通す
+              runWithDownloadAccess({
+                key: result.url,
+                label: "PDFを新しいタブで開く",
+                run: () => window.open(result.url, "_blank", "noopener,noreferrer"),
+              })
+            }
             className="text-xs text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
           >
             新しいタブでPDFを開く（印刷はこちらから）

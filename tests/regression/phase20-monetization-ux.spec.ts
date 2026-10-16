@@ -1,7 +1,25 @@
 import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { setDevPlanOverride, setDevAdOutcome, clearDevOverrides } from "../helpers/dev-plan";
 import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
 import { fixtures } from "../fixtures/paths";
+import { tools } from "@/lib/tools/data";
+
+/**
+ * 現時点で「プレミアム限定」として扱われているツール。
+ * src/lib/tools/data.ts の ALL_TOOLS_STANDARD スイッチが true の間（全ツールを一時的に
+ * Standard扱いにしている間）は、プレミアム限定のツールが存在しないため、
+ * プレミアム限定を前提とするテストはスキップする（スイッチを false に戻すと自動で再び実行される）。
+ */
+const premiumTool = tools.find((t) => t.status === "available" && t.requiredPlan === "premium");
+const PREMIUM_SKIP_REASON = "ALL_TOOLS_STANDARD が true のため、プレミアム限定ツールが存在しない";
+
+async function processFixtureImage(page: Page) {
+  await page.goto("/tools/image-resize");
+  await uploadFixture(page, fixtures.png);
+  await page.getByRole("button", { name: "リサイズする" }).click();
+  await waitForSuccess(page, "完了");
+}
 
 /**
  * Phase 20専用E2E回帰テスト（収益化導線・広告UX最終調整）。
@@ -31,97 +49,108 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     expect(page.url()).not.toContain("/login");
   });
 
-  test("Standard対象ツールでは、なぜ使えないか・どうすれば使えるかが1画面で分かる", async ({ page }) => {
+  test("Standard対象ツールは広告なしで開け、ダウンロード時に広告を見る案内が1画面で分かる", async ({ page }) => {
     await page.goto("/tools/image-resize");
 
-    // 状態②: 広告CTAが表示され、ツール本体（アップロード欄）はまだ出ない
+    // ツール本体は広告なしで使える（入口の広告ボタンは無い）
+    await expect(page.locator('input[type="file"]')).toBeAttached();
+    await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
+    // ダウンロード時に広告を1回見る必要があること・1時間は広告なしになることが事前に分かる
     await expect(
-      page.getByText("無料で使うには広告をご覧ください。広告を見ると1時間、スタンダード対象ツールをまとめて利用できます。")
+      page.getByText("無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。")
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toBeVisible();
-    await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  });
 
-    // もう一方の選択肢（Standardへの案内）も、未ログインのままこの画面で分かる
-    await expect(page.getByText(/Standard（月額550円・広告なし）に加入すると/)).toBeVisible();
-    await expect(page.getByRole("link", { name: "広告なしで使いたい場合はこちら（料金プラン）" })).toBeVisible();
+  test("ダウンロード時の確認画面で、Standardへの案内（料金プランへの導線）も分かる", async ({ page }) => {
+    await processFixtureImage(page);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+
+    const dialog = page.getByTestId("download-gate-dialog");
+    await expect(dialog.getByText(/Standard（月額550円）に加入すると、広告なしでご利用いただけます/)).toBeVisible();
+    await expect(dialog.getByRole("link", { name: "料金プランを見る" })).toBeVisible();
   });
 
   test("Premium対象ツールでは、Standardではなくプレミアム加入が案内される", async ({ page }) => {
-    await page.goto("/tools/ocr");
+    test.skip(!premiumTool, PREMIUM_SKIP_REASON);
+    await page.goto(`/tools/${premiumTool!.id}`);
 
     await expect(page.getByText("このツールはプレミアムプランで利用できます")).toBeVisible();
     await expect(page.getByText(/月額980円・広告なし・すべてのツールが利用可能/)).toBeVisible();
     await expect(page.getByRole("link", { name: "料金プランを見る" })).toBeVisible();
   });
 
-  test("広告視聴で1時間の一時利用が始まり、状態表示され、他のStandard対象ツールも再ゲートなしで使える", async ({
+  test("Freeは1時間の利用権があっても、Premium対象ツールを利用できない", async ({ page, context, baseURL }) => {
+    test.skip(!premiumTool, PREMIUM_SKIP_REASON);
+    // 先に通常のツールで広告視聴による利用権を得る
+    await setDevAdOutcome(context, "granted", baseURL!);
+    await processFixtureImage(page);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await page.getByTestId("download-gate-dialog").getByRole("button", { name: "広告を見てダウンロード" }).click();
+    await expect(page.getByTestId("download-gate-dialog")).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
+
+    await page.goto(`/tools/${premiumTool!.id}`);
+    await expect(page.getByText("このツールはプレミアムプランで利用できます")).toBeVisible();
+  });
+
+  test("広告視聴で1時間の利用権が付与され、状態表示され、他のツールでも広告なしでダウンロードできる", async ({
     page,
     context,
     baseURL,
   }) => {
     await setDevAdOutcome(context, "granted", baseURL!);
-    await page.goto("/tools/image-resize");
+    await processFixtureImage(page);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    const dialog = page.getByTestId("download-gate-dialog");
+    await dialog.getByRole("button", { name: "広告を見てダウンロード" }).click();
+    await expect(dialog).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
 
-    await page.getByRole("button", { name: "広告を見て1時間無料で使う" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await dialog.getByRole("button", { name: /ダウンロードする/ }).click();
+    await assertDownloadedFile(await downloadPromise, { format: "png", minBytes: 10 });
 
-    // 視聴完了 → ツール本体が表示され、残り時間（正確にサーバー発行の期限から計算）も分かる
-    await expect(page.locator('input[type="file"]')).toBeAttached({ timeout: 15_000 });
+    // 残り時間（サーバー発行の期限から計算）が分かる
     await expect(page.getByText(/無料利用中：あと(\d+時間(\d+分)?|\d+分)/)).toBeVisible();
 
-    // 一時利用中は、別のStandard対象ツールへ移動しても広告CTAへ再度戻されない
+    // 一時利用中は、別のツールへ移動してもダウンロード時に広告確認へ戻されない
     await page.goto("/tools/image-compress");
     await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
     await expect(page.locator('input[type="file"]')).toBeAttached();
     await expect(page.getByText(/無料利用中：あと(\d+時間(\d+分)?|\d+分)/)).toBeVisible();
   });
 
-  test("一時利用中に実際にツールを最後まで使え、ダウンロードの前後には広告枠が出ない（Freeのまま）", async ({
-    page,
-    context,
-    baseURL,
-  }) => {
+  test("ダウンロードの前後には通常の広告枠が出ない（Freeのまま）", async ({ page, context, baseURL }) => {
     await setDevAdOutcome(context, "granted", baseURL!);
-    await page.goto("/tools/image-resize");
-    await page.getByRole("button", { name: "広告を見て1時間無料で使う" }).click();
-    await expect(page.locator('input[type="file"]')).toBeAttached({ timeout: 15_000 });
-
-    await uploadFixture(page, fixtures.png);
-    await page.getByRole("button", { name: "リサイズする" }).click();
-    await waitForSuccess(page, "完了");
+    await processFixtureImage(page);
 
     // Free（広告ありプラン）でも、ダウンロードボタンの前後には広告枠を出さない
     // （ボタンの近くの広告は誤クリックを誘う配置としてAdSenseのポリシー違反になるおそれがあるため）。
-    // 広告はフッター付近とツールページ内の枠にだけ表示する。
+    // リワード広告はユーザーが「広告を見る」を押した後に全画面で表示されるもので、通常の広告枠ではない。
     await expect(page.locator('[data-ad-placement="pre-download"]')).toHaveCount(0);
-    const download = await clickAndDownload(page, "ダウンロード");
-    await assertDownloadedFile(download, { format: "png", minBytes: 10 });
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await expect(page.locator('[data-ad-placement="pre-download"]')).toHaveCount(0);
     await expect(page.locator('[data-ad-placement="post-download"]')).toHaveCount(0);
   });
 
-  test("広告が失敗（denied/unavailable）してもエラーが分かり、再試行できる。処理済みファイルを失わない", async ({
+  test("広告が失敗（denied/not-configured）してもエラーが分かり、再試行できる。処理済みファイルを失わない", async ({
     page,
     context,
     baseURL,
   }) => {
     await setDevAdOutcome(context, "denied", baseURL!);
-    await page.goto("/tools/image-resize");
+    await processFixtureImage(page);
 
-    const watchButton = page.getByRole("button", { name: "広告を見て1時間無料で使う" });
-    await watchButton.click();
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    const dialog = page.getByTestId("download-gate-dialog");
+    await dialog.getByRole("button", { name: "広告を見てダウンロード" }).click();
     await expect(
-      page.getByText("広告の視聴が完了しなかったため、無料利用は開始されませんでした。もう一度お試しください。")
+      dialog.getByText(/広告を最後まで視聴できなかったため、利用権は付与されませんでした。もう一度お試しください。/)
     ).toBeVisible();
     // 再試行できる（ボタンが無効のまま固まらない）
-    await expect(watchButton).toBeEnabled();
+    await expect(dialog.getByRole("button", { name: "もう一度試す" })).toBeEnabled();
 
-    await setDevAdOutcome(context, "unavailable", baseURL!);
-    await page.reload();
-    await page.getByRole("button", { name: "広告を見て1時間無料で使う" }).click();
-    await expect(
-      page.getByText(
-        "現在、無料利用用の広告を表示できません。しばらくしてからもう一度お試しください。Standard・Premiumプランでは広告なしでご利用いただけます。"
-      )
-    ).toBeVisible();
+    await setDevAdOutcome(context, "not-configured", baseURL!);
+    await dialog.getByRole("button", { name: "もう一度試す" }).click();
+    await expect(dialog.getByText(/現在、広告を表示できません。しばらくしてからもう一度お試しください。/)).toBeVisible();
   });
 });
 
@@ -141,8 +170,9 @@ test.describe("Standard: 対象ツールに広告なしでアクセスできる"
     context,
     baseURL,
   }) => {
+    test.skip(!premiumTool, PREMIUM_SKIP_REASON);
     await setDevPlanOverride(context, "standard", baseURL!);
-    await page.goto("/tools/ocr");
+    await page.goto(`/tools/${premiumTool!.id}`);
 
     await expect(page.getByText("このツールはプレミアムプランで利用できます")).toBeVisible();
   });
@@ -167,8 +197,9 @@ test.describe("Standard: 対象ツールに広告なしでアクセスできる"
 
 test.describe("Premium: Premium対象ツールに広告なしでアクセスできる", () => {
   test("Premiumプランでは、Premium対象ツールへ広告なしで直接アクセスできる", async ({ page, context, baseURL }) => {
+    test.skip(!premiumTool, PREMIUM_SKIP_REASON);
     await setDevPlanOverride(context, "premium", baseURL!);
-    await page.goto("/tools/ocr");
+    await page.goto(`/tools/${premiumTool!.id}`);
 
     await expect(page.getByText("このツールはプレミアムプランで利用できます")).toHaveCount(0);
     await expect(page.locator('[data-ad-placement="tool-page"]')).toHaveCount(0);

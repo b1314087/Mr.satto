@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import type { TemporaryAccessKind } from "./temporary-access-kinds";
 
 /**
  * Freeユーザーの「リワード広告視聴後1時間」のTemporary Accessを、
@@ -23,7 +24,18 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * verifyTemporaryAccessToken() の中身を差し替えるだけで済む構造にしてある。
  */
 
-const TOKEN_VERSION = "v1";
+/**
+ * トークンの形式：
+ *   v1 : `v1.<expiresAtMs>.<signature>`
+ *        旧形式。種別を持たない。すべて「広告視聴による付与("ad")」として扱う。
+ *        既に発行済みのCookieが有効期限まで引き続き使えるよう、検証は残してある
+ *        （発行はしない）。
+ *   v2 : `v2.<expiresAtMs>.<kind>.<signature>`
+ *        現行形式。kindは "ad"（広告視聴による付与）か "fallback"（広告が配信されなかった
+ *        ための代替付与）。kindも署名の対象のため、利用者が書き換えると検証に失敗する。
+ */
+const TOKEN_VERSION_V1 = "v1";
+const TOKEN_VERSION_V2 = "v2";
 
 function getSecret(): string {
   const secret = process.env.TEMP_ACCESS_SECRET;
@@ -40,10 +52,13 @@ function sign(payload: string): string {
   return createHmac("sha256", getSecret()).update(payload).digest("base64url");
 }
 
-/** サーバー側でTemporary Accessトークンを発行する（有効期限はここで確定する） */
-export function issueTemporaryAccessToken(durationMs: number): string {
+/**
+ * サーバー側でTemporary Accessトークンを発行する（有効期限はここで確定する）。
+ * kind を省略した場合は広告視聴による付与("ad")として発行する。
+ */
+export function issueTemporaryAccessToken(durationMs: number, kind: TemporaryAccessKind = "ad"): string {
   const expiresAtMs = Date.now() + durationMs;
-  const payload = `${TOKEN_VERSION}.${expiresAtMs}`;
+  const payload = `${TOKEN_VERSION_V2}.${expiresAtMs}.${kind}`;
   const signature = sign(payload);
   return `${payload}.${signature}`;
 }
@@ -51,39 +66,65 @@ export function issueTemporaryAccessToken(durationMs: number): string {
 export interface TemporaryAccessCheck {
   active: boolean;
   expiresAtMs: number | null;
+  /** 付与の種別。トークンが無い・不正な場合は null（期限切れでも署名が正しければ種別は入る） */
+  kind: TemporaryAccessKind | null;
+}
+
+const INACTIVE: TemporaryAccessCheck = { active: false, expiresAtMs: null, kind: null };
+
+function isKind(value: string): value is TemporaryAccessKind {
+  return value === "ad" || value === "fallback";
 }
 
 /**
  * トークンの署名と有効期限を検証する。
  * 署名が一致しない・形式が不正・期限切れのいずれの場合も active: false を返す。
+ * v1（旧形式）・v2（現行形式）の両方を受け付ける。
  */
 export function verifyTemporaryAccessToken(token: string | undefined | null): TemporaryAccessCheck {
-  if (!token) return { active: false, expiresAtMs: null };
+  if (!token) return INACTIVE;
 
   const parts = token.split(".");
-  if (parts.length !== 3) return { active: false, expiresAtMs: null };
 
-  const [version, expiresAtRaw, signature] = parts;
-  if (version !== TOKEN_VERSION) return { active: false, expiresAtMs: null };
+  let version: string;
+  let expiresAtRaw: string;
+  let kind: TemporaryAccessKind;
+  let signature: string;
+  let signedPayload: string;
+
+  if (parts.length === 3 && parts[0] === TOKEN_VERSION_V1) {
+    // 旧形式。種別を持たないため、広告視聴による付与として扱う。
+    [version, expiresAtRaw, signature] = parts;
+    kind = "ad";
+    signedPayload = `${version}.${expiresAtRaw}`;
+  } else if (parts.length === 4 && parts[0] === TOKEN_VERSION_V2) {
+    const kindRaw: string = parts[2];
+    if (!isKind(kindRaw)) return INACTIVE;
+    [version, expiresAtRaw, , signature] = parts;
+    kind = kindRaw;
+    signedPayload = `${version}.${expiresAtRaw}.${kind}`;
+  } else {
+    return INACTIVE;
+  }
 
   const expiresAtMs = Number(expiresAtRaw);
-  if (!Number.isFinite(expiresAtMs)) return { active: false, expiresAtMs: null };
+  if (!Number.isFinite(expiresAtMs)) return INACTIVE;
 
   // TEMP_ACCESS_SECRET未設定時など、署名計算そのものができない場合も
   // ページ全体をクラッシュさせず「無効」として扱う（不正/破損したCookieを
   // 受け取っただけでツールページが500になる事態を避けるための防御的処理）。
   let signatureValid: boolean;
   try {
-    const expectedSignature = sign(`${version}.${expiresAtRaw}`);
+    const expectedSignature = sign(signedPayload);
     const a = Buffer.from(signature);
     const b = Buffer.from(expectedSignature);
     signatureValid = a.length === b.length && timingSafeEqual(a, b);
   } catch {
-    return { active: false, expiresAtMs: null };
+    return INACTIVE;
   }
 
-  if (!signatureValid) return { active: false, expiresAtMs: null };
-  if (Date.now() >= expiresAtMs) return { active: false, expiresAtMs };
+  if (!signatureValid) return INACTIVE;
+  if (Date.now() >= expiresAtMs) return { active: false, expiresAtMs, kind };
 
-  return { active: true, expiresAtMs };
+  return { active: true, expiresAtMs, kind };
 }

@@ -50,7 +50,7 @@ export function TemporaryAccessBanner({ expiresAtMs }: { expiresAtMs: number }) 
       }`}
     >
       {expired
-        ? "無料利用時間が終了しました。次にご利用の際は、再度広告をご覧ください。"
+        ? "無料利用時間が終了しました。次にダウンロードする際は、再度広告をご覧ください。"
         : `無料利用中：${formatRemaining(remainingMs)}`}
     </div>
   );
