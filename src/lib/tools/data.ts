@@ -8,7 +8,14 @@ import type { Tool } from "./types";
  * processor: 将来 BrowserProcessor / ServerProcessor のどちらを
  *            使うかの想定。"auto" はファイルサイズ等で自動切り替えする想定。
  */
-export const tools: Tool[] = [
+/**
+ * 一時的な運用スイッチ: true のあいだ、すべてのツールを「スタンダード」扱いにする
+ * （プレミアム限定だったツールも、スタンダードのツールと同じ条件で使える）。
+ * 元のプレミアム限定の設定は下のtoolDefinitionsに残してあるので、false に戻すだけで元に戻る。
+ */
+const ALL_TOOLS_STANDARD = true;
+
+const toolDefinitions: Tool[] = [
   // ------------------------------------------------------------------
   // 画像
   // ------------------------------------------------------------------
@@ -1142,6 +1149,10 @@ export const tools: Tool[] = [
     keywords: ["名簿", "一覧表", "出席簿", "台帳"],
   },
 ];
+
+export const tools: Tool[] = ALL_TOOLS_STANDARD
+  ? toolDefinitions.map((t) => ({ ...t, requiredPlan: "standard" as const }))
+  : toolDefinitions;
 
 export function getToolById(id: string): Tool | undefined {
   return tools.find((t) => t.id === id);
