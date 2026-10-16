@@ -193,7 +193,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
           // 利用回数無制限」/Standard「広告なし・1回1ページ・利用回数無制限」/
           // Premium「ページ数・回数とも無制限」という、ツール専用・ページ数ベースの
           // 利用制限を持ち、既存の汎用<ToolAccessGate>（Standard対象ツール全体・
-          // 15分間の広告ゲート）とは条件が根本的に異なる（2026年改訂で日次回数上限は
+          // 1時間の広告ゲート）とは条件が根本的に異なる（2026年改訂で日次回数上限は
           // Free・Standardとも撤廃済み。詳細は src/lib/tools/filled-pdf-to-excel/
           // usage-status-actions.ts 参照）。
           // そのためこのツールIDのみゲートをバイパスし、ツール自身が

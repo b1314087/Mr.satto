@@ -101,7 +101,7 @@ export function buildWebApplication() {
       "@type": "Offer",
       price: "0",
       priceCurrency: "JPY",
-      description: "広告視聴による15分間の無料利用、またはStandard/Premiumプランへの加入で利用できます。",
+      description: "広告視聴による1時間の無料利用、またはStandard/Premiumプランへの加入で利用できます。",
     },
     inLanguage: "ja",
   };

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 /**
- * Freeユーザーの「広告視聴による15分間の無料利用」の残り時間表示（Phase 4 spec 17章）。
+ * Freeユーザーの「広告視聴による1時間の無料利用」の残り時間表示（Phase 4 spec 17章）。
  *
  * 秒単位で常時画面を再描画するとCPUを不必要に消費するため、20秒ごとにのみ
  * 再計算する（分単位の表示なので、この間隔で十分な精度がある）。
@@ -19,7 +19,14 @@ const REFRESH_INTERVAL_MS = 20_000;
 function formatRemaining(remainingMs: number): string {
   const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
   const minutes = Math.ceil(totalSeconds / 60);
-  return minutes > 0 ? `あと${minutes}分` : "まもなく終了します";
+  if (minutes <= 0) return "まもなく終了します";
+  // 1時間の無料利用になったため、60分以上は「1時間」「1時間20分」の形で表示する
+  if (minutes >= 60) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m === 0 ? `あと${h}時間` : `あと${h}時間${m}分`;
+  }
+  return `あと${minutes}分`;
 }
 
 export function TemporaryAccessBanner({ expiresAtMs }: { expiresAtMs: number }) {

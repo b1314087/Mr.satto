@@ -99,7 +99,7 @@ export function ToolAccessGate({
 
   // 状態④/⑥: 利用不可・Premium必要（Free/Standardユーザーの前ではPremiumツールは
   // 常にこの案内になる。FreeのTemporary Accessの有無はここでは一切考慮しない。
-  // Phase 4 spec 16章：15分の無料利用権をPremiumツールへ適用しない）
+  // Phase 4 spec 16章：1時間の無料利用権をPremiumツールへ適用しない）
   if (!access.allowed) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-6 py-16 text-center dark:border-amber-800 dark:bg-amber-950/30">

@@ -9,7 +9,7 @@ import { PDF_TO_EXCEL_CREDIT_MAX_PAGES } from "./usage-cookie";
  * 記入済みPDF→Excel専用の利用可否判定をまとめたServer Actions。
  *
  * この1ツールは、既存の汎用 <ToolAccessGate>（Standard対象ツール全体・
- * 15分間のリワード広告ゲート）とは条件が根本的に異なるため、
+ * 1時間のリワード広告ゲート）とは条件が根本的に異なるため、
  * src/app/tools/[tool]/page.tsx でこのツールIDのみ <ToolAccessGate> を
  * バイパスし、ツール自身のクライアントコンポーネントがここのServer Actionsを
  * 直接呼び出して可否を判定する（Client ComponentからServer Actionを

@@ -3,14 +3,14 @@
  *
  * 正式な料金体系：
  *
- * free     : 0円。ログイン不要。リワード広告視聴で15分間スタンダード対象ツールを利用可能
+ * free     : 0円。ログイン不要。リワード広告視聴で1時間スタンダード対象ツールを利用可能
  * standard : 月額550円。ログイン必須。広告なしでスタンダード対象ツールを利用可能
  * premium  : 月額980円。ログイン必須。広告なしですべてのツールを利用可能
  *
  * 重要：「広告も見ない」「料金も払わない」でそのまま使える
  * 完全無料プランは、最終仕様として存在しない。
  * free ユーザーは standard 対象ツールの利用時に、Rewarded Ads の視聴によって
- * 15分間の一時利用権（Temporary Access）を得る（src/lib/plans/temporary-access.ts）。
+ * 1時間の一時利用権（Temporary Access）を得る（src/lib/plans/temporary-access.ts）。
  *
  * standard / premium の実際の契約状態は Stripe Subscription が正式な情報源であり、
  * Webhook経由でSupabase DBへ同期される（src/lib/plans/current-plan.tsのgetServerPlan）。

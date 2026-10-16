@@ -3,12 +3,12 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Freeユーザーの「リワード広告視聴後15分間」のTemporary Accessを、
+ * Freeユーザーの「リワード広告視聴後1時間」のTemporary Accessを、
  * サーバー側で検証可能な署名付きトークンとして扱うための実装。
  *
  * 仕様上の要求（Phase 3 spec 4章・20章）：
  *   - 「ユーザーが時計を変更するだけで不正に延長できる設計にしない」
- *   - 「localStorageの値だけで15分を無期限化」できないようにする
+ *   - 「localStorageの値だけで1時間を無期限化」できないようにする
  *
  * 対策：有効期限(expiresAtMs)はここ（サーバー）が発行した時点で確定させ、
  * トークンにHMAC署名を付与する。クライアントは発行されたトークン文字列を

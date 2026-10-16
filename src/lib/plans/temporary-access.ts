@@ -8,7 +8,7 @@ import { TEMP_ACCESS_COOKIE_NAME } from "./temporary-access-cookie";
  *
  * Phase 3で仕様が確定した：
  *   Guest / Free ユーザーがStandard対象ツールを利用する際、リワード広告視聴の
- *   成功をもって「15分間、Standard対象ツール全体」を利用できるようにする
+ *   成功をもって「1時間、Standard対象ツール全体」を利用できるようにする
  *   （1ツールにつき1広告、という設計にはしない）。
  *
  * 権限の正式な判定（本当にまだ有効か）は、署名付きトークンを使って

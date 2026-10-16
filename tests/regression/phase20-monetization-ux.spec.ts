@@ -36,9 +36,9 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
 
     // 状態②: 広告CTAが表示され、ツール本体（アップロード欄）はまだ出ない
     await expect(
-      page.getByText("無料で使うには広告をご覧ください。広告を見ると15分間、スタンダード対象ツールをまとめて利用できます。")
+      page.getByText("無料で使うには広告をご覧ください。広告を見ると1時間、スタンダード対象ツールをまとめて利用できます。")
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "広告を見て15分無料で使う" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toBeVisible();
     await expect(page.locator('input[type="file"]')).toHaveCount(0);
 
     // もう一方の選択肢（Standardへの案内）も、未ログインのままこの画面で分かる
@@ -54,7 +54,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await expect(page.getByRole("link", { name: "料金プランを見る" })).toBeVisible();
   });
 
-  test("広告視聴で15分間の一時利用が始まり、状態表示され、他のStandard対象ツールも再ゲートなしで使える", async ({
+  test("広告視聴で1時間の一時利用が始まり、状態表示され、他のStandard対象ツールも再ゲートなしで使える", async ({
     page,
     context,
     baseURL,
@@ -62,17 +62,17 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await setDevAdOutcome(context, "granted", baseURL!);
     await page.goto("/tools/image-resize");
 
-    await page.getByRole("button", { name: "広告を見て15分無料で使う" }).click();
+    await page.getByRole("button", { name: "広告を見て1時間無料で使う" }).click();
 
     // 視聴完了 → ツール本体が表示され、残り時間（正確にサーバー発行の期限から計算）も分かる
     await expect(page.locator('input[type="file"]')).toBeAttached({ timeout: 15_000 });
-    await expect(page.getByText(/無料利用中：あと\d+分/)).toBeVisible();
+    await expect(page.getByText(/無料利用中：あと(\d+時間(\d+分)?|\d+分)/)).toBeVisible();
 
     // 一時利用中は、別のStandard対象ツールへ移動しても広告CTAへ再度戻されない
     await page.goto("/tools/image-compress");
-    await expect(page.getByRole("button", { name: "広告を見て15分無料で使う" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
     await expect(page.locator('input[type="file"]')).toBeAttached();
-    await expect(page.getByText(/無料利用中：あと\d+分/)).toBeVisible();
+    await expect(page.getByText(/無料利用中：あと(\d+時間(\d+分)?|\d+分)/)).toBeVisible();
   });
 
   test("一時利用中に実際にツールを最後まで使え、ダウンロードの前後には広告枠が出ない（Freeのまま）", async ({
@@ -82,7 +82,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
   }) => {
     await setDevAdOutcome(context, "granted", baseURL!);
     await page.goto("/tools/image-resize");
-    await page.getByRole("button", { name: "広告を見て15分無料で使う" }).click();
+    await page.getByRole("button", { name: "広告を見て1時間無料で使う" }).click();
     await expect(page.locator('input[type="file"]')).toBeAttached({ timeout: 15_000 });
 
     await uploadFixture(page, fixtures.png);
@@ -106,7 +106,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await setDevAdOutcome(context, "denied", baseURL!);
     await page.goto("/tools/image-resize");
 
-    const watchButton = page.getByRole("button", { name: "広告を見て15分無料で使う" });
+    const watchButton = page.getByRole("button", { name: "広告を見て1時間無料で使う" });
     await watchButton.click();
     await expect(
       page.getByText("広告の視聴が完了しなかったため、無料利用は開始されませんでした。もう一度お試しください。")
@@ -116,7 +116,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
 
     await setDevAdOutcome(context, "unavailable", baseURL!);
     await page.reload();
-    await page.getByRole("button", { name: "広告を見て15分無料で使う" }).click();
+    await page.getByRole("button", { name: "広告を見て1時間無料で使う" }).click();
     await expect(
       page.getByText(
         "現在、無料利用用の広告を表示できません。しばらくしてからもう一度お試しください。Standard・Premiumプランでは広告なしでご利用いただけます。"
@@ -130,7 +130,7 @@ test.describe("Standard: 対象ツールに広告なしでアクセスできる"
     await setDevPlanOverride(context, "standard", baseURL!);
     await page.goto("/tools/image-resize");
 
-    await expect(page.getByRole("button", { name: "広告を見て15分無料で使う" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
     await expect(page.locator('input[type="file"]')).toBeAttached();
     // Standard = 広告なし。ツールページ内の通常広告枠も表示されない
     await expect(page.locator('[data-ad-placement="tool-page"]')).toHaveCount(0);
@@ -182,7 +182,7 @@ test.describe("Premium: Premium対象ツールに広告なしでアクセスで�
     await setDevPlanOverride(context, "premium", baseURL!);
     await page.goto("/tools/image-resize");
 
-    await expect(page.getByRole("button", { name: "広告を見て15分無料で使う" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
     await expect(page.locator('input[type="file"]')).toBeAttached();
   });
 });
@@ -197,7 +197,7 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
 
     // Free: ¥0・広告あり・Standard対象
     await expect(page.getByText("0円", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText(/広告を見ると15分間スタンダード対象ツールを利用できます/)).toBeVisible();
+    await expect(page.getByText(/広告を見ると1時間スタンダード対象ツールを利用できます/)).toBeVisible();
 
     // Standard: ¥550/月・広告なし
     await expect(page.getByText("550円/月", { exact: false }).first()).toBeVisible();

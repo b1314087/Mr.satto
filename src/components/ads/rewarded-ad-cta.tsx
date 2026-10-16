@@ -9,7 +9,7 @@ import { getTemporaryAccessService } from "@/lib/plans/temporary-access";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 
 /**
- * Freeユーザー向けの「広告を見て15分無料で使う」導線（Phase 4）。
+ * Freeユーザー向けの「広告を見て1時間無料で使う」導線（Phase 4）。
  *
  * 通常のAdSlot（display広告）とは責務を明確に分離する（Phase 4 spec 23章）：
  * このコンポーネントが表示するのはRewarded Ad専用のCTAであり、AdSlotで
@@ -120,7 +120,7 @@ export function RewardedAdCta({
       <AdSlot placement="tool-page" />
 
       <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        無料で使うには広告をご覧ください。広告を見ると15分間、スタンダード対象ツールをまとめて利用できます。
+        無料で使うには広告をご覧ください。広告を見ると1時間、スタンダード対象ツールをまとめて利用できます。
       </p>
 
       <button
@@ -129,7 +129,7 @@ export function RewardedAdCta({
         onClick={() => void handleWatchAd()}
         className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
-        {isBusy ? (PHASE_LABEL[phase] ?? "広告を見て15分無料で使う") : "広告を見て15分無料で使う"}
+        {isBusy ? (PHASE_LABEL[phase] ?? "広告を見て1時間無料で使う") : "広告を見て1時間無料で使う"}
       </button>
 
       {phase === "unavailable" && (

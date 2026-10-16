@@ -1,5 +1,5 @@
 /**
- * Freeユーザーの「リワード広告視聴後15分間」のTemporary Accessに関する、
+ * Freeユーザーの「リワード広告視聴後1時間」のTemporary Accessに関する、
  * サーバー側・クライアント側の両方から参照する共有定数。
  *
  * このファイルは "use server" でも "server-only" でもない、ただの定数モジュール。
@@ -18,5 +18,9 @@
 /** Temporary Accessトークンを保持するCookie名 */
 export const TEMP_ACCESS_COOKIE_NAME = "mrsatto_temp_access";
 
-/** 「15分間」は仕様で確定した値。勝手に変更しない（Phase 3 spec 3章・35章 / Phase 4 spec 10章・41章）。 */
-export const TEMP_ACCESS_DURATION_MS = 15 * 60 * 1000;
+/**
+ * 広告を1回視聴したあとの無料利用時間。仕様で確定した値のため、勝手に変更しない
+ * （Phase 3 spec 3章・35章 / Phase 4 spec 10章・41章）。
+ * 2026年10月、運営者の指示で15分から1時間へ変更した。
+ */
+export const TEMP_ACCESS_DURATION_MS = 60 * 60 * 1000;
