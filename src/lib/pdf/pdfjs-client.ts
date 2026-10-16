@@ -75,6 +75,22 @@ export interface PositionedTextItem {
   height: number;
   fontHeight: number;
   hasEOL: boolean;
+  /**
+   * 以下はPDF→Word（書式の再現）用の付加情報。取得できた場合だけ入る。
+   * PDF→Excel等、これらを使わない処理には影響しない。
+   */
+  /** pdfjs内部のフォントID（getFontStyles でフォントの太字・斜体などを引くのに使う） */
+  fontName?: string;
+  bold?: boolean;
+  italic?: boolean;
+  /** 明朝系（セリフ）フォントか */
+  serif?: boolean;
+  /** 等幅フォントか */
+  mono?: boolean;
+  /** 文字色（"RRGGBB"）。黒または判別できない場合は未設定 */
+  color?: string;
+  /** この文字がリンク（ハイパーリンク）の範囲内にあるときのURL */
+  link?: string;
 }
 
 /**
@@ -100,6 +116,7 @@ export async function getPositionedTextItems(page: PdfjsPage): Promise<Positione
       height: item.height || fontHeight,
       fontHeight,
       hasEOL: Boolean(item.hasEOL),
+      fontName: typeof item.fontName === "string" ? item.fontName : undefined,
     });
   }
   return items;

@@ -8,7 +8,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { PdfToWordProcessor, previewPdfToWordBlocks, type PdfToWordOutput } from "@/lib/processors/browser/pdf-to-word";
-import type { DocumentBlock } from "@/lib/pdf/paragraph-reconstruction";
+import type { DocumentBlock, RunInfo } from "@/lib/pdf/paragraph-reconstruction";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 /** プレビューに出す先頭ページのブロック数の上限(重くならないよう先頭だけ) */
@@ -18,13 +18,43 @@ type WordPreview =
   | { file: File; hasTextLayer: boolean; blocks: DocumentBlock[] }
   | { file: File; error: string };
 
-/** 変換後のWord文書の先頭ページのイメージ(見出し・段落・表を、変換と同じ構造推定で表示) */
+/** 書式つきの文字列（太字・斜体・色・リンク）をプレビュー用に表示する */
+function PreviewRuns({ runs, text }: { runs?: RunInfo[]; text: string }) {
+  if (!runs || runs.length === 0) return <>{text}</>;
+  return (
+    <>
+      {runs.map((r, i) => (
+        <span
+          key={i}
+          style={{
+            fontWeight: r.bold ? 700 : undefined,
+            fontStyle: r.italic ? "italic" : undefined,
+            color: r.link ? "#0563C1" : r.color ? `#${r.color}` : undefined,
+            textDecoration: r.link ? "underline" : undefined,
+          }}
+        >
+          {r.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
+const ALIGN_CLASS = { left: "text-left", center: "text-center", right: "text-right" } as const;
+
+/** 変換後のWord文書の先頭ページのイメージ(見出し・段落・リスト・表を、変換と同じ構造推定で表示) */
 function WordPagePreview({ blocks }: { blocks: DocumentBlock[] }) {
   return (
     <div className="max-h-96 overflow-y-auto rounded-md border border-neutral-200 bg-white p-4 text-neutral-800 shadow-sm dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100">
       {blocks.slice(0, PREVIEW_MAX_BLOCKS).map((b, i) => {
-        if (b.type === "heading1") return <h3 key={i} className="mb-2 text-lg font-bold">{b.text}</h3>;
-        if (b.type === "heading2") return <h4 key={i} className="mb-2 text-base font-bold">{b.text}</h4>;
+        if (b.type === "heading1" || b.type === "heading2") {
+          const cls = `${ALIGN_CLASS[b.align ?? "left"]} ${b.type === "heading1" ? "text-lg" : "text-base"} mb-2 font-bold`;
+          return b.type === "heading1" ? (
+            <h3 key={i} className={cls}>{b.text}</h3>
+          ) : (
+            <h4 key={i} className={cls}>{b.text}</h4>
+          );
+        }
         if (b.type === "table") {
           return (
             <div key={i} className="mb-2 overflow-x-auto">
@@ -42,9 +72,35 @@ function WordPagePreview({ blocks }: { blocks: DocumentBlock[] }) {
             </div>
           );
         }
+        if (b.type === "list") {
+          return (
+            <p
+              key={i}
+              className="mb-1 flex gap-2 text-sm"
+              style={{ paddingLeft: `${b.level * 1.25}rem` }}
+            >
+              <span aria-hidden="true">{b.ordered ? b.marker : "•"}</span>
+              <span className="min-w-0 break-words">
+                <PreviewRuns runs={b.runs} text={b.text} />
+              </span>
+            </p>
+          );
+        }
+        if (b.type === "image") {
+          return (
+            <p key={i} className="mb-2 text-xs text-neutral-400">
+              [画像]
+            </p>
+          );
+        }
+        if (b.type !== "paragraph") return null;
         return (
-          <p key={i} className="mb-2 min-h-[1em] whitespace-pre-wrap break-words text-sm">
-            {b.text}
+          <p
+            key={i}
+            className={`mb-2 min-h-[1em] whitespace-pre-wrap break-words text-sm ${ALIGN_CLASS[b.align ?? "left"]}`}
+            style={b.indent ? { paddingLeft: `${Math.min(b.indent, 120) / 12}rem` } : undefined}
+          >
+            <PreviewRuns runs={b.runs} text={b.text} />
           </p>
         );
       })}
@@ -132,14 +188,15 @@ export function PdfToWordTool() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
         <p>
-          PDF内の文字を編集可能なWord文書（.docx）に変換します。段落構造・見出し・簡単な表は
-          できる範囲で維持しますが、PDFの見た目をそのまま100%再現することは目的にしていません。
+          PDF内の文字を編集可能なWord文書（.docx）に変換します。段落・見出し・箇条書き/番号リスト・表（列幅・列の結合）、
+          太字・斜体・文字色・文字サイズ、中央/右揃え・字下げ、ハイパーリンク、画像、用紙サイズ・余白、
+          毎ページのヘッダー/フッター・ページ番号を、読み取れる範囲でWordに反映します。
           処理はブラウザ内で完結し、ファイルが外部のサーバーへ送信されることはありません。
         </p>
         <p>
-          2段組・ヘッダーやフッター・特殊なフォント・画像を含む複雑なレイアウトは、
-          元のPDFどおりに再現されない場合があります（画像の埋め込みは今回のバージョンでは未対応です）。
-          まずは「文字が編集できる状態にすること」を優先しています。
+          PDFの見た目を100%再現することは目的にしていません。2段組・図形やグラフ（画像でないもの）・
+          背景の塗りや罫線の装飾・特殊なフォントを含む複雑なレイアウトは、元のPDFどおりに再現されない場合があります。
+          Wordで編集しやすい文書にすることを優先しています。
         </p>
         <p>
           文字情報を持たないスキャン画像のPDFにも対応しています（自動的に画像認識(OCR)へ切り替わります）。
@@ -208,6 +265,8 @@ export function PdfToWordTool() {
             <span>段落数: {result.paragraphCount}</span>
             <span>見出し数: {result.headingCount}</span>
             <span>表: {result.tableCount}個</span>
+            {result.imageCount > 0 && <span>画像: {result.imageCount}個</span>}
+            {result.listItemCount > 0 && <span>箇条書き: {result.listItemCount}項目</span>}
             <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
             {result.usedOcr && (
               <span>
@@ -241,7 +300,7 @@ export function PdfToWordTool() {
               />
             </svg>
             <span>
-              複雑なレイアウト（2段組・表の結合セル・特殊なフォント等）は元のPDFどおりに
+              複雑なレイアウト（2段組・図形やグラフ・背景の塗り・特殊なフォント等）は元のPDFどおりに
               再現されていない場合があります。生成後の文書はWordで開いて内容をご確認ください。
             </span>
           </div>

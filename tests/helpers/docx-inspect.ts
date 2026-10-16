@@ -17,3 +17,20 @@ export async function readDocxText(filePath: string): Promise<string> {
     .map((m) => m[1])
     .join(" ");
 }
+
+/** DOCX内の任意のパーツ（word/document.xml, word/header1.xml 等）のXML文字列を返す。無ければ空文字 */
+export async function readDocxPart(filePath: string, partName: string): Promise<string> {
+  const fs = await import("node:fs/promises");
+  const { unzipSync, strFromU8 } = await import("fflate");
+  const bytes = new Uint8Array(await fs.readFile(filePath));
+  const entries = unzipSync(bytes, { filter: (info) => info.name === partName });
+  return entries[partName] ? strFromU8(entries[partName]) : "";
+}
+
+/** DOCX内のパーツ名の一覧 */
+export async function listDocxParts(filePath: string): Promise<string[]> {
+  const fs = await import("node:fs/promises");
+  const { unzipSync } = await import("fflate");
+  const bytes = new Uint8Array(await fs.readFile(filePath));
+  return Object.keys(unzipSync(bytes));
+}
