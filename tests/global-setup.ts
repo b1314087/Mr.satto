@@ -67,6 +67,7 @@ export default async function globalSetup() {
   generateExcelToPdfFixtures();
   generateWordToPdfFixtures();
   await generatePdfToExcelFixtures();
+  await generatePdfToExcelSideBySideFixture();
   await generatePdfToWordScannedFixture();
   await generatePdfToExcelScannedFixtures();
   await generateLightweightToolsFixtures();
@@ -1141,6 +1142,66 @@ async function generatePdfToExcelFixtures() {
 
   await build(true, fixtures.pdfToExcelBorderedTablePdf);
   await build(false, fixtures.pdfToExcelBorderlessTablePdf);
+}
+
+/**
+ * PDF→Excelの整形テスト用: 給料表のように「同じ構成の表が左右に並ぶ」2ページのPDF。
+ * - 1ページ目: 左の表に番号1〜12(3列の値)、右の表に13〜24(2列の値)。各表の左に縦書きの区分名。
+ *   字間を広げたタイトル、2行に割れた見出し(Grade A / Salary)、下端にページ番号。
+ * - 2ページ目: 左の表の続き(25〜30)と、ページ番号。
+ * 英数字だけで構成する(日本語フォントの埋め込みを避けるため)。
+ */
+async function generatePdfToExcelSideBySideFixture() {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const fontSize = 9;
+  const right = (page: ReturnType<typeof doc.addPage>, text: string, rightX: number, y: number, size = fontSize) =>
+    page.drawText(text, { x: rightX - font.widthOfTextAtSize(text, size), y, size, font, color: rgb(0, 0, 0) });
+  const centered = (page: ReturnType<typeof doc.addPage>, text: string, centerX: number, y: number, size: number) =>
+    page.drawText(text, { x: centerX - font.widthOfTextAtSize(text, size) / 2, y, size, font, color: rgb(0, 0, 0) });
+  const verticalLabel = (page: ReturnType<typeof doc.addPage>, text: string, x: number, topY: number) => {
+    [...text].forEach((ch, i) => page.drawText(ch, { x, y: topY - i * 8.5, size: 7, font, color: rgb(0, 0, 0) }));
+  };
+
+  const leftKeyRight = 90;
+  const leftValueRights = [150, 200, 250];
+  const rightKeyRight = 330;
+  const rightValueRights = [390, 440];
+  const valueOf = (key: number, col: number) => 200000 + key * 1000 + col * 100;
+  const rowY = (i: number) => 728 - i * 14;
+
+  function drawTableRows(page: ReturnType<typeof doc.addPage>, keys: number[], leftSide: boolean) {
+    keys.forEach((key, i) => {
+      const y = rowY(i);
+      right(page, String(key), leftSide ? leftKeyRight : rightKeyRight, y);
+      const rights = leftSide ? leftValueRights : rightValueRights;
+      rights.forEach((rx, c) => right(page, valueOf(key, c).toLocaleString("en-US"), rx, y));
+    });
+  }
+
+  // 1ページ目
+  const p1 = doc.addPage([500, 800]);
+  // 字間を広げたタイトル(1文字ずつ別の項目)
+  [..."GRADETABLE"].forEach((ch, i) => p1.drawText(ch, { x: 110 + i * 28, y: 785, size: 14, font, color: rgb(0, 0, 0) }));
+  // 2行に割れた見出し
+  ["Grade A", "Grade B", "Grade C"].forEach((t, c) => {
+    centered(p1, t, leftValueRights[c] - 16, 752, 8);
+    centered(p1, "Salary", leftValueRights[c] - 16, 744, 8);
+  });
+  right(p1, "No", leftKeyRight, 748, 8);
+  drawTableRows(p1, Array.from({ length: 12 }, (_, i) => i + 1), true);
+  drawTableRows(p1, Array.from({ length: 12 }, (_, i) => i + 13), false);
+  verticalLabel(p1, "SENIORSTAFF", 40, rowY(1));
+  verticalLabel(p1, "SENIORSTAFF", 262, rowY(1));
+  centered(p1, "1", 250, 30, 9);
+
+  // 2ページ目(左の表の続きだけ)
+  const p2 = doc.addPage([500, 800]);
+  drawTableRows(p2, Array.from({ length: 6 }, (_, i) => i + 25), true);
+  verticalLabel(p2, "SENIORSTAFF", 40, rowY(0));
+  centered(p2, "2", 250, 30, 9);
+
+  fs.writeFileSync(fixtures.pdfToExcelSideBySidePdf, await doc.save());
 }
 
 /**

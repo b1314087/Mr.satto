@@ -90,7 +90,9 @@ const MIN_GAP_TOLERANCE = 3; // pt
 const BIN_SIZE_PT = 1;
 /** 列区切りの「候補」とみなすための最小幅(pt)。本物の判定はこれだけでなく
  *  countColumnGapSupportによる複数行での再現性チェックで行う。 */
-const MIN_GAP_WIDTH_PT = 6;
+const MIN_GAP_WIDTH_PT = 5;
+/** 列区切り候補の検出で、外れ値として許容する行の割合(行数が多いページのみ効く。例: 75行なら2行まで) */
+const OUTLIER_LINE_RATIO = 0.03;
 /** 行単独での隙間（内部の自由記述の分割等との区別に使う）を認識する最小幅(pt) */
 const PER_LINE_GAP_MIN_WIDTH_PT = 4;
 /** 列区切り候補として「再現された」とみなすために必要な行数の割合・下限 */
@@ -149,18 +151,33 @@ function pageCandidateGapRanges(lines: Line[]): [number, number][] {
   }
   if (!Number.isFinite(minX) || maxX <= minX) return [];
 
+  // 各x位置(1pt刻み)に「文字がかかっている行」が何行あるかを数える。
+  // 以前は「1文字でもかかっていればその位置は埋まっている」としていたため、
+  // 表のタイトルや注記のような、表全体に横断する数行の外れ値の行が
+  // 本物の列区切りを全部塞いでしまい、列が1つも見つからないことがあった
+  // （例: 字間を広げたタイトル行が、数値列の間の細い隙間をまたぐ）。
+  // 行数が多いページに限り、ごく少数(全体の約3%まで)の行は外れ値として許容する。
   const binCount = Math.max(1, Math.ceil((maxX - minX) / BIN_SIZE_PT) + 1);
-  const covered = new Uint8Array(binCount);
-  for (const item of contentItems) {
-    const startBin = Math.max(0, Math.floor((item.x - minX) / BIN_SIZE_PT));
-    const endBin = Math.min(binCount, Math.ceil((item.x + item.width - minX) / BIN_SIZE_PT));
-    for (let b = startBin; b < endBin; b++) covered[b] = 1;
-  }
+  const coverCount = new Uint16Array(binCount);
+  const stamp = new Int32Array(binCount).fill(-1);
+  lines.forEach((line, lineIndex) => {
+    for (const item of line.items) {
+      const startBin = Math.max(0, Math.floor((item.x - minX) / BIN_SIZE_PT));
+      const endBin = Math.min(binCount, Math.ceil((item.x + item.width - minX) / BIN_SIZE_PT));
+      for (let b = startBin; b < endBin; b++) {
+        if (stamp[b] !== lineIndex) {
+          stamp[b] = lineIndex;
+          coverCount[b]++;
+        }
+      }
+    }
+  });
+  const outlierTolerance = Math.floor(lines.length * OUTLIER_LINE_RATIO);
 
   const ranges: [number, number][] = [];
   let gapStartBin: number | null = null;
   for (let b = 0; b < binCount; b++) {
-    if (covered[b] === 0) {
+    if (coverCount[b] <= outlierTolerance) {
       if (gapStartBin === null) gapStartBin = b;
       continue;
     }
@@ -176,9 +193,21 @@ function pageCandidateGapRanges(lines: Line[]): [number, number][] {
   return ranges;
 }
 
-/** 1行「単独」で見た、隣り合うテキスト項目同士の隙間の一覧(開始x, 終了x)を返す */
-function perLineGapRanges(line: Line, minWidth: number): [number, number][] {
+/**
+ * 1行「単独」で見た、隣り合うテキスト項目同士の隙間の一覧(開始x, 終了x)を返す。
+ * 行頭・行末の「空セル」も隙間として数える（content: そのページの文字の左端・右端）。
+ * 表の左端や右端の列が、その行では空欄(例: 右側の表で値の入っていない級の列)の場合、
+ * 隣り合うテキスト同士の隙間としては現れないため、これを入れないと
+ * 「空欄の多い列」の区切りが再現数不足で落ちてしまう。
+ */
+function perLineGapRanges(line: Line, minWidth: number, content?: { minX: number; maxX: number }): [number, number][] {
   const ranges: [number, number][] = [];
+  if (content && line.items.length > 0) {
+    const first = line.items[0];
+    if (first.x - content.minX >= minWidth) ranges.push([content.minX, first.x]);
+    const last = line.items[line.items.length - 1];
+    if (content.maxX - (last.x + last.width) >= minWidth) ranges.push([last.x + last.width, content.maxX]);
+  }
   for (let i = 1; i < line.items.length; i++) {
     const prev = line.items[i - 1];
     const cur = line.items[i];
@@ -239,7 +268,15 @@ export function computeColumnBreaksAcrossPages(linesByPage: Line[][]): number[] 
   const candidateRanges = linesByPage.flatMap((lines) => pageCandidateGapRanges(lines));
   const clustered = clusterCandidateRanges(candidateRanges, CANDIDATE_CLUSTER_PROXIMITY_PT);
 
-  const perLineGapsByLine = allLines.map((line) => perLineGapRanges(line, PER_LINE_GAP_MIN_WIDTH_PT));
+  const perLineGapsByLine = linesByPage.flatMap((lines) => {
+    const items = lines.flatMap((l) => l.items);
+    if (items.length === 0) return [];
+    const content = {
+      minX: Math.min(...items.map((i) => i.x)),
+      maxX: Math.max(...items.map((i) => i.x + i.width)),
+    };
+    return lines.map((line) => perLineGapRanges(line, PER_LINE_GAP_MIN_WIDTH_PT, content));
+  });
   const requiredSupport = Math.min(allLines.length, Math.max(MIN_SUPPORT_FLOOR, Math.round(allLines.length * MIN_SUPPORT_RATIO)));
 
   const accepted = clustered.filter((range) => countColumnGapSupport(perLineGapsByLine, range) >= requiredSupport);
@@ -260,7 +297,48 @@ export function computeColumnBreaksAcrossPages(linesByPage: Line[][]): number[] 
     merged.push(range);
   }
 
-  return merged.map(([start, end]) => (start + end) / 2);
+  return merged.map((range) => refineBreakPosition(range, allLines));
+}
+
+/**
+ * 列区切りの位置を、候補範囲の中点ではなく「文字が最もかからない位置」へ寄せる。
+ * 外れ値として許容した少数の行(見出しなど)の文字が候補範囲の中に入り込んでいると、
+ * 中点がその文字を真ん中で割ってしまうことがあるため。
+ * 範囲内を0.5pt刻みで見て、文字がかかる行数が最小の区間のうち最も広いものの中央を返す。
+ */
+function refineBreakPosition(range: [number, number], lines: Line[]): number {
+  const [start, end] = range;
+  const step = 0.5;
+  const samples = Math.max(1, Math.floor((end - start) / step));
+  const counts = new Uint16Array(samples);
+  for (const line of lines) {
+    for (const item of line.items) {
+      const x0 = item.x;
+      const x1 = item.x + item.width;
+      if (x1 <= start || x0 >= end) continue;
+      const from = Math.max(0, Math.floor((x0 - start) / step));
+      const to = Math.min(samples, Math.ceil((x1 - start) / step));
+      for (let k = from; k < to; k++) counts[k]++;
+    }
+  }
+  let min = Infinity;
+  for (let k = 0; k < samples; k++) min = Math.min(min, counts[k]);
+  let bestStart = 0;
+  let bestLen = 0;
+  let runStart = -1;
+  for (let k = 0; k <= samples; k++) {
+    if (k < samples && counts[k] === min) {
+      if (runStart < 0) runStart = k;
+    } else if (runStart >= 0) {
+      if (k - runStart > bestLen) {
+        bestLen = k - runStart;
+        bestStart = runStart;
+      }
+      runStart = -1;
+    }
+  }
+  if (bestLen === 0) return (start + end) / 2;
+  return start + (bestStart + bestLen / 2) * step;
 }
 
 /** 1ページ分の行だけから列区切りを推定する(computeColumnBreaksAcrossPagesの単一ページ版) */
@@ -296,8 +374,30 @@ export interface ReconstructedTable {
    */
   rowBoundariesY: number[];
   colBoundariesX: number[];
-  /** 列結合(colspan)の推定結果一覧（開発指示書§21-26。行結合(rowspan)は今回は対象外）。 */
+  /** 列結合(colspan)の推定結果一覧（開発指示書§21-26）。 */
   columnSpans: ColumnSpanHint[];
+  /** 各行の中心のy座標(PDFページ座標系)。rows.length と同じ長さ。縦書きラベルが何行にまたがるかの判定に使う */
+  rowYs: number[];
+  /** 各列の内容の位置・型の統計(左右に並んだ表の検出などに使う)。columnCount と同じ長さ */
+  columnInfo: ColumnInfo[];
+  /**
+   * 各セルに入った文字の左端x・右端x(セルが空ならnull)。rows と同じ形。
+   * 複数行に割れた見出し(「職員」「の」「区分」)を、位置が揃っているかで1つにまとめる判定に使う
+   */
+  cellExtents: ({ left: number; right: number } | null)[][];
+  /** 各行のフォントの大きさの代表値(行間の判定に使う) */
+  rowFontHeights: number[];
+}
+
+/** 1つの列の内容の統計。「結合セル」(列をまたぐ項目)は含めない */
+export interface ColumnInfo {
+  /** この列に入った項目の左端x・右端xの中央値 */
+  left: number;
+  right: number;
+  /** 空でないセルの数 */
+  filled: number;
+  /** そのうち数値として読めるセルの数 */
+  numeric: number;
 }
 
 function averageItemFontHeight(items: PositionedTextItem[]): number {
@@ -318,32 +418,74 @@ function averageItemFontHeight(items: PositionedTextItem[]): number {
  * 行をまとめて1回だけ推定した結果を、各ページの再構築にそのまま渡す）。
  */
 export function reconstructTable(items: PositionedTextItem[], breaksOverride?: number[]): ReconstructedTable {
-  const lines = groupIntoLines(items);
-  if (lines.length === 0) {
-    return { rows: [], columnCount: 0, rowBoundariesY: [], colBoundariesX: [], columnSpans: [] };
+  const rawLines = groupIntoLines(items);
+  if (rawLines.length === 0) {
+    return {
+      rows: [],
+      columnCount: 0,
+      rowBoundariesY: [],
+      colBoundariesX: [],
+      columnSpans: [],
+      rowYs: [],
+      columnInfo: [],
+      cellExtents: [],
+      rowFontHeights: [],
+    };
   }
 
-  const breaks = breaksOverride ?? computeColumnBreaks(lines);
+  const breaks = breaksOverride ?? computeColumnBreaks(rawLines);
   const columnCount = breaks.length + 1;
+
+  // 字間を広げたタイトル(「高 等 学 校 …」のように1文字ずつ別の項目になっているもの)は
+  // 1つの文字列へまとめる。列の推定自体は元の項目で行い、行の組み立てからまとめた項目を使う。
+  const lines: Line[] = rawLines.map((line) => ({ y: line.y, items: mergeSpacedCharacterRuns(line.items, breaks) }));
 
   const rows: string[][] = [];
   const columnSpans: ColumnSpanHint[] = [];
+  const colLefts: number[][] = Array.from({ length: columnCount }, () => []);
+  const colRights: number[][] = Array.from({ length: columnCount }, () => []);
+  const colFilled: number[] = new Array(columnCount).fill(0);
+  const colNumeric: number[] = new Array(columnCount).fill(0);
 
+  const cellExtents: ({ left: number; right: number } | null)[][] = [];
   lines.forEach((line, rowIndex) => {
-    const row: string[][] = Array.from({ length: columnCount }, () => []);
+    const row: PositionedTextItem[][] = Array.from({ length: columnCount }, () => []);
     for (const item of line.items) {
-      const midX = item.x + item.width / 2;
-      const colIndex = Math.min(columnCount - 1, columnIndexFor(midX, breaks));
-      row[colIndex].push(item.str);
+      const startCol = Math.min(columnCount - 1, columnIndexFor(item.x, breaks));
+      const endCol = Math.min(columnCount - 1, columnIndexFor(item.x + item.width, breaks));
+      row[startCol].push(item);
+      if (startCol === endCol) {
+        // 列の位置の統計には、1つの列に収まっている項目だけを入れる。
+        // 列をまたぐ項目(結合セル・タイトル・長い注記)は、またいだ範囲の「先頭の列」に置く
+        // (中点の列に置くと、結合セルにしたとき先頭以外のセルは捨てられるため、文字が消えてしまう)。
+        colLefts[startCol].push(item.x);
+        colRights[startCol].push(item.x + item.width);
+      }
     }
-    rows.push(row.map((cellParts) => cellParts.join(" ").replace(/\s+/g, " ").trim()));
+    const cells = row.map((parts) => joinCellItems(parts));
+    cellExtents.push(
+      row.map((parts) =>
+        parts.length === 0
+          ? null
+          : {
+              left: Math.min(...parts.map((p) => p.x)),
+              right: Math.max(...parts.map((p) => p.x + p.width)),
+            }
+      )
+    );
+    cells.forEach((text, c) => {
+      if (text === "") return;
+      colFilled[c]++;
+      if (tryParseNumberCell(text) !== null) colNumeric[c]++;
+    });
+    rows.push(cells);
 
     // 列結合(colspan)の推定(§21-26): 1つのテキスト項目の実際のバウンディングボックス
     // (中点ではなく左端〜右端)が、ページ全体で検出された列区切り(breaks)を1つ以上
     // またいでいる場合、その項目は「複数列にまたがるセル」として描画されていたと
     // みなす。breaksはページ全体（他の多くの行）の実際の隙間パターンから決定的に
     // 導出された値のため、特定の行のテキストがそれをまたいでいること自体が
-        // 「その行だけ列が結合されている」強い根拠になる(通常の1列幅の文章が
+    // 「その行だけ列が結合されている」強い根拠になる(通常の1列幅の文章が
     // たまたま隣の列にはみ出す、という状況は考えにくい)。
     // 1行に複数の結合候補がある場合は最大のものを1つだけ採用する
     // (複雑な複数結合は対象外、実用上の精度を優先する方針)。
@@ -383,7 +525,213 @@ export function reconstructTable(items: PositionedTextItem[], breaksOverride?: n
   const maxX = Math.max(...allItems.map((it) => it.x + it.width));
   const colBoundariesX = [minX - 4, ...breaks, maxX + 4];
 
-  return { rows, columnCount, rowBoundariesY, colBoundariesX, columnSpans };
+  const columnInfo: ColumnInfo[] = Array.from({ length: columnCount }, (_, c) => ({
+    left: median(colLefts[c]),
+    right: median(colRights[c]),
+    filled: colFilled[c],
+    numeric: colNumeric[c],
+  }));
+
+  return {
+    rows,
+    columnCount,
+    rowBoundariesY,
+    colBoundariesX,
+    columnSpans,
+    rowYs: lines.map((l) => l.y),
+    columnInfo,
+    cellExtents,
+    rowFontHeights: lines.map((l) => averageItemFontHeight(l.items)),
+  };
+}
+
+/**
+ * 1つのセルに入る複数の項目を、1つの文字列にする。
+ * 隣り合う項目がほぼ接している(「[」と「令和８年勧告」など)場合は、
+ * 余計な空白を入れずにそのままつなぐ。
+ */
+function joinCellItems(parts: PositionedTextItem[]): string {
+  let out = "";
+  parts.forEach((part, i) => {
+    const text = part.str.replace(/\s+/g, " ").trim();
+    if (text === "") return;
+    if (out !== "" && i > 0) {
+      const prev = parts[i - 1];
+      const gap = part.x - (prev.x + prev.width);
+      out += gap < Math.max(part.fontHeight, prev.fontHeight) * 0.25 ? "" : " ";
+    }
+    out += text;
+  });
+  return out.trim();
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// ---------------------------------------------------------------------------
+// 字間を広げたタイトルの結合
+// ---------------------------------------------------------------------------
+
+/** 数字・記号ではなく、文字(漢字・かな・英字)の1文字だけの項目か */
+function isSingleLetter(item: PositionedTextItem): boolean {
+  const t = item.str.trim();
+  return [...t].length === 1 && /\p{L}/u.test(t);
+}
+
+/**
+ * 1行の中で、1文字ずつ等間隔に離れて並んでいる文字の並び(「高 等 学 校 教 育」のような
+ * 字間を広げたタイトル)を1つの項目へまとめる。
+ *
+ * 見出しの1文字ずつ(「月 火 水 木 金」など)が列ごとに並んでいる表と区別するため、
+ * 「並びの中に、同じ列に2文字以上入っている」場合だけまとめる
+ * （列ごとに1文字ずつ入っているなら、それは列の見出しとして残す）。
+ */
+function mergeSpacedCharacterRuns(items: PositionedTextItem[], breaks: number[]): PositionedTextItem[] {
+  const out: PositionedTextItem[] = [];
+  let i = 0;
+  while (i < items.length) {
+    if (!isSingleLetter(items[i])) {
+      out.push(items[i++]);
+      continue;
+    }
+    // iから、等間隔の1文字項目の並びを伸ばす
+    let j = i + 1;
+    while (
+      j < items.length &&
+      isSingleLetter(items[j]) &&
+      Math.abs(items[j].fontHeight - items[i].fontHeight) <= items[i].fontHeight * 0.15
+    ) {
+      j++;
+    }
+    const run = items.slice(i, j);
+    if (run.length >= 4 && isEvenlySpaced(run) && sharesAColumn(run, breaks)) {
+      const first = run[0];
+      const last = run[run.length - 1];
+      out.push({
+        ...first,
+        str: run.map((r) => r.str.trim()).join(""),
+        width: last.x + last.width - first.x,
+      });
+    } else {
+      out.push(...run);
+    }
+    i = j;
+  }
+  return out;
+}
+
+function isEvenlySpaced(run: PositionedTextItem[]): boolean {
+  const pitches: number[] = [];
+  for (let k = 1; k < run.length; k++) pitches.push(run[k].x - run[k - 1].x);
+  const med = median(pitches);
+  const charWidth = median(run.map((r) => r.width));
+  // 字間が文字幅の1.3倍以上(明らかに離れている)で、どの間隔も中央値から1割以内(「基準」のような2文字ずつが列ごとに並ぶ見出しを除くため厳しめにしている)
+  return med >= charWidth * 1.3 && pitches.every((p) => Math.abs(p - med) <= med * 0.1);
+}
+
+function sharesAColumn(run: PositionedTextItem[], breaks: number[]): boolean {
+  const seen = new Set<number>();
+  for (const r of run) {
+    const col = columnIndexFor(r.x + r.width / 2, breaks);
+    if (seen.has(col)) return true;
+    seen.add(col);
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// 縦書きのラベル（セルの左右の余白に1文字ずつ縦に並んだ文字）
+// ---------------------------------------------------------------------------
+
+/** 縦に1文字ずつ並んでいた文字列(縦書きの区分名など) */
+export interface VerticalLabel {
+  text: string;
+  /** 文字が並んでいた列のx座標と幅 */
+  x: number;
+  width: number;
+  /** 先頭の文字・末尾の文字のy座標(PDFページ座標系。yTop >= yBottom) */
+  yTop: number;
+  yBottom: number;
+  fontHeight: number;
+}
+
+const VERTICAL_RUN_MIN_CHARS = 6;
+
+/**
+ * 縦書きのラベル（1文字ずつ縦に並んだ文字の列）を項目の一覧から取り出す。
+ * 取り出さないと、1文字ずつが別々の行として表に混ざってしまう
+ * （「定 24 269,300」のように、数値の行の先頭に文字が1つずつ付いてしまう）。
+ *
+ * 誤検出を避けるため、次の条件をすべて満たす並びだけを縦書きとみなす:
+ * - 1文字(数字以外)の項目が、ほぼ同じx座標で6文字以上、上から下に連続している
+ * - 隣り合う文字の間隔が、文字の大きさに近い(詰めて縦に並んでいる)
+ * - 6文字の中に同じ文字が多くない(「男」「女」が並ぶ性別の列などを除く)
+ */
+export function extractVerticalLabels(items: PositionedTextItem[]): {
+  items: PositionedTextItem[];
+  labels: VerticalLabel[];
+} {
+  const candidates = items.filter((item) => {
+    const t = item.str.trim();
+    return [...t].length === 1 && !/[\p{N}]/u.test(t) && item.fontHeight > 0;
+  });
+  if (candidates.length < VERTICAL_RUN_MIN_CHARS) return { items, labels: [] };
+
+  // x座標が近いものを同じ縦の並びの候補としてまとめる
+  const sorted = [...candidates].sort((a, b) => a.x - b.x || b.y - a.y);
+  const groups: PositionedTextItem[][] = [];
+  for (const item of sorted) {
+    const g = groups.find(
+      (grp) => Math.abs(grp[0].x - item.x) <= 1.5 && Math.abs(grp[0].fontHeight - item.fontHeight) <= 0.8
+    );
+    if (g) g.push(item);
+    else groups.push([item]);
+  }
+
+  const labels: VerticalLabel[] = [];
+  const removed = new Set<PositionedTextItem>();
+  for (const group of groups) {
+    group.sort((a, b) => b.y - a.y);
+    let run: PositionedTextItem[] = [];
+    const flush = () => {
+      if (isVerticalRun(run)) {
+        labels.push({
+          text: run.map((r) => r.str.trim()).join(""),
+          x: Math.min(...run.map((r) => r.x)),
+          width: Math.max(...run.map((r) => r.width)),
+          yTop: run[0].y,
+          yBottom: run[run.length - 1].y,
+          fontHeight: run[0].fontHeight,
+        });
+        run.forEach((r) => removed.add(r));
+      }
+      run = [];
+    };
+    for (const item of group) {
+      const prev = run[run.length - 1];
+      if (prev) {
+        const pitch = prev.y - item.y;
+        const ratio = pitch / item.fontHeight;
+        if (ratio < 0.85 || ratio > 1.5) flush();
+      }
+      run.push(item);
+    }
+    flush();
+  }
+
+  if (labels.length === 0) return { items, labels: [] };
+  labels.sort((a, b) => a.x - b.x || b.yTop - a.yTop);
+  return { items: items.filter((item) => !removed.has(item)), labels };
+}
+
+function isVerticalRun(run: PositionedTextItem[]): boolean {
+  if (run.length < VERTICAL_RUN_MIN_CHARS) return false;
+  const distinct = new Set(run.map((r) => r.str.trim())).size;
+  return distinct / run.length >= 0.5;
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +746,8 @@ const PLAIN_NUMBER_RE = /^[+-]?\d{1,3}(,\d{3})*(\.\d+)?$|^[+-]?\d+(\.\d+)?$/;
 export function tryParseNumberCell(text: string): number | null {
   const t = text.trim();
   if (t === "" || !PLAIN_NUMBER_RE.test(t)) return null;
+  // 先頭が0の数字列(001・03-1234のような番号、郵便番号、コード等)は、0が消えないよう文字列のまま扱う
+  if (/^[+-]?0\d/.test(t)) return null;
   const n = Number(t.replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
 }

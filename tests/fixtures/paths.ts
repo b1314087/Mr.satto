@@ -113,6 +113,9 @@ export const fixtures = {
   // 無い場合には出力しない」ことの両方を確認する。
   pdfToExcelBorderedTablePdf: path.join(GENERATED_DIR, "pdf-to-excel-bordered-table.pdf"),
   pdfToExcelBorderlessTablePdf: path.join(GENERATED_DIR, "pdf-to-excel-borderless-table.pdf"),
+  // PDF→Excelの「使いやすさ」整形テスト用: 同じ構成の表が左右に並び(1〜12と13〜24)、
+  // 縦書きの区分名・字間を広げたタイトル・複数行の見出し・ページ番号を含む2ページのPDF。
+  pdfToExcelSideBySidePdf: path.join(GENERATED_DIR, "pdf-to-excel-side-by-side.pdf"),
 
   // 外出先PC修正指示書§27-28: pdf-to-wordのスキャンPDF(OCR)対応テスト用フィクスチャ。
   // 文字レイヤーを持たない画像のみのPDF（英数字のみ。日本語OCR精度の検証自体が

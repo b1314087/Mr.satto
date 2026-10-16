@@ -11,10 +11,14 @@ import {
   reconstructTable,
   groupIntoLines,
   computeColumnBreaksAcrossPages,
+  extractVerticalLabels,
   tryParseNumberCell,
   tryParseDateCell,
-  type ColumnSpanHint,
+  type VerticalLabel,
 } from "@/lib/pdf/table-reconstruction";
+import { buildPageGrid, type BorderPresence, type GridCell, type GridRow, type PageGrid } from "@/lib/pdf/page-grid";
+import { removePageFurniture } from "@/lib/pdf/page-furniture";
+import type { PositionedTextItem } from "@/lib/pdf/pdfjs-client";
 import type { Row as ExcelRow, Cell as ExcelCellValue } from "write-excel-file/universal";
 
 /**
@@ -66,6 +70,17 @@ import type { Row as ExcelRow, Cell as ExcelCellValue } from "write-excel-file/u
  * その行だけ列が結合されていたとみなす）。どちらも「実用的な精度を目指す。
  * 100%の再現は保証しない」という開発指示書の方針を踏まえた、決定的
  * （非AI）なヒューリスティックである。
+ *
+ * 【使いやすさのための整形(2026-10追加)】
+ * 行・列の推定ができても、PDFの見た目に合わせた表がそのまま「使いやすいExcel」になるとは限らない
+ * （例: 号給1〜60の表と61〜120の表が左右に並んでいる給料表、縦書きの区分名、複数行に割れた見出し、
+ * ページ番号）。そこで、推定した表をExcelに出力する前に、次の整形を行う(いずれも画面から
+ * オン・オフできる)。詳細は src/lib/pdf/page-grid.ts と page-furniture.ts:
+ * - 左右に並んだ同じ構成の表を、縦に1つの表へ連結する
+ * - 縦書きのラベルを、縦に結合した1つのセルにする
+ * - 複数行に割れた見出しを、1行にまとめる(見出しは太字・固定表示にする)
+ * - ページ番号・毎ページ繰り返されるヘッダー/フッターを除く
+ * - ページごとに別シートに分ける(初期状態は1つのシートに連結)
  */
 
 const MAX_PDF_TO_EXCEL_PAGES = 50;
@@ -74,7 +89,9 @@ const MAX_OCR_PAGES = 20;
 /** OCR用にページを描画する倍率と、画像の最長辺の上限(px) */
 const OCR_RENDER_SCALE = 2;
 const MAX_OCR_DIMENSION = 2000;
-const PREVIEW_ROW_LIMIT = 20;
+const PREVIEW_ROW_LIMIT = 30;
+/** 画面の先頭ページのプレビューで見せる行数(変換前の確認用) */
+const FILE_PREVIEW_ROW_LIMIT = 40;
 /** 罫線検出用にページを描画する解像度。OCR用途ほどの高解像度は不要なため控えめにする */
 const BORDER_DETECTION_RENDER_SCALE = 1.5;
 /** この輝度(0〜255)未満を「線が引かれている(インクがある)」とみなす */
@@ -94,10 +111,45 @@ export interface PdfToExcelPageInfo {
   confidence: number | null;
 }
 
+/** 変換の整形オプション。画面のチェックボックスと対応する */
+export interface PdfToExcelOptions {
+  /** 左右に並んだ同じ構成の表を、縦に1つの表へ連結する */
+  stackSideBySide: boolean;
+  /** 複数行に割れた見出しを、1行にまとめる */
+  collapseHeader: boolean;
+  /** ページ番号・毎ページ繰り返されるヘッダー/フッターを除く */
+  removePageFurniture: boolean;
+  /** ページごとに別のシートへ分ける(オフなら1つのシートに連結する) */
+  sheetPerPage: boolean;
+}
+
+export const DEFAULT_PDF_TO_EXCEL_OPTIONS: PdfToExcelOptions = {
+  stackSideBySide: true,
+  collapseHeader: true,
+  removePageFurniture: true,
+  sheetPerPage: false,
+};
+
+/** 整形で何が行われた(または見つかった)かの要約。画面の案内に使う */
+export interface PdfToExcelLayoutNotes {
+  /** 左右に並んだ表を見つけたページがある(連結するかどうかにかかわらず) */
+  sideBySideDetected: boolean;
+  /** 実際に連結したページ数 */
+  sideBySideStackedPages: number;
+  /** 縦書きのラベルをセルにした数 */
+  verticalLabels: number;
+  /** 1行にまとめた見出しの、元の行数の合計 */
+  headerRowsCollapsed: number;
+  /** 取り除いたページ番号・ヘッダー/フッターの行数 */
+  furnitureLinesRemoved: number;
+}
+
 export interface PdfToExcelInput {
   file: File;
   /** スキャンページのOCR言語。省略時は日本語+英数字 */
   ocrLanguage?: OcrLanguageOption;
+  /** 整形オプション。省略した項目は DEFAULT_PDF_TO_EXCEL_OPTIONS */
+  options?: Partial<PdfToExcelOptions>;
   onPageProgress?: (info: {
     currentPage: number;
     totalPages: number;
@@ -119,6 +171,13 @@ export interface PdfToExcelOutput {
   usedOcr: boolean;
   /** OCRしたページの信頼度の平均(0〜100)。OCRしていなければnull */
   ocrAverageConfidence: number | null;
+  layout: PdfToExcelLayoutNotes;
+}
+
+/** 小数点以下の桁数 */
+function decimalPlaces(text: string): number {
+  const m = text.match(/\.(\d+)$/);
+  return m ? m[1].length : 0;
 }
 
 /** 抽出したセルのテキストを、確信を持てる場合のみ数値・日付型に変換する */
@@ -126,17 +185,19 @@ function toExcelCellValue(text: string): ExcelCellValue {
   const trimmed = text.trim();
   if (trimmed === "") return "";
   const num = tryParseNumberCell(trimmed);
-  if (num !== null) return num;
+  if (num !== null) {
+    // 元の表記(3桁区切りのカンマ・小数の桁数)をExcel上でも保つ。
+    // 数値セルにすると既定では「223000」と表示されてしまい、元の見た目と変わるため。
+    const decimals = decimalPlaces(trimmed);
+    if (trimmed.includes(",")) {
+      return { value: num, type: Number, format: decimals > 0 ? `#,##0.${"0".repeat(decimals)}` : "#,##0" };
+    }
+    if (decimals > 0) return { value: num, type: Number, format: `0.${"0".repeat(decimals)}` };
+    return num;
+  }
   const date = tryParseDateCell(trimmed);
   if (date !== null) return { value: date, type: Date, format: "yyyy-mm-dd" };
   return trimmed;
-}
-
-interface BorderPresence {
-  /** 長さ = 行数+1。rowBorderPresent[i] = 行iの「上」(=行i-1の下)に線があるか */
-  rowBorderPresent: boolean[];
-  /** 長さ = 列数+1。colBorderPresent[j] = 列jの「左」(=列j-1の右)に線があるか */
-  colBorderPresent: boolean[];
 }
 
 /**
@@ -223,102 +284,326 @@ async function detectTableBorders(
 }
 
 const BORDER_LINE_COLOR = "#8a8a8f";
+const HEADER_BACKGROUND_COLOR = "#f0f0f3";
 
-/**
- * table-reconstruction.tsの1行分の文字列配列を、罫線・結合セル情報を反映した
- * write-excel-file用の行(ExcelRow)へ変換する（§21-26）。スタイル指定が
- * 何も無いセルはこれまでどおりプレーンな値のまま出力する
- * (write-excel-fileの Cell = CellObject | Value | null | undefined という
- * 型を活かし、不要な変更を避ける)。
- */
-function buildExcelRow(
-  row: string[],
-  rowIndex: number,
-  columnCount: number,
-  borders: BorderPresence | null,
-  spansInRow: ColumnSpanHint[]
-): ExcelRow {
-  const spanByCol = new Map<number, number>();
-  const spannedAway = new Set<number>();
-  for (const s of spansInRow) {
-    if (s.span < 2) continue;
-    spanByCol.set(s.col, s.span);
-    for (let c = s.col + 1; c < s.col + s.span; c++) spannedAway.add(c);
-  }
-
-  const cells: ExcelRow = [];
-  for (let c = 0; c < columnCount; c++) {
-    if (spannedAway.has(c)) {
-      // write-excel-fileの仕様: 結合されたセルのうち先頭以外はnullで表現する
-      cells.push(null);
-      continue;
-    }
-    const value = toExcelCellValue(row[c] ?? "");
-    const span = spanByCol.get(c);
-    const b = borders
-      ? {
-          top: borders.rowBorderPresent[rowIndex],
-          bottom: borders.rowBorderPresent[rowIndex + 1],
-          left: borders.colBorderPresent[c],
-          right: borders.colBorderPresent[c + 1],
-        }
-      : null;
-    const hasBorder = b && (b.top || b.bottom || b.left || b.right);
-    if (!span && !hasBorder) {
-      cells.push(value);
-      continue;
-    }
-    const base = typeof value === "object" && value !== null ? { ...value } : { value };
-    const cellObj: Record<string, unknown> = { ...base };
-    if (span) cellObj.columnSpan = span;
-    if (b?.top) {
-      cellObj.topBorderColor = BORDER_LINE_COLOR;
-      cellObj.topBorderStyle = "thin";
-    }
-    if (b?.bottom) {
-      cellObj.bottomBorderColor = BORDER_LINE_COLOR;
-      cellObj.bottomBorderStyle = "thin";
-    }
-    if (b?.left) {
-      cellObj.leftBorderColor = BORDER_LINE_COLOR;
-      cellObj.leftBorderStyle = "thin";
-    }
-    if (b?.right) {
-      cellObj.rightBorderColor = BORDER_LINE_COLOR;
-      cellObj.rightBorderStyle = "thin";
-    }
-    cells.push(cellObj as ExcelCellValue);
-  }
-  return cells;
+/** セル内の文字の表示幅(全角は2、半角は1) */
+function displayWidth(text: string): number {
+  let w = 0;
+  for (const ch of text) w += ch.charCodeAt(0) > 0xff ? 2 : 1;
+  return w;
 }
 
 /**
- * 画面のプレビュー用: 先頭ページの文字情報から、Excelの表になる行を取り出す
- * (変換本体と同じ getPositionedTextItems → reconstructTable を使う。列の区切りは先頭3ページ分から推定)。
+ * ページのグリッドのセルを、罫線・結合・縦書き・見出しの書式を反映した
+ * write-excel-file用のセルへ変換する。スタイル指定が何も無いセルは、
+ * これまでどおりプレーンな値のまま出力する(不要な変更を避ける)。
+ */
+function toExcelCell(cell: GridCell): ExcelCellValue {
+  // write-excel-fileの仕様: 結合されたセルのうち先頭以外はnullで表現する
+  if (cell.covered) return null;
+  const value = toExcelCellValue(cell.text);
+  const b = cell.borders;
+  const hasBorder = !!b && (b.top || b.bottom || b.left || b.right);
+  const styled = !!cell.columnSpan || !!cell.rowSpan || !!cell.vertical || !!cell.header || hasBorder;
+  if (!styled) return value;
+
+  const base = typeof value === "object" && value !== null ? { ...value } : { value };
+  const obj: Record<string, unknown> = { ...base };
+  if (cell.columnSpan) obj.columnSpan = cell.columnSpan;
+  if (cell.rowSpan) obj.rowSpan = cell.rowSpan;
+  if (cell.vertical) {
+    // 縦書きのラベル。上から下へ読む向きに回転し、結合したセルの中央に置く
+    obj.textRotation = -90;
+    obj.align = "center";
+    obj.alignVertical = "center";
+  }
+  if (cell.header && cell.text.trim() !== "") {
+    obj.fontWeight = "bold";
+    obj.backgroundColor = HEADER_BACKGROUND_COLOR;
+    obj.align = "center";
+    obj.alignVertical = "center";
+    obj.wrap = true;
+  }
+  if (b?.top) {
+    obj.topBorderColor = BORDER_LINE_COLOR;
+    obj.topBorderStyle = "thin";
+  }
+  if (b?.bottom) {
+    obj.bottomBorderColor = BORDER_LINE_COLOR;
+    obj.bottomBorderStyle = "thin";
+  }
+  if (b?.left) {
+    obj.leftBorderColor = BORDER_LINE_COLOR;
+    obj.leftBorderStyle = "thin";
+  }
+  if (b?.right) {
+    obj.rightBorderColor = BORDER_LINE_COLOR;
+    obj.rightBorderStyle = "thin";
+  }
+  return obj as ExcelCellValue;
+}
+
+/** 数値が2つ以上入っている行(表の本体のデータ行) */
+function isDataGridRow(row: GridRow | undefined): boolean {
+  return !!row && row.filter((c) => !c.covered && tryParseNumberCell(c.text) !== null).length >= 2;
+}
+
+function lastNonEmptyRow(rows: GridRow[]): GridRow | undefined {
+  for (let i = rows.length - 1; i >= 0; i--) if (rows[i].some((c) => c.text.trim() !== "")) return rows[i];
+  return undefined;
+}
+
+function firstNonEmptyRow(rows: GridRow[]): GridRow | undefined {
+  return rows.find((r) => r.some((c) => c.text.trim() !== ""));
+}
+
+interface SheetModel {
+  name: string;
+  rows: GridRow[];
+  columnCount: number;
+  /** 見出しとしてまとめた行のうち、先頭のシートで最後のものの行番号+1。固定表示する行数(0なら固定しない) */
+  stickyRows: number;
+}
+
+/**
+ * ページごとのグリッドを、1つ以上のシート(行の並び)にまとめる。
+ * 1つのシートに連結する場合、ページの切れ目に空行を1行はさむ。ただし、前のページの最後も
+ * 次のページの最初もデータ行の場合(表が次のページへ続いている)は、続けて並べる。
+ * 空行が入ると、並べ替えやフィルターが途中で切れてしまうため。
+ */
+function assembleSheets(grids: { pageNumber: number; grid: PageGrid }[], sheetPerPage: boolean): SheetModel[] {
+  const sheets: SheetModel[] = [];
+  const startNew = (name: string): SheetModel => {
+    const sheet: SheetModel = { name, rows: [], columnCount: 1, stickyRows: 0 };
+    sheets.push(sheet);
+    return sheet;
+  };
+
+  let current: SheetModel | null = null;
+  for (const { pageNumber, grid } of grids) {
+    if (sheetPerPage || current === null) current = startNew(sheetPerPage ? `${pageNumber}ページ` : "Sheet1");
+    if (current.rows.length > 0) {
+      const continues = isDataGridRow(lastNonEmptyRow(current.rows)) && isDataGridRow(firstNonEmptyRow(grid.rows));
+      if (!continues) current.rows.push([]);
+    }
+    const offset = current.rows.length;
+    grid.rows.forEach((row, i) => {
+      current!.rows.push(row);
+      // 先頭のページの見出し行まで固定表示する(スクロールしても見出しが見える)
+      if (current!.stickyRows === 0 && row.some((c) => c.header && c.text.trim() !== "")) {
+        current!.stickyRows = offset + i + 1;
+      }
+    });
+    current.columnCount = Math.max(current.columnCount, grid.columnCount);
+  }
+
+  // 右端の、全行で空の列を取り除く
+  for (const sheet of sheets) {
+    let used = 0;
+    for (const row of sheet.rows) {
+      row.forEach((cell, c) => {
+        if (cell.text.trim() !== "" || cell.vertical) used = Math.max(used, c + 1);
+      });
+    }
+    used = Math.max(1, used);
+    sheet.columnCount = used;
+    sheet.rows = sheet.rows.map((row) => {
+      const trimmed = row.slice(0, used);
+      // 取り除いた列にかかる結合は、範囲内に収める
+      trimmed.forEach((cell, c) => {
+        if (cell.columnSpan && c + cell.columnSpan > used) {
+          const clipped = used - c;
+          if (clipped >= 2) cell.columnSpan = clipped;
+          else delete cell.columnSpan;
+        }
+      });
+      return trimmed;
+    });
+  }
+  return sheets;
+}
+
+/** 内容に合わせた列幅を求める(結合・縦書きのセルと、極端に長い文は含めない) */
+function computeColumnWidths(sheet: SheetModel): { width: number }[] {
+  const widths: number[] = new Array(sheet.columnCount).fill(6);
+  for (const row of sheet.rows) {
+    row.forEach((cell, c) => {
+      if (cell.covered || cell.columnSpan || cell.vertical || cell.text === "") return;
+      widths[c] = Math.max(widths[c], Math.min(displayWidth(cell.text) + 2, 40));
+    });
+  }
+  return widths.map((width) => ({ width }));
+}
+
+function sheetToExcelRows(sheet: SheetModel): ExcelRow[] {
+  return sheet.rows.map((row) => {
+    const cells: ExcelRow = [];
+    for (let c = 0; c < sheet.columnCount; c++) cells.push(row[c] ? toExcelCell(row[c]) : "");
+    return cells;
+  });
+}
+
+function gridRowToStrings(row: GridRow, columnCount: number): string[] {
+  const out: string[] = [];
+  for (let c = 0; c < columnCount; c++) out.push(row[c]?.covered ? "" : (row[c]?.text ?? ""));
+  return out;
+}
+
+interface PageData {
+  pageNumber: number;
+  page: PdfjsPage;
+  items: PositionedTextItem[];
+  method: "text-layer" | "ocr";
+  confidence: number | null;
+}
+
+interface PreparedPage {
+  items: PositionedTextItem[];
+  labels: VerticalLabel[];
+  furnitureRemoved: number;
+}
+
+/**
+ * 表の推定の前に、ページ番号・ヘッダー/フッターの除去と、縦書きラベルの取り出しを行う。
+ * どちらも文字情報のあるPDFのページだけが対象(OCRのページは座標系が画像のピクセルで、
+ * 余白の位置の判定が使えないため行わない)。
+ */
+function prepareItems(pageData: PageData[], options: PdfToExcelOptions): PreparedPage[] {
+  const prepared: PreparedPage[] = pageData.map((p) => ({ items: p.items, labels: [], furnitureRemoved: 0 }));
+  const textIndexes = pageData.map((p, i) => (p.method === "text-layer" ? i : -1)).filter((i) => i >= 0);
+
+  if (options.removePageFurniture && textIndexes.length > 0) {
+    const results = removePageFurniture(
+      textIndexes.map((i) => {
+        const [, y0, , y1] = pageData[i].page.view;
+        return { items: pageData[i].items, pageHeight: y1 - y0, pageBottom: y0 };
+      })
+    );
+    textIndexes.forEach((i, k) => {
+      prepared[i].items = results[k].items;
+      prepared[i].furnitureRemoved = results[k].removedLines;
+    });
+  }
+
+  for (const i of textIndexes) {
+    const extracted = extractVerticalLabels(prepared[i].items);
+    prepared[i].items = extracted.items;
+    prepared[i].labels = extracted.labels;
+  }
+  return prepared;
+}
+
+/**
+ * 全ページのテキストから、整形したページごとのグリッドを作る(変換本体と画面のプレビューで共通)。
+ * detectBordersがtrueのとき、文字情報のあるページは画像化して罫線も調べる。
+ */
+async function buildGrids(
+  pageData: PageData[],
+  options: PdfToExcelOptions,
+  detectBorders: boolean
+): Promise<{ pageNumber: number; method: "text-layer" | "ocr"; confidence: number | null; grid: PageGrid | null }[]> {
+  const prepared = prepareItems(pageData, options);
+
+  // 列区切りの共有は、座標系が同じページ同士(文字情報のページ=PDFの座標、OCRのページ=画像のピクセル座標)
+  // でだけ行う。文字情報のあるページとスキャンのページが混在するPDFで、座標系の違うページの
+  // 位置を混ぜて推定しないため、方式ごとに別々に推定する。
+  const sharedBreaksByMethod = new Map<"text-layer" | "ocr", ReturnType<typeof computeColumnBreaksAcrossPages>>();
+  for (const m of ["text-layer", "ocr"] as const) {
+    const indexes = pageData.map((p, i) => (p.method === m ? i : -1)).filter((i) => i >= 0);
+    if (indexes.length > 0) {
+      sharedBreaksByMethod.set(
+        m,
+        computeColumnBreaksAcrossPages(indexes.map((i) => groupIntoLines(prepared[i].items)))
+      );
+    }
+  }
+
+  // 全ページで共通の列区切りを使って各ページの表を再構築する。これにより、あるページでは
+  // 記入が少なく単独では十分な根拠が得られない列でも、他のページの内容と合わせて正しく
+  // 列として検出され、かつ全ページで同じ列数・区切り位置になる。
+  const out: { pageNumber: number; method: "text-layer" | "ocr"; confidence: number | null; grid: PageGrid | null }[] = [];
+  for (let i = 0; i < pageData.length; i++) {
+    const { pageNumber, page, method, confidence } = pageData[i];
+    const table = reconstructTable(prepared[i].items, sharedBreaksByMethod.get(method));
+    if (table.rows.length === 0) {
+      out.push({ pageNumber, method, confidence, grid: null });
+      continue;
+    }
+    // 罫線検出(§21-26)は行数が2以上(=表らしい構造)のページに限って行う
+    // (OCRのページは座標系が画像のピクセルでPDFの座標と一致しないため、罫線検出は行わない)
+    const borders =
+      detectBorders && table.rows.length >= 2 && method === "text-layer"
+        ? await detectTableBorders(page, table.rowBoundariesY, table.colBoundariesX)
+        : null;
+    const grid = buildPageGrid(table, prepared[i].labels, borders, options);
+    grid.furnitureRemoved = prepared[i].furnitureRemoved;
+    out.push({ pageNumber, method, confidence, grid });
+  }
+  return out;
+}
+
+function summarizeLayout(grids: { grid: PageGrid | null }[]): PdfToExcelLayoutNotes {
+  const notes: PdfToExcelLayoutNotes = {
+    sideBySideDetected: false,
+    sideBySideStackedPages: 0,
+    verticalLabels: 0,
+    headerRowsCollapsed: 0,
+    furnitureLinesRemoved: 0,
+  };
+  for (const { grid } of grids) {
+    if (!grid) continue;
+    if (grid.sideBySideDetected) notes.sideBySideDetected = true;
+    if (grid.stacked) notes.sideBySideStackedPages++;
+    notes.verticalLabels += grid.verticalLabelCount;
+    notes.headerRowsCollapsed += grid.collapsedHeaderRows;
+    notes.furnitureLinesRemoved += grid.furnitureRemoved;
+  }
+  return notes;
+}
+
+function resolveOptions(partial?: Partial<PdfToExcelOptions>): PdfToExcelOptions {
+  return { ...DEFAULT_PDF_TO_EXCEL_OPTIONS, ...partial };
+}
+
+/**
+ * 画面のプレビュー用: 先頭ページ(など)の文字情報から、Excelの表になる行を取り出す
+ * (変換本体と同じ getPositionedTextItems → 表の推定 → 整形 を使う。列の区切りは先頭3ページ分から推定)。
  * 文字情報が無いページ(スキャン画像)はOCRが必要で重いため、プレビューでは読み取らず
  * hasTextLayer: false を返す(変換を実行したときにOCRされる)。
+ * 左右に並んだ表の連結など、整形の結果が見えるよう、変換と同じオプションを渡せる。
  */
 export async function previewPdfToExcelRows(
-  file: File
-): Promise<{ pageCount: number; hasTextLayer: boolean; rows: string[][] }> {
+  file: File,
+  optionsInput?: Partial<PdfToExcelOptions>
+): Promise<{ pageCount: number; hasTextLayer: boolean; rows: string[][]; layout: PdfToExcelLayoutNotes | null }> {
+  const options = resolveOptions(optionsInput);
   const pdf = await loadPdfDocument(file);
   if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
-  const itemsByPage: Awaited<ReturnType<typeof getPositionedTextItems>>[] = [];
+  const pageData: PageData[] = [];
   for (let n = 1; n <= Math.min(pdf.numPages, 3); n++) {
-    itemsByPage.push(await getPositionedTextItems(await pdf.getPage(n)));
+    const page = await pdf.getPage(n);
+    pageData.push({ pageNumber: n, page, items: await getPositionedTextItems(page), method: "text-layer", confidence: null });
   }
-  if (!pageHasText(itemsByPage[0])) return { pageCount: pdf.numPages, hasTextLayer: false, rows: [] };
-  const textPages = itemsByPage.filter((items) => pageHasText(items));
-  const breaks = computeColumnBreaksAcrossPages(textPages.map((items) => groupIntoLines(items)));
-  const table = reconstructTable(itemsByPage[0], breaks);
-  return { pageCount: pdf.numPages, hasTextLayer: true, rows: table.rows };
+  if (!pageHasText(pageData[0].items)) return { pageCount: pdf.numPages, hasTextLayer: false, rows: [], layout: null };
+  const textPages = pageData.filter((p) => pageHasText(p.items));
+  const grids = await buildGrids(textPages, options, false);
+  const sheets = assembleSheets(
+    grids.filter((g): g is typeof g & { grid: PageGrid } => g.grid !== null).map((g) => ({ pageNumber: g.pageNumber, grid: g.grid })),
+    false
+  );
+  const first = sheets[0];
+  const rows = first
+    ? first.rows.slice(0, FILE_PREVIEW_ROW_LIMIT).map((row) => gridRowToStrings(row, first.columnCount))
+    : [];
+  return { pageCount: pdf.numPages, hasTextLayer: true, rows, layout: summarizeLayout(grids) };
 }
 
 export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfToExcelOutput> {
-  async process({ file, ocrLanguage, onPageProgress }: PdfToExcelInput): Promise<PdfToExcelOutput> {
+  async process({ file, ocrLanguage, options: optionsInput, onPageProgress }: PdfToExcelInput): Promise<PdfToExcelOutput> {
     if (file.size === 0) {
       throw new Error("空のファイルは処理できません。別のファイルを選択してください。");
     }
+    const options = resolveOptions(optionsInput);
 
     const pdf = await loadPdfDocument(file);
     if (pdf.numPages === 0) {
@@ -330,10 +615,7 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
       );
     }
 
-    const sheetRows: ExcelRow[] = [];
     const pages: PdfToExcelPageInfo[] = [];
-    const previewRows: string[][] = [];
-    let totalRowCount = 0;
     const ocrConfidences: number[] = [];
     const language = ocrLanguage ?? "ja+en";
 
@@ -341,15 +623,8 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
     // 1つの表で、ページごとに列数・区切り位置がばらつかないようにするには
     // 列区切りを全ページの行をまとめて1回だけ推定する必要がある
     // (computeColumnBreaksAcrossPages)ため、ここでは各ページのテキスト取得・
-    // 進捗通知・文字有無の判定のみ行い、表への再構築(reconstructTable)は
-    // Pass 2 にまわす。
-    const pageData: {
-      pageNumber: number;
-      page: PdfjsPage;
-      items: Awaited<ReturnType<typeof getPositionedTextItems>>;
-      method: "text-layer" | "ocr";
-      confidence: number | null;
-    }[] = [];
+    // 進捗通知・文字有無の判定のみ行い、表への再構築は Pass 2 (buildGrids) にまわす。
+    const pageData: PageData[] = [];
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
       onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages });
 
@@ -390,49 +665,21 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
       pageData.push({ pageNumber, page, items, method, confidence });
     }
 
-    // 列区切りの共有は、座標系が同じページ同士(文字情報のページ=PDFの座標、OCRのページ=画像のピクセル座標)
-    // でだけ行う。文字情報のあるページとスキャンのページが混在するPDFで、座標系の違うページの
-    // 位置を混ぜて推定しないため、方式ごとに別々に推定する。
-    const sharedBreaksByMethod = new Map<"text-layer" | "ocr", ReturnType<typeof computeColumnBreaksAcrossPages>>();
-    for (const m of ["text-layer", "ocr"] as const) {
-      const group = pageData.filter((p) => p.method === m);
-      if (group.length > 0) {
-        sharedBreaksByMethod.set(m, computeColumnBreaksAcrossPages(group.map((p) => groupIntoLines(p.items))));
-      }
-    }
+    const built = await buildGrids(pageData, options, true);
 
-    // Pass 2: 全ページで共通の列区切り(sharedBreaks)を使って各ページの表を
-    // 再構築する。これにより、あるページでは記入が少なく単独では十分な
-    // 根拠が得られない列でも、他のページの内容と合わせて正しく列として
-    // 検出され、かつ全ページで同じ列数・区切り位置になる。
-    for (const { pageNumber, page, items, method, confidence } of pageData) {
-      const table = reconstructTable(items, sharedBreaksByMethod.get(method));
-      if (table.rows.length === 0) {
+    const gridsForSheet: { pageNumber: number; grid: PageGrid }[] = [];
+    let totalRowCount = 0;
+    for (const { pageNumber, method, confidence, grid } of built) {
+      if (!grid || grid.rows.length === 0) {
         pages.push({ pageNumber, rowCount: 0, columnCount: 0, method, confidence });
         continue;
       }
-
-      if (sheetRows.length > 0) {
-        // ページの切れ目が分かるよう、空行を1行はさんでから連結する
-        sheetRows.push(new Array(Math.max(table.columnCount, 1)).fill(""));
-      }
-
-      // 罫線検出(§21-26)は行数が2以上(=表らしい構造)のページに限って行う
-      // (1行だけのページに罫線検出コストをかけても実益が薄いため)。
-      // (OCRのページは座標系が画像のピクセルでPDFの座標と一致しないため、罫線検出は行わない)
-      const borders = table.rows.length >= 2 && method === "text-layer" ? await detectTableBorders(page, table.rowBoundariesY, table.colBoundariesX) : null;
-
-      table.rows.forEach((row, rowIndex) => {
-        const spansInRow = table.columnSpans.filter((s) => s.row === rowIndex);
-        sheetRows.push(buildExcelRow(row, rowIndex, table.columnCount, borders, spansInRow));
-        if (previewRows.length < PREVIEW_ROW_LIMIT) previewRows.push(row);
-      });
-
-      pages.push({ pageNumber, rowCount: table.rows.length, columnCount: table.columnCount, method, confidence });
-      totalRowCount += table.rows.length;
+      gridsForSheet.push({ pageNumber, grid });
+      pages.push({ pageNumber, rowCount: grid.rows.length, columnCount: grid.columnCount, method, confidence });
+      totalRowCount += grid.rows.length;
     }
 
-    if (sheetRows.length === 0) {
+    if (gridsForSheet.length === 0) {
       throw new Error(
         ocrConfidences.length > 0
           ? "スキャン画像から表として認識できる文字を読み取れませんでした。画像が鮮明か、傾きや影が大きくないかをご確認ください。"
@@ -440,10 +687,21 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
       );
     }
 
+    const sheets = assembleSheets(gridsForSheet, options.sheetPerPage);
+    const previewRows = sheets[0].rows
+      .slice(0, PREVIEW_ROW_LIMIT)
+      .map((row) => gridRowToStrings(row, sheets[0].columnCount));
+
     const { default: writeXlsxFile } = await import("write-excel-file/universal");
     let blob: Blob;
     try {
-      blob = await writeXlsxFile(sheetRows).toBlob();
+      const sheetDefs = sheets.map((sheet) => ({
+        data: sheetToExcelRows(sheet),
+        sheet: sheet.name,
+        columns: computeColumnWidths(sheet),
+        ...(sheet.stickyRows > 0 ? { stickyRowsCount: sheet.stickyRows } : {}),
+      }));
+      blob = await writeXlsxFile(sheetDefs).toBlob();
     } catch {
       throw new Error("Excelファイルの生成に失敗しました");
     }
@@ -458,6 +716,7 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
       usedOcr: ocrConfidences.length > 0,
       ocrAverageConfidence:
         ocrConfidences.length > 0 ? ocrConfidences.reduce((a, b) => a + b, 0) / ocrConfidences.length : null,
+      layout: summarizeLayout(built),
     };
   }
 }

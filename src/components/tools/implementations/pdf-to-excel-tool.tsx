@@ -7,12 +7,101 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
-import { CsvPreviewTable } from "@/components/tools/implementations/shared/csv-preview-table";
-import { PdfToExcelProcessor, previewPdfToExcelRows, type PdfToExcelOutput } from "@/lib/processors/browser/pdf-to-excel";
+import {
+  DEFAULT_PDF_TO_EXCEL_OPTIONS,
+  PdfToExcelProcessor,
+  previewPdfToExcelRows,
+  type PdfToExcelLayoutNotes,
+  type PdfToExcelOptions,
+  type PdfToExcelOutput,
+} from "@/lib/processors/browser/pdf-to-excel";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
-type TablePreview = { file: File; hasTextLayer: boolean; rows: string[][] } | { file: File; error: string };
+type TablePreview =
+  | { file: File; hasTextLayer: boolean; rows: string[][]; layout: PdfToExcelLayoutNotes | null }
+  | { file: File; error: string };
+
+/** 整形の結果(または見つかった構造)を、利用者向けの短い文にする */
+function describeLayout(layout: PdfToExcelLayoutNotes, options: PdfToExcelOptions): string[] {
+  const notes: string[] = [];
+  if (layout.sideBySideStackedPages > 0) {
+    notes.push("左右に並んでいた同じ構成の表を、縦に1つの表へつなげました。");
+  } else if (layout.sideBySideDetected && !options.stackSideBySide) {
+    notes.push("左右に並んだ表を見つけました。右の「左右に並んだ表を縦につなげる」をオンにすると1つの表になります。");
+  }
+  if (layout.verticalLabels > 0) {
+    notes.push(`縦書きの区分名など ${layout.verticalLabels} か所を、縦に結合した1つのセルにしました。`);
+  }
+  if (layout.headerRowsCollapsed > 0) {
+    notes.push("複数行に割れていた見出しを1行にまとめました（太字で、スクロールしても固定表示されます）。");
+  }
+  if (layout.furnitureLinesRemoved > 0) {
+    notes.push(`ページ番号・毎ページ繰り返されるヘッダー/フッター ${layout.furnitureLinesRemoved} 行を除きました。`);
+  }
+  return notes;
+}
+
+/** 変換後の表のプレビュー。数値が「223,…」のように省略されないよう、横にスクロールして全文を見せる */
+function ScrollPreviewTable({ rows, maxRows }: { rows: string[][]; maxRows: number }) {
+  const shown = rows.slice(0, maxRows);
+  const colCount = Math.max(...shown.map((r) => r.length));
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="max-h-96 overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
+        <table className="min-w-full border-collapse text-xs">
+          <tbody>
+            {shown.map((row, i) => (
+              <tr key={i}>
+                {Array.from({ length: colCount }).map((_, j) => (
+                  <td
+                    key={j}
+                    className="whitespace-nowrap border border-neutral-200 px-2 py-1 text-neutral-700 dark:border-neutral-800 dark:text-neutral-200"
+                  >
+                    {row[j] ?? ""}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > maxRows && (
+        <p className="text-xs text-neutral-400 dark:text-neutral-500">プレビューは先頭{maxRows}行のみ表示しています。</p>
+      )}
+    </div>
+  );
+}
+
+function OptionCheckbox({
+  checked,
+  onChange,
+  label,
+  hint,
+  testId,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+  hint: string;
+  testId: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+      <input
+        type="checkbox"
+        data-testid={testId}
+        className="mt-1"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="flex flex-col">
+        <span>{label}</span>
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">{hint}</span>
+      </span>
+    </label>
+  );
+}
 
 /**
  * PDF→Excel（Phase 2-D）。
@@ -32,6 +121,7 @@ export function PdfToExcelTool() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfToExcelOutput | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
+  const [options, setOptions] = useState<PdfToExcelOptions>(DEFAULT_PDF_TO_EXCEL_OPTIONS);
 
   // OCR用のWorker(WASM)はセッション中使い回すため、画面を離れるときに解放する
   useEffect(() => {
@@ -40,14 +130,14 @@ export function PdfToExcelTool() {
     };
   }, []);
 
-  // ファイルを選んだ時点で、先頭ページから作られるExcelの表をプレビューする(変換と同じ表の推定)
+  // ファイルを選んだ時点(と整形オプションを変えたとき)に、Excelになる表の先頭をプレビューする(変換と同じ表の推定・整形)
   const [preview, setPreview] = useState<TablePreview | null>(null);
   useEffect(() => {
     if (!file) return;
     let cancelled = false;
-    previewPdfToExcelRows(file)
+    previewPdfToExcelRows(file, options)
       .then((o) => {
-        if (!cancelled) setPreview({ file, hasTextLayer: o.hasTextLayer, rows: o.rows });
+        if (!cancelled) setPreview({ file, hasTextLayer: o.hasTextLayer, rows: o.rows, layout: o.layout });
       })
       .catch((e) => {
         if (!cancelled) setPreview({ file, error: e instanceof Error ? e.message : "プレビューを作成できませんでした" });
@@ -55,7 +145,7 @@ export function PdfToExcelTool() {
     return () => {
       cancelled = true;
     };
-  }, [file]);
+  }, [file, options]);
   const currentPreview = file && preview && preview.file === file ? preview : null;
 
   function handleSelect(files: File[]) {
@@ -63,6 +153,13 @@ export function PdfToExcelTool() {
     setResult(null);
     setStatus("idle");
     setError(null);
+  }
+
+  function updateOption<K extends keyof PdfToExcelOptions>(key: K, value: PdfToExcelOptions[K]) {
+    setOptions((prev) => ({ ...prev, [key]: value }));
+    // オプションを変えたら、前の変換結果は古くなるので消す(もう一度変換してもらう)
+    setResult(null);
+    setStatus("idle");
   }
 
   async function handleRun() {
@@ -75,6 +172,7 @@ export function PdfToExcelTool() {
     try {
       const output = await new PdfToExcelProcessor().process({
         file,
+        options,
         onPageProgress: (info) => {
           if (info.method === "ocr") {
             const pct = Math.round((info.ocrProgress ?? 0) * 100);
@@ -109,9 +207,10 @@ export function PdfToExcelTool() {
           ファイルが外部のサーバーへ送信されることはありません。
         </p>
         <p>
-          罫線・結合セルの再現も試みますが（PDFの見た目を解析した推定によるもので、常に完全に正確とは限りません）、
-          複数の表が混在する複雑なレイアウトでは、正しく変換できない場合があります。
-          どんなPDFでも完全にExcel化できるものではありません。
+          罫線・結合セルの再現も試みます。左右に並んだ表の縦への連結、縦書きの区分名の結合、複数行に割れた見出しの
+          1行化、ページ番号の除去も自動で行います（いずれも下の設定でオン・オフできます）。
+          PDFの見た目を解析した推定のため、常に完全に正確とは限らず、複数の表が混在する複雑なレイアウトでは
+          正しく変換できない場合があります。どんなPDFでも完全にExcel化できるものではありません。
         </p>
         <p>
           スキャンした画像のPDF（文字情報のないページ）は、ブラウザ内の文字認識(OCR・日本語と英数字)で読み取ります。
@@ -147,7 +246,19 @@ export function PdfToExcelTool() {
               <p role="alert" className="text-sm text-red-600 dark:text-red-400">{currentPreview.error}</p>
             ) : currentPreview.hasTextLayer ? (
               currentPreview.rows.length > 0 ? (
-                <CsvPreviewTable rows={currentPreview.rows} maxRows={10} maxCols={8} />
+                <>
+                  <ScrollPreviewTable rows={currentPreview.rows} maxRows={14} />
+                  {currentPreview.layout && describeLayout(currentPreview.layout, options).length > 0 && (
+                    <ul
+                      data-testid="layout-notes"
+                      className="flex list-disc flex-col gap-0.5 pl-5 text-xs text-emerald-700 dark:text-emerald-400"
+                    >
+                      {describeLayout(currentPreview.layout, options).map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                  )}
+                </>
               ) : (
                 <p className="text-xs text-amber-700 dark:text-amber-400">先頭ページから表として認識できる内容が見つかりませんでした。</p>
               )
@@ -158,6 +269,45 @@ export function PdfToExcelTool() {
             )}
           </section>
         </div>
+      )}
+
+      {file && (
+        <section
+          aria-label="変換の設定"
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+        >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">変換の設定</p>
+          {currentPreview && !("error" in currentPreview) && currentPreview.layout?.sideBySideDetected && (
+            <OptionCheckbox
+              testId="option-stack-side-by-side"
+              checked={options.stackSideBySide}
+              onChange={(v) => updateOption("stackSideBySide", v)}
+              label="左右に並んだ表を縦につなげる"
+              hint="同じ列構成の表が左右に並んでいる場合に、上から順に縦に1つの表へつなげます（並べ替え・集計がしやすくなります）。"
+            />
+          )}
+          <OptionCheckbox
+            testId="option-collapse-header"
+            checked={options.collapseHeader}
+            onChange={(v) => updateOption("collapseHeader", v)}
+            label="複数行に割れた見出しを1行にまとめる"
+            hint="見出しが何行にも分かれている表を、列ごとに1行の見出し（太字・固定表示）にします。"
+          />
+          <OptionCheckbox
+            testId="option-remove-furniture"
+            checked={options.removePageFurniture}
+            onChange={(v) => updateOption("removePageFurniture", v)}
+            label="ページ番号・毎ページのヘッダー/フッターを除く"
+            hint="ページの上下の余白にある「38」「[令和8年勧告]」のような行を、表のデータに混ぜません。"
+          />
+          <OptionCheckbox
+            testId="option-sheet-per-page"
+            checked={options.sheetPerPage}
+            onChange={(v) => updateOption("sheetPerPage", v)}
+            label="ページごとに別のシートに分ける"
+            hint="オフの場合は、全ページを1つのシートに続けて並べます。"
+          />
+        </section>
       )}
 
       {file && (
@@ -185,6 +335,17 @@ export function PdfToExcelTool() {
             <span>検出行数: {result.totalRowCount}</span>
             <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
           </div>
+
+          {describeLayout(result.layout, options).length > 0 && (
+            <ul
+              data-testid="result-layout-notes"
+              className="flex list-disc flex-col gap-0.5 pl-5 text-xs text-emerald-700 dark:text-emerald-400"
+            >
+              {describeLayout(result.layout, options).map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
 
           {result.usedOcr && (
             <div className="flex items-start gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
