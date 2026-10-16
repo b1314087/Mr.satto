@@ -75,7 +75,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await expect(page.getByText(/無料利用中：あと\d+分/)).toBeVisible();
   });
 
-  test("一時利用中に実際にツールを最後まで使え、ダウンロード直前後には広告枠が表示される（Freeのまま）", async ({
+  test("一時利用中に実際にツールを最後まで使え、ダウンロードの前後には広告枠が出ない（Freeのまま）", async ({
     page,
     context,
     baseURL,
@@ -89,12 +89,13 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await page.getByRole("button", { name: "リサイズする" }).click();
     await waitForSuccess(page, "完了");
 
-    // Free（広告ありプラン）のままなので、ダウンロード導線の前後に通常広告枠が出る
-    // （準備中プレースホルダーでよい。レイアウトは崩れず、ダウンロード自体は妨げられない）
-    await expect(page.locator('[data-ad-placement="pre-download"]')).toBeVisible();
+    // Free（広告ありプラン）でも、ダウンロードボタンの前後には広告枠を出さない
+    // （ボタンの近くの広告は誤クリックを誘う配置としてAdSenseのポリシー違反になるおそれがあるため）。
+    // 広告はフッター付近とツールページ内の枠にだけ表示する。
+    await expect(page.locator('[data-ad-placement="pre-download"]')).toHaveCount(0);
     const download = await clickAndDownload(page, "ダウンロード");
     await assertDownloadedFile(download, { format: "png", minBytes: 10 });
-    await expect(page.locator('[data-ad-placement="post-download"]')).toBeVisible();
+    await expect(page.locator('[data-ad-placement="post-download"]')).toHaveCount(0);
   });
 
   test("広告が失敗（denied/unavailable）してもエラーが分かり、再試行できる。処理済みファイルを失わない", async ({
