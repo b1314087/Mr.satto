@@ -73,9 +73,41 @@ import type { NextConfig } from "next";
  * 狭い範囲のCSPソース（Chrome 92+ 等の主要ブラウザが対応）のため、
  * 汎用的なeval()を許可することなくこの問題を解決できる。
  */
-const AD_SCRIPT_ORIGINS = "https://pagead2.googlesyndication.com https://securepubads.g.doubleclick.net";
-const AD_FRAME_ORIGINS =
-  "https://googleads.g.doubleclick.net https://tpc.googlesyndication.com https://pagead2.googlesyndication.com https://securepubads.g.doubleclick.net";
+// 広告(AdSense・同意メッセージ・Google Publisher Tag)が使うGoogleのドメイン。
+// Google公式は「AdSenseは広告ドメインが変わるため、nonce+strict-dynamicの厳格なCSPを推奨し、
+// 許可リスト方式は予告なく動かなくなる場合がある」としている。このサイトは静的CSP(nonceなし)のため
+// 許可リストを使い、"https:" のような包括的な許可は避ける。本番で広告が出なくなった場合は、
+// ブラウザのコンソールのCSP違反ログを見て、ここへドメインを追加すること。
+const AD_SCRIPT_ORIGINS = [
+  "https://pagead2.googlesyndication.com",
+  "https://securepubads.g.doubleclick.net",
+  "https://googleads.g.doubleclick.net",
+  "https://tpc.googlesyndication.com",
+  // Googleの同意メッセージ(AdSenseの「プライバシーとメッセージ」で設定。EEA/英国向けの同意取得)
+  "https://fundingchoicesmessages.google.com",
+  // 広告の配信品質(不正クリック対策)の確認
+  "https://ep1.adtrafficquality.google",
+  "https://ep2.adtrafficquality.google",
+  "https://adtrafficquality.google",
+].join(" ");
+const AD_FRAME_ORIGINS = [
+  "https://googleads.g.doubleclick.net",
+  "https://tpc.googlesyndication.com",
+  "https://pagead2.googlesyndication.com",
+  "https://securepubads.g.doubleclick.net",
+  "https://fundingchoicesmessages.google.com",
+  "https://ep1.adtrafficquality.google",
+  "https://ep2.adtrafficquality.google",
+  "https://www.google.com",
+].join(" ");
+// 広告の計測用ピクセル画像など(広告の本体は上のiframeの中で表示され、iframe内は広告側のCSPが適用される)
+const AD_IMG_ORIGINS = [
+  "https://pagead2.googlesyndication.com",
+  "https://googleads.g.doubleclick.net",
+  "https://tpc.googlesyndication.com",
+  "https://ep1.adtrafficquality.google",
+  "https://ep2.adtrafficquality.google",
+].join(" ");
 
 const SUPABASE_ORIGIN = (() => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -91,7 +123,7 @@ const CSP_DIRECTIVES = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${AD_SCRIPT_ORIGINS}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' blob: data:",
+  `img-src 'self' blob: data: ${AD_IMG_ORIGINS}`,
   "font-src 'self'",
   `connect-src 'self' ${SUPABASE_ORIGIN} ${AD_SCRIPT_ORIGINS}`,
   "worker-src 'self' blob:",

@@ -38,8 +38,8 @@ declare global {
  * Header広告 / Toolページ内広告 / Footer付近広告 / Download前後広告
  * のいずれの用途にも対応できるよう `placement` で見た目・スロットを切り替える。
  *
- * AdSenseの広告ID(NEXT_PUBLIC_ADSENSE_CLIENT_ID)が未設定の間は、
- * レイアウト検証用のプレースホルダーを表示するだけで、外部への通信は発生しない。
+ * AdSenseの広告ID(NEXT_PUBLIC_ADSENSE_CLIENT_ID)、またはその枠のスロットIDが未設定の間は、
+ * 本番では何も表示しない(開発・テスト環境ではレイアウト検証用の枠を表示する)。外部への通信は発生しない。
  */
 export function AdSlot({
   placement,
@@ -49,7 +49,11 @@ export function AdSlot({
   className?: string;
 }) {
   const uid = useId();
-  const enabled = isAdsEnabled();
+  // 広告を出せるのは「発行者IDが設定済み」かつ「この枠のスロットIDが設定済み」のときだけ。
+  // スロットIDが空のまま data-ad-slot="" で広告を要求すると、無効な広告リクエストになり
+  // AdSenseのポリシー・配信品質の面でも好ましくない。まだ広告ユニットを作っていない枠
+  // (例: ダウンロード前後)は、環境変数を設定するまで何も表示しない。
+  const enabled = isAdsEnabled() && PLACEMENT_SLOT[placement] !== "";
 
   useEffect(() => {
     if (!enabled) return;
