@@ -1,3 +1,5 @@
+import { featureFlags } from "@/lib/config/features";
+
 /**
  * Google Ad Manager（Google Publisher Tag / GPT）Rewarded Ads関連の設定。
  *
@@ -32,9 +34,13 @@ export function isRewardedAdConfigured(): boolean {
  * - 本番: Rewarded Ad用のGAM広告ユニットが設定されている（＝広告の審査が通り、広告が出せる）ときだけ有効。
  *   未設定の間は、広告を出せないのに「広告を見て」と求めても誰もダウンロードできないため、制限をかけず自由に使えるようにする。
  *   審査が通って NEXT_PUBLIC_GAM_REWARDED_AD_UNIT_PATH を設定すると、自動で「ダウンロード時に広告を見る」状態になる。
+ * - 機能スイッチ（src/lib/config/features.ts の featureFlags.ads）がオフの間は、上記に関わらず常に無効。
  * - 開発・テスト: 擬似の広告サービス(StubRewardedAdService)で広告導線を確認できるよう、常に有効。
  */
 export function isRewardedAdGateActive(): boolean {
+  // 機能スイッチ（src/lib/config/features.ts の featureFlags.ads）がオフの間は、
+  // 広告ユニットが設定済みでも、ダウンロード時の広告確認は行わない（誰でもそのままダウンロードできる）。
+  if (!featureFlags.ads) return false;
   if (isRewardedAdConfigured()) return true;
   return process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
 }

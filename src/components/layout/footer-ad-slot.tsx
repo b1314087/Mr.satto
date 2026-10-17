@@ -6,6 +6,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { shouldShowAds } from "@/lib/plans/access";
 import type { Plan } from "@/lib/plans/types";
+import { featureFlags } from "@/lib/config/features";
 
 /**
  * フッター広告の表示要否を判定してから <AdSlot placement="footer" /> を描画する
@@ -104,8 +105,15 @@ function useFooterShouldShowAds(): boolean {
   return showAds;
 }
 
-export function FooterAdSlot() {
+function FooterAdSlotInner() {
   const showAds = useFooterShouldShowAds();
   if (!showAds) return null;
   return <AdSlot placement="footer" />;
+}
+
+export function FooterAdSlot() {
+  // 機能スイッチ（src/lib/config/features.ts）で広告がオフの間は、何も描画せず、
+  // 契約状態を調べるためのSupabaseへの問い合わせも行わない。
+  if (!featureFlags.ads) return null;
+  return <FooterAdSlotInner />;
 }

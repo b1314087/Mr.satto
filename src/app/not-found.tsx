@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { featureFlags } from "@/lib/config/features";
 
 export default function NotFound() {
   return (
@@ -22,9 +23,11 @@ export default function NotFound() {
         <Link href="/" className="hover:underline">
           トップページ
         </Link>
-        <Link href="/pricing" className="hover:underline">
-          料金プラン
-        </Link>
+        {featureFlags.billing && (
+          <Link href="/pricing" className="hover:underline">
+            料金プラン
+          </Link>
+        )}
       </div>
     </div>
   );

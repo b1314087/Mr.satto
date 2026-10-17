@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { siteConfig } from "@/lib/config/site";
 import { FooterAdSlot } from "@/components/layout/footer-ad-slot";
+import { featureFlags } from "@/lib/config/features";
 
 export function Footer() {
   return (
@@ -24,9 +25,11 @@ export function Footer() {
           <Link href="/tools" className="hover:text-blue-600 dark:hover:text-blue-400">
             ツール一覧
           </Link>
-          <Link href="/pricing" className="hover:text-blue-600 dark:hover:text-blue-400">
-            料金プラン
-          </Link>
+          {featureFlags.billing && (
+            <Link href="/pricing" className="hover:text-blue-600 dark:hover:text-blue-400">
+              料金プラン
+            </Link>
+          )}
           <Link href="/about" className="hover:text-blue-600 dark:hover:text-blue-400">
             {siteConfig.shortName}について
           </Link>
@@ -36,9 +39,11 @@ export function Footer() {
           <Link href="/terms" className="hover:text-blue-600 dark:hover:text-blue-400">
             利用規約
           </Link>
-          <Link href="/tokushoho" className="hover:text-blue-600 dark:hover:text-blue-400">
-            特定商取引法に基づく表記
-          </Link>
+          {featureFlags.billing && (
+            <Link href="/tokushoho" className="hover:text-blue-600 dark:hover:text-blue-400">
+              特定商取引法に基づく表記
+            </Link>
+          )}
           <Link href="/licenses" className="hover:text-blue-600 dark:hover:text-blue-400">
             ライセンス表記
           </Link>

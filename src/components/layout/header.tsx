@@ -3,6 +3,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { siteConfig } from "@/lib/config/site";
 import { HeaderSearch } from "@/components/tools/search-bar";
 import { AuthStatusLink } from "@/components/auth/auth-status-link";
+import { featureFlags } from "@/lib/config/features";
 
 export function Header() {
   return (
@@ -17,10 +18,14 @@ export function Header() {
           <Link href="/tools" className="hover:text-blue-600 dark:hover:text-blue-400">
             ツール一覧
           </Link>
-          <Link href="/pricing" className="hover:text-blue-600 dark:hover:text-blue-400">
-            料金プラン
-          </Link>
-          <AuthStatusLink />
+          {featureFlags.billing && (
+            <>
+              <Link href="/pricing" className="hover:text-blue-600 dark:hover:text-blue-400">
+                料金プラン
+              </Link>
+              <AuthStatusLink />
+            </>
+          )}
         </nav>
 
         <div className="order-last w-full grow sm:order-none sm:w-auto sm:max-w-xs">

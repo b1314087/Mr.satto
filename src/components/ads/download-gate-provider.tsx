@@ -13,6 +13,7 @@ import {
 import { getTemporaryAccessService } from "@/lib/plans/temporary-access";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { TEMP_ACCESS_DURATION_MS } from "@/lib/plans/temporary-access-cookie";
+import { featureFlags } from "@/lib/config/features";
 
 /**
  * ダウンロード時の広告確認（Free向けの「広告を見て1時間利用する」導線）。
@@ -372,6 +373,8 @@ function DownloadTargets({ labels }: { labels: string[] }) {
 }
 
 function PlanHint() {
+  // 課金システムがオフの間は、有料プランの案内を出さない（src/lib/config/features.ts）
+  if (!featureFlags.billing) return null;
   return (
     <p className="text-xs text-neutral-400 dark:text-neutral-500">
       Standard（月額{PLAN_DEFINITIONS.standard.priceYen}円）に加入すると、広告なしでご利用いただけます。{" "}

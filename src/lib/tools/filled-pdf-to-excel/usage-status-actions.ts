@@ -4,6 +4,7 @@ import { getServerPlan } from "@/lib/plans/current-plan";
 import type { Plan } from "@/lib/plans/types";
 import { checkPageCredit, consumePageCredit } from "./credit-actions";
 import { PDF_TO_EXCEL_CREDIT_MAX_PAGES } from "./usage-cookie";
+import { featureFlags } from "@/lib/config/features";
 
 /**
  * 記入済みPDF→Excel専用の利用可否判定をまとめたServer Actions。
@@ -56,7 +57,14 @@ export async function getFilledPdfToExcelUsageStatus(): Promise<FilledPdfToExcel
     return { plan, maxPagesPerUse: PDF_TO_EXCEL_CREDIT_MAX_PAGES, requiresAd: false, creditActive: credit.active };
   }
 
-  // free（未ログイン含む）。1日あたりの回数上限は設けないため、有効な
+  // free（未ログイン含む）。
+  // 機能スイッチ（src/lib/config/features.ts）で広告がオフの間は、広告を見なくても使える
+  // （1回あたりの上限ページ数は、広告オンのときと同じ）。
+  if (!featureFlags.ads) {
+    return { plan, maxPagesPerUse: PDF_TO_EXCEL_CREDIT_MAX_PAGES, requiresAd: false, creditActive: credit.active };
+  }
+
+  // 1日あたりの回数上限は設けないため、有効な
   // page creditを持っていない間は常に広告視聴が必要な状態になる。
   return {
     plan,
@@ -100,7 +108,13 @@ export async function consumeFilledPdfToExcelUsage(pageCount: number): Promise<C
     return { allowed: true, maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
   }
 
-  // free（未ログイン含む）: 1日あたりの回数上限は設けないため、
+  // free（未ログイン含む）。広告がオフの間は、広告視聴済みの利用権を求めずに許可する
+  // （上のページ数の上限は適用済み）。
+  if (!featureFlags.ads) {
+    return { allowed: true, maxPages: PDF_TO_EXCEL_CREDIT_MAX_PAGES };
+  }
+
+  // 広告オン: 1日あたりの回数上限は設けないため、
   // 有効な広告視聴済みの利用権（page credit）があるかどうかだけを見る。
   const creditConsumed = await consumePageCredit();
   if (!creditConsumed) {

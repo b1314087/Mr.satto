@@ -2,6 +2,7 @@
 
 import { useEffect, useId } from "react";
 import { adConfig, isAdsEnabled } from "@/lib/ads/config";
+import { featureFlags } from "@/lib/config/features";
 
 export type AdSlotPlacement =
   | "header"
@@ -63,6 +64,9 @@ export function AdSlot({
       // AdSenseスクリプトが未ロードの場合などは静かに無視し、UIは壊さない
     }
   }, [enabled]);
+
+  // 機能スイッチ（src/lib/config/features.ts）で広告がオフの間は、開発・テスト環境でも何も表示しない。
+  if (!featureFlags.ads) return null;
 
   if (!enabled) {
     // 広告が未設定の本番環境では、使えない機能に見える「（準備中）」の枠を出さない。

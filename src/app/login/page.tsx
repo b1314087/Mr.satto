@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LoginForm } from "@/components/auth/login-form";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { featureFlags } from "@/lib/config/features";
 
 export const metadata: Metadata = {
   title: "ログイン",
   description: "Mr.Sattoにログインします。",
   alternates: { canonical: "/login" },
+  // 課金システムがオフの間は、リンクを出さず検索にも出さない（管理画面などへのログインのため、ページ自体は残す）
+  ...(featureFlags.billing ? {} : { robots: { index: false, follow: false } }),
 };
 
 export default async function LoginPage({
