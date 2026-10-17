@@ -77,6 +77,14 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     expect(await res.json()).toEqual({ received: true, ignored: true });
   });
 
+  test("ツール一覧のカードに、料金区分のバッジ（スタンダード・プレミアム）が出ない", async ({ page }) => {
+    await page.goto("/tools");
+    await expect(page.locator('a[href^="/tools/"]').first()).toBeVisible();
+    const cards = page.locator('a[href^="/tools/"]');
+    await expect(cards.filter({ hasText: "スタンダード" })).toHaveCount(0);
+    await expect(cards.filter({ hasText: "プレミアム" })).toHaveCount(0);
+  });
+
   test("ツールページに広告の枠・ダウンロード時の広告の案内が出ない", async ({ page }) => {
     await page.goto("/tools/image-resize");
     await expect(page.locator('input[type="file"]')).toBeAttached();

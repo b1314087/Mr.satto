@@ -3,6 +3,7 @@ import type { Tool } from "@/lib/tools/types";
 import { getCategory } from "@/lib/tools/categories";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { cn } from "@/lib/utils/cn";
+import { featureFlags } from "@/lib/config/features";
 
 /**
  * 料金区分バッジ（Phase 19 9章）。
@@ -54,9 +55,10 @@ export function ToolCard({ tool }: { tool: Tool }) {
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
             準備中
           </span>
-        ) : (
+        ) : featureFlags.billing ? (
+          // 課金オフの間は料金プランが存在しないため、料金区分のバッジは出さない。
           <PlanBadge requiredPlan={tool.requiredPlan} />
-        )}
+        ) : null}
       </div>
       <h3
         className={cn(
