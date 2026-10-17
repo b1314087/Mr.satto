@@ -78,10 +78,10 @@ test("image-padding-text: 余白を追加しても元画像はリサイズされ
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [fixtures.png]); // 64x64
 
-  await page.getByLabel("上", { exact: false }).first().fill("10");
-  await page.getByLabel("下", { exact: false }).first().fill("20");
-  await page.getByLabel("左", { exact: false }).first().fill("5");
-  await page.getByLabel("右", { exact: false }).first().fill("5");
+  await page.getByRole("spinbutton", { name: /^上/ }).first().fill("10");
+  await page.getByRole("spinbutton", { name: /^下/ }).first().fill("20");
+  await page.getByRole("spinbutton", { name: /^左/ }).first().fill("5");
+  await page.getByRole("spinbutton", { name: /^右/ }).first().fill("5");
 
   await page.getByRole("button", { name: "この画像だけ保存" }).click();
   await waitForSuccess(page, "完了");
@@ -132,7 +132,7 @@ test("image-padding-text: 文字を入力し、サイズ・色・太字・複数
   await page.getByRole("button", { name: "上", exact: true }).click(); // 配置する余白: 上
   await page.getByRole("button", { name: "始点(左/上)" }).click();
 
-  await page.getByLabel("上", { exact: false }).first().fill("40"); // 上余白がないと文字が表示されないため
+  await page.getByRole("spinbutton", { name: /^上/ }).first().fill("40"); // 上余白がないと文字が表示されないため
 
   await page.getByRole("button", { name: "この画像だけ保存" }).click();
   await waitForSuccess(page, "完了");
@@ -158,7 +158,7 @@ test("image-padding-text: 個別設定に切り替えると共通設定と独立
   await expect(toggle).toHaveText("個別設定を使用中");
 
   // 個別設定パネルが表示され、2つ目の「上」余白入力が増えることを確認
-  await expect(page.getByLabel("上", { exact: false })).toHaveCount(2);
+  await expect(page.getByRole("spinbutton", { name: /^上/ })).toHaveCount(2);
 });
 
 test("image-padding-text: 共通設定を変更しても個別設定した画像の値は維持される", async ({ page }) => {
@@ -167,11 +167,11 @@ test("image-padding-text: 共通設定を変更しても個別設定した画像
 
   // 1枚目を個別設定にし、上余白を100にする
   await page.getByRole("button", { name: "共通設定を使用中" }).click();
-  const individualTopInput = page.getByLabel("上", { exact: false }).nth(1);
+  const individualTopInput = page.getByRole("spinbutton", { name: /^上/ }).nth(1);
   await individualTopInput.fill("100");
 
   // 共通設定（1つ目の「上」入力）を変更しても、個別設定側の値は変わらない
-  await page.getByLabel("上", { exact: false }).first().fill("5");
+  await page.getByRole("spinbutton", { name: /^上/ }).first().fill("5");
   await expect(individualTopInput).toHaveValue("100");
 });
 

@@ -14,7 +14,7 @@ test("passport-photo: ページが表示され、画像をアップロードす�
 
   await uploadFixture(page, [fixtures.jpg]);
 
-  await expect(page.getByText("証明写真サイズ")).toBeVisible();
+  await expect(page.getByText("証明写真サイズ", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "35×45mm" })).toBeVisible();
   await expect(page.getByText("トリミング・位置調整")).toBeVisible();
 });
@@ -66,9 +66,15 @@ test("passport-photo: 拡大/縮小ボタンでズームできる", async ({ pag
 
   const box = page.locator(".cursor-move");
   const before = await box.boundingBox();
+  // 「拡大 +」は被写体を大きく写すため、トリミング枠は小さくなる。「縮小 −」はその逆で枠が大きくなる。
+  await page.getByRole("button", { name: "拡大 +" }).click();
+  const zoomedIn = await box.boundingBox();
+  expect(zoomedIn!.width).toBeLessThan(before!.width);
+
   await page.getByRole("button", { name: "縮小 −" }).click();
-  const after = await box.boundingBox();
-  expect(after!.width).toBeLessThan(before!.width);
+  await page.getByRole("button", { name: "縮小 −" }).click();
+  const zoomedOut = await box.boundingBox();
+  expect(zoomedOut!.width).toBeGreaterThan(zoomedIn!.width);
 });
 
 test("passport-photo: JPEGで証明写真を書き出せる", async ({ page }) => {

@@ -36,7 +36,7 @@ test("image-merge: 画像1枚のみでは結合できず案内が表示される
   await page.goto("/tools/image-merge");
   await uploadFixture(page, [fixtures.png]);
 
-  await expect(page.getByText("2枚以上")).toBeVisible();
+  await expect(page.getByText("画像結合には2枚以上の画像が必要です")).toBeVisible();
   await expect(page.getByRole("button", { name: "PNGで保存" })).toHaveCount(0);
 });
 
@@ -92,7 +92,7 @@ test("image-merge: 縦結合（元サイズ）で正しい幅・高さのPNGが�
   await uploadFixture(page, [fixtures.png, fixtures.png]);
 
   await page.getByRole("button", { name: "縦結合" }).click();
-  await page.getByRole("button", { name: "0px" }).click();
+  await page.getByRole("button", { name: "0px", exact: true }).click();
 
   await page.getByRole("button", { name: "PNGで保存" }).click();
   await waitForSuccess(page, "完了");
@@ -124,7 +124,7 @@ test("image-merge: 元サイズモード（既定）では画像が縮小され�
   await uploadFixture(page, [fixtures.landscapeJpg, fixtures.portraitPng]); // 300x200 + 120x200
 
   await page.getByRole("button", { name: "横結合" }).click();
-  await page.getByRole("button", { name: "0px" }).click();
+  await page.getByRole("button", { name: "0px", exact: true }).click();
 
   await page.getByRole("button", { name: "PNGで保存" }).click();
   await waitForSuccess(page, "完了");
@@ -142,7 +142,7 @@ test("image-merge: 倍率指定でサイズが変わる", async ({ page }) => {
   await uploadFixture(page, [fixtures.png, fixtures.png]);
 
   await page.getByRole("button", { name: "横結合" }).click();
-  await page.getByRole("button", { name: "0px" }).click();
+  await page.getByRole("button", { name: "0px", exact: true }).click();
   await page.getByRole("button", { name: "倍率指定" }).click();
   await page.getByRole("button", { name: "50%" }).click();
 
@@ -163,7 +163,7 @@ test("image-merge: サイズを揃える（フィット）で縦横比を潰さ�
   await uploadFixture(page, [fixtures.landscapeJpg, fixtures.portraitPng]); // 300x200 + 120x200
 
   await page.getByRole("button", { name: "横結合" }).click();
-  await page.getByRole("button", { name: "0px" }).click();
+  await page.getByRole("button", { name: "0px", exact: true }).click();
   await page.getByRole("button", { name: "サイズを揃える" }).click();
   await page.getByLabel("幅").fill("100");
   await page.getByLabel("高さ").fill("100");

@@ -534,6 +534,9 @@ export function ImagePassportPhotoTool() {
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
+      {/* 画像以外のファイルを選んだ場合など、画像がまだ選ばれていないときのエラー表示 */}
+      {!file && photoError && <ErrorMessage message={photoError} />}
+
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">証明写真サイズ</p>

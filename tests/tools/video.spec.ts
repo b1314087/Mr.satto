@@ -66,6 +66,15 @@ test("video-metadata-remove: タイトル・作成者・コメントのメタデ
   expect(beforeTags).toContain("TestComment");
 
   await page.goto("/tools/video-metadata-remove");
+
+  // このテストの動画はH.264（AVC）形式。オープンソース版のChromiumなど、H.264を再生できない
+  // ブラウザでは、ツール自体が「コーデックに対応していません」と案内して処理しない（正しい動作）。
+  // そのようなブラウザでは検証できないので、スキップする。
+  const canDecodeH264 = await page.evaluate(
+    () => document.createElement("video").canPlayType('video/mp4; codecs="avc1.42E01E"') !== "",
+  );
+  test.skip(!canDecodeH264, "このブラウザはH.264を再生できないため、検証できません");
+
   await uploadFixture(page, fixtures.videoWithMetadataMp4);
 
   await page.getByRole("button", { name: "メタデータを削除する" }).click();

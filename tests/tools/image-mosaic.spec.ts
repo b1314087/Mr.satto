@@ -236,19 +236,15 @@ test("image-mosaic: JPEGで保存できる", async ({ page }) => {
   await assertDownloadedFile(download, { format: "jpg", minBytes: 10 });
 });
 
-test("image-mosaic: 範囲を指定しない場合は元画像のまま出力される", async ({ page }) => {
+test("image-mosaic: 範囲を指定しない間は保存できない（モザイクなしの画像を誤って保存しないため）", async ({ page }) => {
   await page.goto("/tools/image-mosaic");
   await uploadFixture(page, [fixtures.png]);
 
-  await page.getByRole("button", { name: "PNGで保存" }).click();
-  await waitForSuccess(page, "完了");
+  await expect(page.getByRole("button", { name: "PNGで保存" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "JPEGで保存" })).toBeDisabled();
 
-  const download = await clickAndDownload(page, "ダウンロード");
-  const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 10 });
-  const fs = await import("node:fs");
-  const dims = getPngDimensions(fs.readFileSync(path));
-  expect(dims.width).toBe(64);
-  expect(dims.height).toBe(64);
+  await page.getByRole("button", { name: "＋ 範囲を追加" }).click();
+  await expect(page.getByRole("button", { name: "PNGで保存" })).toBeEnabled();
 });
 
 test("image-mosaic: モザイクが実際に指定範囲へ焼き込まれ、範囲外は変化しない（ピクセル検証）", async ({ page }) => {

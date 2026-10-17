@@ -199,9 +199,9 @@ test("image-tile-split: プレビューの番号表示をオフにできる", as
   await page.goto("/tools/image-tile-split");
   await uploadFixture(page, [fixtures.png]);
 
-  await expect(page.getByText("1", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("tool-preview").getByText("1", { exact: true })).toBeVisible();
   await page.getByLabel("プレビューに番号を表示する（出力画像には含まれません）").uncheck();
-  await expect(page.getByText("1", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("tool-preview").getByText("1", { exact: true })).toHaveCount(0);
 });
 
 test("image-tile-split: 行数0はエラー表示になり、分割ボタンが無効になる", async ({ page }) => {
