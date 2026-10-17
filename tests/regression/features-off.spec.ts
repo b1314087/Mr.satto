@@ -71,6 +71,12 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     expect(portal.status()).toBe(404);
   });
 
+  test("Stripe Webhook は何も処理せず、200だけ返す（署名がなくても処理に進まない）", async ({ request }) => {
+    const res = await request.post("/api/stripe/webhook", { data: "{}" });
+    expect(res.status()).toBe(200);
+    expect(await res.json()).toEqual({ received: true, ignored: true });
+  });
+
   test("ツールページに広告の枠・ダウンロード時の広告の案内が出ない", async ({ page }) => {
     await page.goto("/tools/image-resize");
     await expect(page.locator('input[type="file"]')).toBeAttached();

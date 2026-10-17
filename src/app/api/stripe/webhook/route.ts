@@ -4,6 +4,7 @@ import { getStripeClient } from "@/lib/stripe/client";
 import { isStripeWebhookConfigured, stripeConfig } from "@/lib/stripe/config";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Plan } from "@/lib/plans/types";
+import { featureFlags } from "@/lib/config/features";
 
 /**
  * Stripe Webhook ハンドラ。
@@ -18,12 +19,15 @@ import type { Plan } from "@/lib/plans/types";
  * 署名検証：stripe-signatureヘッダーとSTRIPE_WEBHOOK_SECRETで必ず検証する。
  * 検証に失敗したリクエストは400で拒否し、Supabaseへの書き込みは一切行わない。
  *
- * 機能スイッチ（src/lib/config/features.ts の featureFlags.billing）がオフの間も、
- * このWebhookは意図的に止めない。既に契約している方がいる場合に、Stripeからの契約状態の通知
- * （更新・解約など）を受け取り続けないと、契約状態が実際とずれ、Stripe側にも失敗として
- * 再送され続けるため。新しい決済の受付（checkout）と管理画面への案内（portal）だけを止めている。
+ * 機能スイッチ（src/lib/config/features.ts の featureFlags.billing）がオフの間は、何も処理しない。
+ * 受け取った内容は読まず、データベースにも触れず、Stripeへは200だけ返す（失敗扱いで再送され続けるのを防ぐ）。
+ * 課金を再開するときは billing を true に戻す。オフにする前に、実際に契約している方がいないことを確認しておくこと。
  */
 export async function POST(request: Request) {
+  if (!featureFlags.billing) {
+    return NextResponse.json({ received: true, ignored: true });
+  }
+
   if (!isStripeWebhookConfigured()) {
     // Webhook Secret未設定の環境で誤って署名検証をスキップして処理することは
     // しない（なりすましリクエストを無条件で信用することになるため）。
