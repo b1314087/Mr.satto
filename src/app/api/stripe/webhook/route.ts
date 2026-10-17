@@ -17,6 +17,11 @@ import type { Plan } from "@/lib/plans/types";
  *
  * 署名検証：stripe-signatureヘッダーとSTRIPE_WEBHOOK_SECRETで必ず検証する。
  * 検証に失敗したリクエストは400で拒否し、Supabaseへの書き込みは一切行わない。
+ *
+ * 機能スイッチ（src/lib/config/features.ts の featureFlags.billing）がオフの間も、
+ * このWebhookは意図的に止めない。既に契約している方がいる場合に、Stripeからの契約状態の通知
+ * （更新・解約など）を受け取り続けないと、契約状態が実際とずれ、Stripe側にも失敗として
+ * 再送され続けるため。新しい決済の受付（checkout）と管理画面への案内（portal）だけを止めている。
  */
 export async function POST(request: Request) {
   if (!isStripeWebhookConfigured()) {

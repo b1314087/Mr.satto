@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { siteConfig } from "@/lib/config/site";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { featureFlags } from "@/lib/config/features";
 
 export const metadata: Metadata = {
   title: "利用規約",
@@ -36,6 +37,14 @@ export default function TermsPage() {
       <h1 className="mb-8 text-2xl font-bold text-neutral-900 dark:text-white">利用規約</h1>
 
       <div className="flex flex-col gap-8 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+        {!featureFlags.billing && (
+          <p
+            data-testid="terms-billing-notice"
+            className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900"
+          >
+            現在、会員登録と有料プランは提供していません。以下のうち、会員登録・有料プラン・お支払いに関する定めは、これらの提供を始めた場合に適用されます。
+          </p>
+        )}
         <Section title="第1条（適用）">
           <Clauses>
             <li>本規約は、{siteConfig.name}（以下「本サービス」）の利用条件を定めるものです。</li>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { categories } from "@/lib/tools/categories";
 import { siteConfig } from "@/lib/config/site";
+import { featureFlags } from "@/lib/config/features";
 
 export const metadata: Metadata = {
   title: "Mr.Sattoとは",
@@ -88,18 +89,25 @@ export default function AboutPage() {
 
         <section>
           <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
-            料金プランについて
+            {featureFlags.billing ? "料金プランについて" : "ご利用料金について"}
           </h2>
-          <p>
-            {siteConfig.name}は会員登録なしでもすぐに使い始められます。無料プランでも、広告を見れば
-            スタンダード対象ツールを一定時間利用できます。広告なしで使いたい方向けにスタンダードプラン
-            （月額550円）、すべてのツールを広告なしで使えるプレミアムプラン（月額980円）もご用意しています。
-            詳しい内容は
-            <Link href="/pricing" className="text-blue-600 hover:underline dark:text-blue-400">
-              料金プラン
-            </Link>
-            のページをご覧ください。
-          </p>
+          {!featureFlags.billing ? (
+            <p>
+              {siteConfig.name}は会員登録なしで、無料でご利用いただけます。
+              {featureFlags.ads ? "ダウンロードの際に、広告をご覧いただく場合があります。" : ""}
+            </p>
+          ) : (
+            <p>
+              {siteConfig.name}は会員登録なしでもすぐに使い始められます。無料プランでも、広告を見れば
+              スタンダード対象ツールを一定時間利用できます。広告なしで使いたい方向けにスタンダードプラン
+              （月額550円）、すべてのツールを広告なしで使えるプレミアムプラン（月額980円）もご用意しています。
+              詳しい内容は
+              <Link href="/pricing" className="text-blue-600 hover:underline dark:text-blue-400">
+                料金プラン
+              </Link>
+              のページをご覧ください。
+            </p>
+          )}
         </section>
 
         <section>

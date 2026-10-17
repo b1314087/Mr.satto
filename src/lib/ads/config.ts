@@ -1,3 +1,5 @@
+import { featureFlags } from "@/lib/config/features";
+
 /**
  * 広告関連の設定を一元管理する。
  *
@@ -23,7 +25,13 @@ export const adConfig = {
   },
 };
 
-/** AdSenseクライアントIDが設定されているかどうか(=実広告を配信できる状態か) */
+/**
+ * 通常の広告（AdSense）を配信できる状態か。
+ *
+ * 機能スイッチ（src/lib/config/features.ts の featureFlags.ads）がオフの間は、
+ * 広告IDが設定済みでも配信しない（広告スクリプトの読み込みも行わない）。
+ * スイッチがオンで、かつ AdSenseクライアントIDが設定されているときだけ true。
+ */
 export function isAdsEnabled(): boolean {
-  return adConfig.adsenseClientId.length > 0;
+  return featureFlags.ads && adConfig.adsenseClientId.length > 0;
 }

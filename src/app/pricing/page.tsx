@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { siteConfig } from "@/lib/config/site";
+import { featureFlags } from "@/lib/config/features";
+import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
 import { PLAN_DEFINITIONS, PLAN_IDS } from "@/lib/plans/types";
 import { getServerPlan } from "@/lib/plans/current-plan";
 import { isStripeConfigured } from "@/lib/stripe/config";
@@ -13,6 +15,7 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/pricing",
   },
+  ...(featureFlags.billing ? {} : { robots: { index: false, follow: false } }),
 };
 
 const PLAN_TOOL_ACCESS_LABEL: Record<string, string> = {
@@ -47,6 +50,9 @@ export default async function PricingPage({
 }: {
   searchParams: Promise<{ checkout?: string }>;
 }) {
+  // 課金システムがオフの間は準備中の案内だけを表示する（src/lib/config/features.ts）
+  if (!featureFlags.billing) return <FeatureUnavailable title="料金プラン" />;
+
   const { checkout } = await searchParams;
   const serverPlan = await getServerPlan();
   const stripeConfigured = isStripeConfigured();

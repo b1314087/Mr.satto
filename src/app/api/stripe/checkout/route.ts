@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { featureFlags } from "@/lib/config/features";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getStripeClient } from "@/lib/stripe/client";
 import { isStripeConfigured, hasPriceIdFor, stripeConfig } from "@/lib/stripe/config";
@@ -25,6 +26,11 @@ function isValidPlan(value: unknown): value is Exclude<Plan, "free"> {
 }
 
 export async function POST(request: Request) {
+  // 課金システムがオフの間は、決済を受け付けない（src/lib/config/features.ts）
+  if (!featureFlags.billing) {
+    return NextResponse.json({ error: "現在、決済機能は提供していません。" }, { status: 404 });
+  }
+
   if (!isStripeConfigured()) {
     return NextResponse.json(
       { error: "現在、決済機能は準備中です（Stripeが設定されていません）。" },

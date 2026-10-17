@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { featureFlags } from "@/lib/config/features";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getStripeClient } from "@/lib/stripe/client";
 import { isStripeConfigured } from "@/lib/stripe/config";
@@ -19,6 +20,11 @@ const RATE_LIMIT = { limit: 5, windowMs: 60_000 };
  * （Phase 3 spec 13章・14章）。
  */
 export async function POST() {
+  // 課金システムがオフの間は、決済を受け付けない（src/lib/config/features.ts）
+  if (!featureFlags.billing) {
+    return NextResponse.json({ error: "現在、決済管理機能は提供していません。" }, { status: 404 });
+  }
+
   if (!isStripeConfigured()) {
     return NextResponse.json(
       { error: "現在、決済管理機能は準備中です（Stripeが設定されていません）。" },

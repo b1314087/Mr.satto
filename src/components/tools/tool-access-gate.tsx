@@ -8,6 +8,7 @@ import { canUseTool } from "@/lib/plans/access";
 import { DownloadGateProvider } from "@/components/ads/download-gate-provider";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { TemporaryAccessBanner } from "@/components/tools/temporary-access-banner";
+import { featureFlags } from "@/lib/config/features";
 
 /**
  * Tool Access Gate（Phase 2-0: ツール利用前の権限制御 → Phase 3で本番判定 →
@@ -77,17 +78,23 @@ export function ToolAccessGate({
           プレミアム限定
         </span>
         <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-          このツールはプレミアムプランで利用できます
+          {featureFlags.billing
+            ? "このツールはプレミアムプランで利用できます"
+            : "このツールは現在ご利用いただけません"}
         </h2>
         <p className="max-w-md text-sm text-neutral-500 dark:text-neutral-400">
-          プレミアムプラン（月額{PLAN_DEFINITIONS.premium.priceYen}円・広告なし・すべてのツールが利用可能）にご加入いただくと、このツールもお使いいただけます。
+          {featureFlags.billing
+            ? `プレミアムプラン（月額${PLAN_DEFINITIONS.premium.priceYen}円・広告なし・すべてのツールが利用可能）にご加入いただくと、このツールもお使いいただけます。`
+            : "このツールは現在準備中です。"}
         </p>
-        <Link
-          href="/pricing"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-        >
-          料金プランを見る
-        </Link>
+        {featureFlags.billing && (
+          <Link
+            href="/pricing"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+          >
+            料金プランを見る
+          </Link>
+        )}
       </div>
     );
   }

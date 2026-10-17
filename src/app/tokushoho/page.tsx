@@ -3,6 +3,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { siteConfig } from "@/lib/config/site";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { featureFlags } from "@/lib/config/features";
+import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
 
 export const metadata: Metadata = {
   title: "特定商取引法に基づく表記",
@@ -10,6 +12,7 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/tokushoho",
   },
+  ...(featureFlags.billing ? {} : { robots: { index: false, follow: false } }),
 };
 
 const LINK_CLASS = "text-blue-600 hover:underline dark:text-blue-400";
@@ -27,6 +30,9 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export default function TokushohoPage() {
+  // 課金システムがオフの間は準備中の案内だけを表示する（src/lib/config/features.ts）
+  if (!featureFlags.billing) return <FeatureUnavailable title="特定商取引法に基づく表記" />;
+
   const standard = PLAN_DEFINITIONS.standard;
   const premium = PLAN_DEFINITIONS.premium;
 

@@ -6,6 +6,8 @@ import { signOutAction } from "@/lib/auth/actions";
 import { PortalLinkButton } from "@/components/account/portal-link-button";
 import { isStripeConfigured } from "@/lib/stripe/config";
 import { SUBSCRIPTION_STATUS_LABEL as STATUS_LABEL } from "@/lib/plans/status-labels";
+import { featureFlags } from "@/lib/config/features";
+import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
 
 // 個人の契約情報を含むページのため検索エンジンには公開しない（Phase 3 spec 25章）。
 export const metadata: Metadata = {
@@ -24,6 +26,9 @@ export default async function AccountPage({
 }: {
   searchParams: Promise<{ checkout?: string }>;
 }) {
+  // 課金システムがオフの間は準備中の案内だけを表示する（src/lib/config/features.ts）
+  if (!featureFlags.billing) return <FeatureUnavailable title="アカウント" />;
+
   const { checkout } = await searchParams;
   const serverPlan = await getServerPlan();
 

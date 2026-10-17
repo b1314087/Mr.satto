@@ -2,18 +2,28 @@ import type { MetadataRoute } from "next";
 import { tools } from "@/lib/tools/data";
 import { categories } from "@/lib/tools/categories";
 import { siteConfig } from "@/lib/config/site";
+import { featureFlags } from "@/lib/config/features";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: siteConfig.url, changeFrequency: "weekly", priority: 1 },
     { url: `${siteConfig.url}/tools`, changeFrequency: "weekly", priority: 0.9 },
-    { url: `${siteConfig.url}/pricing`, changeFrequency: "monthly", priority: 0.7 },
-    { url: `${siteConfig.url}/login`, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${siteConfig.url}/signup`, changeFrequency: "yearly", priority: 0.3 },
+    // 料金・ログイン・会員登録は、課金システムがオフの間は検索エンジンに知らせない（src/lib/config/features.ts）
+    ...(featureFlags.billing
+      ? ([
+          { url: `${siteConfig.url}/pricing`, changeFrequency: "monthly", priority: 0.7 },
+          { url: `${siteConfig.url}/login`, changeFrequency: "yearly", priority: 0.3 },
+          { url: `${siteConfig.url}/signup`, changeFrequency: "yearly", priority: 0.3 },
+        ] satisfies MetadataRoute.Sitemap)
+      : []),
     { url: `${siteConfig.url}/about`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${siteConfig.url}/privacy`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${siteConfig.url}/terms`, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${siteConfig.url}/tokushoho`, changeFrequency: "yearly", priority: 0.3 },
+    ...(featureFlags.billing
+      ? ([
+          { url: `${siteConfig.url}/tokushoho`, changeFrequency: "yearly", priority: 0.3 },
+        ] satisfies MetadataRoute.Sitemap)
+      : []),
     { url: `${siteConfig.url}/licenses`, changeFrequency: "yearly", priority: 0.2 },
   ];
 
