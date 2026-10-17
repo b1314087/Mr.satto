@@ -71,7 +71,7 @@ export class FilledPdfToExcelTemplateProcessor extends BrowserProcessor<
     const effectiveLimit = Math.min(maxTotalPages ?? TEMPLATE_LIMITS.maxFilledPagesHard, TEMPLATE_LIMITS.maxFilledPagesHard);
     if (totalPages > effectiveLimit) {
       throw new Error(
-        `このプラン・利用条件で処理できるページ数の上限は合計${effectiveLimit}ページです（選択したファイルの合計は${totalPages}ページです）。`
+        `処理できるページ数の上限は合計${effectiveLimit}ページです（選択したファイルの合計は${totalPages}ページです）。`
       );
     }
 

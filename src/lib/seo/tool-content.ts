@@ -11,6 +11,8 @@
  * 安心して使ってよい。
  */
 
+import { adaptToolSeoContent } from "@/lib/seo/feature-copy";
+
 export interface ToolFaqItem {
   question: string;
   answer: string;
@@ -2270,5 +2272,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
 };
 
 export function getToolSeoContent(toolId: string): ToolSeoContent | undefined {
-  return toolSeoContent[toolId];
+  const content = toolSeoContent[toolId];
+  // 課金・広告をやめている間は、プランや広告に触れた文言を差し替える（src/lib/seo/feature-copy.ts）。
+  return content ? adaptToolSeoContent(content) : undefined;
 }

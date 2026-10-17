@@ -1,5 +1,6 @@
 "use client";
 
+import { featureFlags } from "@/lib/config/features";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AdSlot } from "@/components/ads/ad-slot";
@@ -140,6 +141,9 @@ export function describeConsumeFailure(
 ): string {
   switch (result.reason) {
     case "page-limit-exceeded":
+      if (!featureFlags.billing) {
+        return `1回につき最大${result.maxPages}ページまで処理できます。ページ数を減らしてお試しください。`;
+      }
       return `Free・Standardプランでは、1回につき最大${result.maxPages}ページまで処理できます。ページ数を減らすか、Premiumプランをご利用ください。`;
     case "ad-required":
       return "広告の視聴が必要です。下の「広告を見て利用する」ボタンからお試しください。";
@@ -175,18 +179,21 @@ export function UsageGatePanel({
 
       {overPageLimit && (
         <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
-          Free・Standardプランでは、1回につき最大{usage?.maxPagesPerUse}ページまで処理できます（選択したファイルの合計は
-          {totalPages}ページです）。ページ数を減らすか、Premiumプランをご利用ください。
+          {featureFlags.billing ? "Free・Standardプランでは、" : ""}1回につき最大{usage?.maxPagesPerUse}ページまで処理できます（選択したファイルの合計は
+          {totalPages}ページです）。ページ数を減らして{featureFlags.billing ? "か、Premiumプランをご利用ください" : "お試しください"}。
         </div>
       )}
 
       {!usageLoading && usage && (
         <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-300">
-          {usage.plan === "premium" && <p>Premiumプランのため、ページ数・回数の制限なくご利用いただけます。</p>}
-          {usage.plan === "standard" && (
+          {!featureFlags.billing && (
+            <p>1回につき最大{usage.maxPagesPerUse}ページまで、回数の制限なくご利用いただけます。</p>
+          )}
+          {featureFlags.billing && usage.plan === "premium" && <p>Premiumプランのため、ページ数・回数の制限なくご利用いただけます。</p>}
+          {featureFlags.billing && usage.plan === "standard" && (
             <p>Standardプラン（広告なし）: 1回につき最大{usage.maxPagesPerUse}ページまで、回数制限なくご利用いただけます。</p>
           )}
-          {usage.plan === "free" && (
+          {featureFlags.billing && usage.plan === "free" && (
             <p>
               無料プラン: 広告を見ると1回・最大{usage.maxPagesPerUse}
               ページまで処理できます（1日あたりの回数制限はありません）。
@@ -212,7 +219,7 @@ export function UsageGatePanel({
           </button>
           {adPhase === "unavailable" && (
             <p className="text-xs text-red-600 dark:text-red-400">
-              現在、広告を表示できません。しばらくしてからもう一度お試しください。Standard・Premiumプランでは広告なしでご利用いただけます。
+              現在、広告を表示できません。しばらくしてからもう一度お試しください。{featureFlags.billing ? "Standard・Premiumプランでは広告なしでご利用いただけます。" : ""}
             </p>
           )}
           {adPhase === "denied" && (
@@ -223,12 +230,14 @@ export function UsageGatePanel({
           {adPhase === "error" && (
             <p className="text-xs text-red-600 dark:text-red-400">エラーが発生しました。しばらくしてからもう一度お試しください。</p>
           )}
-          <Link
-            href="/pricing"
-            className="text-xs text-neutral-400 underline-offset-2 hover:text-blue-600 hover:underline dark:text-neutral-500 dark:hover:text-blue-400"
-          >
-            広告なしで使いたい場合はこちら（料金プラン）
-          </Link>
+          {featureFlags.billing && (
+            <Link
+              href="/pricing"
+              className="text-xs text-neutral-400 underline-offset-2 hover:text-blue-600 hover:underline dark:text-neutral-500 dark:hover:text-blue-400"
+            >
+              広告なしで使いたい場合はこちら（料金プラン）
+            </Link>
+          )}
         </div>
       )}
     </>

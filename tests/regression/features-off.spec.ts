@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { uploadFixture, waitForSuccess } from "../helpers/tool-runner";
 import { fixtures } from "../fixtures/paths";
+import { tools } from "@/lib/tools/data";
+import { categories } from "@/lib/tools/categories";
 
 /**
  * 機能スイッチ（src/lib/config/features.ts）の「広告オフ・課金オフ」状態の回帰テスト。
@@ -83,6 +85,40 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     const cards = page.locator('a[href^="/tools/"]');
     await expect(cards.filter({ hasText: "スタンダード" })).toHaveCount(0);
     await expect(cards.filter({ hasText: "プレミアム" })).toHaveCount(0);
+  });
+
+  test("サイトの主なページに、料金プラン・広告に触れた文言が一つも残っていない", async ({ request }) => {
+    test.setTimeout(900_000);
+    // 画面に出る文章（本文・検索結果用の説明文・構造化データ）を、HTMLから取り出して調べる。
+    // about・privacy・terms は、課金・広告の有無そのものを説明するページなので対象外。
+    const FORBIDDEN = /プレミアム|スタンダード|Standard|Premium|プラン|料金|有料|月額|サブスク|広告/;
+    const paths = [
+      "/",
+      "/tools",
+      ...categories.map((c) => `/tools/${c.id}`),
+      ...tools.filter((t) => t.status === "available").map((t) => `/tools/${t.id}`),
+    ];
+
+    const problems: string[] = [];
+    for (const path of paths) {
+      const res = await request.get(path);
+      expect(res.status(), `${path} が開けない`).toBe(200);
+      const html = await res.text();
+      // 構造化データ（application/ld+json）と meta の説明文は残し、それ以外のscript・styleは除く
+      const ldJson = [...html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+      const metas = [...html.matchAll(/<meta[^>]+(?:name|property)="(?:description|og:description|og:title|twitter:description)"[^>]*>/g)].map(
+        (m) => m[0],
+      );
+      const title = html.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "";
+      const bodyText = html
+        .replace(/<script[\s\S]*?<\/script>/g, " ")
+        .replace(/<style[\s\S]*?<\/style>/g, " ")
+        .replace(/<[^>]+>/g, " ");
+      const haystack = [title, ...metas, ...ldJson, bodyText].join("\n");
+      const hit = haystack.match(new RegExp(`.{0,25}(?:${FORBIDDEN.source}).{0,25}`));
+      if (hit) problems.push(`${path}: …${hit[0].replace(/\s+/g, " ")}…`);
+    }
+    expect(problems, problems.join("\n")).toEqual([]);
   });
 
   test("ツールページに広告の枠・ダウンロード時の広告の案内が出ない", async ({ page }) => {

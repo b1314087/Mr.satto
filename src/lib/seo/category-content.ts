@@ -14,6 +14,8 @@ import type { CategoryId } from "@/lib/tools/types";
  * 各カテゴリの紹介文は、実際に所属するツールと内容が一致するように
  * 見直している（存在しない機能をSEOキーワードのためだけに書かない）。
  */
+import { adaptCategorySeoContent } from "@/lib/seo/feature-copy";
+
 export interface CategorySeoContent {
   metaTitle: string;
   metaDescription: string;
@@ -87,5 +89,6 @@ export const categorySeoContent: Record<CategoryId, CategorySeoContent> = {
 };
 
 export function getCategorySeoContent(id: CategoryId): CategorySeoContent {
-  return categorySeoContent[id];
+  // 課金・広告をやめている間は、プランや広告に触れた文言を差し替える（src/lib/seo/feature-copy.ts）。
+  return adaptCategorySeoContent(categorySeoContent[id]);
 }

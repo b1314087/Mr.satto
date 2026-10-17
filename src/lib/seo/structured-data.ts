@@ -1,4 +1,5 @@
 import { siteConfig } from "@/lib/config/site";
+import { featureFlags } from "@/lib/config/features";
 import type { ToolFaqItem } from "@/lib/seo/tool-content";
 
 /**
@@ -101,7 +102,13 @@ export function buildWebApplication() {
       "@type": "Offer",
       price: "0",
       priceCurrency: "JPY",
-      description: "広告視聴による1時間の無料利用、またはStandard/Premiumプランへの加入で利用できます。",
+      // 課金・広告をやめている間は、プランや広告に触れない説明にする（src/lib/config/features.ts）。
+      description:
+        featureFlags.billing && featureFlags.ads
+          ? "広告視聴による1時間の無料利用、またはStandard/Premiumプランへの加入で利用できます。"
+          : featureFlags.billing
+            ? "無料でご利用いただけます。広告なしで使いたい場合は、Standard/Premiumプランをご利用いただけます。"
+            : "会員登録なしで、無料でご利用いただけます。",
     },
     inLanguage: "ja",
   };
