@@ -5,8 +5,8 @@ import { setDevPlanOverride } from "../helpers/dev-plan";
  * 代表ツールE2Eテスト用のPlaywright test拡張（Phase 14）。
  *
  * ほとんどのツールは requiredPlan: "standard" 以上であり、Freeプランの
- * ユーザーには汎用の <ToolAccessGate>（「広告を見て1時間無料で使う」）が
- * 表示され、ツール本体（FileDropzone等）はレンダリングされない。
+ * ユーザーは、処理済みファイルをダウンロードする時に広告の確認画面
+ * （DownloadGateProvider）が表示される。
  *
  * ツールの入出力そのものを検証したいE2Eテストで、広告視聴フロー
  * （実際の広告SDKには接続していない）まで自動化するのは本質的ではないため、

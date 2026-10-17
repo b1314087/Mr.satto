@@ -1,7 +1,8 @@
 "use client";
 
-import { grantTemporaryAccess } from "./temporary-access-actions";
+import { grantFallbackTemporaryAccess, grantTemporaryAccess } from "./temporary-access-actions";
 import { TEMP_ACCESS_COOKIE_NAME } from "./temporary-access-cookie";
+import type { FallbackGrantReason } from "./temporary-access-kinds";
 
 /**
  * Rewarded Ad 視聴後に付与される「一時的な無料利用権限」のクライアント側抽象層。
@@ -40,9 +41,20 @@ export interface TemporaryAccessSnapshot {
   remainingSeconds: number;
 }
 
+/** 広告が配信されなかった場合の代替付与の結果 */
+export type FallbackGrantOutcome =
+  | { granted: true; snapshot: TemporaryAccessSnapshot }
+  | { granted: false; denial: "invalid-reason" | "cooldown" };
+
 export interface TemporaryAccessService {
   /** Rewarded Ad視聴完了後、Standard対象ツール全体の一時的な利用権限を付与する */
   grant(): Promise<TemporaryAccessSnapshot>;
+  /**
+   * 広告自体が配信されなかった場合に、暫定的な代替の利用権を付与する。
+   * 広告視聴による付与（grant）とは別の経路で、サーバーが発行するトークンの
+   * 種別も "fallback" になる。広告を視聴したことにはならない。
+   */
+  grantFallback(reason: FallbackGrantReason): Promise<FallbackGrantOutcome>;
   /** 現在、（表示用の見積もり上）一時的な利用権限を持っているように見えるか */
   isActive(): boolean;
   /** @deprecated isActive() を使うこと。後方互換のために残している */
@@ -75,7 +87,9 @@ function readCookieValue(name: string): string | null {
 
 /**
  * Cookieに書かれた有効期限(ms)だけを取り出す（表示用）。
- * トークン形式は `v1.<expiresAtMs>.<signature>`（src/lib/plans/temp-access-token.ts）。
+ * トークン形式は `v1.<expiresAtMs>.<signature>`（旧）または
+ * `v2.<expiresAtMs>.<kind>.<signature>`（現行）。どちらも2番目の要素が有効期限
+ * （src/lib/plans/temp-access-token.ts）。
  * 署名の検証はできない（秘密鍵はサーバーのみが持つ）ため、ここでは行わない。
  * 改ざんされていても、実際のアクセス可否判定（サーバー側）には一切影響しない。
  */
@@ -83,7 +97,9 @@ function readExpiresAtMsFromCookie(): number | null {
   const raw = readCookieValue(TEMP_ACCESS_COOKIE_NAME);
   if (!raw) return null;
   const parts = raw.split(".");
-  if (parts.length !== 3) return null;
+  const isV1 = parts.length === 3 && parts[0] === "v1";
+  const isV2 = parts.length === 4 && parts[0] === "v2";
+  if (!isV1 && !isV2) return null;
   const expiresAtMs = Number(parts[1]);
   return Number.isFinite(expiresAtMs) ? expiresAtMs : null;
 }
@@ -122,6 +138,23 @@ class CookieBackedTemporaryAccessService implements TemporaryAccessService {
     }
 
     return this.snapshot();
+  }
+
+  async grantFallback(reason: FallbackGrantReason): Promise<FallbackGrantOutcome> {
+    const result = await grantFallbackTemporaryAccess(reason);
+    if (!result.granted) {
+      return { granted: false, denial: result.denial };
+    }
+    this.lastKnownExpiresAtMs = result.expiresAtMs;
+
+    // 広告視聴による付与と同様、他タブへ「確認しにいくきっかけ」を通知する。
+    try {
+      this.getChannel()?.postMessage({ type: "granted" });
+    } catch {
+      // 送信に失敗しても致命的ではない（Cookie自体は既に共有されている）
+    }
+
+    return { granted: true, snapshot: this.snapshot() };
   }
 
   private resolveExpiresAtMs(): number | null {

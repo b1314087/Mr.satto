@@ -46,6 +46,12 @@ function DownloadTriggerButton({
  *
  * Tool Processing → Processed File → [このコンポーネント] → Download
  *
+ * 【Phase 1-13の補足】Freeユーザーのダウンロード時の広告確認は、このコンポーネントではなく、
+ * 全ツール共通のダウンロード関数 downloadBlob()（src/lib/utils/format.ts）が呼ぶ関所
+ * （src/lib/download/download-gate.ts、src/components/ads/download-gate-provider.tsx）が行う。
+ * そのため、このコンポーネントの "rewarded" モードは使われておらず、各ツールはこのコンポーネントを
+ * 変更せずに関所の対象になっている。
+ *
  * mode によってダウンロード前の挙動を切り替える設計にしておくことで、
  * 将来 "free" → "rewarded"（リワード広告視聴後に解除）へ、
  * あるいは "premium"（広告なしで即ダウンロード）へ、

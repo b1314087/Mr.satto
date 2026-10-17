@@ -24,6 +24,7 @@ import {
   type QuoteOrderPdfOutput,
 } from "@/lib/processors/browser/quote-order-pdf";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { runWithDownloadAccess } from "@/lib/download/download-gate";
 
 const inputClass =
   "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
@@ -210,7 +211,14 @@ export function QuoteOrderGeneratorTool() {
             />
             <button
               type="button"
-              onClick={() => window.open(result.url, "_blank", "noopener,noreferrer")}
+              onClick={() =>
+              // 新しいタブで開くと、そこから保存できてしまうため、ダウンロードと同じ広告の関所を通す
+              runWithDownloadAccess({
+                key: result.url,
+                label: "PDFを新しいタブで開く",
+                run: () => window.open(result.url, "_blank", "noopener,noreferrer"),
+              })
+            }
               className="text-xs text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
             >
               新しいタブでPDFを開く（印刷はこちらから）
