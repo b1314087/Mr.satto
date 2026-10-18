@@ -2,6 +2,7 @@ import { test, expect } from "../fixtures/premium-test";
 import type { Page } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
 import { clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { clickWhenReady } from "../helpers/tool-ready";
 import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { fieldDisplayId } from "@/lib/pdf-template/types";
 import {
@@ -45,9 +46,13 @@ async function openTemplateTool(page: Page) {
   // このページへの最初のアクセス時だけ数秒〜まれに30秒超まで初期化が遅延することがある
   // （本番ビルドでは再現しない、テスト環境固有の揺らぎ）。既存smokeテストと同じく
   // 既定の10秒より長いタイムアウトを与える。
-  await expect(page.getByRole("button", { name: "テンプレート", exact: false })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "テンプレート", exact: false }).click();
-  await expect(page.getByText("空のテンプレートPDFをドラッグ&ドロップ")).toBeVisible({ timeout: 30_000 });
+  // ボタンが「表示」されていても、Reactの準備(hydration)前にクリックすると無視されることがあるため、
+  // onClickが取り付くまで待ってからクリックし、切り替わった画面の表示まで確認する（tests/helpers/tool-ready.ts）。
+  await clickWhenReady(page.getByRole("button", { name: "テンプレート", exact: false }), {
+    readyTimeoutMs: 30_000,
+    expectAfter: page.getByText("空のテンプレートPDFをドラッグ&ドロップ"),
+    expectTimeoutMs: 30_000,
+  });
 }
 
 async function uploadBlankTemplate(page: Page, filePath: string) {
@@ -145,8 +150,10 @@ test.describe("テンプレート作成", () => {
     // を踏まえ、初回表示だけ長めのタイムアウトを与える。
     await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole("button", { name: "テンプレート", exact: false }).click();
-    await expect(page.getByText("空のテンプレートPDFをドラッグ&ドロップ")).toBeVisible();
+    // Reactの準備(hydration)前のクリックは無視されることがあるため、準備完了を待ってからクリックする。
+    await clickWhenReady(page.getByRole("button", { name: "テンプレート", exact: false }), {
+      expectAfter: page.getByText("空のテンプレートPDFをドラッグ&ドロップ"),
+    });
 
     await page.getByRole("button", { name: "自動抽出", exact: false }).click();
     await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible();

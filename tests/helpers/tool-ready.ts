@@ -121,3 +121,66 @@ export async function uploadWhenReady(
     return;
   }
 }
+
+export interface ClickWhenReadyOptions {
+  /** ボタンの表示・有効化・準備完了（onClickが取り付いたこと）を待つ上限（ミリ秒） */
+  readyTimeoutMs?: number;
+  /** クリック後に現れるはずの画面要素。指定すると、現れるまで待ち、現れなければ診断つきで失敗させる */
+  expectAfter?: Locator;
+  /** expectAfter を待つ上限（ミリ秒） */
+  expectTimeoutMs?: number;
+}
+
+/** 要素にReactのonClickハンドラが取り付いている（hydration済み）か。ページ内で評価する関数。 */
+function hasReactClickHandler(el: Element): boolean {
+  const key = Object.keys(el).find((k) => k.startsWith("__reactProps$"));
+  if (!key) return false;
+  return typeof (el as unknown as Record<string, { onClick?: unknown }>)[key]?.onClick === "function";
+}
+
+/**
+ * ボタンを、準備が完了してからクリックする（onClick を持つボタン用）。
+ *
+ * ボタンが「表示されている」だけでは、Reactの準備（hydration）が済んでいるとは限らない。
+ * 準備前にクリックすると無視され、画面が切り替わらないことがある（工程5の
+ * filled-pdf-to-excel-template で、10回中1〜2回の失敗として確認）。
+ * そのため、次をすべて満たすまで待ってから、1回だけクリックする。
+ * 1. ボタンが表示されている　2. ボタンが有効　3. ボタンにReactのonClickが取り付いている
+ * クリックを繰り返すことはしない（状態を切り替えるボタンで、意図せず元に戻すことを避けるため）。
+ *
+ * `expectAfter` を指定した場合は、クリック後にその要素が現れるまで待つ。
+ * 現れなければ、ボタンの状態（aria-pressed・準備状況）つきで失敗させる。
+ */
+export async function clickWhenReady(button: Locator, options: ClickWhenReadyOptions = {}): Promise<void> {
+  const { readyTimeoutMs = 30_000, expectAfter, expectTimeoutMs = 30_000 } = options;
+
+  await expect(button, `クリックするボタンが表示されませんでした: ${button}`).toBeVisible({ timeout: readyTimeoutMs });
+  await expect(button, `クリックするボタンが有効になりませんでした: ${button}`).toBeEnabled({ timeout: readyTimeoutMs });
+  await expect
+    .poll(() => button.evaluate(hasReactClickHandler).catch(() => false), {
+      message: `ボタンにReactのonClickが取り付かず（hydration未完了）、準備完了になりませんでした: ${button}`,
+      timeout: readyTimeoutMs,
+    })
+    .toBe(true);
+
+  await button.click();
+
+  if (!expectAfter) return;
+  const appeared = await expectAfter
+    .waitFor({ state: "visible", timeout: expectTimeoutMs })
+    .then(() => true)
+    .catch(() => false);
+  if (appeared) return;
+
+  const pressed = await button.getAttribute("aria-pressed").catch(() => null);
+  const handler = await button.evaluate(hasReactClickHandler).catch(() => false);
+  await expect(
+    expectAfter,
+    [
+      `ボタンをクリックしましたが、期待する画面要素が現れませんでした: ${expectAfter}`,
+      `  ボタン: ${button}`,
+      `  クリック後のaria-pressed: ${pressed ?? "(属性なし)"}`,
+      `  ボタンのonClick取り付け: ${handler ? "あり" : "なし"}`,
+    ].join("\n")
+  ).toBeVisible({ timeout: 1_000 });
+}
