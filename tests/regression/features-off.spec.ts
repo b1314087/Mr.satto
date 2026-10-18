@@ -3,6 +3,7 @@ import { uploadFixture, waitForSuccess } from "../helpers/tool-runner";
 import { fixtures } from "../fixtures/paths";
 import { tools } from "@/lib/tools/data";
 import { categories } from "@/lib/tools/categories";
+import { siteConfig } from "@/lib/config/site";
 
 /**
  * 機能スイッチ（src/lib/config/features.ts）の「広告オフ・課金オフ」状態の回帰テスト。
@@ -159,12 +160,41 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     await expect(page.getByText("現在、本サービスは、会員登録・ログイン・有料プランを一般のご利用者向けには提供していません。", { exact: false })).toBeVisible();
 
     await page.goto("/terms");
-    await expect(page.getByTestId("terms-billing-notice")).toBeVisible();
+    const notice = page.getByTestId("terms-billing-notice");
+    await expect(notice).toBeVisible();
+    // 収益化を「一時的に」止めていること、恒久的に無料とするものではないことを明記している
+    await expect(notice).toContainText("一時的に停止");
+    await expect(notice).toContainText("恒久的に無料とするものではなく");
+    await expect(page.getByTestId("terms-current-offering")).toContainText("恒久的に無料で提供することをお約束するものではありません");
+  });
+
+  test("利用規約の運営者情報の案内が、「準備中」の特商法ページではなく、問い合わせ窓口を指す", async ({ page }) => {
+    await page.goto("/terms");
+    const clause = page.getByTestId("terms-contact-clause");
+    const formLink = clause.getByRole("link", { name: "お問い合わせフォーム" });
+    await expect(formLink).toHaveAttribute("href", siteConfig.contactFormUrl);
+    // フォームは新しいタブで開き、開いた先から元のページを操作されないようにする
+    await expect(formLink).toHaveAttribute("target", "_blank");
+    await expect(formLink).toHaveAttribute("rel", /noopener/);
+    await expect(clause.getByRole("link", { name: siteConfig.contactEmail })).toHaveAttribute(
+      "href",
+      `mailto:${siteConfig.contactEmail}`,
+    );
+    // 課金オフの間は /tokushoho が「準備中」のため、この問い合わせ条項からはリンクしない
+    // （ページの他の箇所ではなく、この条項の中だけを確認する）
+    await expect(clause.getByRole("link", { name: "特定商取引法に基づく表記" })).toHaveCount(0);
+    await expect(clause.locator('a[href="/tokushoho"]')).toHaveCount(0);
   });
 
   test("会員登録なしの利用案内（aboutページ）が、課金オフの内容になる", async ({ page }) => {
     await page.goto("/about");
     await expect(page.getByRole("heading", { name: "ご利用料金について" })).toBeVisible();
     await expect(page.getByRole("link", { name: "料金プラン" })).toHaveCount(0);
+    // 検索結果に出る説明文にも、実際には提供していない「料金プラン」を出さない
+    const description = await page.locator('meta[name="description"]').getAttribute("content");
+    expect(description ?? "").not.toContain("料金プラン");
+    expect(description ?? "").toContain("対応分野・プライバシー設計について紹介します");
+    // 現在は無料でも、恒久的な無料サービスと誤解されない
+    await expect(page.getByText("今後、広告の表示や有料プランを導入する場合があります")).toBeVisible();
   });
 });

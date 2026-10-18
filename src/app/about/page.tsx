@@ -6,7 +6,10 @@ import { featureFlags } from "@/lib/config/features";
 
 export const metadata: Metadata = {
   title: "Mr.Sattoとは",
-  description: `${siteConfig.name}（${siteConfig.tagline}）がどんなサービスか、対応分野・料金プラン・プライバシー設計について紹介します。`,
+  // 課金がオフの間は、実際に提供していない「料金プラン」に触れない説明文にする
+  description: featureFlags.billing
+    ? `${siteConfig.name}（${siteConfig.tagline}）がどんなサービスか、対応分野・料金プラン・プライバシー設計について紹介します。`
+    : `${siteConfig.name}（${siteConfig.tagline}）がどんなサービスか、対応分野・プライバシー設計について紹介します。`,
   alternates: {
     canonical: "/about",
   },
@@ -93,8 +96,12 @@ export default function AboutPage() {
           </h2>
           {!featureFlags.billing ? (
             <p>
-              {siteConfig.name}は会員登録なしで、無料でご利用いただけます。
+              {siteConfig.name}は現在、会員登録なしで、無料でご利用いただけます。
               {featureFlags.ads ? "ダウンロードの際に、広告をご覧いただく場合があります。" : ""}
+              {featureFlags.ads
+                ? "今後、有料プランを導入する場合があります。"
+                : "今後、広告の表示や有料プランを導入する場合があります。"}
+              その際は、本サイト上でお知らせします。
             </p>
           ) : (
             <p>
