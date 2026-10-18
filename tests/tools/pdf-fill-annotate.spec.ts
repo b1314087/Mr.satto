@@ -1,7 +1,8 @@
 import { test, expect } from "../fixtures/premium-test";
 import type { Page } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
-import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { uploadWhenReady } from "../helpers/tool-ready";
 import { extractPdfContent, isValidPdfFile } from "../helpers/pdf-inspect";
 import { checkBasicAccessibility, checkKeyboardFocusable } from "../helpers/a11y";
 
@@ -28,8 +29,8 @@ test.use({ viewport: { width: 1280, height: 1400 } });
 
 async function openToolWithPdf(page: Page, fixturePath: string) {
   await page.goto("/tools/pdf-fill-annotate");
-  await uploadFixture(page, fixturePath);
-  await expect(page.locator(CANVAS)).toBeVisible({ timeout: 15_000 });
+  // ファイル入力欄のhydration完了を待ってから選択し、canvasの表示まで待つ（tests/helpers/tool-ready.ts）
+  await uploadWhenReady(page, fixturePath, page.locator(CANVAS));
 }
 
 async function clickCanvasAt(page: Page, x: number, y: number) {
@@ -302,14 +303,40 @@ test("表示倍率(50%/100%/150%)を変えても、PDF上の同じ相対位置�
   const FRACTION_X = 0.3;
   const FRACTION_Y = 0.25;
 
+  // 100%表示のキャンバス幅。50%・150%では、この幅×倍率になるまで再描画を待つ（下記）。
+  let width100 = 0;
+
   for (const zoom of [100, 50, 150]) {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     await page.getByRole("button", { name: `${zoom}%`, exact: true }).click();
     await page.getByRole("button", { name: "テキスト", exact: true }).click();
 
+    if (zoom === 100) {
+      width100 = (await page.locator(CANVAS).boundingBox())?.width ?? 0;
+      expect(width100, "100%表示のキャンバス幅が取得できませんでした").toBeGreaterThan(0);
+    } else {
+      // 倍率を変えるとキャンバスが非同期に再描画されて幅が変わる。変わる前に寸法を測ると、
+      // 前の倍率の大きさを基準にクリックしてしまい、別の位置を指してしまう（工程3の調査）。
+      // 幅は「100%表示の幅×倍率」になるはずなので、その大きさになるまで待つ。
+      const expectedWidth = (width100 * zoom) / 100;
+      await expect
+        .poll(
+          async () => {
+            const b = await page.locator(CANVAS).boundingBox();
+            return b ? Math.abs(b.width - expectedWidth) <= 2 : false;
+          },
+          {
+            message: `ズームレベル${zoom}%でキャンバスの幅が期待値(${expectedWidth}px = 100%の${width100}px × ${zoom / 100})に変わりませんでした`,
+            timeout: 15_000,
+          }
+        )
+        .toBe(true);
+    }
+
     const box = await page.locator(CANVAS).boundingBox();
     expect(box, `ズームレベル${zoom}%でキャンバスのサイズが取得できませんでした`).toBeTruthy();
-    await page.locator(CANVAS).click({ position: { x: box!.width * FRACTION_X, y: box!.height * FRACTION_Y } });
+    const clickPos = { x: box!.width * FRACTION_X, y: box!.height * FRACTION_Y };
+    await page.locator(CANVAS).click({ position: clickPos });
 
     const input = page.locator(OBJECT_LIST).locator('textarea').first();
     await input.fill(`Z${zoom}`);
@@ -321,6 +348,11 @@ test("表示倍率(50%/100%/150%)を変えても、PDF上の同じ相対位置�
     const zChar = extracted.pages[0].items.find((i) => i.str === "Z");
     expect(zChar, `ズームレベル${zoom}%でテキストの座標が取得できませんでした`).toBeTruthy();
     positions[zoom] = { x: zChar!.x, y: zChar!.y };
+    // 失敗時・検証時に、倍率ごとの寸法・クリック位置・書き出し位置を確認できるよう記録する
+    test.info().annotations.push({
+      type: "zoom-probe",
+      description: `zoom=${zoom}% canvas=${box!.width.toFixed(1)}x${box!.height.toFixed(1)} click=(${clickPos.x.toFixed(1)},${clickPos.y.toFixed(1)}) pdf=(${zChar!.x.toFixed(1)},${zChar!.y.toFixed(1)})`,
+    });
   }
 
   // ページに対する同じ相対位置をクリックした場合、表示倍率が変わってもPDF上の

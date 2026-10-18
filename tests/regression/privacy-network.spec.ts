@@ -1,5 +1,6 @@
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
+import { uploadWhenReady } from "../helpers/tool-ready";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { fieldDisplayId } from "@/lib/pdf-template/types";
 import { TEMPLATE_FIELDS } from "../fixtures/template-layout";
@@ -20,9 +21,10 @@ test("pdf-merge操作中、PDFの中身が自社API・外部APIへ送信され�
   const recorder = new NetworkRecorder(page);
   await page.goto("/tools/pdf-merge");
 
-  const input = page.locator('input[type="file"]').first();
-  await input.setInputFiles([fixtures.singlePagePdf, fixtures.multiPagePdf]);
-  await page.getByRole("button", { name: /件のPDFを結合する$/ }).click();
+  // ファイル入力欄の準備完了を待ってから選び、結合ボタンが出るまで待つ（tests/helpers/tool-ready.ts）
+  const mergeButton = page.getByRole("button", { name: /件のPDFを結合する$/ });
+  await uploadWhenReady(page, [fixtures.singlePagePdf, fixtures.multiPagePdf], mergeButton, { readyTimeoutMs: 30_000 });
+  await mergeButton.click();
   await expect(page.getByText("完了", { exact: false })).toBeVisible({ timeout: 30_000 });
 
   const origin = new URL(baseURL!).origin;
@@ -61,9 +63,7 @@ test("pdf-fill-annotate操作中、PDF・入力したテキスト・画像が自
   await page.goto("/tools/pdf-fill-annotate");
 
   const marker = "PRIVACY-CHECK-9f3a1";
-  const input = page.locator('input[type="file"]').first();
-  await input.setInputFiles(fixtures.singlePagePdf);
-  await expect(page.locator('[data-testid="pdf-annotate-canvas"]')).toBeVisible({ timeout: 15_000 });
+  await uploadWhenReady(page, fixtures.singlePagePdf, page.locator('[data-testid="pdf-annotate-canvas"]'));
 
   // テキスト
   await page.getByRole("button", { name: "テキスト", exact: true }).click();
@@ -116,9 +116,7 @@ test("pdf-fill-annotate(Phase17: 図形・回転・複製・印影)操作中、�
   const recorder = new NetworkRecorder(page);
   await page.goto("/tools/pdf-fill-annotate");
 
-  const input = page.locator('input[type="file"]').first();
-  await input.setInputFiles(fixtures.singlePagePdf);
-  await expect(page.locator('[data-testid="pdf-annotate-canvas"]')).toBeVisible({ timeout: 15_000 });
+  await uploadWhenReady(page, fixtures.singlePagePdf, page.locator('[data-testid="pdf-annotate-canvas"]'));
 
   // 図形（矩形）を配置
   await page.getByRole("button", { name: "図形", exact: true }).click();
@@ -289,8 +287,10 @@ test("excel-to-pdf操作中、Excelのセル内容が自社API・外部APIへ送
 
   const marker = "FIT1X1_R0C0";
   await page.goto("/tools/excel-to-pdf");
-  await page.locator('input[type="file"]').first().setInputFiles(fixtures.excelFit1x1Xlsx);
-  await expect(page.getByRole("button", { name: "PDFに変換する" })).toBeVisible({ timeout: 30_000 });
+  // ファイル入力欄の準備完了を待ってから選び、変換ボタンが出るまで待つ（tests/helpers/tool-ready.ts）
+  await uploadWhenReady(page, fixtures.excelFit1x1Xlsx, page.getByRole("button", { name: "PDFに変換する" }), {
+    readyTimeoutMs: 30_000,
+  });
   await page.getByRole("button", { name: "PDFに変換する" }).click();
   await expect(page.getByText("完了", { exact: false })).toBeVisible({ timeout: 30_000 });
 
@@ -323,8 +323,10 @@ test("word-to-pdf操作中、Word文書の内容が自社API・外部APIへ送�
 
   const marker = "RICH_HEADING_TEXT";
   await page.goto("/tools/word-to-pdf");
-  await page.locator('input[type="file"]').first().setInputFiles(fixtures.wordRichContentDocx);
-  await expect(page.getByRole("button", { name: "PDFに変換する" })).toBeVisible({ timeout: 30_000 });
+  // ファイル入力欄の準備完了を待ってから選び、変換ボタンが出るまで待つ（tests/helpers/tool-ready.ts）
+  await uploadWhenReady(page, fixtures.wordRichContentDocx, page.getByRole("button", { name: "PDFに変換する" }), {
+    readyTimeoutMs: 30_000,
+  });
   await page.getByRole("button", { name: "PDFに変換する" }).click();
   await expect(page.getByText("完了", { exact: false })).toBeVisible({ timeout: 30_000 });
 

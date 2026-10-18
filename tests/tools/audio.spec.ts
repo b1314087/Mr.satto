@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
 import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { uploadWhenReady } from "../helpers/tool-ready";
 
 /**
  * 音声ツール（6種）のE2E。
@@ -13,20 +14,15 @@ import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile }
  */
 
 /**
- * ファイルを選び、プレビュー（data-testid="tool-preview"）が出るまで繰り返す。
- * 開発サーバーの初回コンパイル直後はReactの準備(hydration)前の入力が無視されることがあるため。
+ * ファイルを選び、プレビュー（data-testid="tool-preview"）が出るまで待つ。
+ * 以前は8秒おきにファイルを選び直していたが、開発サーバーがチャンクを404で返してツール本体が
+ * 起動しなかった場合は、何度選び直しても反応せず回復できなかった（工程2の調査）。
+ * 現在は、ファイル入力欄の準備完了を待ってから1回だけ選び、開発サーバーのチャンク読み込み失敗が
+ * 確認できた場合に限って再読み込みで回復する（詳細は tests/helpers/tool-ready.ts）。
+ * 音声のデコードとプレビュー生成には時間がかかることがあるため、準備完了の待機上限は長めにしている。
  */
 async function uploadAndWait(page: Page, files: string | string[]) {
-  const preview = page.getByTestId("tool-preview").first();
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await uploadFixture(page, files);
-    const shown = await preview
-      .waitFor({ state: "visible", timeout: 8_000 })
-      .then(() => true)
-      .catch(() => false);
-    if (shown) return;
-  }
-  await expect(preview).toBeVisible({ timeout: 10_000 });
+  await uploadWhenReady(page, files, page.getByTestId("tool-preview").first(), { readyTimeoutMs: 25_000 });
 }
 
 function probe(file: string): { codec: string; duration: number } {

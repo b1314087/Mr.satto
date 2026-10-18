@@ -1,7 +1,8 @@
 import { test, expect } from "../fixtures/premium-test";
 import type { Page } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
-import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { uploadWhenReady } from "../helpers/tool-ready";
 import { extractPdfContent, isValidPdfFile, getPageOpSummary } from "../helpers/pdf-inspect";
 
 /**
@@ -25,8 +26,8 @@ test.use({ viewport: { width: 1280, height: 1400 } });
 
 async function openToolWithPdf(page: Page, fixturePath: string) {
   await page.goto("/tools/pdf-fill-annotate");
-  await uploadFixture(page, fixturePath);
-  await expect(page.locator(CANVAS)).toBeVisible({ timeout: 15_000 });
+  // ファイル入力欄のhydration完了を待ってから選択し、canvasの表示まで待つ（tests/helpers/tool-ready.ts）
+  await uploadWhenReady(page, fixturePath, page.locator(CANVAS));
 }
 
 async function clickCanvasAt(page: Page, x: number, y: number) {
