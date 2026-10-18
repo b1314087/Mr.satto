@@ -28,6 +28,20 @@ function Clauses({ children }: { children: ReactNode }) {
   return <ol className="list-decimal space-y-1.5 pl-5">{children}</ol>;
 }
 
+/**
+ * 課金がオフの間の、第3〜6条（会員登録・料金・契約・返金）の本文。
+ * 提供していない料金や契約条件を載せないため「定めなし」とする。
+ * 条番号と、他の条（第2条など）からの参照を保つため、見出しは残す。
+ */
+function NotProvided({ reason }: { reason: string }) {
+  return (
+    <p data-testid="terms-clause-not-provided">
+      {reason}
+      提供を始める場合は、あらかじめ本サイト上でお知らせするよう努め、本規約を改定して定めます（第11条）。
+    </p>
+  );
+}
+
 export default function TermsPage() {
   const standard = PLAN_DEFINITIONS.standard;
   const premium = PLAN_DEFINITIONS.premium;
@@ -42,7 +56,7 @@ export default function TermsPage() {
             data-testid="terms-billing-notice"
             className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900"
           >
-            現在、会員登録・有料プラン・広告の表示は、一時的に停止しています。本サービスを恒久的に無料とするものではなく、将来、会員登録・有料プラン・広告の表示を始める場合があります。以下のうち、会員登録・有料プラン・お支払いに関する定めは、これらの提供を始めた場合に適用されます。提供を始める場合は、あらかじめ本サイト上でお知らせするよう努めます。
+            現在、会員登録・有料プラン・広告の表示は、一時的に停止しています。本サービスを恒久的に無料とするものではなく、将来、会員登録・有料プラン・広告の表示を始める場合があります。第3条から第6条については、これらの提供を始める際に定めます。提供を始める場合は、あらかじめ本サイト上でお知らせするよう努めます。
           </p>
         )}
         <Section title="第1条（適用）">
@@ -116,56 +130,72 @@ export default function TermsPage() {
         </Section>
 
         <Section title="第3条（会員登録）">
-          <Clauses>
-            <li>有料プランのご利用には、メールアドレスとパスワードによる会員登録が必要です。</li>
-            <li>ユーザーは、登録情報を正確に保ち、パスワードを自己の責任で管理するものとします。</li>
-            <li>
-              登録情報の取り扱いは、
-              <Link href="/privacy" className={`mx-1 ${LINK_CLASS}`}>
-                プライバシーポリシー
-              </Link>
-              に従います。
-            </li>
-          </Clauses>
+          {featureFlags.billing ? (
+            <Clauses>
+              <li>有料プランのご利用には、メールアドレスとパスワードによる会員登録が必要です。</li>
+              <li>ユーザーは、登録情報を正確に保ち、パスワードを自己の責任で管理するものとします。</li>
+              <li>
+                登録情報の取り扱いは、
+                <Link href="/privacy" className={`mx-1 ${LINK_CLASS}`}>
+                  プライバシーポリシー
+                </Link>
+                に従います。
+              </li>
+            </Clauses>
+          ) : (
+            <NotProvided reason="現在、会員登録は提供していないため、本条は定めていません。" />
+          )}
         </Section>
 
         <Section title="第4条（料金・お支払い）">
-          <Clauses>
-            <li>
-              有料プランの料金は、スタンダードプランが月額{standard.priceYen.toLocaleString()}円（税込）、プレミアムプランが月額{premium.priceYen.toLocaleString()}円（税込）です。
-            </li>
-            <li>
-              お支払いは、決済サービスStripeを通じて行います。運営者は、カード情報を保存しません。
-            </li>
-            <li>
-              お申し込みの完了時に初回分を、以降は毎月の更新日に、自動でご請求します。
-            </li>
-            <li>
-              お支払いの確認が取れない間（お支払いの確認中、未払いなど）は、有料プランとしては扱われず、無料プランと同じ扱いになります。
-            </li>
-            <li>キャンペーンコードをご利用の場合は、そのコードに定められた条件に従います。</li>
-          </Clauses>
+          {featureFlags.billing ? (
+            <Clauses>
+              <li>
+                有料プランの料金は、スタンダードプランが月額{standard.priceYen.toLocaleString()}円（税込）、プレミアムプランが月額{premium.priceYen.toLocaleString()}円（税込）です。
+              </li>
+              <li>
+                お支払いは、決済サービスStripeを通じて行います。運営者は、カード情報を保存しません。
+              </li>
+              <li>
+                お申し込みの完了時に初回分を、以降は毎月の更新日に、自動でご請求します。
+              </li>
+              <li>
+                お支払いの確認が取れない間（お支払いの確認中、未払いなど）は、有料プランとしては扱われず、無料プランと同じ扱いになります。
+              </li>
+              <li>キャンペーンコードをご利用の場合は、そのコードに定められた条件に従います。</li>
+            </Clauses>
+          ) : (
+            <NotProvided reason="現在、有料プランは提供しておらず、料金のお支払いはないため、本条は定めていません。" />
+          )}
         </Section>
 
         <Section title="第5条（契約期間・更新・解約）">
-          <Clauses>
-            <li>有料プランの契約期間は1か月で、解約しない限り、毎月自動で更新されます。</li>
-            <li>
-              解約は、アカウント画面の「お支払い方法の変更・解約」から、いつでも行えます。
-            </li>
-            <li>
-              解約後も、現在の契約期間の終了までは、有料プランをご利用いただけます。契約期間の終了後は更新されず、無料プランになります。
-            </li>
-            <li>
-              プランの変更は、アカウント画面の「お支払い方法の変更・解約」から開く、決済サービスの管理画面で行えます（変更できる内容は、その画面に表示されます）。
-            </li>
-          </Clauses>
+          {featureFlags.billing ? (
+            <Clauses>
+              <li>有料プランの契約期間は1か月で、解約しない限り、毎月自動で更新されます。</li>
+              <li>
+                解約は、アカウント画面の「お支払い方法の変更・解約」から、いつでも行えます。
+              </li>
+              <li>
+                解約後も、現在の契約期間の終了までは、有料プランをご利用いただけます。契約期間の終了後は更新されず、無料プランになります。
+              </li>
+              <li>
+                プランの変更は、アカウント画面の「お支払い方法の変更・解約」から開く、決済サービスの管理画面で行えます（変更できる内容は、その画面に表示されます）。
+              </li>
+            </Clauses>
+          ) : (
+            <NotProvided reason="現在、有料プランは提供していないため、本条は定めていません。" />
+          )}
         </Section>
 
         <Section title="第6条（返金）">
-          <p>
-            デジタルサービスの性質上、法令に定める場合を除き、お支払い済みの料金の返金は行いません。日割り計算も行いません。
-          </p>
+          {featureFlags.billing ? (
+            <p>
+              デジタルサービスの性質上、法令に定める場合を除き、お支払い済みの料金の返金は行いません。日割り計算も行いません。
+            </p>
+          ) : (
+            <NotProvided reason="現在、お支払いが発生するサービスは提供していないため、本条は定めていません。" />
+          )}
         </Section>
 
         <Section title="第7条（禁止事項）">

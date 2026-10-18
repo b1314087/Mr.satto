@@ -186,6 +186,40 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     await expect(clause.locator('a[href="/tokushoho"]')).toHaveCount(0);
   });
 
+  test("利用規約の第3〜6条は、課金オフの間「定めなし」になり、旧条件が表示されない", async ({ page }) => {
+    await page.goto("/terms");
+    const main = page.locator("main");
+
+    // 条番号が飛んだり重なったりしていない（第1〜12条の見出しが、この順にすべてある）
+    const headings = await main.locator("h2").allTextContents();
+    const articleNumbers = headings.map((h) => h.match(/^第(\d+)条/)?.[1]).filter((n): n is string => Boolean(n)).map(Number);
+    expect(articleNumbers).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+
+    // 第3〜6条は、見出しを残したまま「定めなし」になる（この条の中だけを確認する）
+    const articles = [
+      { title: "第3条（会員登録）", reason: "現在、会員登録は提供していないため、本条は定めていません。" },
+      { title: "第4条（料金・お支払い）", reason: "現在、有料プランは提供しておらず、料金のお支払いはないため、本条は定めていません。" },
+      { title: "第5条（契約期間・更新・解約）", reason: "現在、有料プランは提供していないため、本条は定めていません。" },
+      { title: "第6条（返金）", reason: "現在、お支払いが発生するサービスは提供していないため、本条は定めていません。" },
+    ];
+    for (const { title, reason } of articles) {
+      const article = main.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: title }) });
+      await expect(article).toHaveCount(1);
+      const body = article.getByTestId("terms-clause-not-provided");
+      await expect(body).toContainText(reason);
+      await expect(body).toContainText("本規約を改定して定めます（第11条）");
+    }
+
+    // 旧条件（具体的な料金・自動更新・返金なし・契約期間）が、規約本文に出ない。
+    // 第2条には「月額料金」という語が残るため、「月額」だけでは判定しない
+    for (const oldText of [/円（税込）/, "毎月自動で更新", "返金は行いません", "現在の契約期間の終了までは"]) {
+      await expect(main).not.toContainText(oldText);
+    }
+
+    // 第2条などが指す「第11条」の見出しが、実際にある
+    await expect(main.getByRole("heading", { level: 2, name: "第11条（規約の変更）" })).toBeVisible();
+  });
+
   test("会員登録なしの利用案内（aboutページ）が、課金オフの内容になる", async ({ page }) => {
     await page.goto("/about");
     await expect(page.getByRole("heading", { name: "ご利用料金について" })).toBeVisible();
