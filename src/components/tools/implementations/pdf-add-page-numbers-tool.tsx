@@ -7,7 +7,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfOverlayPreview, usePdfFont } from "@/components/tools/implementations/shared/pdf-overlay-preview";
-import { PAGE_NUMBER_COLOR, pageNumberLabel, pageNumberPlacement } from "@/lib/pdf/overlay-layout";
+import { PAGE_NUMBER_COLOR, pageNumberLabel, pageNumberLayout } from "@/lib/pdf/overlay-layout";
 import { getHelveticaFont } from "@/lib/pdf/overlay-fonts";
 import {
   PdfAddPageNumbersProcessor,
@@ -135,11 +135,21 @@ export function PdfAddPageNumbersTool() {
             if (!previewFont || !Number.isInteger(startNumber)) return null;
             const label = pageNumberLabel(startNumber, page - 1);
             const textWidth = previewFont.widthOfTextAtSize(label, fontSize);
-            const { x, y } = pageNumberPlacement(geometry.media.width, textWidth, position);
+            // 出力と同じ計算。ページに /Rotate があっても、表示上は読める向き・指定の位置になる
+            // (プレビューの枠もページと同じ角度で回して重ねるため、文字の角度も出力と同じ値を使う)
+            const { x, y, angle } = pageNumberLayout(
+              geometry.media.width,
+              geometry.media.height,
+              geometry.rotate,
+              textWidth,
+              position
+            );
+            const baseline = sy(y);
             return (
               <text
                 x={x}
-                y={sy(y)}
+                y={baseline}
+                transform={`rotate(${-angle} ${x} ${baseline})`}
                 fontSize={fontSize}
                 fontFamily="Helvetica, Arial, sans-serif"
                 fill={`rgb(${PAGE_NUMBER_COLOR.r * 255}, ${PAGE_NUMBER_COLOR.g * 255}, ${PAGE_NUMBER_COLOR.b * 255})`}

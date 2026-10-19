@@ -20,6 +20,11 @@ import {
   type TextDrawCall,
   type TextMeasure,
 } from "../helpers/pdf-page-quality";
+import {
+  expectedWatermarkPlacement,
+  type GlyphMetrics,
+  type OracleWatermarkPosition,
+} from "../helpers/overlay-oracle";
 
 /**
  * PDFページ番号・透かしの出力品質テスト（工程8）。
@@ -544,5 +549,422 @@ test.describe("pdf-watermark: 出力PDFの品質", () => {
     });
     await expect(page.getByText("追加が完了しました")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^ダウンロード$/ })).toHaveCount(0);
+  });
+});
+
+// ===========================================================================
+// 工程9: ページの回転（/Rotate）と、小さいページでの収まり
+//
+// 位置・向きは、PDFビューア（pdfjs）が /Rotate を反映して表示したときの座標（TextDrawCall.display）で検証する。
+// 期待値は、表示されたページ（回転後の縦横）を基準に、仕様から独立して計算する（tests/helpers/overlay-oracle.ts）。
+// ===========================================================================
+
+/** 表示されたページの縦横（/Rotate が90・270のとき、本来の縦横が入れ替わる） */
+const displayedSize = (size: { width: number; height: number }, rotation: number) =>
+  rotation === 90 || rotation === 270 ? { width: size.height, height: size.width } : size;
+
+/** 回転の異なる4ページ（縦長・横長・サイズ違いを含む）。ページ番号用の大きさ */
+const ROTATED_SMALL: SyntheticPageSpec[] = [
+  { original: 1, size: { width: 400, height: 600 }, rotation: 0 },
+  { original: 2, size: { width: 400, height: 600 }, rotation: 90 },
+  { original: 3, size: { width: 500, height: 700 }, rotation: 180 },
+  { original: 4, size: { width: 600, height: 400 }, rotation: 270 },
+];
+/** 回転の異なる4ページ。透かし用の大きさ（既定の透かしが余裕をもって収まる） */
+const ROTATED_LARGE: SyntheticPageSpec[] = [
+  { original: 1, size: { width: 600, height: 800 }, rotation: 0 },
+  { original: 2, size: { width: 600, height: 800 }, rotation: 90 },
+  { original: 3, size: { width: 700, height: 900 }, rotation: 180 },
+  { original: 4, size: { width: 800, height: 600 }, rotation: 270 },
+];
+
+const metricsOf = (measure: TextMeasure, text: string, size: number): GlyphMetrics => {
+  const ascent = measure.heightAtSize(size, { descender: false });
+  return { width: measure.widthOfTextAtSize(text, size), ascent, descent: measure.heightAtSize(size) - ascent };
+};
+
+/** 表示上の文字の枠（ベースラインの下 descent 〜 上 ascent）が、表示されたページ内にあること */
+function expectInsideDisplayedPage(call: TextDrawCall, metrics: GlyphMetrics, what: string) {
+  const { x, y, angleDeg, pageWidth, pageHeight } = call.display;
+  const rad = (angleDeg * Math.PI) / 180;
+  const corners = ([[0, -metrics.descent], [metrics.width, -metrics.descent], [metrics.width, metrics.ascent], [0, metrics.ascent]] as [number, number][]).map(
+    ([px, py]) => [x + px * Math.cos(rad) - py * Math.sin(rad), y + px * Math.sin(rad) + py * Math.cos(rad)]
+  );
+  for (const [cx, cy] of corners) {
+    expect(cx, `${what}: 表示上の枠のxがページ内（0〜${pageWidth}）`).toBeGreaterThanOrEqual(-POS_TOL);
+    expect(cx, `${what}: 表示上の枠のxがページ内（0〜${pageWidth}）`).toBeLessThanOrEqual(pageWidth + POS_TOL);
+    expect(cy, `${what}: 表示上の枠のyがページ内（0〜${pageHeight}）`).toBeGreaterThanOrEqual(-POS_TOL);
+    expect(cy, `${what}: 表示上の枠のyがページ内（0〜${pageHeight}）`).toBeLessThanOrEqual(pageHeight + POS_TOL);
+  }
+}
+
+/** 回転ページでのページ番号: 表示上、指定の位置（下端の余白24pt）に、読める向き(0°)で付くこと */
+async function expectPageNumbersDisplayed(
+  outputPath: string,
+  specs: SyntheticPageSpec[],
+  expected: { labels: string[]; position: PnPosition; fontSize: number }
+) {
+  const calls = await extractTextDrawCalls(outputPath);
+  expect(calls).toHaveLength(specs.length);
+  expectBodyUntouched(calls, specs);
+  const helvetica = await getHelveticaMeasure();
+
+  specs.forEach((spec, i) => {
+    const where = `${i + 1}ページ目（元${spec.original}ページ・/Rotate ${spec.rotation ?? 0}°）`;
+    const overlays = overlayCalls(calls[i]);
+    expect(overlays, `${where}に追加された文字は、ページ番号1つだけ`).toHaveLength(1);
+    const c = overlays[0];
+    expect(c.text, `${where}のページ番号`).toBe(expected.labels[i]);
+
+    const shown = displayedSize(spec.size!, spec.rotation ?? 0);
+    approx(c.display.pageWidth, shown.width, SIZE_TOLERANCE_PT, `${where}の表示上の幅`);
+    approx(c.display.pageHeight, shown.height, SIZE_TOLERANCE_PT, `${where}の表示上の高さ`);
+
+    const textWidth = helvetica.widthOfTextAtSize(expected.labels[i], expected.fontSize);
+    const expectedX =
+      expected.position === "左下" ? PN_MARGIN : expected.position === "右下" ? shown.width - PN_MARGIN - textWidth : (shown.width - textWidth) / 2;
+    approx(c.display.x, expectedX, POS_TOL, `${where}の表示上のx（${expected.position}）`);
+    approx(c.display.y, PN_BASELINE_Y, POS_TOL, `${where}の表示上のy（下端の余白）`);
+    expect(angleDiff(c.display.angleDeg, 0), `${where}の表示上の向き（0°=読める向き）: 実測 ${c.display.angleDeg}°`).toBeLessThanOrEqual(0.1);
+    approx(c.fontSize, expected.fontSize, 0.01, `${where}のフォントサイズ`);
+    expect(c.opacity, `${where}の不透明度`).toBe(1);
+    approx(c.fill?.r ?? -999, PN_COLOR_255.r, COLOR_TOL, `${where}の文字色R`);
+    expectInsideDisplayedPage(c, metricsOf(helvetica, expected.labels[i], expected.fontSize), `${where}のページ番号`);
+  });
+}
+
+test.describe("pdf-add-page-numbers: 回転ページ（/Rotate）での向き・位置", () => {
+  const SLUG = "pdf-add-page-numbers";
+  const ready = (page: Page) => page.getByLabel("開始番号");
+  const RUN = "ページ番号を追加する";
+
+  async function open(page: Page, specs: SyntheticPageSpec[]) {
+    const input = workPath("input.pdf");
+    await writeSyntheticPdf(input, specs);
+    await openToolWithPdf(page, SLUG, input, ready(page));
+  }
+
+  for (const position of ["中央下", "左下", "右下"] as const) {
+    test(`位置「${position}」: /Rotate が0・90・180・270°で大きさも違う4ページでも、表示上は下端の指定位置に読める向きで付く`, async ({ page }) => {
+      await open(page, ROTATED_SMALL);
+      if (position !== "中央下") await choosePosition(page, position);
+      await runTool(page, RUN);
+
+      const out = await downloadOutputPdf(page, "numbered.pdf");
+      expectPagesUnchanged(await inspectOutputPdf(out), ROTATED_SMALL);
+      await expectPageNumbersDisplayed(out, ROTATED_SMALL, { labels: ["1", "2", "3", "4"], position, fontSize: 10 });
+    });
+  }
+
+  test("24pt・右下・大きな番号（99999から）でも、回転ページの表示上でページの外にはみ出さない", async ({ page }) => {
+    await open(page, ROTATED_SMALL);
+    await ready(page).fill("99999");
+    await choosePosition(page, "右下");
+    await setSlider(page, "フォントサイズ", 24);
+    await runTool(page, RUN);
+
+    const out = await downloadOutputPdf(page, "numbered.pdf");
+    expectPagesUnchanged(await inspectOutputPdf(out), ROTATED_SMALL);
+    await expectPageNumbersDisplayed(out, ROTATED_SMALL, { labels: ["99999", "100000", "100001", "100002"], position: "右下", fontSize: 24 });
+  });
+
+  test("プレビュー: 回転ページ（90・180・270°）でも、画面上は読める向きで表示され、出力PDFと同じ位置・角度になる", async ({ page }) => {
+    const specs: SyntheticPageSpec[] = [
+      { original: 1, size: { width: 400, height: 600 }, rotation: 90 },
+      { original: 2, size: { width: 500, height: 700 }, rotation: 180 },
+      { original: 3, size: { width: 600, height: 400 }, rotation: 270 },
+    ];
+    await open(page, specs);
+    await choosePosition(page, "右下");
+
+    const texts = page.locator('[data-testid="tool-preview"] svg text');
+    await expect(texts, "プレビューのページ番号が3ページぶん表示される").toHaveCount(3, { timeout: 30_000 });
+    const shown = await texts.evaluateAll((els) =>
+      els.map((el) => {
+        const t = el as SVGTextElement;
+        const m = t.getScreenCTM()!;
+        return {
+          content: t.textContent,
+          x: Number(t.getAttribute("x")),
+          y: Number(t.getAttribute("y")),
+          transform: t.getAttribute("transform") ?? "",
+          // 画面上での文字の傾き（時計回りが正。0なら読める向き）
+          screenAngleDeg: (Math.atan2(m.b, m.a) * 180) / Math.PI,
+        };
+      })
+    );
+    shown.forEach((s, i) => {
+      expect(Math.abs(s.screenAngleDeg), `プレビュー${i + 1}ページ目の画面上の向き（0°=読める向き）: ${s.screenAngleDeg}°`).toBeLessThanOrEqual(0.5);
+    });
+
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "numbered.pdf");
+    const calls = await extractTextDrawCalls(out);
+    shown.forEach((s, i) => {
+      const c = overlayCalls(calls[i])[0];
+      const rotate = /rotate\((-?[\d.e+-]+) /.exec(s.transform);
+      expect(rotate, `プレビュー${i + 1}ページ目の変換: ${s.transform}`).not.toBeNull();
+      expect(s.content).toBe(c.text);
+      // プレビューはページ本来の座標系で描く（SVGのyは上端基準なので、ページの高さから引いて戻す）
+      approx(s.x, c.x, POS_TOL, `プレビュー${i + 1}ページ目のx（出力と一致）`);
+      approx(specs[i].size!.height - s.y, c.y, POS_TOL, `プレビュー${i + 1}ページ目のy（出力と一致）`);
+      expect(angleDiff(-Number(rotate![1]), c.angleDeg), `プレビュー${i + 1}ページ目の角度（出力と一致）`).toBeLessThanOrEqual(0.1);
+    });
+  });
+});
+
+/** 透かしの出力を、仕様から求めた期待値（位置・大きさ・向き・濃さ・色）と照合する。位置は表示上の座標で比べる */
+async function expectWatermarkLayout(
+  outputPath: string,
+  specs: SyntheticPageSpec[],
+  expected: { text: string; position: OracleWatermarkPosition; fontSize: number; rotation: number; opacity: number },
+  options: { adjustments?: ("none" | "moved" | "shrunk")[] } = {}
+) {
+  const calls = await extractTextDrawCalls(outputPath);
+  expect(calls).toHaveLength(specs.length);
+  expectBodyUntouched(calls, specs);
+  const jp = await getJapaneseMeasure();
+
+  specs.forEach((spec, i) => {
+    const where = `${i + 1}ページ目（元${spec.original}ページ・${spec.size!.width}x${spec.size!.height}・/Rotate ${spec.rotation ?? 0}°）`;
+    const overlays = overlayCalls(calls[i]);
+    expect(overlays, `${where}に追加された文字は、透かし1つだけ`).toHaveLength(1);
+    const c = overlays[0];
+    expect(c.text, `${where}の透かし文字`).toBe(expected.text);
+
+    const want = expectedWatermarkPlacement({
+      pageWidth: spec.size!.width,
+      pageHeight: spec.size!.height,
+      pageRotation: spec.rotation ?? 0,
+      position: expected.position,
+      fontSize: expected.fontSize,
+      angleDeg: expected.rotation,
+      metrics: metricsOf(jp, expected.text, expected.fontSize),
+    });
+    expect(want.fits, `${where}: 仕様上、収められるページ`).toBe(true);
+    if (options.adjustments) expect(want.adjustment, `${where}: 調整の種類（仕様）`).toBe(options.adjustments[i]);
+
+    const shown = displayedSize(spec.size!, spec.rotation ?? 0);
+    approx(c.display.pageWidth, shown.width, SIZE_TOLERANCE_PT, `${where}の表示上の幅`);
+    approx(c.display.x, want.pivot[0], POS_TOL, `${where}の透かしの表示上のx（${expected.position}）`);
+    approx(c.display.y, want.pivot[1], POS_TOL, `${where}の透かしの表示上のy（${expected.position}）`);
+    approx(c.fontSize, want.fontSize, 0.011, `${where}の透かしの大きさ（指定 ${expected.fontSize}pt）`);
+    expect(
+      angleDiff(c.display.angleDeg, expected.rotation),
+      `${where}の透かしの表示上の向き: 実測 ${c.display.angleDeg}° / 期待（指定の回転角度）${expected.rotation}°`
+    ).toBeLessThanOrEqual(0.1);
+    approx(c.opacity, expected.opacity, 0.001, `${where}の透かしの不透明度`);
+    approx(c.fill?.r ?? -999, WM_COLOR_255.r, COLOR_TOL, `${where}の文字色R`);
+    approx(c.fill?.g ?? -999, WM_COLOR_255.g, COLOR_TOL, `${where}の文字色G`);
+    approx(c.fill?.b ?? -999, WM_COLOR_255.b, COLOR_TOL, `${where}の文字色B`);
+    // 文字全体が、表示されたページ内に収まっている（実際に描かれた大きさで確認）
+    expectInsideDisplayedPage(c, metricsOf(jp, expected.text, c.fontSize), `${where}の透かし`);
+  });
+}
+
+test.describe("pdf-watermark: 回転ページ（/Rotate）での向き・位置", () => {
+  const SLUG = "pdf-watermark";
+  const TEXT_FIELD = (page: Page) => page.getByLabel("透かしの文字");
+  const RUN = "透かしを追加する";
+
+  async function open(page: Page, specs: SyntheticPageSpec[]) {
+    const input = workPath("input.pdf");
+    await writeSyntheticPdf(input, specs);
+    await openToolWithPdf(page, SLUG, input, TEXT_FIELD(page));
+  }
+
+  test("既定の設定で、/Rotate が0・90・180・270°の4ページとも、表示上は中央・-45°の向きで入る", async ({ page }) => {
+    await open(page, ROTATED_LARGE);
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    expectPagesUnchanged(await inspectOutputPdf(out), ROTATED_LARGE);
+    await expectWatermarkLayout(out, ROTATED_LARGE, { text: "CONFIDENTIAL", position: "center", fontSize: 48, rotation: -45, opacity: 0.3 }, {
+      adjustments: ["none", "none", "none", "none"],
+    });
+  });
+
+  test("回転角度30°でも、回転ページの表示上は30°の向きで入る", async ({ page }) => {
+    await open(page, ROTATED_LARGE);
+    await setSlider(page, "回転角度", 30);
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    await expectWatermarkLayout(out, ROTATED_LARGE, { text: "CONFIDENTIAL", position: "center", fontSize: 48, rotation: 30, opacity: 0.3 });
+  });
+
+  for (const [label, position] of [["左上", "top-left"], ["右上", "top-right"], ["左下", "bottom-left"], ["右下", "bottom-right"]] as const) {
+    test(`位置「${label}」（回転0°・DRAFT）: 回転ページの表示上で、指定の隅に入る`, async ({ page }) => {
+      await open(page, ROTATED_LARGE);
+      await TEXT_FIELD(page).fill("DRAFT");
+      await choosePosition(page, label);
+      await setSlider(page, "回転角度", 0);
+      await runTool(page, RUN);
+      const out = await downloadOutputPdf(page, "watermarked.pdf");
+      await expectWatermarkLayout(out, ROTATED_LARGE, { text: "DRAFT", position, fontSize: 48, rotation: 0, opacity: 0.3 });
+    });
+  }
+
+  test("プレビュー: 回転ページ（90°）でも、画面上は指定の向き（-45°）で表示され、出力PDFと同じ位置・大きさ・角度になる", async ({ page }) => {
+    const specs: SyntheticPageSpec[] = [{ original: 1, size: { width: 600, height: 800 }, rotation: 90 }];
+    await open(page, specs);
+    const text = page.locator('[data-testid="tool-preview"] svg text');
+    await expect(text, "プレビューの透かしが表示される").toHaveCount(1, { timeout: 45_000 });
+    const shown = await text.evaluate((el) => {
+      const t = el as SVGTextElement;
+      const m = t.getScreenCTM()!;
+      return {
+        x: Number(t.getAttribute("x")),
+        y: Number(t.getAttribute("y")),
+        fontSize: Number(t.getAttribute("font-size")),
+        transform: t.getAttribute("transform") ?? "",
+        screenAngleDeg: (Math.atan2(m.b, m.a) * 180) / Math.PI,
+      };
+    });
+    // 画面上の傾き（時計回りが正）。回転角度 -45°（反時計回りに-45°= 時計回りに45°）
+    approx(shown.screenAngleDeg, 45, 0.5, "プレビューの画面上の向き（時計回り）");
+
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    const c = overlayCalls((await extractTextDrawCalls(out))[0])[0];
+    const rotate = /rotate\((-?[\d.e+-]+) /.exec(shown.transform);
+    expect(rotate, `プレビューの変換: ${shown.transform}`).not.toBeNull();
+    approx(shown.x, c.x, POS_TOL, "プレビューのx（出力と一致）");
+    approx(800 - shown.y, c.y, POS_TOL, "プレビューのy（出力と一致）");
+    approx(shown.fontSize, c.fontSize, 0.011, "プレビューの文字の大きさ（出力と一致）");
+    expect(angleDiff(-Number(rotate![1]), c.angleDeg), "プレビューの角度（出力と一致）").toBeLessThanOrEqual(0.1);
+  });
+});
+
+test.describe("pdf-watermark: 小さいページでの収まり", () => {
+  const SLUG = "pdf-watermark";
+  const TEXT_FIELD = (page: Page) => page.getByLabel("透かしの文字");
+  const RUN = "透かしを追加する";
+
+  async function open(page: Page, specs: SyntheticPageSpec[]) {
+    const input = workPath("input.pdf");
+    await writeSyntheticPdf(input, specs);
+    await openToolWithPdf(page, SLUG, input, TEXT_FIELD(page));
+  }
+  const size = (width: number, height: number, rotation = 0, original = 1): SyntheticPageSpec => ({ original, size: { width, height }, rotation });
+  const A4 = { width: 595.28, height: 841.89 };
+  const A5 = { width: 419.53, height: 595.28 };
+  const A6 = { width: 297.64, height: 419.53 };
+  const LETTER = { width: 612, height: 792 };
+
+  test("A4・A5・Letter: 既定の透かし（48pt・-45°・中央）は、従来どおりの位置・大きさで入る（変更なし）", async ({ page }) => {
+    const specs = [size(A4.width, A4.height, 0, 1), size(A5.width, A5.height, 0, 2), size(LETTER.width, LETTER.height, 0, 3)];
+    await open(page, specs);
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    expectPagesUnchanged(await inspectOutputPdf(out), specs);
+    await expectWatermarkLayout(out, specs, { text: "CONFIDENTIAL", position: "center", fontSize: 48, rotation: -45, opacity: 0.3 }, { adjustments: ["none", "none", "none"] });
+    // 従来の仕様（ページ本来の座標で、文字列の左端ベースラインを中央揃え）と同じ位置であること
+    const jp = await getJapaneseMeasure();
+    const w = jp.widthOfTextAtSize("CONFIDENTIAL", 48);
+    const h = jp.heightAtSize(48);
+    const calls = await extractTextDrawCalls(out);
+    specs.forEach((spec, i) => {
+      const c = overlayCalls(calls[i])[0];
+      approx(c.x, (spec.size!.width - w) / 2, POS_TOL, `${i + 1}ページ目の透かしのx（従来の仕様）`);
+      approx(c.y, (spec.size!.height - h) / 2, POS_TOL, `${i + 1}ページ目の透かしのy（従来の仕様）`);
+      approx(c.fontSize, 48, 0.01, `${i + 1}ページ目の透かしの大きさ（従来の仕様）`);
+      expect(angleDiff(c.angleDeg, -45)).toBeLessThanOrEqual(0.1);
+    });
+  });
+
+  test("A6・300x400・320x420: 既定の透かしは、大きさ(48pt)・角度(-45°)・不透明度はそのままで、位置だけ調整されて、文字全体がページ内に収まる", async ({ page }) => {
+    const specs = [size(A6.width, A6.height, 0, 1), size(300, 400, 0, 2), size(320, 420, 0, 3)];
+    await open(page, specs);
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    expectPagesUnchanged(await inspectOutputPdf(out), specs);
+    await expectWatermarkLayout(out, specs, { text: "CONFIDENTIAL", position: "center", fontSize: 48, rotation: -45, opacity: 0.3 }, { adjustments: ["moved", "moved", "moved"] });
+  });
+
+  test("さらに小さいページ（200x300）・長い文字列（A4）: 文字全体が収まる大きさまで縮む。色・不透明度・指定の角度は変わらない", async ({ page }) => {
+    const specs = [size(200, 300, 0, 1), size(A4.width, A4.height, 0, 2)];
+    await open(page, specs);
+    const long = "CONFIDENTIAL - 社外秘 - DO NOT COPY - 複製禁止";
+    await TEXT_FIELD(page).fill(long);
+    await setSlider(page, "不透明度", 60);
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    expectPagesUnchanged(await inspectOutputPdf(out), specs);
+    await expectWatermarkLayout(out, specs, { text: long, position: "center", fontSize: 48, rotation: -45, opacity: 0.6 }, { adjustments: ["shrunk", "shrunk"] });
+  });
+
+  test("ページサイズ・回転が混在するPDF: ページごとに、収まるなら従来どおり、収まらなければそのページだけ調整される", async ({ page }) => {
+    const specs = [size(A4.width, A4.height, 0, 1), size(A6.width, A6.height, 90, 2), size(200, 300, 180, 3), size(300, 400, 270, 4), size(LETTER.width, LETTER.height, 0, 5)];
+    await open(page, specs);
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    expectPagesUnchanged(await inspectOutputPdf(out), specs);
+    await expectWatermarkLayout(out, specs, { text: "CONFIDENTIAL", position: "center", fontSize: 48, rotation: -45, opacity: 0.3 }, {
+      adjustments: ["none", "moved", "shrunk", "moved", "none"],
+    });
+  });
+
+  for (const [label, position] of [["左下", "bottom-left"], ["右下", "bottom-right"]] as const) {
+    test(`位置「${label}」+ 既定の角度(-45°): 下の隅では文字が下へはみ出す配置だったが、大きさ(48pt)はそのままで、隅に寄せて収まる`, async ({ page }) => {
+      const specs = [size(A4.width, A4.height, 0, 1), size(LETTER.width, LETTER.height, 90, 2)];
+      await open(page, specs);
+      await choosePosition(page, label);
+      await runTool(page, RUN);
+      const out = await downloadOutputPdf(page, "watermarked.pdf");
+      await expectWatermarkLayout(out, specs, { text: "CONFIDENTIAL", position, fontSize: 48, rotation: -45, opacity: 0.3 }, { adjustments: ["moved", "moved"] });
+    });
+  }
+
+  test("回転角度90°・A6: 縦に長くなる文字も、ページ内に収まる", async ({ page }) => {
+    const specs = [size(A6.width, A6.height, 0, 1)];
+    await open(page, specs);
+    await setSlider(page, "回転角度", 90);
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    await expectWatermarkLayout(out, specs, { text: "CONFIDENTIAL", position: "center", fontSize: 48, rotation: 90, opacity: 0.3 });
+  });
+
+  test("収められないほど小さいページ（30x30）では、ページを示すエラーが表示され、出力は作られない", async ({ page }) => {
+    await open(page, [size(30, 30, 0, 1)]);
+    await clickWhenReady(page.getByRole("button", { name: RUN, exact: true }), {
+      expectAfter: page.getByRole("alert").filter({ hasText: "収められません" }),
+      expectTimeoutMs: 45_000,
+    });
+    await expect(page.getByRole("alert").filter({ hasText: "1ページ目" })).toBeVisible();
+    await expect(page.getByText("追加が完了しました")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^ダウンロード$/ })).toHaveCount(0);
+  });
+
+  test("プレビュー: 小さいページ（300x400）でも、出力PDFと同じ位置・大きさ・角度で表示され、枠からはみ出さない", async ({ page }) => {
+    const specs = [size(300, 400, 0, 1)];
+    await open(page, specs);
+    const text = page.locator('[data-testid="tool-preview"] svg text');
+    await expect(text, "プレビューの透かしが表示される").toHaveCount(1, { timeout: 45_000 });
+    const shown = await text.evaluate((el) => {
+      const t = el as SVGTextElement;
+      const box = t.getBoundingClientRect();
+      const frame = t.ownerSVGElement!.getBoundingClientRect();
+      return {
+        x: Number(t.getAttribute("x")),
+        y: Number(t.getAttribute("y")),
+        fontSize: Number(t.getAttribute("font-size")),
+        transform: t.getAttribute("transform") ?? "",
+        // 画面上で、透かしの文字がページの枠（サムネイル）の中にあるか（余裕1px）
+        insideFrame:
+          box.left >= frame.left - 1 && box.right <= frame.right + 1 && box.top >= frame.top - 1 && box.bottom <= frame.bottom + 1,
+        box: [box.left, box.top, box.right, box.bottom].map(Math.round),
+        frame: [frame.left, frame.top, frame.right, frame.bottom].map(Math.round),
+      };
+    });
+    expect(shown.insideFrame, `画面上で透かしがページの枠内（文字 ${shown.box} / 枠 ${shown.frame}）`).toBe(true);
+
+    await runTool(page, RUN);
+    const out = await downloadOutputPdf(page, "watermarked.pdf");
+    const c = overlayCalls((await extractTextDrawCalls(out))[0])[0];
+    const rotate = /rotate\((-?[\d.e+-]+) /.exec(shown.transform);
+    expect(rotate, `プレビューの変換: ${shown.transform}`).not.toBeNull();
+    approx(shown.x, c.x, POS_TOL, "プレビューのx（出力と一致）");
+    approx(400 - shown.y, c.y, POS_TOL, "プレビューのy（出力と一致）");
+    approx(shown.fontSize, c.fontSize, 0.011, "プレビューの文字の大きさ（出力と一致）");
+    expect(angleDiff(-Number(rotate![1]), c.angleDeg), "プレビューの角度（出力と一致）").toBeLessThanOrEqual(0.1);
   });
 });

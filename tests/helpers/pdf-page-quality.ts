@@ -174,6 +174,13 @@ export interface TextDrawCall {
   opacity: number;
   /** 塗り色（0〜255の整数。pdfjsが丸めた値） */
   fill: { r: number; g: number; b: number } | null;
+  /**
+   * PDFビューア（pdfjs）が、ページの /Rotate を反映して表示したときの位置と向き。
+   * x, y は、表示されたページの左下を原点とする、文字列の左端・ベースラインの位置。
+   * angleDeg は、画面上の文字の向き（反時計回りが正。0なら左から右へ普通に読める向き、180なら逆さま）。
+   * ページ本来の座標系の値（x, y, angleDeg）と違い、/Rotate のあるページの「見え方」を表す。
+   */
+  display: { x: number; y: number; angleDeg: number; pageWidth: number; pageHeight: number };
 }
 
 const STANDARD_FONT_DATA_URL =
@@ -190,6 +197,8 @@ export async function extractTextDrawCalls(filePath: string): Promise<TextDrawCa
   const result: TextDrawCall[][] = [];
   for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
     const page = await doc.getPage(pageNo);
+    // 既定のビューポートは、ページの /Rotate を反映した表示（y軸は下向き）
+    const viewport = page.getViewport({ scale: 1 });
     const opList = await page.getOperatorList();
     const fn = opList.fnArray as number[];
     const args = opList.argsArray as unknown[][];
@@ -228,6 +237,9 @@ export async function extractTextDrawCalls(filePath: string): Promise<TextDrawCa
         const glyphs = (args[i][0] ?? []) as { unicode?: string }[];
         const text = glyphs.map((g) => (typeof g === "object" && g ? (g.unicode ?? "") : "")).join("");
         const [a, b, , , e, f] = matrix;
+        const [vx, vy] = viewport.convertToViewportPoint(e, f);
+        // 文字の進行方向（ページ本来の座標で (a, b) の向き）が、画面上でどちらを向くか
+        const [wx, wy] = viewport.convertToViewportPoint(e + a, f + b);
         calls.push({
           text,
           x: e,
@@ -236,6 +248,13 @@ export async function extractTextDrawCalls(filePath: string): Promise<TextDrawCa
           fontSize: fontSize * Math.hypot(a, b),
           opacity: state.opacity,
           fill: state.fill,
+          display: {
+            x: vx,
+            y: viewport.height - vy,
+            angleDeg: (Math.atan2(-(wy - vy), wx - vx) * 180) / Math.PI,
+            pageWidth: viewport.width,
+            pageHeight: viewport.height,
+          },
         });
       }
     }
@@ -251,7 +270,8 @@ export async function extractTextDrawCalls(filePath: string): Promise<TextDrawCa
 /** 文字の幅・高さを測る関数（アプリが使うのと同じ pdf-lib のフォント測定） */
 export interface TextMeasure {
   widthOfTextAtSize(text: string, size: number): number;
-  heightAtSize(size: number): number;
+  /** descender:false のとき、ベースラインより下に出る部分（ディセンダ）を含めない高さ（pdf-lib の heightAtSize と同じ） */
+  heightAtSize(size: number, options?: { descender?: boolean }): number;
 }
 
 let helveticaMeasure: Promise<TextMeasure> | null = null;

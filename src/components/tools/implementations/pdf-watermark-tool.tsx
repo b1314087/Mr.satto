@@ -11,7 +11,7 @@ import {
   PdfOverlayPreview,
   usePdfFont,
 } from "@/components/tools/implementations/shared/pdf-overlay-preview";
-import { WATERMARK_COLOR, watermarkPlacement } from "@/lib/pdf/overlay-layout";
+import { WATERMARK_COLOR, watermarkLayout } from "@/lib/pdf/overlay-layout";
 import { WATERMARK_PREVIEW_FONT_FAMILY, getWatermarkFont } from "@/lib/pdf/overlay-fonts";
 import { PdfWatermarkProcessor, type WatermarkPosition } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
@@ -67,20 +67,28 @@ function WatermarkPreview({
           return null;
         }
         const textHeight = previewFont.heightAtSize(fontSize);
-        const { x, y } = watermarkPlacement(
-          geometry.media.width,
-          geometry.media.height,
+        // 出力と同じ計算(位置・向き・大きさ)。ページの /Rotate への対応と、小さいページでの収まり調整を含む
+        const layout = watermarkLayout({
+          pageWidth: geometry.media.width,
+          pageHeight: geometry.media.height,
+          pageRotation: geometry.rotate,
+          position,
+          fontSize,
+          rotation,
           textWidth,
           textHeight,
-          position
-        );
+          textDescent: textHeight - previewFont.heightAtSize(fontSize, { descender: false }),
+        });
+        // 小さすぎて収まらないページは、出力でもエラーになる(描かない)
+        if (!layout.fits) return null;
+        const { x, y } = layout;
         const baseline = sy(y);
         return (
           <text
             x={x}
             y={baseline}
-            transform={`rotate(${-rotation} ${x} ${baseline})`}
-            fontSize={fontSize}
+            transform={`rotate(${-layout.angle} ${x} ${baseline})`}
+            fontSize={layout.fontSize}
             fontFamily={`${WATERMARK_PREVIEW_FONT_FAMILY}, sans-serif`}
             fill={`rgb(${WATERMARK_COLOR.r * 255}, ${WATERMARK_COLOR.g * 255}, ${WATERMARK_COLOR.b * 255})`}
             fillOpacity={opacityPercent / 100}

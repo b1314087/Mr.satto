@@ -11,10 +11,10 @@ import {
   WATERMARK_COLOR,
   croppedBox,
   pageNumberLabel,
-  pageNumberPlacement,
+  pageNumberLayout,
   resizeContentRect,
   resizeTargetSize,
-  watermarkPlacement,
+  watermarkLayout,
   type PageNumberPosition as LayoutPageNumberPosition,
   type PageOrientation,
   type PageSizePreset,
@@ -488,11 +488,19 @@ export class PdfAddPageNumbersProcessor extends BrowserProcessor<
       // 位置の計算はプレビュー(overlay-layout)と共通
       const label = pageNumberLabel(startNumber, index);
       const width = font.widthOfTextAtSize(label, fontSize);
-      const { width: pageWidth } = page.getSize();
-      const { x, y } = pageNumberPlacement(pageWidth, width, position);
+      const { width: pageWidth, height: pageHeight } = page.getSize();
+      // ページに /Rotate があっても、表示上は常に読める向き・指定した位置になるよう、位置と角度を決める
+      const { x, y, angle } = pageNumberLayout(
+        pageWidth,
+        pageHeight,
+        page.getRotation().angle,
+        width,
+        position
+      );
       page.drawText(label, {
         x,
         y,
+        rotate: pdfDegrees(angle),
         size: fontSize,
         font,
         color: rgb(PAGE_NUMBER_COLOR.r, PAGE_NUMBER_COLOR.g, PAGE_NUMBER_COLOR.b),
@@ -565,27 +573,46 @@ export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, P
       );
     }
     const height = font.heightAtSize(fontSize);
+    // ベースラインより下に出る部分の高さ(回したあとの文字全体がページに収まるかの判定に使う)
+    const descent = height - font.heightAtSize(fontSize, { descender: false });
 
-    for (const page of pages) {
+    pages.forEach((page, index) => {
       const { width: pageWidth, height: pageHeight } = page.getSize();
-      // 位置の計算はプレビュー(overlay-layout)と共通
-      const { x, y } = watermarkPlacement(pageWidth, pageHeight, width, height, position);
+      // 位置・向き・大きさの計算はプレビュー(overlay-layout)と共通。
+      // 表示されたページを基準にし、/Rotate があるページでも向きを合わせる。
+      // 文字全体がページに収まらないときは、位置を調整し、それでも大きすぎるときだけ縮める。
+      const layout = watermarkLayout({
+        pageWidth,
+        pageHeight,
+        pageRotation: page.getRotation().angle,
+        position,
+        fontSize,
+        rotation,
+        textWidth: width,
+        textHeight: height,
+        textDescent: descent,
+      });
+      if (!layout.fits) {
+        throw new Error(
+          `${index + 1}ページ目はページが小さすぎるため、この透かしの文字を収められません。文字を短くするか、回転角度を小さくしてください。`
+        );
+      }
       try {
         page.drawText(text, {
-          x,
-          y,
-          size: fontSize,
+          x: layout.x,
+          y: layout.y,
+          size: layout.fontSize,
           font,
           color: rgb(WATERMARK_COLOR.r, WATERMARK_COLOR.g, WATERMARK_COLOR.b),
           opacity,
-          rotate: pdfDegrees(rotation),
+          rotate: pdfDegrees(layout.angle),
         });
       } catch {
         throw new Error(
           "この文字は透かしとして描画できませんでした。別の文字列でお試しください。"
         );
       }
-    }
+    });
 
     return finalizePdf(doc);
   }
