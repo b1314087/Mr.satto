@@ -62,6 +62,7 @@ const CASES: [string, Input][] = [
   // 入力なしでも見える/既定値で出るもの
   ["password-generator", none],
   ["date-weekday-tool", none],
+  ["fiscal-calendar", none],
   ["time-calculator", none],
   ["color-palette-generator", none],
   ["estimate-generator", none],

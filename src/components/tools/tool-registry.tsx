@@ -334,6 +334,11 @@ const RosterTemplateTool = dynamic(() =>
   import("./implementations/roster-template-tool").then((m) => m.RosterTemplateTool)
 );
 
+// 年度カレンダー作成（日本の祝日入りのExcel・PDF）
+const FiscalCalendarTool = dynamic(() =>
+  import("./implementations/fiscal-calendar-tool").then((m) => m.FiscalCalendarTool)
+);
+
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
   "image-compress",
@@ -547,6 +552,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <TicketVoucherTool />;
     case "roster-template":
       return <RosterTemplateTool />;
+    case "fiscal-calendar":
+      return <FiscalCalendarTool />;
     default:
       return null;
   }

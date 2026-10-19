@@ -1213,6 +1213,16 @@ const toolDefinitions: Tool[] = [
     processor: "browser",
     keywords: ["名簿", "一覧表", "出席簿", "台帳"],
   },
+  {
+    id: "fiscal-calendar",
+    name: "年度カレンダー作成",
+    category: "generator",
+    description: "4月始まりの年度（4月〜翌年3月）の月別カレンダーを、日本の祝日入りでExcel（12シート）・PDF（12ページ）に作成します。月曜・日曜始まりとデザインを選べ、A4で印刷しやすい設定で書き出します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["カレンダー", "年度", "年間カレンダー", "祝日", "月間カレンダー", "予定表", "4月始まり", "スケジュール"],
+  },
 ];
 
 export const tools: Tool[] = ALL_TOOLS_STANDARD
