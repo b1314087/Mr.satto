@@ -341,6 +341,10 @@ const FiscalCalendarTool = dynamic(() =>
 const SequenceGeneratorTool = dynamic(() =>
   import("./implementations/sequence-generator-tool").then((m) => m.SequenceGeneratorTool)
 );
+// PowerPoint白黒反転（.pptxの背景・文字・白黒画像を反転）
+const PptxInvertTool = dynamic(() =>
+  import("./implementations/pptx-invert-tool").then((m) => m.PptxInvertTool)
+);
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -559,6 +563,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <FiscalCalendarTool />;
     case "sequence-generator":
       return <SequenceGeneratorTool />;
+    case "pptx-invert":
+      return <PptxInvertTool />;
     default:
       return null;
   }
