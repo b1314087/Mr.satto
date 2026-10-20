@@ -18,6 +18,7 @@ export type CategoryId =
   | "pdf"
   | "csv-excel"
   | "word"
+  | "pptx"
   | "video"
   | "audio"
   | "file"

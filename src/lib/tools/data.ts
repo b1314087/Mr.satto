@@ -1236,7 +1236,7 @@ const toolDefinitions: Tool[] = [
   {
     id: "pptx-invert",
     name: "PowerPoint白黒反転",
-    category: "other",
+    category: "pptx",
     description: "PowerPoint（.pptx）の白い背景・黒い文字を、黒い背景・白い文字に変換して保存します。白黒の画像も反転し、カラー写真・イラストはそのまま。編集できる形式のまま出力し、ファイルは送信されません",
     status: "available",
     requiredPlan: "standard",

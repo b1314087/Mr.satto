@@ -26,6 +26,12 @@ export const categories: Category[] = [
     icon: "📝",
   },
   {
+    id: "pptx",
+    name: "PowerPoint",
+    description: "PowerPoint（.pptx）の色の変換など、スライド資料の加工ツール",
+    icon: "📽️",
+  },
+  {
     id: "video",
     name: "動画",
     description: "形式変換・圧縮・解像度変更などブラウザ完結の動画ツール",
