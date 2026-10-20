@@ -22,8 +22,8 @@ function contrast(a: string, b: string): number {
 const MIN = 4.5;
 
 test.describe("デザインテーマ", () => {
-  test("ビジネスとナチュラルの2つがあり、名前・説明が設定されている", () => {
-    expect(CALENDAR_THEME_IDS).toEqual(["business", "natural"]);
+  test("プリセット5種（ビジネス・ナチュラル・シンプル・パステル・ブルーグレー）があり、名前・説明が設定されている", () => {
+    expect(CALENDAR_THEME_IDS).toEqual(["business", "natural", "simple", "pastel", "bluegray"]);
     for (const id of CALENDAR_THEME_IDS) {
       const t = getCalendarTheme(id);
       expect(t.id).toBe(id);
@@ -33,12 +33,12 @@ test.describe("デザインテーマ", () => {
     expect(() => getCalendarTheme("unknown" as never)).toThrow();
   });
 
-  test("すべての色が #RRGGBB で、2つのテーマの配色は異なる", () => {
+  test("すべての色が #RRGGBB で、プリセットの配色は互いに異なる", () => {
     const collect = (t: (typeof CALENDAR_THEMES)[keyof typeof CALENDAR_THEMES]) => {
       const colors: string[] = [];
       for (const [k, v] of Object.entries(t)) {
         if (typeof v === "string" && v.startsWith("#")) colors.push(v);
-        if (typeof v === "object") colors.push(...Object.values(v as Record<string, string>));
+        if (typeof v === "object" && v !== null) colors.push(...Object.values(v as Record<string, string>));
         void k;
       }
       return colors;
@@ -50,6 +50,8 @@ test.describe("デザインテーマ", () => {
         expect(Math.max(r, g, b)).toBeLessThanOrEqual(1);
       }
     }
+    const signatures = CALENDAR_THEME_IDS.map((id) => JSON.stringify({ ...CALENDAR_THEMES[id], id: "", label: "", description: "" }));
+    expect(new Set(signatures).size).toBe(CALENDAR_THEME_IDS.length);
     expect(CALENDAR_THEMES.business.titleBg).not.toBe(CALENDAR_THEMES.natural.titleBg);
     expect(CALENDAR_THEMES.business.dayBg.weekday).not.toBe(CALENDAR_THEMES.natural.dayBg.weekday);
   });
@@ -83,6 +85,12 @@ test.describe("デザインテーマ", () => {
 
     test(`${id}: 平日・土曜・日曜（祝日）の背景が互いに見分けられる`, () => {
       const t = CALENDAR_THEMES[id];
+      if (t.noFill) {
+        // 白黒（装飾色なし）は、平日・土日祝の色分けをしないのが仕様。前後の月の日付も同じ白
+        expect(new Set(Object.values(t.dayBg))).toEqual(new Set(["#FFFFFF"]));
+        expect(t.outOfMonthBg).toBe("#FFFFFF");
+        return;
+      }
       expect(t.dayBg.saturday).not.toBe(t.dayBg.weekday);
       expect(t.dayBg.sunday).not.toBe(t.dayBg.weekday);
       expect(t.dayBg.saturday).not.toBe(t.dayBg.sunday);

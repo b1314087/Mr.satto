@@ -111,9 +111,18 @@ function drawMonthPage(
   const { drawText } = createTextDrawer(page, font);
   const landscape = orientation === "landscape";
   const rgbArr = (hex: string) => hexToRgb01(hex);
+  // 白黒（noFill）のテーマでは、矩形を塗らず、罫線だけを描く。それ以外は指定色で塗る
+  const fillOf = (hex: string) => (theme.noFill ? {} : { color: rgbOf(hex) });
 
-  // タイトル帯
-  page.drawRectangle({ x: L.margin, y: L.titleTop - TITLE_H, width: L.contentWidth, height: TITLE_H, color: rgbOf(theme.titleBg) });
+  // タイトル帯（白黒のテーマだけは、塗らない代わりに枠線で囲む）
+  page.drawRectangle({
+    x: L.margin,
+    y: L.titleTop - TITLE_H,
+    width: L.contentWidth,
+    height: TITLE_H,
+    ...fillOf(theme.titleBg),
+    ...(theme.noFill ? { borderColor: rgbOf(theme.border), borderWidth: 0.6 } : {}),
+  });
   drawText(`${month.year}年${month.month}月`, L.margin + 8, L.titleTop - TITLE_H + 9, landscape ? 22 : 20, {
     color: rgbArr(theme.titleText),
   });
@@ -130,7 +139,7 @@ function drawMonthPage(
       y: L.headerTop - HEADER_H,
       width: L.cellWidth,
       height: HEADER_H,
-      color: rgbOf(theme.headerBg),
+      ...fillOf(theme.headerBg),
       borderColor: rgbOf(theme.border),
       borderWidth: 0.6,
     });
@@ -151,7 +160,7 @@ function drawMonthPage(
         y: top - L.rowHeight,
         width: L.cellWidth,
         height: L.rowHeight,
-        color: rgbOf(faded ? theme.outOfMonthBg : theme.dayBg[day.kind]),
+        ...fillOf(faded ? theme.outOfMonthBg : theme.dayBg[day.kind]),
         borderColor: rgbOf(theme.border),
         borderWidth: 0.6,
       });

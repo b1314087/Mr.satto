@@ -1,7 +1,7 @@
 /**
  * 年度カレンダー作成 Processor（Mr.Satto 年度カレンダー作成ツール）。
  *
- * 年度（4月〜翌年3月）・週の始まり・デザイン・用紙の向きを指定して、月別12シートのExcel、
+ * 年度（4月〜翌年3月）・週の始まり・デザイン（プリセットまたはカスタムの4色）・用紙の向きを指定して、月別12シートのExcel、
  * または月別12ページのPDFを作る。ExcelもPDFも、同じ共通カレンダーデータ（src/lib/calendar/model.ts）から
  * 作るため、日付・曜日・祝日名が一致する。すべてブラウザの中で処理し、外部へは何も送信しない。
  */
@@ -9,7 +9,14 @@ import { BrowserProcessor } from "../types";
 import { buildCalendarExcel } from "@/lib/calendar/excel";
 import { buildCalendarPdf } from "@/lib/calendar/pdf";
 import { buildFiscalCalendar, type WeekStart } from "@/lib/calendar/model";
-import { CALENDAR_THEME_IDS, getCalendarTheme, type CalendarThemeId } from "@/lib/calendar/themes";
+import {
+  CALENDAR_THEME_CHOICES,
+  CALENDAR_CUSTOM_ROLE_LABELS,
+  invalidCustomRoles,
+  resolveCalendarTheme,
+  type CalendarCustomPalette,
+  type CalendarThemeChoice,
+} from "@/lib/calendar/themes";
 import { sanitizeFileName } from "@/lib/utils/format";
 
 export type FiscalCalendarFormat = "excel" | "pdf";
@@ -18,7 +25,10 @@ export type FiscalCalendarOrientation = "landscape" | "portrait";
 export interface FiscalCalendarInput {
   fiscalYear: number;
   weekStart: WeekStart;
-  theme: CalendarThemeId;
+  /** プリセットのID、または "custom"（customPalette の4色で配色を決める） */
+  theme: CalendarThemeChoice;
+  /** theme が "custom" のときの4色（#RRGGBB）。プリセットのときは使わない */
+  customPalette?: CalendarCustomPalette;
   orientation: FiscalCalendarOrientation;
   showAdjacentDays: boolean;
   format: FiscalCalendarFormat;
@@ -39,7 +49,11 @@ export function validateFiscalCalendarInput(input: FiscalCalendarInput): string 
     return `年度は${FISCAL_YEAR_UI_MIN}〜${FISCAL_YEAR_UI_MAX}年度から選んでください`;
   }
   if (input.weekStart !== "mon" && input.weekStart !== "sun") return "週の始まりは月曜か日曜を選んでください";
-  if (!CALENDAR_THEME_IDS.includes(input.theme)) return "デザインを選んでください";
+  if (!CALENDAR_THEME_CHOICES.includes(input.theme)) return "デザインを選んでください";
+  if (input.theme === "custom") {
+    const bad = invalidCustomRoles(input.customPalette);
+    if (bad.length > 0) return `色の指定が正しくありません（${bad.map((r) => CALENDAR_CUSTOM_ROLE_LABELS[r].label).join("・")}）`;
+  }
   if (input.orientation !== "landscape" && input.orientation !== "portrait") return "用紙の向きを選んでください";
   return null;
 }
@@ -57,7 +71,8 @@ export class FiscalCalendarProcessor extends BrowserProcessor<FiscalCalendarInpu
     const error = validateFiscalCalendarInput(input);
     if (error) throw new Error(error);
     const calendar = buildFiscalCalendar({ fiscalYear: input.fiscalYear, weekStart: input.weekStart });
-    const theme = getCalendarTheme(input.theme);
+    // 画面のプレビューと同じ、解決済みのテーマ（プリセットなら4色は使わない）
+    const theme = resolveCalendarTheme(input.theme, input.customPalette);
     if (input.format === "excel") {
       const blob = await buildCalendarExcel({
         calendar,

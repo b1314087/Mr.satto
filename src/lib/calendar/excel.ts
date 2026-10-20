@@ -113,6 +113,8 @@ function monthRows(
   const g = monthSheetGeometry(month.weeks.length, orientation);
   const landscape = orientation === "landscape";
   const line = { borderStyle: "thin", borderColor: theme.border } as const;
+  // 白黒（noFill）のテーマでは背景を塗らない（塗りつぶしを入れない）。それ以外は指定色で塗る
+  const fill = (color: string) => (theme.noFill ? {} : { backgroundColor: color });
   const rows: CellInput[][] = [];
 
   // タイトル行: 左に「2026年4月」、右に和暦と年度
@@ -124,7 +126,7 @@ function monthRows(
       fontSize: landscape ? 20 : 18,
       fontWeight: "bold",
       textColor: theme.titleText,
-      backgroundColor: theme.titleBg,
+      ...fill(theme.titleBg),
       align: "left",
       alignVertical: "center",
     },
@@ -135,7 +137,7 @@ function monthRows(
       height: TITLE_ROW_PT,
       fontSize: landscape ? 11 : 10,
       textColor: theme.titleText,
-      backgroundColor: theme.titleBg,
+      ...fill(theme.titleBg),
       align: "right",
       alignVertical: "center",
     },
@@ -154,7 +156,7 @@ function monthRows(
         fontSize: 11,
         fontWeight: "bold",
         textColor: text,
-        backgroundColor: theme.headerBg,
+        ...fill(theme.headerBg),
         align: "center",
         alignVertical: "center",
         ...line,
@@ -182,18 +184,18 @@ function monthRows(
               fontSize: landscape ? 12 : 11,
               fontWeight: day.inMonth ? "bold" : undefined,
               textColor: faded ? theme.noteText : theme.dayText[day.kind],
-              backgroundColor: bg,
+              ...fill(bg),
               align: "center",
               alignVertical: "center",
               ...line,
             }
-          : { value: null, height: DATE_ROW_PT, backgroundColor: bg, ...line },
+          : { value: null, height: DATE_ROW_PT, ...fill(bg), ...line },
         {
           value: day.inMonth ? holidayDisplayName(day) || null : null,
           height: DATE_ROW_PT,
           fontSize: landscape ? 9 : 7.5,
           textColor: theme.holidayNameText,
-          backgroundColor: bg,
+          ...fill(bg),
           align: "left",
           alignVertical: "center",
           wrap: true,
@@ -206,7 +208,7 @@ function monthRows(
           columnSpan: COLUMNS_PER_DAY,
           height: g.memoRowPt,
           fontSize: 10,
-          backgroundColor: memoBg,
+          ...fill(memoBg),
           align: "left",
           alignVertical: "top",
           wrap: true,
@@ -266,7 +268,7 @@ export function styleMergedCells(xml: string): string {
 
 /** 1シート分の印刷設定をシートのXMLへ書き込む */
 export function applySheetPrintSettings(xml: string, theme: CalendarTheme, orientation: CalendarOrientation): string {
-  const tab = `<tabColor rgb="FF${theme.tabColor.slice(1).toUpperCase()}"/>`;
+  const tab = theme.tabColor ? `<tabColor rgb="FF${theme.tabColor.slice(1).toUpperCase()}"/>` : "";
   const fit = `<pageSetUpPr fitToPage="1"/>`;
   let out = xml
     .replace(/<printOptions[^>]*\/>/g, "")

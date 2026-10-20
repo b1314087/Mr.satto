@@ -16,7 +16,15 @@ import {
   type FiscalCalendarOrientation,
 } from "@/lib/processors/browser/fiscal-calendar";
 import { buildFiscalCalendar, monthNote, fiscalYearEraLabel, type WeekStart } from "@/lib/calendar/model";
-import { CALENDAR_THEMES, CALENDAR_THEME_IDS, type CalendarThemeId } from "@/lib/calendar/themes";
+import {
+  CALENDAR_CUSTOM_DEFAULT,
+  CALENDAR_THEME_CHOICES,
+  resolveCalendarTheme,
+  themeSwatchColors,
+  type CalendarCustomPalette,
+  type CalendarThemeChoice,
+} from "@/lib/calendar/themes";
+import { FiscalCalendarCustomColors } from "./shared/fiscal-calendar-custom-colors";
 import { CONFIRMED_THROUGH_YEAR, HOLIDAY_DATA_CHECKED_AT, HOLIDAY_DATA_SOURCES } from "@/lib/calendar/holiday-data";
 import { downloadBlob } from "@/lib/utils/format";
 import { FiscalCalendarPreview } from "./shared/fiscal-calendar-preview";
@@ -41,7 +49,9 @@ export function FiscalCalendarTool() {
   // 初期値は今日が属する年度（日付・曜日ツールが今日の日付を初期値にしているのと同じ方式）
   const [fiscalYear, setFiscalYear] = useState(currentFiscalYear);
   const [weekStart, setWeekStart] = useState<WeekStart>("mon");
-  const [theme, setTheme] = useState<CalendarThemeId>("business");
+  const [theme, setTheme] = useState<CalendarThemeChoice>("business");
+  // カスタムの4色。プリセットを選んでいる間も保持するが、プリセットの配色には一切混ざらない（resolveCalendarTheme 参照）
+  const [customPalette, setCustomPalette] = useState<CalendarCustomPalette>({ ...CALENDAR_CUSTOM_DEFAULT });
   const [orientation, setOrientation] = useState<FiscalCalendarOrientation>("landscape");
   const [showAdjacentDays, setShowAdjacentDays] = useState(false);
   const [previewMonth, setPreviewMonth] = useState(0);
@@ -52,7 +62,8 @@ export function FiscalCalendarTool() {
   const [pdfResult, setPdfResult] = useState<Blob | null>(null);
 
   const calendar = useMemo(() => buildFiscalCalendar({ fiscalYear, weekStart }), [fiscalYear, weekStart]);
-  const themeDef = CALENDAR_THEMES[theme];
+  // プレビュー・Excel・PDFで共通に使う、解決済みのテーマ
+  const themeDef = useMemo(() => resolveCalendarTheme(theme, customPalette), [theme, customPalette]);
   const month = calendar.months[previewMonth];
 
   function resetResults() {
@@ -63,7 +74,7 @@ export function FiscalCalendarTool() {
   }
 
   function baseInput(format: FiscalCalendarFormat): FiscalCalendarInput {
-    return { fiscalYear, weekStart, theme, orientation, showAdjacentDays, format };
+    return { fiscalYear, weekStart, theme, customPalette: theme === "custom" ? customPalette : undefined, orientation, showAdjacentDays, format };
   }
 
   async function handleGenerate(format: FiscalCalendarFormat) {
@@ -180,13 +191,14 @@ export function FiscalCalendarTool() {
           <fieldset className="flex flex-col gap-1 text-sm">
             <legend className="mb-1 text-neutral-600 dark:text-neutral-300">デザイン</legend>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {CALENDAR_THEME_IDS.map((id) => {
-                const t = CALENDAR_THEMES[id];
+              {CALENDAR_THEME_CHOICES.map((id) => {
+                const t = resolveCalendarTheme(id, customPalette);
                 return (
                   <button
                     key={id}
                     type="button"
                     aria-pressed={theme === id}
+                    data-testid={`theme-${id}`}
                     onClick={() => {
                       setTheme(id);
                       resetResults();
@@ -196,8 +208,8 @@ export function FiscalCalendarTool() {
                     }`}
                   >
                     <span className="flex gap-1" aria-hidden="true">
-                      {[t.titleBg, t.headerBg, t.dayBg.saturday, t.dayBg.sunday, t.dayBg.weekday].map((c, i) => (
-                        <span key={i} className="h-4 w-6 rounded border border-neutral-300" style={{ background: c }} />
+                      {themeSwatchColors(t).map((c, i) => (
+                        <span key={i} data-testid={`theme-${id}-swatch`} className="h-4 w-6 rounded border border-neutral-400" style={{ background: c }} />
                       ))}
                     </span>
                     <span className="font-medium">{t.label}</span>
@@ -206,6 +218,20 @@ export function FiscalCalendarTool() {
                 );
               })}
             </div>
+            {theme === "custom" && (
+              <FiscalCalendarCustomColors
+                palette={customPalette}
+                theme={themeDef}
+                onChange={(role, color) => {
+                  setCustomPalette((p) => ({ ...p, [role]: color }));
+                  resetResults();
+                }}
+                onReset={() => {
+                  setCustomPalette({ ...CALENDAR_CUSTOM_DEFAULT });
+                  resetResults();
+                }}
+              />
+            )}
           </fieldset>
 
           <fieldset className="flex flex-col gap-1 text-sm">

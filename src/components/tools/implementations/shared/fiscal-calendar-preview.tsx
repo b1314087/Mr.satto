@@ -23,6 +23,7 @@ export function FiscalCalendarPreview({
   return (
     <div
       data-testid="calendar-preview"
+      data-theme={theme.id}
       data-month={`${month.year}-${String(month.month).padStart(2, "0")}`}
       className="overflow-hidden rounded-lg border text-[11px] leading-tight"
       style={{ borderColor: theme.border, aspectRatio: landscape ? "297 / 210" : "210 / 297" }}
