@@ -32,7 +32,7 @@ test.describe("連番・項目一括生成: 画面", () => {
   test("初期表示（単一項目）: 英語 / 1〜10 / 第○回 / 全角で10行が出る", async ({ page }) => {
     await open(page);
     await expect(page.getByTestId("seq-mode-single")).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByTestId("seq-style-dai-kai")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("seq-template")).toHaveValue(`第{n}回${SP}{item}`);
     await expect(page.getByTestId("seq-width-full")).toHaveAttribute("aria-pressed", "true");
     const got = await lines(page);
     expect(got).toHaveLength(10);
@@ -50,17 +50,55 @@ test.describe("連番・項目一括生成: 画面", () => {
     expect(await lines(page)).toEqual([`第３回${SP}数学`, `第４回${SP}数学`, `第５回${SP}数学`]);
   });
 
-  test("表示形式と全角・半角の切り替えで、項目・件数・順序は変わらない", async ({ page }) => {
+  test("テンプレートを自由に書き換えられる。同じ記号の複数使用・順序の入れ替え・全角半角の切り替えで、項目・件数・順序は変わらない", async ({ page }) => {
     await open(page);
     await goMultiple(page, "英語\n英語\n国語\n英語");
     await page.getByTestId("seq-width-half").click();
     expect(await lines(page)).toEqual([`第1回${SP}英語`, `第2回${SP}英語`, `第1回${SP}国語`, `第3回${SP}英語`]);
-    await page.getByTestId("seq-style-kai-me").click();
-    expect(await lines(page)).toEqual([`1回目${SP}英語`, `2回目${SP}英語`, `1回目${SP}国語`, `3回目${SP}英語`]);
-    await page.getByTestId("seq-style-plain").click();
-    expect(await lines(page)).toEqual([`1${SP}英語`, `2${SP}英語`, `1${SP}国語`, `3${SP}英語`]);
+    await page.getByTestId("seq-template").fill("{n}. {item}");
+    expect(await lines(page)).toEqual(["1. 英語", "2. 英語", "1. 国語", "3. 英語"]);
+    await page.getByTestId("seq-template").fill("{item}（第{n}回）");
+    expect(await lines(page)).toEqual(["英語（第1回）", "英語（第2回）", "国語（第1回）", "英語（第3回）"]);
+    await page.getByTestId("seq-template").fill("【{n}】{item}");
     await page.getByTestId("seq-width-full").click();
-    expect(await lines(page)).toEqual([`１${SP}英語`, `２${SP}英語`, `１${SP}国語`, `３${SP}英語`]);
+    expect(await lines(page)).toEqual(["【１】英語", "【２】英語", "【１】国語", "【３】英語"]);
+    // 同じ記号が複数あれば、すべて置き換える（項目名は変換されない）
+    await page.getByTestId("seq-template").fill("{n}/{n} {item}{item}");
+    expect(await lines(page)).toEqual(["１/１ 英語英語", "２/２ 英語英語", "１/１ 国語国語", "３/３ 英語英語"]);
+    // 例のボタンで、テンプレートが入る
+    await page.getByTestId("seq-template-example-0").click();
+    await expect(page.getByTestId("seq-template")).toHaveValue(`第{n}回${SP}{item}`);
+    expect((await lines(page))[0]).toBe(`第１回${SP}英語`);
+    await expect(page.getByTestId("seq-template-example-0")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("片方・両方の記号がないテンプレートは使え、補足の案内が出る。不正な表記は直し方を案内する", async ({ page }) => {
+    await open(page);
+    await page.getByTestId("seq-end").fill("2");
+    await page.getByTestId("seq-template").fill("No.{n}");
+    expect(await lines(page)).toEqual(["No.１", "No.２"]);
+    await expect(page.getByTestId("seq-template-note")).toHaveText("{item} がないため、項目名は出力されません。");
+    await page.getByTestId("seq-template").fill("固定");
+    expect(await lines(page)).toEqual(["固定", "固定"]);
+    await expect(page.getByTestId("seq-template-note")).toHaveCount(2);
+    // 不正な表記
+    await page.getByTestId("seq-template").fill("{番号} {item}");
+    await expect(page.getByTestId("seq-template-error")).toHaveText("「{番号}」は使えません。連番は {n} と書いてください");
+    await expect(page.getByTestId("seq-template")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByTestId("seq-copy")).toBeDisabled();
+    await expect(page.getByTestId("seq-message")).toContainText("テンプレートを直すと、結果が表示されます");
+    await page.getByTestId("seq-template").fill("{n");
+    await expect(page.getByTestId("seq-template-error")).toContainText("波かっこ { } の対応が合っていません");
+    await page.getByTestId("seq-template").fill("");
+    await expect(page.getByTestId("seq-template-error")).toContainText("テンプレートを入力してください");
+    await page.getByTestId("seq-template").fill("｛n｝");
+    await expect(page.getByTestId("seq-template-error")).toContainText("全角の波かっこ");
+    await page.getByTestId("seq-template").fill("{N}");
+    await expect(page.getByTestId("seq-template-error")).toContainText("小文字で {n}");
+    // 直すと、すぐ結果に戻る
+    await page.getByTestId("seq-template").fill("{n}-{item}");
+    await expect(page.getByTestId("seq-template-error")).toHaveCount(0);
+    expect(await lines(page)).toEqual(["１-英語", "２-英語"]);
   });
 
   test("複数項目: 指示書の例どおりに、入力順・項目ごとの連番が出る。空行は無視する", async ({ page }) => {
@@ -118,13 +156,13 @@ test.describe("連番・項目一括生成: 画面", () => {
     await page.getByTestId("seq-copy").click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(edited);
     // 表示形式を変えても、入力を変えても、編集した結果は残る（案内が出る）
-    await page.getByTestId("seq-style-kai-me").click();
+    await page.getByTestId("seq-template").fill(`{n}回目${SP}{item}`);
     await page.getByTestId("seq-multi-input").fill("英語\n英語\n国語\n数学");
     await expect(result(page)).toHaveValue(edited);
-    await expect(page.getByTestId("seq-edited-note")).toContainText("入力や設定が変わりました");
+    await expect(page.getByTestId("seq-edited-note")).toContainText("入力・テンプレート・設定が変わりました");
     await page.getByTestId("seq-copy").click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(edited);
-    // 単一項目に切り替えても、そちらの結果には影響しない。戻ると編集は残っている
+    // 単一項目に切り替えても、そちらの結果には影響しない（テンプレートは共通）。戻ると編集は残っている
     await page.getByTestId("seq-mode-single").click();
     expect((await lines(page))[0]).toBe(`１回目${SP}英語`);
     await expect(page.getByTestId("seq-edited-note")).toHaveCount(0);
@@ -134,6 +172,33 @@ test.describe("連番・項目一括生成: 画面", () => {
     await page.getByTestId("seq-reset").click();
     expect(await lines(page)).toEqual([`１回目${SP}英語`, `２回目${SP}英語`, `１回目${SP}国語`, `１回目${SP}数学`]);
     await expect(page.getByTestId("seq-edited-note")).toHaveCount(0);
+  });
+
+  test("手動編集: テンプレートを書き換えている途中（不正な表記）でも、編集した結果は消えず、コピーできる。モードごとの編集は独立している", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await open(page);
+    // 単一項目で編集
+    await result(page).fill("単一の編集結果");
+    // 複数項目で別の編集
+    await goMultiple(page, "英語\n国語");
+    await result(page).fill("複数の編集結果\n2行目");
+    // テンプレートを不正な表記にしても、編集した結果はそのまま
+    await page.getByTestId("seq-template").fill("{ite");
+    await expect(page.getByTestId("seq-template-error")).toBeVisible();
+    await expect(result(page)).toHaveValue("複数の編集結果\n2行目");
+    await page.getByTestId("seq-copy").click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("複数の編集結果\n2行目");
+    // それぞれのモードの編集が、独立して残っている
+    await page.getByTestId("seq-mode-single").click();
+    await expect(result(page)).toHaveValue("単一の編集結果");
+    await page.getByTestId("seq-mode-multiple").click();
+    await expect(result(page)).toHaveValue("複数の編集結果\n2行目");
+    // 「入力から作り直す」は、いまのモードだけを作り直す
+    await page.getByTestId("seq-template").fill("{item}:{n}");
+    await page.getByTestId("seq-reset").click();
+    expect(await lines(page)).toEqual(["英語:１", "国語:１"]);
+    await page.getByTestId("seq-mode-single").click();
+    await expect(result(page)).toHaveValue("単一の編集結果");
   });
 
   test("手動編集: 編集して自動生成と同じ文字に戻すと、編集済みの扱いではなくなる", async ({ page }) => {
@@ -180,7 +245,7 @@ test.describe("連番・項目一括生成: スマートフォン幅", () => {
     expect(await overflow()).toBeLessThanOrEqual(1);
     await page.getByTestId("seq-mode-multiple").click();
     await page.getByTestId("seq-multi-input").fill(Array.from({ length: 300 }, (_, i) => `項目${i % 7}`).join("\n"));
-    await page.getByTestId("seq-style-kai-me").click();
+    await page.getByTestId("seq-template").fill("{item}（第{n}回）");
     await page.getByTestId("seq-width-half").click();
     await expect(page.getByTestId("seq-count")).toHaveText("300行");
     expect(await overflow()).toBeLessThanOrEqual(1);

@@ -3,14 +3,15 @@
 import { useMemo, useRef, useState } from "react";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import {
+  DEFAULT_TEMPLATE,
   SEQUENCE_MAX_LINES,
-  SEQUENCE_STYLES,
   SEQUENCE_WIDTHS,
+  TEMPLATE_EXAMPLES,
+  TEMPLATE_MAX_LENGTH,
   generateMultiple,
   generateSingle,
   toClipboardText,
   type SequenceResult,
-  type SequenceStyle,
   type SequenceWidth,
 } from "@/lib/sequence/sequence";
 
@@ -42,12 +43,13 @@ function optionClass(active: boolean): string {
  * 連番・項目一括生成（生成ツール）。ブラウザの中だけで処理し、入力・結果は送信も保存もしない。
  * 番号の付け方は src/lib/sequence/sequence.ts の純関数だけで決める。
  *
- * 結果欄は直接編集できる。編集した結果は、入力や設定を変えても自動では上書きせず（「入力から作り直す」を押したときだけ上書き）、
+ * 1行の書き方は、テンプレート（{n}=連番、{item}=項目名）を自由に入力して決める。
+ * 結果欄は直接編集できる。編集した結果は、入力・テンプレート・設定を変えても自動では上書きせず（「入力から作り直す」を押したときだけ上書き）、
  * コピーは常に結果欄に表示されている文字を使う。
  */
 export function SequenceGeneratorTool() {
   const [mode, setMode] = useState<Mode>("single");
-  const [style, setStyle] = useState<SequenceStyle>("dai-kai");
+  const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
   const [width, setWidth] = useState<SequenceWidth>("full");
 
   // モードA（単一項目）
@@ -65,8 +67,8 @@ export function SequenceGeneratorTool() {
   const resultRef = useRef<HTMLTextAreaElement>(null);
 
   const result: SequenceResult = useMemo(
-    () => (mode === "single" ? generateSingle({ item, start, end, style, width }) : generateMultiple({ text: multiText, style, width })),
-    [mode, item, start, end, multiText, style, width],
+    () => (mode === "single" ? generateSingle({ item, start, end, template, width }) : generateMultiple({ text: multiText, template, width })),
+    [mode, item, start, end, multiText, template, width],
   );
   const generatedText = result.lines.join("\n");
   const edited = mode === "single" ? editedSingle : editedMultiple;
@@ -104,7 +106,9 @@ export function SequenceGeneratorTool() {
     }
   }
 
-  const message = result.error;
+  // テンプレートの問題は、テンプレート欄の近くに出す。結果欄の下には、入力の問題だけを出す
+  const templateError = result.errorKind === "template" ? result.error : null;
+  const message = result.errorKind === "input" ? result.error : templateError ? "テンプレートを直すと、結果が表示されます" : null;
   const showMessage = message !== null && !edited;
 
   return (
@@ -145,8 +149,8 @@ export function SequenceGeneratorTool() {
             <div data-testid="seq-edited-note" className="flex flex-col gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950 dark:text-blue-100">
               <p>
                 {stale
-                  ? "入力や設定が変わりましたが、手動で編集した結果はそのまま残しています。最新の入力で作り直すには、下のボタンを押してください（編集内容は上書きされます）。"
-                  : "手動で編集した結果です。入力や設定を変えても、この結果は自動では上書きされません。"}
+                  ? "入力・テンプレート・設定が変わりましたが、手動で編集した結果はそのまま残しています。最新の入力で作り直すには、下のボタンを押してください（編集内容は上書きされます）。"
+                  : "手動で編集した結果です。入力・テンプレート・設定を変えても、この結果は自動では上書きされません。"}
               </p>
               <button
                 type="button"
@@ -275,25 +279,55 @@ export function SequenceGeneratorTool() {
         )}
 
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <div className="flex flex-col gap-1.5">
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">番号の表示</p>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="番号の表示">
-              {SEQUENCE_STYLES.map((s) => (
+          <div className="flex flex-col gap-2">
+            <label htmlFor="seq-template" className="flex flex-col gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+              1行の書き方（テンプレート）
+              <input
+                id="seq-template"
+                data-testid="seq-template"
+                type="text"
+                value={template}
+                onChange={(e) => setTemplate(e.target.value)}
+                maxLength={TEMPLATE_MAX_LENGTH + 50}
+                spellCheck={false}
+                aria-invalid={templateError !== null}
+                aria-describedby="seq-template-help"
+                placeholder="例: 第{n}回　{item}"
+                className={`${fieldClass} font-mono ${templateError ? "border-red-400 focus:border-red-500 focus:ring-red-500/20 dark:border-red-700" : ""}`}
+              />
+            </label>
+            <p id="seq-template-help" className="text-xs text-neutral-500 dark:text-neutral-400">
+              <code>{"{n}"}</code> が連番、<code>{"{item}"}</code> が項目名に置き換わります（同じ記号は何度でも使えます）。どちらか一方だけ、または記号なしでも使えます。
+            </p>
+            {templateError && (
+              <p data-testid="seq-template-error" role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-950 dark:text-red-200">
+                {templateError}
+              </p>
+            )}
+            {!templateError &&
+              result.notes.map((note) => (
+                <p key={note} data-testid="seq-template-note" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+                  {note}
+                </p>
+              ))}
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="テンプレートの例">
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">例:</span>
+              {TEMPLATE_EXAMPLES.map((ex, i) => (
                 <button
-                  key={s.value}
+                  key={ex}
                   type="button"
-                  data-testid={`seq-style-${s.value}`}
-                  aria-pressed={style === s.value}
-                  onClick={() => setStyle(s.value)}
-                  className={optionClass(style === s.value)}
+                  data-testid={`seq-template-example-${i}`}
+                  aria-pressed={template === ex}
+                  onClick={() => setTemplate(ex)}
+                  className={`${optionClass(template === ex)} font-mono !text-xs`}
                 >
-                  {s.label}
+                  {ex}
                 </button>
               ))}
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">数字</p>
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{"{n}"} の数字</p>
             <div className="flex flex-wrap gap-2" role="group" aria-label="数字の全角・半角">
               {SEQUENCE_WIDTHS.map((w) => (
                 <button
