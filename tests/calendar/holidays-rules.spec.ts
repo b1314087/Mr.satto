@@ -12,6 +12,9 @@ import {
   CONFIRMED_THROUGH_YEAR,
   HOLIDAY_DATA_CHECKED_AT,
 } from "@/lib/calendar/holiday-data";
+import { pinHolidayData, HOLIDAY_DATA_PINNED } from "../helpers/holiday-pin";
+
+pinHolidayData(); // 表示・ルールの仕様は、固定データ（2027年まで確定）で確かめる
 
 /**
  * 祝日ルールの個別ケース（年度カレンダー 工程A）。
@@ -133,8 +136,8 @@ test.describe("祝日: 過去の特例", () => {
 });
 
 test.describe("祝日: 春分・秋分", () => {
-  test("公示済みの年の表は、計算式の値と食い違わない（表の入力ミスの検出）", () => {
-    for (const [yearText, days] of Object.entries(CONFIRMED_EQUINOX_DAYS)) {
+  test("公示済みの年の表（固定データ）は、計算式の値と食い違わない（表の入力ミスの検出）", () => {
+    for (const [yearText, days] of Object.entries(HOLIDAY_DATA_PINNED.equinoxDays)) {
       const y = Number(yearText);
       const spring = Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
       const autumn = Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
@@ -157,8 +160,8 @@ test.describe("祝日: 春分・秋分", () => {
 });
 
 test.describe("祝日: 確度（確定・法定・推定）", () => {
-  test("公示済みの最終年と、データの確認日が設定されている", () => {
-    expect(CONFIRMED_THROUGH_YEAR).toBe(2027);
+  test("公示済みの最終年と、データの確認日が設定されている（自動更新で先の年になりうるので、2027年以上）", () => {
+    expect(CONFIRMED_THROUGH_YEAR).toBeGreaterThanOrEqual(2027);
     expect(HOLIDAY_DATA_CHECKED_AT).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(CONFIRMED_EQUINOX_DAYS[CONFIRMED_THROUGH_YEAR]).toBeTruthy();
   });

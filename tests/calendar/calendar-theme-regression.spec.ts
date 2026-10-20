@@ -8,6 +8,9 @@ import { buildFiscalCalendar, type WeekStart } from "@/lib/calendar/model";
 import { CALENDAR_THEMES, getCalendarTheme } from "@/lib/calendar/themes";
 import { excelFingerprint, pdfFingerprint } from "../helpers/calendar-golden";
 import { readFontBytes } from "../helpers/pdf-text-boxes";
+import { pinHolidayData } from "../helpers/holiday-pin";
+
+pinHolidayData(); // 祝日データが自動更新されても、拡張前の出力と比べられるよう固定データを使う
 
 /**
  * 既存テーマ（ビジネス・ナチュラル）の維持を保証するテスト。デザインの拡張（新プリセット・カスタム配色）の前に記録した

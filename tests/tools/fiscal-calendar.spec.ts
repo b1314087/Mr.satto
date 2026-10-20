@@ -5,6 +5,21 @@ import { clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
 import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { addressOf, excelSerialToIso, readXlsxWorkbook } from "../helpers/xlsx-workbook";
 import { extractTextBoxes } from "../helpers/pdf-text-boxes";
+import { CONFIRMED_THROUGH_YEAR } from "@/lib/calendar/holiday-data";
+import { autumnEquinoxDay, springEquinoxDay } from "@/lib/calendar/holidays";
+
+/**
+ * 祝日データは毎週の自動更新で「確定済みの最終年」が進む。画面の表示は実データに従うので、
+ * 「確定していない（推定の）祝日」を確かめるテストは、決め打ちの年ではなく、いまの最終年（L）から日付を求める。
+ *   年度 L の3月（= L+1年3月）に、推定の春分の日がある。
+ */
+const L = CONFIRMED_THROUGH_YEAR;
+const pad = (n: number) => String(n).padStart(2, "0");
+/** 第3月曜日（敬老の日）の日 */
+function thirdMonday(year: number, month: number): number {
+  const firstDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay(); // 0=日
+  return 1 + ((8 - firstDow) % 7) + 14;
+}
 
 /**
  * 年度カレンダー作成ツール（/tools/fiscal-calendar）のE2Eテスト（工程D）。
@@ -88,30 +103,30 @@ test.describe("年度カレンダー作成: 画面", () => {
     await expect(preview.locator('[data-testid="calendar-preview-cell"]').first()).toHaveAttribute("data-date", "2026-04-26");
   });
 
-  test("プレビュー: 推定の祝日（2027年度の3月）に※と注記が出る。2026年度の3月には出ない", async ({ page }) => {
+  test("プレビュー: 推定の祝日（確定済みの最終年Lの年度の3月）に※と注記が出る。確定済みの年度の3月には出ない", async ({ page }) => {
     await open(page);
-    await yearSelect(page).selectOption("2027");
+    await yearSelect(page).selectOption(String(L));
     await expect(page.getByText(/確定していない祝日が含まれます/)).toBeVisible();
     await page.getByRole("button", { name: "3月", exact: true }).click();
     const preview = page.getByTestId("calendar-preview");
-    await expect(preview.locator('[data-date="2028-03-20"]')).toContainText("春分の日※");
+    await expect(preview.locator(`[data-date="${L + 1}-03-${pad(springEquinoxDay(L + 1).day)}"]`)).toContainText("春分の日※");
     await expect(page.getByTestId("calendar-estimated-note")).toHaveText(/※は国立天文台の暦要項が公示される前の推定日です/);
-    // 2028年1月: 元日は法律どおりの日付。※は付けず、法改正の注記だけを出す
+    // L+1年1月: 元日は法律どおりの日付。※は付けず、法改正の注記だけを出す
     await page.getByRole("button", { name: "1月", exact: true }).click();
-    await expect(preview.locator('[data-date="2028-01-01"]')).toContainText("元日");
-    await expect(preview.locator('[data-date="2028-01-01"]')).not.toContainText("※");
+    await expect(preview.locator(`[data-date="${L + 1}-01-01"]`)).toContainText("元日");
+    await expect(preview.locator(`[data-date="${L + 1}-01-01"]`)).not.toContainText("※");
     await expect(page.getByTestId("calendar-estimated-note")).toHaveText(/祝日は現行の祝日法にもとづく日付です。法改正などで変わることがあります/);
-    // 2028年9月（敬老の日＝法律どおり、秋分の日＝推定）: 両方を伝える注記
-    await yearSelect(page).selectOption("2028");
+    // L+1年9月（敬老の日＝法律どおり、秋分の日＝推定）: 両方を伝える注記
+    await yearSelect(page).selectOption(String(L + 1));
     await page.getByRole("button", { name: "9月", exact: true }).click();
-    await expect(preview.locator('[data-date="2028-09-18"]')).not.toContainText("※");
-    await expect(preview.locator('[data-date="2028-09-22"]')).toContainText("秋分の日※");
+    await expect(preview.locator(`[data-date="${L + 1}-09-${pad(thirdMonday(L + 1, 9))}"]`)).not.toContainText("※");
+    await expect(preview.locator(`[data-date="${L + 1}-09-${pad(autumnEquinoxDay(L + 1).day)}"]`)).toContainText("秋分の日※");
     await expect(page.getByTestId("calendar-estimated-note")).toHaveText(/※は暦要項の公示前の推定日です。ほかの祝日は現行の祝日法による日付/);
-    await yearSelect(page).selectOption("2027");
-    // 2027年内の月（確定済み）には注記を出さない
+    await yearSelect(page).selectOption(String(L));
+    // L年内の月（確定済み）には注記を出さない
     await page.getByRole("button", { name: "11月", exact: true }).click();
     await expect(page.getByTestId("calendar-estimated-note")).toHaveCount(0);
-    await yearSelect(page).selectOption("2026");
+    await yearSelect(page).selectOption(String(L - 1));
     await expect(page.getByText(/確定していない祝日が含まれます/)).toHaveCount(0);
     await page.getByRole("button", { name: "3月", exact: true }).click();
     await expect(page.getByTestId("calendar-estimated-note")).toHaveCount(0);
@@ -161,9 +176,9 @@ test.describe("年度カレンダー作成: ダウンロードしたファイル
     expect(wb.sheets[9].cells.get("A1")?.value).toBe("2027年1月");
   });
 
-  test("Excel（2027年度・日曜始まり・ナチュラル・縦・前後の月の日付あり）の設定が反映される", async ({ page }) => {
+  test("Excel（確定済みの最終年Lの年度・日曜始まり・ナチュラル・縦・前後の月の日付あり）の設定が反映される", async ({ page }) => {
     await open(page);
-    await yearSelect(page).selectOption("2027");
+    await yearSelect(page).selectOption(String(L));
     await page.getByRole("button", { name: "日曜日始まり" }).click();
     await page.getByRole("button", { name: /ナチュラル/ }).click();
     await page.getByRole("button", { name: "縦向き" }).click();
@@ -171,14 +186,16 @@ test.describe("年度カレンダー作成: ダウンロードしたファイル
     await page.getByRole("button", { name: /Excelを作成/ }).click();
     await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 90_000 });
     const download = await clickAndDownload(page, /Excelファイルをダウンロード/);
-    expect(await lastDownloadName(page)).toBe("2027年度カレンダー_日曜始まり_縦.xlsx");
+    expect(await lastDownloadName(page)).toBe(`${L}年度カレンダー_日曜始まり_縦.xlsx`);
     const wb = readXlsxWorkbook(await readDownload(download));
     const apr = wb.sheets[0];
     expect(apr.pageSetup.orientation).toBe("portrait");
     expect(apr.tabColor).toBe("4F6B4A");
     expect([0, 2, 4, 6, 8, 10, 12].map((c) => apr.cells.get(addressOf(1, c))?.value)).toEqual(["日", "月", "火", "水", "木", "金", "土"]);
-    // 2027年4月1日は木曜。日曜始まりの先頭は 3/28(日)。前後の月の日付が入る
-    expect(excelSerialToIso(apr.cells.get("A3")!.value as number)).toBe("2027-03-28");
+    // 4月1日を含む週の日曜が先頭。前後の月の日付が入る
+    const apr1 = new Date(Date.UTC(L, 3, 1));
+    const firstSunday = new Date(apr1.getTime() - apr1.getUTCDay() * 86_400_000).toISOString().slice(0, 10);
+    expect(excelSerialToIso(apr.cells.get("A3")!.value as number)).toBe(firstSunday);
     // 3月（推定の春分の日）
     const mar = wb.sheets[11];
     const names = [...mar.cells.values()].filter((c) => typeof c.value === "string" && c.value.startsWith("春分の日"));

@@ -21,6 +21,9 @@ import {
 import { readXlsxWorkbook } from "../helpers/xlsx-workbook";
 import { readPdfColors } from "../helpers/calendar-pdf-colors";
 import { extractTextBoxes, readFontBytes } from "../helpers/pdf-text-boxes";
+import { pinHolidayData } from "../helpers/holiday-pin";
+
+pinHolidayData(); // 祝日の表示（2028年度の推定の注記）は、固定データ（2027年まで確定）で確かめる
 
 /**
  * 年度カレンダーのデザイン拡張（新プリセット・カスタム配色・白黒）のテスト。

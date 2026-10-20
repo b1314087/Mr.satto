@@ -1,4 +1,4 @@
-# cao-syukujitsu-2000-2027-decoded.csv の取得の経緯（祝日計算の独立検証用データ。アプリ本体には含めない）
+# cao-syukujitsu-decoded.csv（旧名 cao-syukujitsu-2000-2027-decoded.csv）の最初の取得の経緯（祝日計算の独立検証用データ。アプリ本体には含めない）
 出典        : 内閣府「国民の祝日について」 https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html
               公式CSV https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv
 取得日      : 2026-10-20（HTTP 200、Content-Type: text/csv、Last-Modified: Mon, 02 Feb 2026 00:30:17 GMT）
@@ -13,3 +13,9 @@
 注意        : 公式CSVは、振替休日と国民の休日をどちらも「休日」と書き、2019年の即位に伴う2日を
               「休日（祝日扱い）」と書く。実装は区別して表示するため、名前の照合は種別を使う（holidays-oracle.spec.ts）。
 利用条件    : 政府標準利用規約（PDL1.0互換）の確認は未了。再配布の可否が確定するまでは、リポジトリ内のテスト用データとしてのみ使う。
+
+■ 自動更新（2026-10 以降）
+  このファイルと cao-syukujitsu-snapshot.json（取得日・Last-Modified・元ファイルのSHA-256・控えのSHA-256・行数・年の範囲）は、
+  scripts/holidays/sync.ts が、内閣府の公式CSVから検証したうえで自動で書き換える（毎週。差分がなければ何も書き換えない）。
+  上の「取得の経緯」は最初の取得（2000〜2027年・486行）の記録で、以降の取得の記録は snapshot.json にある。
+  cao-syukujitsu-dates-2019-2027.txt（日付だけの控え）は、このCSVの控えに置き換わったため、テストから参照されなくなった（削除してよい）。

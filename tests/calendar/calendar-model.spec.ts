@@ -12,6 +12,9 @@ import {
   holidayDisplayName,
   type WeekStart,
 } from "@/lib/calendar/model";
+import { pinHolidayData } from "../helpers/holiday-pin";
+
+pinHolidayData(); // 祝日の表示の仕様は、固定データ（2027年まで確定）で確かめる
 
 /**
  * 年度カレンダーの共通モデルのテスト（工程A）。

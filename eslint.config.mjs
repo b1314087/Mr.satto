@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 祝日データ自動更新スクリプトのビルド出力（使い捨て）
+    ".holiday-sync-build/**",
     // pdfjs-dist の Worker (PDF→画像ツール用) は node_modules からコピーした
     // 圧縮済み配布物であり、Lint対象のソースコードではない。
     "public/pdf.worker.min.mjs",

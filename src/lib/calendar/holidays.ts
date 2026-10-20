@@ -11,14 +11,36 @@
  *   - statutory : 公示済みの年より先で、法律の定めだけで日付が決まる祝日（元日・海の日など）。
  *   - estimated : 公示済みの年より先の春分の日・秋分の日、およびそれに伴って決まる振替休日・国民の休日。
  *                 国立天文台の公示前なので推定であり、確定した祝日としては扱わない。
+ *
+ * 祝日の「データ」（公示済みの最終年・春分/秋分の確定表・公式CSVと計算ルールが食い違う年の公式の祝日一覧）は
+ * holiday-data.generated.ts にあり、内閣府の公式CSVから scripts/holidays が自動で更新する（holiday-data.ts 参照）。
+ * 公式CSVと計算ルールが食い違う年（祝日法の改正など）は、その年の祝日を公式の一覧そのものにする
+ * （OFFICIAL_HOLIDAY_OVERRIDES）。プログラムの修正なしで、公式CSVに載っている年は常に公式の内容になる。
  */
-import { CONFIRMED_EQUINOX_DAYS, CONFIRMED_THROUGH_YEAR } from "./holiday-data";
+import { CONFIRMED_EQUINOX_DAYS, CONFIRMED_THROUGH_YEAR, OFFICIAL_HOLIDAY_OVERRIDES, type OfficialHoliday } from "./holiday-data";
 
 export const HOLIDAY_MIN_YEAR = 2000;
 export const HOLIDAY_MAX_YEAR = 2099;
 
 export type HolidayKind = "national" | "substitute" | "citizens" | "special";
 export type HolidayStatus = "confirmed" | "statutory" | "estimated";
+
+/** 祝日の計算に使うデータ。通常は、自動更新される実データ（LIVE_HOLIDAY_DATA）を使う */
+export interface HolidayData {
+  /** 暦要項が公示済みで、祝日が確定している最後の年 */
+  confirmedThroughYear: number;
+  /** 公示済みの春分の日・秋分の日（日付のうちの「日」） */
+  equinoxDays: Readonly<Record<number, { spring: number; autumn: number }>>;
+  /** 公式CSVと計算ルールが食い違う年の、公式の祝日一覧（その年は、この一覧をそのまま使う） */
+  overrides: Readonly<Record<number, readonly OfficialHoliday[]>>;
+}
+
+/** 自動更新される実データ（holiday-data.generated.ts） */
+export const LIVE_HOLIDAY_DATA: HolidayData = {
+  confirmedThroughYear: CONFIRMED_THROUGH_YEAR,
+  equinoxDays: CONFIRMED_EQUINOX_DAYS,
+  overrides: OFFICIAL_HOLIDAY_OVERRIDES,
+};
 
 export interface Holiday {
   /** YYYY-MM-DD */
@@ -78,20 +100,28 @@ function autumnEquinoxFormula(y: number): number {
   return Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
 }
 
-export function springEquinoxDay(y: number): { day: number; estimated: boolean } {
-  const confirmed = CONFIRMED_EQUINOX_DAYS[y];
+function springOf(y: number, data: HolidayData): { day: number; estimated: boolean } {
+  const confirmed = data.equinoxDays[y];
   if (confirmed) return { day: confirmed.spring, estimated: false };
-  return { day: springEquinoxFormula(y), estimated: y > CONFIRMED_THROUGH_YEAR };
+  return { day: springEquinoxFormula(y), estimated: y > data.confirmedThroughYear };
+}
+
+function autumnOf(y: number, data: HolidayData): { day: number; estimated: boolean } {
+  const confirmed = data.equinoxDays[y];
+  if (confirmed) return { day: confirmed.autumn, estimated: false };
+  return { day: autumnEquinoxFormula(y), estimated: y > data.confirmedThroughYear };
+}
+
+export function springEquinoxDay(y: number): { day: number; estimated: boolean } {
+  return springOf(y, activeData);
 }
 
 export function autumnEquinoxDay(y: number): { day: number; estimated: boolean } {
-  const confirmed = CONFIRMED_EQUINOX_DAYS[y];
-  if (confirmed) return { day: confirmed.autumn, estimated: false };
-  return { day: autumnEquinoxFormula(y), estimated: y > CONFIRMED_THROUGH_YEAR };
+  return autumnOf(y, activeData);
 }
 
 /** 法律で定められた祝日（国民の休日・振替休日を除く）。キーはYYYY-MM-DD */
-function baseHolidays(y: number): Map<string, RawHoliday> {
+function baseHolidays(y: number, data: HolidayData): Map<string, RawHoliday> {
   const map = new Map<string, RawHoliday>();
   const add = (m: number, d: number, name: string, kind: HolidayKind = "national", estimated = false) => {
     map.set(toIso(y, m, d), { name, kind, estimated });
@@ -102,7 +132,7 @@ function baseHolidays(y: number): Map<string, RawHoliday> {
   add(2, 11, "建国記念の日");
   if (y >= 2020) add(2, 23, "天皇誕生日");
   {
-    const s = springEquinoxDay(y);
+    const s = springOf(y, data);
     add(3, s.day, "春分の日", "national", s.estimated);
   }
   add(4, 29, y >= 2007 ? "昭和の日" : "みどりの日");
@@ -124,7 +154,7 @@ function baseHolidays(y: number): Map<string, RawHoliday> {
   // 敬老の日: 2000〜2002年は9月15日、2003年から9月の第3月曜日
   add(9, y >= 2003 ? nthMonday(y, 9, 3) : 15, "敬老の日");
   {
-    const a = autumnEquinoxDay(y);
+    const a = autumnOf(y, data);
     add(9, a.day, "秋分の日", "national", a.estimated);
   }
 
@@ -145,7 +175,18 @@ function baseHolidays(y: number): Map<string, RawHoliday> {
   return map;
 }
 
+let activeData: HolidayData = LIVE_HOLIDAY_DATA;
 const cache = new Map<number, Holiday[]>();
+
+/**
+ * テスト専用。祝日の計算に使うデータを差し替える（null で実データに戻す）。
+ * 「確定／法律どおり／推定」の表示の仕様テストを、自動更新される実データから切り離して固定するために使う。
+ * アプリ本体は呼び出さない。
+ */
+export function setHolidayDataForTesting(data: HolidayData | null): void {
+  activeData = data ?? LIVE_HOLIDAY_DATA;
+  cache.clear();
+}
 
 function assertSupportedYear(y: number): void {
   if (!Number.isInteger(y) || y < HOLIDAY_MIN_YEAR || y > HOLIDAY_MAX_YEAR) {
@@ -153,17 +194,32 @@ function assertSupportedYear(y: number): void {
   }
 }
 
-/** y年の祝日（国民の休日・振替休日を含む）を日付順で返す */
-export function getHolidays(y: number): Holiday[] {
+/**
+ * y年の祝日（国民の休日・振替休日を含む）を日付順で返す。キャッシュを使わず、渡されたデータで求める
+ * （公式CSVとの突き合わせ・自動更新の計画で使う。通常のアプリは getHolidays を使う）。
+ */
+export function computeHolidays(y: number, data: HolidayData): Holiday[] {
   assertSupportedYear(y);
-  const hit = cache.get(y);
-  if (hit) return hit;
+
+  // 公式CSVと計算ルールが食い違う年は、公式の祝日一覧をそのまま使う
+  const official = data.overrides[y];
+  if (official) {
+    return [...official]
+      .sort((a, b) => (a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : 0))
+      .map((h) => ({ iso: h.iso, name: h.name, kind: h.kind, status: y <= data.confirmedThroughYear ? "confirmed" : "statutory" }));
+  }
 
   // 前後の年の祝日も使い、年またぎの「国民の休日」「振替休日」を取りこぼさないようにする
   const all = new Map<string, RawHoliday>();
   for (const yy of [y - 1, y, y + 1]) {
     if (yy < HOLIDAY_MIN_YEAR || yy > HOLIDAY_MAX_YEAR) continue;
-    for (const [k, v] of baseHolidays(yy)) all.set(k, v);
+    const neighbor = data.overrides[yy];
+    if (neighbor) {
+      // 隣の年が公式の一覧のときは、その年の祝日（国民の休日・振替休日を除く）を土台にする
+      for (const h of neighbor) if (h.kind === "national" || h.kind === "special") all.set(h.iso, { name: h.name, kind: h.kind, estimated: false });
+      continue;
+    }
+    for (const [k, v] of baseHolidays(yy, data)) all.set(k, v);
   }
 
   // 国民の休日: 前日と翌日が「国民の祝日」で、日曜でも祝日でもない日
@@ -210,8 +266,17 @@ export function getHolidays(y: number): Holiday[] {
       iso,
       name: h.name,
       kind: h.kind,
-      status: y <= CONFIRMED_THROUGH_YEAR ? "confirmed" : h.estimated ? "estimated" : "statutory",
+      status: y <= data.confirmedThroughYear ? "confirmed" : h.estimated ? "estimated" : "statutory",
     }));
+  return result;
+}
+
+/** y年の祝日（国民の休日・振替休日を含む）を日付順で返す */
+export function getHolidays(y: number): Holiday[] {
+  assertSupportedYear(y);
+  const hit = cache.get(y);
+  if (hit) return hit;
+  const result = computeHolidays(y, activeData);
   cache.set(y, result);
   return result;
 }

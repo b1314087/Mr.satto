@@ -12,9 +12,12 @@ import {
   holidayDisplayName,
   monthNote,
 } from "@/lib/calendar/model";
-import { CONFIRMED_THROUGH_YEAR } from "@/lib/calendar/holiday-data";
+import { pinHolidayData, HOLIDAY_DATA_PINNED } from "../helpers/holiday-pin";
 import { getHolidays } from "@/lib/calendar/holidays";
 import { CALENDAR_THEMES } from "@/lib/calendar/themes";
+
+pinHolidayData();
+const CONFIRMED_THROUGH_YEAR = HOLIDAY_DATA_PINNED.confirmedThroughYear;
 
 /**
  * 「確定」「法律どおり」「推定」の区別（2028年以降の表示）の仕様テスト。

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "holidays:sync": "tsc -p scripts/holidays/tsconfig.json && node .holiday-sync-build/scripts/holidays/sync.js",
     "test": "playwright test",
     "test:features-off": "NEXT_PUBLIC_FEATURES_OFF=1 PLAYWRIGHT_TEST_PORT=3101 playwright test tests/regression/features-off.spec.ts"
   },

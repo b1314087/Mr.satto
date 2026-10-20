@@ -1,0 +1,170 @@
+# 祝日データの自動更新（内閣府の公式CSV → 検証 → データ更新 → テスト → main に反映 → Vercel が自動公開）
+#
+# 流れ:
+#   1. 毎週、内閣府の「国民の祝日」CSVを取得して検証する（scripts/holidays）
+#   2. 変更があるときだけ、祝日データ（src/lib/calendar/holiday-data.generated.ts）と公式CSVの控えを更新する
+#   3. 型チェック・ESLint・カレンダーのテスト（tests/calendar と年度カレンダーの画面テスト）が通ったときだけ、main に直接コミットして push する
+#   4. main への push で、既存の Vercel 連携が本番へ自動公開する
+#
+# 変更がなければ何もコミットしない。取得失敗・データ不正・テスト失敗のときは main を一切変更しない。
+#
+# 頻度を「毎週（月曜 日本時間 10:17）」にした理由:
+#   祝日は、前年2月ごろの官報公示（春分・秋分の日）や祝日法の改正から、実際に必要になるまで数か月以上の余裕がある。
+#   毎日にしても利用者への反映は実質的に早まらず、公式サイトへの負荷とGitHub Actionsの無料枠を無駄にする。
+#   毎週なら、公表から最長でも約1週間以内に反映される。急ぐときは「Run workflow」で手動実行できる。
+#
+# 事前に必要な設定（リポジトリ側）:
+#   - Settings > Actions > General > Workflow permissions は「Read repository contents and packages permissions」でよい
+#     （このファイルの permissions で、必要な権限だけをジョブに与えている）
+#   - main にブランチ保護（プルリクエスト必須など）がある場合は、github-actions[bot] の直接 push を許可すること。
+#     許可できない場合、最後の push で失敗し、更新は反映されない（既存データは壊れない）。
+#   - 秘密情報は不要。任意で、Vercel の Deploy Hook を使う場合だけ、Secrets に VERCEL_DEPLOY_HOOK_URL を登録する。
+
+name: Sync holidays
+
+on:
+  schedule:
+    - cron: "17 1 * * 1" # 毎週月曜 01:17 UTC（日本時間 10:17）。正時を避けて混雑を避ける
+  workflow_dispatch: {}
+
+# 二重実行を避ける（push の競合を防ぐ）
+concurrency:
+  group: sync-holidays
+  cancel-in-progress: false
+
+# 既定は何も与えない。ジョブ側で必要な権限だけを与える。
+permissions: {}
+
+env:
+  ISSUE_TITLE_PROBLEM: "[自動] 祝日データの自動更新に問題があります"
+  ISSUE_TITLE_RULE: "[自動] 祝日の計算ルールの見直しが必要です"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # main へ push するため
+      issues: write # 問題を Issue で知らせるため
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 1. 取得 → 検証 → 更新。終了コード 0=正常 / 10=取得失敗 / 11=データ不正
+      - name: Fetch, validate and update holiday data
+        id: sync
+        continue-on-error: true
+        env:
+          HOLIDAY_SYNC_REPORT_FILE: ${{ runner.temp }}/holiday-sync-report.md
+        run: npm run holidays:sync
+
+      # 2. 更新があったときだけ、公開前の確認（型・Lint・カレンダーのテスト）
+      - name: Type check
+        if: steps.sync.outputs.status == 'updated'
+        id: tsc
+        run: npx tsc --noEmit -p .
+
+      - name: Lint
+        if: steps.tsc.outcome == 'success'
+        id: lint
+        run: npx eslint
+
+      - name: Install Playwright browser
+        if: steps.lint.outcome == 'success'
+        run: npx playwright install --with-deps chromium
+
+      - name: Calendar tests (unit + fiscal-calendar screen)
+        if: steps.lint.outcome == 'success'
+        id: tests
+        env:
+          CI: "true"
+        run: npx playwright test tests/calendar tests/tools/fiscal-calendar.spec.ts tests/tools/fiscal-calendar-design.spec.ts
+
+      # 3. すべて通ったときだけ main に反映する（この push を Vercel が検知して本番へ公開する）
+      - name: Commit and push to main
+        id: push
+        if: steps.tests.outcome == 'success'
+        env:
+          # コミットの作者。Vercel の Hobby プランは、作者が Vercel チームに属さないコミットのデプロイを
+          # 拒否することがある。その場合は、リポジトリ変数 HOLIDAY_SYNC_COMMIT_NAME / _EMAIL に、
+          # Vercel に紐づくあなたの名前・メールを設定する。
+          GIT_NAME: ${{ vars.HOLIDAY_SYNC_COMMIT_NAME || 'github-actions[bot]' }}
+          GIT_EMAIL: ${{ vars.HOLIDAY_SYNC_COMMIT_EMAIL || '41898282+github-actions[bot]@users.noreply.github.com' }}
+        run: |
+          set -euo pipefail
+          git config user.name "$GIT_NAME"
+          git config user.email "$GIT_EMAIL"
+          git add src/lib/calendar/holiday-data.generated.ts tests/fixtures/static/cao-syukujitsu-decoded.csv tests/fixtures/static/cao-syukujitsu-snapshot.json
+          if git diff --cached --quiet; then
+            echo "コミットする変更がありません。"
+            exit 0
+          fi
+          LAST_YEAR=$(grep -oP 'CONFIRMED_THROUGH_YEAR = \K[0-9]+' src/lib/calendar/holiday-data.generated.ts)
+          git commit -m "chore(holidays): 内閣府の祝日データを自動更新（確定済み: ${LAST_YEAR}年まで）" \
+                     -m "内閣府の公式CSVとの差分を検証し、型チェック・ESLint・カレンダーのテストが通ったため自動で反映した。" \
+                     -m "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # 手動実行の間に main が進んでいた場合に備え、取り込み直してから push（競合したら失敗＝何も反映しない）
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
+
+      # 任意: Vercel の Deploy Hook（Git 連携の自動デプロイが動かない環境の保険）。Secrets 未登録なら何もしない
+      - name: Trigger Vercel deploy hook (optional)
+        if: steps.push.outcome == 'success' && steps.sync.outputs.status == 'updated'
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "${HOOK:-}" ]; then curl -fsS -X POST "$HOOK" >/dev/null && echo "deploy hook called"; else echo "VERCEL_DEPLOY_HOOK_URL 未設定のためスキップ"; fi
+
+      # 4. 計算ルールの見直しが必要な改正があったときは、Issue で知らせる（更新自体は反映済み）
+      - name: Notify rule review
+        if: steps.push.outcome == 'success' && steps.sync.outputs.rule_review == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY="公式データと現在の計算ルールが一致しない年がありました。該当年は公式の一覧をそのまま使って反映済みです（カレンダーの表示は正しい）。ただし、その先の年は従来の計算ルールのままなので、法改正の内容に合わせて src/lib/calendar/holidays.ts の見直しを検討してください。
+
+          $(cat "${RUNNER_TEMP}/holiday-sync-report.md" 2>/dev/null || true)
+
+          実行: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          N=$(gh issue list --state open --search "in:title ${ISSUE_TITLE_RULE}" --json number --jq '.[0].number // empty')
+          if [ -n "$N" ]; then gh issue comment "$N" --body "$BODY"; else gh issue create --title "$ISSUE_TITLE_RULE" --body "$BODY"; fi
+
+      # 5. データ不正・確認テスト失敗のときは、main を変えずに Issue で知らせる（取得失敗だけは一時的なことが多いので、ジョブの失敗通知のみ）
+      - name: Report problem
+        # 型チェックなどが失敗するとジョブは失敗扱いになり、後続は既定ではスキップされるため、!cancelled() を付けて必ず実行する
+        if: ${{ !cancelled() && (steps.sync.outputs.status == 'invalid' || steps.tsc.outcome == 'failure' || steps.lint.outcome == 'failure' || steps.tests.outcome == 'failure' || steps.push.outcome == 'failure') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          STATUS="${{ steps.sync.outputs.status }}"
+          BODY="祝日データの自動更新が途中で止まりました。main には何も反映されていません（既存の祝日データはそのままです）。
+
+          - 取得・検証の結果: ${STATUS:-取得失敗または不明}
+          - 型チェック: ${{ steps.tsc.outcome }}
+          - ESLint: ${{ steps.lint.outcome }}
+          - カレンダーのテスト: ${{ steps.tests.outcome }}
+          - main への push: ${{ steps.push.outcome }}
+
+          $(cat "${RUNNER_TEMP}/holiday-sync-report.md" 2>/dev/null || true)
+
+          詳細: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          N=$(gh issue list --state open --search "in:title ${ISSUE_TITLE_PROBLEM}" --json number --jq '.[0].number // empty')
+          if [ -n "$N" ]; then gh issue comment "$N" --body "$BODY"; else gh issue create --title "$ISSUE_TITLE_PROBLEM" --body "$BODY"; fi
+
+      # 取得に失敗したときも、ジョブを失敗として残す（GitHub からの失敗通知メールが届く）
+      - name: Fail the job if sync failed
+        if: ${{ !cancelled() && steps.sync.outcome == 'failure' }}
+        run: |
+          echo "祝日データの取得・検証に失敗しました（終了コードは sync ステップを参照）。main は変更していません。"
+          exit 1

@@ -6,6 +6,9 @@ import { addressOf, excelSerialToIso, readXlsxWorkbook, type XlsxSheetInfo, type
 import { buildCalendarExcel, type CalendarOrientation } from "@/lib/calendar/excel";
 import { STATUTORY_NOTE, buildFiscalCalendar, monthNote, type WeekStart } from "@/lib/calendar/model";
 import { CALENDAR_THEMES, type CalendarThemeId } from "@/lib/calendar/themes";
+import { pinHolidayData } from "../helpers/holiday-pin";
+
+pinHolidayData(); // 祝日の表示の仕様は、固定データ（2027年まで確定）で確かめる
 
 /**
  * 年度カレンダーのExcel出力のテスト（工程B）。

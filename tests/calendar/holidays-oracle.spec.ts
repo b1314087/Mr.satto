@@ -4,14 +4,17 @@ import path from "node:path";
 import { test, expect } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
 import { getHolidays } from "@/lib/calendar/holidays";
+import { CONFIRMED_THROUGH_YEAR } from "@/lib/calendar/holiday-data";
+import { pinHolidayData } from "../helpers/holiday-pin";
 
 /**
  * 祝日の計算結果を、実装とは別に用意した3種類の検証データと突き合わせる（年度カレンダー 工程A）。
  *
  *  1. python-holidays（別実装・MIT）の2000〜2099年の出力（日付と名前）
- *  2. 内閣府の公式CSV「国民の祝日」の日付（2019/1/1〜2027/11/23の165日）
- *  3. 内閣府の公式CSV本体。Shift_JISで配布されているものをブラウザ上で正しく読み替えて保存した
- *     2000〜2027年の486行（cao-syukujitsu-2000-2027-decoded.csv。取得の経緯は cao-syukujitsu-provenance.txt）と、
+ *  2. 内閣府の公式CSV「国民の祝日」の日付（2019年〜確定済みの最終年）
+ *  3. 内閣府の公式CSV本体。Shift_JISで配布されているものを読み替えて保存した2000年〜確定済みの最終年の控え
+ *     （cao-syukujitsu-decoded.csv と、その記録 cao-syukujitsu-snapshot.json。scripts/holidays/sync.ts が自動で更新する。
+ *     最初の取得の経緯は cao-syukujitsu-provenance.txt）と、
  *     tests/fixtures/static/syukujitsu.csv（置かれていれば）の2000年以降の全行（日付と名前）。
  * 期待値を実装の関数から作らない。
  */
@@ -69,6 +72,10 @@ function compareWithOfficial(rows: OfficialRow[]) {
 }
 
 test.describe("祝日: python-holidays との突き合わせ", () => {
+  // python-holidays は計算ルールだけの別実装。自動更新される公式データ（食い違う年の公式の一覧など）から切り離し、
+  // 計算ルール（holidays.ts）そのものを固定データで確かめる。公式データとの一致は、下の「内閣府の公式データとの突き合わせ」で確かめる
+  pinHolidayData();
+
   const ref = JSON.parse(
     fs.readFileSync(path.join(STATIC, "holidays-reference-python-holidays-2000-2099.json"), "utf-8"),
   ) as { holidays: Record<string, [string, string][]> };
@@ -100,37 +107,48 @@ test.describe("祝日: python-holidays との突き合わせ", () => {
 });
 
 test.describe("祝日: 内閣府の公式データとの突き合わせ", () => {
-  test("公式CSVの日付列（2019〜2027年・165日）と過不足なく一致する", () => {
-    const lines = fs
-      .readFileSync(path.join(STATIC, "cao-syukujitsu-dates-2019-2027.txt"), "utf-8")
-      .split(/\r?\n/)
-      .filter((l) => l.trim() && !l.startsWith("#"));
-    expect(lines).toHaveLength(165);
-    const official = lines.map(isoOf);
-    expect(new Set(official).size).toBe(official.length);
+  // 公式CSVの控え（cao-syukujitsu-decoded.csv）と、その取得の記録（cao-syukujitsu-snapshot.json）は、
+  // 内閣府の公式CSVから scripts/holidays/sync.ts が自動で更新する。ここは、実装（実データ）がその内容と一致することを確かめる。
+  const snapshot = JSON.parse(fs.readFileSync(path.join(STATIC, "cao-syukujitsu-snapshot.json"), "utf-8")) as {
+    rows: number;
+    firstYear: number;
+    lastYear: number;
+    snapshotSha256: string;
+  };
 
-    const mine: string[] = [];
-    for (let y = 2019; y <= 2027; y++) for (const h of getHolidays(y)) mine.push(h.iso);
-    expect(mine).toEqual(official);
+  test("公式CSVの控え（Shift_JISを解読して保存したもの）が、取得時の記録（行数・SHA-256・年の範囲）のまま壊れていない", () => {
+    const text = fs.readFileSync(path.join(STATIC, "cao-syukujitsu-decoded.csv"), "utf-8");
+    expect(crypto.createHash("sha256").update(text).digest("hex")).toBe(snapshot.snapshotSha256);
+    const rows = parseOfficialRows(text);
+    expect(rows).toHaveLength(snapshot.rows);
+    expect(Number(rows[0].iso.slice(0, 4))).toBe(snapshot.firstYear);
+    expect(Number(rows[rows.length - 1].iso.slice(0, 4))).toBe(snapshot.lastYear);
+    expect(snapshot.lastYear).toBeGreaterThanOrEqual(2027);
   });
 
-  test("公式CSV（Shift_JISを解読して保存した2000〜2027年・486行）と、日付も名前も過不足なく一致する", () => {
-    const text = fs.readFileSync(path.join(STATIC, "cao-syukujitsu-2000-2027-decoded.csv"), "utf-8");
-    // 保存したデータが、公式CSVから取り出した内容のまま壊れていないこと（取得時に別途計算したSHA-256）
-    expect(crypto.createHash("sha256").update(text).digest("hex")).toBe(
-      "2301283e7a4d2a8170124b737772e918df3a3d56853048f70f72f1e015e80698",
-    );
-    const rows = parseOfficialRows(text);
-    expect(rows).toHaveLength(486);
+  test("公式CSVの控え（2000年〜確定済みの最終年）と、日付も名前も過不足なく一致する（実データ）", () => {
+    const rows = parseOfficialRows(fs.readFileSync(path.join(STATIC, "cao-syukujitsu-decoded.csv"), "utf-8"));
     const result = compareWithOfficial(rows);
     expect(result).toEqual({
-      years: 28,
-      officialCount: 486,
-      mineCount: 486,
+      years: snapshot.lastYear - snapshot.firstYear + 1,
+      officialCount: snapshot.rows,
+      mineCount: snapshot.rows,
       missingInMine: [],
       extraInMine: [],
       nameDiffs: [],
     });
+    // 確定済みの最終年は、公式CSVの最終年と同じ
+    expect(CONFIRMED_THROUGH_YEAR).toBe(snapshot.lastYear);
+  });
+
+  test("公式CSVの日付列（2019年〜確定済みの最終年）と、日付の並びまで過不足なく一致する", () => {
+    const rows = parseOfficialRows(fs.readFileSync(path.join(STATIC, "cao-syukujitsu-decoded.csv"), "utf-8")).filter((r) => r.iso >= "2019-01-01");
+    expect(rows.length).toBeGreaterThan(160);
+    const official = rows.map((r) => r.iso);
+    expect(new Set(official).size).toBe(official.length);
+    const mine: string[] = [];
+    for (let y = 2019; y <= snapshot.lastYear; y++) for (const h of getHolidays(y)) mine.push(h.iso);
+    expect(mine).toEqual(official);
   });
 
   test("公式の表記ゆれの対応が、取り違えを見逃さない（振替休日と国民の休日、祝日扱い）", () => {
@@ -156,7 +174,7 @@ test.describe("祝日: 内閣府の公式データとの突き合わせ", () => 
       text = new TextDecoder("shift_jis").decode(buf);
     }
     const rows = parseOfficialRows(text).filter((r) => r.iso >= "2000-01-01");
-    expect(rows.length).toBeGreaterThan(486 - 1);
+    expect(rows.length).toBeGreaterThan(snapshot.rows - 1);
     const result = compareWithOfficial(rows);
     expect(result.missingInMine).toEqual([]);
     expect(result.extraInMine).toEqual([]);

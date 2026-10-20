@@ -21,6 +21,9 @@
 # テスト実行のたびに生成される合成フィクスチャ（実データ・個人情報は含まない使い捨てファイル）
 /tests/fixtures/generated/
 
+# 祝日データ自動更新スクリプトのビルド出力（npm run holidays:sync が作る使い捨て）
+/.holiday-sync-build/
+
 # next.js
 /.next/
 /out/

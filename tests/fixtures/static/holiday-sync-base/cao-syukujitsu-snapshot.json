@@ -1,0 +1,11 @@
+{
+  "source": "https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv",
+  "retrievedAt": "2026-10-20",
+  "lastModified": "Mon, 02 Feb 2026 00:30:17 GMT",
+  "sourceBytes": 21538,
+  "sourceSha256": "cec37a743c96995cdb9cb52b685c9003634682a9b0e1a640a6b9b96881fe964a",
+  "snapshotSha256": "2301283e7a4d2a8170124b737772e918df3a3d56853048f70f72f1e015e80698",
+  "rows": 486,
+  "firstYear": 2000,
+  "lastYear": 2027
+}
