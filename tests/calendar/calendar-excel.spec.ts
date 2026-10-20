@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
 import { addressOf, excelSerialToIso, readXlsxWorkbook, type XlsxSheetInfo, type XlsxWorkbookInfo } from "../helpers/xlsx-workbook";
 import { buildCalendarExcel, type CalendarOrientation } from "@/lib/calendar/excel";
-import { buildFiscalCalendar, type WeekStart } from "@/lib/calendar/model";
+import { STATUTORY_NOTE, buildFiscalCalendar, monthNote, type WeekStart } from "@/lib/calendar/model";
 import { CALENDAR_THEMES, type CalendarThemeId } from "@/lib/calendar/themes";
 
 /**
@@ -133,13 +133,20 @@ test.describe("年度カレンダーExcel: 日付・曜日・祝日名", () => {
     expect(rowsOf(wb.sheets[0])).toBe(3 + 5 * 2); // 2026年4月
   });
 
-  test("未確定（推定）の祝日には※が付き、注記が出る。確定済みの月には注記がない", async () => {
+  test("未確定の祝日の注記: 推定（※）の月、法律どおりの月に出る。確定済みの月（2027年内）には出ない", async () => {
     const wb = await build(2027, "mon", "business", "landscape");
-    const mar = wb.sheets[11];
-    const note = [...mar.cells.values()].find((c) => typeof c.value === "string" && c.value.startsWith("※"));
-    expect(note?.value).toContain("推定日");
-    const apr = wb.sheets[0];
-    expect([...apr.cells.values()].some((c) => typeof c.value === "string" && c.value.includes("推定"))).toBe(false);
+    const noteOf = (i: number) =>
+      [...wb.sheets[i].cells.values()].find(
+        (c) => typeof c.value === "string" && (c.value.startsWith("※は") || c.value.startsWith("祝日は現行")),
+      )?.value;
+    // 2027年4月〜12月は確定済み（注記なし）
+    for (let i = 0; i < 9; i++) expect(noteOf(i), `${wb.sheets[i].name}`).toBeUndefined();
+    // 2028年1月・2月: 祝日は法律どおり（推定の日なし）→ 「※」は付けず、法改正の注記だけ
+    expect(noteOf(9)).toBe(STATUTORY_NOTE);
+    expect(noteOf(10)).toBe(STATUTORY_NOTE);
+    // 2028年3月: 祝日は春分の日（推定）だけ → 「※」の注記
+    expect(noteOf(11)).toBe(monthNote(buildFiscalCalendar({ fiscalYear: 2027, weekStart: "mon" }).months[11]));
+    expect(noteOf(11)).toContain("推定日");
   });
 
   test("前後の月の日付を表示するオプション: 既定は空欄、オンにすると薄い色で日付が入る", async () => {

@@ -40,6 +40,8 @@ export interface CalendarMonth {
   holidays: CalendarDay[];
   /** 公示前の推定日（春分・秋分など）を含むか */
   hasEstimatedHoliday: boolean;
+  /** 暦要項の公示済みの年より先で、祝日法の定めだけで決まる祝日（元日・海の日など）を含むか。法改正があれば変わりうる */
+  hasStatutoryHoliday: boolean;
 }
 
 export interface FiscalCalendar {
@@ -53,13 +55,36 @@ export interface FiscalCalendar {
   weekdayOrder: number[];
   months: CalendarMonth[];
   hasEstimatedHoliday: boolean;
+  hasStatutoryHoliday: boolean;
 }
 
 const WEEKDAY_CHARS = ["日", "月", "火", "水", "木", "金", "土"];
 
 export const ESTIMATED_MARK = "※";
+
+/**
+ * 祝日の確度と、画面・Excel・PDFに出す注記の決まり（3つの出力は、必ず monthNote() を使う）。
+ *
+ *   確定（confirmed）  : CONFIRMED_THROUGH_YEAR（暦要項の公示済み、内閣府の公式CSVにある年）まで。注記なし。
+ *   法律どおり（statutory）: それより先で、祝日法の定めだけで日付が決まる祝日。「※」は付けないが、
+ *                          法改正で変わりうるため、月の注記で知らせる。
+ *   推定（estimated）  : それより先の春分の日・秋分の日と、それに伴う振替休日・国民の休日。「※」を付ける。
+ *
+ * 「※」は推定の日だけに付ける。年度の祝日すべてに一律で付けることはしない。
+ */
 export const ESTIMATED_NOTE =
   "※は国立天文台の暦要項が公示される前の推定日です（春分の日・秋分の日と、それに伴う休日）。";
+export const STATUTORY_NOTE = "祝日は現行の祝日法にもとづく日付です。法改正などで変わることがあります。";
+export const ESTIMATED_AND_STATUTORY_NOTE =
+  "※は暦要項の公示前の推定日です。ほかの祝日は現行の祝日法による日付で、法改正で変わることがあります。";
+
+/** その月の下に出す注記。確定済みの祝日だけの月は null（注記なし） */
+export function monthNote(month: Pick<CalendarMonth, "hasEstimatedHoliday" | "hasStatutoryHoliday">): string | null {
+  if (month.hasEstimatedHoliday && month.hasStatutoryHoliday) return ESTIMATED_AND_STATUTORY_NOTE;
+  if (month.hasEstimatedHoliday) return ESTIMATED_NOTE;
+  if (month.hasStatutoryHoliday) return STATUTORY_NOTE;
+  return null;
+}
 
 /** 平成・令和の年表記（2000年以降のみ対応）。月の初日で元号を判定する */
 export function eraLabelOf(year: number, month: number): string {
@@ -148,6 +173,7 @@ export function buildMonth(year: number, month: number, weekStart: WeekStart): C
     weeks,
     holidays,
     hasEstimatedHoliday: holidays.some((d) => d.holiday?.status === "estimated"),
+    hasStatutoryHoliday: holidays.some((d) => d.holiday?.status === "statutory"),
   };
 }
 
@@ -169,6 +195,7 @@ export function buildFiscalCalendar(options: { fiscalYear: number; weekStart: We
     weekdayOrder,
     months,
     hasEstimatedHoliday: months.some((m) => m.hasEstimatedHoliday),
+    hasStatutoryHoliday: months.some((m) => m.hasStatutoryHoliday),
   };
 }
 

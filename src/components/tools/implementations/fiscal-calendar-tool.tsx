@@ -15,7 +15,7 @@ import {
   type FiscalCalendarInput,
   type FiscalCalendarOrientation,
 } from "@/lib/processors/browser/fiscal-calendar";
-import { ESTIMATED_NOTE, buildFiscalCalendar, fiscalYearEraLabel, type WeekStart } from "@/lib/calendar/model";
+import { buildFiscalCalendar, monthNote, fiscalYearEraLabel, type WeekStart } from "@/lib/calendar/model";
 import { CALENDAR_THEMES, CALENDAR_THEME_IDS, type CalendarThemeId } from "@/lib/calendar/themes";
 import { CONFIRMED_THROUGH_YEAR, HOLIDAY_DATA_CHECKED_AT, HOLIDAY_DATA_SOURCES } from "@/lib/calendar/holiday-data";
 import { downloadBlob } from "@/lib/utils/format";
@@ -121,9 +121,9 @@ export function FiscalCalendarTool() {
               landscape={orientation === "landscape"}
               showAdjacentDays={showAdjacentDays}
             />
-            {month.hasEstimatedHoliday && (
+            {monthNote(month) && (
               <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="calendar-estimated-note">
-                {ESTIMATED_NOTE}
+                {monthNote(month)}
               </p>
             )}
           </div>
@@ -248,7 +248,7 @@ export function FiscalCalendarTool() {
 
         {!lastConfirmed && (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100">
-            {fiscalYear}年度には、暦要項の公示前の祝日（推定）が含まれます。該当する日には「※」が付きます。
+            {fiscalYear}年度には、確定していない祝日が含まれます。「※」の日は、暦要項の公示前の推定です。「※」のない祝日も、現行の祝日法にもとづく日付で、法改正で変わることがあります。
           </p>
         )}
 
@@ -294,7 +294,7 @@ export function FiscalCalendarTool() {
         <div className="rounded-lg bg-neutral-50 p-3 text-xs leading-relaxed text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
           <p>
             祝日は、祝日法に基づく計算で求めています。{CONFIRMED_THROUGH_YEAR}年までは国立天文台の暦要項で公示済みの日付で、確認日は
-            {HOLIDAY_DATA_CHECKED_AT}です。それより先の春分の日・秋分の日は推定です。
+            {HOLIDAY_DATA_CHECKED_AT}です。それより先は、春分の日・秋分の日が推定（「※」付き）で、そのほかの祝日は現行の祝日法による日付です。
           </p>
           <p className="mt-1">
             出典:

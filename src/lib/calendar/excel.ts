@@ -12,7 +12,7 @@ import type { Feature as WriteExcelFeature } from "write-excel-file/universal";
 
 type Feature = WriteExcelFeature<Blob>;
 import { mmToExcelColumnWidth } from "@/lib/excel/xlsx-simple-io";
-import { holidayDisplayName, ESTIMATED_NOTE, type CalendarDay, type CalendarMonth, type FiscalCalendar } from "./model";
+import { holidayDisplayName, monthNote, type CalendarDay, type CalendarMonth, type FiscalCalendar } from "./model";
 import type { CalendarTheme } from "./themes";
 
 export type CalendarOrientation = "landscape" | "portrait";
@@ -218,10 +218,10 @@ function monthRows(
     rows.push(dateRow, memoRow);
   }
 
-  // 注記行（推定の祝日を含む月だけ）
+  // 注記行（推定または法律どおりの未確定の祝日を含む月だけ。決まりは model.ts の monthNote）
   rows.push([
     {
-      value: month.hasEstimatedHoliday ? ESTIMATED_NOTE : null,
+      value: monthNote(month),
       columnSpan: COLUMN_COUNT,
       height: NOTE_ROW_PT,
       fontSize: 8,

@@ -10,7 +10,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { createTextDrawer, wrapTextByWidth } from "@/lib/pdf/text-draw";
 import { mmToPt, resolvePaperSizePt } from "@/lib/print/paper-sizes";
-import { ESTIMATED_NOTE, holidayDisplayName, type CalendarMonth, type FiscalCalendar } from "./model";
+import { holidayDisplayName, monthNote, type CalendarMonth, type FiscalCalendar } from "./model";
 import { hexToRgb01, type CalendarTheme } from "./themes";
 
 export type CalendarPdfOrientation = "landscape" | "portrait";
@@ -180,8 +180,9 @@ function drawMonthPage(
   });
 
   // 注記
-  if (month.hasEstimatedHoliday) {
-    drawText(ESTIMATED_NOTE, L.margin, L.noteBaselineY, 7.5, { color: rgbArr(theme.noteText) });
+  const note = monthNote(month);
+  if (note) {
+    drawText(note, L.margin, L.noteBaselineY, 7.5, { color: rgbArr(theme.noteText) });
   }
 }
 

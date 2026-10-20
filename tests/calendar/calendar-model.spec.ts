@@ -202,6 +202,7 @@ test.describe("年度カレンダーのモデル: 色分けと祝日", () => {
     const nov = cal.months[7].holidays.map(holidayDisplayName);
     expect(nov).toEqual(["文化の日", "勤労感謝の日"]);
     expect(cal.months[0].hasEstimatedHoliday).toBe(false);
+    expect(cal.months[0].hasStatutoryHoliday).toBe(false);
   });
 
   test("2026年度は全祝日が確定している（推定の祝日を含まない）", () => {

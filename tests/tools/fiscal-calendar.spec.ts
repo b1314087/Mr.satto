@@ -2,7 +2,7 @@ import fs from "node:fs";
 import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
-import { NetworkRecorder, findSuspiciousExternalUploads } from "../helpers/network-guard";
+import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { addressOf, excelSerialToIso, readXlsxWorkbook } from "../helpers/xlsx-workbook";
 import { extractTextBoxes } from "../helpers/pdf-text-boxes";
 
@@ -91,13 +91,28 @@ test.describe("年度カレンダー作成: 画面", () => {
   test("プレビュー: 推定の祝日（2027年度の3月）に※と注記が出る。2026年度の3月には出ない", async ({ page }) => {
     await open(page);
     await yearSelect(page).selectOption("2027");
-    await expect(page.getByText(/暦要項の公示前の祝日（推定）が含まれます/)).toBeVisible();
+    await expect(page.getByText(/確定していない祝日が含まれます/)).toBeVisible();
     await page.getByRole("button", { name: "3月", exact: true }).click();
     const preview = page.getByTestId("calendar-preview");
     await expect(preview.locator('[data-date="2028-03-20"]')).toContainText("春分の日※");
-    await expect(page.getByTestId("calendar-estimated-note")).toBeVisible();
+    await expect(page.getByTestId("calendar-estimated-note")).toHaveText(/※は国立天文台の暦要項が公示される前の推定日です/);
+    // 2028年1月: 元日は法律どおりの日付。※は付けず、法改正の注記だけを出す
+    await page.getByRole("button", { name: "1月", exact: true }).click();
+    await expect(preview.locator('[data-date="2028-01-01"]')).toContainText("元日");
+    await expect(preview.locator('[data-date="2028-01-01"]')).not.toContainText("※");
+    await expect(page.getByTestId("calendar-estimated-note")).toHaveText(/祝日は現行の祝日法にもとづく日付です。法改正などで変わることがあります/);
+    // 2028年9月（敬老の日＝法律どおり、秋分の日＝推定）: 両方を伝える注記
+    await yearSelect(page).selectOption("2028");
+    await page.getByRole("button", { name: "9月", exact: true }).click();
+    await expect(preview.locator('[data-date="2028-09-18"]')).not.toContainText("※");
+    await expect(preview.locator('[data-date="2028-09-22"]')).toContainText("秋分の日※");
+    await expect(page.getByTestId("calendar-estimated-note")).toHaveText(/※は暦要項の公示前の推定日です。ほかの祝日は現行の祝日法による日付/);
+    await yearSelect(page).selectOption("2027");
+    // 2027年内の月（確定済み）には注記を出さない
+    await page.getByRole("button", { name: "11月", exact: true }).click();
+    await expect(page.getByTestId("calendar-estimated-note")).toHaveCount(0);
     await yearSelect(page).selectOption("2026");
-    await expect(page.getByText(/暦要項の公示前の祝日（推定）が含まれます/)).toHaveCount(0);
+    await expect(page.getByText(/確定していない祝日が含まれます/)).toHaveCount(0);
     await page.getByRole("button", { name: "3月", exact: true }).click();
     await expect(page.getByTestId("calendar-estimated-note")).toHaveCount(0);
   });
@@ -214,5 +229,74 @@ test.describe("年度カレンダー作成: ダウンロードしたファイル
     for (const r of fontRequests) expect(r.url.startsWith(origin)).toBe(true);
     // 祝日の取得のための通信（API・外部サイト）はない
     expect(recorder.requests.filter((r) => /syukujitsu|cao\.go\.jp|holiday/i.test(r.url))).toEqual([]);
+    // 自社の /api/ へ、本文のあるリクエスト（POST・PUT）を送らない
+    expect(findSuspiciousApiUploads(recorder, origin, [], 1), "自社APIへの送信").toEqual([]);
+    // 作成中に、外部のサイトへ fetch/XHR/beacon の通信をしない
+    expect(
+      recorder.requests.filter((r) => !r.url.startsWith(origin) && ["fetch", "xhr", "ping", "websocket", "eventsource"].includes(r.resourceType)),
+      "外部サイトへの通信",
+    ).toEqual([]);
+  });
+});
+
+test.describe("年度カレンダー作成: 初期の年度（利用者の端末の日付で決まる）", () => {
+  test.use({ timezoneId: "Asia/Tokyo" });
+
+  // 日本時間で年度が替わる4月1日の前後。サーバー側の描画（UTC）とずれる時間帯でも、画面の表示が正しいことを確かめる
+  for (const [label, iso, expected] of [
+    ["3月31日 23:30（日本時間）", "2027-03-31T14:30:00Z", "2026"],
+    ["4月1日 00:30（日本時間）", "2027-03-31T15:30:00Z", "2027"],
+    ["1月15日（年が替わっても同じ年度）", "2027-01-14T15:00:00Z", "2026"],
+  ] as const) {
+    test(`初期の年度: ${label} → ${expected}年度`, async ({ page }) => {
+      await page.clock.setFixedTime(new Date(iso));
+      await open(page);
+      await expect(yearSelect(page)).toHaveValue(expected);
+      await expect(page.getByTestId("calendar-preview").first()).toContainText(`${expected}年4月`);
+    });
+  }
+});
+
+test.describe("年度カレンダー作成: スマートフォン幅", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test("画面が横にはみ出さず、設定の変更とExcel作成・ダウンロードができる", async ({ page }) => {
+    await open(page);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, "横方向のはみ出し(px)").toBeLessThanOrEqual(1);
+    await yearSelect(page).selectOption("2026");
+    await page.getByRole("button", { name: "日曜日始まり" }).click();
+    await page.getByRole("button", { name: /ナチュラル/ }).click();
+    await page.getByRole("button", { name: "縦向き" }).click();
+    for (const name of ["日曜日始まり", "縦向き"]) await expect(page.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
+    // プレビューの日付マスが、画面の幅の内側に収まっている
+    const box = await page.getByTestId("calendar-preview").first().boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(375 + 1);
+    await page.getByRole("button", { name: /Excelを作成/ }).scrollIntoViewIfNeeded();
+    await page.getByRole("button", { name: /Excelを作成/ }).click();
+    await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 60_000 });
+    const download = await clickAndDownload(page, /Excelファイルをダウンロード/);
+    expect(await lastDownloadName(page)).toBe("2026年度カレンダー_日曜始まり_縦.xlsx");
+    await assertDownloadedFile(download, { format: "zip", minBytes: 5_000 });
+    const after = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(after).toBeLessThanOrEqual(1);
+  });
+});
+
+test.describe("年度カレンダー作成: エラー時の画面", () => {
+  test("日本語フォントを取得できないとき、PDFはエラーを表示してダウンロードを出さず、Excelはそのまま作れる", async ({ page }) => {
+    await page.route("**/fonts/NotoSansJP-Regular.ttf", (route) => route.abort());
+    await open(page);
+    await yearSelect(page).selectOption("2026");
+    await page.getByRole("button", { name: /PDFを作成/ }).click();
+    await expect(page.getByText(/日本語フォントの読み込みに失敗しました/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: /PDFファイルをダウンロード/ })).toHaveCount(0);
+    // 画面は操作できる状態のまま（ボタンが無効のままになっていない）
+    await expect(page.getByRole("button", { name: /PDFを作成/ })).toBeEnabled();
+    // Excelはフォントを使わないので、そのまま作れ、エラー表示は消える
+    await page.getByRole("button", { name: /Excelを作成/ }).click();
+    await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/日本語フォントの読み込みに失敗しました/)).toHaveCount(0);
   });
 });

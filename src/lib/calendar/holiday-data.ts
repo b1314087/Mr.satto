@@ -11,8 +11,15 @@
  *      https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html
  *   2. CONFIRMED_EQUINOX_DAYS に、その年の春分・秋分の「日」を追加する。
  *   3. CONFIRMED_THROUGH_YEAR をその年に更新し、HOLIDAY_DATA_CHECKED_AT を確認した日付にする。
- *   4. tests/fixtures/static/syukujitsu.csv を新しいCSVに差し替え、tests/calendar を実行する。
+ *   4. 新しいCSVの内容で tests/fixtures/static/cao-syukujitsu-2000-2027-decoded.csv を作り直し（取得の経緯は
+ *      cao-syukujitsu-provenance.txt に追記）、holidays-oracle.spec.ts の行数・SHA-256 を更新して tests/calendar を実行する。
+ *      内閣府のCSVはShift_JISで配布されている。UTF-8に読み替えてから保存する。
  *      （CSVは内閣府の公式データで、アプリ本体には含めない。テストで祝日の計算結果と突き合わせるためだけに使う）
+ *
+ * ■ 「確定」の意味（画面・Excel・PDFで共通。model.ts の monthNote 参照）
+ *   CONFIRMED_THROUGH_YEAR までの年は、公式CSVに載っている日付で、すべての祝日が「確定」。
+ *   それより先の年は、春分・秋分とそれに伴う休日だけが「推定」（「※」付き）で、そのほかの祝日は
+ *   「法律どおり」（祝日法の現行の定めによる。法改正で変わりうる）。「※」は推定の日だけに付ける。
  */
 
 /** 暦要項が公示済みで、祝日が確定している最後の年（西暦）。この年までの祝日は「確定」として扱う */
@@ -35,8 +42,8 @@ export const HOLIDAY_DATA_SOURCES = [
 
 /**
  * 暦要項で公示済みの春分の日・秋分の日（日付のうちの「日」の部分）。
- * 春分は3月、秋分は9月。計算式（holidays.ts）の結果と一致していることを
- * tests/calendar/holidays-data.spec.ts で確認している。
+ * 春分は3月、秋分は9月。計算式（holidays.ts）の結果と一致していること、および天文計算（Meeus法）の
+ * 結果とも一致していることを tests/calendar/holidays-equinox.spec.ts で確認している。
  */
 export const CONFIRMED_EQUINOX_DAYS: Readonly<Record<number, { spring: number; autumn: number }>> = {
   2020: { spring: 20, autumn: 22 },

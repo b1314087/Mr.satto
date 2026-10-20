@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
 import { extractTextBoxes, readFontBytes, type PageBoxes, type TextBox } from "../helpers/pdf-text-boxes";
 import { buildCalendarPdf, layoutHolidayName, pdfMonthLayout, type CalendarPdfOrientation } from "@/lib/calendar/pdf";
-import { buildFiscalCalendar, type WeekStart } from "@/lib/calendar/model";
+import { STATUTORY_NOTE, buildFiscalCalendar, monthNote, type WeekStart } from "@/lib/calendar/model";
 import { CALENDAR_THEMES, type CalendarThemeId } from "@/lib/calendar/themes";
 import { getHolidays } from "@/lib/calendar/holidays";
 
@@ -192,11 +192,18 @@ test.describe("年度カレンダーPDF: 日付・曜日・祝日名", () => {
     expect(dateNumbers(common)).toHaveLength(28);
   });
 
-  test("未確定（推定）の祝日には※が付き、その月のページにだけ注記が出る", async () => {
+  test("未確定の祝日の注記: 推定（※）の月と法律どおりの月のページにだけ出る。確定済みの月（2027年内）には出ない", async () => {
     const { pages } = await make(2027, "mon", "business", "landscape");
+    const noteBox = (i: number) =>
+      pages[i].boxes.find((b) => b.str.startsWith("※は") || b.str.startsWith("祝日は現行"))?.str;
     expect(pages[11].boxes.some((b) => b.str === "春分の日※")).toBe(true);
-    expect(pages[11].boxes.some((b) => b.str.startsWith("※は国立天文台の暦要項")), "3月の注記").toBe(true);
-    for (let i = 0; i < 11; i++) expect(pages[i].boxes.some((b) => b.str.includes("推定日")), `p${i + 1}`).toBe(false);
+    expect(noteBox(11), "3月の注記").toBe(
+      monthNote(buildFiscalCalendar({ fiscalYear: 2027, weekStart: "mon" }).months[11]),
+    );
+    expect(noteBox(11)).toContain("推定日");
+    expect(noteBox(9), "1月の注記").toBe(STATUTORY_NOTE);
+    expect(noteBox(10), "2月の注記").toBe(STATUTORY_NOTE);
+    for (let i = 0; i < 9; i++) expect(noteBox(i), `p${i + 1}`).toBeUndefined();
   });
 
   test("前後の月の日付を表示するオプション: 既定は空欄、オンにするとその月以外の数字も出る", async () => {
