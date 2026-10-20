@@ -1,5 +1,6 @@
 "use client";
 
+import { fitEventLines, formatEventLine, hiddenCountLabel, type CalendarEventMap } from "@/lib/calendar/events";
 import { holidayDisplayName, type CalendarMonth, type FiscalCalendar } from "@/lib/calendar/model";
 import type { CalendarTheme } from "@/lib/calendar/themes";
 
@@ -13,20 +14,27 @@ export function FiscalCalendarPreview({
   theme,
   landscape,
   showAdjacentDays,
+  events,
+  pair = false,
 }: {
   calendar: FiscalCalendar;
   month: CalendarMonth;
   theme: CalendarTheme;
   landscape: boolean;
   showAdjacentDays: boolean;
+  /** 日付ごとの予定（共通の予定モデル。Excel・PDFと同じもの） */
+  events?: CalendarEventMap;
+  /** 2か月表示のうちの1か月ぶん（幅が狭いので、文字を小さくし、予定の表示行数を減らす） */
+  pair?: boolean;
 }) {
+  const maxEventLines = pair ? 2 : 3;
   return (
     <div
       data-testid="calendar-preview"
       data-theme={theme.id}
       data-month={`${month.year}-${String(month.month).padStart(2, "0")}`}
-      className="overflow-hidden rounded-lg border text-[11px] leading-tight"
-      style={{ borderColor: theme.border, aspectRatio: landscape ? "297 / 210" : "210 / 297" }}
+      className={`overflow-hidden rounded-lg border leading-tight ${pair ? "aspect-[297/210] text-[9px] sm:aspect-[136/190]" : "text-[11px]"}`}
+      style={pair ? { borderColor: theme.border } : { borderColor: theme.border, aspectRatio: landscape ? "297 / 210" : "210 / 297" }}
     >
       <div className="flex items-center justify-between px-3 py-1.5" style={{ background: theme.titleBg, color: theme.titleText }}>
         <span className="text-base font-semibold">
@@ -74,16 +82,38 @@ export function FiscalCalendarPreview({
                     {day.day}
                   </span>
                   {!faded && day.holiday && (
-                    <span className="text-[9px]" style={{ color: theme.holidayNameText }}>
+                    <span className={pair ? "text-[7px]" : "text-[9px]"} style={{ color: theme.holidayNameText }}>
                       {holidayDisplayName(day)}
                     </span>
                   )}
+                  {!faded && <PreviewEvents events={events?.get(day.iso)} maxLines={maxEventLines} color={theme.headerText} pair={pair} />}
                 </>
               )}
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** そのマスの予定。入りきらない分は「他N件」にまとめる（Excelには全件が入る） */
+function PreviewEvents({ events, maxLines, color, pair }: { events: ReturnType<NonNullable<CalendarEventMap["get"]>> | undefined; maxLines: number; color: string; pair: boolean }) {
+  if (!events || events.length === 0) return null;
+  const { shown, hiddenCount } = fitEventLines(events, maxLines);
+  const size = pair ? "text-[7px]" : "text-[9px]";
+  return (
+    <div data-testid="calendar-preview-events" className={`mt-px flex flex-col ${size}`} style={{ color }}>
+      {shown.map((e) => (
+        <span key={`${e.sourceRow}`} data-testid="calendar-preview-event" title={formatEventLine(e)} className="truncate">
+          {pair ? e.title : formatEventLine(e)}
+        </span>
+      ))}
+      {hiddenCount > 0 && (
+        <span data-testid="calendar-preview-more" className="opacity-80">
+          {hiddenCountLabel(hiddenCount, shown.length)}
+        </span>
+      )}
     </div>
   );
 }

@@ -16,6 +16,8 @@ import {
   type FiscalCalendarOrientation,
 } from "@/lib/processors/browser/fiscal-calendar";
 import { buildFiscalCalendar, monthNote, fiscalYearEraLabel, type WeekStart } from "@/lib/calendar/model";
+import { placeEvents } from "@/lib/calendar/events";
+import { effectiveOrientation, groupButtonLabel, groupMonths, type MonthsPerSheet } from "@/lib/calendar/layout";
 import {
   CALENDAR_CUSTOM_DEFAULT,
   CALENDAR_THEME_CHOICES,
@@ -25,6 +27,7 @@ import {
   type CalendarThemeChoice,
 } from "@/lib/calendar/themes";
 import { FiscalCalendarCustomColors } from "./shared/fiscal-calendar-custom-colors";
+import { FiscalCalendarEventsImport, type EventImportState } from "./shared/fiscal-calendar-events-import";
 import { CONFIRMED_THROUGH_YEAR, HOLIDAY_DATA_CHECKED_AT, HOLIDAY_DATA_SOURCES } from "@/lib/calendar/holiday-data";
 import { downloadBlob } from "@/lib/utils/format";
 import { FiscalCalendarPreview } from "./shared/fiscal-calendar-preview";
@@ -54,6 +57,9 @@ export function FiscalCalendarTool() {
   const [customPalette, setCustomPalette] = useState<CalendarCustomPalette>({ ...CALENDAR_CUSTOM_DEFAULT });
   const [orientation, setOrientation] = useState<FiscalCalendarOrientation>("landscape");
   const [showAdjacentDays, setShowAdjacentDays] = useState(false);
+  const [monthsPerSheet, setMonthsPerSheet] = useState<MonthsPerSheet>(1);
+  // Excelの予定表から読み込んだ予定（この端末の中だけで保持。年度を変えても、新しい年度の範囲で振り分け直す）
+  const [eventImport, setEventImport] = useState<EventImportState | null>(null);
   const [previewMonth, setPreviewMonth] = useState(0);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
@@ -64,7 +70,13 @@ export function FiscalCalendarTool() {
   const calendar = useMemo(() => buildFiscalCalendar({ fiscalYear, weekStart }), [fiscalYear, weekStart]);
   // プレビュー・Excel・PDFで共通に使う、解決済みのテーマ
   const themeDef = useMemo(() => resolveCalendarTheme(theme, customPalette), [theme, customPalette]);
-  const month = calendar.months[previewMonth];
+  // 2か月は横向きだけ（A4横に左右の月を並べる）
+  const shownOrientation = effectiveOrientation(orientation, monthsPerSheet);
+  const groups = useMemo(() => groupMonths(calendar, monthsPerSheet), [calendar, monthsPerSheet]);
+  const previewGroup = groups[Math.floor(previewMonth / monthsPerSheet)] ?? groups[0];
+  // プレビュー・Excel・PDFが同じ予定（共通の予定モデルを年度の範囲で振り分けたもの）を使う
+  const importedEvents = eventImport?.result?.events;
+  const placed = useMemo(() => placeEvents(calendar, importedEvents ?? []), [calendar, importedEvents]);
 
   function resetResults() {
     setExcelResult(null);
@@ -74,7 +86,17 @@ export function FiscalCalendarTool() {
   }
 
   function baseInput(format: FiscalCalendarFormat): FiscalCalendarInput {
-    return { fiscalYear, weekStart, theme, customPalette: theme === "custom" ? customPalette : undefined, orientation, showAdjacentDays, format };
+    return {
+      fiscalYear,
+      weekStart,
+      theme,
+      customPalette: theme === "custom" ? customPalette : undefined,
+      orientation,
+      showAdjacentDays,
+      monthsPerSheet,
+      events: importedEvents,
+      format,
+    };
   }
 
   async function handleGenerate(format: FiscalCalendarFormat) {
@@ -109,33 +131,48 @@ export function FiscalCalendarTool() {
           <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
             <p className="text-sm font-medium">プレビュー（出力と同じ内容・色分け）</p>
             <div className="flex flex-wrap gap-1" role="group" aria-label="プレビューする月">
-              {calendar.months.map((m, i) => (
-                <button
+              {groups.map((g, i) => {
+                const index = i * monthsPerSheet;
+                const active = Math.floor(previewMonth / monthsPerSheet) === i;
+                return (
+                  <button
+                    key={`${g[0].year}-${g[0].month}`}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setPreviewMonth(index)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                      active
+                        ? "bg-blue-600 text-white"
+                        : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
+                    }`}
+                  >
+                    {groupButtonLabel(g)}
+                  </button>
+                );
+              })}
+            </div>
+            <div data-testid="calendar-preview-sheet" data-months-per-sheet={monthsPerSheet} className={monthsPerSheet === 2 ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : ""}>
+              {previewGroup.map((m) => (
+                <FiscalCalendarPreview
                   key={`${m.year}-${m.month}`}
-                  type="button"
-                  aria-pressed={previewMonth === i}
-                  onClick={() => setPreviewMonth(i)}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                    previewMonth === i
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
-                  }`}
-                >
-                  {m.month}月
-                </button>
+                  calendar={calendar}
+                  month={m}
+                  theme={themeDef}
+                  landscape={shownOrientation === "landscape"}
+                  showAdjacentDays={showAdjacentDays}
+                  events={placed.byDate}
+                  pair={monthsPerSheet === 2}
+                />
               ))}
             </div>
-            <FiscalCalendarPreview
-              calendar={calendar}
-              month={month}
-              theme={themeDef}
-              landscape={orientation === "landscape"}
-              showAdjacentDays={showAdjacentDays}
-            />
-            {monthNote(month) && (
-              <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="calendar-estimated-note">
-                {monthNote(month)}
-              </p>
+            {previewGroup.map(
+              (m) =>
+                monthNote(m) && (
+                  <p key={`${m.year}-${m.month}-note`} className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="calendar-estimated-note">
+                    {monthsPerSheet === 2 ? `${m.month}月: ` : ""}
+                    {monthNote(m)}
+                  </p>
+                ),
             )}
           </div>
         }
@@ -235,6 +272,37 @@ export function FiscalCalendarTool() {
           </fieldset>
 
           <fieldset className="flex flex-col gap-1 text-sm">
+            <legend className="mb-1 text-neutral-600 dark:text-neutral-300">カレンダー形式</legend>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  [1, "1か月 / 1シート"],
+                  [2, "2か月 / 1シート"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  data-testid={`months-per-sheet-${id}`}
+                  aria-pressed={monthsPerSheet === id}
+                  onClick={() => {
+                    setMonthsPerSheet(id);
+                    resetResults();
+                  }}
+                  className={optionButtonClass(monthsPerSheet === id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {monthsPerSheet === 2
+                ? "4月+5月・6月+7月…のように、2か月を左右に並べて6シート（PDFは6ページ）にします。A4横向きで作成します。"
+                : "1か月を1シート（PDFは1ページ）にして、12シート（12ページ）にします。"}
+            </p>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-1 text-sm">
             <legend className="mb-1 text-neutral-600 dark:text-neutral-300">用紙（A4）の向き</legend>
             <div className="flex flex-wrap gap-2">
               {(
@@ -246,17 +314,23 @@ export function FiscalCalendarTool() {
                 <button
                   key={id}
                   type="button"
-                  aria-pressed={orientation === id}
+                  aria-pressed={shownOrientation === id}
+                  disabled={monthsPerSheet === 2 && id === "portrait"}
                   onClick={() => {
                     setOrientation(id);
                     resetResults();
                   }}
-                  className={optionButtonClass(orientation === id)}
+                  className={`${optionButtonClass(shownOrientation === id)} disabled:cursor-not-allowed disabled:opacity-40`}
                 >
                   {label}
                 </button>
               ))}
             </div>
+            {monthsPerSheet === 2 && (
+              <p data-testid="orientation-locked" className="text-xs text-neutral-500 dark:text-neutral-400">
+                2か月表示は、左右に並べるためA4横向きのみです。
+              </p>
+            )}
           </fieldset>
 
           <label className="flex items-center gap-2 text-sm">
@@ -272,6 +346,17 @@ export function FiscalCalendarTool() {
           </label>
         </div>
 
+        <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <FiscalCalendarEventsImport
+            calendar={calendar}
+            value={eventImport}
+            onChange={(next) => {
+              setEventImport(next);
+              resetResults();
+            }}
+          />
+        </div>
+
         {!lastConfirmed && (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100">
             {fiscalYear}年度には、確定していない祝日が含まれます。「※」の日は、暦要項の公示前の推定です。「※」のない祝日も、現行の祝日法にもとづく日付で、法改正で変わることがあります。
@@ -285,7 +370,7 @@ export function FiscalCalendarTool() {
             disabled={status === "processing"}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            Excelを作成（月別12シート）
+            {monthsPerSheet === 2 ? "Excelを作成（2か月ずつ6シート）" : "Excelを作成（月別12シート）"}
           </button>
           <button
             type="button"
@@ -293,7 +378,7 @@ export function FiscalCalendarTool() {
             disabled={status === "processing"}
             className="w-fit rounded-lg bg-neutral-800 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-200 dark:text-neutral-900"
           >
-            PDFを作成（月別12ページ）
+            {monthsPerSheet === 2 ? "PDFを作成（2か月ずつ6ページ）" : "PDFを作成（月別12ページ）"}
           </button>
         </div>
 

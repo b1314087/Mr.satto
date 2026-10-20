@@ -1221,7 +1221,7 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["カレンダー", "年度", "年間カレンダー", "祝日", "月間カレンダー", "予定表", "4月始まり", "スケジュール"],
+    keywords: ["カレンダー", "年度", "年間カレンダー", "祝日", "月間カレンダー", "予定表", "4月始まり", "スケジュール", "2か月", "予定読み込み"],
   },
 ];
 
