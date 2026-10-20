@@ -13,7 +13,7 @@ import type { Feature as WriteExcelFeature } from "write-excel-file/universal";
 type Feature = WriteExcelFeature<Blob>;
 import { mmToExcelColumnWidth } from "@/lib/excel/xlsx-simple-io";
 import { eventsCellText, type CalendarEventMap } from "./events";
-import { groupMonths, sheetNameOf, type MonthsPerSheet } from "./layout";
+import { groupMonths, sheetArrangement, sheetNameOf, type MonthsPerSheet } from "./layout";
 import { holidayDisplayName, monthNote, type CalendarDay, type CalendarMonth, type FiscalCalendar } from "./model";
 import type { CalendarTheme } from "./themes";
 
@@ -25,7 +25,7 @@ export interface CalendarExcelOptions {
   orientation: CalendarOrientation;
   /** 前後の月の日付を薄く表示するか（既定は空欄） */
   showAdjacentDays?: boolean;
-  /** 1シートに載せる月数（既定は1か月=12シート。2か月=6シートで、横向きだけ） */
+  /** 1シートに載せる月数（既定は1か月=12シート。2か月=6シート。横向きは左右、縦向きは上下に並べる） */
   monthsPerSheet?: MonthsPerSheet;
   /** 日付ごとの予定。その日の予定欄（日付の下のセル）に、全件を改行でつないで入れる */
   events?: CalendarEventMap;
@@ -87,18 +87,26 @@ export function monthSheetGeometry(weekCount: number, orientation: CalendarOrien
   };
 }
 
-/** 2か月を1シートに並べるときの、列と行の寸法（A4横）。左右の月の間に細い余白の列を入れる */
+/**
+ * 2か月を1シートに並べるときの、列と行の寸法。
+ * A4横は左右に並べ、月の間に細い余白の列を入れる。A4縦は上下に並べ、月の間に細い余白の行を入れる。
+ */
 const PAIR_GAP_MM = 4;
 const PAIR_NUMBER_COLUMN_MM = 8;
 const PAIR_TITLE_ROW_PT = 26;
 const PAIR_HEADER_ROW_PT = 16;
 const PAIR_NOTE_ROW_PT = 22;
+/** 上下に並べるとき（A4縦）の、月の間の余白の行と、注記の行の高さ(pt)。幅が広いので注記は1行に収まる */
+const STACK_GAP_ROW_PT = 10;
+const STACK_NOTE_ROW_PT = 16;
 
 export interface SheetGeometry {
   numberColumnMm: number;
   nameColumnMm: number;
-  /** 2か月のときだけ、左右の月の間の余白の列の幅(mm)。1か月は 0（余白の列なし） */
+  /** 2か月を左右に並べる（A4横）ときだけ、左右の月の間の余白の列の幅(mm)。それ以外は 0（余白の列なし） */
   gapColumnMm: number;
+  /** 2か月を上下に並べる（A4縦）ときだけ、上下の月の間の余白の行の高さ(pt)。それ以外は 0（余白の行なし） */
+  gapRowPt: number;
   memoRowPt: number;
   columnCount: number;
   rowCount: number;
@@ -115,11 +123,31 @@ export function sheetGeometry(maxWeekCount: number, monthsPerSheet: MonthsPerShe
       numberColumnMm: g.numberColumnMm,
       nameColumnMm: g.nameColumnMm,
       gapColumnMm: 0,
+      gapRowPt: 0,
       memoRowPt: g.memoRowPt,
       columnCount: COLUMN_COUNT,
       rowCount: g.rowCount,
       monthColumnCount: COLUMN_COUNT,
       noteRowPt: NOTE_ROW_PT,
+    };
+  }
+  if (orientation === "portrait") {
+    // 上下に並べる: 1か月と同じ幅の列を使い、2か月ぶんの行（週数の多い方に合わせる）と、間の余白の行を縦に積む
+    const widthMm = A4_MM.width - PRINT_MARGIN_MM * 2;
+    const heightPt = (A4_MM.height - PRINT_MARGIN_MM * 2) * MM_TO_PT * HEIGHT_SAFETY;
+    const fixed = 2 * (PAIR_TITLE_ROW_PT + PAIR_HEADER_ROW_PT + STACK_NOTE_ROW_PT) + STACK_GAP_ROW_PT;
+    const memo = Math.min(MEMO_MAX_PT.portrait, Math.floor((heightPt - fixed) / (2 * maxWeekCount) - DATE_ROW_PT));
+    const monthRowCount = 3 + maxWeekCount * 2;
+    return {
+      numberColumnMm: PAIR_NUMBER_COLUMN_MM,
+      nameColumnMm: widthMm / 7 - PAIR_NUMBER_COLUMN_MM,
+      gapColumnMm: 0,
+      gapRowPt: STACK_GAP_ROW_PT,
+      memoRowPt: memo,
+      columnCount: COLUMN_COUNT,
+      rowCount: monthRowCount * 2 + 1,
+      monthColumnCount: COLUMN_COUNT,
+      noteRowPt: STACK_NOTE_ROW_PT,
     };
   }
   const pageWidthMm = A4_MM.height - PRINT_MARGIN_MM * 2;
@@ -131,6 +159,7 @@ export function sheetGeometry(maxWeekCount: number, monthsPerSheet: MonthsPerShe
     numberColumnMm: PAIR_NUMBER_COLUMN_MM,
     nameColumnMm: dayMm - PAIR_NUMBER_COLUMN_MM,
     gapColumnMm: PAIR_GAP_MM,
+    gapRowPt: 0,
     memoRowPt,
     columnCount: COLUMN_COUNT * 2 + 1,
     rowCount: 3 + maxWeekCount * 2,
@@ -163,6 +192,8 @@ interface MonthRowsOptions {
   memoRowPt: number;
   /** 2か月を並べるときの、小さめの文字・寸法 */
   compact: boolean;
+  /** 注記の行の高さ(pt) */
+  noteRowPt: number;
   events?: CalendarEventMap;
 }
 
@@ -174,7 +205,7 @@ function monthRows(
   showAdjacentDays: boolean,
   options: MonthRowsOptions,
 ): CellInput[][] {
-  const { memoRowPt, compact, events } = options;
+  const { memoRowPt, compact, noteRowPt, events } = options;
   const landscape = orientation === "landscape";
   const line = { borderStyle: "thin", borderColor: theme.border } as const;
   // 白黒（noFill）のテーマでは背景を塗らない（塗りつぶしを入れない）。それ以外は指定色で塗る
@@ -298,7 +329,7 @@ function monthRows(
     {
       value: monthNote(month),
       columnSpan: COLUMN_COUNT,
-      height: compact ? PAIR_NOTE_ROW_PT : NOTE_ROW_PT,
+      height: noteRowPt,
       fontSize: compact ? 7 : 8,
       textColor: theme.noteText,
       align: "left",
@@ -311,7 +342,8 @@ function monthRows(
 }
 
 /**
- * 1シートぶんの行を作る。1か月はその月の行そのもの。2か月は、左の月・余白の列・右の月を横に並べる。
+ * 1シートぶんの行を作る。1か月はその月の行そのもの。
+ * 2か月は、横向きなら左の月・余白の列・右の月を横に並べ、縦向きなら上の月・余白の行・下の月を縦に並べる（前の月が左／上）。
  * 週数が違う2つの月は、少ない方に空の週の行を足して、注記の行をそろえる。
  */
 function sheetRows(
@@ -326,18 +358,36 @@ function sheetRows(
   const maxWeeks = Math.max(...months.map((m) => m.weeks.length));
   const geometry = sheetGeometry(maxWeeks, monthsPerSheet, orientation);
   const blocks = months.map((m) =>
-    monthRows(m, cal, theme, orientation, showAdjacentDays, { memoRowPt: geometry.memoRowPt, compact: monthsPerSheet === 2, events }),
+    monthRows(m, cal, theme, orientation, showAdjacentDays, {
+      memoRowPt: geometry.memoRowPt,
+      compact: monthsPerSheet === 2,
+      noteRowPt: monthsPerSheet === 2 ? geometry.noteRowPt : NOTE_ROW_PT,
+      events,
+    }),
   );
   if (blocks.length === 1) return { rows: blocks[0], geometry };
 
+  const stacked = sheetArrangement(orientation, monthsPerSheet) === "stacked";
+  // 空の週の行。左右に並べるときは、もう一方の月のセルと同じ行になるので、中身はすべて空でよい。
+  // 上下に並べるときは、行全体が空になる（write-excel-file は、空の行が続くとXMLを壊すことがある）ので、
+  // 先頭のセルに行の高さだけを持たせて、行が書き出されるようにする。
   const emptyWeekRows = (count: number): CellInput[][] =>
-    Array.from({ length: count * 2 }, () => Array<CellInput>(COLUMN_COUNT).fill(null));
+    Array.from({ length: count * 2 }, (_, r) => {
+      const row = Array<CellInput>(COLUMN_COUNT).fill(null);
+      if (stacked) row[0] = { value: null, height: r % 2 === 0 ? DATE_ROW_PT : geometry.memoRowPt };
+      return row;
+    });
   const padded = blocks.map((rows, i) => {
     const missing = maxWeeks - months[i].weeks.length;
     if (missing === 0) return rows;
     // タイトル・見出し・週の行までと、最後の注記の行の間に、空の週を足す
     return [...rows.slice(0, rows.length - 1), ...emptyWeekRows(missing), rows[rows.length - 1]];
   });
+  if (stacked) {
+    // 上の月、余白の行（高さだけを持つ空の行）、下の月の順に積む
+    const spacer: CellInput[] = [{ value: null, height: geometry.gapRowPt }, ...Array<CellInput>(COLUMN_COUNT - 1).fill(null)];
+    return { rows: [...padded[0], spacer, ...padded[1]], geometry };
+  }
   const combined = padded[0].map((leftRow, r) => [...leftRow, null, ...padded[1][r]]);
   return { rows: combined, geometry };
 }
@@ -479,12 +529,11 @@ function printFeature(options: CalendarExcelOptions & { monthsPerSheet: MonthsPe
 export const CALENDAR_EXCEL_FONT = "Yu Gothic";
 export const CALENDAR_EXCEL_BASE_FONT = { fontFamily: "Arial", fontSize: 10 } as const;
 
-/** 年度カレンダーのExcelファイル（1か月=12シート、または2か月=6シート）を作る */
+/** 年度カレンダーのExcelファイル（1か月=12シート、または2か月=6シート。2か月は横向きなら左右、縦向きなら上下に並べる）を作る */
 export async function buildCalendarExcel(options: CalendarExcelOptions): Promise<Blob> {
   const { calendar, theme } = options;
   const monthsPerSheet: MonthsPerSheet = options.monthsPerSheet ?? 1;
-  // 2か月は横向きだけ（A4横に左右の月を並べる）
-  const orientation: CalendarOrientation = monthsPerSheet === 2 ? "landscape" : options.orientation;
+  const orientation: CalendarOrientation = options.orientation;
   const { default: writeXlsxFile } = await import("write-excel-file/universal");
 
   const groups = groupMonths(calendar, monthsPerSheet);
@@ -496,7 +545,11 @@ export async function buildCalendarExcel(options: CalendarExcelOptions): Promise
     const monthColumns = Array.from({ length: COLUMN_COUNT }, (_, c) => ({
       width: mmToExcelColumnWidth(c % 2 === 0 ? g.numberColumnMm : g.nameColumnMm),
     }));
-    const columns = monthsPerSheet === 2 ? [...monthColumns, { width: mmToExcelColumnWidth(g.gapColumnMm) }, ...monthColumns] : monthColumns;
+    // 左右に並べるとき（2か月・A4横）だけ、月の間に余白の列を入れる。上下に並べるとき（A4縦）は1か月と同じ列
+    const columns =
+      sheetArrangement(orientation, monthsPerSheet) === "side-by-side"
+        ? [...monthColumns, { width: mmToExcelColumnWidth(g.gapColumnMm) }, ...monthColumns]
+        : monthColumns;
     return {
       sheet: sheetNames[i],
       // write-excel-file の行・セルの型は厳密なため、既存の xlsx-simple-io.ts と同じくこの境界でだけ型を緩める

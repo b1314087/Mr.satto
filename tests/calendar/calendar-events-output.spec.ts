@@ -109,9 +109,8 @@ test.describe("Excelの厳密な構造検査（Excelの「修復しますか」�
 
 test.describe("2か月表示のExcel", () => {
   test("6シート・シート名・左が前の月/右が次の月・A4横・印刷範囲", async () => {
-    const wb = readXlsxWorkbook(await excelOf({ mps: 2, orientation: "portrait" }));
+    const wb = readXlsxWorkbook(await excelOf({ mps: 2, orientation: "landscape" }));
     expect(wb.sheets.map((s) => s.name)).toEqual(["4月・5月", "6月・7月", "8月・9月", "10月・11月", "12月・1月", "2月・3月"]);
-    // 縦向きを指定しても、2か月は横向きになる
     for (const s of wb.sheets) {
       expect(s.pageSetup.orientation).toBe("landscape");
       expect(s.pageSetup.paperSize).toBe("9");
@@ -250,14 +249,14 @@ test.describe("2か月表示・予定のPDF", () => {
     return { pageCount, pages: await extractTextBoxes(bytes) };
   };
 
-  test("2か月: 6ページ、すべてA4横。縦向きを指定しても横になる", async () => {
+  test("2か月: 6ページ。横向きはA4横、縦向きはA4縦（向きの指定どおり）", async () => {
     for (const orientation of ["landscape", "portrait"] as const) {
       const { pageCount, pages } = await pdf(2, undefined, orientation);
       expect(pageCount).toBe(6);
       expect(pages).toHaveLength(6);
       for (const p of pages) {
-        expect(p.width).toBeCloseTo(841.89, 1);
-        expect(p.height).toBeCloseTo(595.28, 1);
+        expect(p.width).toBeCloseTo(orientation === "landscape" ? 841.89 : 595.28, 1);
+        expect(p.height).toBeCloseTo(orientation === "landscape" ? 595.28 : 841.89, 1);
       }
     }
   });
@@ -376,11 +375,14 @@ test.describe("Excel予定表 → カレンダー の往復", () => {
     expect(pdf.blob.size).toBeGreaterThan(5000);
   });
 
-  test("ファイル名: 2か月は「_2か月」が付き、向きは横になる", () => {
+  test("ファイル名: 2か月は「_2か月」が付き、向き（横/縦）は指定どおり", () => {
     const base = { fiscalYear: 2026, weekStart: "mon", theme: "business", orientation: "portrait", showAdjacentDays: false } as const;
     expect(buildFiscalCalendarFileName({ ...base, format: "excel" })).toBe("2026年度カレンダー_月曜始まり_縦.xlsx");
-    expect(buildFiscalCalendarFileName({ ...base, monthsPerSheet: 2, format: "excel" })).toBe("2026年度カレンダー_月曜始まり_横_2か月.xlsx");
-    expect(buildFiscalCalendarFileName({ ...base, monthsPerSheet: 2, format: "pdf" })).toBe("2026年度カレンダー_月曜始まり_横_2か月.pdf");
+    expect(buildFiscalCalendarFileName({ ...base, monthsPerSheet: 2, format: "excel" })).toBe("2026年度カレンダー_月曜始まり_縦_2か月.xlsx");
+    expect(buildFiscalCalendarFileName({ ...base, monthsPerSheet: 2, format: "pdf" })).toBe("2026年度カレンダー_月曜始まり_縦_2か月.pdf");
+    const land = { ...base, orientation: "landscape" } as const;
+    expect(buildFiscalCalendarFileName({ ...land, monthsPerSheet: 2, format: "excel" })).toBe("2026年度カレンダー_月曜始まり_横_2か月.xlsx");
+    expect(buildFiscalCalendarFileName({ ...land, monthsPerSheet: 2, format: "pdf" })).toBe("2026年度カレンダー_月曜始まり_横_2か月.pdf");
   });
 
   test("入力の検証: 1シートの月数が不正ならエラー", async () => {

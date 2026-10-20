@@ -3,7 +3,9 @@
  *
  *   1か月: 1シート=1か月（12シート / 12ページ）。従来の形式。
  *   2か月: 1シート=2か月（6シート / 6ページ）。年度の並びのまま、4月+5月・6月+7月・8月+9月・10月+11月・12月+1月・2月+3月。
- *          左に前の月、右に次の月を横に並べる。A4横に無理なく収めるため、2か月は横向きだけにする。
+ *          用紙の向きで並べ方が変わる（pairArrangement 参照）。
+ *            A4横: 左に前の月、右に次の月を左右に並べる。
+ *            A4縦: 上に前の月、下に次の月を上下に並べる。
  *
  * 画面のプレビュー・Excel・PDFは、必ずここで同じ組み合わせを決める（出力ごとに別の組み合わせ方をしない）。
  */
@@ -33,7 +35,14 @@ export function groupButtonLabel(months: readonly CalendarMonth[]): string {
   return months.length === 1 ? `${months[0].month}月` : `${months.map((m) => m.month).join("・")}月`;
 }
 
-/** 用紙の向き。2か月は横向きに限る */
-export function effectiveOrientation<T extends "landscape" | "portrait">(orientation: T, monthsPerSheet: MonthsPerSheet): T | "landscape" {
-  return monthsPerSheet === 2 ? "landscape" : orientation;
+/** 2か月を1シートに並べるときの並べ方。1か月は "single"（並べない） */
+export type SheetArrangement = "single" | "side-by-side" | "stacked";
+
+/**
+ * 1シートの中の月の並べ方。A4横の2か月は左右（左=前の月・右=次の月）、A4縦の2か月は上下（上=前の月・下=次の月）。
+ * 画面のプレビュー・Excel・PDFは、必ずこの関数で並べ方を決める。
+ */
+export function sheetArrangement(orientation: "landscape" | "portrait", monthsPerSheet: MonthsPerSheet): SheetArrangement {
+  if (monthsPerSheet === 1) return "single";
+  return orientation === "landscape" ? "side-by-side" : "stacked";
 }

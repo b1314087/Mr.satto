@@ -20,7 +20,7 @@ import {
   sanitizeEventText,
   type CalendarEvent,
 } from "@/lib/calendar/events";
-import { effectiveOrientation, groupButtonLabel, groupMonths, sheetNameOf } from "@/lib/calendar/layout";
+import { groupButtonLabel, groupMonths, sheetArrangement, sheetNameOf } from "@/lib/calendar/layout";
 import { buildFiscalCalendar } from "@/lib/calendar/model";
 
 /**
@@ -343,9 +343,10 @@ test.describe("1か月/2か月の組み合わせ", () => {
     expect(groupMonths(cal, 1).map(sheetNameOf)[0]).toBe("4月");
   });
 
-  test("2か月は横向きに固定、1か月は指定どおり", () => {
-    expect(effectiveOrientation("portrait", 2)).toBe("landscape");
-    expect(effectiveOrientation("landscape", 2)).toBe("landscape");
-    expect(effectiveOrientation("portrait", 1)).toBe("portrait");
+  test("並べ方: 2か月は横=左右・縦=上下、1か月は並べない", () => {
+    expect(sheetArrangement("landscape", 2)).toBe("side-by-side");
+    expect(sheetArrangement("portrait", 2)).toBe("stacked");
+    expect(sheetArrangement("landscape", 1)).toBe("single");
+    expect(sheetArrangement("portrait", 1)).toBe("single");
   });
 });

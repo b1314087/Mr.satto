@@ -17,7 +17,7 @@ import {
 } from "@/lib/processors/browser/fiscal-calendar";
 import { buildFiscalCalendar, monthNote, fiscalYearEraLabel, type WeekStart } from "@/lib/calendar/model";
 import { placeEvents } from "@/lib/calendar/events";
-import { effectiveOrientation, groupButtonLabel, groupMonths, type MonthsPerSheet } from "@/lib/calendar/layout";
+import { groupButtonLabel, groupMonths, sheetArrangement, type MonthsPerSheet } from "@/lib/calendar/layout";
 import {
   CALENDAR_CUSTOM_DEFAULT,
   CALENDAR_THEME_CHOICES,
@@ -70,8 +70,8 @@ export function FiscalCalendarTool() {
   const calendar = useMemo(() => buildFiscalCalendar({ fiscalYear, weekStart }), [fiscalYear, weekStart]);
   // プレビュー・Excel・PDFで共通に使う、解決済みのテーマ
   const themeDef = useMemo(() => resolveCalendarTheme(theme, customPalette), [theme, customPalette]);
-  // 2か月は横向きだけ（A4横に左右の月を並べる）
-  const shownOrientation = effectiveOrientation(orientation, monthsPerSheet);
+  // 2か月の並べ方（横向きは左右、縦向きは上下）。プレビュー・Excel・PDFで同じ並べ方にする
+  const arrangement = sheetArrangement(orientation, monthsPerSheet);
   const groups = useMemo(() => groupMonths(calendar, monthsPerSheet), [calendar, monthsPerSheet]);
   const previewGroup = groups[Math.floor(previewMonth / monthsPerSheet)] ?? groups[0];
   // プレビュー・Excel・PDFが同じ予定（共通の予定モデルを年度の範囲で振り分けたもの）を使う
@@ -151,17 +151,30 @@ export function FiscalCalendarTool() {
                 );
               })}
             </div>
-            <div data-testid="calendar-preview-sheet" data-months-per-sheet={monthsPerSheet} className={monthsPerSheet === 2 ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : ""}>
+            <div
+              data-testid="calendar-preview-sheet"
+              data-months-per-sheet={monthsPerSheet}
+              data-arrangement={arrangement}
+              data-orientation={orientation}
+              className={
+                arrangement === "stacked"
+                  ? "mx-auto flex w-full max-w-md flex-col gap-3"
+                  : arrangement === "side-by-side"
+                    ? "grid grid-cols-1 gap-3 sm:grid-cols-2"
+                    : ""
+              }
+            >
               {previewGroup.map((m) => (
                 <FiscalCalendarPreview
                   key={`${m.year}-${m.month}`}
                   calendar={calendar}
                   month={m}
                   theme={themeDef}
-                  landscape={shownOrientation === "landscape"}
+                  landscape={orientation === "landscape"}
                   showAdjacentDays={showAdjacentDays}
                   events={placed.byDate}
                   pair={monthsPerSheet === 2}
+                  stacked={arrangement === "stacked"}
                 />
               ))}
             </div>
@@ -296,9 +309,11 @@ export function FiscalCalendarTool() {
               ))}
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {monthsPerSheet === 2
-                ? "4月+5月・6月+7月…のように、2か月を左右に並べて6シート（PDFは6ページ）にします。A4横向きで作成します。"
-                : "1か月を1シート（PDFは1ページ）にして、12シート（12ページ）にします。"}
+              {arrangement === "stacked"
+                ? "4月+5月・6月+7月…のように、2か月を上下（上が前の月、下が次の月）に並べて6シート（PDFは6ページ）にします。A4縦向きで作成します。"
+                : arrangement === "side-by-side"
+                  ? "4月+5月・6月+7月…のように、2か月を左右（左が前の月、右が次の月）に並べて6シート（PDFは6ページ）にします。A4横向きで作成します。"
+                  : "1か月を1シート（PDFは1ページ）にして、12シート（12ページ）にします。"}
             </p>
           </fieldset>
 
@@ -314,21 +329,22 @@ export function FiscalCalendarTool() {
                 <button
                   key={id}
                   type="button"
-                  aria-pressed={shownOrientation === id}
-                  disabled={monthsPerSheet === 2 && id === "portrait"}
+                  aria-pressed={orientation === id}
                   onClick={() => {
                     setOrientation(id);
                     resetResults();
                   }}
-                  className={`${optionButtonClass(shownOrientation === id)} disabled:cursor-not-allowed disabled:opacity-40`}
+                  className={optionButtonClass(orientation === id)}
                 >
                   {label}
                 </button>
               ))}
             </div>
             {monthsPerSheet === 2 && (
-              <p data-testid="orientation-locked" className="text-xs text-neutral-500 dark:text-neutral-400">
-                2か月表示は、左右に並べるためA4横向きのみです。
+              <p data-testid="orientation-arrangement" className="text-xs text-neutral-500 dark:text-neutral-400">
+                {arrangement === "stacked"
+                  ? "2か月表示・縦向き: 上に前の月、下に次の月を並べます。"
+                  : "2か月表示・横向き: 左に前の月、右に次の月を並べます。"}
               </p>
             )}
           </fieldset>

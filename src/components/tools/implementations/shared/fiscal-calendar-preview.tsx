@@ -16,6 +16,7 @@ export function FiscalCalendarPreview({
   showAdjacentDays,
   events,
   pair = false,
+  stacked = false,
 }: {
   calendar: FiscalCalendar;
   month: CalendarMonth;
@@ -26,15 +27,19 @@ export function FiscalCalendarPreview({
   events?: CalendarEventMap;
   /** 2か月表示のうちの1か月ぶん（幅が狭いので、文字を小さくし、予定の表示行数を減らす） */
   pair?: boolean;
+  /** 2か月を上下に並べる（A4縦）うちの1か月ぶん。幅が広いので、左右に並べるより文字を大きくし、予定も多く出す */
+  stacked?: boolean;
 }) {
-  const maxEventLines = pair ? 2 : 3;
+  const maxEventLines = pair && !stacked ? 2 : 3;
   return (
     <div
       data-testid="calendar-preview"
       data-theme={theme.id}
       data-month={`${month.year}-${String(month.month).padStart(2, "0")}`}
-      className={`overflow-hidden rounded-lg border leading-tight ${pair ? "aspect-[297/210] text-[9px] sm:aspect-[136/190]" : "text-[11px]"}`}
-      style={pair ? { borderColor: theme.border } : { borderColor: theme.border, aspectRatio: landscape ? "297 / 210" : "210 / 297" }}
+      className={`overflow-hidden rounded-lg border leading-tight ${
+        stacked ? "aspect-[190/138] text-[10px]" : pair ? "aspect-[297/210] text-[9px] sm:aspect-[136/190]" : "text-[11px]"
+      }`}
+      style={pair || stacked ? { borderColor: theme.border } : { borderColor: theme.border, aspectRatio: landscape ? "297 / 210" : "210 / 297" }}
     >
       <div className="flex items-center justify-between px-3 py-1.5" style={{ background: theme.titleBg, color: theme.titleText }}>
         <span className="text-base font-semibold">
@@ -82,11 +87,11 @@ export function FiscalCalendarPreview({
                     {day.day}
                   </span>
                   {!faded && day.holiday && (
-                    <span className={pair ? "text-[7px]" : "text-[9px]"} style={{ color: theme.holidayNameText }}>
+                    <span className={pair && !stacked ? "text-[7px]" : "text-[9px]"} style={{ color: theme.holidayNameText }}>
                       {holidayDisplayName(day)}
                     </span>
                   )}
-                  {!faded && <PreviewEvents events={events?.get(day.iso)} maxLines={maxEventLines} color={theme.headerText} pair={pair} />}
+                  {!faded && <PreviewEvents events={events?.get(day.iso)} maxLines={maxEventLines} color={theme.headerText} pair={pair && !stacked} />}
                 </>
               )}
             </div>

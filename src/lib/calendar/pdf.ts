@@ -1,8 +1,8 @@
 /**
- * 年度カレンダーのPDF出力（月別12ページ・A4）。
+ * 年度カレンダーのPDF出力（月別12ページ、または2か月ずつ6ページ・A4）。
  *
  * Excelを経由せず、同じ共通モデル（FiscalCalendar）から pdf-lib で直接描く。日本語はNoto Sans JPを埋め込む。
- * 1ページ=1か月。日付の数字と祝日名は各マスの左上に置き、祝日名がマスに収まらないときは
+ * 1ページ=1か月（2か月のときは、A4横なら左右、A4縦なら上下に並べる。前の月が左／上）。日付の数字と祝日名は各マスの左上に置き、祝日名がマスに収まらないときは
  * 文字を小さくし、それでも収まらなければ2行に折り返す（マスからはみ出す・隣と重なることがないようにする）。
  */
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
@@ -11,7 +11,7 @@ import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { createTextDrawer, wrapTextByWidth } from "@/lib/pdf/text-draw";
 import { mmToPt, resolvePaperSizePt } from "@/lib/print/paper-sizes";
 import { formatEventLine, type CalendarEvent, type CalendarEventMap } from "./events";
-import { groupMonths, type MonthsPerSheet } from "./layout";
+import { groupMonths, sheetArrangement, type MonthsPerSheet } from "./layout";
 import { holidayDisplayName, monthNote, type CalendarMonth, type FiscalCalendar } from "./model";
 import { hexToRgb01, type CalendarTheme } from "./themes";
 
@@ -22,7 +22,7 @@ export interface CalendarPdfOptions {
   theme: CalendarTheme;
   orientation: CalendarPdfOrientation;
   showAdjacentDays?: boolean;
-  /** 1ページに載せる月数（既定は1か月=12ページ。2か月=6ページで、横向きだけ） */
+  /** 1ページに載せる月数（既定は1か月=12ページ。2か月=6ページ。横向きは左右、縦向きは上下に並べる） */
   monthsPerSheet?: MonthsPerSheet;
   /** 日付ごとの予定。各日のマスの、日付・祝日名の下に表示する（入りきらない分は「他N件」） */
   events?: CalendarEventMap;
@@ -103,8 +103,11 @@ export function layoutHolidayName(
   return { lines: wrapTextByWidth(name, font, MIN_NAME_SIZE, innerWidth), size: MIN_NAME_SIZE, sameLine: false };
 }
 
-/** 2か月を1ページに並べるときの寸法（A4横。左右の月の間に余白を入れる） */
+/** 2か月を1ページに並べるときの寸法（A4横は左右、A4縦は上下。月の間に余白を入れる） */
 const PAIR_GAP = 14;
+/** 上下に並べる（A4縦）ときの、月の間の余白と、注記の高さ（幅が広いので注記は1行に収まる） */
+const STACK_GAP = 16;
+const STACK_NOTE_H = 16;
 const PAIR_TITLE_H = 28;
 const PAIR_HEADER_H = 16;
 const PAIR_NOTE_H = 22;
@@ -134,6 +137,19 @@ interface PdfMetrics {
   titleX: number;
   compact: boolean;
 }
+
+/** 2か月を上下に並べる（A4縦）ときの文字の大きさ。各月の幅は1か月の縦向きと同じなので、左右に並べるときより少し大きくできる */
+const STACKED_METRICS: PdfMetrics = {
+  titleSize: 16,
+  subSize: 9,
+  headerSize: 10,
+  numberSize: 12,
+  nameBase: 8,
+  eventSize: 7,
+  noteSize: 7,
+  titleX: 8,
+  compact: true,
+};
 
 const metricsFor = (landscape: boolean, compact: boolean): PdfMetrics =>
   compact
@@ -216,6 +232,30 @@ export function layoutEventLines(
   const hidden = events.length - shown;
   lines.push(shown === 0 ? `予定${hidden}件` : `他${hidden}件`);
   return { lines: lines.slice(0, maxLines), hiddenCount: hidden };
+}
+
+/** 2か月を上下に並べるフレーム（A4縦。上に前の月、下に次の月。行の高さは週数の多い方に合わせ、上下で同じにする） */
+function stackedFrames(maxWeekCount: number): { top: MonthFrame; bottom: MonthFrame } {
+  const page = resolvePaperSizePt("A4", "portrait");
+  const margin = mmToPt(PDF_MARGIN_MM);
+  const contentWidth = page.width - margin * 2;
+  const contentHeight = page.height - margin * 2;
+  const halfHeight = (contentHeight - STACK_GAP) / 2;
+  const gridHeight = halfHeight - PAIR_TITLE_H - PAIR_HEADER_H - STACK_NOTE_H;
+  const frameAt = (titleTop: number): MonthFrame => ({
+    left: margin,
+    width: contentWidth,
+    titleTop,
+    titleH: PAIR_TITLE_H,
+    headerTop: titleTop - PAIR_TITLE_H,
+    headerH: PAIR_HEADER_H,
+    gridTop: titleTop - PAIR_TITLE_H - PAIR_HEADER_H,
+    rowHeight: gridHeight / maxWeekCount,
+    // 注記は、それぞれの月の枠の下端（上の月は半分の位置、下の月はページの下端）
+    noteBaselineY: titleTop - halfHeight + 4,
+  });
+  const top = page.height - margin;
+  return { top: frameAt(top), bottom: frameAt(top - halfHeight - STACK_GAP) };
 }
 
 function drawMonth(
@@ -361,15 +401,25 @@ function drawSheetPage(
     drawMonth(page, font, months[0], cal, theme, singleFrame(months[0].weeks.length, orientation), metricsFor(orientation === "landscape", false), showAdjacentDays, events);
     return;
   }
+  const maxWeeks = Math.max(...months.map((m) => m.weeks.length));
+  if (sheetArrangement(orientation, 2) === "stacked") {
+    // A4縦: 上に前の月、下に次の月
+    const portrait = resolvePaperSizePt("A4", "portrait");
+    const stacked = doc.addPage([portrait.width, portrait.height]);
+    const frames = stackedFrames(maxWeeks);
+    drawMonth(stacked, font, months[0], cal, theme, frames.top, STACKED_METRICS, showAdjacentDays, events);
+    drawMonth(stacked, font, months[1], cal, theme, frames.bottom, STACKED_METRICS, showAdjacentDays, events);
+    return;
+  }
   const page = resolvePaperSizePt("A4", "landscape");
   const sheet = doc.addPage([page.width, page.height]);
-  const frames = pairFrames(Math.max(...months.map((m) => m.weeks.length)));
+  const frames = pairFrames(maxWeeks);
   const metrics = metricsFor(true, true);
   drawMonth(sheet, font, months[0], cal, theme, frames.left, metrics, showAdjacentDays, events);
   drawMonth(sheet, font, months[1], cal, theme, frames.right, metrics, showAdjacentDays, events);
 }
 
-/** 年度カレンダーのPDF（月別12ページ）を作る */
+/** 年度カレンダーのPDF（月別12ページ、または2か月ずつ6ページ）を作る */
 export async function buildCalendarPdf(options: CalendarPdfOptions): Promise<{ blob: Blob; pageCount: number }> {
   const { calendar, theme, orientation } = options;
   let fontBytes: ArrayBuffer | Uint8Array;
@@ -398,8 +448,7 @@ export async function buildCalendarPdf(options: CalendarPdfOptions): Promise<{ b
   const monthsPerSheet: MonthsPerSheet = options.monthsPerSheet ?? 1;
   const groups = groupMonths(calendar, monthsPerSheet);
   for (const months of groups) {
-    // 2か月は横向きだけ（A4横に左右の月を並べる）
-    drawSheetPage(doc, font, months, calendar, theme, monthsPerSheet === 2 ? "landscape" : orientation, options.showAdjacentDays ?? false, options.events);
+    drawSheetPage(doc, font, months, calendar, theme, orientation, options.showAdjacentDays ?? false, options.events);
   }
 
   let bytes: Uint8Array;

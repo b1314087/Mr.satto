@@ -154,31 +154,62 @@ test.describe("年度カレンダー: Excel予定表の読み込み", () => {
 });
 
 test.describe("年度カレンダー: 1か月/2か月と出力", () => {
-  test("2か月に切り替えると、プレビューが左右2か月になり、向きは横に固定、ボタンの表示が変わる。1か月に戻せる", async ({ page }) => {
+  test("2か月に切り替えると、横向きは左右・縦向きは上下に並ぶ（向きは選べる）。ボタンの表示が変わり、1か月に戻せる", async ({ page }) => {
     await open(page);
     await expect(page.getByTestId("months-per-sheet-1")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("calendar-preview")).toHaveCount(1);
-    await page.getByRole("button", { name: "縦向き" }).click();
+    await expect(page.getByTestId("calendar-preview-sheet")).toHaveAttribute("data-arrangement", "single");
     await page.getByTestId("months-per-sheet-2").click();
     await expect(page.getByTestId("calendar-preview-sheet")).toHaveAttribute("data-months-per-sheet", "2");
+    // 横向き（既定）: 左に前の月、右に次の月
+    await expect(page.getByTestId("calendar-preview-sheet")).toHaveAttribute("data-arrangement", "side-by-side");
     const previews = page.getByTestId("calendar-preview");
     await expect(previews).toHaveCount(2);
     await expect(previews.nth(0)).toHaveAttribute("data-month", "2026-04");
     await expect(previews.nth(1)).toHaveAttribute("data-month", "2026-05");
-    await expect(page.getByRole("button", { name: "12・1月", exact: true })).toBeVisible();
+    const side0 = (await previews.nth(0).boundingBox())!;
+    const side1 = (await previews.nth(1).boundingBox())!;
+    expect(side0.x).toBeLessThan(side1.x);
+    expect(Math.abs(side0.y - side1.y)).toBeLessThan(2);
+    await expect(page.getByRole("button", { name: "横向き" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "縦向き" })).toBeEnabled();
+    await expect(page.getByTestId("orientation-arrangement")).toContainText("左に前の月、右に次の月");
+    // 縦向き: 上に前の月、下に次の月
+    await page.getByRole("button", { name: "縦向き" }).click();
+    await expect(page.getByTestId("calendar-preview-sheet")).toHaveAttribute("data-arrangement", "stacked");
+    await expect(page.getByRole("button", { name: "縦向き" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "横向き" })).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("orientation-arrangement")).toContainText("上に前の月、下に次の月");
+    await expect(previews.nth(0)).toHaveAttribute("data-month", "2026-04");
+    await expect(previews.nth(1)).toHaveAttribute("data-month", "2026-05");
+    const top = (await previews.nth(0).boundingBox())!;
+    const bottom = (await previews.nth(1).boundingBox())!;
+    expect(top.y + top.height).toBeLessThanOrEqual(bottom.y + 1);
+    expect(Math.abs(top.x - bottom.x)).toBeLessThan(2);
     await page.getByRole("button", { name: "12・1月", exact: true }).click();
     await expect(previews.nth(0)).toHaveAttribute("data-month", "2026-12");
     await expect(previews.nth(1)).toHaveAttribute("data-month", "2027-01");
-    await expect(page.getByTestId("orientation-locked")).toBeVisible();
-    await expect(page.getByRole("button", { name: "縦向き" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "横向き" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "Excelを作成（2か月ずつ6シート）" })).toBeVisible();
     await expect(page.getByRole("button", { name: "PDFを作成（2か月ずつ6ページ）" })).toBeVisible();
+    // 横向きに戻すと左右、1か月に戻すと従来どおり
+    await page.getByRole("button", { name: "横向き" }).click();
+    await expect(page.getByTestId("calendar-preview-sheet")).toHaveAttribute("data-arrangement", "side-by-side");
     await page.getByTestId("months-per-sheet-1").click();
     await expect(previews).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "縦向き" })).toBeEnabled();
+    await expect(page.getByTestId("orientation-arrangement")).toHaveCount(0);
+    await page.getByRole("button", { name: "縦向き" }).click();
     await expect(page.getByRole("button", { name: "縦向き" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("calendar-preview-sheet")).toHaveAttribute("data-arrangement", "single");
     await expect(page.getByRole("button", { name: "Excelを作成（月別12シート）" })).toBeVisible();
+  });
+
+  test("縦向きの2か月: 向きを変えると、作成済みファイルのダウンロードボタンは消える", async ({ page }) => {
+    await open(page);
+    await page.getByTestId("months-per-sheet-2").click();
+    await page.getByRole("button", { name: /Excelを作成/ }).click();
+    await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "縦向き" }).click();
+    await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toHaveCount(0);
   });
 
   test("設定を変えると、作成済みファイルのダウンロードボタンは消える（2か月に変えたとき、1か月のファイルを渡さない）", async ({ page }) => {
@@ -214,6 +245,64 @@ test.describe("年度カレンダー: 1か月/2か月と出力", () => {
     expect(memo(4, "2027-01-04")).toBe("09:00 仕事始め");
     const all = wb.sheets.flatMap((s) => [...s.cells.values()]).map((c) => c.value);
     expect(all.some((v) => typeof v === "string" && (v.includes("前年度の予定") || v.includes("翌年度の予定")))).toBe(false);
+  });
+
+  test("Excel（2か月・縦向き）: A4縦・上に前の月/下に次の月・予定が全件・ファイル名・XMLの検査に合格", async ({ page }) => {
+    await open(page);
+    await load(page);
+    await page.getByTestId("months-per-sheet-2").click();
+    await page.getByRole("button", { name: "縦向き" }).click();
+    await page.getByRole("button", { name: /Excelを作成/ }).click();
+    await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 60_000 });
+    const download = await clickAndDownload(page, /Excelファイルをダウンロード/);
+    expect(await lastDownloadName(page)).toBe("2026年度カレンダー_月曜始まり_縦_2か月.xlsx");
+    await assertDownloadedFile(download, { format: "zip", minBytes: 5_000 });
+    const bytes = new Uint8Array(fs.readFileSync((await download.path())!));
+    expect(validateXlsxStrict(bytes).problems).toEqual([]);
+    const wb = readXlsxWorkbook(bytes);
+    expect(wb.sheets.map((s) => s.name)).toEqual(["4月・5月", "6月・7月", "8月・9月", "10月・11月", "12月・1月", "2月・3月"]);
+    for (const s of wb.sheets) {
+      expect(s.pageSetup.orientation).toBe("portrait");
+      expect(s.pageSetup.paperSize).toBe("9");
+      expect(s.fitToPage).toBe(true);
+    }
+    const cellOf = (sheetIndex: number, iso: string) =>
+      [...wb.sheets[sheetIndex].cells.values()].find((x) => typeof x.value === "number" && x.value > 40000 && excelSerialToIso(x.value) === iso)!;
+    const memo = (sheetIndex: number, iso: string) => {
+      const c = cellOf(sheetIndex, iso);
+      return wb.sheets[sheetIndex].cells.get(addressOf(c.row + 1, c.col))?.value;
+    };
+    // 上の月（4月）の日が、下の月（5月）の日より上の行にある
+    expect(cellOf(0, "2026-04-30").row).toBeLessThan(cellOf(0, "2026-05-01").row);
+    expect(cellOf(4, "2026-12-31").row).toBeLessThan(cellOf(4, "2027-01-01").row);
+    expect(memo(0, "2026-04-01")).toBe("10:00-11:30 入社式\n18:30 歓迎会");
+    expect(memo(0, "2026-04-10")).toBe("09:00 朝会A\n09:30 朝会B\n10:00 朝会C\n10:30 朝会D\n11:00 朝会E");
+    expect(memo(0, "2026-05-12")).toBe("09:00-17:00 出張");
+    expect(memo(4, "2027-01-04")).toBe("09:00 仕事始め");
+    const all = wb.sheets.flatMap((s) => [...s.cells.values()]).map((c) => c.value);
+    expect(all.some((v) => typeof v === "string" && (v.includes("前年度の予定") || v.includes("翌年度の予定")))).toBe(false);
+  });
+
+  test("PDF（2か月・縦向き・予定つき）: 6ページのA4縦で、上に前の月・下に次の月、予定が載る", async ({ page }) => {
+    await open(page);
+    await load(page);
+    await page.getByTestId("months-per-sheet-2").click();
+    await page.getByRole("button", { name: "縦向き" }).click();
+    await page.getByRole("button", { name: /PDFを作成/ }).click();
+    await expect(page.getByRole("button", { name: /PDFファイルをダウンロード/ })).toBeVisible({ timeout: 60_000 });
+    const download = await clickAndDownload(page, /PDFファイルをダウンロード/);
+    expect(await lastDownloadName(page)).toBe("2026年度カレンダー_月曜始まり_縦_2か月.pdf");
+    await assertDownloadedFile(download, { format: "pdf", minBytes: 5_000 });
+    const pages = await extractTextBoxes(new Uint8Array(fs.readFileSync((await download.path())!)));
+    expect(pages).toHaveLength(6);
+    for (const p of pages) expect(p.height).toBeGreaterThan(p.width);
+    const text = (i: number) => pages[i].boxes.map((b) => b.str).join("").replace(/\s+/g, "");
+    expect(text(0)).toContain("入社式");
+    expect(text(0)).toContain("出張");
+    expect(text(4)).toContain("仕事始め");
+    const titleY = (i: number, label: string) => pages[i].boxes.find((b) => b.str.includes(label))!.y;
+    expect(titleY(0, "2026年4月")).toBeGreaterThan(titleY(0, "2026年5月"));
+    expect(titleY(4, "2026年12月")).toBeGreaterThan(titleY(4, "2027年1月"));
   });
 
   test("Excel（1か月・予定つき）: 従来どおり12シートで、予定が入る", async ({ page }) => {
@@ -274,6 +363,20 @@ test.describe("年度カレンダー: 予定・2か月 スマートフォン幅"
     await page.getByRole("button", { name: /Excelを作成/ }).scrollIntoViewIfNeeded();
     await page.getByRole("button", { name: /Excelを作成/ }).click();
     await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 60_000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+  });
+
+  test("縦向き（上下配置）でも、画面が横にはみ出さない。上の月・下の月が縦に並ぶ", async ({ page }) => {
+    await open(page);
+    await load(page);
+    await page.getByTestId("months-per-sheet-2").click();
+    await page.getByRole("button", { name: "縦向き" }).click();
+    await expect(page.getByTestId("calendar-preview-sheet")).toHaveAttribute("data-arrangement", "stacked");
+    const a = (await page.getByTestId("calendar-preview").nth(0).boundingBox())!;
+    const b = (await page.getByTestId("calendar-preview").nth(1).boundingBox())!;
+    expect(a.x).toBeGreaterThanOrEqual(0);
+    expect(a.x + a.width).toBeLessThanOrEqual(375 + 1);
+    expect(a.y + a.height).toBeLessThanOrEqual(b.y + 1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   });
 });
