@@ -338,6 +338,9 @@ const RosterTemplateTool = dynamic(() =>
 const FiscalCalendarTool = dynamic(() =>
   import("./implementations/fiscal-calendar-tool").then((m) => m.FiscalCalendarTool)
 );
+const SequenceGeneratorTool = dynamic(() =>
+  import("./implementations/sequence-generator-tool").then((m) => m.SequenceGeneratorTool)
+);
 
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
@@ -554,6 +557,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <RosterTemplateTool />;
     case "fiscal-calendar":
       return <FiscalCalendarTool />;
+    case "sequence-generator":
+      return <SequenceGeneratorTool />;
     default:
       return null;
   }

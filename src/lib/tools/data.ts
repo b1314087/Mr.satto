@@ -1223,6 +1223,16 @@ const toolDefinitions: Tool[] = [
     processor: "browser",
     keywords: ["カレンダー", "年度", "年間カレンダー", "祝日", "月間カレンダー", "予定表", "4月始まり", "スケジュール", "2か月", "予定読み込み"],
   },
+  {
+    id: "sequence-generator",
+    name: "連番・項目一括生成",
+    category: "generator",
+    description: "「第１回 英語」のような連番付きの項目を一括で作ります。1つの項目の連番も、複数の項目を入力順に項目ごとの連番にすることもでき、結果は編集してExcelへそのまま貼り付けられます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["連番", "番号", "第1回", "回数", "一括生成", "項目", "スケジュール", "時間割", "コピー"],
+  },
 ];
 
 export const tools: Tool[] = ALL_TOOLS_STANDARD

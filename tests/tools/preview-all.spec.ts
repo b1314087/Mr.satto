@@ -63,6 +63,7 @@ const CASES: [string, Input][] = [
   ["password-generator", none],
   ["date-weekday-tool", none],
   ["fiscal-calendar", none],
+  ["sequence-generator", none],
   ["time-calculator", none],
   ["color-palette-generator", none],
   ["estimate-generator", none],
