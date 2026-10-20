@@ -9,6 +9,8 @@
  * 透明（アルファ）は変えない。判定は画素の統計だけで、AI・外部サービスは使わない。
  */
 
+import { isDefaultPalette, type Palette } from "./color";
+
 export type ImageDecision = "invert-all" | "invert-gray" | "keep-color" | "keep-transparent";
 
 export interface PixelAnalysis {
@@ -72,18 +74,32 @@ export function analyzeImage(data: PixelData, width: number, height: number): Pi
   return { decision, visible, coloredRatio, extremeRatio };
 }
 
-/** 判定にしたがって、画素を反転する（その場で書き換える。透明度は変えない） */
-export function invertImagePixels(data: PixelData, decision: ImageDecision): void {
+/**
+ * 判定にしたがって、画素を反転する（その場で書き換える。透明度は変えない）。
+ * 配色（palette）を渡すと、反転した明るさ（白→背景色、黒→文字色、灰色はその間）を、その配色に写す。
+ * 配色を渡さない、または既定（純黒×純白）のときは、単純な反転（255 から引く）。
+ */
+export function invertImagePixels(data: PixelData, decision: ImageDecision, palette?: Palette | null): void {
   if (decision !== "invert-all" && decision !== "invert-gray") return;
   const onlyGray = decision === "invert-gray";
+  const custom = palette && !isDefaultPalette(palette) ? palette : null;
+  // チャンネルごとの変換表（反転した値 0〜255 → 配色の背景〜文字の間の値）
+  const lut = (b: number, t: number) => {
+    const table = new Uint8Array(256);
+    for (let v = 0; v < 256; v++) table[v] = Math.min(255, Math.max(0, Math.round(b + (t - b) * (v / 255))));
+    return table;
+  };
+  const lr = custom ? lut(custom.background.r, custom.text.r) : null;
+  const lg = custom ? lut(custom.background.g, custom.text.g) : null;
+  const lb = custom ? lut(custom.background.b, custom.text.b) : null;
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
     if (onlyGray && Math.max(r, g, b) - Math.min(r, g, b) > IMAGE_COLOR_CHROMA) continue;
-    data[i] = 255 - r;
-    data[i + 1] = 255 - g;
-    data[i + 2] = 255 - b;
+    data[i] = lr ? lr[255 - r] : 255 - r;
+    data[i + 1] = lg ? lg[255 - g] : 255 - g;
+    data[i + 2] = lb ? lb[255 - b] : 255 - b;
   }
 }
 

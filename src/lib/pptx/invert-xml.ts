@@ -25,6 +25,7 @@ import {
   rgbToHsl,
   toHex,
   type ColorModifier,
+  type Palette,
   type Rgb,
 } from "./color";
 
@@ -44,6 +45,11 @@ export interface ColorContext {
 export interface InvertOptions {
   /** 濃い色（紺色など）の文字を、色合いはそのままで明るくする。既定はオフ（色は変えない） */
   brightenDarkText: boolean;
+  /**
+   * 反転後の配色（背景色・文字色）。省略、または純黒×純白のときは、従来の白黒反転。
+   * 指定すると、反転した色（白→背景色、黒→文字色、灰色はその間）をこの配色に写す。
+   */
+  palette?: Palette | null;
 }
 
 export interface ColorStats {
@@ -159,7 +165,7 @@ function convertColor(whole: string, tag: string, attrs: string, inner: string, 
 
   // 色つきの図形の上の白い文字（標準スタイルの文字色）は、そのまま残す
   const keepWhiteFontRef = mode.fontRef && chromaOf(final) <= 20 && rgbToHsl(final).l > 0.85;
-  const inverted = keepWhiteFontRef ? null : invertDocumentColor(final);
+  const inverted = keepWhiteFontRef ? null : invertDocumentColor(final, options.palette);
   if (inverted) {
     stats.inverted++;
     return emit(inverted);

@@ -90,14 +90,54 @@ export function hslToRgb(c: Hsl): Rgb {
 }
 
 /**
+ * 反転後の配色。background は「元の白（明るい色）」が変わる先、text は「元の黒（暗い色）」が変わる先。
+ * 既定（純黒×純白）は、従来どおりの単純な白黒反転と同じ結果になる。
+ */
+export interface Palette {
+  background: Rgb;
+  text: Rgb;
+}
+
+export const DEFAULT_PALETTE: Palette = { background: { r: 0, g: 0, b: 0 }, text: { r: 255, g: 255, b: 255 } };
+
+export function isDefaultPalette(p: Palette): boolean {
+  return toHex(p.background) === toHex(DEFAULT_PALETTE.background) && toHex(p.text) === toHex(DEFAULT_PALETTE.text);
+}
+
+/**
+ * 単純に反転した無彩色（0＝元の白 … 255＝元の黒）を、配色の「背景色〜文字色」の間に写す。
+ * 0 → 背景色、255 → 文字色、その間の灰色は、チャンネルごとに直線で補間する。
+ */
+export function remapToPalette(inverted: Rgb, p: Palette): Rgb {
+  const f = (v: number, b: number, t: number) => clamp255(b + (t - b) * (v / 255));
+  return { r: f(inverted.r, p.background.r, p.text.r), g: f(inverted.g, p.background.g, p.text.g), b: f(inverted.b, p.background.b, p.text.b) };
+}
+
+/** 反転後の明るさ（HSLのL。0＝元の白 … 1＝元の黒）を、背景色の明るさ〜文字色の明るさの間に写す */
+export function remapLightness(l: number, p: Palette): number {
+  const lb = rgbToHsl(p.background).l;
+  const lt = rgbToHsl(p.text).l;
+  return Math.min(1, Math.max(0, lb + (lt - lb) * l));
+}
+
+/**
  * 色を反転する。反転しない色（はっきりした色）は null を返す。
  *   無彩色: 各チャンネルを 255 から引く（白→黒、#D9D9D9→#262626、#808080→#7F7F7F）
  *   ごく明るい／ごく暗い色: 色相と彩度は変えず、明るさ（HSLのL）だけを 1 から引く
+ * 配色（palette）を渡すと、反転した結果を「背景色〜文字色」の間に写す（白→背景色、黒→文字色、灰色はその間）。
+ * 配色を渡さない、または既定（純黒×純白）のときは、上の単純な反転と同じ。
  */
-export function invertDocumentColor(c: Rgb): Rgb | null {
-  if (chromaOf(c) <= NEUTRAL_CHROMA_MAX) return { r: 255 - c.r, g: 255 - c.g, b: 255 - c.b };
+export function invertDocumentColor(c: Rgb, palette?: Palette | null): Rgb | null {
+  const custom = palette && !isDefaultPalette(palette) ? palette : null;
+  if (chromaOf(c) <= NEUTRAL_CHROMA_MAX) {
+    const inverted = { r: 255 - c.r, g: 255 - c.g, b: 255 - c.b };
+    return custom ? remapToPalette(inverted, custom) : inverted;
+  }
   const hsl = rgbToHsl(c);
-  if (hsl.l >= VERY_LIGHT_L || hsl.l <= VERY_DARK_L) return hslToRgb({ h: hsl.h, s: hsl.s, l: 1 - hsl.l });
+  if (hsl.l >= VERY_LIGHT_L || hsl.l <= VERY_DARK_L) {
+    const l = 1 - hsl.l;
+    return hslToRgb({ h: hsl.h, s: hsl.s, l: custom ? remapLightness(l, custom) : l });
+  }
   return null;
 }
 

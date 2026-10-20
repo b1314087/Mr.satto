@@ -248,6 +248,149 @@ test.describe("PowerPoint白黒反転: 画面", () => {
   });
 });
 
+test.describe("PowerPoint白黒反転: 配色（背景色・文字色）", () => {
+  const WHITE_BG = `<p:bg><p:bgPr><a:solidFill>${srgb("FFFFFF")}</a:solidFill><a:effectLst/></p:bgPr></p:bg>`;
+  const colorDeck = (images: { name: string; bytes: Uint8Array }[] = []) =>
+    buildPptx({
+      slides: [
+        { shapes: rect(2, { text: "文字", textColor: srgb("000000") }) + rect(3, { fill: srgb("FF0000"), text: "赤" }) + images.map((_, i) => picture(4 + i, `rId${i + 2}`)).join(""), bg: WHITE_BG, images },
+        { shapes: rect(2, { text: "2枚目", textColor: srgb("000000") }), bg: WHITE_BG },
+      ],
+    });
+
+  async function runAndDownload(page: Page): Promise<Record<string, Uint8Array>> {
+    await RUN.click();
+    await expect(page.getByTestId("tool-preview")).toBeVisible({ timeout: 30_000 });
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "PowerPointファイルをダウンロード" }).click();
+    return readParts(new Uint8Array(fs.readFileSync((await (await downloadPromise).path())!)));
+  }
+
+  test("初期は「純黒 × 純白」が選ばれ、3つのプリセット（色見本つき）と自由指定が選べる。何も変えずに実行すると従来どおり黒背景・白文字", async ({ page }) => {
+    await open(page);
+    await pickFile(page, upload("a.pptx", colorDeck()));
+    const palette = page.getByTestId("pptx-palette");
+    await expect(palette).toBeVisible();
+    await expect(page.getByTestId("pptx-palette-pure")).toBeChecked();
+    await expect(page.getByTestId("pptx-palette-dark-gray")).not.toBeChecked();
+    await expect(page.getByTestId("pptx-palette-charcoal")).not.toBeChecked();
+    await expect(page.getByTestId("pptx-palette-custom")).not.toBeChecked();
+    for (const name of ["純黒 × 純白", "ダークグレー × 薄い白", "チャコール × 暖色系の白", "自由に指定する"]) await expect(palette).toContainText(name);
+    await expect(palette.getByText("Aa")).toHaveCount(4); // 色見本
+    await expect(page.getByTestId("pptx-palette-custom-fields")).toHaveCount(0);
+
+    const out = await runAndDownload(page);
+    const slide = strFromU8(out["ppt/slides/slide1.xml"]);
+    expect(slide).toMatch(/<p:bgPr><a:solidFill><a:srgbClr val="000000"/);
+    expect(slide).toMatch(/<a:rPr lang="ja-JP" sz="2400"><a:solidFill><a:srgbClr val="FFFFFF"/);
+    await expect(page.getByTestId("pptx-applied-palette")).toContainText("#000000");
+  });
+
+  for (const [id, bg, fg] of [["dark-gray", "171717", "F2F2F2"], ["charcoal", "262626", "FFF4E5"]] as const) {
+    test(`プリセット「${id}」を選ぶと、全スライドの背景・文字と、白黒画像に反映される。カラー画像・赤は変わらず、何も送信されない`, async ({ page, baseURL }) => {
+      const recorder = new NetworkRecorder(page);
+      await open(page);
+      const color = encodePng(colorPhoto());
+      const input = colorDeck([
+        { name: "bw.png", bytes: encodePng(bwDocument()) },
+        { name: "color.png", bytes: color },
+      ]);
+      await pickFile(page, upload("資料.pptx", input));
+      await page.getByTestId(`pptx-palette-${id}`).check();
+      await expect(page.getByTestId(`pptx-palette-${id}`)).toBeChecked();
+      await expect(page.getByTestId("pptx-palette-pure")).not.toBeChecked();
+
+      const out = await runAndDownload(page);
+      for (const n of [1, 2]) {
+        const slide = strFromU8(out[`ppt/slides/slide${n}.xml`]);
+        expect(slide).toContain(`<p:bgPr><a:solidFill><a:srgbClr val="${bg}"`);
+        expect(slide).toContain(`<a:rPr lang="ja-JP" sz="2400"><a:solidFill><a:srgbClr val="${fg}"`);
+      }
+      expect(strFromU8(out["ppt/slides/slide1.xml"])).toContain('<a:srgbClr val="FF0000"');
+      const bw = await toPixels(page, out["ppt/media/bw.png"], "image/png");
+      const hexOf = (v: number[]) => v.slice(0, 3).map((x) => x.toString(16).padStart(2, "0")).join("").toUpperCase();
+      expect(hexOf(bw.at(1, 10))).toBe(bg); // 白 → 背景色
+      expect(hexOf(bw.at(0, 7))).toBe(fg); // 黒 → 文字色
+      expect(Buffer.from(out["ppt/media/color.png"]).equals(Buffer.from(color))).toBe(true);
+      const problems: string[] = [];
+      for (const [n, b] of Object.entries(out)) if (/\.(xml|rels)$/.test(n)) problems.push(...checkXmlWellFormed(strFromU8(b), n));
+      expect(problems).toEqual([]);
+      await expect(page.getByTestId("pptx-applied-palette")).toContainText(`#${bg}`);
+
+      const origin = new URL(baseURL!).origin;
+      expect(findSuspiciousApiUploads(recorder, origin)).toEqual([]);
+      expect(findSuspiciousExternalUploads(recorder, origin)).toEqual([]);
+    });
+  }
+
+  test("自由指定: プリセットを選んだあとに切り替えると、その色から始まり、カラーピッカー・16進入力で変えた色が出力に反映される", async ({ page }) => {
+    await open(page);
+    await pickFile(page, upload("a.pptx", colorDeck()));
+    await page.getByTestId("pptx-palette-charcoal").check();
+    await page.getByTestId("pptx-palette-custom").check();
+    await expect(page.getByTestId("pptx-palette-custom")).toBeChecked();
+    await expect(page.getByTestId("pptx-color-bg-hex")).toHaveValue("#262626"); // 直前のプリセットの色から始まる
+    await expect(page.getByTestId("pptx-color-text-hex")).toHaveValue("#FFF4E5");
+
+    await page.getByTestId("pptx-color-bg").fill("#1a2b4c"); // カラーピッカー
+    await expect(page.getByTestId("pptx-color-bg-hex")).toHaveValue("#1A2B4C");
+    const textHex = page.getByTestId("pptx-color-text-hex");
+    await textHex.fill("ffe08a"); // 16進の入力（# なし・小文字）
+    await page.getByTestId("pptx-color-bg-hex").focus(); // 入力欄から離れる
+
+    const out = await runAndDownload(page);
+    const slide = strFromU8(out["ppt/slides/slide1.xml"]);
+    expect(slide).toContain('<p:bgPr><a:solidFill><a:srgbClr val="1A2B4C"');
+    expect(slide).toContain('<a:rPr lang="ja-JP" sz="2400"><a:solidFill><a:srgbClr val="FFE08A"');
+    await expect(page.getByTestId("pptx-applied-palette")).toContainText("#1A2B4C");
+    await expect(page.getByTestId("pptx-applied-palette")).toContainText("#FFE08A");
+  });
+
+  test("自由指定: 16進の入力の途中・正しくない入力でも壊れず、最後の正しい色で変換できる。色が近いときは注意が出る", async ({ page }) => {
+    await open(page);
+    await pickFile(page, upload("a.pptx", colorDeck()));
+    await page.getByTestId("pptx-palette-custom").check();
+    const bg = page.getByTestId("pptx-color-bg-hex");
+    await bg.fill("#33");
+    await expect(bg).toHaveAttribute("aria-invalid", "true");
+    await bg.fill("#33zzzz");
+    await expect(bg).toHaveAttribute("aria-invalid", "true");
+    await page.getByTestId("pptx-color-text-hex").focus(); // 入力欄から離れる → 最後の正しい色（000000）に戻る
+    await expect(bg).toHaveValue("#000000");
+    // 背景と文字が同じ色 → 注意
+    await page.getByTestId("pptx-color-text-hex").fill("#111111");
+    await expect(page.getByTestId("pptx-palette-contrast-warning")).toBeVisible();
+    await page.getByTestId("pptx-color-text-hex").fill("#FFFFFF");
+    await expect(page.getByTestId("pptx-palette-contrast-warning")).toHaveCount(0);
+    const out = await runAndDownload(page);
+    expect(strFromU8(out["ppt/slides/slide1.xml"])).toContain('<p:bgPr><a:solidFill><a:srgbClr val="000000"');
+  });
+
+  test("狭い画面（360px）でも、配色の選択・自由指定の欄・ボタンが見切れず、横にはみ出さない", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await open(page);
+    await pickFile(page, upload("a.pptx", colorDeck()));
+    await page.getByTestId("pptx-palette-custom").check();
+    const palette = page.getByTestId("pptx-palette");
+    await expect(page.getByTestId("pptx-palette-custom-fields")).toBeVisible();
+    const vw = 360;
+    const targets = [palette, page.getByTestId("pptx-palette-custom-fields"), page.getByTestId("pptx-color-bg"), page.getByTestId("pptx-color-bg-hex"), page.getByTestId("pptx-color-text"), page.getByTestId("pptx-color-text-hex"), RUN];
+    for (const t of targets) {
+      await t.scrollIntoViewIfNeeded();
+      const box = (await t.boundingBox())!;
+      expect(box.x, "左にはみ出し").toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, "右にはみ出し").toBeLessThanOrEqual(vw + 0.5);
+    }
+    const labels = ["純黒 × 純白", "ダークグレー × 薄い白", "チャコール × 暖色系の白"];
+    for (const l of labels) {
+      const box = (await palette.getByText(l, { exact: false }).first().boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(vw + 0.5);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
 // ---- ブラウザで読んだ画像の画素 ----
 interface Pixels {
   width: number;

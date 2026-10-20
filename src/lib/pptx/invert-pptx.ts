@@ -9,14 +9,20 @@
  */
 import { unzipSync, zipSync, strFromU8, strToU8, type Zippable } from "fflate";
 import { emptyColorStats, parseClrMap, parseThemeColors, swapClrMap, convertColorsInXml, DEFAULT_CLR_MAP, type ClrMap, type ColorContext, type ColorStats, type InvertOptions } from "./invert-xml";
+import { resolvePalette, DEFAULT_COLOR_CHOICE, type ColorChoice } from "./palette";
 import { analyzeImage, createBrowserImageCodec, invertImagePixels, sniffRasterKind, type ImageCodec, type ImageDecision } from "./image-invert";
 
 export interface PptxInvertOptions extends InvertOptions {
   /** 白黒と判定できる挿入画像を反転する（既定はオン） */
   invertImages: boolean;
+  /**
+   * 反転後の背景色・文字色（6桁の16進）。省略、または純黒×純白のときは、従来の白黒反転と同じ結果になる。
+   * （InvertOptions の palette は処理の内部用。ここでは、画面から渡しやすい16進の指定を使う）
+   */
+  colors?: ColorChoice;
 }
 
-export const DEFAULT_PPTX_INVERT_OPTIONS: PptxInvertOptions = { invertImages: true, brightenDarkText: false };
+export const DEFAULT_PPTX_INVERT_OPTIONS: PptxInvertOptions = { invertImages: true, brightenDarkText: false, colors: DEFAULT_COLOR_CHOICE };
 
 /** 処理できるファイルの大きさの上限 */
 export const PPTX_MAX_BYTES = 150 * 1024 * 1024;
@@ -66,6 +72,8 @@ export interface PptxInvertReport {
   images: ImageReport[];
   /** 影響があること・変更しなかったものの説明（画面に表示する） */
   notes: string[];
+  /** 適用した配色（背景色・文字色。6桁の16進）。指定がない、または正しくないときは、純黒×純白 */
+  colorChoice: ColorChoice;
 }
 
 export interface PptxInvertResult {
@@ -224,6 +232,11 @@ export async function invertPptx(
   }
   const targetOf = (source: string, suffix: string): string | undefined => relsOf.get(source)?.find((r) => typeEnds(r, suffix))?.target;
 
+  // --- 反転後の配色（既定の純黒×純白のときは palette が null で、従来の単純な白黒反転） ---
+  const resolved = resolvePalette(options.colors);
+  const palette = resolved.palette;
+  const convertOptions = { brightenDarkText: options.brightenDarkText, palette };
+
   // --- マスターごとの、テーマの色と色の対応表（元のもの） ---
   const masters = names.filter((n) => MASTER_RE.test(n)).sort();
   const masterCtx = new Map<string, ColorContext>();
@@ -286,7 +299,7 @@ export async function invertPptx(
     const xml = readText(name);
     if (xml === null) return;
     const ctx = contextOf(name);
-    let next = convertColorsInXml(xml, ctx, options, stats);
+    let next = convertColorsInXml(xml, ctx, convertOptions, stats);
     const swapped = swapClrMap(next);
     next = swapped.xml;
     colorMapsSwapped += swapped.swapped;
@@ -344,7 +357,7 @@ export async function invertPptx(
       } else if (decision === "keep-color") {
         images.push({ ...base, outcome: "kept-color", before: original });
       } else {
-        invertImagePixels(raster.data, decision);
+        invertImagePixels(raster.data, decision, palette);
         const encoded = await activeCodec.encode(raster, kind);
         out[name] = encoded;
         images.push({ ...base, outcome: decision === "invert-all" ? "inverted" : "inverted-gray", before: original, after: encoded });
@@ -359,6 +372,12 @@ export async function invertPptx(
   // --- 影響の説明 ---
   const slideCount = names.filter((n) => SLIDE_RE.test(n)).length;
   const notes: string[] = [];
+  if (resolved.invalid) notes.push("背景色・文字色の指定を読み取れなかったため、純黒×純白で変換しました。");
+  if (palette) {
+    notes.push(
+      "配色を指定した場合、元の白系の色は背景色、黒系の色は文字色に、灰色はその間の色になります。色の指定のない既定の文字・背景（テーマの標準の黒・白）と、色つきの図形の上の白い文字は、純黒・純白のまま表示されることがあります。",
+    );
+  }
   const count = (re: RegExp) => names.filter((n) => re.test(n)).length;
   const notesSlides = count(/^ppt\/notesSlides\/[^/]+\.xml$/);
   if (notesSlides > 0) notes.push(`発表者ノート（${notesSlides}件）は、変更していません。`);
@@ -393,6 +412,6 @@ export async function invertPptx(
 
   return {
     bytes,
-    report: { slideCount, partsConverted, colors: stats, colorMapsSwapped, images, notes },
+    report: { slideCount, partsConverted, colors: stats, colorMapsSwapped, images, notes, colorChoice: resolved.choice },
   };
 }
