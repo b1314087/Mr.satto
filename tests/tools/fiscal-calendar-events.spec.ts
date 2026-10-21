@@ -85,6 +85,65 @@ test.describe("年度カレンダー: Excel予定表の読み込み", () => {
     await expect(page.getByTestId("events-col-title")).toHaveValue("1");
   });
 
+  test("警告: 日付と曜日が合わない行・同じ日付が複数ある日を知らせる。予定は削除も修正もせず、そのままカレンダーに載る", async ({ page }) => {
+    await open(page);
+    await load(page, [
+      HEADER,
+      ["2026/4/6(月)", "入学式", "09:00", null], // 2026-04-06 は月曜日: 一致
+      ["2026/4/7(月)", "始業式", "09:00", null], // 2026-04-07 は火曜日: 不一致
+      ["2026/4/8(水)", "保護者会", "14:00", null],
+      ["2026/4/8(水)", "保護者会", "14:00", null], // 同じ日・同じ予定名
+      ["2026/5/12", "出張", "09:00", null],
+      ["2026/5/12", "会議", "13:00", null], // 同じ日・別の予定
+    ]);
+    await expect(page.getByTestId("events-count-recognized")).toContainText("6件");
+    await expect(page.getByTestId("events-count-weekday")).toContainText("1件");
+    await expect(page.getByTestId("events-count-duplicate")).toContainText("2日");
+    // 読めない行はないので、「確認が必要な行」は出ない（警告とは別の表示）
+    await expect(page.getByTestId("events-issues")).toHaveCount(0);
+
+    const warnings = page.getByTestId("events-warning");
+    await expect(warnings).toHaveCount(3);
+    await expect(page.getByTestId("events-warnings")).toContainText("読み込みはそのまま行います");
+    const weekday = page.locator('[data-testid="events-warning"][data-kind="weekday-mismatch"]');
+    await expect(weekday).toHaveCount(1);
+    await expect(weekday).toContainText("2026/04/07 は火曜日ですが、「月」と書かれています");
+    await expect(weekday).toContainText("自動では直しません");
+    await expect(weekday).toContainText("対象: 3行目");
+    const duplicate = page.locator('[data-testid="events-warning"][data-kind="duplicate-date"]');
+    await expect(duplicate).toHaveCount(2);
+    await expect(duplicate.nth(0)).toContainText("同じ予定名の行が重なっています");
+    await expect(duplicate.nth(0)).toContainText("対象: 4・5行目");
+    await expect(duplicate.nth(1)).toContainText("意図したものか確認してください");
+    await expect(duplicate.nth(1)).toContainText("対象: 6・7行目");
+
+    // 予定は1件も落ちず、日付も動かない（不一致の「始業式」は入力どおり4月7日、重複した「保護者会」は2件とも載る）
+    const preview = page.getByTestId("calendar-preview").first();
+    await expect(preview.locator('[data-date="2026-04-07"]')).toContainText("始業式");
+    await expect(preview.locator('[data-date="2026-04-08"]')).toContainText("保護者会");
+    expect((await preview.locator('[data-date="2026-04-08"]').innerText()).match(/保護者会/g)).toHaveLength(2);
+    await page.getByRole("button", { name: "5月", exact: true }).click();
+    const may12 = page.getByTestId("calendar-preview").first().locator('[data-date="2026-05-12"]');
+    await expect(may12).toContainText("出張");
+    await expect(may12).toContainText("会議");
+  });
+
+  test("警告: 曜日の付記も重複もない予定表では、警告は出ない。同じ日に予定が複数ある予定表では重複の確認だけが出る", async ({ page }) => {
+    await open(page);
+    await load(page, [HEADER, [d(2026, 4, 1), "入社式", "10:00", null], [d(2026, 4, 2), "研修", "10:00", null]]);
+    await expect(page.getByTestId("events-warnings")).toHaveCount(0);
+    await expect(page.getByTestId("events-count-weekday")).toHaveCount(0);
+    await expect(page.getByTestId("events-count-duplicate")).toHaveCount(0);
+    await page.getByTestId("events-clear").click();
+    await load(page);
+    // 従来の予定表（4/1に2件・4/10に5件）: 曜日の付記はなく、重複の確認だけが2日分出る。従来の件数表示は変わらない
+    await expect(page.getByTestId("events-count-duplicate")).toContainText("2日");
+    await expect(page.getByTestId("events-count-weekday")).toHaveCount(0);
+    await expect(page.getByTestId("events-warning")).toHaveCount(2);
+    await expect(page.getByTestId("events-issue")).toHaveCount(3);
+    await expect(page.getByTestId("events-count-recognized")).toContainText("12件");
+  });
+
   test("プレビューに予定が出る（時刻つき・同じ日の複数・入りきらない分は「他N件」）。年度の外の予定は出ない", async ({ page }) => {
     await open(page);
     await load(page);

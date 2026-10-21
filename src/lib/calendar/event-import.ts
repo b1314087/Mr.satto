@@ -6,6 +6,8 @@
  *   1. 見出し行と列（日付・予定・開始・終了）を、列名の表記ゆれを許して推定する
  *   2. 各行を読み取り、使える行と、問題のある行（日付を読めない・予定名が空・時刻を読めない）に分ける
  * 問題のある行があっても、ファイル全体を読み込み不能にはしない。問題のある行だけを理由つきで返す。
+ * 読めた予定についても、日付と曜日が合わない行・同じ日付が複数ある日を「注意（warnings）」として返す
+ * （予定の削除・統合・日付や曜日の書き換えはしない。確認するのは利用者）。
  *
  * 年度の範囲かどうかの判定は events.ts の placeEvents で行う（ここでは日付を別の年度へ動かさない）。
  */
@@ -40,6 +42,25 @@ export interface ImportIssue {
   raw: string;
 }
 
+/**
+ * 注意（警告）の種類。ImportIssue（読めない行）とは別で、予定そのものは読み込まれ、データは何も変えない。
+ *   weekday-mismatch: 日付と、書かれている曜日が合わない（どちらが正しいかは、ここでは決めない）
+ *   duplicate-date: 同じ日付の予定が複数ある（同じ日に複数の予定があるのは普通なので、間違いとは決めつけない）
+ */
+export type ImportWarningKind = "weekday-mismatch" | "duplicate-date";
+
+export interface ImportWarning {
+  kind: ImportWarningKind;
+  /** 対象の日付（YYYY-MM-DD） */
+  date: string;
+  /** 対象の行（Excelの行番号。1始まり、昇順） */
+  rows: number[];
+  /** 画面に出す説明 */
+  message: string;
+  /** duplicate-date のとき、予定名まで同じ行が含まれるか（同じ予定を二重に書いた可能性が高い） */
+  sameTitle?: boolean;
+}
+
 export interface DetectedLayout {
   /** 見出し行の位置（0始まり）。見出しがないと判断したときは -1 */
   headerRow: number;
@@ -53,6 +74,8 @@ export interface ImportResult {
   events: CalendarEvent[];
   /** 問題のある行（予定名が空・日付を読めないなど）と、注意が必要な行（時刻を読めない） */
   issues: ImportIssue[];
+  /** 読み込んだ予定についての注意（曜日の不一致・同じ日付の重複）。予定は削除も修正もしていない */
+  warnings: ImportWarning[];
   /** 空行を除いた、データ行の数 */
   dataRowCount: number;
   headerRow: number;
@@ -234,6 +257,88 @@ function cellText(value: EventCellValue): string {
 
 const isEmpty = (v: EventCellValue) => v === null || v === undefined || (typeof v === "string" && v.trim() === "");
 
+// ───────────── 曜日の読み取り（日付との照合用） ─────────────
+
+/** 曜日の番号（日=0 … 土=6）と、画面に出す名前 */
+const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;
+const WEEKDAY_ENGLISH: Record<string, number> = {
+  sun: 0, sunday: 0,
+  mon: 1, monday: 1,
+  tue: 2, tues: 2, tuesday: 2,
+  wed: 3, wednesday: 3,
+  thu: 4, thur: 4, thurs: 4, thursday: 4,
+  fri: 5, friday: 5,
+  sat: 6, saturday: 6,
+};
+
+/** 曜日の文字（"月" "月曜" "月曜日" "(月)" "Mon" "Monday"）→ 0〜6。読めなければ null（照合しない） */
+export function parseWeekdayText(value: EventCellValue): number | null {
+  if (typeof value !== "string") return null;
+  const s = value.normalize("NFKC").trim().replace(/^\(\s*|\s*\)$/g, "").trim();
+  const ja = /^([月火水木金土日])(?:曜日?)?$/.exec(s);
+  if (ja) return WEEKDAY_LABELS.indexOf(ja[1] as (typeof WEEKDAY_LABELS)[number]);
+  const en = WEEKDAY_ENGLISH[s.toLowerCase()];
+  return en === undefined ? null : en;
+}
+
+/** 日付のセルに「2027/4/5(月)」のように付記された曜日を取り出す（日付の読み取りは parseDateCell が行う）。なければ null */
+function weekdayAnnotation(value: EventCellValue): number | null {
+  if (typeof value !== "string") return null;
+  const m = /[(（]([月火水木金土日])曜?日?[)）]/.exec(value.normalize("NFKC"));
+  return m ? WEEKDAY_LABELS.indexOf(m[1] as (typeof WEEKDAY_LABELS)[number]) : null;
+}
+
+/** YYYY-MM-DD の曜日（日=0 … 土=6）。タイムゾーンに左右されない */
+function weekdayOfIso(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+const WEEKDAY_HEADERS = ["曜日", "曜", "weekday", "dayofweek", "dow"];
+
+/** 見出し行に「曜日」の列があれば、その列番号（日付・予定・時刻に割り当てた列は除く）。なければ null */
+function findWeekdayColumn(rows: EventCellValue[][], headerRow: number, mapping: ColumnMapping): number | null {
+  if (headerRow < 0) return null;
+  const used = new Set([mapping.date, mapping.title, mapping.start, mapping.end]);
+  const header = rows[headerRow] ?? [];
+  for (let c = 0; c < header.length; c++) {
+    if (!used.has(c) && WEEKDAY_HEADERS.includes(normalizeHeader(header[c]))) return c;
+  }
+  return null;
+}
+
+const isoToSlash = (iso: string) => iso.replace(/-/g, "/");
+
+/** 予定名を比べやすい形にする（全角→半角・前後と連続の空白を除く・大文字→小文字） */
+const normalizeTitle = (title: string) => title.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+
+/** 読み込んだ予定から、同じ日付が複数ある日を見つける。予定は変更しない */
+function findDuplicateDates(events: CalendarEvent[]): ImportWarning[] {
+  const byDate = new Map<string, CalendarEvent[]>();
+  for (const e of events) {
+    const list = byDate.get(e.date);
+    if (list) list.push(e);
+    else byDate.set(e.date, [e]);
+  }
+  const warnings: ImportWarning[] = [];
+  for (const [date, list] of [...byDate].sort(([a], [b]) => a.localeCompare(b))) {
+    if (list.length < 2) continue;
+    const rows = list.map((e) => e.sourceRow).sort((a, b) => a - b);
+    const titles = list.map((e) => normalizeTitle(e.title));
+    const sameTitle = new Set(titles).size < titles.length;
+    warnings.push({
+      kind: "duplicate-date",
+      date,
+      rows,
+      sameTitle,
+      message: sameTitle
+        ? `${isoToSlash(date)} に同じ予定名の行が重なっています（${list.length}件）。同じ予定を二重に書いていないか確認してください`
+        : `${isoToSlash(date)} に${list.length}件の予定があります。同じ日に複数の予定があるのは問題ありません。意図したものか確認してください`,
+    });
+  }
+  return warnings;
+}
+
 // ───────────── 列の推定（見出しなしの表も） ─────────────
 
 /** 見出しがないときの推定: 1列目の大半が日付として読めるなら、1列目=日付・2列目=予定・3列目=開始・4列目=終了 */
@@ -284,8 +389,11 @@ export function columnLabels(rows: EventCellValue[][], headerRow: number): strin
 export function parseEventRows(rows: EventCellValue[][], mapping: ColumnMapping, headerRow: number): ImportResult {
   const events: CalendarEvent[] = [];
   const issues: ImportIssue[] = [];
+  const weekdayWarnings: ImportWarning[] = [];
   let dataRowCount = 0;
   const get = (row: EventCellValue[], col: number | null): EventCellValue => (col === null ? null : row[col]);
+  // 見出しに「曜日」の列があれば、日付との照合に使う（なければ、日付に付記された「(月)」だけを使う）
+  const weekdayColumn = findWeekdayColumn(rows, headerRow, mapping);
 
   for (let r = headerRow + 1; r < rows.length; r++) {
     const row = rows[r];
@@ -345,8 +453,24 @@ export function parseEventRows(rows: EventCellValue[][], mapping: ColumnMapping,
       issues.push({ row: excelRow, kind: "bad-time", message: `${timeProblems.join("・")}を読み取れないため、その時刻は使わずに配置します`, raw });
     }
     events.push({ date: dateParse.iso, title, startTime, endTime, sourceRow: excelRow });
+
+    // 日付と曜日の照合。日付と予定名が読めた行だけが対象（読めない行は上の issues で扱い済みで、二重には出さない）。
+    // 曜日が書かれていない行・曜日として読めない文字（「祝」など）は照合しない。日付も曜日も書き換えない。
+    const entered = weekdayAnnotation(cells[0]) ?? (weekdayColumn === null ? null : parseWeekdayText(row[weekdayColumn]));
+    if (entered !== null) {
+      const actual = weekdayOfIso(dateParse.iso);
+      if (entered !== actual) {
+        weekdayWarnings.push({
+          kind: "weekday-mismatch",
+          date: dateParse.iso,
+          rows: [excelRow],
+          message: `${isoToSlash(dateParse.iso)} は${WEEKDAY_LABELS[actual]}曜日ですが、「${WEEKDAY_LABELS[entered]}」と書かれています。日付と曜日のどちらが正しいか確認してください（自動では直しません）`,
+        });
+      }
+    }
   }
-  return { events, issues, dataRowCount, headerRow, mapping };
+  const warnings = [...weekdayWarnings, ...findDuplicateDates(events)];
+  return { events, issues, warnings, dataRowCount, headerRow, mapping };
 }
 
 // ───────────── 取り込みの要約（画面に出す件数） ─────────────
@@ -361,10 +485,15 @@ export interface ImportSummary {
   badDateRows: number;
   emptyTitleRows: number;
   badTimeRows: number;
+  /** 日付と曜日が合わない行の数 */
+  weekdayMismatchRows: number;
+  /** 同じ日付の予定が複数ある日の数（その日にある予定の行数ではない） */
+  duplicateDates: number;
 }
 
 export function summarizeImport(result: ImportResult, inYearCount: number): ImportSummary {
   const count = (k: ImportIssueKind) => result.issues.filter((i) => i.kind === k).length;
+  const warned = (k: ImportWarningKind) => result.warnings.filter((w) => w.kind === k).length;
   return {
     totalRows: result.dataRowCount,
     recognized: result.events.length,
@@ -373,6 +502,8 @@ export function summarizeImport(result: ImportResult, inYearCount: number): Impo
     badDateRows: count("bad-date"),
     emptyTitleRows: count("empty-title"),
     badTimeRows: count("bad-time"),
+    weekdayMismatchRows: warned("weekday-mismatch"),
+    duplicateDates: warned("duplicate-date"),
   };
 }
 

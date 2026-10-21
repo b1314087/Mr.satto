@@ -229,6 +229,45 @@ export function FiscalCalendarEventsImport({
                   時刻を読み取れない行：{summary.badTimeRows}件（その時刻は使わずに配置します）
                 </p>
               )}
+              {summary.weekdayMismatchRows > 0 && (
+                <p data-testid="events-count-weekday" className="text-amber-800 dark:text-amber-300">
+                  日付と曜日が合わない行：{summary.weekdayMismatchRows}件（要確認）
+                </p>
+              )}
+              {summary.duplicateDates > 0 && (
+                <p data-testid="events-count-duplicate" className="text-amber-800 dark:text-amber-300">
+                  同じ日付の予定が複数ある日：{summary.duplicateDates}日（要確認）
+                </p>
+              )}
+            </div>
+          )}
+
+          {value.result && value.result.warnings.length > 0 && (
+            <div data-testid="events-warnings" className="flex flex-col gap-1 text-xs">
+              <p className="font-medium text-neutral-700 dark:text-neutral-200">ご確認ください（読み込みはそのまま行います）</p>
+              <p className="text-neutral-500 dark:text-neutral-400">
+                次の内容は、予定を削除・統合・修正せず、読み込んだままカレンダーに使います。意図したものであれば、そのままで大丈夫です。
+              </p>
+              <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950">
+                {value.result.warnings.slice(0, MAX_ISSUE_ROWS_SHOWN).map((warning) => (
+                  <li
+                    key={`${warning.kind}-${warning.date}-${warning.rows[0]}`}
+                    data-testid="events-warning"
+                    data-kind={warning.kind}
+                    className="break-all text-amber-900 dark:text-amber-100"
+                  >
+                    <span className="font-medium">{warning.kind === "weekday-mismatch" ? "曜日の不一致" : "同じ日付が複数"}</span>
+                    ：{warning.message}
+                    <span className="block font-mono text-amber-800 dark:text-amber-300">
+                      対象: {warning.rows.slice(0, 10).join("・")}
+                      行目{warning.rows.length > 10 ? ` ほか${warning.rows.length - 10}行` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {value.result.warnings.length > MAX_ISSUE_ROWS_SHOWN && (
+                <p className="text-neutral-500 dark:text-neutral-400">ほか{value.result.warnings.length - MAX_ISSUE_ROWS_SHOWN}件</p>
+              )}
             </div>
           )}
 

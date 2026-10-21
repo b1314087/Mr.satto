@@ -5,6 +5,7 @@ import {
   parseDateCell,
   parseEventRows,
   parseTimeCell,
+  parseWeekdayText,
   pickEventSheet,
   summarizeImport,
   type EventCellValue,
@@ -348,5 +349,151 @@ test.describe("1か月/2か月の組み合わせ", () => {
     expect(sheetArrangement("portrait", 2)).toBe("stacked");
     expect(sheetArrangement("landscape", 1)).toBe("single");
     expect(sheetArrangement("portrait", 1)).toBe("single");
+  });
+});
+
+test.describe("日付と曜日の照合・同じ日付の重複（警告のみ。予定は削除も修正もしない）", () => {
+  // 2027-04-05 は月曜日、2027-04-13 は火曜日、2027-05-10 は月曜日
+  const header: EventCellValue[] = ["日付", "予定"];
+  const kinds = (result: ReturnType<typeof importRows>["result"], kind: string) => result.warnings.filter((w) => w.kind === kind);
+
+  test("曜日の文字の読み取り: 日本語・全角・括弧・英語。曜日として読めない文字は null", () => {
+    expect(parseWeekdayText("月")).toBe(1);
+    expect(parseWeekdayText("月曜")).toBe(1);
+    expect(parseWeekdayText("月曜日")).toBe(1);
+    expect(parseWeekdayText("（日）")).toBe(0);
+    expect(parseWeekdayText(" 土曜日 ")).toBe(6);
+    expect(parseWeekdayText("Wed")).toBe(3);
+    expect(parseWeekdayText("thursday")).toBe(4);
+    expect(parseWeekdayText("祝")).toBeNull();
+    expect(parseWeekdayText("")).toBeNull();
+    expect(parseWeekdayText(null)).toBeNull();
+    expect(parseWeekdayText(1)).toBeNull();
+  });
+
+  test("1. 日付と曜日が一致する正常データ: 日付に付記した曜日・曜日の列のどちらも、警告なし", () => {
+    const a = importRows([header, ["2027/4/5(月)", "入学式"], ["2027年4月13日（火）", "健康診断"], ["2027/4/14（水曜日）", "測定"]]);
+    expect(a.result.warnings).toEqual([]);
+    expect(a.result.events).toHaveLength(3);
+    const b = importRows([["日付", "曜日", "予定"], [utc(2027, 4, 5), "月", "入学式"], [utc(2027, 4, 13), "火曜日", "健康診断"], ["2027/4/14", "Wed", "測定"]]);
+    expect(b.layout.mapping).toEqual({ date: 0, title: 2, start: null, end: null });
+    expect(b.result.warnings).toEqual([]);
+  });
+
+  test("2. 日付と曜日が不一致: 警告にする。日付も曜日も書き換えず、予定は残す", () => {
+    const { result } = importRows([header, ["2027/4/5(月)", "入学式"], ["2027/4/5(火)", "始業式"], ["2027/4/13(火)", "健康診断"], ["2027/4/13(月)", "身体測定"]]);
+    const mismatch = kinds(result, "weekday-mismatch");
+    expect(mismatch.map((w) => [w.date, w.rows])).toEqual([
+      ["2027-04-05", [3]],
+      ["2027-04-13", [5]],
+    ]);
+    expect(mismatch[0].message).toContain("月曜日");
+    expect(mismatch[0].message).toContain("「火」");
+    expect(mismatch[0].message).toContain("自動では直しません");
+    // 予定はすべて残り、日付は入力のまま
+    expect(result.events.map((e) => [e.date, e.title])).toEqual([
+      ["2027-04-05", "入学式"],
+      ["2027-04-05", "始業式"],
+      ["2027-04-13", "健康診断"],
+      ["2027-04-13", "身体測定"],
+    ]);
+    // 曜日の列でも同じ（見出しが「曜日」の列）
+    const col = importRows([["日付", "曜日", "予定"], [utc(2027, 4, 5), "火", "始業式"], [utc(2027, 4, 6), "火", "OK"]]);
+    expect(kinds(col.result, "weekday-mismatch").map((w) => [w.date, w.rows])).toEqual([["2027-04-05", [2]]]);
+    expect(col.result.events.map((e) => e.date)).toEqual(["2027-04-05", "2027-04-06"]);
+  });
+
+  test("3. 曜日が入力されていないデータ・曜日として読めない文字は、照合しない（警告なし）", () => {
+    const a = importRows([header, ["2027/4/5", "入学式"], [utc(2027, 4, 6), "始業式"], [46117, "シリアル値"]]);
+    expect(a.result.warnings).toEqual([]);
+    const b = importRows([["日付", "曜日", "予定"], [utc(2027, 4, 5), null, "空の曜日"], [utc(2027, 4, 6), "祝", "読めない曜日"], [utc(2027, 4, 7), "", "空文字"]]);
+    expect(b.result.warnings).toEqual([]);
+    expect(b.result.events).toHaveLength(3);
+  });
+
+  test("4. 同じ日付が重複: 1つの警告にまとめ、行を昇順で示す。行は削除も統合もしない", () => {
+    const { result } = importRows([header, ["2027/5/10", "遠足"], ["2027/5/10", "遠足"], ["2027/5/10", "遠足 "], ["2027/6/1", "避難訓練"]]);
+    const dup = kinds(result, "duplicate-date");
+    expect(dup).toHaveLength(1);
+    expect(dup[0]).toMatchObject({ date: "2027-05-10", rows: [2, 3, 4], sameTitle: true });
+    expect(dup[0].message).toContain("同じ予定名");
+    expect(result.events).toHaveLength(4);
+    expect(result.events.filter((e) => e.date === "2027-05-10").map((e) => e.sourceRow)).toEqual([2, 3, 4]);
+    expect(summarizeImport(result, 4)).toMatchObject({ duplicateDates: 1, weekdayMismatchRows: 0 });
+  });
+
+  test("5. 同じ日付に異なる予定: 間違いとは断定せず、予定名が違う旨の穏やかな警告にする。全件残す", () => {
+    const { result } = importRows([header, ["2027/5/10", "遠足"], ["2027/5/10", "遠足（予備日）"], ["2027/5/10", "会議"]]);
+    const dup = kinds(result, "duplicate-date");
+    expect(dup).toHaveLength(1);
+    expect(dup[0]).toMatchObject({ date: "2027-05-10", rows: [2, 3, 4], sameTitle: false });
+    expect(dup[0].message).toContain("問題ありません");
+    expect(dup[0].message).not.toContain("同じ予定名");
+    expect(result.events.map((e) => e.title)).toEqual(["遠足", "遠足（予備日）", "会議"]);
+  });
+
+  test("6. 表記が違っても、正規化すると同じ日付なら同じ日として検出する", () => {
+    const { result } = importRows([
+      header,
+      ["2027/5/10", "a"],
+      ["2027-05-10", "b"],
+      ["2027年5月10日", "c"],
+      ["R9.5.10", "d"],
+      [20270510, "e"],
+      [utc(2027, 5, 10), "f"],
+      ["2027/5/11", "別の日"],
+    ]);
+    const dup = kinds(result, "duplicate-date");
+    expect(dup).toHaveLength(1);
+    expect(dup[0]).toMatchObject({ date: "2027-05-10", rows: [2, 3, 4, 5, 6, 7], sameTitle: false });
+  });
+
+  test("7. 日付を読めない行・予定名が空の行は、重複と曜日の照合の対象外（既存の確認が必要な行にだけ出る）", () => {
+    const { result } = importRows([
+      header,
+      ["2027/4/31(火)", "存在しない日（4月は30日まで）"],
+      ["2027/4/31(火)", "存在しない日その2"],
+      ["来週(月)", "日付が読めない"],
+      ["来週(月)", "日付が読めない2"],
+      ["2027/4/5(火)", ""],
+      ["2027/4/5(火)", "   "],
+      ["2027/4/5(月)", "OK"],
+    ]);
+    expect(result.issues.map((i) => [i.row, i.kind])).toEqual([
+      [2, "bad-date"],
+      [3, "bad-date"],
+      [4, "bad-date"],
+      [5, "bad-date"],
+      [6, "empty-title"],
+      [7, "empty-title"],
+    ]);
+    expect(result.warnings).toEqual([]);
+    expect(result.events).toHaveLength(1);
+  });
+
+  test("時刻だけが読めない行は予定が残るので、曜日の照合の対象になる（時刻の確認とは別に警告が出る）", () => {
+    const { result } = importRows([["日付", "予定", "開始時刻"], ["2027/4/5(火)", "朝会", "あとで"]]);
+    expect(result.issues.map((i) => i.kind)).toEqual(["bad-time"]);
+    expect(result.warnings.map((w) => w.kind)).toEqual(["weekday-mismatch"]);
+  });
+
+  test("8. 従来の正常な取込: 警告も確認が必要な行も出ず、予定の中身は従来どおり", () => {
+    const { result } = importRows([
+      ["日付", "予定", "開始時刻", "終了時刻"],
+      [utc(2026, 4, 10), "営業会議", "10:00", "11:30"],
+      [utc(2026, 4, 11), "出張", null, null],
+    ]);
+    expect(result.warnings).toEqual([]);
+    expect(result.issues).toEqual([]);
+    expect(result.events).toEqual([
+      { date: "2026-04-10", title: "営業会議", startTime: "10:00", endTime: "11:30", sourceRow: 2 },
+      { date: "2026-04-11", title: "出張", startTime: null, endTime: null, sourceRow: 3 },
+    ]);
+    expect(summarizeImport(result, 2)).toMatchObject({ weekdayMismatchRows: 0, duplicateDates: 0, badDateRows: 0 });
+  });
+
+  test("見出しがない表では曜日の列は使わない（日付に付記した曜日だけで照合する）", () => {
+    const { result } = importRows([["2027/4/5(火)", "始業式"], ["2027/4/6", "月", "x"]]);
+    expect(result.warnings.map((w) => [w.kind, w.rows])).toEqual([["weekday-mismatch", [1]]]);
   });
 });
