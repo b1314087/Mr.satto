@@ -137,10 +137,11 @@ async function fetchSubscriptionSnapshot(userId: string): Promise<SubscriptionSn
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (error || !data || !data.plan || !data.status) return null;
+  if (error || !data || !data.status) return null;
 
+  // plan が null の行: Stripeの契約はあるが、登録していない価格（権限なし）。二重申し込みを防ぐため、契約としては返す
   return {
-    plan: data.plan as Exclude<Plan, "free">,
+    plan: data.plan ? (data.plan as Exclude<Plan, "free">) : null,
     status: data.status as string,
     currentPeriodEnd: data.current_period_end as string | null,
     cancelAtPeriodEnd: Boolean(data.cancel_at_period_end),

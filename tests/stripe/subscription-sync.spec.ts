@@ -9,7 +9,7 @@ import {
   type SubscriptionRow,
   type SubscriptionStore,
 } from "@/lib/stripe/subscription-sync";
-import { resolveEffectivePlan } from "@/lib/plans/effective-plan";
+import { hasOpenSubscription, resolveEffectivePlan } from "@/lib/plans/effective-plan";
 
 const OLD_PRICE = "price_old980";
 const NEW_PRICE = "price_new1100";
@@ -88,11 +88,19 @@ test.describe("価格の移行・知らない価格・契約状態", () => {
     expect(after.stripe_price_id).toBe(NEW_PRICE);
   });
 
-  test("知らない価格でも、プランを null にして権限を外さない（いまのプランを残し、unknownPriceを知らせる）", () => {
-    const { row, unknownPrice } = buildSubscriptionRow(sub("price_unregistered_1100"), "premium", MAPPING_PRICES_ONLY, "2026-10-22T00:00:00.000Z");
-    expect(unknownPrice).toBe(true);
-    expect(row.plan).toBe("premium");
-    expect(row.status).toBe("active");
+  test("知らない価格は、有料プランにしない（plan = null）。もともとPremiumでも引き継がず、unknownPriceを知らせる", () => {
+    for (const existing of ["premium", "standard", null]) {
+      const { row, unknownPrice } = buildSubscriptionRow(sub("price_unregistered_1100"), existing, MAPPING_PRICES_ONLY, "2026-10-22T00:00:00.000Z");
+      expect(unknownPrice).toBe(true);
+      expect(row.plan, String(existing)).toBeNull();
+      expect(row.status).toBe("active"); // 契約が続いていること自体は記録する（二重の申し込みを防ぐため）
+    }
+  });
+
+  test("知らない価格の有効な契約は、権限なし(Free)だが、続いている契約としては扱う（二重のCheckoutを作らせない）", () => {
+    const snapshot = { plan: null, status: "active", currentPeriodEnd: "2026-11-22T00:00:00.000Z", cancelAtPeriodEnd: false } as const;
+    expect(resolveEffectivePlan(snapshot)).toBe("free");
+    expect(hasOpenSubscription(snapshot)).toBe(true);
   });
 
   test("知らない価格で、もともとプランが無い契約は、プランなしのまま（勝手にPremiumにしない）", () => {
@@ -163,6 +171,6 @@ test.describe("同期: 古いイベントの巻き戻し・重複", () => {
     const seen: (string | null)[] = [];
     await syncSubscription({ store, customerId: "cus", subscription: sub("price_zzz"), mapping: MAPPING_PRICES_ONLY, retrievedAtIso: T1, onUnknownPrice: (p) => seen.push(p) });
     expect(seen).toEqual(["price_zzz"]);
-    expect(store.row!.plan).toBe("premium");
+    expect(store.row!.plan).toBeNull();
   });
 });

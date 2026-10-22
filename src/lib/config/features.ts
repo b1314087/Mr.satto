@@ -28,14 +28,14 @@ export type FeatureName = "ads" | "billing";
 /** 本番の設定。広告や課金を入れる／切るときは、ここだけを書き換える。 */
 const PRODUCTION_FLAGS: Record<FeatureName, boolean> = {
   ads: false,
-  billing: false,
+  billing: true,
 };
 
 function resolveFeature(name: FeatureName): boolean {
   if (process.env.NODE_ENV === "production") return PRODUCTION_FLAGS[name];
   // 開発・テスト: 常にオン。ただし、オフの確認用に上書きできる。
-  //   NEXT_PUBLIC_FEATURES_OFF=1   広告・課金の両方をオフ（現在の本番と同じ）
-  //   NEXT_PUBLIC_FEATURES_OFF=ads 広告だけをオフ（課金を始めるときの本番の想定と同じ。課金は有効）
+  //   NEXT_PUBLIC_FEATURES_OFF=1   広告・課金の両方をオフ（課金を始める前の本番と同じ）
+  //   NEXT_PUBLIC_FEATURES_OFF=ads 広告だけをオフ（現在の本番と同じ。課金は有効）
   const off = process.env.NEXT_PUBLIC_FEATURES_OFF;
   if (off === "1") return false;
   if (off === "ads" && name === "ads") return false;

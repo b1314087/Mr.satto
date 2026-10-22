@@ -147,7 +147,7 @@ async function syncLatestSubscription(subscriptionId: string, stripe: Stripe, fa
     subscription,
     mapping: getPlanMapping(),
     retrievedAtIso,
-    onUnknownPrice: (priceId) => console.error(`[stripe webhook] unknown price ${priceId ?? "(none)"}; kept the existing plan`),
+    onUnknownPrice: (priceId) => console.error(`[stripe webhook] unknown price ${priceId ?? "(none)"}; paid access withheld (plan=null)`),
   });
   if (outcome === "no-row") {
     // 通常のCheckoutフロー（/api/stripe/checkout）では必ず先にCustomerが subscriptions に登録されているため、

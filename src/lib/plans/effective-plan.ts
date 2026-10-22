@@ -12,14 +12,15 @@ import type { Plan } from "./types";
 export const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
 
 export interface SubscriptionSnapshot {
-  plan: Exclude<Plan, "free">;
+  /** null = 続いている契約はあるが、登録していない価格（有料プランとして扱わない） */
+  plan: Exclude<Plan, "free"> | null;
   status: string;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
 }
 
 export function resolveEffectivePlan(subscription: SubscriptionSnapshot | null): Plan {
-  return subscription !== null && ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status) ? subscription.plan : "free";
+  return subscription !== null && subscription.plan !== null && ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status) ? subscription.plan : "free";
 }
 
 /**

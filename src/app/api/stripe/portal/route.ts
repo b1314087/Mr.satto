@@ -1,3 +1,4 @@
+import { siteUrlIssue } from "@/lib/config/site-url";
 import { NextResponse } from "next/server";
 import { featureFlags } from "@/lib/config/features";
 import { getCurrentUser } from "@/lib/auth/user";
@@ -72,6 +73,12 @@ export async function POST() {
       { error: "契約情報が見つかりません。まずプランへの登録を行ってください。" },
       { status: 404 }
     );
+  }
+
+  const siteIssue = siteUrlIssue(siteConfig.url, process.env.NODE_ENV);
+  if (siteIssue) {
+    console.error("[stripe/portal] site url is not ready:", siteIssue);
+    return NextResponse.json({ error: "契約管理ページを準備中です。しばらくしてから再度お試しください。" }, { status: 503 });
   }
 
   try {

@@ -5,9 +5,10 @@
  * 方針（料金体系の統一: Free / Premium 1,100円）:
  * - プランは「旧価格か新価格か」ではなく、Premiumの商品（Product）または登録済みの価格（Price）に当たるかで決める。
  *   旧980円と新1,100円は、どちらもPremiumとして同じに扱う。
- * - 知らない価格を受け取っても、プランを null にして権限を外したりはしない。いまのプランをそのまま残し、
- *   契約の状態（status）・期間・解約予定は、Stripeの最新の状態で更新する。
- *   → 権限は status（active/trialing のときだけ有効）で決まるため、解約・支払い失敗・期限切れで権限が残り続けることはない。
+ * - 知らない価格（登録していないPrice・Productの契約）は、有料プランとして扱わない。プランを null にして、有料の権限を与えない
+ *   （Stripeのポータルや管理画面で、想定外の価格に変えられても、Premiumが残り続けないようにする）。
+ *   契約の状態（status）・期間・解約予定は、Stripeの最新の状態で更新する（契約が続いていることは、二重の申し込みを防ぐために必要）。
+ *   → 正しい価格を登録（環境変数）すれば、次の通知（または再同期）でPremiumに戻る。
  * - 契約の価格を替えても、請求期間（開始・終了）は変わらないので、AI利用枠の期間はリセットされない。
  */
 
@@ -70,7 +71,7 @@ const toIso = (unix: number | null | undefined): string | null =>
 
 export function buildSubscriptionRow(
   subscription: SubscriptionLike,
-  existingPlan: string | null,
+  _existingPlan: string | null,
   mapping: PlanMapping,
   retrievedAtIso: string,
 ): { row: SubscriptionRow; unknownPrice: boolean } {
@@ -78,8 +79,8 @@ export function buildSubscriptionRow(
   const item = items[0];
   const resolved = resolvePlanFromItems(items, mapping);
   const unknownPrice = resolved === null && items.length > 0;
-  // 知らない価格のときは、いまのプランをそのまま残す（権限は status で決まる）
-  const plan: PaidPlan | null = resolved ?? (existingPlan === "premium" || existingPlan === "standard" ? existingPlan : null);
+  // 知らない価格のときは、有料プランにしない（plan = null → 権限なし）。いまのプランは引き継がない
+  const plan: PaidPlan | null = resolved;
   return {
     unknownPrice,
     row: {

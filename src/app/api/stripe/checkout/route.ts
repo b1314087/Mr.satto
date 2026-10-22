@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { featureFlags } from "@/lib/config/features";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getServerPlan } from "@/lib/plans/current-plan";
+import { siteUrlIssue } from "@/lib/config/site-url";
 import { hasOpenSubscription } from "@/lib/plans/effective-plan";
 import { getStripeClient } from "@/lib/stripe/client";
 import { isStripeConfigured, hasPriceIdFor, stripeConfig } from "@/lib/stripe/config";
@@ -78,6 +79,16 @@ export async function POST(request: Request) {
   if (!hasPriceIdFor(plan)) {
     return NextResponse.json(
       { error: `${plan}プランのPrice IDが設定されていません。管理者に環境変数の設定を確認してください。` },
+      { status: 503 }
+    );
+  }
+
+  // 支払い後の戻り先が仮の値・不正なら、決済を始めさせない（別のサイトへ戻されるのを防ぐ）
+  const siteIssue = siteUrlIssue(siteConfig.url, process.env.NODE_ENV);
+  if (siteIssue) {
+    console.error("[stripe/checkout] site url is not ready:", siteIssue);
+    return NextResponse.json(
+      { error: "現在、お申し込みの受け付けを準備中です。しばらくしてから、もう一度お試しください。" },
       { status: 503 }
     );
   }
