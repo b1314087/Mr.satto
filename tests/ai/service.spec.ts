@@ -92,7 +92,7 @@ test.describe("AI補助: 利用できる人・同意", () => {
 
   test("APIキー未設定・プレビュー環境では、利用不可（AIを呼ばない）", async () => {
     const { ledger, model, deps } = setup();
-    for (const reason of ["not_configured", "preview"] as const) {
+    for (const reason of ["not_configured", "preview", "billing_off"] as const) {
       const res = await handleCalendarAssist(deps, PREMIUM, { available: false, reason }, assistBody());
       expect(res.status).toBe(503);
       expect((res.body as { reason: string }).reason).toBe(reason);

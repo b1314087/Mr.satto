@@ -45,7 +45,7 @@ export interface Caller {
   plan: "free" | "standard" | "premium";
 }
 
-export type Availability = { available: true } | { available: false; reason: "not_configured" | "preview" };
+export type Availability = { available: true } | { available: false; reason: "not_configured" | "preview" | "billing_off" };
 
 export interface ServiceResponse {
   status: number;

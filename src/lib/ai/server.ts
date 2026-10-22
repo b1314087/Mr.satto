@@ -1,5 +1,6 @@
 import "server-only";
 
+import { featureFlags } from "@/lib/config/features";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { getServerPlan } from "@/lib/plans/current-plan";
 import { createRpcLedger, type Ledger } from "./ledger";
@@ -15,12 +16,15 @@ import type { Availability, AssistDeps, Caller } from "./service";
  *   OPENAI_API_KEY               OpenAIのAPIキー。未設定の間は、AI補助は「利用不可」になる
  *   SUPABASE_SERVICE_ROLE_KEY    利用台帳の関数（service_roleだけが実行できる）を呼ぶために必要（既存）
  *
+ * 課金の機能スイッチ（featureFlags.billing）がオフの間も、AI補助は利用不可（画面の入口も出さない）。
  * Vercelのプレビュー環境（VERCEL_ENV=preview）では、APIキーが設定されていても利用不可にする
  * （プレビューのたびに本物のAPIを呼ばないため。キーはProductionにだけ設定する運用）。
  */
 const TIMEOUT_MS = 100_000;
 
 export function getAiAvailability(): Availability {
+  // AIはPremium限定の機能。課金システムがオフの間（src/lib/config/features.ts）は、キーが設定されていても利用不可にする
+  if (!featureFlags.billing) return { available: false, reason: "billing_off" };
   if (process.env.VERCEL_ENV === "preview") return { available: false, reason: "preview" };
   const key = (process.env.OPENAI_API_KEY ?? "").trim();
   if (key.length === 0 || !getSupabaseServiceClient()) return { available: false, reason: "not_configured" };
