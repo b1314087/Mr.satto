@@ -84,7 +84,7 @@ export default function Home() {
             <h3 className="mt-2 font-semibold text-neutral-900 dark:text-white">会員登録不要ですぐ使える</h3>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
               {featureFlags.billing
-                ? "アカウントを作らなくてもすぐに使い始められます。無料プランでも、広告を見れば1時間スタンダードツールを利用できます。"
+                ? "アカウントを作らなくてもすぐに使い始められます。無料プランでも、広告を見れば1時間、通常ツールを利用できます。"
                 : "アカウントを作らなくても、すぐに使い始められます。ツールは無料でご利用いただけます。"}
             </p>
           </div>

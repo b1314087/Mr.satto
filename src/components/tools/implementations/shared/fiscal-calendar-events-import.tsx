@@ -16,6 +16,9 @@ import {
   type ImportResult,
 } from "@/lib/calendar/event-import";
 import type { FiscalCalendar } from "@/lib/calendar/model";
+import type { CalendarEvent } from "@/lib/calendar/events";
+import { featureFlags } from "@/lib/config/features";
+import { FiscalCalendarAiAssist } from "./fiscal-calendar-ai-assist";
 
 /** 読み込んだExcelの予定表（シートごとの行）と、いま選んでいるシート・列の割り当て・読み取り結果 */
 export interface EventImportState {
@@ -31,6 +34,8 @@ export interface EventImportState {
   result: ImportResult | null;
   /** 読み取りで起きたエラー（行数が多すぎるなど） */
   error: string | null;
+  /** AIの提案から、利用者が確認して採用した予定（通常の読み取り結果とは別に保持する。シート・列の割り当てを変えると破棄する） */
+  aiEvents?: CalendarEvent[];
 }
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -53,7 +58,7 @@ function stateForSheet(base: Pick<EventImportState, "fileName" | "sheets">, shee
   const layout = detectLayout(rows);
   const mapping = layout?.mapping ?? EMPTY_MAPPING;
   const headerRow = layout?.headerRow ?? 0;
-  return { ...base, sheetIndex, headerRow, mapping, detected: !!layout, ...compute(rows, mapping, headerRow) };
+  return { ...base, sheetIndex, headerRow, mapping, detected: !!layout, ...compute(rows, mapping, headerRow), aiEvents: [] };
 }
 
 const selectClass = "rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900";
@@ -107,7 +112,8 @@ export function FiscalCalendarEventsImport({
     if (!value) return;
     const mapping = patch.mapping ?? value.mapping;
     const headerRow = patch.headerRow ?? value.headerRow;
-    onChange({ ...value, mapping, headerRow, ...compute(value.sheets[value.sheetIndex].rows, mapping, headerRow) });
+    // 列の割り当てが変わると行の意味が変わるため、AIの提案から採用した予定は破棄する
+    onChange({ ...value, mapping, headerRow, ...compute(value.sheets[value.sheetIndex].rows, mapping, headerRow), aiEvents: [] });
   }
 
   const rows = value ? value.sheets[value.sheetIndex].rows : [];
@@ -286,6 +292,19 @@ export function FiscalCalendarEventsImport({
                 <p className="text-neutral-500 dark:text-neutral-400">ほか{value.result.issues.length - MAX_ISSUE_ROWS_SHOWN}行</p>
               )}
             </div>
+          )}
+
+          {featureFlags.billing && value.result && (
+            <FiscalCalendarAiAssist
+              key={`${value.fileName}|${value.sheetIndex}|${value.headerRow}|${JSON.stringify(value.mapping)}`}
+              calendar={calendar}
+              rows={rows}
+              headerRow={value.headerRow}
+              mapping={value.mapping}
+              result={value.result}
+              adopted={value.aiEvents ?? []}
+              onAdoptedChange={(aiEvents) => onChange({ ...value, aiEvents })}
+            />
           )}
 
           <details open={!value.detected} data-testid="events-mapping" className="text-xs">

@@ -249,7 +249,7 @@ export function parseDateCell(value: EventCellValue): DateParse {
   return { error: "日付として読めません" };
 }
 
-function cellText(value: EventCellValue): string {
+export function cellText(value: EventCellValue): string {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString().slice(0, 16).replace("T", " ");
   return String(value);

@@ -377,7 +377,7 @@ function PlanHint() {
   if (!featureFlags.billing) return null;
   return (
     <p className="text-xs text-neutral-400 dark:text-neutral-500">
-      Standard（月額{PLAN_DEFINITIONS.standard.priceYen}円）に加入すると、広告なしでご利用いただけます。{" "}
+      Premium（月額{PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円・税込）に加入すると、広告なしでご利用いただけます。{" "}
       <Link href="/pricing" className="underline-offset-2 hover:text-blue-600 hover:underline dark:hover:text-blue-400">
         料金プランを見る
       </Link>

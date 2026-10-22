@@ -1,20 +1,20 @@
 import Link from "next/link";
 import type { Tool } from "@/lib/tools/types";
 import { getCategory } from "@/lib/tools/categories";
-import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { TOOL_TIER_LABELS } from "@/lib/plans/types";
 import { cn } from "@/lib/utils/cn";
 import { featureFlags } from "@/lib/config/features";
 
 /**
  * 料金区分バッジ（Phase 19 9章）。
  *
- * 表示名は必ずPLAN_DEFINITIONS（src/lib/plans/types.ts）を参照し、
+ * 表示名は必ずTOOL_TIER_LABELS（src/lib/plans/types.ts）を参照し、
  * ここで別の文言をハードコードしない（プラン名の唯一の情報源を守る）。
  * standard/premiumで色分けし、一目で区別できるようにする
  * （準備中バッジのamber色とは被らない配色にする）。
  */
 function PlanBadge({ requiredPlan }: { requiredPlan: Tool["requiredPlan"] }) {
-  const label = PLAN_DEFINITIONS[requiredPlan].name;
+  const label = TOOL_TIER_LABELS[requiredPlan];
   return (
     <span
       className={cn(

@@ -33,7 +33,6 @@ export default function TokushohoPage() {
   // 課金システムがオフの間は準備中の案内だけを表示する（src/lib/config/features.ts）
   if (!featureFlags.billing) return <FeatureUnavailable title="特定商取引法に基づく表記" />;
 
-  const standard = PLAN_DEFINITIONS.standard;
   const premium = PLAN_DEFINITIONS.premium;
 
   return (
@@ -42,7 +41,7 @@ export default function TokushohoPage() {
         特定商取引法に基づく表記
       </h1>
       <p className="mb-8 text-sm text-neutral-600 dark:text-neutral-300">
-        {siteConfig.name}の有料プラン（{standard.name}プラン・{premium.name}プラン）に関する表記です。
+        {siteConfig.name}の有料プラン（{premium.name}プラン）に関する表記です。
       </p>
 
       <dl className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 text-sm leading-relaxed text-neutral-700 dark:divide-neutral-800 dark:border-neutral-800 dark:text-neutral-300">
@@ -74,17 +73,17 @@ export default function TokushohoPage() {
         </Row>
         <Row label="販売価格">
           <p>
-            {standard.name}プラン: 月額{standard.priceYen.toLocaleString()}円（税込）
-          </p>
-          <p>
             {premium.name}プラン: 月額{premium.priceYen.toLocaleString()}円（税込）
           </p>
           <p className="mt-1">
-            無料プランは0円です。各プランの内容は
+            無料プランは0円です。{premium.name}プランには、年度カレンダー作成の「AIで読み取る」補助が含まれます（AIトークン単位の利用枠があり、追加の料金はかかりません）。各プランの内容は
             <Link href="/pricing" className={`mx-1 ${LINK_CLASS}`}>
               料金プラン
             </Link>
             のページをご確認ください。
+          </p>
+          <p className="mt-1">
+            旧料金（月額980円のプレミアムプラン、月額550円のスタンダードプラン）でご契約済みの方は、新しい料金への移行が完了するまで、ご契約時の料金で請求されます。移行の方法と時期は、あらためてご案内します。
           </p>
         </Row>
         <Row label="商品代金以外の必要料金">

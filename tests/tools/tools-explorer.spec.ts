@@ -159,21 +159,21 @@ test("Coming Soonカードのアクセシブルな名前が実装済みツール
   await expect(comingSoonLink).toBeVisible();
 });
 
-test("料金区分バッジ: 実装済みツールカードにスタンダード/プレミアムが表示される", async ({ page }) => {
+test("料金区分バッジ: 実装済みツールカードに通常/プレミアムが表示される", async ({ page }) => {
   await page.goto("/tools");
   const main = page.locator("main");
 
   // image-resize は requiredPlan: "standard"
   await main.getByRole("searchbox", { name: "ツールを検索" }).fill("画像リサイズ");
   const standardCard = main.getByRole("link", { name: "画像リサイズ" });
-  await expect(standardCard.getByText("スタンダード", { exact: true })).toBeVisible();
+  await expect(standardCard.getByText("通常", { exact: true })).toBeVisible();
 
   // ocr のバッジは、ツール一覧データ（src/lib/tools/data.ts）の requiredPlan に従う。
   // 全ツールを一時的にスタンダード扱いにするスイッチ(ALL_TOOLS_STANDARD)が入っている間は
   // スタンダード、スイッチを外して元のプレミアム限定に戻したときはプレミアムが表示される。
   const ocrTool = tools.find((t) => t.id === "ocr");
   expect(ocrTool, "ocr がツール一覧にない").toBeTruthy();
-  const expectedBadge = ocrTool!.requiredPlan === "premium" ? "プレミアム" : "スタンダード";
+  const expectedBadge = ocrTool!.requiredPlan === "premium" ? "プレミアム" : "通常";
   await main.getByRole("searchbox", { name: "ツールを検索" }).fill("OCR");
   const ocrCard = main.getByRole("link", { name: "OCR" });
   await expect(ocrCard.getByText(expectedBadge, { exact: true })).toBeVisible();

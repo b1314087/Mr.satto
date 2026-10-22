@@ -61,12 +61,12 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     ).toBeVisible();
   });
 
-  test("ダウンロード時の確認画面で、Standardへの案内（料金プランへの導線）も分かる", async ({ page }) => {
+  test("ダウンロード時の確認画面で、Premiumへの案内（料金プランへの導線）も分かる", async ({ page }) => {
     await processFixtureImage(page);
     await page.getByRole("button", { name: "ダウンロード" }).click();
 
     const dialog = page.getByTestId("download-gate-dialog");
-    await expect(dialog.getByText(/Standard（月額550円）に加入すると、広告なしでご利用いただけます/)).toBeVisible();
+    await expect(dialog.getByText(/Premium（月額1,100円・税込）に加入すると、広告なしでご利用いただけます/)).toBeVisible();
     await expect(dialog.getByRole("link", { name: "料金プランを見る" })).toBeVisible();
   });
 
@@ -75,7 +75,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await page.goto(`/tools/${premiumTool!.id}`);
 
     await expect(page.getByText("このツールはプレミアムプランで利用できます")).toBeVisible();
-    await expect(page.getByText(/月額980円・広告なし・すべてのツールが利用可能/)).toBeVisible();
+    await expect(page.getByText(/月額1,100円・広告なし・すべてのツールが利用可能/)).toBeVisible();
     await expect(page.getByRole("link", { name: "料金プランを見る" })).toBeVisible();
   });
 
@@ -223,24 +223,25 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
     await clearDevOverrides(context);
   });
 
-  test("Free/Standard/Premiumの料金・広告有無・対象範囲の説明が仕様どおり", async ({ page }) => {
+  test("Free/Premiumの料金・広告有無・対象範囲の説明が仕様どおり（Standardは出ない）", async ({ page }) => {
     await page.goto("/pricing");
 
-    // Free: ¥0・広告あり・Standard対象
+    // Free: ¥0・広告あり・通常ツール
     await expect(page.getByText("0円", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText(/広告を見ると1時間スタンダード対象ツールを利用できます/)).toBeVisible();
+    await expect(page.getByText(/広告を見ると1時間、通常ツールを利用できます/)).toBeVisible();
+    await expect(page.getByText("通常ツールを利用可能").first()).toBeVisible();
 
-    // Standard: ¥550/月・広告なし
-    await expect(page.getByText("550円/月", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText("スタンダード対象ツールを利用可能").first()).toBeVisible();
-
-    // Premium: ¥980/月・広告なし・すべて対象
-    await expect(page.getByText("980円/月", { exact: false }).first()).toBeVisible();
+    // Premium: ¥1,100/月・広告なし・すべて対象・AI読み取り補助
+    await expect(page.getByText("1,100円/月", { exact: false }).first()).toBeVisible();
     await expect(page.getByText("すべてのツールを利用可能")).toBeVisible();
+    await expect(page.getByText(/「AIで読み取る」補助/)).toBeVisible();
 
-    // 広告あり/なしの明示（Free=あり、Standard/Premium=なし）
+    // 広告あり/なしの明示（Free=あり、Premium=なし）
     await expect(page.getByText("広告視聴あり")).toBeVisible();
     await expect(page.getByText("広告なし").first()).toBeVisible();
+
+    // 旧プランは新規のプランとして出ない
+    await expect(page.getByText(/スタンダード|550円/)).toHaveCount(0);
   });
 });
 

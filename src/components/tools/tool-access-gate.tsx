@@ -84,7 +84,7 @@ export function ToolAccessGate({
         </h2>
         <p className="max-w-md text-sm text-neutral-500 dark:text-neutral-400">
           {featureFlags.billing
-            ? `プレミアムプラン（月額${PLAN_DEFINITIONS.premium.priceYen}円・広告なし・すべてのツールが利用可能）にご加入いただくと、このツールもお使いいただけます。`
+            ? `プレミアムプラン（月額${PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円・広告なし・すべてのツールが利用可能）にご加入いただくと、このツールもお使いいただけます。`
             : "このツールは現在準備中です。"}
         </p>
         {featureFlags.billing && (

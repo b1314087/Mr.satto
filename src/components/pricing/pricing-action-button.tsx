@@ -16,11 +16,14 @@ export function PricingActionButton({
   isAuthenticated,
   currentPlan,
   stripeConfigured,
+  hasOpenSubscription = false,
 }: {
-  plan: Exclude<Plan, "free">;
+  plan: Extract<Plan, "premium">;
   isAuthenticated: boolean;
   currentPlan: Plan;
   stripeConfigured: boolean;
+  /** まだ続いている契約がある（契約が二重にならないよう、新しく申し込ませない） */
+  hasOpenSubscription?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +39,19 @@ export function PricingActionButton({
           className="text-center text-xs text-blue-600 hover:underline dark:text-blue-400"
         >
           契約状況を確認する
+        </Link>
+      </div>
+    );
+  }
+
+  if (hasOpenSubscription) {
+    return (
+      <div className="mt-auto flex flex-col gap-2">
+        <span className="w-full rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+          すでにご契約があります
+        </span>
+        <Link href="/account" className="text-center text-xs text-blue-600 hover:underline dark:text-blue-400">
+          契約状況・お支払い方法の変更・解約
         </Link>
       </div>
     );
@@ -95,7 +111,7 @@ export function PricingActionButton({
         disabled={loading}
         className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
-        {loading ? "移動中..." : `${plan === "standard" ? "スタンダード" : "プレミアム"}を始める`}
+        {loading ? "移動中..." : "プレミアムを始める"}
       </button>
       {error && <p className="text-center text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>

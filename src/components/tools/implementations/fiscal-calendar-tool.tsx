@@ -75,7 +75,13 @@ export function FiscalCalendarTool() {
   const groups = useMemo(() => groupMonths(calendar, monthsPerSheet), [calendar, monthsPerSheet]);
   const previewGroup = groups[Math.floor(previewMonth / monthsPerSheet)] ?? groups[0];
   // プレビュー・Excel・PDFが同じ予定（共通の予定モデルを年度の範囲で振り分けたもの）を使う
-  const importedEvents = eventImport?.result?.events;
+  // 通常の読み取り結果 + 利用者がAIの提案から採用した予定
+  const readEvents = eventImport?.result?.events;
+  const aiEvents = eventImport?.aiEvents;
+  const importedEvents = useMemo(
+    () => (readEvents ? (aiEvents && aiEvents.length > 0 ? [...readEvents, ...aiEvents] : readEvents) : undefined),
+    [readEvents, aiEvents],
+  );
   const placed = useMemo(() => placeEvents(calendar, importedEvents ?? []), [calendar, importedEvents]);
 
   function resetResults() {

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe/client";
-import { isStripeWebhookConfigured, stripeConfig } from "@/lib/stripe/config";
+import { getPlanMapping, isStripeWebhookConfigured, stripeConfig } from "@/lib/stripe/config";
+import { syncSubscription, type SubscriptionRow, type SubscriptionStore } from "@/lib/stripe/subscription-sync";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
-import type { Plan } from "@/lib/plans/types";
 import { featureFlags } from "@/lib/config/features";
 
 /**
@@ -77,76 +77,89 @@ export async function POST(request: Request) {
     await handleEvent(event, stripe);
   } catch (error) {
     console.error(`[stripe webhook] failed to handle ${event.type}`, error);
+    // 処理に失敗したイベントは「処理済み」に残さない。残すと、Stripeが再送しても重複として無視され、
+    // 契約状態が更新されないままになる。
+    await supabase.from("stripe_webhook_events").delete().eq("event_id", event.id);
     return NextResponse.json({ error: "イベント処理に失敗しました。" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });
 }
 
-function resolvePlanFromPriceId(priceId: string | null | undefined): Exclude<Plan, "free"> | null {
-  if (!priceId) return null;
-  if (priceId === stripeConfig.priceIds.standard) return "standard";
-  if (priceId === stripeConfig.priceIds.premium) return "premium";
-  return null;
+/** subscriptions テーブルの読み書き（純粋な同期処理 src/lib/stripe/subscription-sync.ts に渡す） */
+function createSubscriptionStore(supabase: NonNullable<ReturnType<typeof getSupabaseServiceClient>>): SubscriptionStore {
+  return {
+    async findByCustomer(customerId) {
+      const { data } = await supabase.from("subscriptions").select("plan").eq("stripe_customer_id", customerId).maybeSingle();
+      return data ? { plan: (data.plan as string | null) ?? null } : null;
+    },
+    async updateIfNotNewer(customerId, row: SubscriptionRow) {
+      // 取得時刻がこの行より古い結果では上書きしない（古いイベントによる状態の巻き戻しを防ぐ）
+      const { data, error } = await supabase
+        .from("subscriptions")
+        .update(row)
+        .eq("stripe_customer_id", customerId)
+        .or(`stripe_synced_at.is.null,stripe_synced_at.lte.${row.stripe_synced_at}`)
+        .select("user_id");
+      if (!error) return (data?.length ?? 0) > 0;
+      // 0003_ai_usage_ledger.sql を適用する前（新しい列が無い）は、従来の列だけで更新する
+      if (error.code === "42703" || error.code === "PGRST204") {
+        const legacy = {
+          stripe_subscription_id: row.stripe_subscription_id,
+          plan: row.plan,
+          status: row.status,
+          current_period_end: row.current_period_end,
+          cancel_at_period_end: row.cancel_at_period_end,
+        };
+        const { error: legacyError } = await supabase.from("subscriptions").update(legacy).eq("stripe_customer_id", customerId);
+        if (legacyError) throw new Error(`subscriptions upsert failed: ${legacyError.message}`);
+        console.warn("[stripe webhook] new subscriptions columns are missing; applied legacy columns only");
+        return true;
+      }
+      throw new Error(`subscriptions upsert failed: ${error.message}`);
+    },
+  };
 }
 
 /**
- * Stripeの現在のSubscription状態をそのままsubscriptionsテーブルへ反映する。
- * customer.subscription.created/updated/deleted はいずれも
- * event.data.object が「その時点の最新Subscription」であるため、
- * このひとつの関数で全て同じロジックで同期できる
- * （deletedの場合はstatusが既にcanceledになった状態で届く）。
+ * Stripeの最新のSubscriptionを取得して、subscriptions テーブルへ反映する。
+ * イベントの本文は使わない（順序が前後した古い本文で、新しい状態を上書きしないため）。
+ * 取得に失敗したら例外を投げ、Stripeに再送させる。ただし、契約がすでに存在しない（resource_missing）ときだけは、
+ * 削除イベントの本文（解約済みの状態）をそのまま使う。
  */
-async function upsertSubscriptionFromStripe(subscription: Stripe.Subscription): Promise<void> {
+async function syncLatestSubscription(subscriptionId: string, stripe: Stripe, fallback?: Stripe.Subscription): Promise<void> {
   const supabase = getSupabaseServiceClient();
   if (!supabase) return;
 
-  const customerId =
-    typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-
-  const { data: existing } = await supabase
-    .from("subscriptions")
-    .select("user_id")
-    .eq("stripe_customer_id", customerId)
-    .maybeSingle();
-
-  if (!existing) {
-    // 通常のCheckoutフロー（/api/stripe/checkout）では必ず先にCustomerが
-    // subscriptionsテーブルへ登録されているため、ここに来るのは想定外
-    // （Stripeダッシュボードから直接作成されたCustomer等）。
-    // user_idが分からないため書き込めない旨をログに残すに留める。
-    console.error(
-      `[stripe webhook] no subscriptions row for stripe_customer_id=${customerId}; skipping sync`
-    );
-    return;
+  let subscription: Stripe.Subscription;
+  try {
+    subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  } catch (error) {
+    if (fallback && (error as { code?: string }).code === "resource_missing") subscription = fallback;
+    else throw error;
   }
+  const retrievedAtIso = new Date().toISOString();
 
-  const item = subscription.items.data[0];
-  const priceId = item?.price?.id ?? null;
-  const plan = resolvePlanFromPriceId(priceId);
-  const periodEndUnix = item?.current_period_end ?? null;
-
-  const { error } = await supabase
-    .from("subscriptions")
-    .update({
-      stripe_subscription_id: subscription.id,
-      plan,
-      status: subscription.status,
-      current_period_end: periodEndUnix ? new Date(periodEndUnix * 1000).toISOString() : null,
-      cancel_at_period_end: subscription.cancel_at_period_end,
-    })
-    .eq("stripe_customer_id", customerId);
-
-  if (error) {
-    throw new Error(`subscriptions upsert failed: ${error.message}`);
+  const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+  const outcome = await syncSubscription({
+    store: createSubscriptionStore(supabase),
+    customerId,
+    subscription,
+    mapping: getPlanMapping(),
+    retrievedAtIso,
+    onUnknownPrice: (priceId) => console.error(`[stripe webhook] unknown price ${priceId ?? "(none)"}; kept the existing plan`),
+  });
+  if (outcome === "no-row") {
+    // 通常のCheckoutフロー（/api/stripe/checkout）では必ず先にCustomerが subscriptions に登録されているため、
+    // ここに来るのは想定外（Stripeダッシュボードから直接作成されたCustomer等）。user_idが分からないため書き込めない。
+    console.error(`[stripe webhook] no subscriptions row for stripe_customer_id=${customerId}; skipping sync`);
   }
 }
 
 async function syncFromInvoiceOrSession(subscriptionRef: string | Stripe.Subscription | null | undefined, stripe: Stripe): Promise<void> {
   if (!subscriptionRef) return;
   const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef.id;
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  await upsertSubscriptionFromStripe(subscription);
+  await syncLatestSubscription(subscriptionId, stripe);
 }
 
 async function handleEvent(event: Stripe.Event, stripe: Stripe): Promise<void> {
@@ -155,7 +168,7 @@ async function handleEvent(event: Stripe.Event, stripe: Stripe): Promise<void> {
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
       const subscription = event.data.object as Stripe.Subscription;
-      await upsertSubscriptionFromStripe(subscription);
+      await syncLatestSubscription(subscription.id, stripe, subscription);
       break;
     }
 

@@ -7,7 +7,7 @@ import { supabaseServiceConfig, isSupabaseServiceConfigured } from "./service-co
 /**
  * Service Role Key を使うSupabaseクライアント（RLSを経由しない特権クライアント）。
  *
- * 用途は以下の2箇所に限定する。
+ * 用途は以下の3箇所に限定する。
  *   1. Stripe Webhookハンドラ（src/app/api/stripe/webhook/route.ts）。
  *      Webhookはユーザーのログインセッションを持たない（Stripeサーバーからの通知）ため、
  *      通常のRLS前提のクライアントでは subscriptions テーブルを更新できない。
@@ -15,6 +15,9 @@ import { supabaseServiceConfig, isSupabaseServiceConfigured } from "./service-co
  *      「自分の行だけ」しか読めない通常のRLS前提クライアントでは実現できない。
  *      必ず src/lib/admin/auth.ts の checkAdminAccess() で管理者と確認した
  *      呼び出し元からのみ使うこと（この関数自体は誰が呼んでいるかを検証しない）。
+ *
+ *   3. AI利用台帳の関数呼び出し（src/lib/ai/server.ts）。ai_reserve / ai_settle / ai_release / ai_get_usage は
+ *      service_role だけが実行できる。呼び出し元（src/app/api/ai/*）が、ログインとPremiumを確認してから使う。
  *
  * 重要：
  * - "server-only" によりクライアントバンドルに紛れ込んだ場合はビルドエラーになる。

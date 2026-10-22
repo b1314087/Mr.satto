@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS, PREMIUM_PRICE_YEN } from "@/lib/plans/types";
 import { setDevPlanOverride } from "../helpers/dev-plan";
 
 /**
@@ -13,17 +13,20 @@ import { setDevPlanOverride } from "../helpers/dev-plan";
  * 本番のStripe実課金・Supabaseの契約状態そのものを検証するものではない。
  */
 
-test("pricing: ¥0 / ¥550 / ¥980 の料金表示が崩れていない", async ({ page }) => {
+test("pricing: 現行の料金は ¥0 / ¥1,100 の2つだけ。旧Standard(¥550)・旧Premium(¥980)は料金ページに出ない", async ({ page }) => {
   await page.goto("/pricing");
 
   expect(PLAN_DEFINITIONS.free.priceYen).toBe(0);
-  expect(PLAN_DEFINITIONS.standard.priceYen).toBe(550);
-  expect(PLAN_DEFINITIONS.premium.priceYen).toBe(980);
+  expect(PLAN_DEFINITIONS.premium.priceYen).toBe(PREMIUM_PRICE_YEN);
+  expect(PREMIUM_PRICE_YEN).toBe(1100);
+  expect(OFFERED_PLAN_IDS).toEqual(["free", "premium"]);
 
   await expect(page.getByText("無料", { exact: false }).first()).toBeVisible();
   await expect(page.getByText("0円", { exact: false }).first()).toBeVisible();
-  await expect(page.getByText("550", { exact: false }).first()).toBeVisible();
-  await expect(page.getByText("980", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("1,100円", { exact: false }).first()).toBeVisible();
+  const text = await page.locator("main").innerText();
+  expect(text).not.toMatch(/550|980|スタンダード/);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(3); // 無料・プレミアム・お支払い/解約
 });
 
 test("filled-pdf-to-excel: free/standard/premiumで利用制限の表示が切り替わる（dev cookie経由）", async ({

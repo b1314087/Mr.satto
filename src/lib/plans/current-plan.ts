@@ -5,6 +5,7 @@ import type { Plan } from "./types";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { checkTemporaryAccess } from "./temporary-access-actions";
+import { resolveEffectivePlan, type SubscriptionSnapshot } from "./effective-plan";
 
 /**
  * 現在のユーザーのプランを取得する唯一の窓口（Phase 3: サーバー側プラン判定）。
@@ -36,26 +37,8 @@ import { checkTemporaryAccess } from "./temporary-access-actions";
  * src/components/tools/tool-access-gate.tsx）。
  */
 
-export const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
-
-export interface SubscriptionSnapshot {
-  plan: Exclude<Plan, "free">;
-  status: string;
-  currentPeriodEnd: string | null;
-  cancelAtPeriodEnd: boolean;
-}
-
-/**
- * 契約情報から実効プラン（実際にツール利用に反映されるプラン）を算出する。
- * getServerPlan() 本体と、管理画面（src/lib/admin/data.ts）の会員一覧の両方が
- * 参照する、この判定ロジックの唯一の共有点（同じ判定を複数箇所へ
- * 重複実装しない、という既存方針を管理画面にも適用する）。
- */
-export function resolveEffectivePlan(subscription: SubscriptionSnapshot | null): Plan {
-  return subscription !== null && ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status)
-    ? subscription.plan
-    : "free";
-}
+export { ACTIVE_SUBSCRIPTION_STATUSES, resolveEffectivePlan } from "./effective-plan";
+export type { SubscriptionSnapshot } from "./effective-plan";
 
 export interface ServerPlanContext {
   plan: Plan;

@@ -79,13 +79,14 @@ export default async function AccountPage({
           <p className="text-xs text-neutral-400 dark:text-neutral-500">現在のプラン</p>
           <p className="text-lg font-semibold text-neutral-900 dark:text-white">
             {planDefinition.name}
-            {planDefinition.priceYen > 0 && (
-              <span className="ml-2 text-sm font-normal text-neutral-400">
-                月額{planDefinition.priceYen.toLocaleString()}円
-              </span>
-            )}
           </p>
         </div>
+
+        {serverPlan.plan === "standard" && (
+          <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-300">
+            スタンダードプランは、新規のお申し込みを終了しています。現在のご契約は、これまでどおりご利用いただけます。
+          </p>
+        )}
 
         {serverPlan.subscription ? (
           <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">

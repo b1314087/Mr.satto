@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Plan } from "@/lib/plans/types";
+import { parseIdList, type PlanMapping } from "./subscription-sync";
 
 /**
  * Stripe関連の設定を一元管理する（src/lib/ads/config.ts と同じ方針）。
@@ -31,7 +32,25 @@ export const stripeConfig = {
     standard: trimmedEnv("STRIPE_STANDARD_PRICE_ID"),
     premium: trimmedEnv("STRIPE_PREMIUM_PRICE_ID"),
   } satisfies Record<Exclude<Plan, "free">, string>,
+  /**
+   * Premiumの判定に使う追加の設定（任意）。Checkoutが使う価格は priceIds.premium の1つだけで、ここは「契約の判定」用。
+   *   STRIPE_PREMIUM_PRODUCT_ID        Premium専用のProduct ID。設定すると、その商品の価格はすべてPremiumとして扱う
+   *                                    （旧980円と新1,100円を同じ商品の下に置けば、価格を移行してもコード側の変更が要らない）。
+   *                                    他の用途の商品を含まないことを、Stripeダッシュボードで確認してから設定すること。
+   *   STRIPE_PREMIUM_LEGACY_PRICE_IDS  移行が終わるまでだけPremiumとして扱う旧価格のID（カンマ区切り）。移行後は空にする。
+   */
+  premiumProductIds: parseIdList(process.env.STRIPE_PREMIUM_PRODUCT_ID),
+  premiumLegacyPriceIds: parseIdList(process.env.STRIPE_PREMIUM_LEGACY_PRICE_IDS),
 };
+
+/** 契約の価格 → プランの判定に使う対応表 */
+export function getPlanMapping(): PlanMapping {
+  return {
+    premiumProductIds: stripeConfig.premiumProductIds,
+    premiumPriceIds: [stripeConfig.priceIds.premium, ...stripeConfig.premiumLegacyPriceIds].filter((id) => id.length > 0),
+    standardPriceIds: stripeConfig.priceIds.standard ? [stripeConfig.priceIds.standard] : [],
+  };
+}
 
 /** Checkout Session等、Stripe課金機能を実際に呼び出せる状態か */
 export function isStripeConfigured(): boolean {
