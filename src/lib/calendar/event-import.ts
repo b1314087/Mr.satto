@@ -307,6 +307,30 @@ function findWeekdayColumn(rows: EventCellValue[][], headerRow: number, mapping:
   return null;
 }
 
+/**
+ * 元の行に書かれている曜日（あれば）。日付のセルの付記「(月)」、または見出しが「曜日」の列から読む。
+ * AIが返した日付との照合に使う（読み込み時の照合は parseEventRows が行う。AIの結果はそこを通らないため、ここで照合する）。
+ * rowNumber は1始まりの行番号。曜日が書かれていない・読めないときは null（照合しない）。
+ */
+export function weekdayHintForRow(rows: EventCellValue[][], headerRow: number, mapping: ColumnMapping, rowNumber: number): number | null {
+  const row = rows[rowNumber - 1];
+  if (!row) return null;
+  if (mapping.date !== null) {
+    const annotated = weekdayAnnotation(row[mapping.date]);
+    if (annotated !== null) return annotated;
+  }
+  const column = findWeekdayColumn(rows, headerRow, mapping);
+  return column === null ? null : parseWeekdayText(row[column]);
+}
+
+/** 日付（YYYY-MM-DD）と、書かれていた曜日が合わないとき、その説明を返す。合っている・照合できないときは null */
+export function weekdayMismatchMessage(iso: string, entered: number | null): string | null {
+  if (entered === null || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const actual = weekdayOfIso(iso);
+  if (actual === entered) return null;
+  return `${iso.replace(/-/g, "/")} は${WEEKDAY_LABELS[actual]}曜日ですが、元の行には「${WEEKDAY_LABELS[entered]}」と書かれています`;
+}
+
 const isoToSlash = (iso: string) => iso.replace(/-/g, "/");
 
 /** 予定名を比べやすい形にする（全角→半角・前後と連続の空白を除く・大文字→小文字） */

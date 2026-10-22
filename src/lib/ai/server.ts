@@ -3,6 +3,7 @@ import "server-only";
 import { featureFlags } from "@/lib/config/features";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { getServerPlan } from "@/lib/plans/current-plan";
+import { resolveAiPlan } from "@/lib/plans/effective-plan";
 import { createRpcLedger, type Ledger } from "./ledger";
 import { callOpenAi } from "./openai-client";
 import { AI_MODELS } from "./pricing";
@@ -31,10 +32,13 @@ export function getAiAvailability(): Availability {
   return { available: true };
 }
 
-/** 現在のリクエストの利用者とプラン（開発用のプラン上書きでは利用者IDが無いため、AIは使えない） */
+/**
+ * 現在のリクエストの利用者とプラン（開発用のプラン上書きでは利用者IDが無いため、AIは使えない）。
+ * 契約の期間が過ぎても更新が確認できない契約は、AIだけ使えないものとして扱う（resolveAiPlan）。
+ */
 export async function getCaller(): Promise<Caller> {
   const ctx = await getServerPlan();
-  return { userId: ctx.userId, plan: ctx.plan };
+  return { userId: ctx.userId, plan: resolveAiPlan(ctx.plan, ctx.subscription, Date.now()) };
 }
 
 export function getLedger(): Ledger | null {

@@ -60,6 +60,27 @@ test.describe("AI補助: 利用できる人・同意", () => {
     expect(ledger.calls).toHaveLength(0);
   });
 
+  test("未ログイン・Freeは、同意が無くても同意の案内ではなく、ログイン／Premiumの案内を返す（権限の確認が先）", async () => {
+    const { ledger, model, deps } = setup();
+    const noConsent = () => {
+      const body = assistBody();
+      delete body.consent;
+      return body;
+    };
+    const anon = await handleCalendarAssist(deps, { userId: null, plan: "free" }, AVAILABLE, noConsent());
+    expect(anon.status).toBe(401);
+    expect((anon.body as { error: string }).error).toBe("login_required");
+    for (const plan of ["free", "standard"] as const) {
+      const res = await handleCalendarAssist(deps, { userId: USER_ID, plan }, AVAILABLE, noConsent());
+      expect(res.status, plan).toBe(403);
+      expect((res.body as { error: string }).error, plan).toBe("not_premium");
+    }
+    // 本文が壊れていても、権限が無ければ入力の検証より先に断る
+    expect((await handleCalendarAssist(deps, { userId: null, plan: "free" }, AVAILABLE, "not an object")).status).toBe(401);
+    expect(model.calls).toHaveLength(0);
+    expect(ledger.calls).toHaveLength(0);
+  });
+
   test("DB側でPremiumでないと判定された場合も、AIを呼ばない", async () => {
     const { ledger, model, deps } = setup();
     ledger.premium.clear();
@@ -120,6 +141,22 @@ test.describe("AI補助: 利用枠", () => {
     expect(model.calls).toHaveLength(0);
     expect(ledger.reserved).toBe(0);
     expect(ledger.spent).toBe(0);
+  });
+
+  test("枠を使い切った状態（残り0）では、AIを呼ばず、予約もしない。画面には残量0と更新日を返す", async () => {
+    const { ledger, model, deps } = setup(3_000_000);
+    ledger.spent = 3_000_000; // 上限ちょうどまで使用済み
+    const res = await handleCalendarAssist(deps, PREMIUM, AVAILABLE, assistBody());
+    expect(res.status).toBe(429);
+    const body = res.body as { error: string; usage: { remainingAiTokens: number; usedAiTokens: number; limitAiTokens: number }; resetAt: string };
+    expect(body.error).toBe("quota_exceeded");
+    expect(body.usage.remainingAiTokens).toBe(0);
+    expect(body.usage.usedAiTokens).toBe(body.usage.limitAiTokens);
+    expect(body.resetAt).toBe("2026-11-01T00:00:00.000Z");
+    expect(JSON.stringify(body)).not.toMatch(/micro|usd|円/i);
+    expect(model.calls).toHaveLength(0);
+    expect(ledger.reserved).toBe(0);
+    expect(ledger.spent).toBe(3_000_000);
   });
 
   test("同時に2件の依頼が来て、枠に1件ぶんしか無い場合: AIが呼ばれるのは1件だけ", async () => {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { calendarDateRange, sanitizeEventText, type CalendarEvent } from "@/lib/calendar/events";
-import { cellText, columnLabels, type EventCellValue, type ImportResult } from "@/lib/calendar/event-import";
+import { cellText, columnLabels, weekdayHintForRow, weekdayMismatchMessage, type EventCellValue, type ImportResult } from "@/lib/calendar/event-import";
 import type { FiscalCalendar } from "@/lib/calendar/model";
 import {
   CONSENT_VERSION,
@@ -183,6 +183,8 @@ export function FiscalCalendarAiAssist({
       const sentSet = new Set(sentRows);
       const incoming: Draft[] = (data.suggestions as AssistSuggestion[]).map((s) => {
         const inRange = !!s.date && s.date >= range.start && s.date <= range.end;
+        // 元の行に曜日が書かれていて、AIの日付と合わない場合は、最初から採用の候補にしない（警告を出す）
+        const weekdayOk = !s.date || weekdayMismatchMessage(s.date, weekdayHintForRow(rows, headerRow, mapping, s.row)) === null;
         return {
           row: s.row,
           date: s.date ?? "",
@@ -193,7 +195,7 @@ export function FiscalCalendarAiAssist({
           inferred: s.inferred,
           note: s.note,
           // 確実で、推測が入っておらず、対象年度内のものだけ、最初から採用の候補にする
-          adopt: s.confidence === "high" && !s.inferred && !!s.date && !!s.title && inRange,
+          adopt: s.confidence === "high" && !s.inferred && !!s.date && !!s.title && inRange && weekdayOk,
         };
       });
       // 今回送った行は新しい結果に置き換え、送っていない行の前回の結果は残す
@@ -467,6 +469,8 @@ export function FiscalCalendarAiAssist({
                 {drafts.map((d) => {
                   const problem = draftProblem(d);
                   const sameDay = d.date && existingByDate.get(d.date);
+                  // 編集した日付でも照合する（日付を直すと、警告は消える）
+                  const weekdayProblem = d.date ? weekdayMismatchMessage(d.date, weekdayHintForRow(rows, headerRow, mapping, d.row)) : null;
                   return (
                     <li key={d.row} data-testid="ai-result" data-row={d.row} className="flex flex-col gap-1 rounded border border-violet-200 bg-white p-2 dark:border-violet-800 dark:bg-neutral-950">
                       <div className="flex flex-wrap items-center gap-2">
@@ -494,6 +498,11 @@ export function FiscalCalendarAiAssist({
                         {problem && (
                           <span data-testid="ai-badge-problem" className="rounded bg-red-100 px-1.5 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
                             {problem}
+                          </span>
+                        )}
+                        {weekdayProblem && (
+                          <span data-testid="ai-badge-weekday" className="rounded bg-red-100 px-1.5 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
+                            曜日が合いません：{weekdayProblem}。日付を確認してください
                           </span>
                         )}
                         {sameDay ? (

@@ -10,7 +10,6 @@ import { siteConfig } from "@/lib/config/site";
  * 料金表示が PLAN_DEFINITIONS と一致している」ことまで。
  * 記載内容が法令に適合しているかを検証するものではない。
  */
-const STANDARD = PLAN_DEFINITIONS.standard.priceYen;
 const PREMIUM = PLAN_DEFINITIONS.premium.priceYen;
 
 test.describe("特定商取引法に基づく表記", () => {
@@ -21,8 +20,9 @@ test.describe("特定商取引法に基づく表記", () => {
     await checkBasicAccessibility(page);
 
     const main = page.locator("main");
-    await expect(main).toContainText(`月額${STANDARD.toLocaleString()}円（税込）`);
     await expect(main).toContainText(`月額${PREMIUM.toLocaleString()}円（税込）`);
+    // 現行の料金体系はFree / Premiumのみ。旧スタンダード（550円）を、現在の料金として載せていない
+    await expect(main).not.toContainText("月額550円（税込）");
     await expect(main).toContainText("お支払い済みの料金の返金は行いません");
     await expect(main).toContainText("契約期間の終了までは");
     await expect(main.getByRole("link", { name: "お問い合わせフォーム" })).toHaveAttribute(
@@ -66,8 +66,8 @@ test.describe("利用規約", () => {
     const main = page.locator("main");
     await expect(main.getByRole("heading", { level: 1, name: "利用規約" })).toBeVisible();
     await expect(main).toContainText("第4条（料金・お支払い）");
-    await expect(main).toContainText(`月額${STANDARD.toLocaleString()}円（税込）`);
     await expect(main).toContainText(`月額${PREMIUM.toLocaleString()}円（税込）`);
+    await expect(main).not.toContainText("月額550円（税込）");
     await expect(main).toContainText("毎月自動で更新");
     await expect(main).toContainText("現在の契約期間の終了までは");
     await expect(main).toContainText("返金は行いません");
@@ -80,8 +80,8 @@ test.describe("料金ページ", () => {
   test("税込表記・解約説明・規約と特商法へのリンクがある", async ({ page }) => {
     await page.goto("/pricing");
     const main = page.locator("main");
-    await expect(main.getByText(`${STANDARD.toLocaleString()}円/月（税込）`)).toBeVisible();
     await expect(main.getByText(`${PREMIUM.toLocaleString()}円/月（税込）`)).toBeVisible();
+    await expect(main.getByText("550円/月（税込）")).toHaveCount(0); // 旧スタンダードは新規受付を終了している
     await expect(main.getByRole("heading", { name: "お支払い・解約について" })).toBeVisible();
     await expect(main).toContainText("毎月自動で更新されます");
     await expect(main).toContainText("返金や、日割り計算は行いません");

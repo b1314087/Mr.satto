@@ -2,7 +2,7 @@
  * 年度カレンダーのAI補助（サーバー側の処理の流れ）。通信・認証・データベースは外から渡す（テストで差し替える）ため、
  * このファイル自体は、環境にも「server-only」にも依存しない。
  *
- * 流れ: 利用できる状態か → 同意があるか → ログイン・Premiumか → 入力の検証 → 利用枠の予約 →
+ * 流れ: 利用できる状態か → ログイン・Premiumか → 同意があるか → 入力の検証 → 利用枠の予約 →
  *       AIの呼び出し → 出力の検証 → 実際の使用量で確定（または、確実に課金されていない失敗だけ解放）。
  *
  * 利用枠の扱い（根拠なく返還しない）:
@@ -84,6 +84,10 @@ export async function handleCalendarAssist(
     return respond(503, { error: "unavailable", reason: availability.reason, message: "AIによる読み取り補助は、現在ご利用いただけません。" });
   }
 
+  // 権限の確認が先: ログインしていない人・Premiumでない人には、同意や入力の中身を見ずに断る
+  if (!caller.userId) return respond(401, { error: "login_required", message: "ログインが必要です。" });
+  if (caller.plan !== "premium") return respond(403, { error: "not_premium", message: "AIによる読み取り補助は、Premiumプランの機能です。" });
+
   // 同意がなければ、何も処理しない（AIは呼ばない）
   const consent = typeof rawBody === "object" && rawBody !== null ? (rawBody as { consent?: unknown }).consent : undefined;
   const consented =
@@ -91,9 +95,6 @@ export async function handleCalendarAssist(
   if (!consented) {
     return respond(400, { error: "consent_required", message: "AIへ送信することへの同意が確認できませんでした。送信内容を確認し、同意してから実行してください。" });
   }
-
-  if (!caller.userId) return respond(401, { error: "login_required", message: "ログインが必要です。" });
-  if (caller.plan !== "premium") return respond(403, { error: "not_premium", message: "AIによる読み取り補助は、Premiumプランの機能です。" });
 
   const validated = validateAssistRequest(rawBody);
   if (!validated.ok) return respond(400, { error: "invalid_request", message: validated.message });

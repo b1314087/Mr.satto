@@ -22,6 +22,28 @@ export function resolveEffectivePlan(subscription: SubscriptionSnapshot | null):
   return subscription !== null && ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status) ? subscription.plan : "free";
 }
 
+/**
+ * AI機能を使える契約か（費用が発生する機能のための、より厳しい判定）。
+ *
+ * resolveEffectivePlan は status だけで判断する。Webhook（Stripeからの通知）が届かなくなった場合、
+ * 契約の期間が過ぎても status が active のまま残るため、AIの利用枠が毎月新しく付与され続けてしまう。
+ * そこで、契約期間の終了から猶予（AI_PERIOD_END_GRACE_MS）を過ぎても更新が確認できない契約は、
+ * AIだけ使えないものとして扱う（通常のツールの権限には影響しない）。
+ * 更新の通知が少し遅れる場合に備えた猶予であり、更新が確認できれば current_period_end が先へ進み、すぐに使える。
+ * 期間の終了日が不明（null・読めない値）の古い行は、判定できないので status のままにする。
+ */
+export const AI_PERIOD_END_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+
+export function resolveAiPlan(plan: Plan, subscription: SubscriptionSnapshot | null, nowMs: number): Plan {
+  if (plan !== "premium" || subscription === null) return plan;
+  if (subscription.currentPeriodEnd === null) return plan;
+  const end = Date.parse(subscription.currentPeriodEnd);
+  if (!Number.isFinite(end)) return plan;
+  // 解約の予約がある契約は、更新されないので、期間の終了で猶予なしに終わる（Stripeの終了通知が遅れていても使わせない）
+  if (subscription.cancelAtPeriodEnd) return end < nowMs ? "free" : plan;
+  return end + AI_PERIOD_END_GRACE_MS < nowMs ? "free" : plan;
+}
+
 /** すでに終わった契約（再度申し込める状態） */
 const ENDED_SUBSCRIPTION_STATUSES = new Set(["canceled", "incomplete_expired"]);
 

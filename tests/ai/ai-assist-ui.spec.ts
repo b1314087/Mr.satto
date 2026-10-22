@@ -250,6 +250,48 @@ test.describe("年度カレンダー: AIで読み取る補助", () => {
     await expect(page.getByTestId("ai-adopt")).toBeDisabled();
   });
 
+  test("元の行に書かれた曜日とAIの日付が合わない提案は、警告を出し、最初は採用に入れない。日付を直すと警告は消える", async ({ page }) => {
+    await mockAi(page, {
+      assist: (body) => ({
+        status: 200,
+        body: {
+          ok: true,
+          model: body.model,
+          suggestions: [
+            suggestion(2, { date: "2026-04-20", title: "棚卸し" }), // 月曜日: 「(月)」と合う
+            suggestion(3, { date: "2026-04-21", title: "会議" }), // 火曜日: 「(月)」と合わない
+            suggestion(4, { date: "2026-04-22", title: "研修" }), // 水曜日: 「(水)」と合う
+          ],
+          rejected: 0,
+        },
+      }),
+    });
+    await openTool(page);
+    await loadFile(page, [HEADER, ["4/20(月)", "棚卸し", null, null, ""], ["4/21(月)", "会議", null, null, ""], ["4/22(水)", "研修", null, null, ""]]);
+    await page.getByTestId("ai-open").click();
+    await page.getByTestId("ai-consent").check();
+    await page.getByTestId("ai-run").click();
+    await expect(page.getByTestId("ai-result")).toHaveCount(3);
+
+    const row2 = page.locator('[data-testid="ai-result"][data-row="2"]');
+    const row3 = page.locator('[data-testid="ai-result"][data-row="3"]');
+    const row4 = page.locator('[data-testid="ai-result"][data-row="4"]');
+    await expect(row2.getByTestId("ai-badge-weekday")).toHaveCount(0);
+    await expect(row2.getByTestId("ai-result-adopt")).toBeChecked();
+    await expect(row4.getByTestId("ai-badge-weekday")).toHaveCount(0);
+    await expect(row4.getByTestId("ai-result-adopt")).toBeChecked();
+    await expect(row3.getByTestId("ai-badge-weekday")).toContainText("火曜日");
+    await expect(row3.getByTestId("ai-badge-weekday")).toContainText("「月」");
+    await expect(row3.getByTestId("ai-result-adopt")).not.toBeChecked();
+
+    // 日付を直す（2026-04-27は月曜日）と、警告は消える。採用するかどうかは利用者が選ぶ
+    await row3.getByTestId("ai-edit-date").fill("2026-04-27");
+    await expect(row3.getByTestId("ai-badge-weekday")).toHaveCount(0);
+    await row3.getByTestId("ai-result-adopt").check();
+    await page.getByTestId("ai-adopt").click();
+    await expect(page.getByTestId("ai-adopted")).toContainText("3件");
+  });
+
   test("AIが失敗しても、メッセージを示すだけで、通常の読み取り・カレンダー作成は続けられる", async ({ page }) => {
     await mockAi(page, { assist: () => ({ status: 504, body: { error: "ai_unknown", message: "AIの応答に時間がかかりすぎたため、読み取りを中止しました。通常の読み取り結果はそのまま使えます。" } }) });
     await openTool(page);
