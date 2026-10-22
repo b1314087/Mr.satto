@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { featureFlags } from "@/lib/config/features";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getStripeClient } from "@/lib/stripe/client";
-import { isStripeConfigured } from "@/lib/stripe/config";
+import { isStripeConfigured, stripeConfig } from "@/lib/stripe/config";
+import { resolvePortalConfiguration } from "@/lib/stripe/portal-config";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { siteConfig } from "@/lib/config/site";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
@@ -30,6 +31,13 @@ export async function POST() {
       { error: "現在、決済管理機能は準備中です（Stripeが設定されていません）。" },
       { status: 503 }
     );
+  }
+
+  // Mr.Satto専用のポータル設定ID。指定があるのに形式が違う（設定ミス）場合は、他サービスの既定設定へ黙って切り替えず、開かない。
+  const portalConfiguration = resolvePortalConfiguration(stripeConfig.portalConfigurationId);
+  if (!portalConfiguration.ok) {
+    console.error("[stripe/portal] STRIPE_PORTAL_CONFIGURATION_ID の形式が正しくありません（bpc_… を設定してください）");
+    return NextResponse.json({ error: "現在、決済管理機能は準備中です。" }, { status: 503 });
   }
 
   const user = await getCurrentUser();
@@ -71,6 +79,8 @@ export async function POST() {
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: data.stripe_customer_id,
       return_url: `${siteConfig.url}/account`,
+      // Mr.Satto専用のポータル設定（未設定の間は、アカウントの既定の設定が使われる）
+      ...(portalConfiguration.id ? { configuration: portalConfiguration.id } : {}),
     });
     return NextResponse.json({ url: portalSession.url });
   } catch (error) {

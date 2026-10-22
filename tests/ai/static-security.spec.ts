@@ -53,3 +53,25 @@ test.describe("AI機能の静的な安全確認", () => {
     }
   });
 });
+
+test.describe("OpenAI実接続テストの安全確認（静的）", () => {
+  const live = readFileSync(join(process.cwd(), "tests/ai/openai-live.spec.ts"), "utf8");
+
+  test("キーと明示のフラグの両方が無い・CIでは、外部に接続せずスキップする。失敗しても自動で再実行しない", () => {
+    expect(live).toContain('process.env.RUN_OPENAI_LIVE === "1"');
+    expect(live).toContain("!process.env.CI");
+    expect(live).toMatch(/test\.skip\(!ENABLED/);
+    expect(live).toMatch(/retries: 0/);
+  });
+
+  test("キーの値を出力しない。呼び出しは小さく固定（2行・出力2,000トークン以下・2モデルに1回ずつ）", () => {
+    for (const m of live.matchAll(/console\.(log|error|warn)\(([\s\S]*?)\);/g)) {
+      expect(m[2], m[0]).not.toMatch(/\bKEY\b|apiKey/);
+    }
+    expect(live).toMatch(/maxOutputTokens: 2_000/);
+    // 呼び出し箇所は2つだけ: 標準・高精度を1回ずつまわすループと、不正なキー（課金されない拒否）
+    expect(live.match(/callOpenAi\(/g)).toHaveLength(2);
+    expect(live).toContain('for (const tier of ["standard", "advanced"] as AiModelTier[])');
+    expect(live).not.toMatch(/for \(let|while \(|\.repeat\(/);
+  });
+});

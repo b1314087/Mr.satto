@@ -41,6 +41,13 @@ export const stripeConfig = {
    */
   premiumProductIds: parseIdList(process.env.STRIPE_PREMIUM_PRODUCT_ID),
   premiumLegacyPriceIds: parseIdList(process.env.STRIPE_PREMIUM_LEGACY_PRICE_IDS),
+  /**
+   * Customer Portal（解約・支払い方法の変更）の設定ID（bpc_…、任意）。
+   * 同じStripeアカウントを別のサービスと共有している場合、指定しないと、そのアカウントの「既定のポータル設定」が使われ、
+   * 他サービスの設定（解約の扱い・表示する商品など）がMr.Sattoの利用者にも適用されてしまう。
+   * scripts/create-portal-config.mjs で、Mr.Satto専用の設定を作ってそのIDを設定する。
+   */
+  portalConfigurationId: trimmedEnv("STRIPE_PORTAL_CONFIGURATION_ID"),
 };
 
 /** 契約の価格 → プランの判定に使う対応表 */
