@@ -12,6 +12,8 @@
  *   ただし、オフの状態を開発サーバーで確認したいときのために、
  *   NEXT_PUBLIC_FEATURES_OFF=1 を付けて起動すると、開発中でも両方オフになる
  *   （テスト専用。tests/regression/features-off.spec.ts が使う）。
+ *   NEXT_PUBLIC_FEATURES_OFF=ads を付けると、広告だけがオフ（課金は有効）になる
+ *   （課金を始める構成の確認用。tests/regression/launch-config.spec.ts が使う）。
  *
  * ■ このファイルの値はビルド時にコードへ埋め込まれる。値を変えたら再ビルド（＝再デプロイ）が必要。
  *   Vercelは main へのプッシュで自動的に再デプロイされる。
@@ -32,7 +34,11 @@ const PRODUCTION_FLAGS: Record<FeatureName, boolean> = {
 function resolveFeature(name: FeatureName): boolean {
   if (process.env.NODE_ENV === "production") return PRODUCTION_FLAGS[name];
   // 開発・テスト: 常にオン。ただし、オフの確認用に上書きできる。
-  if (process.env.NEXT_PUBLIC_FEATURES_OFF === "1") return false;
+  //   NEXT_PUBLIC_FEATURES_OFF=1   広告・課金の両方をオフ（現在の本番と同じ）
+  //   NEXT_PUBLIC_FEATURES_OFF=ads 広告だけをオフ（課金を始めるときの本番の想定と同じ。課金は有効）
+  const off = process.env.NEXT_PUBLIC_FEATURES_OFF;
+  if (off === "1") return false;
+  if (off === "ads" && name === "ads") return false;
   return true;
 }
 

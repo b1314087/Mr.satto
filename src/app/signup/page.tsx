@@ -7,7 +7,7 @@ import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
 
 export const metadata: Metadata = {
   title: "会員登録",
-  description: "Mr.Sattoに会員登録します。Standard・Premiumプランのご利用にはログインが必要です。",
+  description: "Mr.Sattoに会員登録します。プレミアムプランのご利用にはログインが必要です。",
   alternates: { canonical: "/signup" },
   ...(featureFlags.billing ? {} : { robots: { index: false, follow: false } }),
 };
@@ -37,7 +37,7 @@ export default function SignupPage() {
       </div>
 
       <p className="mt-4 text-center text-xs text-neutral-400 dark:text-neutral-500">
-        会員登録が必要なのはStandard・Premiumプランのご利用時のみです。
+        会員登録が必要なのはプレミアムプランのご利用時のみです。
         <br />
         無料プランはログインなしでお使いいただけます。
       </p>

@@ -32,6 +32,13 @@ const PLAN_TOOL_ACCESS_LABEL: Record<string, string> = {
  * 書き分ける。設計上の想定（広告を見ると1時間利用できる）と、現在の実際の挙動
  * （広告視聴の仕組みが無効の間は、広告を見なくても使える）を混同しないため。
  */
+/** プランカードの「広告」の行。広告の仕組みが有効でない間は、実際の状態（広告を見る必要がない）を書く */
+function getAdsLabel(adsRequired: boolean, adGateActive: boolean): string {
+  if (!adsRequired) return "広告なし";
+  if (adGateActive) return "広告視聴あり";
+  return featureFlags.ads ? "広告が表示されます" : "現在、広告は表示されません";
+}
+
 function getPlanUsageNote(planId: string, adGateActive: boolean): string {
   switch (planId) {
     case "free":
@@ -99,7 +106,7 @@ export default async function PricingPage({
                 </li>
                 <li className="flex items-start gap-2">
                   <span aria-hidden="true">・</span>
-                  {plan.adsRequired ? "広告視聴あり" : "広告なし"}
+                  {getAdsLabel(plan.adsRequired, adGateActive)}
                 </li>
                 <li className="flex items-start gap-2">
                   <span aria-hidden="true">・</span>

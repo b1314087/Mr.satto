@@ -219,7 +219,7 @@ export function UsageGatePanel({
           </button>
           {adPhase === "unavailable" && (
             <p className="text-xs text-red-600 dark:text-red-400">
-              現在、広告を表示できません。しばらくしてからもう一度お試しください。{featureFlags.billing ? "Standard・Premiumプランでは広告なしでご利用いただけます。" : ""}
+              現在、広告を表示できません。しばらくしてからもう一度お試しください。{featureFlags.billing ? "プレミアムプランでは広告なしでご利用いただけます。" : ""}
             </p>
           )}
           {adPhase === "denied" && (
