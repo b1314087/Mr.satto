@@ -26,6 +26,7 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
     expect(text).not.toContain("広告視聴あり");
     expect(text).not.toContain("Standard");
     expect(text).not.toContain("550円");
+    expect(text).not.toContain("有効になった後"); // 将来の広告の予定を、現行の説明に出さない
   });
 
   test("トップページ・サイトの紹介・会員登録: 広告を見る前提の文言が出ない", async ({ page }) => {

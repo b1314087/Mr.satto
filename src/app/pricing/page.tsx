@@ -44,7 +44,7 @@ function getPlanUsageNote(planId: string, adGateActive: boolean): string {
     case "free":
       return adGateActive
         ? "広告を見ると1時間、通常ツールを利用できます（複数のツールをまとめて利用可能）"
-        : "現在は、広告を見なくても通常ツールをご利用いただけます。広告視聴の仕組みが有効になった後は、広告を見ると1時間、通常ツールを利用できる形になります。";
+        : "広告を見なくても、通常ツールをご利用いただけます。";
     case "premium":
       return `月額${PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円（税込）・広告なし・プレミアム対象ツールも利用可能`;
     default:
