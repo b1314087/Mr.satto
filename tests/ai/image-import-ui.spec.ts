@@ -1,4 +1,7 @@
 import type { Page, Route } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { test, expect } from "../fixtures/premium-test";
 import { NetworkRecorder } from "../helpers/network-guard";
@@ -77,6 +80,33 @@ async function textPdf(): Promise<TestFile> {
     page.drawText(r[2], { x: 400, y: 760 - i * 30, size: 12, font });
   });
   return { name: "行事予定.pdf", mimeType: "application/pdf", buffer: Buffer.from(await doc.save()) };
+}
+
+
+/** 月ごとの列に、日・曜日・予定が縦に並ぶ行事予定表（学校の年間行事予定表の形式）のPDF。2027年1〜3月と、翌年度の4月 */
+async function monthlyPdf(): Promise<TestFile> {
+  const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
+  const font = await doc.embedFont(fs.readFileSync(path.join(process.cwd(), "public/fonts/NotoSansJP-Regular.ttf")), { subset: true });
+  const page = doc.addPage([842, 595]);
+  const cols = [
+    { x: 58, year: 2027, month: 1, events: { 1: ["「元日」"], 5: ["教育相談再開", "入試願書受付開始"], 8: ["始業式 追認考査"], 25: ["学年末考査①"] } as Record<number, string[]> },
+    { x: 210, year: 2027, month: 2, events: { 3: ["教科会 成績等入力"], 26: ["卒業証書授与式"] } as Record<number, string[]> },
+    { x: 361, year: 2027, month: 3, events: { 19: ["修了式"] } as Record<number, string[]> },
+    { x: 514, year: 2027, month: 4, events: { 9: ["入学式"] } as Record<number, string[]> },
+  ];
+  const week = "日月火水木金土";
+  for (const c of cols) {
+    page.drawText(`${c.month}月`, { x: c.x + 66, y: 499, size: 7, font });
+    const days = new Date(Date.UTC(c.year, c.month, 0)).getUTCDate();
+    for (let d = 1; d <= days; d++) {
+      const y = 486 - (d - 1) * 12.5;
+      page.drawText(String(d), { x: c.x, y, size: 7, font });
+      page.drawText(week[new Date(Date.UTC(c.year, c.month - 1, d)).getUTCDay()], { x: c.x + 8, y, size: 7, font });
+      (c.events[d] ?? []).forEach((text, i) => page.drawText(text, { x: c.x + 18 + i * 60, y, size: 7, font }));
+    }
+  }
+  return { name: "行事予定表.pdf", mimeType: "application/pdf", buffer: Buffer.from(await doc.save()) };
 }
 
 async function xlsxFile(rows: unknown[][], name = "予定表.xlsx"): Promise<TestFile> {
@@ -259,6 +289,31 @@ test.describe("予定表の取り込み: 文字のPDF", () => {
     // 開発サーバー自身のエラー表示用の通信(/__nextjs...)を除き、POSTなどの送信は1つもない
     expect(recorder.requests.filter((r) => r.method !== "GET" && r.method !== "HEAD" && !new URL(r.url).pathname.startsWith("/__nextjs"))).toEqual([]);
     expect(recorder.requests.filter((r) => !r.url.startsWith(origin) && r.method !== "GET")).toEqual([]);
+  });
+
+
+  test("月ごとの列に日・曜日・予定が並ぶ行事予定表のPDFは、AIを使わず、曜日から年を決めて予定にする。年度外の月は配置されない", async ({ page }) => {
+    const rec = await mockAi(page);
+    await openTool(page);
+    await drop(page, [await monthlyPdf()]);
+    await expect(page.getByTestId("events-source-note")).toContainText("月ごとに日・曜日・予定が並ぶ行事予定表", { timeout: 90_000 });
+    await expect(page.getByTestId("events-source-note")).toContainText("曜日に合う年");
+    // 2027年1〜3月は対象年度(2026年度)内、2027年4月は翌年度なので対象年度外。「元日」は祝日なので読み取らない
+    await expect(page.getByTestId("events-count-recognized")).toContainText("8件");
+    await expect(page.getByTestId("events-count-inyear")).toContainText("7件");
+    await expect(page.getByTestId("events-count-outyear")).toContainText("1件");
+    const preview = page.getByTestId("calendar-preview").first();
+    await page.getByRole("button", { name: "1月", exact: true }).click();
+    const jan = page.getByTestId("calendar-preview").first();
+    await expect(jan.locator('[data-date="2027-01-05"]')).toContainText("教育相談再開");
+    await expect(jan.locator('[data-date="2027-01-05"]')).toContainText("入試願書受付開始");
+    await expect(jan.locator('[data-date="2027-01-08"]')).toContainText("始業式 追認考査");
+    await expect(jan.locator('[data-date="2027-01-25"]')).toContainText("学年末考査①");
+    void preview;
+    await page.getByRole("button", { name: "3月", exact: true }).click();
+    await expect(page.getByTestId("calendar-preview").first().locator('[data-date="2027-03-19"]')).toContainText("修了式");
+    expect(rec.assistBodies).toHaveLength(0);
+    expect(rec.usageCalls).toBe(0);
   });
 
   test("文字として読めたPDFも、うまくいかなければ、画像としてAIで読み取り直せる（同意の前は何も送らない）", async ({ page }) => {

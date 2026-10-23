@@ -171,6 +171,27 @@ export function FiscalCalendarEventsImport({
   async function handlePdf(file: File, seq: number) {
     const stale = () => seq !== loadSeq.current;
     setBusy("PDFを読み込んでいます…");
+    // 先に、「月ごとの列に、日・曜日・予定が縦に並ぶ」形式（学校の行事予定表など）かを調べる
+    const { extractMonthColumnEntries, resolveMonthColumnEntries, MIN_DAY_ROWS } = await import("@/lib/calendar/pdf-month-columns");
+    const monthly = await extractMonthColumnEntries(file, (cur, total) => {
+      if (!stale()) setBusy(`PDFの文字を読み取っています…（${cur}/${total}ページ）`);
+    });
+    if (stale()) return;
+    if (monthly.dayRowCount >= MIN_DAY_ROWS) {
+      const resolved = resolveMonthColumnEntries(monthly.entries, calendarDateRange(calendar));
+      if (resolved.rows.length === 0) throw new Error("PDFから予定を読み取れませんでした（日付と曜日は見つかりましたが、予定の文字がありませんでした）。");
+      setPdfFile(file);
+      const notes = ["月ごとに日・曜日・予定が並ぶ行事予定表として読み取りました。年は、書かれている曜日に合う年から判定しています。"];
+      if (resolved.unresolved > 0) notes.push(`曜日が合う年がなく、年を決められなかった予定が${resolved.unresolved}件あります（下の「確認が必要な行」に出ます）。`);
+      if (resolved.skippedHolidayLabels > 0) notes.push(`「元日」などの祝日の名前だけの行（${resolved.skippedHolidayLabels}件）は、カレンダーに祝日が出るため、読み取っていません。`);
+      if (monthly.pageCount > monthly.pagesRead) notes.push(`先頭の${monthly.pagesRead}ページだけを読み取りました。`);
+      notes.push("日付のない注記（下の欄外のメモなど）は読み取っていません。内容を確認してください。");
+      setPending(null);
+      onChange(
+        stateForSheet({ fileName: file.name, sheets: [{ name: "PDF（月ごとの行事予定）", rows: [["日付", "予定"], ...resolved.rows] }], source: "pdf", sourceNote: notes.join("") }, 0),
+      );
+      return;
+    }
     const { extractPdfTextRows } = await import("@/lib/processors/browser/pdf-to-excel");
     const text = await extractPdfTextRows(file, (cur, total) => {
       if (!stale()) setBusy(`PDFの文字を読み取っています…（${cur}/${total}ページ）`);

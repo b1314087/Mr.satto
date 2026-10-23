@@ -266,7 +266,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
         ? "AIがこの内容の読み取りに応じませんでした。通常の読み取り結果はそのまま使えます。"
         : result.kind === "incomplete"
           ? plan.mode === "image"
-            ? "AIの応答が途中で切れたため、結果を使えませんでした。画像の枚数（ページ数）を減らして、もう一度お試しください。"
+            ? "AIの応答が途中で切れたため、結果を使えませんでした。予定が多すぎる可能性があります。画像の枚数（ページ数）を減らすか、文字として読めるPDFなら、画像ではなくPDFのまま読み込んでください。"
             : "AIの応答が途中で切れたため、結果を使えませんでした。行を減らして、もう一度お試しください。"
           : "AIの処理に失敗しました。通常の読み取り結果はそのまま使えます。";
     return respond(502, { error: `ai_${result.kind}`, message, usage: usageInfo });

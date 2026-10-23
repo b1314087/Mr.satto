@@ -258,7 +258,7 @@ export const MAX_IMAGES_TOTAL_BYTES = 2_600_000;
 /** 画像1枚あたり、入力として数える量（トークン）の見積り。実際より多めに数えるための固定値 */
 export const IMAGE_TOKEN_ESTIMATE = 6_000;
 /** 一度に読み取る予定の数の上限 */
-export const MAX_IMAGE_EVENTS = 100;
+export const MAX_IMAGE_EVENTS = 150;
 
 export type AssistImageSource = "image" | "scanned-pdf";
 
@@ -392,7 +392,10 @@ export const IMAGE_OUTPUT_SCHEMA = {
 
 /** 出力の長さの上限（推論トークンを含む）。画像の枚数に応じて決める */
 export function maxOutputTokensForImages(imageCount: number): number {
-  return Math.min(16_000, 3_000 + imageCount * 3_000);
+  // 行事予定表のように予定が多い画像では、1枚でも百数十件になる。途中で切れないよう、上限いっぱいを使えるようにする
+  // （標準モデルでは費用はごくわずか。実際の使用量で確定するため、使わなかった分は計上されない）
+  void imageCount;
+  return 16_000;
 }
 
 /** 入力の見積り（トークン）の上限: 指示・スキーマ・文字の部分のバイト数 + 画像1枚ごとの固定の見積り + 余裕 */

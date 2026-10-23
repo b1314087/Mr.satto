@@ -117,7 +117,7 @@ test.describe("画像モード: AIの出力の検証", () => {
         item(1),
         item(1, { title: "重複" }),
         item(0),
-        item(101),
+        item(151),
         item(3, { date: "2027-02-30" }),
         item(4, { start_time: "25:00" }),
         item(5, { page: 3 }),
