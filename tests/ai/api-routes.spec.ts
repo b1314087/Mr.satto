@@ -38,4 +38,18 @@ test.describe("AI API: 入口の安全確認", () => {
     const res = await request.post("/api/ai/calendar-assist", { headers: { "Content-Type": "application/json" }, data: JSON.stringify({ pad: "あ".repeat(500_000) }) });
     expect(res.status()).toBe(413);
   });
+
+  test("読み取り（画像モード）: 画像の本文の上限(約3.7MB)を超えると413。上限内の画像でも、設定が無ければ503（AIは呼ばない）", async ({ request }) => {
+    const tooBig = await request.post("/api/ai/calendar-assist", { headers: { "Content-Type": "application/json" }, data: JSON.stringify({ mode: "image", pad: "A".repeat(3_800_000) }) });
+    expect(tooBig.status()).toBe(413);
+    // 画像モードでない大きな本文は、従来の上限(400KB)のまま断る
+    const textMode = await request.post("/api/ai/calendar-assist", { headers: { "Content-Type": "application/json" }, data: JSON.stringify({ pad: "A".repeat(1_000_000) }) });
+    expect(textMode.status()).toBe(413);
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]).toString("base64");
+    const img = await request.post("/api/ai/calendar-assist", {
+      headers: { "Content-Type": "application/json" },
+      data: JSON.stringify({ mode: "image", source: "image", images: [{ mediaType: "image/jpeg", base64: jpeg }], consent: { accepted: true } }),
+    });
+    expect(img.status()).toBe(503);
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { placeEvents, calendarDateRange } from "@/lib/calendar/events";
 import {
   COLUMN_ROLES,
@@ -18,7 +18,11 @@ import {
 import type { FiscalCalendar } from "@/lib/calendar/model";
 import type { CalendarEvent } from "@/lib/calendar/events";
 import { featureFlags } from "@/lib/config/features";
+import { MAX_IMAGES } from "@/lib/ai/calendar-assist";
+import { EVENT_FILE_ACCEPT, LEGACY_EXCEL_MESSAGE, UNSUPPORTED_FILE_MESSAGE, classifyEventFile, decodeCsvBytes, parseCsv } from "@/lib/calendar/event-file";
+import type { PreparedImage } from "@/lib/calendar/event-image";
 import { FiscalCalendarAiAssist } from "./fiscal-calendar-ai-assist";
+import { FiscalCalendarImageAssist, type ImageDraft } from "./fiscal-calendar-image-assist";
 
 /** 読み込んだExcelの予定表（シートごとの行）と、いま選んでいるシート・列の割り当て・読み取り結果 */
 export interface EventImportState {
@@ -34,11 +38,16 @@ export interface EventImportState {
   result: ImportResult | null;
   /** 読み取りで起きたエラー（行数が多すぎるなど） */
   error: string | null;
+  /** 読み込んだ元（Excel・CSV・PDFの文字・AIで読み取った画像）。画面の案内に使う */
+  source?: "excel" | "csv" | "pdf" | "image";
+  /** 読み込み方についての案内（PDFのページ数・AIで読み取った内容の確認のお願いなど） */
+  sourceNote?: string | null;
   /** AIの提案から、利用者が確認して採用した予定（通常の読み取り結果とは別に保持する。シート・列の割り当てを変えると破棄する） */
   aiEvents?: CalendarEvent[];
 }
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_PDF_BYTES = 30 * 1024 * 1024;
 const MAX_ISSUE_ROWS_SHOWN = 30;
 
 const EMPTY_MAPPING: ColumnMapping = { date: null, title: null, start: null, end: null };
@@ -53,7 +62,7 @@ function compute(rows: EventCellValue[][], mapping: ColumnMapping, headerRow: nu
   }
 }
 
-function stateForSheet(base: Pick<EventImportState, "fileName" | "sheets">, sheetIndex: number): EventImportState {
+function stateForSheet(base: Pick<EventImportState, "fileName" | "sheets" | "source" | "sourceNote">, sheetIndex: number): EventImportState {
   const rows = base.sheets[sheetIndex].rows;
   const layout = detectLayout(rows);
   const mapping = layout?.mapping ?? EMPTY_MAPPING;
@@ -77,35 +86,160 @@ export function FiscalCalendarEventsImport({
   onChange: (next: EventImportState | null) => void;
 }) {
   const inputId = useId();
-  const [reading, setReading] = useState(false);
+  /** 読み込み中の案内（空でなければ処理中。処理中は、新しいファイルを受け付けない＝二重実行の防止） */
+  const [busy, setBusy] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  /** AIで読み取る前の画像（画像ファイル・スキャンPDF）。確認・同意のあとに読み取り、結果を確認してから反映する */
+  const [pending, setPending] = useState<{ source: "image" | "scanned-pdf"; fileName: string; images: PreparedImage[]; note: string | null } | null>(null);
+  /** 最後に読んだPDF（文字として読めた場合も、画像としてAIで読み直せるように保持。ブラウザの画面の中だけ） */
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  /** 取り消した・別のファイルに替えた読み込みの結果を捨てるための番号 */
+  const loadSeq = useRef(0);
+  const dragDepth = useRef(0);
 
-  async function handleFile(file: File | undefined) {
-    if (!file) return;
+  function resetAll() {
+    loadSeq.current++;
+    setBusy(null);
     setFileError(null);
-    if (!/\.(xlsx|xlsm)$/i.test(file.name)) {
-      setFileError(
-        /\.xls$/i.test(file.name)
-          ? "古い形式（.xls）は読み込めません。Excelで「名前を付けて保存」から、Excelブック（.xlsx）にして選んでください。"
-          : "Excelファイル（.xlsx）を選んでください。",
-      );
-      return;
+    setPending(null);
+    setPdfFile(null);
+    onChange(null);
+  }
+
+  async function handleFiles(files: File[]) {
+    if (files.length === 0 || busy) return;
+    setFileError(null);
+    const kinds = files.map(classifyEventFile);
+    if (kinds.includes("legacy-excel")) return setFileError(LEGACY_EXCEL_MESSAGE);
+    if (kinds.includes("unsupported")) return setFileError(UNSUPPORTED_FILE_MESSAGE);
+    const allImages = kinds.every((k) => k === "image");
+    if (!allImages && files.length > 1) return setFileError(`一度に選べるのは、Excel・CSV・PDFは1つ、画像は${MAX_IMAGES}枚までです。`);
+    if (allImages && files.length > MAX_IMAGES) return setFileError(`画像は一度に${MAX_IMAGES}枚までです。`);
+    const kind = kinds[0];
+    const file = files[0];
+    if ((kind === "excel" || kind === "csv") && file.size > MAX_FILE_BYTES) {
+      return setFileError("ファイルが大きすぎます（10MBまで）。予定の行だけを残したファイルにして選んでください。");
     }
-    if (file.size > MAX_FILE_BYTES) {
-      setFileError("ファイルが大きすぎます（10MBまで）。予定の行だけを残したExcelにして選んでください。");
-      return;
+    if (kind === "pdf" && file.size > MAX_PDF_BYTES) return setFileError("PDFが大きすぎます（30MBまで）。ページを減らしてから選んでください。");
+    if (kind === "image" && !featureFlags.billing) {
+      return setFileError("画像の読み取りはAI（Premium）の機能で、現在ご利用いただけません。Excel・CSV・文字のPDFは読み込めます。");
     }
-    setReading(true);
+
+    const seq = ++loadSeq.current;
+    const stale = () => seq !== loadSeq.current;
     try {
-      const { readXlsxSheets } = await import("@/lib/excel/xlsx-simple-io");
-      const sheets = await readXlsxSheets(file);
-      const base = { fileName: file.name, sheets: sheets.map((s) => ({ name: s.name, rows: s.rows as EventCellValue[][] })) };
-      onChange(stateForSheet(base, pickEventSheet(base.sheets)));
+      if (kind === "excel") {
+        setBusy("Excelを読み込んでいます…");
+        const { readXlsxSheets } = await import("@/lib/excel/xlsx-simple-io");
+        const sheets = await readXlsxSheets(file);
+        if (stale()) return;
+        const base = { fileName: file.name, sheets: sheets.map((s) => ({ name: s.name, rows: s.rows as EventCellValue[][] })), source: "excel" as const };
+        setPending(null);
+        setPdfFile(null);
+        onChange(stateForSheet(base, pickEventSheet(base.sheets)));
+      } else if (kind === "csv") {
+        setBusy("CSVを読み込んでいます…");
+        const rows = parseCsv(decodeCsvBytes(await file.arrayBuffer()));
+        if (stale()) return;
+        if (rows.every((r) => r.every((c) => String(c).trim() === ""))) throw new Error("CSVにデータがありません。");
+        setPending(null);
+        setPdfFile(null);
+        onChange(stateForSheet({ fileName: file.name, sheets: [{ name: "CSV", rows }], source: "csv" }, 0));
+      } else if (kind === "pdf") {
+        await handlePdf(file, seq);
+      } else {
+        setBusy("画像を読み込んでいます…");
+        const { prepareImageFile } = await import("@/lib/calendar/event-image");
+        const images: PreparedImage[] = [];
+        for (const f of files) {
+          setBusy(`画像を読み込んでいます…（${images.length + 1}/${files.length}枚目）`);
+          images.push(await prepareImageFile(f));
+          if (stale()) return;
+        }
+        setPdfFile(null);
+        setPending({ source: "image", fileName: files.map((f) => f.name).join("、"), images, note: null });
+      }
     } catch (e) {
-      setFileError(e instanceof Error ? e.message : "Excelファイルを読み込めませんでした");
+      if (!stale()) setFileError(e instanceof Error ? e.message : "ファイルを読み込めませんでした");
     } finally {
-      setReading(false);
+      if (!stale()) setBusy(null);
     }
+  }
+
+  /** PDF: まず文字情報から表を読み取る（ブラウザの中だけ）。文字情報がなければ、ページを画像にしてAIで読み取る準備をする */
+  async function handlePdf(file: File, seq: number) {
+    const stale = () => seq !== loadSeq.current;
+    setBusy("PDFを読み込んでいます…");
+    const { extractPdfTextRows } = await import("@/lib/processors/browser/pdf-to-excel");
+    const text = await extractPdfTextRows(file, (cur, total) => {
+      if (!stale()) setBusy(`PDFの文字を読み取っています…（${cur}/${total}ページ）`);
+    });
+    if (stale()) return;
+    setPdfFile(file);
+    if (text.textPageCount === 0) {
+      // 文字情報のないPDF（スキャン）: 画像として読み取る
+      await prepareScannedPdf(file, seq, `このPDFには文字情報がありませんでした（スキャンした画像のPDFです）。`);
+      return;
+    }
+    if (text.rows.length === 0) {
+      throw new Error("PDFから表として認識できる内容が見つかりませんでした。下の「画像としてAIで読み取る」をお試しください。");
+    }
+    const notes = [`PDFの文字情報から表を読み取りました（${text.textPageCount}ページ分）。`];
+    if (text.pageCount > text.pagesRead) notes.push(`先頭の${text.pagesRead}ページだけを読み取りました。`);
+    if (text.emptyPages.length > 0) notes.push(`文字情報のないページ（${text.emptyPages.slice(0, 10).join("・")}ページ）は読み取っていません。`);
+    notes.push("PDFの表は、列や行がずれて読み取られることがあります。件数と内容を確認してください。");
+    setPending(null);
+    onChange(stateForSheet({ fileName: file.name, sheets: [{ name: `PDF（${text.pagesRead}ページ）`, rows: text.rows }], source: "pdf", sourceNote: notes.join("") }, 0));
+  }
+
+  async function prepareScannedPdf(file: File, seq: number, lead: string) {
+    const stale = () => seq !== loadSeq.current;
+    if (!featureFlags.billing) {
+      throw new Error("文字情報のないPDF（スキャン）の読み取りはAI（Premium）の機能で、現在ご利用いただけません。");
+    }
+    const { preparePdfPages } = await import("@/lib/calendar/event-image");
+    const prepared = await preparePdfPages(file, (m) => {
+      if (!stale()) setBusy(m);
+    });
+    if (stale()) return;
+    const note = `${lead}${prepared.truncated ? `先頭の${prepared.images.length}ページ（全${prepared.pageCount}ページ）だけを読み取ります。残りは、別のPDFにして読み取ってください。` : ""}`;
+    setPending({ source: "scanned-pdf", fileName: file.name, images: prepared.images, note });
+  }
+
+  /** 文字として読めたPDFを、画像としてAIで読み直す（表の読み取りがうまくいかなかったとき） */
+  async function rereadPdfAsImage() {
+    if (!pdfFile || busy) return;
+    setFileError(null);
+    const seq = ++loadSeq.current;
+    try {
+      await prepareScannedPdf(pdfFile, seq, "このPDFを画像として読み取ります。");
+    } catch (e) {
+      if (seq === loadSeq.current) setFileError(e instanceof Error ? e.message : "PDFを画像にできませんでした");
+    } finally {
+      if (seq === loadSeq.current) setBusy(null);
+    }
+  }
+
+  /** AIの読み取り結果（利用者が確認・修正したもの）を、Excelと同じ取り込みの流れに渡す */
+  function applyImageDrafts(drafts: ImageDraft[]) {
+    if (!pending) return;
+    const rows: EventCellValue[][] = [
+      ["日付", "予定", "開始時刻", "終了時刻", "曜日"],
+      ...drafts.map((d) => [d.date, d.title, d.startTime, d.endTime, d.weekday ?? ""] as EventCellValue[]),
+    ];
+    onChange(
+      stateForSheet(
+        {
+          fileName: `${pending.fileName}（AIの読み取り結果）`,
+          sheets: [{ name: "AIの読み取り結果", rows }],
+          source: "image",
+          sourceNote: "AIが画像から読み取った内容を、確認・修正したものです。内容に誤りがないか、元の画像と見比べて確認してください。",
+        },
+        0,
+      ),
+    );
+    setPending(null);
   }
 
   function update(patch: Partial<Pick<EventImportState, "mapping" | "headerRow">>) {
@@ -128,46 +262,102 @@ export function FiscalCalendarEventsImport({
     <fieldset data-testid="events-import" className="flex flex-col gap-2 text-sm">
       <legend className="mb-1 text-neutral-600 dark:text-neutral-300">予定データ</legend>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        日付・予定・開始時刻・終了時刻が並んだExcelの予定表を選ぶと、カレンダーの該当する日に予定を入れます。ファイルの内容は、この端末の中だけで処理され、サーバーには送信されません。
+        日付・予定・開始時刻・終了時刻が並んだ予定表（Excel・CSV・PDF・画像）を選ぶと、カレンダーの該当する日に予定を入れます。Excel・CSV・文字のPDFは、この端末の中だけで処理され、サーバーには送信されません。画像とスキャンしたPDFは、AI（Premium）で読み取るため、内容を確認して同意したときだけ、縮小した画像をAIに送ります。
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <label
-          htmlFor={inputId}
-          className="cursor-pointer rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-        >
-          Excelの予定表を選ぶ
-        </label>
-        <input
-          id={inputId}
-          data-testid="events-file"
-          type="file"
-          accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          className="sr-only"
-          onChange={(e) => {
-            void handleFile(e.target.files?.[0]);
-            // 同じファイルをもう一度選べるようにする
-            e.target.value = "";
-          }}
-        />
-        {value && (
-          <button
-            type="button"
-            data-testid="events-clear"
-            onClick={() => {
-              setFileError(null);
-              onChange(null);
-            }}
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+      <div
+        data-testid="events-dropzone"
+        data-dragging={dragging}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragDepth.current++;
+          setDragging(true);
+        }}
+        onDragOver={(e) => {
+          // ドロップを受け付ける（これがないと、ブラウザがファイルを開いてしまう）
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }}
+        onDragLeave={() => {
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragDepth.current = 0;
+          setDragging(false);
+          void handleFiles(Array.from(e.dataTransfer.files));
+        }}
+        className={`flex flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors ${
+          dragging ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900"
+        }`}
+      >
+        <p data-testid="events-drop-label" className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          {dragging ? "ここで手を離すと読み込みます" : "ここにファイルをドラッグ＆ドロップ"}
+        </p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">またはボタンで選択（スマートフォンでは、ボタンから選べます）。Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）に対応しています。</p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <label
+            htmlFor={inputId}
+            className={`rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 ${
+              busy ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
+            }`}
           >
-            予定の読み込みを取り消す
-          </button>
+            {value || pending ? "別のファイルを選ぶ" : "ファイルを選ぶ"}
+          </label>
+          <input
+            id={inputId}
+            data-testid="events-file"
+            type="file"
+            multiple
+            accept={EVENT_FILE_ACCEPT}
+            disabled={!!busy}
+            className="sr-only"
+            onChange={(e) => {
+              void handleFiles(Array.from(e.target.files ?? []));
+              // 同じファイルをもう一度選べるようにする
+              e.target.value = "";
+            }}
+          />
+          {(value || pending || busy) && (
+            <button
+              type="button"
+              data-testid="events-clear"
+              onClick={resetAll}
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              {busy ? "読み込みを中止する" : "予定の読み込みを取り消す"}
+            </button>
+          )}
+        </div>
+        {busy && (
+          <p role="status" data-testid="events-busy" className="text-xs text-neutral-600 dark:text-neutral-300">
+            {busy}
+          </p>
         )}
-        {reading && <span className="text-xs text-neutral-500">読み込み中…</span>}
       </div>
       {fileError && (
         <p role="alert" data-testid="events-file-error" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-950 dark:text-red-200">
           {fileError}
         </p>
+      )}
+      {pdfFile && featureFlags.billing && !pending && !busy && (
+        <button
+          type="button"
+          data-testid="events-pdf-as-image"
+          onClick={() => void rereadPdfAsImage()}
+          className="self-start rounded-lg border border-violet-400 px-3 py-1.5 text-xs text-violet-900 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-100 dark:hover:bg-violet-950"
+        >
+          このPDFを、画像としてAIで読み取り直す（Premium）
+        </button>
+      )}
+
+      {pending && (
+        <div data-testid="events-pending" className="flex flex-col gap-2 rounded-lg border border-neutral-300 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-900">
+          <p className="break-all text-xs text-neutral-600 dark:text-neutral-300">
+            選択中のファイル: <span data-testid="events-pending-name">{pending.fileName}</span>
+          </p>
+          <FiscalCalendarImageAssist calendar={calendar} source={pending.source} images={pending.images} fileName={pending.fileName} note={pending.note} onApply={applyImageDrafts} />
+        </div>
       )}
 
       {value && (
@@ -176,13 +366,19 @@ export function FiscalCalendarEventsImport({
             ファイル: <span data-testid="events-file-name">{value.fileName}</span>
           </p>
 
+          {value.sourceNote && (
+            <p data-testid="events-source-note" className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:bg-blue-950 dark:text-blue-100">
+              {value.sourceNote}
+            </p>
+          )}
+
           {value.sheets.length > 1 && (
             <label className="flex flex-col gap-1 text-xs sm:w-2/3">
               <span className="text-neutral-600 dark:text-neutral-300">読み込むシート</span>
               <select
                 data-testid="events-sheet"
                 value={value.sheetIndex}
-                onChange={(e) => onChange(stateForSheet({ fileName: value.fileName, sheets: value.sheets }, Number(e.target.value)))}
+                onChange={(e) => onChange(stateForSheet({ fileName: value.fileName, sheets: value.sheets, source: value.source, sourceNote: value.sourceNote }, Number(e.target.value)))}
                 className={selectClass}
               >
                 {value.sheets.map((s, i) => (

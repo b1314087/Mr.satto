@@ -598,6 +598,62 @@ export async function previewPdfToExcelRows(
   return { pageCount: pdf.numPages, hasTextLayer: true, rows, layout: summarizeLayout(grids) };
 }
 
+/** カレンダーの取り込み用に読むページ数・行数の上限（画面が固まらないための制限） */
+const EVENT_IMPORT_MAX_PAGES = 30;
+const EVENT_IMPORT_MAX_ROWS = 5_000;
+
+export interface PdfTextRowsResult {
+  pageCount: number;
+  /** 実際に読んだページ数（上限を超えるページは読まない） */
+  pagesRead: number;
+  /** 文字情報のあるページの数。0なら、スキャン画像のPDF（文字として読めない） */
+  textPageCount: number;
+  /** 文字情報のなかったページ（1始まり。読んだページの中だけ） */
+  emptyPages: number[];
+  /** 表として取り出した行（セルの文字）。文字情報のあるページだけが対象 */
+  rows: string[][];
+}
+
+/**
+ * PDFの文字情報から、表の行を取り出す（カレンダーの予定表の取り込み用）。
+ * PDF→Excelと同じ表の推定（座標から行・列を決める。AIは使わない）を、ブラウザの中だけで行う。
+ * OCRは行わない: 文字情報のないページは emptyPages に入れて返し、呼び出し側が画像として読むかを決める。
+ */
+export async function extractPdfTextRows(
+  file: File,
+  onPageProgress?: (currentPage: number, totalPages: number) => void
+): Promise<PdfTextRowsResult> {
+  const options = resolveOptions();
+  const pdf = await loadPdfDocument(file);
+  if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+  const total = Math.min(pdf.numPages, EVENT_IMPORT_MAX_PAGES);
+  const pageData: PageData[] = [];
+  const emptyPages: number[] = [];
+  for (let n = 1; n <= total; n++) {
+    onPageProgress?.(n, total);
+    let page;
+    try {
+      page = await pdf.getPage(n);
+    } catch {
+      throw new Error(`${n}ページ目の読み込みに失敗しました`);
+    }
+    const items = await getPositionedTextItems(page);
+    if (pageHasText(items)) pageData.push({ pageNumber: n, page, items, method: "text-layer", confidence: null });
+    else emptyPages.push(n);
+  }
+  if (pageData.length === 0) {
+    return { pageCount: pdf.numPages, pagesRead: total, textPageCount: 0, emptyPages, rows: [] };
+  }
+  const grids = await buildGrids(pageData, options, false);
+  const sheets = assembleSheets(
+    grids.filter((g): g is typeof g & { grid: PageGrid } => g.grid !== null).map((g) => ({ pageNumber: g.pageNumber, grid: g.grid })),
+    false
+  );
+  const first = sheets[0];
+  const rows = first ? first.rows.slice(0, EVENT_IMPORT_MAX_ROWS).map((row) => gridRowToStrings(row, first.columnCount)) : [];
+  return { pageCount: pdf.numPages, pagesRead: total, textPageCount: pageData.length, emptyPages, rows };
+}
+
 export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfToExcelOutput> {
   async process({ file, ocrLanguage, options: optionsInput, onPageProgress }: PdfToExcelInput): Promise<PdfToExcelOutput> {
     if (file.size === 0) {

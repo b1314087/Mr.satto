@@ -15,13 +15,19 @@
 import { AI_MODELS, costMicroUsd, estimateInputTokens, microUsdToAiTokens, reserveMicroUsd, AI_PERIOD_LIMIT_MICRO_USD, type AiModelTier, type TokenUsage } from "./pricing";
 import {
   CONSENT_VERSION,
+  IMAGE_INSTRUCTIONS,
   INSTRUCTIONS,
   OUTPUT_SCHEMA,
+  buildImageUserText,
   buildUserInput,
+  estimateImageInputTokens,
   maxOutputTokensFor,
+  maxOutputTokensForImages,
   parseAssistOutput,
+  parseImageAssistOutput,
   validateAssistRequest,
-  type AssistSuggestion,
+  validateImageAssistRequest,
+  type AssistImage,
 } from "./calendar-assist";
 import type { Ledger, PeriodSnapshot, ReserveOutcome } from "./ledger";
 import type { OpenAiCallResult } from "./openai-client";
@@ -35,7 +41,16 @@ const RESERVATION_TTL_SECONDS = 900;
 
 export interface AssistDeps {
   ledger: Ledger;
-  callModel(args: { tier: AiModelTier; modelId: string; instructions: string; input: string; maxOutputTokens: number }): Promise<OpenAiCallResult>;
+  /** mode が "image" のときは、images（ブラウザで縮小したJPEG/PNG）を input の文字と一緒にAIへ渡す */
+  callModel(args: {
+    tier: AiModelTier;
+    modelId: string;
+    instructions: string;
+    input: string;
+    maxOutputTokens: number;
+    mode?: "rows" | "image";
+    images?: AssistImage[];
+  }): Promise<OpenAiCallResult>;
   /** 運用ログ。本文（セルの文字・AIの出力）は渡さない */
   log(event: Record<string, unknown>): void;
 }
@@ -96,28 +111,89 @@ export async function handleCalendarAssist(
     return respond(400, { error: "consent_required", message: "AIへ送信することへの同意が確認できませんでした。送信内容を確認し、同意してから実行してください。" });
   }
 
-  const validated = validateAssistRequest(rawBody);
-  if (!validated.ok) return respond(400, { error: "invalid_request", message: validated.message });
-  const request = validated.value;
+  const plan = buildPlan(rawBody);
+  if (!plan.ok) return respond(400, { error: "invalid_request", message: plan.message });
+  return execute(deps, caller.userId, plan.value);
+}
 
-  const modelId = AI_MODELS[request.model].id;
-  const instructions = INSTRUCTIONS;
+/** 1回の依頼の中身（文字の読み取り・画像の読み取りで共通の流れに渡す形） */
+interface Plan {
+  mode: "rows" | "image";
+  requestId: string;
+  tier: AiModelTier;
+  instructions: string;
+  input: string;
+  images?: AssistImage[];
+  maxOutputTokens: number;
+  estimatedInputTokens: number;
+  tooLargeMessage: string;
+  /** AIの出力を検証して、画面に返す項目にする。全体が不正なら null */
+  parse(text: string): { fields: Record<string, unknown>; rejected: number } | null;
+}
+
+function buildPlan(rawBody: unknown): { ok: true; value: Plan } | { ok: false; message: string } {
+  const isImage = typeof rawBody === "object" && rawBody !== null && (rawBody as { mode?: unknown }).mode === "image";
+  if (isImage) {
+    const v = validateImageAssistRequest(rawBody);
+    if (!v.ok) return v;
+    const request = v.value;
+    return {
+      ok: true,
+      value: {
+        mode: "image",
+        requestId: request.requestId,
+        tier: request.model,
+        instructions: IMAGE_INSTRUCTIONS,
+        input: buildImageUserText(request),
+        images: request.images,
+        maxOutputTokens: maxOutputTokensForImages(request.images.length),
+        estimatedInputTokens: estimateImageInputTokens(request),
+        tooLargeMessage: "一度に読み取る量が多すぎます。画像の枚数（ページ数）を減らして、もう一度お試しください。",
+        parse: (text) => {
+          const parsed = parseImageAssistOutput(text, request);
+          return parsed ? { fields: { suggestions: parsed.suggestions, source: request.source }, rejected: parsed.rejected } : null;
+        },
+      },
+    };
+  }
+  const validated = validateAssistRequest(rawBody);
+  if (!validated.ok) return validated;
+  const request = validated.value;
   const input = buildUserInput(request);
-  const maxOutputTokens = maxOutputTokensFor(request.rows.length);
-  // 入力の見積り（上限）: 指示・スキーマ・本文のすべてのバイト数 + リクエストの枠組みの余裕
-  const estimatedInputTokens = estimateInputTokens(instructions + JSON.stringify(OUTPUT_SCHEMA) + input) + 1_000;
-  const reserved = reserveMicroUsd(request.model, estimatedInputTokens, maxOutputTokens);
+  return {
+    ok: true,
+    value: {
+      mode: "rows",
+      requestId: request.requestId,
+      tier: request.model,
+      instructions: INSTRUCTIONS,
+      input,
+      maxOutputTokens: maxOutputTokensFor(request.rows.length),
+      // 入力の見積り（上限）: 指示・スキーマ・本文のすべてのバイト数 + リクエストの枠組みの余裕
+      estimatedInputTokens: estimateInputTokens(INSTRUCTIONS + JSON.stringify(OUTPUT_SCHEMA) + input) + 1_000,
+      tooLargeMessage: "一度に読み取る量が多すぎます。行を減らして、もう一度お試しください。",
+      parse: (text) => {
+        const parsed = parseAssistOutput(text, request);
+        return parsed ? { fields: { suggestions: parsed.suggestions }, rejected: parsed.rejected } : null;
+      },
+    },
+  };
+}
+
+async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<ServiceResponse> {
+  const { requestId, tier, instructions, input, maxOutputTokens } = plan;
+  const modelId = AI_MODELS[tier].id;
+  const reserved = reserveMicroUsd(tier, plan.estimatedInputTokens, maxOutputTokens);
   if (reserved > MAX_SINGLE_RESERVE_MICRO_USD) {
-    return respond(400, { error: "too_large", message: "一度に読み取る量が多すぎます。行を減らして、もう一度お試しください。" });
+    return respond(400, { error: "too_large", message: plan.tooLargeMessage });
   }
 
   // ① 利用枠の予約（できなければ、AIは呼ばない）
-  const userId = caller.userId;
   let reservation;
   try {
     reservation = await deps.ledger.reserve({
       userId,
-      requestId: request.requestId,
+      requestId,
       feature: FEATURE_CALENDAR_ASSIST,
       modelId,
       reserveMicroUsd: reserved,
@@ -126,12 +202,12 @@ export async function handleCalendarAssist(
       maxPerMinute: 10,
     });
   } catch {
-    deps.log({ event: "ai_assist", requestId: request.requestId, stage: "reserve", result: "ledger_error" });
+    deps.log({ event: "ai_assist", requestId, stage: "reserve", result: "ledger_error" });
     return respond(503, { error: "ledger_unavailable", message: "利用枠を確認できませんでした。時間をおいて、もう一度お試しください。" });
   }
   if (reservation.outcome !== "ok") {
     const info = RESERVE_ERRORS[reservation.outcome];
-    deps.log({ event: "ai_assist", requestId: request.requestId, stage: "reserve", result: reservation.outcome });
+    deps.log({ event: "ai_assist", requestId, stage: "reserve", result: reservation.outcome });
     return respond(info.status, {
       error: info.error,
       message: info.message,
@@ -142,7 +218,14 @@ export async function handleCalendarAssist(
   // ② AIの呼び出し
   let result: OpenAiCallResult;
   try {
-    result = await deps.callModel({ tier: request.model, modelId, instructions, input, maxOutputTokens });
+    result = await deps.callModel({
+      tier,
+      modelId,
+      instructions,
+      input,
+      maxOutputTokens,
+      ...(plan.mode === "image" ? { mode: "image" as const, images: plan.images } : {}),
+    });
   } catch {
     // 呼び出しの中で想定外の例外が起きた: 課金されたか分からないので、そのままにする
     result = { kind: "unknown", reason: "network" };
@@ -151,8 +234,8 @@ export async function handleCalendarAssist(
   // ③ 結果に応じて、確定・解放・そのまま
   if (result.kind === "rejected") {
     const rejectedStatus = result.status;
-    await finalize(deps, () => deps.ledger.release({ userId, requestId: request.requestId, errorCode: `openai_${rejectedStatus}` }), request.requestId, "release");
-    deps.log({ event: "ai_assist", requestId: request.requestId, tier: request.model, result: "rejected", status: rejectedStatus });
+    await finalize(deps, () => deps.ledger.release({ userId, requestId, errorCode: `openai_${rejectedStatus}` }), requestId, "release");
+    deps.log({ event: "ai_assist", requestId, tier, result: "rejected", status: rejectedStatus });
     const message =
       rejectedStatus === 429
         ? "AIの利用が混み合っています。少し待ってから、もう一度お試しください。"
@@ -161,7 +244,7 @@ export async function handleCalendarAssist(
   }
 
   if (result.kind === "unknown") {
-    deps.log({ event: "ai_assist", requestId: request.requestId, tier: request.model, result: "unknown", reason: result.reason });
+    deps.log({ event: "ai_assist", requestId, tier, result: "unknown", reason: result.reason });
     const message =
       result.reason === "timeout"
         ? "AIの応答に時間がかかりすぎたため、読み取りを中止しました。通常の読み取り結果はそのまま使えます。"
@@ -172,33 +255,29 @@ export async function handleCalendarAssist(
 
   // OpenAIが処理した（ok / refusal / incomplete / failed）: 使用量で確定する。使用量が読めなければ予約額で確定する
   const usage: TokenUsage | null = result.usage;
-  const actual = usage ? costMicroUsd(request.model, usage) : reserved;
-  const settled = await finalize(
-    deps,
-    () => deps.ledger.settle({ userId, requestId: request.requestId, actualMicroUsd: actual, usage }),
-    request.requestId,
-    "settle",
-  );
+  const actual = usage ? costMicroUsd(tier, usage) : reserved;
+  const settled = await finalize(deps, () => deps.ledger.settle({ userId, requestId, actualMicroUsd: actual, usage }), requestId, "settle");
   const usageInfo = usageBody(settled?.period ?? null);
 
   if (result.kind !== "ok") {
-    deps.log({ event: "ai_assist", requestId: request.requestId, tier: request.model, result: result.kind, costMicroUsd: actual });
+    deps.log({ event: "ai_assist", requestId, tier, result: result.kind, costMicroUsd: actual });
     const message =
       result.kind === "refusal"
         ? "AIがこの内容の読み取りに応じませんでした。通常の読み取り結果はそのまま使えます。"
         : result.kind === "incomplete"
-          ? "AIの応答が途中で切れたため、結果を使えませんでした。行を減らして、もう一度お試しください。"
+          ? plan.mode === "image"
+            ? "AIの応答が途中で切れたため、結果を使えませんでした。画像の枚数（ページ数）を減らして、もう一度お試しください。"
+            : "AIの応答が途中で切れたため、結果を使えませんでした。行を減らして、もう一度お試しください。"
           : "AIの処理に失敗しました。通常の読み取り結果はそのまま使えます。";
     return respond(502, { error: `ai_${result.kind}`, message, usage: usageInfo });
   }
 
-  const parsed = parseAssistOutput(result.text, request);
-  deps.log({ event: "ai_assist", requestId: request.requestId, tier: request.model, result: parsed ? "ok" : "invalid_output", costMicroUsd: actual });
+  const parsed = plan.parse(result.text);
+  deps.log({ event: "ai_assist", requestId, tier, result: parsed ? "ok" : "invalid_output", costMicroUsd: actual });
   if (!parsed) {
     return respond(502, { error: "ai_invalid_output", message: "AIの出力の形式が正しくなかったため、結果を使えませんでした。", usage: usageInfo });
   }
-  const suggestions: AssistSuggestion[] = parsed.suggestions;
-  return respond(200, { ok: true, model: request.model, suggestions, rejected: parsed.rejected, usage: usageInfo });
+  return respond(200, { ok: true, model: tier, ...(plan.mode === "image" ? { mode: "image" } : {}), ...parsed.fields, rejected: parsed.rejected, usage: usageInfo });
 }
 
 /** 台帳への確定・解放。一時的な失敗に備えて1回だけやり直す。それでも失敗したら、予約は期限切れで「使用済み」になる */

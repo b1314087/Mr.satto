@@ -5,9 +5,9 @@ import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { getServerPlan } from "@/lib/plans/current-plan";
 import { resolveAiPlan } from "@/lib/plans/effective-plan";
 import { createRpcLedger, type Ledger } from "./ledger";
-import { callOpenAi } from "./openai-client";
+import { buildImageInput, callOpenAi, type OpenAiInputMessage } from "./openai-client";
 import { AI_MODELS } from "./pricing";
-import { OUTPUT_SCHEMA } from "./calendar-assist";
+import { IMAGE_OUTPUT_SCHEMA, OUTPUT_SCHEMA } from "./calendar-assist";
 import type { Availability, AssistDeps, Caller } from "./service";
 
 /**
@@ -56,17 +56,20 @@ export function createAssistDeps(): AssistDeps | null {
   if (!ledger || apiKey.length === 0) return null;
   return {
     ledger,
-    callModel: ({ tier, instructions, input, maxOutputTokens }) =>
-      callOpenAi({
+    callModel: ({ tier, instructions, input, maxOutputTokens, mode, images }) => {
+      const isImage = mode === "image" && images !== undefined && images.length > 0;
+      const aiInput: string | OpenAiInputMessage[] = isImage ? buildImageInput(input, images) : input;
+      return callOpenAi({
         apiKey,
         modelId: AI_MODELS[tier].id,
         instructions,
-        input,
+        input: aiInput,
         maxOutputTokens,
-        schemaName: "calendar_rows",
-        schema: OUTPUT_SCHEMA,
+        schemaName: isImage ? "calendar_image_events" : "calendar_rows",
+        schema: isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
         timeoutMs: TIMEOUT_MS,
-      }),
+      });
+    },
     // 運用ログ。本文は含まれない（呼び出し側が渡さない）
     log: (event) => console.info("[ai]", JSON.stringify(event)),
   };

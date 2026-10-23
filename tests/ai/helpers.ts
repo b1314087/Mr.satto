@@ -95,7 +95,7 @@ export class MemoryLedger implements Ledger {
 }
 
 export interface FakeModel {
-  calls: { modelId: string; input: string; maxOutputTokens: number }[];
+  calls: { modelId: string; input: string; maxOutputTokens: number; mode?: string; imageCount?: number; instructions?: string }[];
   next: OpenAiCallResult | (() => Promise<OpenAiCallResult>);
 }
 
@@ -104,7 +104,7 @@ export function makeDeps(ledger: Ledger, model: FakeModel, logs: Record<string, 
     ledger,
     log: (event) => logs.push(event),
     callModel: async (args) => {
-      model.calls.push({ modelId: args.modelId, input: args.input, maxOutputTokens: args.maxOutputTokens });
+      model.calls.push({ modelId: args.modelId, input: args.input, maxOutputTokens: args.maxOutputTokens, mode: args.mode, imageCount: args.images?.length, instructions: args.instructions });
       return typeof model.next === "function" ? model.next() : model.next;
     },
   };

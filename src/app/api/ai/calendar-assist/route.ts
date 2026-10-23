@@ -10,6 +10,8 @@ import { handleCalendarAssist } from "@/lib/ai/service";
 export const maxDuration = 120;
 
 const MAX_BODY_BYTES = 400_000;
+/** 画像モード（画像・スキャンPDF）の本文の上限。Vercelの関数の本文の上限（4.5MB）より小さくする */
+const MAX_IMAGE_BODY_BYTES = 3_700_000;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 function json(status: number, body: Record<string, unknown>) {
@@ -32,14 +34,20 @@ export async function POST(request: Request) {
     return json(415, { error: "unsupported_media_type", message: "リクエストの形式が正しくありません。" });
   }
 
+  // 本文を読む前に、宣言された大きさで断る（大きすぎる本文をメモリに読み込まない）
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > MAX_IMAGE_BODY_BYTES) return json(413, { error: "too_large", message: "送る内容が大きすぎます。" });
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return json(413, { error: "too_large", message: "送る内容が大きすぎます。行や列を減らしてください。" });
+  if (text.length > MAX_IMAGE_BODY_BYTES) return json(413, { error: "too_large", message: "送る内容が大きすぎます。" });
   let body: unknown;
   try {
     body = JSON.parse(text);
   } catch {
     return json(400, { error: "invalid_request", message: "リクエストの形式が正しくありません。" });
   }
+  // 画像モード以外（文字の読み取り）は、従来どおりの上限
+  const isImageMode = typeof body === "object" && body !== null && (body as { mode?: unknown }).mode === "image";
+  if (!isImageMode && text.length > MAX_BODY_BYTES) return json(413, { error: "too_large", message: "送る内容が大きすぎます。行や列を減らしてください。" });
 
   const availability = getAiAvailability();
   const deps = availability.available ? createAssistDeps() : null;

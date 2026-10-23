@@ -12,11 +12,30 @@ import type { TokenUsage } from "./pricing";
 
 const ENDPOINT = "https://api.openai.com/v1/responses";
 
+/** 画像つきの入力（Responses APIの input_text / input_image）。画像は data: URL で渡す（ファイルのアップロードはしない） */
+export type OpenAiInputMessage = {
+  role: "user";
+  content: ({ type: "input_text"; text: string } | { type: "input_image"; image_url: string; detail: "high" | "low" | "auto" })[];
+};
+
+/** 文字と画像（縮小したJPEG/PNGのbase64）から、画像つきの入力を作る。画像は data: URL で渡し、ファイルとしてはアップロードしない */
+export function buildImageInput(text: string, images: { mediaType: string; base64: string }[]): OpenAiInputMessage[] {
+  return [
+    {
+      role: "user",
+      content: [
+        { type: "input_text", text },
+        ...images.map((im) => ({ type: "input_image" as const, image_url: `data:${im.mediaType};base64,${im.base64}`, detail: "high" as const })),
+      ],
+    },
+  ];
+}
+
 export interface OpenAiCallInput {
   apiKey: string;
   modelId: string;
   instructions: string;
-  input: string;
+  input: string | OpenAiInputMessage[];
   maxOutputTokens: number;
   schemaName: string;
   schema: object;
