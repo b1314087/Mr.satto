@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -23,6 +23,17 @@ export function JsonToCsvTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<JsonToCsvOutput | null>(null);
+  // 入力が変わるたびに増やす番号。変換中に入力が変わった場合、その変換の結果を捨てるために使う
+  const inputVersionRef = useRef(0);
+
+  // 入力が変わったら、前の入力に対する変換結果・エラーは捨てる（古いCSVをダウンロードさせない）
+  function handleInputChange(value: string) {
+    inputVersionRef.current += 1;
+    setInput(value);
+    setResult(null);
+    setError(null);
+    setStatus("idle");
+  }
 
   // プレビュー: 出力と同じ jsonTextToCsvRows で、入力に応じてその場で表にする
   const preview = useMemo(() => {
@@ -38,11 +49,15 @@ export function JsonToCsvTool() {
     if (status === "processing") return;
     setStatus("processing");
     setError(null);
+    setResult(null);
+    const version = inputVersionRef.current;
     try {
       const output = await new JsonToCsvProcessor().process({ text: input });
+      if (version !== inputVersionRef.current) return;
       setResult(output);
       setStatus("success");
     } catch (e) {
+      if (version !== inputVersionRef.current) return;
       setResult(null);
       setError(e instanceof Error ? e.message : "変換に失敗しました");
       setStatus("error");
@@ -60,7 +75,7 @@ export function JsonToCsvTool() {
         入力 (JSON配列)
         <textarea
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => handleInputChange(e.target.value)}
           rows={10}
           placeholder={PLACEHOLDER}
           className="rounded-xl border border-neutral-300 px-4 py-3 font-mono text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"

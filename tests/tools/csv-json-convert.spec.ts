@@ -362,6 +362,68 @@ test.describe("CSV・JSON変換の統合: JSON → CSV の変換内容", () => {
   }
 });
 
+test.describe("CSV・JSON変換の統合: JSON → CSV で入力を変えたら古い結果を残さない", () => {
+  test("入力を変更すると結果とダウンロードが消え、不正なJSONに変えても前の結果は残らず、再変換後は新しい入力のCSVが出る", async ({ page }) => {
+    await page.goto("/tools/json-to-csv");
+    await waitForJsonInput(page);
+
+    // 1. 変換すると結果が出る
+    await jsonInput(page).fill('[{"name":"古い","age":1}]');
+    await page.getByRole("button", { name: "CSVに変換する" }).click();
+    await waitForSuccess(page, "変換が完了しました");
+    await expect(resultBox(page)).toBeVisible();
+    await expect(page.getByRole("button", { name: ".csvをダウンロード" })).toBeVisible();
+
+    // 2・3. 入力を変更すると、前の結果もダウンロードも消える
+    await jsonInput(page).fill('[{"name":"新しい","age":2}]');
+    await expect(resultBox(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: ".csvをダウンロード" })).toHaveCount(0);
+    await expect(page.getByText("変換が完了しました")).toHaveCount(0);
+
+    // 4. 不正なJSONに変えても、前の成功結果は残らない（再変換でエラーになっても同じ）
+    await page.getByRole("button", { name: "CSVに変換する" }).click();
+    await waitForSuccess(page, "変換が完了しました");
+    await jsonInput(page).fill("{bad");
+    await expect(resultBox(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: ".csvをダウンロード" })).toHaveCount(0);
+    await page.getByRole("button", { name: "CSVに変換する" }).click();
+    await expect(page.getByText("JSONの形式が正しくありません").first()).toBeVisible();
+    await expect(resultBox(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: ".csvをダウンロード" })).toHaveCount(0);
+
+    // 入力を直すと、エラー表示も消える
+    await jsonInput(page).fill('[{"name":"最後","age":3}]');
+    await expect(page.getByText("JSONの形式が正しくありません")).toHaveCount(0);
+
+    // 5. 再変換後は、新しい入力に対応したCSVをダウンロードできる
+    await page.getByRole("button", { name: "CSVに変換する" }).click();
+    await waitForSuccess(page, "変換が完了しました");
+    const { path: p } = await assertDownloadedFile(await clickAndDownload(page, ".csvをダウンロード"), { minBytes: 1 });
+    const text = normalize(fs.readFileSync(p, "utf8"));
+    expect(text).toContain("最後");
+    expect(text).not.toContain("古い");
+    expect(text).not.toContain("新しい");
+  });
+
+  test("総合ページでも同じ（入力を変えると結果が消える）。CSV→JSONの動作には影響しない", async ({ page }) => {
+    await page.goto(`/tools/${HUB}`);
+    await switchMode(page, "json-to-csv");
+    await jsonInput(page).fill('[{"a":1}]');
+    await page.getByRole("button", { name: "CSVに変換する" }).click();
+    await waitForSuccess(page, "変換が完了しました");
+    await jsonInput(page).fill('[{"a":2}]');
+    await expect(page.getByRole("button", { name: ".csvをダウンロード" })).toHaveCount(0);
+
+    // 6. CSV→JSON は従来どおり（変換後に結果が残り、ダウンロードできる）
+    await switchMode(page, "csv-to-json");
+    await uploadFixture(page, fixtures.csv);
+    await page.getByRole("button", { name: "JSONに変換する" }).click();
+    await waitForSuccess(page, "変換が完了しました");
+    await expect(page.getByText("変換結果（3件）")).toBeVisible();
+    await expect(page.getByRole("button", { name: ".jsonをダウンロード" })).toBeVisible();
+  });
+});
+
 test.describe("CSV・JSON変換の統合: 往復とローカル処理", () => {
   test("往復: CSV→JSONの結果を、同じ画面でJSON→CSVに入れると、元のCSVの内容に戻る", async ({ page }) => {
     const original = 'id,name,note\n1,テスト商品A,"a,b"\n2,テスト商品B,"x""y"\n3,テスト商品C,\n';
