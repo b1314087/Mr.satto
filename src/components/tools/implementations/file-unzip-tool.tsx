@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -15,16 +15,14 @@ import {
 } from "@/lib/processors/browser/file-unzip";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { useObjectUrl } from "@/lib/utils/use-object-url";
 
 /** プレビュー用の画像サムネイル（Object URLはこのコンポーネントが破棄する） */
 function ZipEntryThumb({ blob, alt }: { blob: Blob; alt: string }) {
-  const url = useMemo(() => URL.createObjectURL(blob), [blob]);
-  useEffect(() => {
-    return () => URL.revokeObjectURL(url);
-  }, [url]);
+  const url = useObjectUrl(blob);
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ブラウザ内で生成したObject URLのため next/image は不要
-    <img src={url} alt={alt} className="h-12 w-12 shrink-0 rounded-md border border-neutral-200 object-cover dark:border-neutral-700" />
+    <img src={url ?? undefined} alt={alt} className="h-12 w-12 shrink-0 rounded-md border border-neutral-200 object-cover dark:border-neutral-700" />
   );
 }
 

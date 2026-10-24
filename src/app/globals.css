@@ -431,6 +431,18 @@
     outline: 2px solid var(--ms-focus);
     outline-offset: 2px;
   }
+  /* 枠そのものはクリックしない型（中にボタンや説明がある取り込み欄）。ドラッグ中の見た目だけ共通 */
+  .ms-dropzone-static {
+    min-height: 0;
+    padding: 1.25rem 1rem;
+    cursor: default;
+  }
+  @media (hover: hover) {
+    .ms-dropzone-static:hover:not([data-dragging="true"]) {
+      border-color: var(--ms-border-strong);
+      background-image: none;
+    }
+  }
 
   /* ---- 処理中のスピナー（文字の「処理中」と一緒に使う。動きを減らす設定では回さない） ---- */
   .ms-spinner {

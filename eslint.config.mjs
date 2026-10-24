@@ -21,6 +21,9 @@ const eslintConfig = defineConfig([
     // npmパッケージから抽出した圧縮済み配布物（Phase 2-D OCR機能用）であり、
     // 自前のソースコードではないためLint対象から除外する。
     "public/tesseract/**",
+    // onnxruntime-web の WASM グルーコード（背景除去用）も同様。node_modules/onnxruntime-web/dist の
+    // 同名ファイルとバイト単位で同一の圧縮済み配布物であり、自前のソースコードではないためLint対象から除外する。
+    "public/ort/**",
   ]),
 ]);
 

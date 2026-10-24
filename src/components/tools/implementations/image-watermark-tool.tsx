@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { SliderField } from "@/components/common/slider-field";
@@ -73,13 +73,6 @@ export function ImageWatermarkTool() {
   const previewError = previewErrorFor && previewErrorFor.file === file ? previewErrorFor.message : null;
   const sliderMax = fontSizeSliderMax(naturalSize?.width ?? null, naturalSize?.height ?? null);
   const shownFontSize = fontSize;
-
-  const originalUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => {
-    return () => {
-      if (originalUrl) URL.revokeObjectURL(originalUrl);
-    };
-  }, [originalUrl]);
 
   useEffect(() => {
     return () => {

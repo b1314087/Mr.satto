@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { loadImage } from "@/lib/processors/browser/image";
+import { useObjectUrl } from "@/lib/utils/use-object-url";
 
 /**
  * 画像ツールのライブプレビュー用の共通フック(画像6ツール共用)。
@@ -9,16 +10,8 @@ import { loadImage } from "@/lib/processors/browser/image";
  * ファイルが変わった瞬間に古い結果を使わないようにする(effect本体で同期setStateしない)。
  */
 
-/** File の Object URL。ファイルが変わる/外れるたびに解放する */
-export function useObjectUrl(file: File | null): string | null {
-  const url = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => {
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [url]);
-  return url;
-}
+/** File の Object URL（作成・解放は共通フックが担当。Strict Modeでも壊れない）。既存の呼び出し元のために再エクスポートする */
+export { useObjectUrl };
 
 /** File を HTMLImageElement として読み込む。読み込み中は img=null */
 export function useLoadedImage(file: File | null): { img: HTMLImageElement | null; error: string | null } {

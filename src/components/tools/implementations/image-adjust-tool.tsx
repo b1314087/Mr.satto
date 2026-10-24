@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { SliderField } from "@/components/common/slider-field";
@@ -10,6 +10,7 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ImageAdjustProcessor, applyBrightnessContrast, loadImage } from "@/lib/processors/browser/image";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { useObjectUrl } from "@/lib/utils/use-object-url";
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -50,12 +51,7 @@ export function ImageAdjustTool() {
   const [errorFor, setErrorFor] = useState<{ file: File; message: string } | null>(null);
   const previewReady = selectedFile !== null && readyFor === selectedFile;
   const previewError = errorFor && errorFor.file === selectedFile ? errorFor.message : null;
-  const originalUrl = useMemo(() => (selectedFile ? URL.createObjectURL(selectedFile) : null), [selectedFile]);
-  useEffect(() => {
-    return () => {
-      if (originalUrl) URL.revokeObjectURL(originalUrl);
-    };
-  }, [originalUrl]);
+  const originalUrl = useObjectUrl(selectedFile);
 
   // 選択画像が変わったら、縮小した元データを作り直す
   useEffect(() => {

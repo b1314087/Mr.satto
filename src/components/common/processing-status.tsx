@@ -12,16 +12,19 @@ export function ProcessingStatus({
   state,
   processingLabel = "処理中...",
   successLabel = "処理が完了しました",
+  testId,
 }: {
   state: ProcessingState;
   processingLabel?: string;
   successLabel?: string;
+  /** 自動テスト用の識別子（省略可） */
+  testId?: string;
 }) {
   if (state === "idle" || state === "error") return null;
 
   if (state === "processing") {
     return (
-      <div role="status" aria-live="polite" className="flex items-center gap-2 text-sm text-ms-muted">
+      <div role="status" aria-live="polite" data-testid={testId} className="flex items-center gap-2 text-sm text-ms-muted">
         <Spinner className="text-ms-accent dark:text-ms-focus" />
         <span>{processingLabel}</span>
       </div>
@@ -29,7 +32,7 @@ export function ProcessingStatus({
   }
 
   return (
-    <div role="status" aria-live="polite" className="flex items-center gap-2 text-sm text-ms-success">
+    <div role="status" aria-live="polite" data-testid={testId} className="flex items-center gap-2 text-sm text-ms-success">
       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.5 12.75l6 6 9-13.5" />
       </svg>

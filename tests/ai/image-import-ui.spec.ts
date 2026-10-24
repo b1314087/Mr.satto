@@ -194,7 +194,7 @@ test.describe("予定表の取り込み: ドラッグ&ドロップ・ファイ�
     await openTool(page);
     await expect(page.getByTestId("events-dropzone")).toBeVisible();
     await expect(page.getByTestId("events-drop-label")).toContainText("ドラッグ＆ドロップ");
-    await expect(page.locator('label[for]', { hasText: "ファイルを選ぶ" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "ファイルを選ぶ", exact: true })).toBeVisible();
     await page.evaluate(() => {
       const el = document.querySelector('[data-testid="events-dropzone"]')!;
       el.dispatchEvent(new DragEvent("dragenter", { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() }));
@@ -213,7 +213,7 @@ test.describe("予定表の取り込み: ドラッグ&ドロップ・ファイ�
     await expect(page.getByTestId("events-count-recognized")).toContainText("2件", { timeout: 30_000 });
     await expect(page.getByTestId("events-file-name")).toHaveText("予定表.xlsx");
     // 別のファイルに替える（選ぶボタンの文言が変わる）
-    await expect(page.locator("label[for]", { hasText: "別のファイルを選ぶ" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "別のファイルを選ぶ", exact: true })).toBeVisible();
     await page.getByTestId("events-file").setInputFiles(await xlsxFile([["日付", "予定"], [new Date(Date.UTC(2026, 3, 8)), "遠足"]], "新しい予定表.xlsx"));
     await expect(page.getByTestId("events-count-recognized")).toContainText("1件", { timeout: 30_000 });
     await expect(page.getByTestId("events-file-name")).toHaveText("新しい予定表.xlsx");
@@ -535,6 +535,6 @@ test.describe("予定表の取り込み: 画像・スキャンPDF（AIで読み�
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
     await expect(page.getByTestId("events-dropzone")).toBeVisible();
-    await expect(page.locator('label[for]', { hasText: "別のファイルを選ぶ" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "別のファイルを選ぶ", exact: true })).toBeVisible();
   });
 });

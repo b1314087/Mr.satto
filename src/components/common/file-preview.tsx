@@ -1,18 +1,12 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
 import { formatBytes } from "@/lib/utils/format";
+import { useObjectUrl } from "@/lib/utils/use-object-url";
 
 export function FilePreview({ file }: { file: File }) {
   const isImage = file.type.startsWith("image/");
-  // オブジェクトURLはレンダー中に同期的に生成し、破棄だけをEffectで行う
-  const url = useMemo(() => (isImage ? URL.createObjectURL(file) : null), [file, isImage]);
-
-  useEffect(() => {
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [url]);
+  // プレビュー用のURLの作成・解放は共通フックが担当する（開発モードの二重実行でも壊れない）
+  const url = useObjectUrl(isImage ? file : null);
 
   return (
     <div className="flex items-center gap-3 rounded-ms-control border border-ms-border bg-ms-surface p-3 pr-12">

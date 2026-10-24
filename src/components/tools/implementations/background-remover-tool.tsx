@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { SliderField } from "@/components/common/slider-field";
@@ -21,6 +21,7 @@ import {
 } from "@/lib/processors/browser/background-remove";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { useObjectUrl } from "@/lib/utils/use-object-url";
 
 type Mode = "ai" | "color";
 type PreviewBg = "checker" | "white" | "black" | "green";
@@ -82,12 +83,7 @@ export function BackgroundRemoverTool() {
   const ready = prepared !== null && prepared.file === selectedFile;
   const analyzing = mode === "ai" && ready && prepared.mask === null && previewError === null;
   const keyColor: RGB = keyHex ? hexToRgb(keyHex) : ready ? prepared.autoColor : [255, 255, 255];
-  const originalUrl = useMemo(() => (selectedFile ? URL.createObjectURL(selectedFile) : null), [selectedFile]);
-  useEffect(() => {
-    return () => {
-      if (originalUrl) URL.revokeObjectURL(originalUrl);
-    };
-  }, [originalUrl]);
+  const originalUrl = useObjectUrl(selectedFile);
 
   // 選択画像が変わったら、プレビュー用の縮小データを作る(AIの解析は下のeffectが担当)
   useEffect(() => {

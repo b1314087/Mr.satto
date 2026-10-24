@@ -4,7 +4,7 @@
  * Processor層は日本語の分かりやすいメッセージを throw する設計にしているため、
  * ここではそのメッセージを表示しつつ、想定外のエラーには汎用文言を使う。
  */
-export function ErrorMessage({ message }: { message: string }) {
+export function ErrorMessage({ message, testId }: { message: string; testId?: string }) {
   const displayMessage =
     message && message.length < 200
       ? message
@@ -13,6 +13,7 @@ export function ErrorMessage({ message }: { message: string }) {
   return (
     <div
       role="alert"
+      data-testid={testId}
       className="flex items-start gap-2 rounded-ms-control border border-ms-danger/40 bg-ms-danger/10 px-4 py-3 text-sm text-ms-danger"
     >
       <svg

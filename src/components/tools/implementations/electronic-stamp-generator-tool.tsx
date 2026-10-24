@@ -6,6 +6,8 @@ import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardE
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
+import { FilePickButton } from "@/components/common/file-pick-button";
+import { Button } from "@/components/ui/button";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   STAMP_COLORS,
@@ -228,9 +230,7 @@ function TextStampPanel({
     };
   }, []);
 
-  async function handleFontFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // 同じファイルを選び直しても onChange が発火するようにする
+  async function handleFontFile(file: File | undefined) {
     if (!file) return;
     setFontError(null);
     setFontLoading(true);
@@ -424,31 +424,25 @@ function TextStampPanel({
             選択したファイルはこのブラウザの中だけで処理され、サーバーには送信されません。
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <label className="w-fit cursor-pointer rounded-lg bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700">
+            <FilePickButton
+              accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+              inputLabel="フォントファイルを選択"
+              loading={fontLoading}
+              onFilesSelected={(files) => void handleFontFile(files[0])}
+            >
               フォントファイルを選択
-              <input
-                type="file"
-                accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
-                className="hidden"
-                onChange={handleFontFileChange}
-                disabled={fontLoading}
-              />
-            </label>
+            </FilePickButton>
             {customFont && (
-              <button
-                type="button"
-                onClick={resetToDefaultFont}
-                className="rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-              >
+              <Button variant="secondary" onClick={resetToDefaultFont}>
                 標準フォントに戻す
-              </button>
+              </Button>
             )}
           </div>
-          {fontLoading && <p className="text-xs text-neutral-500 dark:text-neutral-400">読み込み中...</p>}
+          <ProcessingStatus state={fontLoading ? "processing" : "idle"} processingLabel="読み込み中..." />
           {customFont && !fontLoading && (
             <p className="text-xs text-neutral-600 dark:text-neutral-300">使用中: {customFont.fileName}</p>
           )}
-          {fontError && <p className="text-xs text-red-600 dark:text-red-400">{fontError}</p>}
+          {fontError && <ErrorMessage message={fontError} />}
           {customFont && (
             <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
               <input type="checkbox" checked={boldText} onChange={(e) => setBoldText(e.target.checked)} />

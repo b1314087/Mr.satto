@@ -1,6 +1,10 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { ErrorMessage } from "@/components/common/error-message";
+import { FilePickButton } from "@/components/common/file-pick-button";
+import { ProcessingStatus } from "@/components/common/processing-status";
+import { Button } from "@/components/ui/button";
 import { placeEvents, calendarDateRange } from "@/lib/calendar/events";
 import {
   COLUMN_ROLES,
@@ -85,7 +89,6 @@ export function FiscalCalendarEventsImport({
   value: EventImportState | null;
   onChange: (next: EventImportState | null) => void;
 }) {
-  const inputId = useId();
   /** 読み込み中の案内（空でなければ処理中。処理中は、新しいファイルを受け付けない＝二重実行の防止） */
   const [busy, setBusy] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -308,59 +311,32 @@ export function FiscalCalendarEventsImport({
           setDragging(false);
           void handleFiles(Array.from(e.dataTransfer.files));
         }}
-        className={`flex flex-col items-center gap-2 rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors ${
-          dragging ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900"
-        }`}
+        className="ms-dropzone ms-dropzone-static"
       >
-        <p data-testid="events-drop-label" className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+        <p data-testid="events-drop-label" className="text-sm font-medium text-ms-text">
           {dragging ? "ここで手を離すと読み込みます" : "ここにファイルをドラッグ＆ドロップ"}
         </p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">またはボタンで選択（スマートフォンでは、ボタンから選べます）。Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）に対応しています。</p>
+        <p className="text-xs text-ms-muted">またはボタンで選択（スマートフォンでは、ボタンから選べます）。Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）に対応しています。</p>
         <div className="flex flex-wrap items-center justify-center gap-2">
-          <label
-            htmlFor={inputId}
-            className={`rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 ${
-              busy ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
-            }`}
+          <FilePickButton
+            accept={EVENT_FILE_ACCEPT}
+            multiple
+            disabled={!!busy}
+            inputTestId="events-file"
+            inputLabel="予定表のファイル"
+            onFilesSelected={(files) => void handleFiles(files)}
           >
             {value || pending ? "別のファイルを選ぶ" : "ファイルを選ぶ"}
-          </label>
-          <input
-            id={inputId}
-            data-testid="events-file"
-            type="file"
-            multiple
-            accept={EVENT_FILE_ACCEPT}
-            disabled={!!busy}
-            className="sr-only"
-            onChange={(e) => {
-              void handleFiles(Array.from(e.target.files ?? []));
-              // 同じファイルをもう一度選べるようにする
-              e.target.value = "";
-            }}
-          />
+          </FilePickButton>
           {(value || pending || busy) && (
-            <button
-              type="button"
-              data-testid="events-clear"
-              onClick={resetAll}
-              className="rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
-            >
+            <Button variant="secondary" data-testid="events-clear" onClick={resetAll}>
               {busy ? "読み込みを中止する" : "予定の読み込みを取り消す"}
-            </button>
+            </Button>
           )}
         </div>
-        {busy && (
-          <p role="status" data-testid="events-busy" className="text-xs text-neutral-600 dark:text-neutral-300">
-            {busy}
-          </p>
-        )}
+        {busy && <ProcessingStatus state="processing" processingLabel={busy} testId="events-busy" />}
       </div>
-      {fileError && (
-        <p role="alert" data-testid="events-file-error" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-950 dark:text-red-200">
-          {fileError}
-        </p>
-      )}
+      {fileError && <ErrorMessage message={fileError} testId="events-file-error" />}
       {pdfFile && featureFlags.billing && !pending && !busy && (
         <button
           type="button"

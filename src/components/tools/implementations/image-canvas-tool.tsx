@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
+import { useObjectUrl } from "@/lib/utils/use-object-url";
 
 type ImageMode = "resize" | "compress" | "compress-to-size";
 
@@ -81,12 +82,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
   const [preview, setPreview] = useState<{ key: string; file: File; output: ImageProcessorOutput } | null>(null);
   const [previewError, setPreviewError] = useState<{ key: string; message: string } | null>(null);
 
-  const originalUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => {
-    return () => {
-      if (originalUrl) URL.revokeObjectURL(originalUrl);
-    };
-  }, [originalUrl]);
+  const originalUrl = useObjectUrl(file);
 
   // 設定が処理可能な値かどうか(リサイズの幅・高さ、目標KB)
   const settingsValid =

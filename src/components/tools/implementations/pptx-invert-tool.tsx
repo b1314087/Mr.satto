@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -10,6 +10,7 @@ import { PptxInvertProcessor, type PptxInvertOutput } from "@/lib/processors/bro
 import type { ImageOutcome, ImageReport } from "@/lib/pptx/invert-pptx";
 import { DEFAULT_COLOR_CHOICE, PALETTE_PRESETS, contrastRatio, normalizeHex, presetOf, type ColorChoice } from "@/lib/pptx/palette";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { useObjectUrl } from "@/lib/utils/use-object-url";
 
 const ACCEPT = ".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
@@ -25,15 +26,9 @@ const OUTCOME_LABEL: Record<ImageOutcome, string> = {
 };
 
 function useBlobUrl(bytes: Uint8Array | undefined, mime: string | undefined): string | null {
-  // 画像の表示用のURL。画面から外れたら解放する
-  const url = useMemo(() => (bytes ? URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime ?? "image/png" })) : null), [bytes, mime]);
-  useEffect(
-    () => () => {
-      if (url) URL.revokeObjectURL(url);
-    },
-    [url],
-  );
-  return url;
+  // 画像の表示用のURL。作成・解放は共通フックが担当する（画面から外れたら解放。開発モードでも壊れない）
+  const blob = useMemo(() => (bytes ? new Blob([bytes as BlobPart], { type: mime ?? "image/png" }) : null), [bytes, mime]);
+  return useObjectUrl(blob);
 }
 
 /** 色見本（背景色の上に、文字色で「Aa」を表示する） */

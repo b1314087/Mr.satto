@@ -5,6 +5,7 @@ import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { QrCodeProcessor } from "@/lib/processors/browser/qrcode";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
+import { FilePickButton } from "@/components/common/file-pick-button";
 import { SliderField } from "@/components/common/slider-field";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob, dataUrlToBlob } from "@/lib/utils/format";
@@ -218,22 +219,17 @@ export function QrGeneratorTool() {
         </div>
 
         {markKind === "custom" && (
-          <label className="flex flex-col gap-1.5 text-sm">
+          <div className="flex flex-col gap-1.5 text-sm">
             <span className="text-neutral-600 dark:text-neutral-300">マークにする画像（PNG・JPEG・SVGなど）</span>
-            <input
-              type="file"
-              accept="image/*"
-              aria-label="マークにする画像"
-              onChange={(e) => {
-                void handleMarkFile(e.target.files?.[0]);
-                e.target.value = "";
-              }}
-              className="text-sm"
-            />
+            <div>
+              <FilePickButton accept="image/*" inputLabel="マークにする画像" onFilesSelected={(files) => void handleMarkFile(files[0])}>
+                {customMark ? "別の画像を選ぶ" : "画像を選ぶ"}
+              </FilePickButton>
+            </div>
             {!customMark && (
               <span className="text-xs text-neutral-500 dark:text-neutral-400">画像を選ぶと二次元コードに表示されます。</span>
             )}
-          </label>
+          </div>
         )}
 
         {markKind !== "none" && (
