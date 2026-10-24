@@ -34,7 +34,7 @@ const CASES: [string, Input][] = [
   ["csv-format", { kind: "text", text: "a, b ,c\n 1,2 ,3\n\n4,5,6" }],
   ["excel-label", { kind: "text", text: "山田太郎\n佐藤花子" }],
   // 表
-  ...(["csv-to-excel", "csv-dedupe", "csv-replace", "csv-column-editor", "csv-to-json"] as const).map((id) => [id, csv] as [string, Input]),
+  ...(["csv-to-excel", "csv-dedupe", "csv-replace", "csv-column-editor", "csv-to-json", "csv-json-convert"] as const).map((id) => [id, csv] as [string, Input]),
   ...(["excel-to-csv", "excel-csv-convert", "excel-transpose", "excel-blank-remove", "excel-replace", "excel-merge-center", "excel-date-shift", "excel-to-pdf"] as const).map((id) => [id, xlsx] as [string, Input]),
   // 文書
   ...(["word-paragraph-cleanup", "word-renumber", "word-to-pdf"] as const).map((id) => [id, docx] as [string, Input]),

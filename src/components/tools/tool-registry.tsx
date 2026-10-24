@@ -168,11 +168,8 @@ const ImageGrayscaleTool = dynamic(() =>
 const ImageAdjustTool = dynamic(() =>
   import("./implementations/image-adjust-tool").then((m) => m.ImageAdjustTool)
 );
-const CsvToJsonTool = dynamic(() =>
-  import("./implementations/csv-to-json-tool").then((m) => m.CsvToJsonTool)
-);
-const JsonToCsvTool = dynamic(() =>
-  import("./implementations/json-to-csv-tool").then((m) => m.JsonToCsvTool)
+const CsvJsonConvertTool = dynamic(() =>
+  import("./implementations/csv-json-convert-tool").then((m) => m.CsvJsonConvertTool)
 );
 const TextLineCleanerTool = dynamic(() =>
   import("./implementations/text-line-cleaner-tool").then((m) => m.TextLineCleanerTool)
@@ -461,10 +458,12 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageGrayscaleTool />;
     case "image-adjust":
       return <ImageAdjustTool />;
+    case "csv-json-convert":
+      return <CsvJsonConvertTool initialMode="csv-to-json" />;
     case "csv-to-json":
-      return <CsvToJsonTool />;
+      return <CsvJsonConvertTool initialMode="csv-to-json" />;
     case "json-to-csv":
-      return <JsonToCsvTool />;
+      return <CsvJsonConvertTool initialMode="json-to-csv" />;
     case "text-line-cleaner":
       return <TextLineCleanerTool />;
     case "file-unzip":

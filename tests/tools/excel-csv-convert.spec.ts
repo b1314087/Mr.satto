@@ -102,7 +102,7 @@ plainTest.describe("Excel・CSV変換の統合: 登録と一覧・検索・SEO",
 
   plainTest("検索「CSV」「Excel」: 他のCSV・Excelツールのヒットは従来どおり残る", () => {
     const csv = searchTools(getListedTools(), "CSV").map((t) => t.id);
-    for (const id of ["csv-format", "csv-merge", "csv-dedupe", "csv-replace", "csv-to-json"]) plainExpect(csv, id).toContain(id);
+    for (const id of ["csv-format", "csv-merge", "csv-dedupe", "csv-replace", "csv-json-convert"]) plainExpect(csv, id).toContain(id);
     const excel = searchTools(getListedTools(), "Excel").map((t) => t.id);
     for (const id of ["excel-transpose", "excel-replace", "excel-to-pdf"]) plainExpect(excel, id).toContain(id);
   });
@@ -111,7 +111,7 @@ plainTest.describe("Excel・CSV変換の統合: 登録と一覧・検索・SEO",
     const ids = new Set(getListedTools().map((t) => t.id));
     plainExpect(ids.has(HUB)).toBe(true);
     for (const m of MEMBERS) plainExpect(ids.has(m), `${m}が一覧に残っている`).toBe(false);
-    for (const id of ["csv-format", "csv-merge", "csv-dedupe", "csv-replace", "csv-to-json", "json-to-csv", "excel-transpose", "excel-replace", "excel-to-pdf", "pdf-to-excel"]) {
+    for (const id of ["csv-format", "csv-merge", "csv-dedupe", "csv-replace", "csv-json-convert", "excel-transpose", "excel-replace", "excel-to-pdf", "pdf-to-excel"]) {
       plainExpect(ids.has(id), `${id}が一覧から消えている`).toBe(true);
     }
     plainExpect(getListedTools().length).toBe(tools.filter((t) => !t.mergedInto).length);
