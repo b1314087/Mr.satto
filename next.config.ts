@@ -199,6 +199,32 @@ const nextConfig: NextConfig = {
   },
 
   /**
+   * 背景除去（onnxruntime-web）のWASMが、ビルドで二重に出力されるのを防ぐ設定。
+   *
+   * 背景除去は、実行時に /ort/ort-wasm-simd-threaded.{mjs,wasm}（public/ort/ に置いた同じ内容の
+   * ファイル。インストール済みの onnxruntime-web 1.30.0 の dist と完全に一致）を読み込む
+   * （src/lib/processors/browser/background-remove.ts の wasmPaths）。
+   *
+   * 一方、onnxruntime-web の標準の入口（onnxruntime-web/wasm → dist/ort.wasm.bundle.min.mjs）は、
+   * 内部に new URL("ort-wasm-simd-threaded.wasm", import.meta.url) を持つため、ビルドが
+   * その約14.2MBのWASMを /_next/static/media/ にも出力していた（実ブラウザの通信ログで、
+   * この重複コピーが一度も要求されないことを確認済み）。
+   *
+   * このパッケージは、WASMを外部に置く版（dist/ort.wasm.min.mjs）も公式に用意している
+   * （package.json の exports の "onnxruntime-web-use-extern-wasm" 条件）。ただし Turbopack には
+   * 任意の解決条件を指定する設定が無いため、同じ入口をこの版へ直接向ける。
+   * 使い方（wasmPaths で /ort/ を指定する）はこれまでと変わらない。
+   *
+   * 将来 onnxruntime-web を更新したら、public/ort/ のファイルも同じ版に差し替えること。
+   * tests/regression/function-bundle.spec.ts が、この設定と public/ort/ の内容の一致を検知する。
+   */
+  turbopack: {
+    resolveAlias: {
+      "onnxruntime-web/wasm": "./node_modules/onnxruntime-web/dist/ort.wasm.min.mjs",
+    },
+  },
+
+  /**
    * redirects()一覧。
    *
    * 1件目「お問い合わせ」機能削除（次工程 事前作業）に伴うリダイレクト。
