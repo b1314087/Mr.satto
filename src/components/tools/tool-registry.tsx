@@ -85,6 +85,10 @@ const ImageCropTool = dynamic(() =>
 const ImageBatchConvertTool = dynamic(() =>
   import("./implementations/image-batch-convert-tool").then((m) => m.ImageBatchConvertTool)
 );
+// JPG変換・PNG変換・WebP変換は、画像一括変換と同じ共通画面（出力形式の初期選択だけが違う）
+const ImageFormatConvertTool = dynamic(() =>
+  import("./implementations/image-format-convert-tool").then((m) => m.ImageFormatConvertTool)
+);
 const PdfMergeTool = dynamic(() =>
   import("./implementations/pdf-merge-tool").then((m) => m.PdfMergeTool)
 );
@@ -350,9 +354,6 @@ const IMAGE_TOOL_IDS = new Set([
   "image-resize",
   "image-compress",
   "image-compress-to-size",
-  "image-jpg-convert",
-  "image-png-convert",
-  "image-webp-convert",
   "image-rotate",
 ]);
 
@@ -367,6 +368,12 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
   }
 
   switch (toolId) {
+    case "image-jpg-convert":
+      return <ImageFormatConvertTool initialFormat="image/jpeg" />;
+    case "image-png-convert":
+      return <ImageFormatConvertTool initialFormat="image/png" />;
+    case "image-webp-convert":
+      return <ImageFormatConvertTool initialFormat="image/webp" />;
     case "qr-generator":
       return <QrGeneratorTool />;
     case "business-card-qr":

@@ -11,17 +11,15 @@ import {
   ImageResizeProcessor,
   ImageCompressProcessor,
   ImageCompressToSizeProcessor,
-  ImageConvertProcessor,
   ImageRotateProcessor,
 } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
 
-type ImageMode = "resize" | "compress" | "compress-to-size" | "convert" | "rotate";
+type ImageMode = "resize" | "compress" | "compress-to-size" | "rotate";
 
 interface ImageToolSpec {
   mode: ImageMode;
-  targetFormat?: "image/jpeg" | "image/png" | "image/webp";
   actionLabel: string;
 }
 
@@ -29,9 +27,6 @@ const IMAGE_TOOL_CONFIG: Record<string, ImageToolSpec> = {
   "image-resize": { mode: "resize", actionLabel: "リサイズする" },
   "image-compress": { mode: "compress", actionLabel: "圧縮する" },
   "image-compress-to-size": { mode: "compress-to-size", actionLabel: "圧縮する" },
-  "image-jpg-convert": { mode: "convert", targetFormat: "image/jpeg", actionLabel: "JPGに変換する" },
-  "image-png-convert": { mode: "convert", targetFormat: "image/png", actionLabel: "PNGに変換する" },
-  "image-webp-convert": { mode: "convert", targetFormat: "image/webp", actionLabel: "WebPに変換する" },
   "image-rotate": { mode: "rotate", actionLabel: "回転する" },
 };
 
@@ -65,8 +60,6 @@ async function runImageProcessor(
       return new ImageCompressProcessor().process({ file, quality: s.quality / 100 });
     case "compress-to-size":
       return new ImageCompressToSizeProcessor().process({ file, targetKB: s.targetKB });
-    case "convert":
-      return new ImageConvertProcessor().process({ file, mimeType: spec.targetFormat! });
     case "rotate":
       return new ImageRotateProcessor().process({ file, degrees: s.rotateDegrees });
   }

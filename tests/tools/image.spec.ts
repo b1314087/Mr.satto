@@ -36,7 +36,7 @@ test("image-batch-convert: 複数画像を一括変換し、ZIPでダウンロ�
   await page.goto("/tools/image-batch-convert");
   await uploadFixture(page, [fixtures.png, fixtures.jpg]);
 
-  await page.getByRole("button", { name: /件を変換する$/ }).click();
+  await page.getByRole("button", { name: /件をJPGに変換する$/ }).click();
   await waitForSuccess(page, "完了");
 
   const download = await clickAndDownload(page, /ダウンロード/);
@@ -55,16 +55,17 @@ test("image-compress-to-size: 目標KBを指定して圧縮し、ダウンロー
   await assertDownloadedFile(download, { minBytes: 10 });
 });
 
-for (const [id, action, format] of [
-  ["image-jpg-convert", "JPGに変換する", "jpeg"],
-  ["image-png-convert", "PNGに変換する", "png"],
-  ["image-webp-convert", "WebPに変換する", "webp"],
+// 出力形式と同じ形式の画像は変換しない仕様のため、PNG変換ページだけはJPGの画像を入力にする
+for (const [id, action, format, input] of [
+  ["image-jpg-convert", "JPGに変換する", "jpeg", fixtures.png],
+  ["image-png-convert", "PNGに変換する", "png", fixtures.jpg],
+  ["image-webp-convert", "WebPに変換する", "webp", fixtures.png],
 ] as const) {
   test(`${id}: 画像を${format}に変換してダウンロードできる`, async ({ page }) => {
     await page.goto(`/tools/${id}`);
-    await uploadFixture(page, fixtures.png);
+    await uploadFixture(page, input);
 
-    await page.getByRole("button", { name: action }).click();
+    await page.getByRole("button", { name: new RegExp(`件を${action}$`) }).click();
     await waitForSuccess(page, "完了");
 
     const download = await clickAndDownload(page, "ダウンロード");
