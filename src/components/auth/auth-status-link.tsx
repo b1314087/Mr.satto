@@ -14,7 +14,12 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
  * ブラウザセッションを見ているだけの表示用ヒントであり、これを
  * 書き換えても実際のツール利用可否には影響しない。
  */
-export function AuthStatusLink() {
+export function AuthStatusLink({
+  className = "hover:text-blue-600 dark:hover:text-blue-400",
+}: {
+  /** リンクの見た目。既定はヘッダーの横並びナビ用（メニュー内では別のクラスを渡す） */
+  className?: string;
+} = {}) {
   // Supabase未設定の場合は「未ログイン」で確定できるため、初期値として
   // 直接算出する（エフェクト内での同期的なsetStateを避けるため）。
   // 設定済みの場合はセッション確認が終わるまでnull（表示なし）。
@@ -44,11 +49,11 @@ export function AuthStatusLink() {
   if (signedIn === null) return null;
 
   return signedIn ? (
-    <Link href="/account" className="hover:text-blue-600 dark:hover:text-blue-400">
+    <Link href="/account" className={className}>
       アカウント
     </Link>
   ) : (
-    <Link href="/login" className="hover:text-blue-600 dark:hover:text-blue-400">
+    <Link href="/login" className={className}>
       ログイン
     </Link>
   );

@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
+import { dispatchToolsNavigate } from "@/lib/navigation/tools-navigate";
 
 interface SearchBarProps {
   placeholder?: string;
@@ -15,6 +16,12 @@ interface SearchBarProps {
    * このプロパティを渡さない既存の呼び出し箇所（HeaderSearch等）の挙動は変えない。
    */
   resetSignal?: number;
+  /** 入力欄のアクセシブルネーム。同じ画面に複数の検索欄がある時、区別したい場合だけ指定する */
+  ariaLabel?: string;
+  /** 入力欄へのref（メニューを開いた時にここへフォーカスを移すために使う） */
+  inputRef?: Ref<HTMLInputElement>;
+  /** onSearch が無い（=/tools へ移動する）場合に、移動を始めた直後に呼ばれる（メニューを閉じる等に使う） */
+  onNavigate?: () => void;
 }
 
 /**
@@ -27,19 +34,20 @@ export function SearchBar({
   size = "lg",
   onSearch,
   resetSignal,
+  ariaLabel = "ツールを検索",
+  inputRef,
+  onNavigate,
 }: SearchBarProps) {
   const router = useRouter();
   const [value, setValue] = useState(initialValue);
-  const isFirstRender = useRef(true);
+  // resetSignal が「前回から変わった時」だけ検索語を空にする。
+  // （初回マウントでは何もしない。「初回かどうか」の旗で判定すると、開発モードのStrict Modeが
+  //  エフェクトを2回実行するため、URLの?qから復元した初期値が消えてしまう）
+  const lastResetSignal = useRef(resetSignal);
 
   useEffect(() => {
-    // 初回マウント時（resetSignalが最初に評価された時点）は何もしない。
-    // ここで無条件にsetValue("")してしまうと、URLの?qから初期値を復元している
-    // ケース（initialValue由来）を毎回上書きしてしまうため。
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
+    if (lastResetSignal.current === resetSignal) return;
+    lastResetSignal.current = resetSignal;
     setValue("");
   }, [resetSignal]);
 
@@ -49,7 +57,11 @@ export function SearchBar({
       onSearch(value);
     } else {
       const q = value.trim();
-      router.push(q ? `/tools?q=${encodeURIComponent(q)}` : "/tools");
+      const href = q ? `/tools?q=${encodeURIComponent(q)}` : "/tools";
+      // すでに /tools を開いていても、一覧の絞り込みが検索語に追随するように知らせる
+      dispatchToolsNavigate(href);
+      router.push(href);
+      onNavigate?.();
     }
   }
 
@@ -70,6 +82,7 @@ export function SearchBar({
         />
       </svg>
       <input
+        ref={inputRef}
         type="search"
         value={value}
         onChange={(e) => {
@@ -77,7 +90,7 @@ export function SearchBar({
           onSearch?.(e.target.value);
         }}
         placeholder={placeholder}
-        aria-label="ツールを検索"
+        aria-label={ariaLabel}
         className={
           size === "lg"
             ? "w-full rounded-xl border border-neutral-200 bg-white py-3 pl-10 pr-4 text-base shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"

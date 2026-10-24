@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Tool, CategoryId } from "@/lib/tools/types";
 import type { Category } from "@/lib/tools/types";
@@ -8,6 +8,7 @@ import { searchTools } from "@/lib/tools/search";
 import { SearchBar } from "./search-bar";
 import { ToolGrid } from "./tool-grid";
 import { cn } from "@/lib/utils/cn";
+import { TOOLS_NAVIGATE_EVENT, type ToolsNavigateDetail } from "@/lib/navigation/tools-navigate";
 
 interface ToolsExplorerProps {
   tools: Tool[];
@@ -60,6 +61,25 @@ export function ToolsExplorer({
   // 空文字にリセットする。他の呼び出し箇所（ヘッダー等）には影響しない）。
   const [searchBarResetSignal, setSearchBarResetSignal] = useState(0);
 
+  // メニューやヘッダー検索から /tools?... へ移動した時、URLだけでなく絞り込みも合わせる。
+  // （すでにこのページを開いていると、URLが変わっても画面の状態は自動では変わらないため）
+  // 検索欄は key を変えて作り直し、表示を新しい検索語に揃える（この一覧の中だけの再マウント）。
+  const [searchBarKey, setSearchBarKey] = useState(0);
+  const [searchBarInitial, setSearchBarInitial] = useState(initialQuery);
+  useEffect(() => {
+    const validIds = new Set<string>(categories.map((c) => c.id));
+    function handleToolsNavigate(e: Event) {
+      const detail = (e as CustomEvent<ToolsNavigateDetail>).detail;
+      if (!detail) return;
+      setQuery(detail.query);
+      setCategory(validIds.has(detail.category) ? (detail.category as CategoryId) : "all");
+      setSearchBarInitial(detail.query);
+      setSearchBarKey((n) => n + 1);
+    }
+    window.addEventListener(TOOLS_NAVIGATE_EVENT, handleToolsNavigate);
+    return () => window.removeEventListener(TOOLS_NAVIGATE_EVENT, handleToolsNavigate);
+  }, [categories]);
+
   function clearFilters() {
     setQuery("");
     setCategory("all");
@@ -70,7 +90,8 @@ export function ToolsExplorer({
   return (
     <div className="flex flex-col gap-6">
       <SearchBar
-        initialValue={initialQuery}
+        key={searchBarKey}
+        initialValue={searchBarInitial}
         resetSignal={searchBarResetSignal}
         onSearch={(value) => {
           setQuery(value);

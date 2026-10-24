@@ -278,12 +278,141 @@
     border-right-color: transparent;
     animation: ms-spin 0.8s linear infinite;
   }
+
+  /* ---- 共通ヘッダー（バー状のガラス面） ---- */
+  .ms-bar {
+    background-color: var(--ms-surface-glass-solid);
+    border-bottom: 1px solid var(--ms-border);
+    color: var(--ms-text);
+  }
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .ms-bar {
+      background-color: var(--ms-surface-glass);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.2);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.2);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    .ms-bar {
+      background-color: var(--ms-surface-strong);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  /* ---- アイコンだけのボタン（メニューを開く・閉じる・検索）。タップしやすいよう 40px 角 ---- */
+  .ms-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex: none;
+    border-radius: var(--ms-radius-control);
+    border: 1px solid transparent;
+    color: var(--ms-text);
+    background-color: transparent;
+    cursor: pointer;
+    transition:
+      background-color var(--ms-duration) var(--ms-ease),
+      border-color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-icon-btn:hover {
+    background-color: var(--ms-hover-tint);
+    border-color: var(--ms-border);
+  }
+  .ms-icon-btn:focus-visible,
+  .ms-menu-link:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+
+  /* ---- ドロワー（<dialog>）: 画面全体を覆う透明な箱の中に、左寄せでパネルを置く ---- */
+  .ms-drawer {
+    position: fixed;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    border: 0;
+    background: transparent;
+    color: var(--ms-text);
+    overflow: hidden;
+  }
+  .ms-drawer:not([open]) {
+    display: none;
+  }
+  .ms-drawer::backdrop {
+    background-color: rgb(0 0 0 / 0.45);
+  }
+  .ms-drawer-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    width: min(20rem, 88vw);
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 1rem;
+    /* パネルは入力欄と同じく、読みやすさ優先でほぼ不透明にする */
+    background-color: var(--ms-surface-strong);
+    border-right: 1px solid var(--ms-border-strong);
+    box-shadow: var(--ms-shadow-lift);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .ms-drawer[open] .ms-drawer-panel {
+      animation: ms-drawer-in 200ms var(--ms-ease);
+    }
+    .ms-drawer[open]::backdrop {
+      animation: ms-fade-in 200ms var(--ms-ease);
+    }
+  }
+
+  /* ---- メニューのリンク: 押せることが分かる（余白・hover）。現在地は線と太字でも示す（色だけに頼らない） ---- */
+  .ms-menu-link {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--ms-radius-control);
+    font-size: 0.9375rem;
+    color: var(--ms-text);
+    transition: background-color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-menu-link:hover {
+    background-color: var(--ms-hover-tint);
+  }
+  .ms-menu-link[aria-current="page"] {
+    font-weight: 700;
+    background-color: var(--ms-hover-tint);
+    box-shadow: inset 3px 0 0 var(--ms-accent);
+  }
 }
 
 @keyframes ms-spin {
   to {
     transform: rotate(360deg);
   }
+}
+@keyframes ms-drawer-in {
+  from {
+    transform: translateX(-1.5rem);
+    opacity: 0;
+  }
+}
+@keyframes ms-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* メニューを開いている間、背後のページがスクロールしないようにする */
+html.ms-scroll-lock {
+  overflow: hidden;
 }
 
 /* ==========================================================================
