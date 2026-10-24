@@ -11,12 +11,11 @@ import {
   ImageResizeProcessor,
   ImageCompressProcessor,
   ImageCompressToSizeProcessor,
-  ImageRotateProcessor,
 } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
 
-type ImageMode = "resize" | "compress" | "compress-to-size" | "rotate";
+type ImageMode = "resize" | "compress" | "compress-to-size";
 
 interface ImageToolSpec {
   mode: ImageMode;
@@ -27,7 +26,6 @@ const IMAGE_TOOL_CONFIG: Record<string, ImageToolSpec> = {
   "image-resize": { mode: "resize", actionLabel: "リサイズする" },
   "image-compress": { mode: "compress", actionLabel: "圧縮する" },
   "image-compress-to-size": { mode: "compress-to-size", actionLabel: "圧縮する" },
-  "image-rotate": { mode: "rotate", actionLabel: "回転する" },
 };
 
 const EXT_BY_MIME: Record<string, string> = {
@@ -41,7 +39,6 @@ interface ImageRunSettings {
   height: number;
   quality: number;
   targetKB: number;
-  rotateDegrees: 90 | 180 | 270;
 }
 
 /**
@@ -60,8 +57,6 @@ async function runImageProcessor(
       return new ImageCompressProcessor().process({ file, quality: s.quality / 100 });
     case "compress-to-size":
       return new ImageCompressToSizeProcessor().process({ file, targetKB: s.targetKB });
-    case "rotate":
-      return new ImageRotateProcessor().process({ file, degrees: s.rotateDegrees });
   }
 }
 
@@ -79,7 +74,6 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
   const [lockAspect, setLockAspect] = useState(true);
   const [quality, setQuality] = useState(80);
   const [targetKB, setTargetKB] = useState(300);
-  const [rotateDegrees, setRotateDegrees] = useState<90 | 180 | 270>(90);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -113,7 +107,6 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         spec.mode === "resize" ? `${Math.round(width)}x${Math.round(height)}` : "",
         spec.mode === "compress" ? quality : "",
         spec.mode === "compress-to-size" ? targetKB : "",
-        spec.mode === "rotate" ? rotateDegrees : "",
       ].join("|");
 
   // 設定を変えるたびに、実際のProcessorで処理した結果をプレビューとして更新する
@@ -122,7 +115,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const output = await runImageProcessor(spec, file, { width, height, quality, targetKB, rotateDegrees });
+        const output = await runImageProcessor(spec, file, { width, height, quality, targetKB });
         if (cancelled) {
           URL.revokeObjectURL(output.url);
           return;
@@ -139,7 +132,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [file, spec, settingsValid, tooLarge, width, height, quality, targetKB, rotateDegrees, previewKey]);
+  }, [file, spec, settingsValid, tooLarge, width, height, quality, targetKB, previewKey]);
 
   // プレビュー用Object URLは、差し替わる時・アンマウント時に解放する
   const previewOutput = preview?.output ?? null;
@@ -208,7 +201,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     setStatus("processing");
     setError(null);
     try {
-      const output = await runImageProcessor(spec, file, { width, height, quality, targetKB, rotateDegrees });
+      const output = await runImageProcessor(spec, file, { width, height, quality, targetKB });
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -351,24 +344,6 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         </label>
       )}
 
-      {file && spec.mode === "rotate" && (
-        <div className="flex gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          {[90, 180, 270].map((deg) => (
-            <button
-              key={deg}
-              type="button"
-              onClick={() => setRotateDegrees(deg as 90 | 180 | 270)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                rotateDegrees === deg
-                  ? "bg-blue-600 text-white"
-                  : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-              }`}
-            >
-              {deg}°
-            </button>
-          ))}
-        </div>
-      )}
 
 
       {file && (

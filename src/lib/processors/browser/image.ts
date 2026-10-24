@@ -195,15 +195,36 @@ export interface ImageRotateInput {
   degrees: 90 | 180 | 270;
 }
 
+/** 回転後の幅・高さ（90度・270度は縦横が入れ替わる） */
+export function rotatedSize(width: number, height: number, degrees: 90 | 180 | 270): { width: number; height: number } {
+  const swap = degrees === 90 || degrees === 270;
+  return swap ? { width: height, height: width } : { width, height };
+}
+
+/**
+ * 時計回りに回転して描画する（回転後の大きさ rotatedSize に設定したキャンバスの ctx に描く）。
+ * 書き出し（ImageRotateProcessor）とライブプレビューの両方がこの関数を使い、プレビューどおりの結果になる。
+ */
+export function drawRotated(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  degrees: 90 | 180 | 270
+): void {
+  const out = rotatedSize(sourceWidth, sourceHeight, degrees);
+  ctx.translate(out.width / 2, out.height / 2);
+  ctx.rotate((degrees * Math.PI) / 180);
+  ctx.drawImage(source, -sourceWidth / 2, -sourceHeight / 2, sourceWidth, sourceHeight);
+}
+
 export class ImageRotateProcessor extends BrowserProcessor<
   ImageRotateInput,
   ImageProcessorOutput
 > {
   async process({ file, degrees }: ImageRotateInput) {
     const img = await loadImage(file);
-    const swap = degrees === 90 || degrees === 270;
-    const width = swap ? img.naturalHeight : img.naturalWidth;
-    const height = swap ? img.naturalWidth : img.naturalHeight;
+    const { width, height } = rotatedSize(img.naturalWidth, img.naturalHeight, degrees);
 
     const canvas = document.createElement("canvas");
     canvas.width = width;
@@ -211,9 +232,7 @@ export class ImageRotateProcessor extends BrowserProcessor<
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvasの初期化に失敗しました");
 
-    ctx.translate(width / 2, height / 2);
-    ctx.rotate((degrees * Math.PI) / 180);
-    ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+    drawRotated(ctx, img, img.naturalWidth, img.naturalHeight, degrees);
 
     const outType = file.type || "image/png";
     const blob = await canvasToBlob(canvas, outType, 0.92);

@@ -86,6 +86,9 @@ const ImageBatchConvertTool = dynamic(() =>
   import("./implementations/image-batch-convert-tool").then((m) => m.ImageBatchConvertTool)
 );
 // JPG変換・PNG変換・WebP変換は、画像一括変換と同じ共通画面（出力形式の初期選択だけが違う）
+const ImageRotateFlipTool = dynamic(() =>
+  import("./implementations/image-rotate-flip-tool").then((m) => m.ImageRotateFlipTool)
+);
 const ImageFormatConvertTool = dynamic(() =>
   import("./implementations/image-format-convert-tool").then((m) => m.ImageFormatConvertTool)
 );
@@ -354,7 +357,6 @@ const IMAGE_TOOL_IDS = new Set([
   "image-resize",
   "image-compress",
   "image-compress-to-size",
-  "image-rotate",
 ]);
 
 /**
@@ -368,6 +370,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
   }
 
   switch (toolId) {
+    case "image-rotate":
+      return <ImageRotateFlipTool initialMode="rotate" />;
     case "image-jpg-convert":
       return <ImageFormatConvertTool initialFormat="image/jpeg" />;
     case "image-png-convert":
