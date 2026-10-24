@@ -1,7 +1,16 @@
+import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import fs from "node:fs";
 import { fixtures } from "../fixtures/paths";
-import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { uploadFixture as rawUpload, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { waitForFileInputHydrated } from "../helpers/tool-ready";
+
+/** ファイル入力欄の準備（hydration）が終わってから選択する（準備前の選択は無視されることがあるため） */
+async function uploadFixture(page: Page, files: string | string[]) {
+  await waitForFileInputHydrated(page);
+  await rawUpload(page, files);
+}
+
 
 /**
  * CSV/Excelカテゴリの代表E2E（Phase 14 優先度1位）:

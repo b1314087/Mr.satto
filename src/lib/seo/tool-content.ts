@@ -1248,6 +1248,40 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "貼り付けた内容はサーバーに送信されますか？", answer: "いいえ。入力した内容の処理はすべてブラウザ内で行われ、サーバーへ送信されることはありません。" },
     ],
   },
+  "excel-csv-convert": {
+    metaTitle: "Excel・CSV変換｜ExcelをCSVに、CSVをExcelに変換",
+    metaDescription:
+      "Excelファイル(.xlsx)をCSVに、CSVファイルをExcelに変換できる無料ツール。変換の向きは同じ画面で切り替えられ、ブラウザ内処理でファイルはサーバーに送信されません。",
+    lead: "Excelファイル（.xlsx）とCSVファイルを、相互に変換します。変換の向きは、画面の切り替えボタンで選べます。",
+    howTo: [
+      "変換の向き（「Excel → CSV」または「CSV → Excel」）を選びます。",
+      "変換したいファイルをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB）。Excelは.xlsx、CSVは.csvに対応しています。",
+      "「CSVに変換する」または「Excelに変換する」を押すと、ブラウザ内で処理されます。",
+      "変換結果のプレビューを確認して、ダウンロードします。Excelに複数のシートがあるときは、ダウンロードするシートを選べます。",
+    ],
+    faq: [
+      {
+        question: "Excel→CSV変換・CSV→Excel変換の専用ページはなくなりましたか？",
+        answer: "いいえ。Excel→CSV変換・CSV→Excel変換の各ページは、これまでと同じURLで引き続き使えます。どのページからでも、同じ画面で変換の向きを切り替えられます。",
+      },
+      {
+        question: "複数のシートがあるExcelファイルはどうなりますか？",
+        answer: "Excel→CSVでは、読み込んだシートの中からダウンロードするシートを選べます。CSVは1つのシートしか表せないため、シートごとにダウンロードする形式です。複数シートのときのファイル名は「元のファイル名-シート名.csv」になります。",
+      },
+      {
+        question: "ExcelからCSVに変換したファイルは、日本語が文字化けしませんか？",
+        answer: "CSVは、BOM付きのUTF-8で書き出されます。Excelで開いても日本語が文字化けしにくい形式です。",
+      },
+      {
+        question: "CSVからExcelに変換するときの文字コードや区切り文字は？",
+        answer: "UTF-8（BOMの有無どちらでも可）で保存された、カンマ区切りのCSVに対応しています。Shift_JISなど別の文字コードで保存されたCSVは、文字が化けることがあります。その場合は、UTF-8で保存し直してからお試しください。",
+      },
+      {
+        question: "アップロードしたファイルはサーバーに保存されますか？",
+        answer: NO_UPLOAD_ANSWER,
+      },
+    ],
+  },
   "csv-to-excel": {
     metaTitle: "CSV→Excel変換｜CSVファイルをExcel形式(.xlsx)に変換",
     metaDescription:
@@ -1262,7 +1296,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     faq: [
       {
         question: "日本語のCSVで文字化けしませんか？",
-        answer: "文字コードを自動判定して読み込むため、Shift_JISやUTF-8で保存された日本語のCSVもそのまま変換できます。",
+        answer: "UTF-8で保存されたCSVを読み込みます。日本語を含むUTF-8のCSVはそのまま変換できます。Shift_JISなど別の文字コードで保存されたCSVは、文字が化けることがあるため、UTF-8で保存し直してからお試しください。",
       },
       { question: "アップロードしたCSVはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
     ],

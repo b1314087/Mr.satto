@@ -111,11 +111,8 @@ const FileSequentialRenameTool = dynamic(() =>
 const FileZipTool = dynamic(() =>
   import("./implementations/file-zip-tool").then((m) => m.FileZipTool)
 );
-const CsvToExcelTool = dynamic(() =>
-  import("./implementations/csv-to-excel-tool").then((m) => m.CsvToExcelTool)
-);
-const ExcelToCsvTool = dynamic(() =>
-  import("./implementations/excel-to-csv-tool").then((m) => m.ExcelToCsvTool)
+const ExcelCsvConvertTool = dynamic(() =>
+  import("./implementations/excel-csv-convert-tool").then((m) => m.ExcelCsvConvertTool)
 );
 const CsvMergeTool = dynamic(() =>
   import("./implementations/csv-merge-tool").then((m) => m.CsvMergeTool)
@@ -418,10 +415,12 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <FileSequentialRenameTool />;
     case "file-zip":
       return <FileZipTool />;
+    case "excel-csv-convert":
+      return <ExcelCsvConvertTool initialMode="excel-to-csv" />;
     case "csv-to-excel":
-      return <CsvToExcelTool />;
+      return <ExcelCsvConvertTool initialMode="csv-to-excel" />;
     case "excel-to-csv":
-      return <ExcelToCsvTool />;
+      return <ExcelCsvConvertTool initialMode="excel-to-csv" />;
     case "csv-merge":
       return <CsvMergeTool />;
     case "csv-dedupe":
