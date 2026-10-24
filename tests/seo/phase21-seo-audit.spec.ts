@@ -4,6 +4,7 @@ import { tools } from "@/lib/tools/data";
 import { categories } from "@/lib/tools/categories";
 import { AVAILABLE_TOOL_IDS, hasImplementation } from "@/lib/tools/registry";
 import { getRelatedTools } from "@/lib/tools/related-tools";
+import { PDF_EDIT_MODES, PDF_EDIT_TOOL_ID } from "@/lib/tools/pdf-edit-modes";
 import { toolSeoContent } from "@/lib/seo/tool-content";
 import sitemap from "@/app/sitemap";
 
@@ -58,6 +59,14 @@ test.describe("Phase 21: Tool Registryとtool-content.tsの整合性", () => {
     for (const tool of available) {
       const { related } = getRelatedTools(tool);
       for (const r of related) linkedFrom.get(r.id)?.add(tool.id);
+    }
+
+    // 総合ツールに統合済みの旧ツールは、関連ツールのカードには出さない代わりに、総合ツールのページの
+    // 「操作ごとの説明ページ」（src/lib/tools/pdf-edit-modes.ts）から個別URLへリンクされる。
+    for (const t of available) {
+      if (t.mergedInto === PDF_EDIT_TOOL_ID && PDF_EDIT_MODES.some((m) => m.toolId === t.id)) {
+        linkedFrom.get(t.id)?.add(PDF_EDIT_TOOL_ID);
+      }
     }
 
     const orphans = available.filter((t) => (linkedFrom.get(t.id)?.size ?? 0) === 0).map((t) => t.id);

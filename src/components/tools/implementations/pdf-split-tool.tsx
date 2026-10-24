@@ -8,6 +8,7 @@ import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { fileKey, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
 import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
 import { PdfSplitProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
@@ -47,8 +48,8 @@ function formatRange(r: PageRange): string {
   return r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`;
 }
 
-export function PdfSplitTool() {
-  const [file, setFile] = useState<File | null>(null);
+export function PdfSplitTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
+  const [file, setFile] = useState<File | null>(initialFile);
   const [mode, setMode] = useState<SplitMode>("each-page");
   const [rangeText, setRangeText] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
@@ -64,6 +65,7 @@ export function PdfSplitTool() {
 
   function selectFile(next: File | null) {
     setFile(next);
+    onFileChange?.(next);
     setInputError(null);
     run.reset();
   }

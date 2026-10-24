@@ -9,6 +9,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfPageCheckList } from "@/components/tools/implementations/shared/pdf-page-list";
+import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
 import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
 import { PdfDeletePagesProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
@@ -17,8 +18,8 @@ import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 const PREVIEW_MAX_PAGES = 40;
 
-export function PdfDeletePagesTool() {
-  const [file, setFile] = useState<File | null>(null);
+export function PdfDeletePagesTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
+  const [file, setFile] = useState<File | null>(initialFile);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [inputError, setInputError] = useState<string | null>(null);
   const { pageCount, loadError } = usePdfPageCount(file);
@@ -32,6 +33,7 @@ export function PdfDeletePagesTool() {
 
   function selectFile(next: File | null) {
     setFile(next);
+    onFileChange?.(next);
     setSelected(new Set());
     setInputError(null);
     run.reset();

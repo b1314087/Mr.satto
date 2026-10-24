@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { tools, getToolById, getToolsByCategory } from "@/lib/tools/data";
+import { tools, getToolById, getToolsByCategory, isListedTool } from "@/lib/tools/data";
 import { categories, getCategory } from "@/lib/tools/categories";
 import { CategoryBadge } from "@/components/tools/category-badge";
 import { ComingSoon } from "@/components/tools/coming-soon";
@@ -116,7 +116,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
   if (category) {
     const content = getCategorySeoContent(category.id);
     const categoryTools = getToolsByCategory(category.id);
-    const availableTools = categoryTools.filter((t) => t.status === "available" && hasImplementation(t.id));
+    const availableTools = categoryTools.filter((t) => t.status === "available" && hasImplementation(t.id) && isListedTool(t));
     const comingSoonTools = categoryTools.filter((t) => t.status === "coming-soon");
     const breadcrumbItems = [
       { name: "トップ", path: "/" },

@@ -1,56 +1,52 @@
 "use client";
 
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { usePdfPageAspects } from "@/components/tools/implementations/shared/use-pdf-page-aspects";
-import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
+import { ProcessingStatus } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { PdfRotateProcessor } from "@/lib/processors/browser/pdf";
+import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
+import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
+import { PdfRotateProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 const PREVIEW_MAX_PAGES = 40;
 
-export function PdfRotateTool() {
-  const [file, setFile] = useState<File | null>(null);
+export function PdfRotateTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
+  const [file, setFile] = useState<File | null>(initialFile);
   const [rotateBy, setRotateBy] = useState<90 | 180 | 270>(90);
+  const [inputError, setInputError] = useState<string | null>(null);
 
-  const [status, setStatus] = useState<ProcessingState>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PdfProcessorOutput | null>(null);
+  // 結果は「どのファイル・どの角度の結果か」と一緒に持つ。いまの設定と違う古い結果は、表示もダウンロードもしない
+  const settingKey = file ? `${fileKey(file)}|${rotateBy}` : "";
+  const run = useKeyedRun<PdfProcessorOutput>(settingKey, { dispose: revokeOutputUrl });
+  const result = run.value;
+  const error = run.error ?? inputError;
+  const status = run.status;
 
-  // Phase 7: 生成結果のObject URL(result.url)は画面上で使っていないが、
-  // 解放しないとページを離れるまでメモリに残り続けるため、明示的に解放する。
-  useEffect(() => {
-    return () => {
-      if (result) URL.revokeObjectURL(result.url);
-    };
-  }, [result]);
+  function selectFile(next: File | null) {
+    setFile(next);
+    onFileChange?.(next);
+    setInputError(null);
+    run.reset();
+  }
 
   // 縦長ページを90°/270°回転すると枠の幅をはみ出すため、縦横比から縮小率を求めて枠に収める
   const aspects = usePdfPageAspects(file, PREVIEW_MAX_PAGES);
 
-  async function handleRun() {
+  function handleRun() {
     if (!file) return;
-    setStatus("processing");
-    setError(null);
-    try {
-      // ページ指定は省略し、すべてのページを回転する
-      // （実装の複雑さを避けるため、全ページ回転を優先する仕様）
-      const output = await new PdfRotateProcessor().process({ file, rotateBy });
-      setResult(output);
-      setStatus("success");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
-    }
+    // ページ指定は省略し、すべてのページを回転する
+    // （実装の複雑さを避けるため、全ページ回転を優先する仕様）
+    void run.run(() => new PdfRotateProcessor().process({ file, rotateBy }));
   }
 
-  const downloadName = file ? `${stripExtension(file.name)}-rotated.pdf` : "rotated.pdf";
+  const downloadName = file ? pdfOutputName(file.name, "rotated") : "rotated.pdf";
 
   return (
     <PreviewSplitLayout
@@ -85,11 +81,11 @@ export function PdfRotateTool() {
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
-        onFilesSelected={(files) => setFile(files[0])}
-        onError={setError}
+        onFilesSelected={(files) => selectFile(files[0])}
+        onError={setInputError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <FileList files={[file]} onRemove={() => selectFile(null)} />}
 
       {file && (
         <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">

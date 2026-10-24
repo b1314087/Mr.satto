@@ -1,4 +1,4 @@
-import { tools, getToolsByCategory } from "./data";
+import { tools, getToolsByCategory, isListedTool } from "./data";
 import { hasImplementation } from "./registry";
 import type { Tool } from "./types";
 
@@ -31,11 +31,12 @@ export interface RelatedToolsResult {
 }
 
 export function getRelatedTools(tool: Tool, max = 4): RelatedToolsResult {
+  // 総合ツールに統合済みの旧ツールは、独立したカードとしては勧めない（総合ツールのページから専用ページへリンクする）
   const isRecommendable = (t: Tool) =>
-    t.id !== tool.id && t.status === "available" && hasImplementation(t.id);
+    t.id !== tool.id && t.status === "available" && hasImplementation(t.id) && isListedTool(t);
 
   const sameCategoryAvailable = getToolsByCategory(tool.category).filter(
-    (t) => t.status === "available" && hasImplementation(t.id)
+    (t) => t.status === "available" && hasImplementation(t.id) && (isListedTool(t) || t.id === tool.id)
   );
   const selfIndex = sameCategoryAvailable.findIndex((t) => t.id === tool.id);
   const sameCategoryRelated =

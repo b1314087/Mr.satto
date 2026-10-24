@@ -1,16 +1,17 @@
 "use client";
 
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
-import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
+import { ProcessingStatus } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { PdfMergeProcessor } from "@/lib/processors/browser/pdf";
+import { fileKey as fileIdentity, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
+import { PdfMergeProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 // 並べ替えてもサムネイルを作り直さないよう、Fileごとに固定のキーを割り当てる
 const fileKeys = new WeakMap<File, number>();
@@ -26,46 +27,32 @@ function fileKey(file: File): number {
 
 export function PdfMergeTool() {
   const [files, setFiles] = useState<File[]>([]);
-  const [status, setStatus] = useState<ProcessingState>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PdfProcessorOutput | null>(null);
+  const [inputError, setInputError] = useState<string | null>(null);
 
-  // Phase 7: 生成結果のObject URLを、次の結果に置き換わる時／unmount時に解放する
-  // （画像系ツールと同じパターン。本ツールはダウンロードにblobを直接使うため
-  // 画面上でurlを使うことはないが、Processor側の型に合わせて生成されている
-  // ため、明示的に解放しないとページを離れるまで保持され続けてしまう）。
-  useEffect(() => {
-    return () => {
-      if (result) URL.revokeObjectURL(result.url);
-    };
-  }, [result]);
+  // 結果は「どのファイルを・どの順序で結合したか」と一緒に持つ。いまのファイル・順序と違う古い結果は、
+  // 表示もダウンロードもしない（ファイルの追加・削除・並べ替えのたびに、前の結合結果は使えなくなる）
+  const settingKey = files.length > 0 ? files.map((f) => `${fileKey(f)}:${fileIdentity(f)}`).join("|") : "";
+  const run = useKeyedRun<PdfProcessorOutput>(settingKey, { dispose: revokeOutputUrl });
+  const result = run.value;
+  const error = run.error ?? inputError;
+  const status = run.status;
 
   function addFiles(newFiles: File[]) {
     setFiles((prev) => [...prev, ...newFiles]);
-    setResult(null);
-    setStatus("idle");
-    setError(null);
+    setInputError(null);
   }
 
   function removeFile(index: number) {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
-  async function handleRun() {
+  function handleRun() {
     if (files.length < 2) return;
-    setStatus("processing");
-    setError(null);
-    try {
-      const output = await new PdfMergeProcessor().process({ files });
-      setResult(output);
-      setStatus("success");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
-    }
+    const targets = files;
+    void run.run(() => new PdfMergeProcessor().process({ files: targets }));
   }
 
-  const downloadName = files[0] ? `${stripExtension(files[0].name)}-merged.pdf` : "merged.pdf";
+  const downloadName = files[0] ? pdfOutputName(files[0].name, "merged") : "merged.pdf";
 
   return (
     <PreviewSplitLayout
@@ -104,7 +91,7 @@ export function PdfMergeTool() {
         label="PDFをドラッグ&ドロップ（複数可）"
         hint="またはタップして選択。結合する順序で選択してください"
         onFilesSelected={addFiles}
-        onError={setError}
+        onError={setInputError}
       />
 
       {files.length > 0 && (

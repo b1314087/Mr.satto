@@ -305,6 +305,37 @@ const toolDefinitions: Tool[] = [
   // PDF
   // ------------------------------------------------------------------
   {
+    id: "pdf-edit",
+    name: "PDF編集",
+    category: "pdf",
+    description: "PDFの結合・分割・ページ削除・ページ抽出・ページ並び替え・回転を、ひとつの画面で切り替えて使えます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: [
+      "PDF編集",
+      "結合",
+      "分割",
+      "ページ削除",
+      "ページ抽出",
+      "並び替え",
+      "並べ替え",
+      "回転",
+      "PDF結合",
+      "PDF分割",
+      "PDFページ削除",
+      "PDFページ抽出",
+      "PDFページ並び替え",
+      "PDF回転",
+      "merge",
+      "split",
+      "delete pages",
+      "extract pages",
+      "reorder pages",
+      "rotate",
+    ],
+  },
+  {
     id: "pdf-merge",
     name: "PDF結合",
     category: "pdf",
@@ -313,6 +344,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["merge", "結合"],
+    mergedInto: "pdf-edit",
   },
   {
     id: "pdf-split",
@@ -323,6 +355,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["split", "分割"],
+    mergedInto: "pdf-edit",
   },
   {
     id: "pdf-delete-pages",
@@ -333,6 +366,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["delete", "削除"],
+    mergedInto: "pdf-edit",
   },
   {
     id: "pdf-reorder-pages",
@@ -343,6 +377,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["reorder", "並び替え"],
+    mergedInto: "pdf-edit",
   },
   {
     id: "pdf-rotate",
@@ -353,6 +388,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["rotate", "回転"],
+    mergedInto: "pdf-edit",
   },
   {
     id: "pdf-compress",
@@ -443,6 +479,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["extract", "抽出", "ページ抽出"],
+    mergedInto: "pdf-edit",
   },
   {
     id: "pdf-add-page-numbers",
@@ -1257,9 +1294,24 @@ export function getToolsByCategory(category: string): Tool[] {
   return tools.filter((t) => t.category === category);
 }
 
+/** ツール一覧・検索・おすすめなどに「独立したカード」として出すツールか（統合済みの旧ツールは出さない） */
+export function isListedTool(tool: Tool): boolean {
+  return !tool.mergedInto;
+}
+
+/** ツール一覧・検索の対象（統合済みの旧ツールを除く） */
+export function getListedTools(): Tool[] {
+  return tools.filter(isListedTool);
+}
+
+/** 指定した総合ツールに統合済みのツール（個別URLは維持。総合ツールのページからリンクする） */
+export function getMergedTools(hubId: string): Tool[] {
+  return tools.filter((t) => t.mergedInto === hubId);
+}
+
 export function getFeaturedTools(): Tool[] {
   // Phase 19: おすすめツール（ホーム等）には準備中(coming-soon)のツールを
   // 絶対に混ぜない（開発指示書10章）。現状featured:trueなcoming-soonツールは
   // 存在しないが、今後のデータ追加ミスで混入することを防ぐための安全策。
-  return tools.filter((t) => t.featured && t.status === "available");
+  return tools.filter((t) => t.featured && t.status === "available" && isListedTool(t));
 }

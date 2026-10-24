@@ -8,6 +8,7 @@ import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
 import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
 import { PdfExtractPagesProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
@@ -17,8 +18,8 @@ import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 const PREVIEW_MAX_PAGES = 40;
 
-export function PdfExtractPagesTool() {
-  const [file, setFile] = useState<File | null>(null);
+export function PdfExtractPagesTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
+  const [file, setFile] = useState<File | null>(initialFile);
   const [pageSelection, setPageSelection] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
   const { pageCount, loadError } = usePdfPageCount(file);
@@ -32,6 +33,7 @@ export function PdfExtractPagesTool() {
 
   function selectFile(next: File | null) {
     setFile(next);
+    onFileChange?.(next);
     setInputError(null);
     run.reset();
   }

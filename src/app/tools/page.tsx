@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ToolsExplorer } from "@/components/tools/tools-explorer";
-import { tools } from "@/lib/tools/data";
+import { getListedTools } from "@/lib/tools/data";
 import { categories } from "@/lib/tools/categories";
 import type { CategoryId } from "@/lib/tools/types";
 
@@ -30,7 +30,7 @@ export default async function ToolsPage({ searchParams }: ToolsPageProps) {
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
       <h1 className="mb-6 text-2xl font-bold text-neutral-900 dark:text-white">ツール一覧</h1>
       <ToolsExplorer
-        tools={tools}
+        tools={getListedTools()}
         categories={categories}
         initialQuery={initialQuery}
         initialCategory={initialCategory}

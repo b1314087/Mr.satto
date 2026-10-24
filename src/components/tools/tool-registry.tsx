@@ -92,20 +92,9 @@ const ImageRotateFlipTool = dynamic(() =>
 const ImageFormatConvertTool = dynamic(() =>
   import("./implementations/image-format-convert-tool").then((m) => m.ImageFormatConvertTool)
 );
-const PdfMergeTool = dynamic(() =>
-  import("./implementations/pdf-merge-tool").then((m) => m.PdfMergeTool)
-);
-const PdfSplitTool = dynamic(() =>
-  import("./implementations/pdf-split-tool").then((m) => m.PdfSplitTool)
-);
-const PdfDeletePagesTool = dynamic(() =>
-  import("./implementations/pdf-delete-pages-tool").then((m) => m.PdfDeletePagesTool)
-);
-const PdfReorderPagesTool = dynamic(() =>
-  import("./implementations/pdf-reorder-pages-tool").then((m) => m.PdfReorderPagesTool)
-);
-const PdfRotateTool = dynamic(() =>
-  import("./implementations/pdf-rotate-tool").then((m) => m.PdfRotateTool)
+// PDF編集（結合・分割・ページ削除・ページ抽出・並び替え・回転）は、1つの共通画面（操作の初期選択だけが違う）
+const PdfEditTool = dynamic(() =>
+  import("./implementations/pdf-edit-tool").then((m) => m.PdfEditTool)
 );
 const ImageToPdfTool = dynamic(() =>
   import("./implementations/image-to-pdf-tool").then((m) => m.ImageToPdfTool)
@@ -166,9 +155,6 @@ const WordToPdfTool = dynamic(() =>
 );
 const ExcelToPdfTool = dynamic(() =>
   import("./implementations/excel-to-pdf-tool").then((m) => m.ExcelToPdfTool)
-);
-const PdfExtractPagesTool = dynamic(() =>
-  import("./implementations/pdf-extract-pages-tool").then((m) => m.PdfExtractPagesTool)
 );
 const PdfAddPageNumbersTool = dynamic(() =>
   import("./implementations/pdf-add-page-numbers-tool").then((m) => m.PdfAddPageNumbersTool)
@@ -408,16 +394,18 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageCropTool />;
     case "image-batch-convert":
       return <ImageBatchConvertTool />;
+    case "pdf-edit":
+      return <PdfEditTool initialMode="merge" pageToolId="pdf-edit" />;
     case "pdf-merge":
-      return <PdfMergeTool />;
+      return <PdfEditTool initialMode="merge" pageToolId="pdf-merge" />;
     case "pdf-split":
-      return <PdfSplitTool />;
+      return <PdfEditTool initialMode="split" pageToolId="pdf-split" />;
     case "pdf-delete-pages":
-      return <PdfDeletePagesTool />;
+      return <PdfEditTool initialMode="delete" pageToolId="pdf-delete-pages" />;
     case "pdf-reorder-pages":
-      return <PdfReorderPagesTool />;
+      return <PdfEditTool initialMode="reorder" pageToolId="pdf-reorder-pages" />;
     case "pdf-rotate":
-      return <PdfRotateTool />;
+      return <PdfEditTool initialMode="rotate" pageToolId="pdf-rotate" />;
     case "image-to-pdf":
       return <ImageToPdfTool />;
     case "pdf-to-image":
@@ -461,7 +449,7 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
     case "excel-to-pdf":
       return <ExcelToPdfTool />;
     case "pdf-extract-pages":
-      return <PdfExtractPagesTool />;
+      return <PdfEditTool initialMode="extract" pageToolId="pdf-extract-pages" />;
     case "pdf-add-page-numbers":
       return <PdfAddPageNumbersTool />;
     case "pdf-watermark":
