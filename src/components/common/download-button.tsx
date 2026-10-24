@@ -1,6 +1,7 @@
 "use client";
 
 import { downloadBlob } from "@/lib/utils/format";
+import { Button } from "@/components/ui/button";
 
 export function DownloadButton({
   blob,
@@ -12,12 +13,8 @@ export function DownloadButton({
   label?: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => downloadBlob(blob, filename)}
-      className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-    >
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <Button onClick={() => downloadBlob(blob, filename)}>
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
         <path
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -26,6 +23,6 @@ export function DownloadButton({
         />
       </svg>
       {label}
-    </button>
+    </Button>
   );
 }

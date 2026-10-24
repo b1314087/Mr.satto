@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -27,6 +27,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
   /** 処理中。true の間は押せない（二重送信を防ぐ）。 */
   loading?: boolean;
+  /** 要素への参照（フォーカスを移す時などに使う） */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function Button({

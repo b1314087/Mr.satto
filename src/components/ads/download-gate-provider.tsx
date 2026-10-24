@@ -14,6 +14,9 @@ import { getTemporaryAccessService } from "@/lib/plans/temporary-access";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { TEMP_ACCESS_DURATION_MS } from "@/lib/plans/temporary-access-cookie";
 import { featureFlags } from "@/lib/config/features";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { Spinner } from "@/components/ui/spinner";
 
 /**
  * ダウンロード時の広告確認（Free向けの「広告を見て1時間利用する」導線）。
@@ -117,16 +120,6 @@ export function DownloadGateProvider({
     setPhase("closed");
   }, []);
 
-  // Escキーで閉じる（広告の処理中は閉じない）
-  useEffect(() => {
-    if (phase === "closed" || phase === "busy") return;
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") close();
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [phase, close]);
-
   function applyUnlocked(kind: "ad" | "fallback", expiresAtMs: number | null) {
     unlockedUntilMsRef.current = expiresAtMs ?? Date.now() + TEMP_ACCESS_DURATION_MS;
     rewardEarnedRef.current = false;
@@ -228,46 +221,38 @@ export function DownloadGateProvider({
     <>
       {children}
       {isOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-          data-testid="download-gate-overlay"
+        // 見た目・フォーカス管理・Tabの閉じ込め・背景スクロール停止・Escapeは共通のModalが担当する。
+        // Escで閉じるのは広告の処理中以外（処理中は閉じない）。背景のクリックでは閉じない（誤タップ防止）。
+        <Modal
+          labelledBy="download-gate-title"
+          onEscape={phase === "busy" ? undefined : close}
+          overlayTestId="download-gate-overlay"
+          panelTestId="download-gate-dialog"
+          panelProps={{ "data-phase": phase }}
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="download-gate-title"
-            data-testid="download-gate-dialog"
-            data-phase={phase}
-            className="flex w-full max-w-md flex-col gap-4 rounded-2xl bg-white p-6 text-left shadow-xl dark:bg-neutral-900"
-          >
             {phase === "prompt" && (
               <>
-                <h2 id="download-gate-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
+                <h2 id="download-gate-title" className="text-lg font-semibold text-ms-text">
                   ダウンロードの前に広告をご覧ください
                 </h2>
-                <p className="text-sm text-neutral-600 dark:text-neutral-300">
+                <p className="text-sm text-ms-muted">
                   無料でご利用の場合、広告を1回見ていただくと、1時間は他のツールを含めて広告なしでダウンロードできます。
                 </p>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                <p className="text-xs text-ms-muted">
                   ファイルはお使いのブラウザの中で処理されており、広告の視聴でサーバーへ送信されることはありません。
                 </p>
                 <DownloadTargets labels={itemLabels} />
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <button
+                  <Button
                     ref={primaryButtonRef}
-                    type="button"
+                    data-modal-initial-focus
                     onClick={() => void handleWatchAd()}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
                   >
                     広告を見てダウンロード
-                  </button>
-                  <button
-                    type="button"
-                    onClick={close}
-                    className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  >
+                  </Button>
+                  <Button variant="secondary" onClick={close}>
                     キャンセル
-                  </button>
+                  </Button>
                 </div>
                 <PlanHint />
               </>
@@ -275,10 +260,11 @@ export function DownloadGateProvider({
 
             {phase === "busy" && (
               <>
-                <h2 id="download-gate-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
+                <h2 id="download-gate-title" className="text-lg font-semibold text-ms-text">
                   しばらくお待ちください
                 </h2>
-                <p role="status" aria-live="polite" className="text-sm text-neutral-600 dark:text-neutral-300">
+                <p role="status" aria-live="polite" className="flex items-center gap-2 text-sm text-ms-muted">
+                  <Spinner />
                   {busyLabel}
                 </p>
               </>
@@ -286,45 +272,40 @@ export function DownloadGateProvider({
 
             {phase === "unlocked" && (
               <>
-                <h2 id="download-gate-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
+                <h2 id="download-gate-title" className="text-lg font-semibold text-ms-text">
                   {unlockKind === "fallback" ? "今回は広告なしでご利用いただけます" : "ありがとうございました"}
                 </h2>
                 {unlockKind === "fallback" ? (
-                  <p className="text-sm text-neutral-600 dark:text-neutral-300">
+                  <p className="text-sm text-ms-muted">
                     広告を表示できませんでした。ご不便をおかけしたため、今回は特別に1時間、広告なしでご利用いただけるようにしました。
                   </p>
                 ) : (
-                  <p className="text-sm text-neutral-600 dark:text-neutral-300">
+                  <p className="text-sm text-ms-muted">
                     広告の視聴が完了しました。これから1時間は、他のツールを含めて広告なしでダウンロードできます。
                   </p>
                 )}
                 <DownloadTargets labels={itemLabels} />
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <button
+                  <Button
                     ref={primaryButtonRef}
-                    type="button"
+                    data-modal-initial-focus
                     onClick={handleDownload}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
                   >
                     ダウンロードする{countLabel}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={close}
-                    className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  >
+                  </Button>
+                  <Button variant="secondary" onClick={close}>
                     閉じる
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
 
             {(phase === "denied" || phase === "unavailable" || phase === "error") && (
               <>
-                <h2 id="download-gate-title" className="text-lg font-semibold text-neutral-900 dark:text-white">
+                <h2 id="download-gate-title" className="text-lg font-semibold text-ms-text">
                   {phase === "denied" ? "広告の視聴が完了しませんでした" : "広告を表示できませんでした"}
                 </h2>
-                <p className="text-sm text-red-600 dark:text-red-400">
+                <p className="text-sm text-ms-danger">
                   {phase === "denied" &&
                     "広告を最後まで視聴できなかったため、利用権は付与されませんでした。もう一度お試しください。処理済みのファイルはそのまま残っています。"}
                   {phase === "unavailable" &&
@@ -333,27 +314,21 @@ export function DownloadGateProvider({
                     "エラーが発生しました。しばらくしてからもう一度お試しください。処理済みのファイルはそのまま残っています。"}
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <button
+                  <Button
                     ref={primaryButtonRef}
-                    type="button"
+                    data-modal-initial-focus
                     onClick={() => void handleWatchAd()}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
                   >
                     もう一度試す
-                  </button>
-                  <button
-                    type="button"
-                    onClick={close}
-                    className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  >
+                  </Button>
+                  <Button variant="secondary" onClick={close}>
                     閉じる
-                  </button>
+                  </Button>
                 </div>
                 <PlanHint />
               </>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   );
@@ -362,7 +337,7 @@ export function DownloadGateProvider({
 function DownloadTargets({ labels }: { labels: string[] }) {
   if (labels.length === 0) return null;
   return (
-    <ul className="max-h-24 overflow-y-auto rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+    <ul className="max-h-24 overflow-y-auto rounded-ms-control bg-ms-hover-tint px-3 py-2 text-xs text-ms-muted">
       {labels.map((label, index) => (
         <li key={`${label}-${index}`} className="truncate">
           {label}
@@ -376,9 +351,9 @@ function PlanHint() {
   // 課金システムがオフの間は、有料プランの案内を出さない（src/lib/config/features.ts）
   if (!featureFlags.billing) return null;
   return (
-    <p className="text-xs text-neutral-400 dark:text-neutral-500">
+    <p className="text-xs text-ms-muted">
       Premium（月額{PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円・税込）に加入すると、広告なしでご利用いただけます。{" "}
-      <Link href="/pricing" className="underline-offset-2 hover:text-blue-600 hover:underline dark:hover:text-blue-400">
+      <Link href="/pricing" className="underline underline-offset-2 hover:text-ms-accent dark:hover:text-ms-focus">
         料金プランを見る
       </Link>
     </p>

@@ -15,7 +15,7 @@ export function FilePreview({ file }: { file: File }) {
   }, [url]);
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900">
+    <div className="flex items-center gap-3 rounded-ms-control border border-ms-border bg-ms-surface p-3 pr-12">
       {isImage && url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -24,15 +24,15 @@ export function FilePreview({ file }: { file: File }) {
           className="h-14 w-14 shrink-0 rounded-md object-cover"
         />
       ) : (
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-xl dark:bg-neutral-800">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-ms-hover-tint text-xl">
           📄
         </div>
       )}
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-neutral-800 dark:text-neutral-100">
+        <p className="truncate text-sm font-medium text-ms-text">
           {file.name}
         </p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="text-xs text-ms-muted">
           {formatBytes(file.size)}
         </p>
       </div>

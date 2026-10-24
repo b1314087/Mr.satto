@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useId, useRef, useState } from "react";
-import { cn } from "@/lib/utils/cn";
 
 interface FileDropzoneProps {
   accept?: string;
@@ -94,34 +93,44 @@ export function FileDropzone({
     [accept, maxSizeMB, multiple, onFilesSelected, onError]
   );
 
+  const hintId = `${inputId}-hint`;
+
   return (
     <div
       role="button"
       tabIndex={0}
       aria-label={label}
+      aria-describedby={hintId}
+      data-dragging={isDragging ? "true" : undefined}
       onClick={() => inputRef.current?.click()}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+        // 入力欄の中のキー操作（hiddenなので通常は起きない）には反応せず、この領域自身にフォーカスがある時だけ開く
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          // スペースでページがスクロールしてしまうのを防ぐ
+          e.preventDefault();
+          inputRef.current?.click();
+        }
       }}
       onDragOver={(e) => {
         e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
         setIsDragging(true);
       }}
-      onDragLeave={() => setIsDragging(false)}
+      onDragLeave={(e) => {
+        // 中の文字やアイコンの上に移っただけでは、ドラッグ中の表示を解除しない（ちらつき防止）
+        if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+        setIsDragging(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         setIsDragging(false);
         validateAndEmit(e.dataTransfer.files);
       }}
-      className={cn(
-        "flex min-h-40 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors",
-        isDragging
-          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30"
-          : "border-neutral-300 bg-neutral-50 hover:border-blue-400 hover:bg-blue-50/50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:border-blue-500 dark:hover:bg-blue-950/20"
-      )}
+      className="ms-dropzone"
     >
       <svg
-        className="h-8 w-8 text-neutral-400"
+        className="h-8 w-8 text-ms-muted"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -134,8 +143,10 @@ export function FileDropzone({
           d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 8.25 12 3.75m0 0L7.5 8.25M12 3.75v13.5"
         />
       </svg>
-      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{label}</p>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>
+      <p className="text-sm font-medium text-ms-text">{label}</p>
+      <p id={hintId} className="text-xs text-ms-muted">
+        {isDragging ? "ここでマウスを離すと選択されます" : hint}
+      </p>
       <input
         id={inputId}
         ref={inputRef}

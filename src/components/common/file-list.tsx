@@ -21,9 +21,9 @@ export function FileList({
               type="button"
               onClick={() => onRemove(index)}
               aria-label={`${file.name} を削除`}
-              className="absolute right-2 top-2 rounded-full bg-neutral-100 p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
+              className="ms-focus-ring absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-ms-border bg-ms-strong text-ms-muted transition-colors hover:text-ms-text hover:bg-ms-hover-tint"
             >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5" fill="none" viewBox="3 3 18 18" stroke="currentColor" aria-hidden="true">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
