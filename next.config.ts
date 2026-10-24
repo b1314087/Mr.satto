@@ -174,6 +174,31 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["stripe"],
 
   /**
+   * サーバー関数（Vercel Function）への不要な同梱を減らす設定。
+   *
+   * Next.js は、画像最適化（/_next/image）用の画像処理ライブラリ sharp（と、その本体ファイルを
+   * 収めた @img/* パッケージ）を、ほぼすべての画面のサーバー関数に同梱する（1画面あたり約48MB。
+   * ビルド記録のファイル追跡結果で確認）。
+   *
+   * このアプリでは、次の理由で、関数の中に sharp は不要である:
+   *   - next/image（画像最適化を使う部品）はどこからも使っていない（src 配下に import が無い）。
+   *     画像はブラウザ内で処理するか、通常の <img> で表示している。
+   *   - 画像最適化の本体（/_next/image）は、Vercel では Vercel 側のサービスが処理する。
+   *   - OGP画像・アイコンは next/og の ImageResponse で作る。ImageResponse は sharp があれば
+   *     使い、無ければ同梱の resvg（WebAssembly）で描画する作りになっている
+   *     （node_modules/next/dist/compiled/@vercel/og/index.node.js の getSharp）。
+   *     ビルド時に作る画像は、sharp がインストールされたまま作られるため、この設定の影響を受けない。
+   *
+   * 影響するのは「関数に同梱されるファイル」だけで、sharp パッケージ自体（node_modules）は
+   * 削除していない。将来 next/image を使う場合は、この除外を外すこと
+   * （tests/regression/function-bundle.spec.ts が、next/image・sharp の使用を検知して知らせる）。
+   * キーの "/*" はすべてのルートを指す（Next.js 公式: next.config.js の outputFileTracingExcludes）。
+   */
+  outputFileTracingExcludes: {
+    "/*": ["./node_modules/sharp/**/*", "./node_modules/@img/**/*"],
+  },
+
+  /**
    * redirects()一覧。
    *
    * 1件目「お問い合わせ」機能削除（次工程 事前作業）に伴うリダイレクト。
