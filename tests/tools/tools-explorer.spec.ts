@@ -24,8 +24,9 @@ import { tools } from "@/lib/tools/data";
  */
 
 test("一覧ページが表示され、件数がRegistry上の実装済みツール数と一致する", async ({ page }) => {
-  const expectedAvailable = tools.filter((t) => t.status === "available").length;
-  const expectedComingSoon = tools.filter((t) => t.status === "coming-soon").length;
+  // 統合済みツール（PDF編集・画像形式変換・画像回転・反転などの旧ツール）は一覧のカードに出さない
+  const expectedAvailable = tools.filter((t) => t.status === "available" && !t.mergedInto).length;
+  const expectedComingSoon = tools.filter((t) => t.status === "coming-soon" && !t.mergedInto).length;
 
   await page.goto("/tools");
   const main = page.locator("main");
@@ -47,7 +48,7 @@ test("キーワード検索: 単一語（PDF）で絞り込める", async ({ pag
   const main = page.locator("main");
   await main.getByRole("searchbox", { name: "ツールを検索" }).fill("PDF");
 
-  await expect(main.getByRole("heading", { name: "PDF結合" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "PDF編集" })).toBeVisible();
   const countText = await main.getByText(/件のツール$/).first().innerText();
   expect(Number(countText.replace("件のツール", ""))).toBeGreaterThan(0);
 });

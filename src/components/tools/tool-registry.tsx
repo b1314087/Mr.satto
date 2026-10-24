@@ -356,8 +356,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
   }
 
   switch (toolId) {
+    case "image-rotate-flip":
     case "image-rotate":
       return <ImageRotateFlipTool initialMode="rotate" />;
+    case "image-format-convert":
     case "image-jpg-convert":
       return <ImageFormatConvertTool initialFormat="image/jpeg" />;
     case "image-png-convert":
@@ -395,17 +397,17 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
     case "image-batch-convert":
       return <ImageBatchConvertTool />;
     case "pdf-edit":
-      return <PdfEditTool initialMode="merge" pageToolId="pdf-edit" />;
+      return <PdfEditTool initialMode="merge" />;
     case "pdf-merge":
-      return <PdfEditTool initialMode="merge" pageToolId="pdf-merge" />;
+      return <PdfEditTool initialMode="merge" />;
     case "pdf-split":
-      return <PdfEditTool initialMode="split" pageToolId="pdf-split" />;
+      return <PdfEditTool initialMode="split" />;
     case "pdf-delete-pages":
-      return <PdfEditTool initialMode="delete" pageToolId="pdf-delete-pages" />;
+      return <PdfEditTool initialMode="delete" />;
     case "pdf-reorder-pages":
-      return <PdfEditTool initialMode="reorder" pageToolId="pdf-reorder-pages" />;
+      return <PdfEditTool initialMode="reorder" />;
     case "pdf-rotate":
-      return <PdfEditTool initialMode="rotate" pageToolId="pdf-rotate" />;
+      return <PdfEditTool initialMode="rotate" />;
     case "image-to-pdf":
       return <ImageToPdfTool />;
     case "pdf-to-image":
@@ -449,7 +451,7 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
     case "excel-to-pdf":
       return <ExcelToPdfTool />;
     case "pdf-extract-pages":
-      return <PdfEditTool initialMode="extract" pageToolId="pdf-extract-pages" />;
+      return <PdfEditTool initialMode="extract" />;
     case "pdf-add-page-numbers":
       return <PdfAddPageNumbersTool />;
     case "pdf-watermark":

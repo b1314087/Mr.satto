@@ -57,8 +57,9 @@ plainTest.describe("PDF編集: ツール登録と一覧・検索・SEO", () => {
     for (const id of ["pdf-compress", "pdf-to-text", "image-to-pdf", "pdf-add-page-numbers"]) {
       plainExpect(ids.has(id), `${id}が一覧から消えている`).toBe(true);
     }
-    // 統合済み以外のツールは1つも減っていない
-    plainExpect(getListedTools().length).toBe(tools.length - OLD_IDS.length);
+    // 統合済み以外のツールは1つも減っていない（画像ツールなど、他の統合済みツールも一覧からは外れている）
+    plainExpect(getListedTools().length).toBe(tools.filter((t) => !t.mergedInto).length);
+    plainExpect(tools.filter((t) => t.mergedInto === PDF_EDIT_TOOL_ID).length).toBe(OLD_IDS.length);
   });
 
   const queries = ["PDF結合", "PDF分割", "ページ削除", "ページ抽出", "並び替え", "並べ替え", "回転", "merge", "split", "PDF編集"];
@@ -203,13 +204,13 @@ test.describe("PDF編集: 一覧・カテゴリ・旧URL", () => {
     await openHub(page);
     await expect(page.locator("h1")).toHaveText("PDF編集");
     expect(await page.locator('link[rel="canonical"]').getAttribute("href")).toMatch(/\/tools\/pdf-edit$/);
-    const nav = page.getByRole("navigation", { name: "PDF編集の各操作のページ" });
+    const nav = page.getByRole("navigation", { name: "同じ画面で使える各ページ" });
     for (const id of OLD_IDS) await expect(nav.locator(`a[href="/tools/${id}"]`), id).toHaveCount(1);
   });
 
   test("旧URLのページからは、総合ツールと他の操作の専用ページへリンクされ、自分自身へのリンクは出ない", async ({ page }) => {
     await openHub(page, "pdf-split");
-    const nav = page.getByRole("navigation", { name: "PDF編集の各操作のページ" });
+    const nav = page.getByRole("navigation", { name: "同じ画面で使える各ページ" });
     await expect(nav.locator('a[href="/tools/pdf-edit"]')).toHaveCount(1);
     await expect(nav.locator('a[href="/tools/pdf-split"]')).toHaveCount(0);
     await expect(nav.locator('a[href="/tools/pdf-merge"]')).toHaveCount(1);

@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { tools, getToolById, getToolsByCategory, isListedTool } from "@/lib/tools/data";
+import { tools, getToolById, getToolsByCategory, getMergedTools, isListedTool } from "@/lib/tools/data";
 import { categories, getCategory } from "@/lib/tools/categories";
 import { CategoryBadge } from "@/components/tools/category-badge";
 import { ComingSoon } from "@/components/tools/coming-soon";
 import { ToolImplementation } from "@/components/tools/tool-registry";
 import { ToolAccessGate } from "@/components/tools/tool-access-gate";
+import { MergedToolsNav } from "@/components/tools/merged-tools-nav";
 import { hasImplementation } from "@/lib/tools/registry";
 import { getRelatedTools } from "@/lib/tools/related-tools";
 import { ToolCard } from "@/components/tools/tool-card";
@@ -159,6 +160,9 @@ export default async function ToolPage({ params }: ToolPageProps) {
   // ページ側とテスト側の両方から同じロジックを参照する）。
   const { related, sameCategoryCandidateCount } = getRelatedTools(tool);
   const toolCategory = getCategory(tool.category);
+  // 総合ツールとその統合済みツール（個別URLを維持している旧ツール）は、互いのページへリンクする
+  const mergedHub = tool.mergedInto ? getToolById(tool.mergedInto) : getMergedTools(tool.id).length > 0 ? tool : undefined;
+  const mergedMembers = mergedHub ? getMergedTools(mergedHub.id) : [];
   const seo = isAvailable ? getToolSeoContent(tool.id) : undefined;
 
   const breadcrumbItems = [
@@ -220,6 +224,8 @@ export default async function ToolPage({ params }: ToolPageProps) {
           <ComingSoon tool={tool} />
         )}
       </div>
+
+      {isAvailable && mergedHub && <MergedToolsNav hub={mergedHub} members={mergedMembers} currentId={tool.id} />}
 
       {isAvailable && (
         <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">

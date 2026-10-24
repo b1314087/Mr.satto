@@ -28,7 +28,7 @@ const CASES: [string, Input][] = [
   // PDF
   ...(["pdf-merge", "pdf-split", "pdf-delete-pages", "pdf-reorder-pages", "pdf-rotate", "pdf-extract-pages", "pdf-add-page-numbers", "pdf-watermark", "pdf-resize-pages", "pdf-crop-pages", "pdf-compress", "pdf-metadata-remove", "pdf-to-text", "pdf-to-word", "pdf-to-excel", "ocr", "filled-pdf-to-excel"] as const).map((id) => [id, pdf] as [string, Input]),
   // 画像
-  ...(["image-sns-size", "image-crop", "image-batch-convert", "image-to-pdf", "image-flip", "image-grayscale", "image-metadata-remove", "image-layout", "image-passport-photo", "image-padding-text", "image-tile-split", "image-mosaic", "image-resize", "image-compress", "image-rotate"] as const).map((id) => [id, img] as [string, Input]),
+  ...(["image-sns-size", "image-crop", "image-batch-convert", "image-format-convert", "image-rotate-flip", "image-to-pdf", "image-flip", "image-grayscale", "image-metadata-remove", "image-layout", "image-passport-photo", "image-padding-text", "image-tile-split", "image-mosaic", "image-resize", "image-compress", "image-rotate"] as const).map((id) => [id, img] as [string, Input]),
   ["image-merge", { kind: "file", files: [fixtures.png, fixtures.jpg] }],
   ["csv-merge", { kind: "file", files: [fixtures.csv, fixtures.csvForMerge] }],
   ["csv-format", { kind: "text", text: "a, b ,c\n 1,2 ,3\n\n4,5,6" }],
