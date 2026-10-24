@@ -73,3 +73,63 @@ export function parsePageSelection(input: string, totalPages: number): number[] 
 
   return pages;
 }
+
+// ---------------------------------------------------------------------------
+// ページ範囲（開始・終了）の共通処理
+// PDF分割（画面の入力解析・プレビュー・実行時の検証）が使う。
+// ---------------------------------------------------------------------------
+
+export interface PageRange {
+  start: number;
+  end: number;
+}
+
+/** 範囲が整数で、1 ≤ start ≤ end ≤ totalPages を満たすか */
+export function isValidPageRange(range: PageRange, totalPages: number): boolean {
+  return (
+    Number.isInteger(range.start) &&
+    Number.isInteger(range.end) &&
+    range.start >= 1 &&
+    range.end >= range.start &&
+    range.end <= totalPages
+  );
+}
+
+/** 範囲が不正なら、画面・処理で共通のメッセージでエラーにする */
+export function assertValidPageRange(range: PageRange, totalPages: number): void {
+  if (!isValidPageRange(range, totalPages)) {
+    throw new Error(`ページ範囲の指定が正しくありません（1〜${totalPages}の範囲で指定してください）`);
+  }
+}
+
+/** 範囲 → 0始まりのページ位置の配列（pdf-lib の copyPages 用） */
+export function rangeToIndices(range: PageRange): number[] {
+  const indices: number[] = [];
+  for (let p = range.start; p <= range.end; p++) indices.push(p - 1);
+  return indices;
+}
+
+/**
+ * "1-3,5,8-10" のような文字列を {start,end}[] に変換する（分割用。ページの重複・順序は問わない）。
+ * 入力が空・形式が不正・範囲外のときはエラーにする。
+ */
+export function parsePageRanges(text: string, totalPages: number): PageRange[] {
+  const parts = text
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    throw new Error("ページ範囲を入力してください（例: 1-3,5,8-10）");
+  }
+  return parts.map((part) => {
+    const match = part.match(/^(\d+)(?:-(\d+))?$/);
+    if (!match) {
+      throw new Error(`ページ範囲の指定が正しくありません（"${part}"）`);
+    }
+    const start = Number(match[1]);
+    const end = match[2] ? Number(match[2]) : start;
+    const range = { start, end };
+    assertValidPageRange(range, totalPages);
+    return range;
+  });
+}

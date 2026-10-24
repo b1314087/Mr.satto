@@ -4,7 +4,7 @@ import { BrowserProcessor, type PdfProcessorOutput, type NamedFileOutput } from 
 import { loadImage, canvasToBlob } from "./image";
 import { computeImagePageLayout } from "./image-to-pdf-layout";
 import { stripExtension } from "@/lib/utils/format";
-import { parsePageSelection } from "@/lib/pdf/page-selection";
+import { assertValidPageRange, parsePageSelection, rangeToIndices } from "@/lib/pdf/page-selection";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import {
   PAGE_NUMBER_COLOR,
@@ -80,15 +80,36 @@ export async function loadPdfDoc(file: File, options?: { updateMetadata?: boolea
   }
 }
 
-export async function finalizePdf(doc: PDFDocument): Promise<PdfProcessorOutput> {
+/** PDFDocument を保存して Blob にする（URLは作らない。複数ファイル出力で使う） */
+async function pdfToBlob(doc: PDFDocument): Promise<Blob> {
   const bytes = await doc.save();
-  const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
+  return new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
+}
+
+export async function finalizePdf(doc: PDFDocument): Promise<PdfProcessorOutput> {
+  const blob = await pdfToBlob(doc);
   return {
     blob,
     url: URL.createObjectURL(blob),
     pageCount: doc.getPageCount(),
     sizeBytes: blob.size,
   };
+}
+
+/**
+ * 元PDFの指定ページ（0始まりの位置）を、指定した順序で並べた新しいPDFを作る。
+ * ページ削除（残すページ）・抽出・並べ替え・分割が共通で使う。位置の検証は呼び出し側で済ませておく。
+ */
+export async function buildPdfFromPageIndices(src: PDFDocument, indices: number[]): Promise<PDFDocument> {
+  const out = await PDFDocument.create();
+  const copied = await out.copyPages(src, indices);
+  copied.forEach((page) => out.addPage(page));
+  return out;
+}
+
+/** 出力PDFのファイル名（元のファイル名の拡張子を外し、末尾に -deleted などを付ける） */
+export function pdfOutputName(sourceName: string, suffix: string, extension: "pdf" | "zip" = "pdf"): string {
+  return `${stripExtension(sourceName)}-${suffix}.${extension}`;
 }
 
 /** ページ数を確認するためだけの軽量ヘルパー（UI側のページ一覧表示に使う） */
@@ -197,11 +218,7 @@ export class PdfSplitProcessor extends BrowserProcessor<PdfSplitInput, NamedFile
       const pad = String(totalPages).length;
       const outputs: NamedFileOutput[] = [];
       for (let i = 0; i < totalPages; i++) {
-        const out = await PDFDocument.create();
-        const [page] = await out.copyPages(src, [i]);
-        out.addPage(page);
-        const bytes = await out.save();
-        const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
+        const blob = await pdfToBlob(await buildPdfFromPageIndices(src, [i]));
         outputs.push({
           blob,
           suggestedName: `${base}-${zeroPad(i + 1, pad)}.pdf`,
@@ -217,24 +234,8 @@ export class PdfSplitProcessor extends BrowserProcessor<PdfSplitInput, NamedFile
     }
     const outputs: NamedFileOutput[] = [];
     for (const range of input.ranges) {
-      if (
-        !Number.isInteger(range.start) ||
-        !Number.isInteger(range.end) ||
-        range.start < 1 ||
-        range.end < range.start ||
-        range.end > totalPages
-      ) {
-        throw new Error(
-          `ページ範囲の指定が正しくありません（1〜${totalPages}の範囲で指定してください）`
-        );
-      }
-      const indices = [];
-      for (let p = range.start; p <= range.end; p++) indices.push(p - 1);
-      const out = await PDFDocument.create();
-      const copied = await out.copyPages(src, indices);
-      copied.forEach((page) => out.addPage(page));
-      const bytes = await out.save();
-      const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
+      assertValidPageRange(range, totalPages);
+      const blob = await pdfToBlob(await buildPdfFromPageIndices(src, rangeToIndices(range)));
       outputs.push({
         blob,
         suggestedName:
@@ -280,10 +281,7 @@ export class PdfDeletePagesProcessor extends BrowserProcessor<
     }
     const deleteSet = new Set(uniqueValid);
     const keepIndices = src.getPageIndices().filter((idx) => !deleteSet.has(idx + 1));
-    const out = await PDFDocument.create();
-    const copied = await out.copyPages(src, keepIndices);
-    copied.forEach((page) => out.addPage(page));
-    return finalizePdf(out);
+    return finalizePdf(await buildPdfFromPageIndices(src, keepIndices));
   }
 }
 
@@ -313,13 +311,12 @@ export class PdfReorderPagesProcessor extends BrowserProcessor<
     if (!isValidPermutation) {
       throw new Error("ページの並び順が正しくありません");
     }
-    const out = await PDFDocument.create();
-    const copied = await out.copyPages(
-      src,
-      newOrder.map((p) => p - 1)
+    return finalizePdf(
+      await buildPdfFromPageIndices(
+        src,
+        newOrder.map((p) => p - 1)
+      )
     );
-    copied.forEach((page) => out.addPage(page));
-    return finalizePdf(out);
   }
 }
 
@@ -435,13 +432,12 @@ export class PdfExtractPagesProcessor extends BrowserProcessor<
     }
     // parsePageSelectionが範囲・0ページ・逆順・不正文字列・重複を検証済みのエラーを投げる
     const pageNumbers = parsePageSelection(pageSelection, totalPages);
-    const out = await PDFDocument.create();
-    const copied = await out.copyPages(
-      src,
-      pageNumbers.map((p) => p - 1)
+    return finalizePdf(
+      await buildPdfFromPageIndices(
+        src,
+        pageNumbers.map((p) => p - 1)
+      )
     );
-    copied.forEach((page) => out.addPage(page));
-    return finalizePdf(out);
   }
 }
 

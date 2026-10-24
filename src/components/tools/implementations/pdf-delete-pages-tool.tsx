@@ -1,7 +1,7 @@
 "use client";
 
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
@@ -9,57 +9,33 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfPageCheckList } from "@/components/tools/implementations/shared/pdf-page-list";
-import { PdfDeletePagesProcessor, getPdfPageCount } from "@/lib/processors/browser/pdf";
+import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
+import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
+import { PdfDeletePagesProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 const PREVIEW_MAX_PAGES = 40;
 
 export function PdfDeletePagesTool() {
   const [file, setFile] = useState<File | null>(null);
-  const [pageCount, setPageCount] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [inputError, setInputError] = useState<string | null>(null);
+  const { pageCount, loadError } = usePdfPageCount(file);
 
-  const [status, setStatus] = useState<ProcessingState>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PdfProcessorOutput | null>(null);
+  // 結果は「どのファイル・どのページを削除したか」と一緒に持つ。いまの選択と違う古い結果は、表示もダウンロードもしない
+  const settingKey = file ? `${fileKey(file)}|${Array.from(selected).sort((x, y) => x - y).join(",")}` : "";
+  const run = useKeyedRun<PdfProcessorOutput>(settingKey, { dispose: revokeOutputUrl });
+  const result = run.value;
+  const error = loadError ?? run.error ?? inputError;
+  const status: ProcessingState = loadError ? "error" : run.status;
 
-  // Phase 7: 生成結果のObject URL(result.url)は画面上で使っていないが、
-  // 解放しないとページを離れるまでメモリに残り続けるため、明示的に解放する。
-  useEffect(() => {
-    return () => {
-      if (result) URL.revokeObjectURL(result.url);
-    };
-  }, [result]);
-
-  useEffect(() => {
-    if (!file) {
-      // ファイル選択が解除された際に関連stateをリセットする
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPageCount(null);
-      setSelected(new Set());
-      return;
-    }
-    let cancelled = false;
-    setPageCount(null);
+  function selectFile(next: File | null) {
+    setFile(next);
     setSelected(new Set());
-    setResult(null);
-    setError(null);
-    setStatus("idle");
-    getPdfPageCount(file)
-      .then((count) => {
-        if (!cancelled) setPageCount(count);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました");
-          setStatus("error");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [file]);
+    setInputError(null);
+    run.reset();
+  }
 
   function togglePage(pageNumber: number) {
     setSelected((prev) => {
@@ -70,24 +46,13 @@ export function PdfDeletePagesTool() {
     });
   }
 
-  async function handleRun() {
+  function handleRun() {
     if (!file || selected.size === 0) return;
-    setStatus("processing");
-    setError(null);
-    try {
-      const output = await new PdfDeletePagesProcessor().process({
-        file,
-        pagesToDelete: Array.from(selected),
-      });
-      setResult(output);
-      setStatus("success");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
-    }
+    const pagesToDelete = Array.from(selected);
+    void run.run(() => new PdfDeletePagesProcessor().process({ file, pagesToDelete }));
   }
 
-  const downloadName = file ? `${stripExtension(file.name)}-deleted.pdf` : "deleted.pdf";
+  const downloadName = file ? pdfOutputName(file.name, "deleted") : "deleted.pdf";
   const willDeleteAll = pageCount !== null && selected.size >= pageCount;
 
   return (
@@ -129,11 +94,11 @@ export function PdfDeletePagesTool() {
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
-        onFilesSelected={(files) => setFile(files[0])}
-        onError={setError}
+        onFilesSelected={(files) => selectFile(files[0])}
+        onError={setInputError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <FileList files={[file]} onRemove={() => selectFile(null)} />}
 
       {file && pageCount !== null && (
         <div className="flex flex-col gap-3">

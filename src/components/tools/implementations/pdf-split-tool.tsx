@@ -1,140 +1,92 @@
 "use client";
 
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { PdfSplitProcessor, getPdfPageCount } from "@/lib/processors/browser/pdf";
+import { fileKey, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
+import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
+import { PdfSplitProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
+import { parsePageRanges, type PageRange } from "@/lib/pdf/page-selection";
 import type { NamedFileOutput } from "@/lib/processors/types";
 import { createZip } from "@/lib/utils/zip";
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 type SplitMode = "each-page" | "range";
 
-/** "1-3,5,8-10" のような文字列を {start,end}[] に変換する */
-function parseRanges(text: string, totalPages: number): { start: number; end: number }[] {
-  const parts = text
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (parts.length === 0) {
-    throw new Error("ページ範囲を入力してください（例: 1-3,5,8-10）");
-  }
-  return parts.map((part) => {
-    const match = part.match(/^(\d+)(?:-(\d+))?$/);
-    if (!match) {
-      throw new Error(`ページ範囲の指定が正しくありません（"${part}"）`);
-    }
-    const start = Number(match[1]);
-    const end = match[2] ? Number(match[2]) : start;
-    if (start < 1 || end < start || end > totalPages) {
-      throw new Error(
-        `ページ範囲の指定が正しくありません（1〜${totalPages}の範囲で指定してください）`
-      );
-    }
-    return { start, end };
-  });
+/** 分割の結果。複数ファイルのときは、ダウンロード用のZIPも実行時に作っておく */
+interface SplitResult {
+  outputs: NamedFileOutput[];
+  zip: Blob | null;
 }
 
 const PREVIEW_MAX_PAGES = 40;
 
-/** 実行時と同じ解釈(parseRanges)で、分割後の各ファイルのページ範囲を求める。入力途中の不正な値はエラー文にする */
+/** 実行時と同じ解釈(parsePageRanges)で、分割後の各ファイルのページ範囲を求める。入力途中の不正な値はエラー文にする */
 function planSplit(
   mode: SplitMode,
   rangeText: string,
   totalPages: number
-): { ranges: { start: number; end: number }[]; error: string | null } {
+): { ranges: PageRange[]; error: string | null } {
   if (mode === "each-page") {
     return { ranges: Array.from({ length: totalPages }, (_, i) => ({ start: i + 1, end: i + 1 })), error: null };
   }
   if (rangeText.trim() === "") return { ranges: [], error: null };
   try {
-    return { ranges: parseRanges(rangeText, totalPages), error: null };
+    return { ranges: parsePageRanges(rangeText, totalPages), error: null };
   } catch (e) {
     return { ranges: [], error: e instanceof Error ? e.message : "ページ範囲を解釈できません" };
   }
 }
 
-function formatRange(r: { start: number; end: number }): string {
+function formatRange(r: PageRange): string {
   return r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`;
 }
 
 export function PdfSplitTool() {
   const [file, setFile] = useState<File | null>(null);
-  const [pageCount, setPageCount] = useState<number | null>(null);
   const [mode, setMode] = useState<SplitMode>("each-page");
   const [rangeText, setRangeText] = useState("");
+  const [inputError, setInputError] = useState<string | null>(null);
+  const { pageCount, loadError } = usePdfPageCount(file);
 
-  const [status, setStatus] = useState<ProcessingState>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [outputs, setOutputs] = useState<NamedFileOutput[] | null>(null);
-  const [zipBlob, setZipBlob] = useState<Blob | null>(null);
+  // 結果は「どのファイル・どの分割方法の結果か」と一緒に持つ。いまの設定と違う古い結果は、表示もダウンロードもしない
+  const settingKey = file ? `${fileKey(file)}|${mode}|${mode === "range" ? rangeText : ""}` : "";
+  const run = useKeyedRun<SplitResult>(settingKey);
+  const outputs = run.value?.outputs ?? null;
+  const zipBlob = run.value?.zip ?? null;
+  const error = loadError ?? run.error ?? inputError;
+  const status: ProcessingState = loadError ? "error" : run.status;
 
-  useEffect(() => {
-    if (!file) {
-      // ファイル選択が解除された際に関連stateをリセットする
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPageCount(null);
-      return;
-    }
-    let cancelled = false;
-    setPageCount(null);
-    setResult(null);
-    setError(null);
-    setStatus("idle");
-    getPdfPageCount(file)
-      .then((count) => {
-        if (!cancelled) setPageCount(count);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました");
-          setStatus("error");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [file]);
+  function selectFile(next: File | null) {
+    setFile(next);
+    setInputError(null);
+    run.reset();
+  }
 
   const plan = useMemo(
     () => (pageCount === null ? null : planSplit(mode, rangeText, pageCount)),
     [mode, rangeText, pageCount]
   );
 
-  function setResult(next: NamedFileOutput[] | null) {
-    setOutputs(next);
-    setZipBlob(null);
-  }
-
-  async function handleRun() {
+  function handleRun() {
     if (!file || !pageCount) return;
-    setStatus("processing");
-    setError(null);
-    setResult(null);
-    try {
+    void run.run(async () => {
       const result =
         mode === "each-page"
           ? await new PdfSplitProcessor().process({ file, mode: "each-page" })
           : await new PdfSplitProcessor().process({
               file,
               mode: "range",
-              ranges: parseRanges(rangeText, pageCount),
+              ranges: parsePageRanges(rangeText, pageCount),
             });
-      setOutputs(result);
-      if (result.length > 1) {
-        const zip = await createZip(result.map((r) => ({ name: r.suggestedName, blob: r.blob })));
-        setZipBlob(zip);
-      }
-      setStatus("success");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
-    }
+      const zip = result.length > 1 ? await createZip(result.map((r) => ({ name: r.suggestedName, blob: r.blob }))) : null;
+      return { outputs: result, zip };
+    });
   }
 
   function handleDownload() {
@@ -142,7 +94,7 @@ export function PdfSplitTool() {
     if (outputs.length === 1) {
       downloadBlob(outputs[0].blob, outputs[0].suggestedName);
     } else if (zipBlob && file) {
-      downloadBlob(zipBlob, `${stripExtension(file.name)}-split.zip`);
+      downloadBlob(zipBlob, pdfOutputName(file.name, "split", "zip"));
     }
   }
 
@@ -203,11 +155,11 @@ export function PdfSplitTool() {
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
-        onFilesSelected={(files) => setFile(files[0])}
-        onError={setError}
+        onFilesSelected={(files) => selectFile(files[0])}
+        onError={setInputError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <FileList files={[file]} onRemove={() => selectFile(null)} />}
 
       {file && pageCount !== null && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">

@@ -1,7 +1,7 @@
 "use client";
 
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
@@ -9,72 +9,51 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { PdfPageOrderList } from "@/components/tools/implementations/shared/pdf-page-list";
-import { PdfReorderPagesProcessor, getPdfPageCount } from "@/lib/processors/browser/pdf";
+import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
+import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
+import { PdfReorderPagesProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
 const PREVIEW_MAX_PAGES = 40;
 
 export function PdfReorderPagesTool() {
   const [file, setFile] = useState<File | null>(null);
-  const [order, setOrder] = useState<number[] | null>(null);
+  const [edited, setEdited] = useState<{ file: File; order: number[] } | null>(null);
+  const [inputError, setInputError] = useState<string | null>(null);
+  const { pageCount, loadError } = usePdfPageCount(file);
 
-  const [status, setStatus] = useState<ProcessingState>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PdfProcessorOutput | null>(null);
+  // 並び順は「どのファイルの並び順か」と一緒に持つ。ファイルを選び直すと、元の順序に戻る
+  const order: number[] | null =
+    pageCount === null
+      ? null
+      : edited && edited.file === file
+        ? edited.order
+        : Array.from({ length: pageCount }, (_, i) => i + 1);
 
-  // Phase 7: 生成結果のObject URL(result.url)は画面上で使っていないが、
-  // 解放しないとページを離れるまでメモリに残り続けるため、明示的に解放する。
-  useEffect(() => {
-    return () => {
-      if (result) URL.revokeObjectURL(result.url);
-    };
-  }, [result]);
+  // 結果は「どのファイル・どの並び順の結果か」と一緒に持つ。いまの並び順と違う古い結果は、表示もダウンロードもしない
+  const settingKey = file && order ? `${fileKey(file)}|${order.join(",")}` : "";
+  const run = useKeyedRun<PdfProcessorOutput>(settingKey, { dispose: revokeOutputUrl });
+  const result = run.value;
+  const error = loadError ?? run.error ?? inputError;
+  const status: ProcessingState = loadError ? "error" : run.status;
 
-  useEffect(() => {
-    if (!file) {
-      // ファイル選択が解除された際に関連stateをリセットする
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOrder(null);
-      return;
-    }
-    let cancelled = false;
-    setOrder(null);
-    setResult(null);
-    setError(null);
-    setStatus("idle");
-    getPdfPageCount(file)
-      .then((count) => {
-        if (!cancelled) setOrder(Array.from({ length: count }, (_, i) => i + 1));
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました");
-          setStatus("error");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [file]);
+  function selectFile(next: File | null) {
+    setFile(next);
+    setEdited(null);
+    setInputError(null);
+    run.reset();
+  }
 
   const isUnchanged = order?.every((p, i) => p === i + 1) ?? true;
 
-  async function handleRun() {
+  function handleRun() {
     if (!file || !order) return;
-    setStatus("processing");
-    setError(null);
-    try {
-      const output = await new PdfReorderPagesProcessor().process({ file, newOrder: order });
-      setResult(output);
-      setStatus("success");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
-    }
+    const newOrder = order;
+    void run.run(() => new PdfReorderPagesProcessor().process({ file, newOrder }));
   }
 
-  const downloadName = file ? `${stripExtension(file.name)}-reordered.pdf` : "reordered.pdf";
+  const downloadName = file ? pdfOutputName(file.name, "reordered") : "reordered.pdf";
 
   return (
     <PreviewSplitLayout
@@ -113,18 +92,18 @@ export function PdfReorderPagesTool() {
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
-        onFilesSelected={(files) => setFile(files[0])}
-        onError={setError}
+        onFilesSelected={(files) => selectFile(files[0])}
+        onError={setInputError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <FileList files={[file]} onRemove={() => selectFile(null)} />}
 
       {file && order && (
         <div className="flex flex-col gap-3">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             ↑↓ ボタンでページの順序を並び替えられます（{order.length}ページ）
           </p>
-          <PdfPageOrderList order={order} onReorder={setOrder} />
+          <PdfPageOrderList order={order} onReorder={(next) => file && setEdited({ file, order: next })} />
         </div>
       )}
 
