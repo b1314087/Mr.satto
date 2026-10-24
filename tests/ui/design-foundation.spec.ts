@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
-import { getFeaturedTools, tools } from "@/lib/tools/data";
+import { getFeaturedTools, getListedTools, tools } from "@/lib/tools/data";
 import { waitForFileInputHydrated } from "../helpers/tool-ready";
 
 /**
@@ -82,11 +82,13 @@ test.describe("デザイントークン（globals.css）", () => {
     for (const name of SHARED_TOKENS) expect(dark[name], `ダークで上書きしていない: ${name}`).toBeUndefined();
   });
 
-  test("既存の背景・文字の色は変えていない（トークン追加だけでは全画面の見た目が変わらない）", () => {
-    expect(tokensOf(":root")["--background"]).toBe("#ffffff");
-    expect(tokensOf(":root")["--foreground"]).toBe("#171717");
-    expect(tokensOf(".dark")["--background"]).toBe("#0a0a0a");
-    expect(tokensOf(".dark")["--foreground"]).toBe("#ededed");
+  test("ページ背景・基本の文字色は --ms-page / --ms-text を参照する（背景の定義は1か所。青のグラデーションは使わない）", () => {
+    expect(tokensOf(":root")["--background"]).toBe("var(--ms-page)");
+    expect(tokensOf(":root")["--foreground"]).toBe("var(--ms-text)");
+    expect(tokensOf(".dark")["--background"]).toBe("var(--ms-page)");
+    expect(tokensOf(".dark")["--foreground"]).toBe("var(--ms-text)");
+    expect(tokensOf(":root")["--ms-page"]).toBe("#fafafa");
+    expect(tokensOf(".dark")["--ms-page"]).toBe("#0b0b0d");
     expect(CSS).toMatch(/@custom-variant dark \(&:where\(\.dark, \.dark \*\)\);/);
     expect(CSS).toMatch(/body \{\s*background: var\(--background\);/);
   });
@@ -164,13 +166,15 @@ test.describe("共通部品の作り（ソースの約束）", () => {
     expect(src).toContain('interactive && "ms-glass-interactive"');
   });
 
-  test("ToolCard: 既定の見た目と「準備中」の表示は従来のまま。glassは実装済みのカードにだけ効く", () => {
+  test("ToolCard: 実装済みはガラス調（共通クラス）。準備中は破線・低コントラストで区別し、ガラスにしない", () => {
     const src = read("src/components/tools/tool-card.tsx");
-    expect(src).toContain('appearance = "default"');
-    expect(src).toContain("hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-blue-700");
-    // 準備中の見た目（破線・低コントラスト）は appearance に関係なく同じ
-    expect(src).toContain('"border-dashed border-neutral-300 bg-neutral-50/60 opacity-80 hover:opacity-100 dark:border-neutral-700 dark:bg-neutral-900/40"');
-    expect(src).toMatch(/isComingSoon\s*\?[^:]*\n?[\s\S]*?"border-dashed[\s\S]*?:\s*appearance === "glass"/);
+    expect(src).not.toContain("appearance");
+    expect(src).toContain("glassCardClasses({ interactive: true })");
+    // 準備中の分岐: 破線・弱い背景。ガラス（ms-glass）や浮き上がりは付けない
+    const coming = /isComingSoon\s*\?[\s\S]*?:\s*glassCardClasses/.exec(src)?.[0] ?? "";
+    expect(coming).toContain("border-dashed");
+    expect(coming).not.toContain("ms-glass");
+    expect(coming).not.toContain("translate");
     expect(src).toContain("（準備中・まだ利用できません）");
   });
 });
@@ -231,17 +235,15 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
       await page.emulateMedia({ colorScheme: scheme });
     });
 
-    test("トップ: おすすめカードはガラス調で、リンク先・個数が変わらず、文字が読める", async ({ page }) => {
-      await page.goto("/");
-      const featured = getFeaturedTools();
-      const section = page.locator("section", { has: page.getByRole("heading", { name: "おすすめツール" }) });
-      const cards = section.locator('a[href^="/tools/"][aria-label]');
-      await expect(cards).toHaveCount(featured.length);
-      for (const [i, tool] of featured.entries()) await expect(cards.nth(i)).toHaveAttribute("href", `/tools/${tool.id}`);
+    test("ツール一覧: カードはガラス調で、リンク先・個数が変わらず、文字が読める", async ({ page }) => {
+      await page.goto("/tools");
+      const expected = getListedTools().filter((t) => t.status === "available");
+      const cards = page.locator('main a[href^="/tools/"][aria-label]');
+      await expect(cards).toHaveCount(expected.length);
+      for (const [i, tool] of expected.entries()) await expect(cards.nth(i)).toHaveAttribute("href", `/tools/${tool.id}`);
 
-      const first = section.locator('a[href^="/tools/"][aria-label]').first();
-      await first.scrollIntoViewIfNeeded();
-      const sel = `section:has(h2:text("おすすめツール")) a[href^="/tools/"][aria-label]`;
+      const sel = 'main a[href^="/tools/"][aria-label]';
+      await cards.first().scrollIntoViewIfNeeded();
       const cs = await computed(page, sel, ["background-color", "border-top-width", "backdrop-filter", "box-shadow", "border-radius"]);
       expect(cs["border-top-width"]).toBe("1px");
       expect(cs["backdrop-filter"]).toContain("blur");
@@ -257,11 +259,11 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
       expect(contrast(desc, bg), "カード説明").toBeGreaterThanOrEqual(4.5);
     });
 
-    test("トップ: 「ファイルを保存しない」などの3つの説明がガラスカードで、文字が読める", async ({ page }) => {
+    test("トップ: 「ファイルを保存しない」などの説明がガラスカードで、文字が読める", async ({ page }) => {
       await page.goto("/");
       const sel = 'div.ms-glass:has(h3:text("ファイルを保存しない"))';
       await expect(page.locator(sel)).toHaveCount(1);
-      await expect(page.locator("div.ms-glass:has(h3)")).toHaveCount(3);
+      await expect(page.locator("div.ms-glass:has(h3)")).toHaveCount(2);
       const bg = await effectiveBackground(page, sel);
       const h = parseColor((await computed(page, `${sel} h3`, ["color"]))["color"]);
       const p = parseColor((await computed(page, `${sel} p:nth-of-type(2)`, ["color"]))["color"]);
@@ -269,23 +271,14 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
       expect(contrast(p, bg)).toBeGreaterThanOrEqual(4.5);
     });
 
-    test("トップ: おすすめカードにキーボードで移動すると、はっきりしたフォーカス枠が出る", async ({ page }) => {
-      await page.goto("/");
-      const firstHref = `/tools/${getFeaturedTools()[0].id}`;
-      let focused = false;
-      for (let i = 0; i < 80 && !focused; i++) {
-        await page.keyboard.press("Tab");
-        focused = await page.evaluate(
-          (href) => document.activeElement?.getAttribute("href") === href && !!document.activeElement.closest("section")?.querySelector("h2"),
-          firstHref
-        );
-        if (focused) {
-          // 同じhrefのリンクがカテゴリ等にある場合に備え、おすすめのカードか確認
-          const inFeatured = await page.evaluate(() => /おすすめツール/.test(document.activeElement?.closest("section")?.querySelector("h2")?.textContent ?? ""));
-          if (!inFeatured) focused = false;
-        }
-      }
-      expect(focused, "キーボードのTabでおすすめカードにたどり着けない").toBe(true);
+    test("ツール一覧: カードにキーボードで移動すると、はっきりしたフォーカス枠が出る", async ({ page }) => {
+      await page.goto("/tools");
+      const first = page.locator('main a[href^="/tools/"][aria-label]').first();
+      // キーボード操作としてフォーカスする（Tabで入る形にして、:focus-visible が効く状態にする）
+      await first.focus();
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Tab");
+      await expect(first).toBeFocused();
       const cs = await page.evaluate(() => {
         const s = getComputedStyle(document.activeElement!);
         return { style: s.outlineStyle, width: s.outlineWidth, color: s.outlineColor };
@@ -347,39 +340,38 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
 }
 
 test.describe("視覚効果を減らす設定（prefers-reduced-motion）", () => {
-  const HOVER_CARD = 'section:has(h2:text("おすすめツール")) a[href^="/tools/"][aria-label]';
+  const CARD = 'main a[href^="/tools/"][aria-label]';
+  const CATEGORY_CARD = 'section:has(h2:text("カテゴリから探す")) a[href^="/tools/"]';
 
-  test("通常: おすすめカード（ガラス）も一覧のカード（従来）もホバーで浮く", async ({ page }) => {
+  test("通常: ツールのカードもカテゴリのカードもホバーで少し浮く", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.goto("/");
-    const card = page.locator(HOVER_CARD).first();
-    await card.scrollIntoViewIfNeeded();
-    await card.hover();
-    await expect.poll(async () => (await computed(page, HOVER_CARD, ["translate"]))["translate"], { timeout: 3000 }).toBe("0px -2px");
+    const cat = page.locator(CATEGORY_CARD).first();
+    await cat.scrollIntoViewIfNeeded();
+    await cat.hover();
+    await expect.poll(async () => (await computed(page, CATEGORY_CARD, ["translate"]))["translate"], { timeout: 3000 }).toBe("0px -2px");
 
     await page.goto("/tools");
-    const listCard = page.locator('main a[href^="/tools/"][aria-label]').first();
-    await listCard.hover();
-    await expect.poll(async () => (await computed(page, 'main a[href^="/tools/"][aria-label]', ["translate"]))["translate"], { timeout: 3000 }).not.toBe("none");
+    await page.locator(CARD).first().hover();
+    await expect.poll(async () => (await computed(page, CARD, ["translate"]))["translate"], { timeout: 3000 }).toBe("0px -2px");
   });
 
-  test("動きを減らす設定: どちらのカードも浮かず、切り替えもほぼ即時になる。色・枠の変化は残る", async ({ page }) => {
+  test("動きを減らす設定: どのカードも浮かず、切り替えもほぼ即時になる。枠の色の変化は残る", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/");
-    const card = page.locator(HOVER_CARD).first();
-    await card.scrollIntoViewIfNeeded();
-    await card.hover();
+    const cat = page.locator(CATEGORY_CARD).first();
+    await cat.scrollIntoViewIfNeeded();
+    await cat.hover();
     await page.waitForTimeout(400);
-    const glass = await computed(page, HOVER_CARD, ["translate", "transition-duration", "border-top-color"]);
+    const glass = await computed(page, CATEGORY_CARD, ["translate", "transition-duration", "border-top-color"]);
     expect(glass["translate"]).toBe("none");
     expect(parseFloat(glass["transition-duration"].split(",")[0])).toBeLessThan(0.001);
     expect(glass["border-top-color"]).toBe("rgba(37, 99, 235, 1.000)"); // ホバーしたことは枠の色で伝わる
 
     await page.goto("/tools");
-    const listCard = page.locator('main a[href^="/tools/"][aria-label]').first();
-    await listCard.hover();
+    await page.locator(CARD).first().hover();
     await page.waitForTimeout(400);
-    const def = await computed(page, 'main a[href^="/tools/"][aria-label]', ["translate", "transition-duration"]);
+    const def = await computed(page, CARD, ["translate", "transition-duration"]);
     expect(def["translate"]).toBe("none");
     expect(parseFloat(def["transition-duration"].split(",")[0])).toBeLessThan(0.001);
   });
@@ -406,13 +398,12 @@ test.describe("視覚効果を減らす設定（prefers-reduced-motion）", () =
   });
 });
 
-test("通常の設定では、処理中のボタンにスピナーが回り、カーソルが処理中になる。一覧のカードは従来の見た目のまま", async ({ page }) => {
+test("通常の設定では、処理中のボタンにスピナーが回り、カーソルが処理中になる。一覧のカードはガラス調", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/tools");
   const card = page.locator('main a[href^="/tools/"][aria-label]').first();
   await expect(card).toBeVisible();
-  expect(await card.getAttribute("class")).toContain("hover:-translate-y-0.5");
-  expect(await card.getAttribute("class")).not.toContain("ms-glass");
+  expect(await card.getAttribute("class")).toContain("ms-glass-interactive");
 
   const r = await page.evaluate(() => {
     const el = document.createElement("button");

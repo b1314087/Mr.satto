@@ -151,7 +151,7 @@ test.describe("メニューの開閉", () => {
   test("閉じている間はメニューの項目がDOM上に無く、開くと見える（aria-expanded も切り替わる）", async ({ page }) => {
     await page.goto("/");
     await expect(drawer(page)).toBeHidden();
-    await expect(page.getByRole("link", { name: "全ツール一覧" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "全ツール一覧", exact: true })).toHaveCount(0);
     await expect(menuButton(page)).toHaveAttribute("aria-expanded", "false");
     await openMenu(page);
     await expect(menuButton(page)).toHaveAttribute("aria-expanded", "true");

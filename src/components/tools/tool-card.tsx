@@ -11,8 +11,8 @@ import { glassCardClasses } from "@/components/ui/glass-card";
  *
  * 表示名は必ずTOOL_TIER_LABELS（src/lib/plans/types.ts）を参照し、
  * ここで別の文言をハードコードしない（プラン名の唯一の情報源を守る）。
- * standard/premiumで色分けし、一目で区別できるようにする
- * （準備中バッジのamber色とは被らない配色にする）。
+ * 「通常」は目立たせない中立色、「プレミアム」だけ紫で区別する
+ * （準備中バッジのamber色とは被らない配色。青は操作・選択の強調のために取っておく）。
  */
 function PlanBadge({ requiredPlan }: { requiredPlan: Tool["requiredPlan"] }) {
   const label = TOOL_TIER_LABELS[requiredPlan];
@@ -22,7 +22,7 @@ function PlanBadge({ requiredPlan }: { requiredPlan: Tool["requiredPlan"] }) {
         "rounded-full px-2 py-0.5 text-[11px] font-medium",
         requiredPlan === "premium"
           ? "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
-          : "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+          : "border border-ms-border bg-ms-hover-tint text-ms-muted"
       )}
     >
       {label}
@@ -31,11 +31,15 @@ function PlanBadge({ requiredPlan }: { requiredPlan: Tool["requiredPlan"] }) {
 }
 
 /**
- * appearance: "default"（従来の見た目）/ "glass"（UI刷新で使う、ガラス調の見た目）。
- * 既定は "default" のまま。"glass" を指定した画面だけ見た目が変わる。
- * 「準備中」のカードは、どちらの場合も同じ（破線・低コントラスト）にして、実装済みと区別する。
+ * ツールのカード。全ツール一覧・カテゴリ別一覧・関連ツールなど、すべての一覧で共通に使う。
+ *
+ * - 実装済みのツール: ガラス調（半透明＋背景ぼかし＋細い境界線＋上端のハイライト＋影）。
+ *   ホバーで少し浮き、キーボードのフォーカスでは青い枠が出る（定義は globals.css の .ms-glass 系）。
+ * - 準備中のツール: ガラスにせず、破線・低コントラストの別の見た目にして、実装済みと区別する
+ *   （ホバーで浮かない・枠の色も変えない。まだ使えない印象を与えないため）。
+ * - カード全体が1つのリンク（<a>）。JavaScriptでの遷移には置き換えていない。
  */
-export function ToolCard({ tool, appearance = "default" }: { tool: Tool; appearance?: "default" | "glass" }) {
+export function ToolCard({ tool }: { tool: Tool }) {
   const category = getCategory(tool.category);
   const isComingSoon = tool.status === "coming-soon";
 
@@ -44,16 +48,13 @@ export function ToolCard({ tool, appearance = "default" }: { tool: Tool; appeara
       href={`/tools/${tool.id}`}
       aria-label={isComingSoon ? `${tool.name}（準備中・まだ利用できません）` : tool.name}
       className={cn(
-        "group flex flex-col gap-2 p-4",
-        (isComingSoon || appearance !== "glass") && "rounded-xl border transition-all",
+        "group flex h-full flex-col gap-2 p-4",
         isComingSoon
           ? // Phase 19 10章: 実装済みツールと同じクリック体験にしない
             // （持ち上がるホバー演出や「使える」印象を与える枠線色の変化をつけず、
             // 破線・低コントラストな配色にとどめる）。
-            "border-dashed border-neutral-300 bg-neutral-50/60 opacity-80 hover:opacity-100 dark:border-neutral-700 dark:bg-neutral-900/40"
-          : appearance === "glass"
-            ? glassCardClasses({ interactive: true })
-            : "border-neutral-200 bg-white hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-blue-700"
+            "ms-focus-ring rounded-ms-card border border-dashed border-ms-border-strong bg-ms-hover-tint"
+          : glassCardClasses({ interactive: true })
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -61,7 +62,7 @@ export function ToolCard({ tool, appearance = "default" }: { tool: Tool; appeara
           {category?.icon ?? "🔧"}
         </span>
         {isComingSoon ? (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
             準備中
           </span>
         ) : featureFlags.billing ? (
@@ -72,18 +73,12 @@ export function ToolCard({ tool, appearance = "default" }: { tool: Tool; appeara
       <h3
         className={cn(
           "font-semibold",
-          isComingSoon
-            ? "text-neutral-500 dark:text-neutral-400"
-            : appearance === "glass"
-              ? "text-ms-text group-hover:text-ms-accent dark:group-hover:text-ms-focus"
-              : "text-neutral-900 group-hover:text-blue-700 dark:text-neutral-100 dark:group-hover:text-blue-400"
+          isComingSoon ? "text-ms-muted" : "text-ms-text group-hover:text-ms-accent dark:group-hover:text-ms-focus"
         )}
       >
         {tool.name}
       </h3>
-      <p className={cn("line-clamp-2 text-sm", appearance === "glass" && !isComingSoon ? "text-ms-muted" : "text-neutral-500 dark:text-neutral-400")}>
-        {tool.description}
-      </p>
+      <p className="line-clamp-2 text-sm text-ms-muted">{tool.description}</p>
     </Link>
   );
 }

@@ -1,15 +1,13 @@
 import type { Tool } from "@/lib/tools/types";
 import { ToolCard } from "./tool-card";
 
-export function ToolGrid({ tools, emptyMessage = "該当するツールが見つかりませんでした", appearance = "default" }: {
+export function ToolGrid({ tools, emptyMessage = "該当するツールが見つかりませんでした" }: {
   tools: Tool[];
   emptyMessage?: string;
-  /** カードの見た目。既定は従来のまま。"glass" を渡した画面だけガラス調になる */
-  appearance?: "default" | "glass";
 }) {
   if (tools.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed border-neutral-300 py-12 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+      <p className="rounded-ms-card border border-dashed border-ms-border-strong py-12 text-center text-sm text-ms-muted">
         {emptyMessage}
       </p>
     );
@@ -18,7 +16,7 @@ export function ToolGrid({ tools, emptyMessage = "該当するツールが見つ
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {tools.map((tool) => (
-        <ToolCard key={tool.id} tool={tool} appearance={appearance} />
+        <ToolCard key={tool.id} tool={tool} />
       ))}
     </div>
   );

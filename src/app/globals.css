@@ -4,13 +4,15 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ページ背景はニュートラル（オフホワイト／ごく暗いグレー）。青のグラデーションは使わない。
+     値は下の --ms-page / --ms-text を参照する（背景色の定義を1か所にするため） */
+  --background: var(--ms-page);
+  --foreground: var(--ms-text);
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: var(--ms-page);
+  --foreground: var(--ms-text);
 }
 
 @theme inline {
