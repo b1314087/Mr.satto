@@ -18,6 +18,7 @@ import {
 import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
 import { CsvToJsonProcessor, csvRowsToJsonObjects, type CsvToJsonOutput } from "@/lib/processors/browser/csv-json";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { Button } from "@/components/ui/button";
 
 export function CsvToJsonTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -103,14 +104,9 @@ export function CsvToJsonTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
+        <Button onClick={handleRun} loading={status === "processing"} className="w-fit">
           JSONに変換する
-        </button>
+        </Button>
       )}
 
       <ProcessingStatus state={status} successLabel="変換が完了しました" />
@@ -128,13 +124,9 @@ export function CsvToJsonTool() {
             />
           </label>
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-            >
+            <Button variant="secondary" onClick={handleCopy}>
               コピー
-            </button>
+            </Button>
             <RewardedDownloadGate
               label=".jsonをダウンロード"
               onDownload={() => downloadBlob(result.blob, downloadName)}

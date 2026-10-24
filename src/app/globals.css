@@ -21,6 +21,297 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* ==========================================================================
+ * Mr.Satto デザイントークン（UI刷新・第1工程）
+ *
+ * 画面の色・角丸・影・動きの「基準値」をここに集める。今後、色や角丸を変えたいときは
+ * 個別のツール画面ではなく、この一か所（と下の .ms-* クラス）だけを直す。
+ *
+ * - すべて --ms- で始まる名前にして、既存の --background / --foreground とは混ぜない。
+ * - 値の追加だけでは、既存の画面の見た目は変わらない（使われて初めて効く）。
+ * - ライト（:root）とダーク（.dark）の両方で同じ名前を定義する。
+ * - 文字色は、背景（ページ・ガラス面の上）とのコントラスト比 4.5:1 以上を保つ
+ *   （tests/ui/design-foundation.spec.ts で検証している）。
+ * ========================================================================== */
+:root {
+  /* 背景・面 */
+  --ms-page: #fafafa; /* ページ背景（オフホワイト） */
+  --ms-surface: #ffffff; /* 通常の面 */
+  --ms-surface-glass: rgba(255, 255, 255, 0.72); /* ガラス調の面（背景ぼかしが使える時） */
+  --ms-surface-glass-solid: rgba(255, 255, 255, 0.94); /* ぼかしが使えない時の面（ほぼ不透明） */
+  --ms-surface-strong: #ffffff; /* 入力欄・ダイアログ・エラー表示など、操作上重要な面（不透明） */
+  --ms-hover-tint: rgba(0, 0, 0, 0.045); /* 押せる面にカーソルを乗せた時の薄い色 */
+
+  /* 文字 */
+  --ms-text: #171717;
+  --ms-text-muted: #525252;
+
+  /* 境界線・ハイライト・影 */
+  --ms-border: rgba(0, 0, 0, 0.09);
+  --ms-border-strong: rgba(0, 0, 0, 0.3);
+  --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.75); /* ガラスの上端の細い反射 */
+  --ms-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 1px rgba(0, 0, 0, 0.03);
+  --ms-shadow-lift: 0 10px 28px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+
+  /* 青（主要な操作・選択状態・フォーカスだけに使う） */
+  --ms-accent: #2563eb;
+  --ms-accent-hover: #1d4ed8;
+  --ms-accent-pressed: #1e40af;
+  --ms-on-accent: #ffffff;
+  --ms-focus: #2563eb;
+
+  /* 状態の色（文字・アイコン用。意味に応じて使い分ける） */
+  --ms-success: #15803d;
+  --ms-warning: #b45309;
+  --ms-danger: #b91c1c;
+
+  /* 形・ぼかし・動き */
+  --ms-radius-card: 1rem;
+  --ms-radius-control: 0.625rem;
+  --ms-blur: 14px;
+  --ms-duration: 160ms;
+  --ms-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dark {
+  --ms-page: #0b0b0d;
+  --ms-surface: #151517;
+  --ms-surface-glass: rgba(34, 34, 38, 0.62);
+  --ms-surface-glass-solid: rgba(28, 28, 31, 0.94);
+  --ms-surface-strong: #1c1c1f;
+  --ms-hover-tint: rgba(255, 255, 255, 0.07);
+
+  --ms-text: #ededed;
+  --ms-text-muted: #a3a3a3;
+
+  --ms-border: rgba(255, 255, 255, 0.13);
+  --ms-border-strong: rgba(255, 255, 255, 0.34);
+  --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  --ms-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ms-shadow-lift: 0 12px 30px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+
+  /* ダークでも青の主要ボタンは同じ（白文字とのコントラストを保つため）。フォーカス枠だけ明るくする */
+  --ms-accent: #2563eb;
+  --ms-accent-hover: #1d4ed8;
+  --ms-accent-pressed: #1e40af;
+  --ms-on-accent: #ffffff;
+  --ms-focus: #60a5fa;
+
+  --ms-success: #4ade80;
+  --ms-warning: #fbbf24;
+  --ms-danger: #f87171;
+}
+
+/* Tailwindのユーティリティ（bg-ms-surface など）から使えるようにする */
+@theme inline {
+  --color-ms-page: var(--ms-page);
+  --color-ms-surface: var(--ms-surface);
+  --color-ms-glass: var(--ms-surface-glass);
+  --color-ms-strong: var(--ms-surface-strong);
+  --color-ms-text: var(--ms-text);
+  --color-ms-muted: var(--ms-text-muted);
+  --color-ms-border: var(--ms-border);
+  --color-ms-border-strong: var(--ms-border-strong);
+  --color-ms-accent: var(--ms-accent);
+  --color-ms-accent-hover: var(--ms-accent-hover);
+  --color-ms-focus: var(--ms-focus);
+  --color-ms-success: var(--ms-success);
+  --color-ms-warning: var(--ms-warning);
+  --color-ms-danger: var(--ms-danger);
+  --radius-ms-card: var(--ms-radius-card);
+  --radius-ms-control: var(--ms-radius-control);
+  --shadow-ms-sm: var(--ms-shadow-sm);
+  --shadow-ms-lift: var(--ms-shadow-lift);
+  --ease-ms: var(--ms-ease);
+}
+
+/* ==========================================================================
+ * 共通部品のスタイル（ガラスカード・ボタン）。React側は src/components/ui/ にある。
+ * Tailwindのユーティリティ（p-4 など）で上書きできるよう、components層に置く。
+ * ========================================================================== */
+@layer components {
+  /* キーボード操作でフォーカスした時の枠（マウスのクリックでは出ない） */
+  .ms-focus-ring:focus-visible,
+  .ms-btn:focus-visible,
+  .ms-glass-interactive:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+
+  /* ---- ガラスカード ----
+   * 既定は「ほぼ不透明の面＋細い境界線」。背景ぼかしが使える環境では、半透明＋ぼかしにする。
+   * こうしておくと、ぼかしが使えない環境でも文字が読める。 */
+  .ms-glass {
+    background-color: var(--ms-surface-glass-solid);
+    border: 1px solid var(--ms-border);
+    border-radius: var(--ms-radius-card);
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm);
+    color: var(--ms-text);
+  }
+
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .ms-glass {
+      background-color: var(--ms-surface-glass);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.35);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.35);
+    }
+  }
+
+  /* 操作上重要な面（入力欄・ダイアログ・エラー表示・広告ゲートなど）。透かさない */
+  .ms-glass-strong {
+    background-color: var(--ms-surface-strong);
+    border: 1px solid var(--ms-border-strong);
+    border-radius: var(--ms-radius-card);
+    box-shadow: var(--ms-shadow-sm);
+    color: var(--ms-text);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  /* 「透明度を下げる」「コントラストを上げる」設定では、ガラスをやめて不透明にする */
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    .ms-glass {
+      background-color: var(--ms-surface-strong);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  /* クリックできるカード（リンク）。ホバーで少し浮く */
+  .ms-glass-interactive {
+    transition:
+      translate var(--ms-duration) var(--ms-ease),
+      box-shadow var(--ms-duration) var(--ms-ease),
+      border-color var(--ms-duration) var(--ms-ease);
+  }
+
+  @media (hover: hover) {
+    .ms-glass-interactive:hover {
+      border-color: var(--ms-accent);
+      box-shadow: var(--ms-glass-highlight), var(--ms-shadow-lift);
+    }
+  }
+
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .ms-glass-interactive:hover {
+      translate: 0 -2px;
+    }
+  }
+
+  /* ---- ボタン ---- */
+  .ms-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--ms-radius-control);
+    border: 1px solid transparent;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    transition:
+      background-color var(--ms-duration) var(--ms-ease),
+      border-color var(--ms-duration) var(--ms-ease),
+      box-shadow var(--ms-duration) var(--ms-ease),
+      scale var(--ms-duration) var(--ms-ease);
+  }
+
+  .ms-btn-sm {
+    padding: 0.375rem 0.875rem;
+  }
+
+  /* 主要ボタン（青）。ページ内でいちばん大事な操作に使う */
+  .ms-btn-primary {
+    background-color: var(--ms-accent);
+    color: var(--ms-on-accent);
+    box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
+  }
+  .ms-btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
+    background-color: var(--ms-accent-hover);
+  }
+  .ms-btn-primary:active:not(:disabled):not([aria-disabled="true"]) {
+    background-color: var(--ms-accent-pressed);
+  }
+
+  /* 補助ボタン（白・ニュートラル）。主要ボタンより目立たせない */
+  .ms-btn-secondary {
+    background-color: var(--ms-surface-strong);
+    color: var(--ms-text);
+    border-color: var(--ms-border-strong);
+    box-shadow: var(--ms-shadow-sm);
+  }
+  .ms-btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+    background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint));
+  }
+  .ms-btn-secondary:active:not(:disabled):not([aria-disabled="true"]) {
+    background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint));
+    border-color: var(--ms-text-muted);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ms-btn:active:not(:disabled):not([aria-disabled="true"]) {
+      scale: 0.98;
+    }
+  }
+
+  /* 無効: 薄くするだけでなく、カーソルと影でも「押せない」ことを示す */
+  .ms-btn:disabled,
+  .ms-btn[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  /* 処理中: 文字は残し、前に小さなスピナーを出す */
+  .ms-btn[aria-busy="true"] {
+    cursor: progress;
+  }
+  .ms-btn[aria-busy="true"]::before {
+    content: "";
+    width: 0.9em;
+    height: 0.9em;
+    border-radius: 9999px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: ms-spin 0.8s linear infinite;
+  }
+}
+
+@keyframes ms-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+ * 「視覚効果を減らす」設定（prefers-reduced-motion）への対応。
+ * 画面全体の「ふわっと動く」表現を止める（機能や見た目の内容は変えない）。
+ * - 色・影の切り替えはほぼ即時にする
+ * - ホバーで浮き上がるカード（既存の hover:-translate-* も含む）は動かさない
+ * - 処理中のスピナーは回さず、静止した状態にする（「処理中」の文字は残る）
+ * ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+  [class*="hover:-translate-"]:hover {
+    translate: none !important;
+  }
+  .ms-btn[aria-busy="true"]::before,
+  .animate-spin {
+    animation: none !important;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

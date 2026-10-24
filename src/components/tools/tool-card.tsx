@@ -4,6 +4,7 @@ import { getCategory } from "@/lib/tools/categories";
 import { TOOL_TIER_LABELS } from "@/lib/plans/types";
 import { cn } from "@/lib/utils/cn";
 import { featureFlags } from "@/lib/config/features";
+import { glassCardClasses } from "@/components/ui/glass-card";
 
 /**
  * 料金区分バッジ（Phase 19 9章）。
@@ -29,7 +30,12 @@ function PlanBadge({ requiredPlan }: { requiredPlan: Tool["requiredPlan"] }) {
   );
 }
 
-export function ToolCard({ tool }: { tool: Tool }) {
+/**
+ * appearance: "default"（従来の見た目）/ "glass"（UI刷新で使う、ガラス調の見た目）。
+ * 既定は "default" のまま。"glass" を指定した画面だけ見た目が変わる。
+ * 「準備中」のカードは、どちらの場合も同じ（破線・低コントラスト）にして、実装済みと区別する。
+ */
+export function ToolCard({ tool, appearance = "default" }: { tool: Tool; appearance?: "default" | "glass" }) {
   const category = getCategory(tool.category);
   const isComingSoon = tool.status === "coming-soon";
 
@@ -38,13 +44,16 @@ export function ToolCard({ tool }: { tool: Tool }) {
       href={`/tools/${tool.id}`}
       aria-label={isComingSoon ? `${tool.name}（準備中・まだ利用できません）` : tool.name}
       className={cn(
-        "group flex flex-col gap-2 rounded-xl border p-4 transition-all",
+        "group flex flex-col gap-2 p-4",
+        (isComingSoon || appearance !== "glass") && "rounded-xl border transition-all",
         isComingSoon
           ? // Phase 19 10章: 実装済みツールと同じクリック体験にしない
             // （持ち上がるホバー演出や「使える」印象を与える枠線色の変化をつけず、
             // 破線・低コントラストな配色にとどめる）。
             "border-dashed border-neutral-300 bg-neutral-50/60 opacity-80 hover:opacity-100 dark:border-neutral-700 dark:bg-neutral-900/40"
-          : "border-neutral-200 bg-white hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-blue-700"
+          : appearance === "glass"
+            ? glassCardClasses({ interactive: true })
+            : "border-neutral-200 bg-white hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-blue-700"
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -65,12 +74,14 @@ export function ToolCard({ tool }: { tool: Tool }) {
           "font-semibold",
           isComingSoon
             ? "text-neutral-500 dark:text-neutral-400"
-            : "text-neutral-900 group-hover:text-blue-700 dark:text-neutral-100 dark:group-hover:text-blue-400"
+            : appearance === "glass"
+              ? "text-ms-text group-hover:text-ms-accent dark:group-hover:text-ms-focus"
+              : "text-neutral-900 group-hover:text-blue-700 dark:text-neutral-100 dark:group-hover:text-blue-400"
         )}
       >
         {tool.name}
       </h3>
-      <p className="line-clamp-2 text-sm text-neutral-500 dark:text-neutral-400">
+      <p className={cn("line-clamp-2 text-sm", appearance === "glass" && !isComingSoon ? "text-ms-muted" : "text-neutral-500 dark:text-neutral-400")}>
         {tool.description}
       </p>
     </Link>

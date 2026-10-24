@@ -12,6 +12,7 @@ import {
 } from "@/components/tools/implementations/shared/before-after-table";
 import { JsonToCsvProcessor, jsonTextToCsvRows, type JsonToCsvOutput } from "@/lib/processors/browser/csv-json";
 import { downloadBlob } from "@/lib/utils/format";
+import { Button } from "@/components/ui/button";
 
 const PLACEHOLDER = `[
   {"name": "田中", "age": 20},
@@ -94,14 +95,9 @@ export function JsonToCsvTool() {
         </PreviewShell>
       )}
 
-      <button
-        type="button"
-        onClick={handleRun}
-        disabled={!input.trim() || status === "processing"}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
+      <Button onClick={handleRun} disabled={!input.trim()} loading={status === "processing"} className="w-fit">
         CSVに変換する
-      </button>
+      </Button>
 
       <ProcessingStatus state={status} successLabel="変換が完了しました" />
       {error && <ErrorMessage message={error} />}
@@ -118,13 +114,9 @@ export function JsonToCsvTool() {
             />
           </label>
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-            >
+            <Button variant="secondary" onClick={handleCopy}>
               コピー
-            </button>
+            </Button>
             <RewardedDownloadGate
               label=".csvをダウンロード"
               onDownload={() => downloadBlob(result.blob, "output.csv")}
