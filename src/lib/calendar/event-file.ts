@@ -29,6 +29,11 @@ export const LEGACY_EXCEL_MESSAGE = "古い形式（.xls）は読み込めませ
 
 /** CSVの文字コードを判定して文字にする。UTF-8（BOMつき含む）で読めなければ、Excelの日本語CSVに多いShift_JISとして読む */
 export function decodeCsvBytes(bytes: ArrayBuffer): string {
+  // Excelの「Unicodeテキスト」で保存したファイルは、BOMつきのUTF-16。UTF-8やShift_JISとして読むと文字化けして、
+  // 読めない行が大量に出てしまう（AIに送る対象にもなってしまう）ため、BOMで判定して先に読む
+  const head = new Uint8Array(bytes.slice(0, 2));
+  if (head[0] === 0xff && head[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes).replace(/^\uFEFF/, "");
+  if (head[0] === 0xfe && head[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes).replace(/^\uFEFF/, "");
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^﻿/, "");
   } catch {

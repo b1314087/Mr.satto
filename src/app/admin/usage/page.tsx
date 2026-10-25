@@ -30,7 +30,7 @@ export default async function AdminUsagePage() {
       <div>
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">利用状況</h1>
         <p className="mt-2 max-w-2xl text-sm text-neutral-500 dark:text-neutral-400">
-          Mr.Sattoのツールはブラウザ内で処理が完結し、ファイルの内容やツールの実行結果はサーバーへ送信されません。
+          Mr.Sattoの通常のツールはブラウザ内で処理が完結し、ファイルの内容やツールの実行結果はサーバーへ送信されません（同意のうえで実行するAIの読み取りを除きます）。
           現在、ツールの利用回数は新たに記録していません。ここに表示されるのは、過去に記録された利用ログ
           （かつて「記入済みPDF→Excel」のStandardプラン向け1日あたり利用制限を管理していた際のログ）の集計のみで、
           サイト全体の利用回数ではありません。

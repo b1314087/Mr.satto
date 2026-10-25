@@ -20,7 +20,9 @@ export function Footer() {
             </span>
           </p>
           <p className="mt-1 max-w-md text-xs text-ms-muted">
-            ファイルはブラウザ上で処理され、サーバーに保存されません。
+            {featureFlags.billing
+              ? "通常のツールは、ファイルをブラウザ上で処理します。サーバーには保存されません。AIで読み取る機能のみ、同意のうえで選んだ内容を外部のAIサービスへ送信します。"
+              : "ファイルはブラウザ上で処理され、サーバーに保存されません。"}
           </p>
         </div>
         <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ms-muted">

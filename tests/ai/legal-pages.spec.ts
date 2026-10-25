@@ -15,6 +15,10 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("実行のたびに");
     expect(text).toContain("AIトークン");
     expect(text).toContain("自動では採用されません");
+    // AIの対象（表・画像・スキャンPDF）と、画像の文字がすべて送られることが書かれている
+    expect(text).toContain("Excel・CSV・PDF・画像");
+    expect(text).toContain("先頭の最大4ページ");
+    expect(text).toContain("画像に写っている文字は、すべてAIに送られます");
     expect(text).toContain("新規のお申し込みを終了");
     expect(text).toContain("移行が完了するまで");
     expect(text).not.toMatch(/スタンダードプランが月額|550円（税込）/);
@@ -31,9 +35,31 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("最長30日");
     expect(text).toContain("学習");
     expect(text).toContain("日本国外");
+    // 形式ごとの送信内容（Excel・CSV=選んだ行・列、画像・スキャンPDF=縮小した画像）と、通常処理はAIなし
+    expect(text).toContain("Excel（.xlsx・.xlsm）・CSV");
+    expect(text).toContain("JPEGに縮小した画像");
+    expect(text).toContain("先頭の最大4ページ");
+    expect(text).toContain("画像に写っている文字は、すべてAIに送られます");
+    expect(text).toContain("本サービスのサーバー側でも、AIによる処理を行いません");
+    expect(text).toContain("通常の年度カレンダー作成");
+    expect(text).toContain("元のファイルは送信しません");
+    expect(text).toContain("自動では採用されません");
+    await expect(ai.locator('a[href="https://developers.openai.com/api/docs/guides/your-data"]')).toBeVisible();
     // 「ファイルは送信されない」の説明に、AIの例外が明記されている
     const all = await page.locator("main").innerText();
     expect(all).toContain("AIによる読み取り補助を除きます");
+  });
+
+  test("料金ページ: プレミアムの内容（AIの利用枠・外部送信・PDF→Excelの制限差）が書かれ、全ツールが標準扱いの間は「プレミアム対象ツール」を書かない", async ({ page }) => {
+    await page.goto("/pricing");
+    const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
+    expect(text).toContain("月額1,100円");
+    expect(text).toContain("AIの利用枠は、請求期間ごとに上限があり");
+    expect(text).toContain("同意のうえで、選んだ内容が外部のAIサービス（OpenAI）へ送信されます");
+    expect(text).toContain("「記入済みPDF→Excel」は、ページ数・回数の制限なし");
+    expect(text).toContain("「記入済みPDF→Excel」は、1回1ページまで");
+    expect(text).not.toContain("プレミアム対象ツール");
+    expect(text).not.toContain("通常ツールを利用可能");
   });
 
   test("特定商取引法: 販売価格はPremium 月額1,100円のみ。旧料金の契約者の扱いも書かれている", async ({ page }) => {

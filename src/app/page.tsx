@@ -84,6 +84,7 @@ export default function Home() {
               <h3 className="font-semibold text-ms-text">ファイルを保存しない</h3>
               <p className="mt-1 text-sm text-ms-muted">
                 多くの処理はお使いのブラウザ内で完結し、ファイルをサーバーに送信・保存しません。
+                {featureFlags.billing ? "AIで読み取る機能（プレミアム）だけは、同意したうえで選んだ内容を、外部のAIサービスへ送信します。" : ""}
               </p>
             </div>
           </GlassCard>

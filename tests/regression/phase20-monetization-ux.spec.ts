@@ -229,11 +229,19 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
     // Free: ¥0・広告あり・通常ツール
     await expect(page.getByText("0円", { exact: false }).first()).toBeVisible();
     await expect(page.getByText(/広告を見ると1時間、通常ツールを利用できます/)).toBeVisible();
-    await expect(page.getByText("通常ツールを利用可能").first()).toBeVisible();
+    if (premiumTool) {
+      // プレミアム限定のツールが実在する間は、無料は「通常ツール」、プレミアムは「すべてのツール」と書き分ける
+      await expect(page.getByText("通常ツールを利用可能").first()).toBeVisible();
+    } else {
+      // 全ツールが標準扱いの間は、どちらのプランも同じ表示にし、実在しない「通常ツールのみ」の制限を示さない
+      await expect(page.getByText("通常ツールを利用可能")).toHaveCount(0);
+      await expect(page.getByText("すべてのツールを利用可能")).toHaveCount(2);
+      await expect(page.getByText("プレミアム対象ツール")).toHaveCount(0);
+    }
 
     // Premium: ¥1,100/月・広告なし・すべて対象・AI読み取り補助
     await expect(page.getByText("1,100円/月", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText("すべてのツールを利用可能")).toBeVisible();
+    if (premiumTool) await expect(page.getByText("すべてのツールを利用可能")).toBeVisible();
     await expect(page.getByText(/「AIで読み取る」補助/)).toBeVisible();
 
     // 広告あり/なしの明示（Free=あり、Premium=なし）

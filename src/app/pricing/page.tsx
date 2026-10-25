@@ -10,6 +10,7 @@ import { isStripeConfigured } from "@/lib/stripe/config";
 import { verifyPremiumPrice } from "@/lib/stripe/price-guard-server";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { PricingActionButton } from "@/components/pricing/pricing-action-button";
+import { tools } from "@/lib/tools/data";
 
 export const metadata: Metadata = {
   title: "料金プラン",
@@ -20,10 +21,18 @@ export const metadata: Metadata = {
   ...(featureFlags.billing ? {} : { robots: { index: false, follow: false } }),
 };
 
-const PLAN_TOOL_ACCESS_LABEL: Record<string, string> = {
-  standard: "通常ツールを利用可能",
-  all: "すべてのツールを利用可能",
-};
+/**
+ * プレミアムのプラン限定として提供しているツールが、実際にあるか。
+ * ツールの一覧データ（src/lib/tools/data.ts）の実際の設定から判定する。
+ * 全ツールを標準扱いにしている間は false になり、「プレミアム対象ツール」の説明を出さない。
+ */
+const hasPremiumOnlyTools = tools.some((t) => t.status === "available" && t.requiredPlan === "premium");
+
+/** プランカードの「ツールの利用範囲」の行。実際にプレミアム限定のツールがない間は、どのプランも同じ表示にする */
+function getToolAccessLabel(toolAccess: string): string {
+  if (!hasPremiumOnlyTools) return "すべてのツールを利用可能";
+  return toolAccess === "all" ? "すべてのツールを利用可能" : "通常ツールを利用可能";
+}
 
 /**
  * 料金ページ限定の、プランごとの利用条件の補足（誇張表現は入れない）。
@@ -33,8 +42,9 @@ const PLAN_TOOL_ACCESS_LABEL: Record<string, string> = {
  * （広告視聴の仕組みが無効の間は、広告を見なくても使える）を混同しないため。
  */
 /** プランカードの「広告」の行。広告の仕組みが有効でない間は、実際の状態（広告を見る必要がない）を書く */
-function getAdsLabel(adsRequired: boolean, adGateActive: boolean): string {
-  if (!adsRequired) return "広告なし";
+function getAdsLabel(adsRequired: boolean, adGateActive: boolean): string | null {
+  // 広告そのものを提供していない間は、「広告なし」をプレミアムの特典として書かない（書くと、特典があるように見えてしまう）
+  if (!adsRequired) return featureFlags.ads ? "広告なし" : null;
   if (adGateActive) return "広告視聴あり";
   return featureFlags.ads ? "広告が表示されます" : "現在、広告は表示されません";
 }
@@ -46,7 +56,7 @@ function getPlanUsageNote(planId: string, adGateActive: boolean): string {
         ? "広告を見ると1時間、通常ツールを利用できます（複数のツールをまとめて利用可能）"
         : "広告を見なくても、通常ツールをご利用いただけます。";
     case "premium":
-      return `月額${PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円（税込）・広告なし・プレミアム対象ツールも利用可能`;
+      return `月額${PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円（税込）${featureFlags.ads ? "・広告なし" : ""}${hasPremiumOnlyTools ? "・プレミアム対象ツールも利用可能" : ""}`;
     default:
       return "";
   }
@@ -102,21 +112,36 @@ export default async function PricingPage({
               <ul className="flex flex-col gap-2 text-sm text-ms-muted">
                 <li className="flex items-start gap-2">
                   <span aria-hidden="true">・</span>
-                  {PLAN_TOOL_ACCESS_LABEL[plan.toolAccess]}
+                  {getToolAccessLabel(plan.toolAccess)}
+                </li>
+                {getAdsLabel(plan.adsRequired, adGateActive) && (
+                  <li className="flex items-start gap-2">
+                    <span aria-hidden="true">・</span>
+                    {getAdsLabel(plan.adsRequired, adGateActive)}
+                  </li>
+                )}
+                <li className="flex items-start gap-2">
+                  <span aria-hidden="true">・</span>
+                  {id === "premium" ? "年度カレンダー作成の「AIで読み取る」補助（Excel・CSV・画像・スキャンPDF／利用枠あり）" : "通常の年度カレンダー作成は無料（AIは使いません）"}
                 </li>
                 <li className="flex items-start gap-2">
                   <span aria-hidden="true">・</span>
-                  {getAdsLabel(plan.adsRequired, adGateActive)}
-                </li>
-                <li className="flex items-start gap-2">
-                  <span aria-hidden="true">・</span>
-                  {id === "premium" ? "年度カレンダー作成の「AIで読み取る」補助（利用枠あり）" : "通常の年度カレンダー作成は無料（AIは使いません）"}
+                  {id === "premium" ? "「記入済みPDF→Excel」は、ページ数・回数の制限なし" : "「記入済みPDF→Excel」は、1回1ページまで"}
                 </li>
               </ul>
 
               <p className="text-xs text-ms-muted">
                 {getPlanUsageNote(plan.id, adGateActive)}
               </p>
+              {id === "premium" && (
+                <p data-testid="pricing-ai-note" className="text-xs text-ms-muted">
+                  AIの利用枠は、請求期間ごとに上限があり、AIトークンという単位で残量を表示します。上限に達すると、次の請求期間までAIによる読み取りは利用できません。AIの読み取り結果は提案であり、内容は必ずご自身で確認してください。AIを使う場合は、同意のうえで、選んだ内容が外部のAIサービス（OpenAI）へ送信されます（詳しくは
+                  <Link href="/privacy" className="mx-1 text-ms-accent hover:underline dark:text-ms-focus">
+                    プライバシーポリシー
+                  </Link>
+                  をご覧ください）。
+                </p>
+              )}
 
               {id === "free" ? (
                 <span className="mt-auto w-full rounded-lg border border-dashed border-ms-border-strong px-4 py-2 text-center text-sm text-ms-muted">

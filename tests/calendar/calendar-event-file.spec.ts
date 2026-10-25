@@ -55,6 +55,17 @@ test.describe("CSVの読み取り", () => {
     expect(decodeCsvBytes(sjis.buffer)).toBe("日付,予定");
   });
 
+  test("Excelの「Unicodeテキスト」（BOMつきUTF-16・タブ区切り）も、文字化けせずに読める。UTF-16BEも同様", () => {
+    const text = "日付\t予定\n2027/04/05\t入学式\n";
+    const le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+    const decodedLe = decodeCsvBytes(le.buffer.slice(le.byteOffset, le.byteOffset + le.byteLength) as ArrayBuffer);
+    expect(decodedLe).toBe(text);
+    expect(parseCsv(decodedLe)).toEqual([["日付", "予定"], ["2027/04/05", "入学式"]]);
+    const be = Buffer.from(Buffer.from(text, "utf16le")).swap16();
+    const beWithBom = Buffer.concat([Buffer.from([0xfe, 0xff]), be]);
+    expect(decodeCsvBytes(beWithBom.buffer.slice(beWithBom.byteOffset, beWithBom.byteOffset + beWithBom.byteLength) as ArrayBuffer)).toBe(text);
+  });
+
   test("CSVの内容が、Excelと同じ取り込みで予定になる", () => {
     const rows = parseCsv("日付,予定,開始時刻,終了時刻\n2027/04/05,入学式,10:00,11:30\n2027/04/06,始業式,,\n四月十日,棚卸し,,\n");
     const layout = detectLayout(rows)!;

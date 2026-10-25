@@ -126,7 +126,7 @@ export function FiscalCalendarEventsImport({
     }
     if (kind === "pdf" && file.size > MAX_PDF_BYTES) return setFileError("PDFが大きすぎます（30MBまで）。ページを減らしてから選んでください。");
     if (kind === "image" && !featureFlags.billing) {
-      return setFileError("画像の読み取りはAI（Premium）の機能で、現在ご利用いただけません。Excel・CSV・文字のPDFは読み込めます。");
+      return setFileError("画像の読み取り（AI）は、現在ご利用いただけません。Excel・CSV・文字のPDFは読み込めます。");
     }
 
     const seq = ++loadSeq.current;
@@ -207,7 +207,7 @@ export function FiscalCalendarEventsImport({
       return;
     }
     if (text.rows.length === 0) {
-      throw new Error("PDFから表として認識できる内容が見つかりませんでした。下の「画像としてAIで読み取る」をお試しください。");
+      throw new Error(featureFlags.billing ? "PDFから表として認識できる内容が見つかりませんでした。下の「画像としてAIで読み取る」をお試しください。" : "PDFから表として認識できる内容が見つかりませんでした。");
     }
     const notes = [`PDFの文字情報から表を読み取りました（${text.textPageCount}ページ分）。`];
     if (text.pageCount > text.pagesRead) notes.push(`先頭の${text.pagesRead}ページだけを読み取りました。`);
@@ -220,7 +220,7 @@ export function FiscalCalendarEventsImport({
   async function prepareScannedPdf(file: File, seq: number, lead: string) {
     const stale = () => seq !== loadSeq.current;
     if (!featureFlags.billing) {
-      throw new Error("文字情報のないPDF（スキャン）の読み取りはAI（Premium）の機能で、現在ご利用いただけません。");
+      throw new Error("文字情報のないPDF（スキャン）の読み取り（AI）は、現在ご利用いただけません。");
     }
     const { preparePdfPages } = await import("@/lib/calendar/event-image");
     const prepared = await preparePdfPages(file, (m) => {
@@ -286,7 +286,9 @@ export function FiscalCalendarEventsImport({
     <fieldset data-testid="events-import" className="flex flex-col gap-2 text-sm">
       <legend className="mb-1 text-neutral-600 dark:text-neutral-300">予定データ</legend>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        日付・予定・開始時刻・終了時刻が並んだ予定表（Excel・CSV・PDF・画像）を選ぶと、カレンダーの該当する日に予定を入れます。Excel・CSV・文字のPDFは、この端末の中だけで処理され、サーバーには送信されません。画像とスキャンしたPDFは、AI（Premium）で読み取るため、内容を確認して同意したときだけ、縮小した画像をAIに送ります。
+        {featureFlags.billing
+          ? "日付・予定・開始時刻・終了時刻が並んだ予定表（Excel・CSV・PDF・画像）を選ぶと、カレンダーの該当する日に予定を入れます。Excel・CSV・文字のPDFは、この端末の中だけで処理され、サーバーには送信されません。画像とスキャンしたPDFは、AI（プレミアムの機能）で読み取るため、内容を確認して同意したときだけ、縮小した画像をAIに送ります。"
+          : "日付・予定・開始時刻・終了時刻が並んだ予定表（Excel・CSV・PDF）を選ぶと、カレンダーの該当する日に予定を入れます。Excel・CSV・文字のPDFは、この端末の中だけで処理され、サーバーには送信されません。"}
       </p>
       <div
         data-testid="events-dropzone"
@@ -316,7 +318,7 @@ export function FiscalCalendarEventsImport({
         <p data-testid="events-drop-label" className="text-sm font-medium text-ms-text">
           {dragging ? "ここで手を離すと読み込みます" : "ここにファイルをドラッグ＆ドロップ"}
         </p>
-        <p className="text-xs text-ms-muted">またはボタンで選択（スマートフォンでは、ボタンから選べます）。Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）に対応しています。</p>
+        <p className="text-xs text-ms-muted">またはボタンで選択（スマートフォンでは、ボタンから選べます）。{featureFlags.billing ? "Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）に対応しています。" : "Excel（.xlsx）・CSV・PDFに対応しています。"}</p>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <FilePickButton
             accept={EVENT_FILE_ACCEPT}

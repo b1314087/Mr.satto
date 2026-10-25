@@ -29,6 +29,33 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
     expect(text).not.toContain("有効になった後"); // 将来の広告の予定を、現行の説明に出さない
   });
 
+  test("料金ページ: 広告を出していない間は「広告なし」を特典にせず、実在しない「プレミアム対象ツール」も書かない。AIの利用枠と外部送信を説明する", async ({ page }) => {
+    await page.goto("/pricing");
+    const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
+    expect(text).not.toContain("広告なし");
+    expect(text).not.toContain("プレミアム対象ツール");
+    expect(text).toContain("現在、広告は表示されません"); // 無料プランの実際の状態
+    expect(text).toContain("AIの利用枠は、請求期間ごとに上限があり");
+    expect(text).toContain("AIトークン");
+    expect(text).toContain("OpenAI");
+    expect(text).toContain("必ずご自身で確認してください");
+    // 年度カレンダー作成の通常処理は無料のまま（AIを使わない）
+    expect(text).toContain("通常の年度カレンダー作成は無料（AIは使いません）");
+  });
+
+  test("フッター・トップ・運営者情報: 通常ツールはブラウザ処理、AI機能だけが同意のうえで外部送信されると区別して説明する", async ({ page }) => {
+    for (const path of ["/", "/about"]) {
+      await page.goto(path);
+      const text = (await page.locator("body").innerText()).replace(/\s+/g, " ");
+      expect(text, path).toContain("AIで読み取る機能");
+      expect(text, path).toContain("外部のAIサービスへ送信します");
+    }
+    await page.goto("/tools/fiscal-calendar");
+    const footer = (await page.locator("footer").innerText()).replace(/\s+/g, " ");
+    expect(footer).toContain("サーバーには保存されません");
+    expect(footer).toContain("同意のうえで選んだ内容を外部のAIサービスへ送信します");
+  });
+
   test("トップページ・サイトの紹介・会員登録: 広告を見る前提の文言が出ない", async ({ page }) => {
     for (const path of ["/", "/about", "/signup"]) {
       await page.goto(path);

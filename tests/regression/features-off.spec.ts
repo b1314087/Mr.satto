@@ -123,6 +123,18 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     expect(problems, problems.join("\n")).toEqual([]);
   });
 
+  test("年度カレンダー作成の予定データ欄に、「AI」「Premium」「画像」など、提供していない機能の案内が出ない", async ({ page }) => {
+    await page.goto("/tools/fiscal-calendar");
+    const imp = page.getByTestId("events-import");
+    await expect(imp).toBeVisible();
+    const text = (await imp.innerText()).replace(/\s+/g, " ");
+    expect(text).not.toMatch(/AI|Premium|プレミアム|画像/);
+    expect(text).toContain("Excel・CSV・PDF");
+    const footer = (await page.locator("footer").innerText()).replace(/\s+/g, " ");
+    expect(footer).toContain("サーバーに保存されません");
+    expect(footer).not.toContain("AI");
+  });
+
   test("ツールページに広告の枠・ダウンロード時の広告の案内が出ない", async ({ page }) => {
     await page.goto("/tools/image-resize");
     await expect(page.locator('input[type="file"]')).toBeAttached();
