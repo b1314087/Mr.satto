@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { uploadFixture } from "./tool-runner";
+import { uploadFixture, waitForFileInputHydrated } from "./tool-runner";
 
 /**
  * ツールページで「ファイルを選ぶ」操作を安全に行うための共通ヘルパー（工程3）。
@@ -24,22 +24,11 @@ import { uploadFixture } from "./tool-runner";
  *   再試行せず、診断情報つきで失敗させる。
  */
 
-const FILE_INPUT = 'input[type="file"]';
-
-/** ファイル入力欄のhydration完了を待つ。上限時間までに完了しなければ false を返す（例外にはしない）。 */
-export async function waitForFileInputHydrated(page: Page, timeoutMs = 20_000): Promise<boolean> {
-  return page
-    .waitForFunction(
-      (selector) => {
-        const input = document.querySelector(selector);
-        return !!input && Object.keys(input).some((k) => k.startsWith("__reactProps$"));
-      },
-      FILE_INPUT,
-      { timeout: timeoutMs }
-    )
-    .then(() => true)
-    .catch(() => false);
-}
+/**
+ * ファイル入力欄のhydration完了を待つ。上限時間までに完了しなければ false を返す（例外にはしない）。
+ * 実体は tool-runner.ts（uploadFixture も同じ待機を使うため）。既存の呼び出し元のため、ここからも公開する。
+ */
+export { waitForFileInputHydrated };
 
 /** このページの読み込み中に失敗した /_next/static/ のリソース（404など）を、ブラウザの記録から取り出す */
 async function collectStaticLoadFailures(page: Page): Promise<string[]> {

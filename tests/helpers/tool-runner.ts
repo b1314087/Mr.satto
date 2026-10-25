@@ -14,7 +14,39 @@ import { expect } from "@playwright/test";
  * 実際に生成されたファイルの中身（マジックバイト・サイズ）まで確認する。
  */
 
+/**
+ * ファイル入力欄（`input[type="file"]` の先頭）のhydration（Reactの準備）完了を待つ。
+ * 上限時間までに完了しなければ false を返す（例外にはしない）。
+ *
+ * ここに置く理由：`uploadFixture` が内部で使うため。tool-ready.ts は tool-runner.ts を読み込むので、
+ * 逆向きの読み込み（循環）を避けるために、実体はこちらに置き、tool-ready.ts から再公開している。
+ */
+export async function waitForFileInputHydrated(page: Page, timeoutMs = 20_000): Promise<boolean> {
+  return page
+    .waitForFunction(
+      (selector) => {
+        const input = document.querySelector(selector);
+        return !!input && Object.keys(input).some((k) => k.startsWith("__reactProps$"));
+      },
+      'input[type="file"]',
+      { timeout: timeoutMs }
+    )
+    .then(() => true)
+    .catch(() => false);
+}
+
+/**
+ * フィクスチャのファイルを、ページ最初のファイル入力欄に設定する。
+ *
+ * 入力欄のhydrationが終わる前に設定すると、選択が無視されて画面が初期状態のままになることがある
+ * （tool-ready.ts 冒頭の調査メモを参照）。そのため、設定の前に入力欄の準備完了を条件で待つ
+ * （固定時間の待機ではない）。上限までに準備できなくても例外にはせず、従来どおり設定を試みる
+ * ＝ 失敗は、これまでと同じ形で呼び出し側のテストの確認で報告される。
+ * すでに準備できている場合は待たずに進むため、事前に待っている呼び出し側（uploadWhenReady 等）と
+ * 二重に待っても時間は増えない。
+ */
 export async function uploadFixture(page: Page, filePathOrPaths: string | string[]) {
+  await waitForFileInputHydrated(page);
   const input = page.locator('input[type="file"]').first();
   await input.setInputFiles(filePathOrPaths);
 }

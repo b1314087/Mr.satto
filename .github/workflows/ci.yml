@@ -1,0 +1,176 @@
+# 自動検証（CI）：コードの変更が、型・Lint・ビルド・重要な画面のテストを壊していないかを確認する
+#
+# 動くタイミング:
+#   - main への push（Vercel の自動公開と並行して、結果を知らせる）
+#   - main 向けのプルリクエスト
+#   - 手動実行（Actions の画面の「Run workflow」）
+#
+# 注意（運用）:
+#   - このCIは「結果を知らせる」ものです。main へ直接 push する運用のままでは、失敗しても
+#     Vercel の公開は止まりません（push 後に失敗が分かる形）。公開前に止めたい場合は、
+#     ブランチ保護・プルリクエスト必須・Vercel 側の設定が別途必要です（今回は変更していません）。
+#   - 祝日データの自動更新（sync-holidays.yml）は GITHUB_TOKEN で main に push するため、
+#     GitHub の仕様上、その push ではこのCIは起動しません（祝日同期の側で、型・Lint・
+#     カレンダーのテストを実行済みです）。
+#
+# 秘密情報について:
+#   - このファイルに本番のAPIキー・秘密情報は一切書かない。Secrets も使わない。
+#   - 下の値はすべてテスト用のダミー／公開値です。Stripe・Supabase・OpenAI・広告の設定は未設定のまま動き、
+#     これらの外部サービスには接続しません（未設定のときは各機能が「準備中／利用不可」になる設計）。
+#
+# 実行するテストの範囲（軽量セット）:
+#   全テスト（約130ファイル、1ワーカーで約45分）は重すぎるため、変更の影響が大きい次に絞っています。
+#   PDF修正、広告・ダウンロードの導線、料金・プラン表示、法務ページ、SEO、ツール登録情報、機能フラグ別の表示。
+#   全件の実行は別途（手動／必要になったら別ワークフロー）。
+#   テストはリトライなし（--retries=0）で、1ワーカー（--workers=1）。不安定な失敗を成功に見せず、
+#   2コアの実行環境での負荷による失敗を避けるため（工程13・14の実測に基づく）。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+# 同じブランチ／PRで新しい実行が始まったら、PRの古い実行は止める。main への push は止めない（各コミットの結果を残す）。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# 読み取りだけ。コミット・push・Issue作成などの書き込み権限は与えない。
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  # サイトの公開URL（公開値）。SEOのテストが、この値を使ったcanonicalやOGPを期待するため設定する。
+  NEXT_PUBLIC_SITE_URL: https://mrsatto.com
+  # リワード広告の利用権トークンの署名鍵。テストでは固定のダミー値で足りる（本物の鍵ではない）。
+  TEMP_ACCESS_SECRET: ci-dummy-secret-not-for-production
+
+jobs:
+  # 1. 型チェック・Lint・本番ビルド（テストとは別のマシンで並行して実行する）
+  checks:
+    name: 型・Lint・ビルド
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      # 既存の警告（scripts/verify-stripe-live.mjs の14件）は失敗扱いにしない。エラーがあれば失敗する。
+      - name: ESLint
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+  # 2. 画面のテスト（Playwright）。開発サーバーを起動して実行する（開発専用のプラン上書きCookieを使うテストがあるため）
+  tests:
+    name: テスト（${{ matrix.name }}）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: PDF修正・広告・料金・法務
+            slug: app
+            paths: >-
+              tests/tools/pdf-fix.spec.ts
+              tests/regression/phase20-monetization-ux.spec.ts
+              tests/regression/download-gate.spec.ts
+              tests/regression/pricing-plan.spec.ts
+              tests/legal
+          - name: SEO・ツール登録情報
+            slug: seo-registry
+            paths: >-
+              tests/seo
+              tests/registry
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        env:
+          PLAYWRIGHT_TEST_PORT: "3100"
+        run: npx playwright test ${{ matrix.paths }} --workers=1 --retries=0
+
+      # 失敗したときだけ、原因調査用のレポート・スクリーンショット・トレースを保存する（7日間）
+      - name: Upload test report on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ matrix.slug }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # 3. 機能フラグ別の表示テスト（広告・課金の有効／無効で説明文や表示が正しく切り替わるか）
+  #    package.json の既存スクリプトを使う（フラグとポートはスクリプト側で指定済み）。
+  flag-tests:
+    name: テスト（機能フラグ別）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Features off (ads and billing off)
+        run: npm run test:features-off -- --workers=1 --retries=0
+
+      # 片方が失敗しても、もう片方の結果も確認できるようにする（キャンセル時は実行しない）
+      - name: Launch config (ads off)
+        if: ${{ !cancelled() }}
+        run: npm run test:launch-config -- --workers=1 --retries=0
+
+      - name: Upload test report on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-flags
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore

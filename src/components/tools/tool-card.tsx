@@ -40,7 +40,7 @@ function PlanBadge({ requiredPlan }: { requiredPlan: Tool["requiredPlan"] }) {
  *   （ホバーで浮かない・枠の色も変えない。まだ使えない印象を与えないため）。
  * - カード全体が1つのリンク（<a>）。JavaScriptでの遷移には置き換えていない。
  */
-export function ToolCard({ tool }: { tool: Tool }) {
+export function ToolCard({ tool, showDescription = true }: { tool: Tool; showDescription?: boolean }) {
   const category = getCategory(tool.category);
   const isComingSoon = tool.status === "coming-soon";
 
@@ -77,7 +77,7 @@ export function ToolCard({ tool }: { tool: Tool }) {
       >
         {tool.name}
       </h3>
-      <p className="line-clamp-2 text-sm text-ms-muted">{tool.description}</p>
+      {showDescription && <p className="line-clamp-2 text-sm text-ms-muted">{tool.description}</p>}
     </Link>
   );
 }

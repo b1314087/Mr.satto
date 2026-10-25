@@ -225,6 +225,22 @@ test.describe("ツールカード", () => {
     expect(read("src/components/tools/tool-card.tsx")).not.toMatch(/onClick|router\.push/);
   });
 
+  test("カテゴリ別一覧: カードにツールの説明文を出さない（名前・バッジ・リンクは変わらない）。全ツール一覧では説明が残る", async ({ page }) => {
+    const imageTools = getListedTools().filter((t) => t.category === "image" && t.status === "available");
+    await page.goto("/tools/image");
+    const cards = main(page).locator('a[href^="/tools/"][aria-label]');
+    await expect(cards).toHaveCount(imageTools.length);
+    // どのカードにも説明文（<p>）がなく、名前（<h3>）とリンク先はそのまま
+    expect(await cards.evaluateAll((els) => els.map((e) => e.querySelectorAll("p").length))).toEqual(imageTools.map(() => 0));
+    await expect(cards.first().locator("h3")).toHaveCount(1);
+    await expect(cards.first()).toHaveAttribute("href", `/tools/${imageTools[0].id}`);
+    await expect(main(page).getByText(imageTools[0].description, { exact: false })).toHaveCount(0);
+
+    // 全ツール一覧（共通のカード）には、これまでどおり説明が出る
+    await page.goto("/tools");
+    await expect(main(page).locator('a[href^="/tools/"][aria-label]').first().locator("p")).toHaveCount(1);
+  });
+
   test("カードの背景はぼかし付きの半透明で、ぼかしが使えない環境用の不透明な既定値もある", async ({ page }) => {
     const css = read("src/app/globals.css");
     // 既定（ぼかし非対応）: ほぼ不透明の面＋境界線。@supports の中でだけ半透明＋ぼかしにする
