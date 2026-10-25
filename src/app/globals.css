@@ -4,7 +4,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* ページ背景はニュートラル（オフホワイト／ごく暗いグレー）。青のグラデーションは使わない。
+  /* ページ背景は、淡い水色のガラス調（ダークは深い紺）。
      値は下の --ms-page / --ms-text を参照する（背景色の定義を1か所にするため） */
   --background: var(--ms-page);
   --foreground: var(--ms-text);
@@ -13,6 +13,23 @@
 .dark {
   --background: var(--ms-page);
   --foreground: var(--ms-text);
+}
+
+/* Tailwindの灰色（neutral）を、青みのある灰色（slate系）に置き換える。
+   * 100以上のツール画面で使っている枠線・薄い背景・補助文字が、まとめて水色のガラス調になじむ。
+   * 色名（neutral-600 など）と明るさの順序は変えていない。補助文字に使う 500〜600 は、元より濃くコントラストが上がる。 */
+@theme {
+  --color-neutral-50: #f6f9fd;
+  --color-neutral-100: #eef3fa;
+  --color-neutral-200: #dfe7f3;
+  --color-neutral-300: #c7d3e5;
+  --color-neutral-400: #8da0bd;
+  --color-neutral-500: #5f7392;
+  --color-neutral-600: #475b78;
+  --color-neutral-700: #34465f;
+  --color-neutral-800: #1e2c45;
+  --color-neutral-900: #111c31;
+  --color-neutral-950: #070e1d;
 }
 
 @theme inline {
@@ -36,24 +53,27 @@
  *   （tests/ui/design-foundation.spec.ts で検証している）。
  * ========================================================================== */
 :root {
-  /* 背景・面 */
-  --ms-page: #fafafa; /* ページ背景（オフホワイト） */
-  --ms-surface: #ffffff; /* 通常の面 */
-  --ms-surface-glass: rgba(255, 255, 255, 0.72); /* ガラス調の面（背景ぼかしが使える時） */
-  --ms-surface-glass-solid: rgba(255, 255, 255, 0.94); /* ぼかしが使えない時の面（ほぼ不透明） */
+  /* 背景・面（淡い水色のガラス調） */
+  --ms-page: #eaf2fc; /* ページ背景（淡い水色） */
+  --ms-surface: #f5f9ff; /* 通常の面 */
+  --ms-surface-glass: rgba(255, 255, 255, 0.58); /* ガラス調の面（背景ぼかしが使える時） */
+  --ms-surface-glass-solid: rgba(246, 250, 255, 0.94); /* ぼかしが使えない時の面（ほぼ不透明） */
   --ms-surface-strong: #ffffff; /* 入力欄・ダイアログ・エラー表示など、操作上重要な面（不透明） */
-  --ms-hover-tint: rgba(0, 0, 0, 0.045); /* 押せる面にカーソルを乗せた時の薄い色 */
+  --ms-surface-tool: rgba(250, 253, 255, 0.7); /* ツール画面の外枠（ぼかしなしの半透明） */
+  --ms-hover-tint: rgba(37, 99, 235, 0.07); /* 押せる面にカーソルを乗せた時の薄い青 */
 
   /* 文字 */
-  --ms-text: #171717;
-  --ms-text-muted: #525252;
+  --ms-text: #0f1f38;
+  --ms-text-muted: #475b78;
 
-  /* 境界線・ハイライト・影 */
-  --ms-border: rgba(0, 0, 0, 0.09);
-  --ms-border-strong: rgba(0, 0, 0, 0.3);
-  --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.75); /* ガラスの上端の細い反射 */
-  --ms-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 1px rgba(0, 0, 0, 0.03);
-  --ms-shadow-lift: 0 10px 28px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  /* 境界線・ハイライト・影（青みがかった、やわらかい影） */
+  --ms-border: rgba(90, 130, 200, 0.22);
+  --ms-border-strong: rgba(45, 80, 145, 0.5);
+  --ms-dash: rgba(37, 99, 235, 0.38); /* ファイル選択欄の点線 */
+  --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.5); /* ガラスの縁の反射 */
+  --ms-glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 46%); /* ガラスの上半分のつや */
+  --ms-shadow-sm: 0 2px 10px rgba(50, 90, 170, 0.09), 0 1px 2px rgba(50, 90, 170, 0.06);
+  --ms-shadow-lift: 0 16px 40px rgba(50, 90, 170, 0.2), 0 4px 10px rgba(50, 90, 170, 0.1);
 
   /* 青（主要な操作・選択状態・フォーカスだけに使う） */
   --ms-accent: #2563eb;
@@ -61,44 +81,56 @@
   --ms-accent-pressed: #1e40af;
   --ms-on-accent: #ffffff;
   --ms-focus: #2563eb;
+  /* 主要ボタンの質感（上がやや明るい青のグラデーション＋つや） */
+  --ms-accent-gradient:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 52%),
+    linear-gradient(180deg, #2f6df0, #1d4ed8);
+  --ms-accent-gradient-hover:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 52%),
+    linear-gradient(180deg, #2760e0, #1a43bd);
 
   /* 状態の色（文字・アイコン用。意味に応じて使い分ける） */
-  --ms-success: #15803d;
-  --ms-warning: #b45309;
+  --ms-success: #166534;
+  --ms-warning: #92400e;
   --ms-danger: #b91c1c;
 
-  --ms-brand-shine: rgba(255, 255, 255, 0.6); /* ロゴの上半分の光沢 */
+  --ms-brand-shine: rgba(255, 255, 255, 0.75); /* ロゴの上半分の光沢 */
 
-  /* 背景のやわらかい光（完成図の透明感）。白と薄いグレーだけで作り、青は使わない */
+  /* 背景のやわらかい光（参考画像のぼけた水色・白・ごく淡い藤色の重なりと、斜めの光の筋） */
   --ms-ambient:
-    radial-gradient(52rem 34rem at 88% -8%, rgba(255, 255, 255, 0.95), transparent 62%),
-    radial-gradient(46rem 32rem at -6% 18%, rgba(226, 229, 234, 0.7), transparent 66%),
-    radial-gradient(40rem 28rem at 72% 96%, rgba(228, 231, 236, 0.6), transparent 66%);
+    radial-gradient(60rem 40rem at 86% -10%, rgba(255, 255, 255, 0.95), transparent 62%),
+    radial-gradient(52rem 38rem at -8% 8%, rgba(147, 197, 253, 0.55), transparent 66%),
+    radial-gradient(46rem 34rem at 104% 58%, rgba(165, 180, 252, 0.36), transparent 66%),
+    radial-gradient(54rem 36rem at 12% 108%, rgba(125, 211, 252, 0.45), transparent 66%),
+    linear-gradient(118deg, transparent 36%, rgba(255, 255, 255, 0.5) 46%, transparent 56%);
 
   /* 形・ぼかし・動き */
   --ms-radius-card: 1rem;
   --ms-radius-control: 0.625rem;
-  --ms-blur: 14px;
+  --ms-blur: 20px;
   --ms-duration: 160ms;
   --ms-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .dark {
-  --ms-page: #0b0b0d;
-  --ms-surface: #151517;
-  --ms-surface-glass: rgba(34, 34, 38, 0.62);
-  --ms-surface-glass-solid: rgba(28, 28, 31, 0.94);
-  --ms-surface-strong: #1c1c1f;
-  --ms-hover-tint: rgba(255, 255, 255, 0.07);
+  --ms-page: #060c1a;
+  --ms-surface: #0d1630;
+  --ms-surface-glass: rgba(28, 44, 80, 0.5);
+  --ms-surface-glass-solid: rgba(15, 25, 50, 0.94);
+  --ms-surface-strong: #0f1a35;
+  --ms-surface-tool: rgba(18, 30, 58, 0.68);
+  --ms-hover-tint: rgba(140, 175, 255, 0.11);
 
-  --ms-text: #ededed;
-  --ms-text-muted: #a3a3a3;
+  --ms-text: #e8eefb;
+  --ms-text-muted: #a3b3cf;
 
-  --ms-border: rgba(255, 255, 255, 0.13);
-  --ms-border-strong: rgba(255, 255, 255, 0.34);
-  --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.09);
-  --ms-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --ms-shadow-lift: 0 12px 30px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --ms-border: rgba(150, 185, 255, 0.2);
+  --ms-border-strong: rgba(160, 190, 255, 0.42);
+  --ms-dash: rgba(125, 165, 255, 0.45);
+  --ms-glass-highlight: inset 0 1px 0 rgba(200, 220, 255, 0.18), inset 0 0 0 1px rgba(160, 190, 255, 0.06);
+  --ms-glass-sheen: linear-gradient(180deg, rgba(180, 205, 255, 0.1), rgba(180, 205, 255, 0) 46%);
+  --ms-shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ms-shadow-lift: 0 18px 44px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.4);
 
   /* ダークでも青の主要ボタンは同じ（白文字とのコントラストを保つため）。フォーカス枠だけ明るくする */
   --ms-accent: #2563eb;
@@ -106,6 +138,12 @@
   --ms-accent-pressed: #1e40af;
   --ms-on-accent: #ffffff;
   --ms-focus: #60a5fa;
+  --ms-accent-gradient:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 52%),
+    linear-gradient(180deg, #2f6df0, #1d4ed8);
+  --ms-accent-gradient-hover:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 52%),
+    linear-gradient(180deg, #2760e0, #1a43bd);
 
   --ms-success: #4ade80;
   --ms-warning: #fbbf24;
@@ -114,9 +152,11 @@
   --ms-brand-shine: rgba(255, 255, 255, 0.08);
 
   --ms-ambient:
-    radial-gradient(52rem 34rem at 88% -8%, rgba(255, 255, 255, 0.07), transparent 62%),
-    radial-gradient(46rem 32rem at -6% 18%, rgba(255, 255, 255, 0.04), transparent 66%),
-    radial-gradient(40rem 28rem at 72% 96%, rgba(255, 255, 255, 0.04), transparent 66%);
+    radial-gradient(56rem 38rem at 88% -10%, rgba(96, 140, 255, 0.22), transparent 64%),
+    radial-gradient(50rem 36rem at -8% 12%, rgba(56, 120, 230, 0.26), transparent 66%),
+    radial-gradient(46rem 34rem at 104% 60%, rgba(129, 110, 240, 0.18), transparent 66%),
+    radial-gradient(52rem 36rem at 14% 108%, rgba(34, 150, 220, 0.2), transparent 66%),
+    linear-gradient(118deg, transparent 38%, rgba(160, 190, 255, 0.07) 47%, transparent 56%);
 }
 
 /* Tailwindのユーティリティ（bg-ms-surface など）から使えるようにする */
@@ -161,6 +201,7 @@
   .ms-glass {
     background-color: var(--ms-surface-glass-solid);
     border: 1px solid var(--ms-border);
+    background-image: var(--ms-glass-sheen);
     border-radius: var(--ms-radius-card);
     box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm);
     color: var(--ms-text);
@@ -169,8 +210,8 @@
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .ms-glass {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.35);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.35);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
     }
   }
 
@@ -179,7 +220,7 @@
     background-color: var(--ms-surface-strong);
     border: 1px solid var(--ms-border-strong);
     border-radius: var(--ms-radius-card);
-    box-shadow: var(--ms-shadow-sm);
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm);
     color: var(--ms-text);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -189,6 +230,7 @@
   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
     .ms-glass {
       background-color: var(--ms-surface-strong);
+      background-image: none;
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }
@@ -243,17 +285,21 @@
   /* 主要ボタン（青）。ページ内でいちばん大事な操作に使う */
   .ms-btn-primary {
     background-color: var(--ms-accent);
+    background-image: var(--ms-accent-gradient);
     color: var(--ms-on-accent);
+    border-color: rgba(255, 255, 255, 0.22);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 1px 2px rgba(37, 99, 235, 0.35),
-      0 6px 14px -4px rgba(37, 99, 235, 0.35);
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 1px 2px rgba(37, 99, 235, 0.4),
+      0 10px 22px -8px rgba(37, 99, 235, 0.55);
   }
   .ms-btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
     background-color: var(--ms-accent-hover);
+    background-image: var(--ms-accent-gradient-hover);
   }
   .ms-btn-primary:active:not(:disabled):not([aria-disabled="true"]) {
     background-color: var(--ms-accent-pressed);
+    background-image: none;
   }
 
   /* 補助ボタン（白・ニュートラル）。主要ボタンより目立たせない */
@@ -308,8 +354,8 @@
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .ms-bar {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.2);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.2);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
     }
   }
   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
@@ -366,7 +412,7 @@
     display: none;
   }
   .ms-drawer::backdrop {
-    background-color: rgb(0 0 0 / 0.45);
+    background-color: rgb(15 31 56 / 0.4);
   }
   .ms-drawer-panel {
     display: flex;
@@ -378,10 +424,11 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 1rem;
-    /* パネルは入力欄と同じく、読みやすさ優先でほぼ不透明にする */
+    /* パネルは入力欄と同じく、読みやすさ優先で不透明にする（つやと縁の反射で、ガラスらしさを出す） */
     background-color: var(--ms-surface-strong);
-    border-left: 1px solid var(--ms-border-strong);
-    box-shadow: var(--ms-shadow-lift);
+    background-image: var(--ms-glass-sheen);
+    border-left: 1px solid var(--ms-border);
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-lift);
   }
   @media (prefers-reduced-motion: no-preference) {
     .ms-drawer[open] .ms-drawer-panel {
@@ -426,8 +473,9 @@
     cursor: pointer;
     text-align: center;
     color: var(--ms-text);
-    background-color: var(--ms-surface-glass-solid);
-    border: 2px dashed var(--ms-border-strong);
+    background-color: var(--ms-surface-glass);
+    background-image: var(--ms-glass-sheen);
+    border: 2px dashed var(--ms-dash);
     border-radius: var(--ms-radius-card);
     box-shadow: var(--ms-glass-highlight);
     transition:
@@ -447,9 +495,10 @@
     font-weight: 600;
     color: var(--ms-on-accent);
     background-color: var(--ms-accent);
+    background-image: var(--ms-accent-gradient);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 6px 14px -4px rgba(37, 99, 235, 0.35);
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 10px 22px -8px rgba(37, 99, 235, 0.55);
   }
   .ms-dropzone-cta::after {
     content: "ファイルを選択";
@@ -460,13 +509,13 @@
   @media (hover: hover) {
     .ms-dropzone:hover {
       border-color: var(--ms-accent);
-      background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint));
+      background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint)), var(--ms-glass-sheen);
     }
   }
   .ms-dropzone[data-dragging="true"] {
     border-style: solid;
     border-color: var(--ms-accent);
-    background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint));
+    background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint)), var(--ms-glass-sheen);
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--ms-accent) 22%, transparent);
   }
   .ms-dropzone:focus-visible {
@@ -481,8 +530,8 @@
   }
   @media (hover: hover) {
     .ms-dropzone-static:hover:not([data-dragging="true"]) {
-      border-color: var(--ms-border-strong);
-      background-image: none;
+      border-color: var(--ms-dash);
+      background-image: var(--ms-glass-sheen);
     }
   }
 
@@ -507,6 +556,7 @@
     border: 1px solid var(--ms-border);
     border-radius: var(--ms-radius-control);
     background-color: var(--ms-surface-glass-solid);
+    background-image: var(--ms-glass-sheen);
     box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm);
     font-size: 0.875rem;
   }
@@ -531,7 +581,7 @@
     justify-content: center;
     overflow-y: auto;
     padding: 1rem;
-    background-color: rgb(0 0 0 / 0.5);
+    background-color: rgb(15 31 56 / 0.45);
   }
   .ms-modal-panel {
     display: flex;
@@ -545,9 +595,10 @@
     text-align: left;
     color: var(--ms-text);
     background-color: var(--ms-surface-strong);
-    border: 1px solid var(--ms-border-strong);
+    background-image: var(--ms-glass-sheen);
+    border: 1px solid var(--ms-border);
     border-radius: var(--ms-radius-card);
-    box-shadow: var(--ms-shadow-lift);
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-lift);
     outline: none;
   }
   @media (prefers-reduced-motion: no-preference) {
@@ -585,9 +636,11 @@
     border-radius: 0.75rem;
     color: var(--tile-fg);
     background-color: var(--tile-bg);
+    background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0) 62%);
     box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--tile-fg) 14%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.55);
+      inset 0 0 0 1px color-mix(in srgb, var(--tile-fg) 16%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 6px 14px -6px color-mix(in srgb, var(--tile-fg) 45%, transparent);
   }
   .ms-tile > svg {
     width: 56%;
@@ -614,9 +667,11 @@
   .ms-tile[data-cat="generator"] { --tile-fg: #0f766e; --tile-bg: #dcf4f0; }
   .ms-tile[data-cat="other"] { --tile-fg: #475569; --tile-bg: #eceff4; }
   .dark .ms-tile {
+    background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 62%);
     box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--tile-fg) 28%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      inset 0 0 0 1px color-mix(in srgb, var(--tile-fg) 30%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 6px 16px -6px rgba(0, 0, 0, 0.55);
   }
   .dark .ms-tile[data-cat="image"] { --tile-fg: #7aa7ff; --tile-bg: rgba(59, 130, 246, 0.16); }
   .dark .ms-tile[data-cat="pdf"] { --tile-fg: #ff8a95; --tile-bg: rgba(244, 63, 94, 0.16); }
@@ -633,7 +688,8 @@
    * ぼかしを使うと、中に置いた position: fixed のダイアログ（広告確認など）が画面ではなくこの枠を基準に
    * 配置されてしまい、スマホで画面からはみ出すため。 */
   .ms-tool-panel {
-    background-color: var(--ms-surface-glass-solid);
+    background-color: var(--ms-surface-tool);
+    background-image: var(--ms-glass-sheen);
     border: 1px solid var(--ms-border);
     border-radius: var(--ms-radius-card);
     box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm);
@@ -679,7 +735,7 @@
     padding-left: 3rem;
     padding-right: 4rem;
     font-size: 1rem;
-    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm), 0 10px 30px -12px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm), 0 14px 34px -14px rgba(37, 99, 235, 0.32);
   }
   .ms-search-go {
     position: absolute;
@@ -696,13 +752,15 @@
     cursor: pointer;
     color: var(--ms-on-accent);
     background-color: var(--ms-accent);
+    background-image: var(--ms-accent-gradient);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 6px 14px -4px rgba(37, 99, 235, 0.5);
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 10px 20px -6px rgba(37, 99, 235, 0.6);
     transition: background-color var(--ms-duration) var(--ms-ease);
   }
   .ms-search-go:hover {
     background-color: var(--ms-accent-hover);
+    background-image: var(--ms-accent-gradient-hover);
   }
   .ms-search-go:focus-visible {
     outline: 2px solid var(--ms-focus);
@@ -717,16 +775,17 @@
     border-radius: 2rem;
     background-color: var(--ms-surface-glass-solid);
     border: 1px solid var(--ms-border);
+    background-image: var(--ms-glass-sheen);
     box-shadow:
       var(--ms-glass-highlight),
-      0 30px 60px -24px rgba(0, 0, 0, 0.28),
-      0 8px 20px -8px rgba(0, 0, 0, 0.12);
+      0 34px 70px -22px rgba(37, 99, 235, 0.38),
+      0 10px 24px -10px rgba(50, 90, 170, 0.2);
   }
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .ms-emblem {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.35);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.35);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
     }
   }
 
@@ -740,9 +799,11 @@
     border-radius: 9999px;
     border: 1px solid var(--ms-border);
     background-color: var(--ms-surface-glass-solid);
+    background-image: var(--ms-glass-sheen);
     color: var(--ms-text);
     font-size: 0.875rem;
     font-weight: 500;
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm);
     cursor: pointer;
     transition:
       background-color var(--ms-duration) var(--ms-ease),
@@ -750,7 +811,7 @@
   }
   .ms-chip:hover {
     border-color: var(--ms-border-strong);
-    background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint));
+    background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint)), var(--ms-glass-sheen);
   }
   .ms-chip:focus-visible {
     outline: 2px solid var(--ms-focus);
@@ -758,6 +819,7 @@
   }
   .ms-chip[aria-pressed="true"] {
     background-color: var(--ms-accent);
+    background-image: var(--ms-accent-gradient);
     border-color: var(--ms-accent);
     color: var(--ms-on-accent);
     font-weight: 700;
@@ -890,10 +952,14 @@ body {
 }
 .ms-tool-panel :is(button, a, label).bg-blue-600 {
   border-radius: var(--ms-radius-control);
+  background-image: var(--ms-accent-gradient);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 1px 2px rgba(37, 99, 235, 0.35),
-    0 6px 14px -4px rgba(37, 99, 235, 0.3);
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 1px 2px rgba(37, 99, 235, 0.4),
+    0 10px 22px -8px rgba(37, 99, 235, 0.5);
+}
+.ms-tool-panel :is(button, a, label).bg-blue-600:hover:not(:is(:disabled, [aria-disabled="true"])) {
+  background-image: var(--ms-accent-gradient-hover);
 }
 .ms-tool-panel :is(button, a, label).bg-blue-600:is(:disabled, [aria-disabled="true"]) {
   box-shadow: none;

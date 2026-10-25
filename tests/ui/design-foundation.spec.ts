@@ -82,13 +82,13 @@ test.describe("デザイントークン（globals.css）", () => {
     for (const name of SHARED_TOKENS) expect(dark[name], `ダークで上書きしていない: ${name}`).toBeUndefined();
   });
 
-  test("ページ背景・基本の文字色は --ms-page / --ms-text を参照する（背景の定義は1か所。青のグラデーションは使わない）", () => {
+  test("ページ背景・基本の文字色は --ms-page / --ms-text を参照する（背景の定義は1か所。ページ背景は淡い水色のガラス調）", () => {
     expect(tokensOf(":root")["--background"]).toBe("var(--ms-page)");
     expect(tokensOf(":root")["--foreground"]).toBe("var(--ms-text)");
     expect(tokensOf(".dark")["--background"]).toBe("var(--ms-page)");
     expect(tokensOf(".dark")["--foreground"]).toBe("var(--ms-text)");
-    expect(tokensOf(":root")["--ms-page"]).toBe("#fafafa");
-    expect(tokensOf(".dark")["--ms-page"]).toBe("#0b0b0d");
+    expect(tokensOf(":root")["--ms-page"]).toBe("#eaf2fc");
+    expect(tokensOf(".dark")["--ms-page"]).toBe("#060c1a");
     expect(CSS).toMatch(/@custom-variant dark \(&:where\(\.dark, \.dark \*\)\);/);
     expect(CSS).toMatch(/body \{\s*background: var\(--background\);/);
   });
@@ -334,7 +334,7 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
       expect(sec["border-top-width"]).toBe("1px");
       expect(sec["background-color"]).not.toBe("rgba(37, 99, 235, 1.000)");
       expect(contrast(parseColor(sec["color"]), parseColor(sec["background-color"]))).toBeGreaterThanOrEqual(4.5);
-      expect(sec["background-color"]).toBe(scheme === "light" ? "rgba(255, 255, 255, 1.000)" : "rgba(28, 28, 31, 1.000)");
+      expect(sec["background-color"]).toBe(scheme === "light" ? "rgba(255, 255, 255, 1.000)" : "rgba(15, 26, 53, 1.000)");
     });
   });
 }

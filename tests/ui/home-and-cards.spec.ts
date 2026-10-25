@@ -320,7 +320,7 @@ for (const scheme of ["light", "dark"] as const) {
   test.describe(`背景と読みやすさ（${scheme}）`, () => {
     test.use({ colorScheme: scheme });
 
-    test("ページ背景はニュートラルな単色で、青のグラデーション・背景画像がない", async ({ page }) => {
+    test("ページ背景は淡い水色（ダークは深い紺）のガラス調で、写真などの背景画像は使っていない", async ({ page }) => {
       await page.goto("/");
       const info = await page.evaluate(() => {
         const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
@@ -332,10 +332,11 @@ for (const scheme of ["light", "dark"] as const) {
           .filter((v) => v !== "none");
         return { rgb: [r, g, b], images };
       });
-      expect(info.rgb).toEqual(scheme === "light" ? [250, 250, 250] : [11, 11, 13]);
-      // 3色の差が小さい＝無彩色（青みがない）
-      expect(Math.max(...info.rgb) - Math.min(...info.rgb)).toBeLessThanOrEqual(3);
-      expect(info.images.filter((v) => /gradient/.test(v))).toEqual([]);
+      expect(info.rgb).toEqual(scheme === "light" ? [234, 242, 252] : [6, 12, 26]);
+      // 青みがある（ライト・ダークとも、青の成分が赤より大きい）
+      expect(info.rgb[2]).toBeGreaterThan(info.rgb[0]);
+      // カードのつやなどのグラデーションだけで、画像ファイル（url）の背景は使わない
+      expect(info.images.filter((v) => /url\(/.test(v))).toEqual([]);
     });
 
     test("トップの文字（見出し・説明・件数・カテゴリ名・補足）が、背景に対して4.5以上", async ({ page }) => {
