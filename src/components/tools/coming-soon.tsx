@@ -8,17 +8,17 @@ const ENGINE_LABEL: Record<Tool["processor"], string> = {
 
 export function ComingSoon({ tool }: { tool: Tool }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-16 text-center dark:border-neutral-700 dark:bg-neutral-900">
+    <div className="flex flex-col items-center gap-3 rounded-ms-card border border-dashed border-ms-border-strong bg-ms-hover-tint px-6 py-16 text-center">
       <span className="text-4xl" aria-hidden="true">
         🚧
       </span>
-      <h2 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
+      <h2 className="text-lg font-semibold text-ms-text">
         「{tool.name}」は準備中です
       </h2>
-      <p className="max-w-md text-sm text-neutral-500 dark:text-neutral-400">
+      <p className="max-w-md text-sm text-ms-muted">
         この機能は近日公開予定です。公開までもうしばらくお待ちください。
       </p>
-      <span className="mt-2 rounded-full bg-neutral-200 px-3 py-1 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+      <span className="mt-2 rounded-full border border-ms-border bg-ms-surface-strong px-3 py-1 text-xs text-ms-muted">
         {ENGINE_LABEL[tool.processor]}
       </span>
     </div>

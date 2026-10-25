@@ -19,15 +19,15 @@ export default async function ResetPasswordPage() {
   if (!data.user) {
     return (
       <div className="mx-auto w-full max-w-sm px-4 py-16 text-center sm:px-6">
-        <h1 className="mb-3 text-2xl font-bold text-neutral-900 dark:text-white">
+        <h1 className="mb-3 text-2xl font-bold text-ms-text">
           新しいパスワードを設定
         </h1>
-        <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-300">
+        <p className="mb-6 text-sm text-ms-muted">
           このリンクは無効か、有効期限が切れています。お手数ですが、パスワード再設定をもう一度お試しください。
         </p>
         <Link
           href="/auth/forgot-password"
-          className="inline-block rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+          className="inline-block ms-btn ms-btn-primary"
         >
           パスワード再設定をやり直す
         </Link>
@@ -37,10 +37,10 @@ export default async function ResetPasswordPage() {
 
   return (
     <div className="mx-auto w-full max-w-sm px-4 py-16 sm:px-6">
-      <h1 className="mb-6 text-center text-2xl font-bold text-neutral-900 dark:text-white">
+      <h1 className="mb-6 text-center text-2xl font-bold text-ms-text">
         新しいパスワードを設定
       </h1>
-      <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="ms-glass p-6">
         <ResetPasswordForm />
       </div>
     </div>

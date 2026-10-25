@@ -35,20 +35,20 @@ export default async function AccountPage({
   if (!serverPlan.userId) {
     return (
       <div className="mx-auto w-full max-w-sm px-4 py-16 text-center sm:px-6">
-        <h1 className="mb-3 text-2xl font-bold text-neutral-900 dark:text-white">アカウント</h1>
-        <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-300">
+        <h1 className="mb-3 text-2xl font-bold text-ms-text">アカウント</h1>
+        <p className="mb-6 text-sm text-ms-muted">
           アカウント情報の確認にはログインが必要です。
         </p>
         <div className="flex flex-col gap-3">
           <Link
             href="/login?next=/account"
-            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+            className="ms-btn ms-btn-primary"
           >
             ログイン
           </Link>
           <Link
             href="/signup"
-            className="rounded-lg border border-neutral-300 px-5 py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            className="ms-btn ms-btn-secondary"
           >
             会員登録
           </Link>
@@ -61,29 +61,29 @@ export default async function AccountPage({
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-12 sm:px-6">
-      <h1 className="mb-6 text-2xl font-bold text-neutral-900 dark:text-white">アカウント</h1>
+      <h1 className="mb-6 text-2xl font-bold text-ms-text">アカウント</h1>
 
       {checkout === "success" && (
-        <p className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300">
+        <p className="ms-glass mb-6 px-4 py-3 text-sm text-ms-text">
           お申し込みありがとうございます。契約状況への反映まで数秒ほどかかる場合があります。反映されない場合はページを再読み込みしてください。
         </p>
       )}
 
-      <div className="flex flex-col gap-6 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="flex flex-col gap-6 ms-glass p-6">
         <div>
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">メールアドレス</p>
-          <p className="text-sm text-neutral-800 dark:text-neutral-100">{serverPlan.userEmail}</p>
+          <p className="text-xs text-ms-muted">メールアドレス</p>
+          <p className="text-sm text-ms-text">{serverPlan.userEmail}</p>
         </div>
 
         <div>
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">現在のプラン</p>
-          <p className="text-lg font-semibold text-neutral-900 dark:text-white">
+          <p className="text-xs text-ms-muted">現在のプラン</p>
+          <p className="text-lg font-semibold text-ms-text">
             {planDefinition.name}
           </p>
         </div>
 
         {serverPlan.plan === "standard" && (
-          <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-300">
+          <p className="ms-glass px-3 py-2 text-xs text-ms-muted">
             スタンダードプランは、新規のお申し込みを終了しています。現在のご契約は、これまでどおりご利用いただけます。
           </p>
         )}
@@ -97,16 +97,16 @@ export default async function AccountPage({
         {serverPlan.subscription ? (
           <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500">契約状態</p>
-              <p className="text-neutral-800 dark:text-neutral-100">
+              <p className="text-xs text-ms-muted">契約状態</p>
+              <p className="text-ms-text">
                 {STATUS_LABEL[serverPlan.subscription.status] ?? serverPlan.subscription.status}
               </p>
             </div>
             <div>
-              <p className="text-xs text-neutral-400 dark:text-neutral-500">
+              <p className="text-xs text-ms-muted">
                 {serverPlan.subscription.cancelAtPeriodEnd ? "利用可能期限" : "次回更新日"}
               </p>
-              <p className="text-neutral-800 dark:text-neutral-100">
+              <p className="text-ms-text">
                 {formatDate(serverPlan.subscription.currentPeriodEnd)}
               </p>
             </div>
@@ -117,17 +117,17 @@ export default async function AccountPage({
             )}
           </div>
         ) : (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="text-sm text-ms-muted">
             現在、有料プランのご契約はありません。
           </p>
         )}
 
-        <div className="flex flex-wrap items-center gap-4 border-t border-neutral-200 pt-6 dark:border-neutral-800">
+        <div className="flex flex-wrap items-center gap-4 border-t border-ms-border pt-6">
           {isStripeConfigured() && serverPlan.subscription && <PortalLinkButton />}
           {serverPlan.plan === "free" && (
             <Link
               href="/pricing"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+              className="ms-btn ms-btn-primary"
             >
               プランを見る
             </Link>
@@ -135,7 +135,7 @@ export default async function AccountPage({
           <form action={signOutAction}>
             <button
               type="submit"
-              className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              className="ms-btn ms-btn-secondary"
             >
               ログアウト
             </button>

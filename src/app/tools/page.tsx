@@ -28,7 +28,7 @@ export default async function ToolsPage({ searchParams }: ToolsPageProps) {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
-      <h1 className="mb-6 text-2xl font-bold text-neutral-900 dark:text-white">ツール一覧</h1>
+      <h1 className="mb-6 text-2xl font-bold text-ms-text">ツール一覧</h1>
       <ToolsExplorer
         tools={getListedTools()}
         categories={categories}

@@ -16,13 +16,13 @@ export function MergedToolsNav({ hub, members, currentId }: { hub: Tool; members
     <nav
       aria-label="同じ画面で使える各ページ"
       data-testid="merged-tools-nav"
-      className="mt-3 text-xs text-neutral-500 dark:text-neutral-400"
+      className="mt-3 text-xs text-ms-muted"
     >
       <span className="mr-2">同じ画面で使える各ページ:</span>
       <ul className="inline-flex flex-wrap gap-x-3 gap-y-1 align-top">
         {links.map((t) => (
           <li key={t.id}>
-            <Link href={`/tools/${t.id}`} className="text-blue-600 hover:underline dark:text-blue-400">
+            <Link href={`/tools/${t.id}`} className="text-ms-accent hover:underline dark:text-ms-focus">
               {t.name}
             </Link>
           </li>

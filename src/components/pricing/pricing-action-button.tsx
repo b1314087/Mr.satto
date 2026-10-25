@@ -36,7 +36,7 @@ export function PricingActionButton({
         </span>
         <Link
           href="/account"
-          className="text-center text-xs text-blue-600 hover:underline dark:text-blue-400"
+          className="text-center text-xs text-ms-accent hover:underline dark:text-ms-focus"
         >
           契約状況を確認する
         </Link>
@@ -47,10 +47,10 @@ export function PricingActionButton({
   if (hasOpenSubscription) {
     return (
       <div className="mt-auto flex flex-col gap-2">
-        <span className="w-full rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+        <span className="w-full rounded-lg border border-dashed border-ms-border-strong px-4 py-2 text-center text-sm text-ms-muted">
           すでにご契約があります
         </span>
-        <Link href="/account" className="text-center text-xs text-blue-600 hover:underline dark:text-blue-400">
+        <Link href="/account" className="text-center text-xs text-ms-accent hover:underline dark:text-ms-focus">
           契約状況・お支払い方法の変更・解約
         </Link>
       </div>
@@ -63,7 +63,7 @@ export function PricingActionButton({
         type="button"
         disabled
         title="現在準備中です"
-        className="mt-auto w-full cursor-not-allowed rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-sm text-neutral-400 dark:border-neutral-700 dark:text-neutral-500"
+        className="mt-auto w-full cursor-not-allowed rounded-lg border border-dashed border-ms-border-strong px-4 py-2 text-sm text-ms-muted"
       >
         準備中
       </button>
@@ -74,7 +74,7 @@ export function PricingActionButton({
     return (
       <Link
         href={`/login?next=${encodeURIComponent("/pricing")}`}
-        className="mt-auto w-full rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+        className="ms-btn ms-btn-primary mt-auto w-full"
       >
         ログインして始める
       </Link>
@@ -109,7 +109,7 @@ export function PricingActionButton({
         type="button"
         onClick={handleClick}
         disabled={loading}
-        className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        className="w-full ms-btn ms-btn-primary"
       >
         {loading ? "移動中..." : "プレミアムを始める"}
       </button>

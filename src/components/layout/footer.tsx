@@ -2,56 +2,58 @@ import Link from "next/link";
 import { siteConfig } from "@/lib/config/site";
 import { FooterAdSlot } from "@/components/layout/footer-ad-slot";
 import { featureFlags } from "@/lib/config/features";
+import { BrandMark } from "@/components/ui/brand-mark";
 
 export function Footer() {
   return (
-    <footer className="border-t border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950">
+    <footer className="ms-bar mt-8 border-b-0 border-t border-ms-border">
       <div className="mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6">
         <FooterAdSlot />
       </div>
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div>
-          <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+          <p className="flex items-center gap-2 text-sm font-semibold text-ms-text">
+            <BrandMark size={22} />
             {siteConfig.shortName}
-            <span className="ml-2 font-normal text-neutral-400 dark:text-neutral-500">
+            <span className="font-normal text-ms-muted">
               {siteConfig.tagline}
             </span>
           </p>
-          <p className="mt-1 max-w-md text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="mt-1 max-w-md text-xs text-ms-muted">
             ファイルはブラウザ上で処理され、サーバーに保存されません。
           </p>
         </div>
-        <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-neutral-600 dark:text-neutral-300">
-          <Link href="/tools" className="hover:text-blue-600 dark:hover:text-blue-400">
+        <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ms-muted">
+          <Link href="/tools" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
             ツール一覧
           </Link>
           {featureFlags.billing && (
-            <Link href="/pricing" className="hover:text-blue-600 dark:hover:text-blue-400">
+            <Link href="/pricing" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
               料金プラン
             </Link>
           )}
-          <Link href="/about" className="hover:text-blue-600 dark:hover:text-blue-400">
+          <Link href="/about" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
             {siteConfig.shortName}について
           </Link>
-          <Link href="/privacy" className="hover:text-blue-600 dark:hover:text-blue-400">
+          <Link href="/privacy" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
             プライバシーポリシー
           </Link>
-          <Link href="/terms" className="hover:text-blue-600 dark:hover:text-blue-400">
+          <Link href="/terms" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
             利用規約
           </Link>
           {featureFlags.billing && (
-            <Link href="/tokushoho" className="hover:text-blue-600 dark:hover:text-blue-400">
+            <Link href="/tokushoho" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
               特定商取引法に基づく表記
             </Link>
           )}
-          <Link href="/licenses" className="hover:text-blue-600 dark:hover:text-blue-400">
+          <Link href="/licenses" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
             ライセンス表記
           </Link>
           <a
             href={siteConfig.contactFormUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-blue-600 dark:hover:text-blue-400"
+            className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus"
           >
             お問い合わせ
             <span aria-hidden="true"> ↗</span>
@@ -59,7 +61,7 @@ export function Footer() {
           </a>
         </nav>
       </div>
-      <div className="border-t border-neutral-200 px-4 py-4 text-center text-xs text-neutral-400 dark:border-neutral-800 sm:px-6">
+      <div className="border-t border-ms-border px-4 py-4 text-center text-xs text-ms-muted sm:px-6">
         © {new Date().getFullYear()} {siteConfig.shortName}
       </div>
     </footer>

@@ -5,6 +5,7 @@ import { TOOL_TIER_LABELS } from "@/lib/plans/types";
 import { cn } from "@/lib/utils/cn";
 import { featureFlags } from "@/lib/config/features";
 import { glassCardClasses } from "@/components/ui/glass-card";
+import { CategoryIcon } from "@/components/ui/category-icon";
 
 /**
  * 料金区分バッジ（Phase 19 9章）。
@@ -58,9 +59,7 @@ export function ToolCard({ tool }: { tool: Tool }) {
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-2xl" aria-hidden="true">
-          {category?.icon ?? "🔧"}
-        </span>
+        <CategoryIcon id={category?.id ?? "other"} size="md" />
         {isComingSoon ? (
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
             準備中

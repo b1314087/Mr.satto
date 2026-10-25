@@ -7,7 +7,7 @@ import type { Category } from "@/lib/tools/types";
 import { searchTools } from "@/lib/tools/search";
 import { SearchBar } from "./search-bar";
 import { ToolGrid } from "./tool-grid";
-import { cn } from "@/lib/utils/cn";
+import { CategoryIcon } from "@/components/ui/category-icon";
 import { TOOLS_NAVIGATE_EVENT, type ToolsNavigateDetail } from "@/lib/navigation/tools-navigate";
 
 interface ToolsExplorerProps {
@@ -87,81 +87,122 @@ export function ToolsExplorer({
     setSearchBarResetSignal((n) => n + 1);
   }
 
+  // カテゴリごとの件数（絞り込み前の、使えるツールの数。左の列・ボタンの横に出す）
+  const countByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of tools) {
+      if (t.status !== "available") continue;
+      map.set(t.category, (map.get(t.category) ?? 0) + 1);
+    }
+    return map;
+  }, [tools]);
+  const totalAvailable = useMemo(() => tools.filter((t) => t.status === "available").length, [tools]);
+
+  function selectCategory(next: CategoryId | "all") {
+    setCategory(next);
+    updateUrl(query, next);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <SearchBar
         key={searchBarKey}
         initialValue={searchBarInitial}
         resetSignal={searchBarResetSignal}
+        pill
         onSearch={(value) => {
           setQuery(value);
           updateUrl(value, category);
         }}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            setCategory("all");
-            updateUrl(query, "all");
-          }}
-          className={cn(
-            "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-            category === "all"
-              ? "bg-blue-600 text-white"
-              : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-          )}
-        >
-          すべて
-        </button>
-        {categories.map((cat) => (
-          <button
-            key={cat.id}
-            type="button"
-            onClick={() => {
-              setCategory(cat.id);
-              updateUrl(query, cat.id);
-            }}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              category === cat.id
-                ? "bg-blue-600 text-white"
-                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+      <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start">
+        {/* PC: 左のカテゴリ列（完成図どおり）。名前＋件数。選択中は青い線と太字でも示す */}
+        <aside aria-label="カテゴリで絞り込む" className="ms-glass hidden p-2 lg:sticky lg:top-24 lg:block">
+          <ul className="flex flex-col gap-0.5">
+            <li>
+              <button
+                type="button"
+                aria-pressed={category === "all"}
+                onClick={() => selectCategory("all")}
+                className="ms-side-link"
+              >
+                <span aria-hidden="true" className="inline-flex h-8 w-8 flex-none items-center justify-center text-ms-muted">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                    <rect x="3.5" y="3.5" width="7" height="7" rx="2" />
+                    <rect x="13.5" y="3.5" width="7" height="7" rx="2" />
+                    <rect x="3.5" y="13.5" width="7" height="7" rx="2" />
+                    <rect x="13.5" y="13.5" width="7" height="7" rx="2" />
+                  </svg>
+                </span>
+                すべて
+                <span aria-hidden="true" className="ms-side-count">{totalAvailable}</span>
+              </button>
+            </li>
+            {categories.map((cat) => (
+              <li key={cat.id}>
+                <button
+                  type="button"
+                  aria-pressed={category === cat.id}
+                  onClick={() => selectCategory(cat.id)}
+                  className="ms-side-link"
+                >
+                  <CategoryIcon id={cat.id} size="sm" />
+                  {cat.name}
+                  <span aria-hidden="true" className="ms-side-count">{countByCategory.get(cat.id) ?? 0}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+
+        <div className="flex min-w-0 flex-col gap-5">
+          {/* スマホ・タブレット: 横に並ぶ選択ボタン（PCでは左の列を使うので出さない） */}
+          <div className="flex flex-wrap items-center gap-2 lg:hidden">
+            <button type="button" aria-pressed={category === "all"} onClick={() => selectCategory("all")} className="ms-chip">
+              すべて
+            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                aria-pressed={category === cat.id}
+                onClick={() => selectCategory(cat.id)}
+                className="ms-chip"
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-ms-muted">{availableFiltered.length}件のツール</p>
+            {hasActiveFilter && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="rounded-full border border-dashed border-ms-border-strong px-3 py-1.5 text-sm font-medium text-ms-muted transition-colors hover:text-ms-text"
+              >
+                絞り込みを解除
+              </button>
             )}
-          >
-            <span aria-hidden="true">{cat.icon}</span>
-            {cat.name}
-          </button>
-        ))}
-        {hasActiveFilter && (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="rounded-full border border-dashed border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-          >
-            絞り込みを解除
-          </button>
-        )}
-      </div>
+          </div>
 
-      <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        {availableFiltered.length}件のツール
-      </p>
+          <ToolGrid tools={availableFiltered} />
 
-      <ToolGrid tools={availableFiltered} />
-
-      {comingSoonFiltered.length > 0 && (
-        <div className="mt-4">
-          <h2 className="mb-1 text-sm font-semibold text-neutral-500 dark:text-neutral-400">
-            準備中のツール（{comingSoonFiltered.length}件）
-          </h2>
-          <p className="mb-4 text-xs text-neutral-400 dark:text-neutral-500">
-            近日公開予定のツールです。まだ利用できません。
-          </p>
-          <ToolGrid tools={comingSoonFiltered} />
+          {comingSoonFiltered.length > 0 && (
+            <div className="mt-4">
+              <h2 className="mb-1 text-sm font-semibold text-ms-muted">
+                準備中のツール（{comingSoonFiltered.length}件）
+              </h2>
+              <p className="mb-4 text-xs text-ms-muted">
+                近日公開予定のツールです。まだ利用できません。
+              </p>
+              <ToolGrid tools={comingSoonFiltered} />
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

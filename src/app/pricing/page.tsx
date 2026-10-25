@@ -68,13 +68,13 @@ export default async function PricingPage({
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-12 sm:px-6">
-      <h1 className="mb-2 text-2xl font-bold text-neutral-900 dark:text-white">料金プラン</h1>
-      <p className="mb-10 text-sm text-neutral-600 dark:text-neutral-300">
+      <h1 className="mb-2 text-2xl font-bold text-ms-text">料金プラン</h1>
+      <p className="mb-10 text-sm text-ms-muted">
         {siteConfig.name}は、無料プランとプレミアムプランでご利用いただけます。
       </p>
 
       {checkout === "cancelled" && (
-        <p className="mb-6 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+        <p className="ms-glass mb-6 px-4 py-3 text-sm text-ms-muted">
           お申し込みは完了していません。もう一度お試しいただけます。
         </p>
       )}
@@ -85,21 +85,21 @@ export default async function PricingPage({
           return (
             <div
               key={plan.id}
-              className="flex flex-col gap-4 rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900"
+              className="ms-glass flex flex-col gap-4 p-6"
             >
               <div>
-                <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
+                <h2 className="text-lg font-semibold text-ms-text">
                   {plan.name}
                 </h2>
-                <p className="mt-1 text-2xl font-bold text-neutral-900 dark:text-white">
+                <p className="mt-1 text-2xl font-bold text-ms-text">
                   {plan.priceYen === 0 ? "0円" : `${plan.priceYen.toLocaleString()}円`}
                   {plan.priceYen > 0 && (
-                    <span className="ml-1 text-sm font-normal text-neutral-400">/月（税込）</span>
+                    <span className="ml-1 text-sm font-normal text-ms-muted">/月（税込）</span>
                   )}
                 </p>
               </div>
 
-              <ul className="flex flex-col gap-2 text-sm text-neutral-600 dark:text-neutral-300">
+              <ul className="flex flex-col gap-2 text-sm text-ms-muted">
                 <li className="flex items-start gap-2">
                   <span aria-hidden="true">・</span>
                   {PLAN_TOOL_ACCESS_LABEL[plan.toolAccess]}
@@ -114,12 +114,12 @@ export default async function PricingPage({
                 </li>
               </ul>
 
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="text-xs text-ms-muted">
                 {getPlanUsageNote(plan.id, adGateActive)}
               </p>
 
               {id === "free" ? (
-                <span className="mt-auto w-full rounded-lg border border-dashed border-neutral-300 px-4 py-2 text-center text-sm text-neutral-400 dark:border-neutral-700 dark:text-neutral-500">
+                <span className="mt-auto w-full rounded-lg border border-dashed border-ms-border-strong px-4 py-2 text-center text-sm text-ms-muted">
                   {serverPlan.plan === "free" ? "現在ご利用中のプランです" : "ログイン不要"}
                 </span>
               ) : (
@@ -136,11 +136,11 @@ export default async function PricingPage({
         })}
       </div>
 
-      <section className="mt-10 rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900">
-        <h2 className="mb-3 text-base font-semibold text-neutral-900 dark:text-white">
+      <section className="ms-glass mt-10 p-6">
+        <h2 className="mb-3 text-base font-semibold text-ms-text">
           お支払い・解約について
         </h2>
-        <ul className="flex flex-col gap-2 text-sm text-neutral-600 dark:text-neutral-300">
+        <ul className="flex flex-col gap-2 text-sm text-ms-muted">
           <li className="flex items-start gap-2">
             <span aria-hidden="true">・</span>
             有料プランは月額（税込）です。お申し込みの完了時から課金が始まり、毎月自動で更新されます。
@@ -158,20 +158,20 @@ export default async function PricingPage({
             お支払いの確認が取れない間は、無料プランと同じ扱いになります。
           </li>
         </ul>
-        <p className="mt-4 text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="mt-4 text-xs text-ms-muted">
           お申し込みの前に、
-          <Link href="/terms" className="mx-1 text-blue-600 hover:underline dark:text-blue-400">
+          <Link href="/terms" className="mx-1 text-ms-accent hover:underline dark:text-ms-focus">
             利用規約
           </Link>
           と
-          <Link href="/tokushoho" className="mx-1 text-blue-600 hover:underline dark:text-blue-400">
+          <Link href="/tokushoho" className="mx-1 text-ms-accent hover:underline dark:text-ms-focus">
             特定商取引法に基づく表記
           </Link>
           をご確認ください。
         </p>
       </section>
 
-      <p className="mt-8 text-xs text-neutral-400 dark:text-neutral-500">
+      <p className="mt-8 text-xs text-ms-muted">
         ※ お支払い・契約状況の確認は Stripe を利用しています。カード情報はMr.Satto側では保存しません。
         {!stripeConfigured &&
           " 現在、プレミアムへのお申し込み機能は準備中です。"}

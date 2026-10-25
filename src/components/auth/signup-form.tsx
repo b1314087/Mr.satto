@@ -10,7 +10,7 @@ import { siteConfig } from "@/lib/config/site";
 import { getSignupConsentError } from "@/lib/auth/signup-consent";
 
 const INPUT_CLASS =
-  "rounded-xl border border-neutral-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
+  "ms-input";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -87,7 +87,7 @@ export function SignupForm() {
 
   if (needsEmailConfirmation) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-6 text-center text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+      <div className="ms-glass flex flex-col items-center gap-3 p-6 text-center text-sm text-ms-muted">
         <p>確認メールを送信しました。メール内のリンクを開いて登録を完了してください。</p>
       </div>
     );
@@ -119,20 +119,20 @@ export function SignupForm() {
         />
       </label>
 
-      <label className="flex items-start gap-2 text-xs leading-relaxed text-neutral-600 dark:text-neutral-300">
+      <label className="flex items-start gap-2 text-xs leading-relaxed text-ms-muted">
         <input
           type="checkbox"
           required
           checked={termsAccepted}
           onChange={(e) => setTermsAccepted(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 rounded border-neutral-300"
+          className="mt-0.5 h-4 w-4 shrink-0 rounded accent-[var(--ms-accent)]"
         />
         <span>
           <Link
             href="/terms"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline dark:text-blue-400"
+            className="text-ms-accent hover:underline dark:text-ms-focus"
           >
             利用規約
           </Link>
@@ -141,7 +141,7 @@ export function SignupForm() {
             href="/privacy"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline dark:text-blue-400"
+            className="text-ms-accent hover:underline dark:text-ms-focus"
           >
             プライバシーポリシー
           </Link>
@@ -152,7 +152,7 @@ export function SignupForm() {
       <button
         type="submit"
         disabled={status === "processing" || !termsAccepted}
-        className="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        className="w-full ms-btn ms-btn-primary"
       >
         {status === "processing" ? "登録中..." : "会員登録"}
       </button>
@@ -160,9 +160,9 @@ export function SignupForm() {
       <ProcessingStatus state={status} processingLabel="登録中..." successLabel="登録が完了しました" />
       {error && <ErrorMessage message={error} />}
 
-      <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
+      <p className="text-center text-xs text-ms-muted">
         既にアカウントをお持ちですか？{" "}
-        <Link href="/login" className="text-blue-600 hover:underline dark:text-blue-400">
+        <Link href="/login" className="text-ms-accent hover:underline dark:text-ms-focus">
           ログイン
         </Link>
       </p>

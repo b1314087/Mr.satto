@@ -15,7 +15,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
  * 書き換えても実際のツール利用可否には影響しない。
  */
 export function AuthStatusLink({
-  className = "hover:text-blue-600 dark:hover:text-blue-400",
+  className = "hover:text-ms-accent dark:hover:text-ms-focus",
 }: {
   /** リンクの見た目。既定はヘッダーの横並びナビ用（メニュー内では別のクラスを渡す） */
   className?: string;

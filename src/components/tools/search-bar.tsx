@@ -22,6 +22,11 @@ interface SearchBarProps {
   inputRef?: Ref<HTMLInputElement>;
   /** onSearch が無い（=/tools へ移動する）場合に、移動を始めた直後に呼ばれる（メニューを閉じる等に使う） */
   onNavigate?: () => void;
+  /**
+   * 丸い大きな検索欄にし、右端に青い丸の検索ボタンを付ける（ホーム・一覧の目立つ検索欄用）。
+   * 検索ボタンは Enter キーと同じ送信（フォームの submit）なので、動作は変わらない。
+   */
+  pill?: boolean;
 }
 
 /**
@@ -37,6 +42,7 @@ export function SearchBar({
   ariaLabel = "ツールを検索",
   inputRef,
   onNavigate,
+  pill = false,
 }: SearchBarProps) {
   const router = useRouter();
   const [value, setValue] = useState(initialValue);
@@ -68,7 +74,7 @@ export function SearchBar({
   return (
     <form onSubmit={handleSubmit} role="search" className="relative w-full">
       <svg
-        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400"
+        className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-ms-muted ${pill ? "left-5 h-5 w-5" : "left-3 h-4 w-4"}`}
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -92,11 +98,20 @@ export function SearchBar({
         placeholder={placeholder}
         aria-label={ariaLabel}
         className={
-          size === "lg"
-            ? "w-full rounded-xl border border-neutral-200 bg-white py-3 pl-10 pr-4 text-base shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-            : "w-full rounded-lg border border-neutral-200 bg-white py-1.5 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          pill
+            ? "ms-input ms-input-soft ms-input-pill"
+            : size === "lg"
+              ? "ms-input ms-input-soft py-3 pl-10 pr-4"
+              : "ms-input ms-input-soft ms-input-sm pl-9 pr-3"
         }
       />
+      {pill && (
+        <button type="submit" aria-label="検索する" className="ms-search-go">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-5 w-5">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </button>
+      )}
     </form>
   );
 }

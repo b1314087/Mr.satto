@@ -13,12 +13,12 @@ export const metadata: Metadata = {
   },
 };
 
-const LINK_CLASS = "text-blue-600 hover:underline dark:text-blue-400";
+const LINK_CLASS = "text-ms-accent hover:underline dark:text-ms-focus";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">{title}</h2>
+      <h2 className="mb-2 text-base font-semibold text-ms-text">{title}</h2>
       {children}
     </section>
   );
@@ -47,13 +47,13 @@ export default function TermsPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
-      <h1 className="mb-8 text-2xl font-bold text-neutral-900 dark:text-white">利用規約</h1>
+      <h1 className="mb-8 text-2xl font-bold text-ms-text">利用規約</h1>
 
-      <div className="flex flex-col gap-8 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+      <div className="ms-glass ms-prose-surface flex flex-col gap-8 text-sm leading-relaxed text-ms-text">
         {!featureFlags.billing && (
           <p
             data-testid="terms-billing-notice"
-            className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900"
+            className="ms-glass px-4 py-3"
           >
             現在、会員登録・有料プラン・広告の表示は、一時的に停止しています。本サービスを恒久的に無料とするものではなく、将来、会員登録・有料プラン・広告の表示を始める場合があります。第3条から第6条については、これらの提供を始める際に定めます。提供を始める場合は、あらかじめ本サイト上でお知らせするよう努めます。
           </p>
@@ -281,7 +281,7 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <p className="text-xs text-neutral-400">最終更新日: 2026年10月</p>
+        <p className="text-xs text-ms-muted">最終更新日: 2026年10月</p>
       </div>
     </div>
   );

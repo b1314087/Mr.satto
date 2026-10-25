@@ -7,16 +7,16 @@ import Link from "next/link";
 export function FeatureUnavailable({ title }: { title: string }) {
   return (
     <div className="mx-auto w-full max-w-sm px-4 py-16 text-center sm:px-6">
-      <h1 className="mb-3 text-2xl font-bold text-neutral-900 dark:text-white">{title}</h1>
+      <h1 className="mb-3 text-2xl font-bold text-ms-text">{title}</h1>
       <p
         data-testid="feature-unavailable"
-        className="mb-6 text-sm text-neutral-600 dark:text-neutral-300"
+        className="mb-6 text-sm text-ms-muted"
       >
         現在、この機能は準備中です。ツールは、会員登録なしで、そのままご利用いただけます。
       </p>
       <Link
         href="/tools"
-        className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+        className="ms-btn ms-btn-primary"
       >
         ツール一覧へ
       </Link>

@@ -10,18 +10,18 @@ import type { BreadcrumbItem } from "@/lib/seo/structured-data";
  */
 export function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
   return (
-    <nav aria-label="パンくずリスト" className="mb-4 flex flex-wrap items-center gap-1 text-xs text-neutral-400">
+    <nav aria-label="パンくずリスト" className="mb-4 flex flex-wrap items-center gap-1 text-xs text-ms-muted">
       {items.map((item, index) => {
         const isLast = index === items.length - 1;
         return (
           <span key={item.path} className="flex items-center gap-1">
             {index > 0 && <span aria-hidden="true">/</span>}
             {isLast ? (
-              <span className="text-neutral-500 dark:text-neutral-300" aria-current="page">
+              <span className="font-medium text-ms-text" aria-current="page">
                 {item.name}
               </span>
             ) : (
-              <Link href={item.path} className="hover:text-blue-600 dark:hover:text-blue-400">
+              <Link href={item.path} className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
                 {item.name}
               </Link>
             )}

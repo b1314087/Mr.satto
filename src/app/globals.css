@@ -67,6 +67,14 @@
   --ms-warning: #b45309;
   --ms-danger: #b91c1c;
 
+  --ms-brand-shine: rgba(255, 255, 255, 0.6); /* ロゴの上半分の光沢 */
+
+  /* 背景のやわらかい光（完成図の透明感）。白と薄いグレーだけで作り、青は使わない */
+  --ms-ambient:
+    radial-gradient(52rem 34rem at 88% -8%, rgba(255, 255, 255, 0.95), transparent 62%),
+    radial-gradient(46rem 32rem at -6% 18%, rgba(226, 229, 234, 0.7), transparent 66%),
+    radial-gradient(40rem 28rem at 72% 96%, rgba(228, 231, 236, 0.6), transparent 66%);
+
   /* 形・ぼかし・動き */
   --ms-radius-card: 1rem;
   --ms-radius-control: 0.625rem;
@@ -102,6 +110,13 @@
   --ms-success: #4ade80;
   --ms-warning: #fbbf24;
   --ms-danger: #f87171;
+
+  --ms-brand-shine: rgba(255, 255, 255, 0.08);
+
+  --ms-ambient:
+    radial-gradient(52rem 34rem at 88% -8%, rgba(255, 255, 255, 0.07), transparent 62%),
+    radial-gradient(46rem 32rem at -6% 18%, rgba(255, 255, 255, 0.04), transparent 66%),
+    radial-gradient(40rem 28rem at 72% 96%, rgba(255, 255, 255, 0.04), transparent 66%);
 }
 
 /* Tailwindのユーティリティ（bg-ms-surface など）から使えるようにする */
@@ -229,7 +244,10 @@
   .ms-btn-primary {
     background-color: var(--ms-accent);
     color: var(--ms-on-accent);
-    box-shadow: 0 1px 2px rgba(37, 99, 235, 0.35);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      0 1px 2px rgba(37, 99, 235, 0.35),
+      0 6px 14px -4px rgba(37, 99, 235, 0.35);
   }
   .ms-btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
     background-color: var(--ms-accent-hover);
@@ -354,14 +372,15 @@
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
-    width: min(20rem, 88vw);
+    margin-left: auto;
+    width: min(21rem, 90vw);
     height: 100%;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 1rem;
     /* パネルは入力欄と同じく、読みやすさ優先でほぼ不透明にする */
     background-color: var(--ms-surface-strong);
-    border-right: 1px solid var(--ms-border-strong);
+    border-left: 1px solid var(--ms-border-strong);
     box-shadow: var(--ms-shadow-lift);
   }
   @media (prefers-reduced-motion: no-preference) {
@@ -407,13 +426,36 @@
     cursor: pointer;
     text-align: center;
     color: var(--ms-text);
-    background-color: var(--ms-surface);
+    background-color: var(--ms-surface-glass-solid);
     border: 2px dashed var(--ms-border-strong);
     border-radius: var(--ms-radius-card);
+    box-shadow: var(--ms-glass-highlight);
     transition:
       border-color var(--ms-duration) var(--ms-ease),
       background-color var(--ms-duration) var(--ms-ease),
       box-shadow var(--ms-duration) var(--ms-ease);
+  }
+  /* 枠の中の「ファイルを選択」ボタン風の飾り（枠全体が押せるので、これ自体は操作しない） */
+  .ms-dropzone-cta {
+    margin-top: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--ms-radius-control);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ms-on-accent);
+    background-color: var(--ms-accent);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      0 6px 14px -4px rgba(37, 99, 235, 0.35);
+  }
+  .ms-dropzone-cta::after {
+    content: "ファイルを選択";
+  }
+  .ms-dropzone-static .ms-dropzone-cta {
+    display: none;
   }
   @media (hover: hover) {
     .ms-dropzone:hover {
@@ -456,6 +498,29 @@
     animation: ms-spin 0.8s linear infinite;
   }
 
+  /* ---- 処理中・完了の表示（ProcessingStatus）。完成図どおり、小さなカード状にする ---- */
+  .ms-status {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid var(--ms-border);
+    border-radius: var(--ms-radius-control);
+    background-color: var(--ms-surface-glass-solid);
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm);
+    font-size: 0.875rem;
+  }
+  .ms-status-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 9999px;
+    background-color: color-mix(in srgb, var(--ms-success) 16%, transparent);
+  }
+
   /* ---- ダイアログ（Modal）。パネルは読みやすさ優先で不透明 ---- */
   .ms-modal-overlay {
     position: fixed;
@@ -493,6 +558,255 @@
       animation: ms-modal-in 200ms var(--ms-ease);
     }
   }
+
+  /* ==========================================================================
+   * 完成図に合わせた共通の見た目（背景の光・アイコンタイル・検索・入力欄など）
+   * ========================================================================== */
+
+  /* 背景のやわらかい光。layout.tsx に1つだけ置く飾り（操作や文字には関わらない） */
+  .ms-ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--ms-ambient);
+  }
+
+  /* ---- カテゴリのアイコンタイル（色分けした角丸の面＋線画アイコン）。色だけに頼らず、名前も必ず併記する ---- */
+  .ms-tile {
+    --tile-fg: #475569;
+    --tile-bg: #eef1f5;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.75rem;
+    color: var(--tile-fg);
+    background-color: var(--tile-bg);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--tile-fg) 14%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+  .ms-tile > svg {
+    width: 56%;
+    height: 56%;
+  }
+  .ms-tile-sm {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.625rem;
+  }
+  .ms-tile-lg {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 1rem;
+  }
+  .ms-tile[data-cat="image"] { --tile-fg: #2563eb; --tile-bg: #e7efff; }
+  .ms-tile[data-cat="pdf"] { --tile-fg: #dc3545; --tile-bg: #fdeaec; }
+  .ms-tile[data-cat="csv-excel"] { --tile-fg: #15803d; --tile-bg: #e4f5ea; }
+  .ms-tile[data-cat="word"] { --tile-fg: #3b5bdb; --tile-bg: #e8ecff; }
+  .ms-tile[data-cat="pptx"] { --tile-fg: #d9480f; --tile-bg: #ffeee3; }
+  .ms-tile[data-cat="video"] { --tile-fg: #7c3aed; --tile-bg: #f0e9fe; }
+  .ms-tile[data-cat="audio"] { --tile-fg: #c2255c; --tile-bg: #fde8f0; }
+  .ms-tile[data-cat="file"] { --tile-fg: #a16207; --tile-bg: #fcf1d9; }
+  .ms-tile[data-cat="generator"] { --tile-fg: #0f766e; --tile-bg: #dcf4f0; }
+  .ms-tile[data-cat="other"] { --tile-fg: #475569; --tile-bg: #eceff4; }
+  .dark .ms-tile {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--tile-fg) 28%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .dark .ms-tile[data-cat="image"] { --tile-fg: #7aa7ff; --tile-bg: rgba(59, 130, 246, 0.16); }
+  .dark .ms-tile[data-cat="pdf"] { --tile-fg: #ff8a95; --tile-bg: rgba(244, 63, 94, 0.16); }
+  .dark .ms-tile[data-cat="csv-excel"] { --tile-fg: #6ee7a0; --tile-bg: rgba(34, 197, 94, 0.15); }
+  .dark .ms-tile[data-cat="word"] { --tile-fg: #9db0ff; --tile-bg: rgba(99, 102, 241, 0.18); }
+  .dark .ms-tile[data-cat="pptx"] { --tile-fg: #ffa56b; --tile-bg: rgba(249, 115, 22, 0.16); }
+  .dark .ms-tile[data-cat="video"] { --tile-fg: #c4a5ff; --tile-bg: rgba(139, 92, 246, 0.18); }
+  .dark .ms-tile[data-cat="audio"] { --tile-fg: #ff9cc2; --tile-bg: rgba(236, 72, 153, 0.16); }
+  .dark .ms-tile[data-cat="file"] { --tile-fg: #f5c451; --tile-bg: rgba(234, 179, 8, 0.15); }
+  .dark .ms-tile[data-cat="generator"] { --tile-fg: #5eead4; --tile-bg: rgba(20, 184, 166, 0.16); }
+  .dark .ms-tile[data-cat="other"] { --tile-fg: #b6c2d3; --tile-bg: rgba(148, 163, 184, 0.16); }
+
+  /* ---- ツール画面の外枠。ガラス調の見た目だが、背景ぼかし（backdrop-filter）は使わない。
+   * ぼかしを使うと、中に置いた position: fixed のダイアログ（広告確認など）が画面ではなくこの枠を基準に
+   * 配置されてしまい、スマホで画面からはみ出すため。 */
+  .ms-tool-panel {
+    background-color: var(--ms-surface-glass-solid);
+    border: 1px solid var(--ms-border);
+    border-radius: var(--ms-radius-card);
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm);
+    color: var(--ms-text);
+  }
+
+  /* ---- 入力欄（検索・フォーム共通）。不透明な面にして読みやすさを優先する ---- */
+  .ms-input {
+    width: 100%;
+    border-radius: var(--ms-radius-control);
+    border: 1px solid var(--ms-border-strong);
+    background-color: var(--ms-surface-strong);
+    color: var(--ms-text);
+    padding: 0.625rem 0.875rem;
+    font-size: 0.9375rem;
+    line-height: 1.5rem;
+    box-shadow: var(--ms-shadow-sm);
+    transition:
+      border-color var(--ms-duration) var(--ms-ease),
+      box-shadow var(--ms-duration) var(--ms-ease);
+  }
+  .ms-input::placeholder {
+    color: var(--ms-text-muted);
+    opacity: 0.85;
+  }
+  .ms-input:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 1px;
+    border-color: var(--ms-focus);
+  }
+  .ms-input-sm {
+    padding: 0.4375rem 0.75rem;
+    font-size: 0.875rem;
+  }
+  /* 検索欄は枠線をやや薄くして、ガラス調の画面になじませる（枠は22%の濃さで残す） */
+  .ms-input-soft {
+    border-color: color-mix(in srgb, var(--ms-text) 22%, transparent);
+  }
+  /* ホーム・一覧の大きな検索欄（丸い形。右端に青い丸の検索ボタンが付く） */
+  .ms-input-pill {
+    border-radius: 9999px;
+    height: 3.5rem;
+    padding-left: 3rem;
+    padding-right: 4rem;
+    font-size: 1rem;
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-sm), 0 10px 30px -12px rgba(0, 0, 0, 0.18);
+  }
+  .ms-search-go {
+    position: absolute;
+    top: 50%;
+    right: 0.5rem;
+    translate: 0 -50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 9999px;
+    border: 0;
+    cursor: pointer;
+    color: var(--ms-on-accent);
+    background-color: var(--ms-accent);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      0 6px 14px -4px rgba(37, 99, 235, 0.5);
+    transition: background-color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-search-go:hover {
+    background-color: var(--ms-accent-hover);
+  }
+  .ms-search-go:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+
+  /* ---- ホームの大きなロゴ（ガラスのタイルに青いS） ---- */
+  .ms-emblem {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2rem;
+    background-color: var(--ms-surface-glass-solid);
+    border: 1px solid var(--ms-border);
+    box-shadow:
+      var(--ms-glass-highlight),
+      0 30px 60px -24px rgba(0, 0, 0, 0.28),
+      0 8px 20px -8px rgba(0, 0, 0, 0.12);
+  }
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .ms-emblem {
+      background-color: var(--ms-surface-glass);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.35);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.35);
+    }
+  }
+
+  /* ---- 横並びの選択ボタン（カテゴリの絞り込みなど）。選択中は青、色以外（太字）でも示す ---- */
+  .ms-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.875rem;
+    border-radius: 9999px;
+    border: 1px solid var(--ms-border);
+    background-color: var(--ms-surface-glass-solid);
+    color: var(--ms-text);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color var(--ms-duration) var(--ms-ease),
+      border-color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-chip:hover {
+    border-color: var(--ms-border-strong);
+    background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint));
+  }
+  .ms-chip:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+  .ms-chip[aria-pressed="true"] {
+    background-color: var(--ms-accent);
+    border-color: var(--ms-accent);
+    color: var(--ms-on-accent);
+    font-weight: 700;
+  }
+
+  /* ---- 一覧ページの左側のカテゴリ列（PC）。選択中は線と太字でも示す ---- */
+  .ms-side-link {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    min-height: 2.5rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: var(--ms-radius-control);
+    border: 0;
+    background-color: transparent;
+    color: var(--ms-text);
+    font-size: 0.875rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-side-link:hover {
+    background-color: var(--ms-hover-tint);
+  }
+  .ms-side-link:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+  .ms-side-link[aria-pressed="true"] {
+    font-weight: 700;
+    background-color: var(--ms-hover-tint);
+    box-shadow: inset 3px 0 0 var(--ms-accent);
+  }
+  .ms-side-count {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--ms-text-muted);
+  }
+
+  /* ---- 本文ページ（規約・案内）の読み物用の面 ---- */
+  .ms-prose-surface {
+    padding: 1.5rem;
+  }
+  @media (min-width: 640px) {
+    .ms-prose-surface {
+      padding: 2rem 2.25rem;
+    }
+  }
 }
 
 @keyframes ms-spin {
@@ -502,7 +816,7 @@
 }
 @keyframes ms-drawer-in {
   from {
-    transform: translateX(-1.5rem);
+    transform: translateX(1.5rem);
     opacity: 0;
   }
 }
@@ -559,4 +873,32 @@ body {
 /* next-themes のハイドレーション前に不要なトランジションが走らないようにする */
 * {
   scrollbar-gutter: stable;
+}
+
+/* ==========================================================================
+ * ツール画面の中の共通の見た目（100以上あるツールの部品を、1つずつ書き換えずに揃える）。
+ * レイヤーの外に書くことで、ツール側の個別クラスより優先される。
+ * 対象は「角丸・枠線の色・フォーカス枠・主要ボタンの質感」だけ。配置・寸法・文言・動作には触れない。
+ * ========================================================================== */
+.ms-tool-panel :is(select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="password"], input[type="search"], input[type="url"], input[type="tel"], input[type="date"], input[type="time"], input[type="datetime-local"]) {
+  border-radius: var(--ms-radius-control);
+  border-color: var(--ms-border-strong);
+}
+.ms-tool-panel :is(select, textarea, input):focus-visible {
+  outline: 2px solid var(--ms-focus);
+  outline-offset: 1px;
+}
+.ms-tool-panel :is(button, a, label).bg-blue-600 {
+  border-radius: var(--ms-radius-control);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 2px rgba(37, 99, 235, 0.35),
+    0 6px 14px -4px rgba(37, 99, 235, 0.3);
+}
+.ms-tool-panel :is(button, a, label).bg-blue-600:is(:disabled, [aria-disabled="true"]) {
+  box-shadow: none;
+}
+.ms-tool-panel :is(button, a, label):focus-visible {
+  outline: 2px solid var(--ms-focus);
+  outline-offset: 2px;
 }

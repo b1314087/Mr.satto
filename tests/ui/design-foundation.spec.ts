@@ -266,7 +266,7 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
       await expect(page.locator("div.ms-glass:has(h3)")).toHaveCount(2);
       const bg = await effectiveBackground(page, sel);
       const h = parseColor((await computed(page, `${sel} h3`, ["color"]))["color"]);
-      const p = parseColor((await computed(page, `${sel} p:nth-of-type(2)`, ["color"]))["color"]);
+      const p = parseColor((await computed(page, `${sel} p:nth-of-type(1)`, ["color"]))["color"]);
       expect(contrast(h, bg)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(p, bg)).toBeGreaterThanOrEqual(4.5);
     });

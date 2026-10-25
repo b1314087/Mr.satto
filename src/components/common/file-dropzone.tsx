@@ -130,7 +130,7 @@ export function FileDropzone({
       className="ms-dropzone"
     >
       <svg
-        className="h-8 w-8 text-ms-muted"
+        className="h-10 w-10 text-ms-accent dark:text-ms-focus"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -140,13 +140,15 @@ export function FileDropzone({
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth={1.5}
-          d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 8.25 12 3.75m0 0L7.5 8.25M12 3.75v13.5"
+          d="M7 18.25h-.5a4.25 4.25 0 0 1-.6-8.46 5.75 5.75 0 0 1 11.1-1.04A4.75 4.75 0 0 1 17 18.25h-.5M12 20.25v-8m0 0-3 3m3-3 3 3"
         />
       </svg>
       <p className="text-sm font-medium text-ms-text">{label}</p>
       <p id={hintId} className="text-xs text-ms-muted">
         {isDragging ? "ここでマウスを離すと選択されます" : hint}
       </p>
+      {/* 見た目だけの「ファイルを選択」ボタン（文字は CSS で出す。操作は枠全体のクリック・キー操作が担う） */}
+      <span aria-hidden="true" className="ms-dropzone-cta" />
       <input
         id={inputId}
         ref={inputRef}

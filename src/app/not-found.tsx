@@ -7,19 +7,19 @@ export default function NotFound() {
       <span className="text-5xl" aria-hidden="true">
         🔍
       </span>
-      <h1 className="text-xl font-bold text-neutral-900 dark:text-white">
+      <h1 className="text-xl font-bold text-ms-text">
         ページが見つかりませんでした
       </h1>
-      <p className="text-sm text-neutral-500 dark:text-neutral-400">
+      <p className="text-sm text-ms-muted">
         お探しのツールまたはページは存在しないか、移動した可能性があります。
       </p>
       <Link
         href="/tools"
-        className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+        className="ms-btn ms-btn-primary"
       >
         ツール一覧へ戻る
       </Link>
-      <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-blue-600 dark:text-blue-400">
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-ms-accent dark:text-ms-focus">
         <Link href="/" className="hover:underline">
           トップページ
         </Link>

@@ -20,13 +20,13 @@ export default function PrivacyPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
-      <h1 className="mb-8 text-2xl font-bold text-neutral-900 dark:text-white">
+      <h1 className="mb-8 text-2xl font-bold text-ms-text">
         プライバシーポリシー
       </h1>
 
-      <div className="flex flex-col gap-8 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+      <div className="ms-glass ms-prose-surface flex flex-col gap-8 text-sm leading-relaxed text-ms-text">
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             1. 基本方針
           </h2>
           <p>
@@ -45,7 +45,7 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             2. ファイルの処理について（ブラウザ内で完結）
           </h2>
           <p>
@@ -60,7 +60,7 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             {billing ? "3. サーバーで取り扱う情報（会員機能・料金プラン）" : "3. サーバーで取り扱う情報"}
           </h2>
           <p>
@@ -85,7 +85,7 @@ export default function PrivacyPage() {
 
         {billing && (
           <section data-testid="privacy-ai">
-            <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+            <h2 className="mb-2 text-base font-semibold text-ms-text">
               3-2. AIによる読み取り補助について（プレミアムプラン）
             </h2>
             <p>
@@ -106,7 +106,7 @@ export default function PrivacyPage() {
         )}
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             4. ブラウザに保存する情報
           </h2>
           <p>
@@ -115,7 +115,7 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             5. 広告配信について
           </h2>
           {ads ? (
@@ -131,7 +131,7 @@ export default function PrivacyPage() {
                   href="https://adssettings.google.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline dark:text-blue-400"
+                  className="text-ms-accent hover:underline dark:text-ms-focus"
                 >
                   Googleの広告設定
                 </a>
@@ -140,7 +140,7 @@ export default function PrivacyPage() {
                   href="https://www.google.com/policies/technologies/ads/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline dark:text-blue-400"
+                  className="text-ms-accent hover:underline dark:text-ms-focus"
                 >
                   広告に関するポリシー
                 </a>
@@ -159,7 +159,7 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             6. Cookie・アクセス解析について
           </h2>
           <p>
@@ -183,7 +183,7 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             7. お問い合わせ
           </h2>
           <p>
@@ -192,7 +192,7 @@ export default function PrivacyPage() {
               href={siteConfig.contactFormUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mx-1 text-blue-600 hover:underline dark:text-blue-400"
+              className="mx-1 text-ms-accent hover:underline dark:text-ms-focus"
             >
               お問い合わせフォーム
             </a>
@@ -202,14 +202,14 @@ export default function PrivacyPage() {
           </p>
           <p className="mt-2">
             本ポリシーに関するお問い合わせは
-            <a href={`mailto:${siteConfig.contactEmail}`} className="text-blue-600 hover:underline dark:text-blue-400">
+            <a href={`mailto:${siteConfig.contactEmail}`} className="text-ms-accent hover:underline dark:text-ms-focus">
               {siteConfig.contactEmail}
             </a>
             でも受け付けています。
           </p>
         </section>
 
-        <p className="text-xs text-neutral-400">最終更新日: 2026年10月</p>
+        <p className="text-xs text-ms-muted">最終更新日: 2026年10月</p>
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   },
 };
 
-const LINK_CLASS = "break-all text-blue-600 hover:underline dark:text-blue-400";
+const LINK_CLASS = "break-all text-ms-accent hover:underline dark:text-ms-focus";
 
 function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
   return (
@@ -24,7 +24,7 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">{title}</h2>
+      <h2 className="mb-2 text-base font-semibold text-ms-text">{title}</h2>
       <div className="flex flex-col gap-2">{children}</div>
     </section>
   );
@@ -33,9 +33,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export default function LicensesPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
-      <h1 className="mb-8 text-2xl font-bold text-neutral-900 dark:text-white">オープンソースライセンス表記</h1>
+      <h1 className="mb-8 text-2xl font-bold text-ms-text">オープンソースライセンス表記</h1>
 
-      <div className="flex flex-col gap-8 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+      <div className="ms-glass ms-prose-surface flex flex-col gap-8 text-sm leading-relaxed text-ms-text">
         <p>
           {siteConfig.name}の音声ツール（音声形式変換・動画から音声を抽出・音声カット・音声結合・音量調整・音声圧縮）は、
           以下のオープンソースソフトウェアを利用しています。いずれも改変せずに、配布されているままの状態で利用しています。

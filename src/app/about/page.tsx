@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CategoryIcon } from "@/components/ui/category-icon";
 import { categories } from "@/lib/tools/categories";
 import { siteConfig } from "@/lib/config/site";
 import { featureFlags } from "@/lib/config/features";
@@ -18,16 +19,16 @@ export const metadata: Metadata = {
 export default function AboutPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
-      <h1 className="mb-2 text-2xl font-bold text-neutral-900 dark:text-white">
+      <h1 className="mb-2 text-2xl font-bold text-ms-text">
         {siteConfig.name}とは
       </h1>
-      <p className="mb-10 text-lg font-medium text-blue-600 dark:text-blue-400">
+      <p className="mb-10 text-lg font-medium text-ms-accent dark:text-ms-focus">
         {siteConfig.tagline}
       </p>
 
-      <div className="flex flex-col gap-10 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+      <div className="flex flex-col gap-10 text-sm leading-relaxed text-ms-text">
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             名前の由来
           </h2>
           <p>
@@ -39,7 +40,7 @@ export default function AboutPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             今できること
           </h2>
           <p className="mb-4">
@@ -51,11 +52,9 @@ export default function AboutPage() {
               <Link
                 key={category.id}
                 href={`/tools/${category.id}`}
-                className="flex flex-col items-center gap-1 rounded-lg border border-neutral-200 bg-white p-3 text-center text-xs text-neutral-600 transition-colors hover:border-blue-300 hover:text-blue-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:border-blue-700 dark:hover:text-blue-400"
+                className="ms-glass ms-glass-interactive flex flex-col items-center gap-1 p-3 text-center text-xs text-ms-muted"
               >
-                <span className="text-xl" aria-hidden="true">
-                  {category.icon}
-                </span>
+                <CategoryIcon id={category.id} size="sm" />
                 {category.name}
               </Link>
             ))}
@@ -63,14 +62,14 @@ export default function AboutPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             これから目指す姿
           </h2>
           <p>
             現在の{siteConfig.name}は、ツールを1つずつ選んで使う「ツール一覧型」のサービスです。
             将来的には、たとえば
           </p>
-          <blockquote className="my-3 rounded-lg border-l-4 border-blue-400 bg-blue-50 px-4 py-3 italic text-neutral-700 dark:border-blue-600 dark:bg-blue-950/30 dark:text-neutral-300">
+          <blockquote className="ms-glass my-3 border-l-4 border-l-ms-accent px-4 py-3 italic text-ms-text">
             「この10枚の画像をInstagram用サイズにして、容量を小さくして、連番で名前をつけてZIPにして」
           </blockquote>
           <p>
@@ -80,7 +79,7 @@ export default function AboutPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             大事にしていること
           </h2>
           <p>
@@ -91,7 +90,7 @@ export default function AboutPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             {featureFlags.billing ? "料金プランについて" : "ご利用料金について"}
           </h2>
           {!featureFlags.billing ? (
@@ -110,7 +109,7 @@ export default function AboutPage() {
                 ? "無料プランでも、広告を見れば通常ツールを一定時間利用できます。広告なしで使いたい方、AIによる読み取り補助を使いたい方向けに、すべてのツールを広告なしで使えるプレミアムプラン（月額1,100円・税込）もご用意しています。"
                 : "通常のツールは、無料プランで、広告なしでご利用いただけます。AIによる読み取り補助を使いたい方向けに、プレミアムプラン（月額1,100円・税込）もご用意しています。"}
               詳しい内容は
-              <Link href="/pricing" className="text-blue-600 hover:underline dark:text-blue-400">
+              <Link href="/pricing" className="text-ms-accent hover:underline dark:text-ms-focus">
                 料金プラン
               </Link>
               のページをご覧ください。
@@ -119,16 +118,16 @@ export default function AboutPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-base font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
             もっと知りたい方へ
           </h2>
           <p>
             ファイルの取り扱いについては
-            <Link href="/privacy" className="text-blue-600 hover:underline dark:text-blue-400">
+            <Link href="/privacy" className="text-ms-accent hover:underline dark:text-ms-focus">
               プライバシーポリシー
             </Link>
             を、ご利用条件については
-            <Link href="/terms" className="text-blue-600 hover:underline dark:text-blue-400">
+            <Link href="/terms" className="text-ms-accent hover:underline dark:text-ms-focus">
               利用規約
             </Link>
             をご確認ください。

@@ -7,11 +7,15 @@ import { SearchBar } from "@/components/tools/search-bar";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { AuthStatusLink } from "@/components/auth/auth-status-link";
 import { dispatchToolsNavigate } from "@/lib/navigation/tools-navigate";
+import { BrandMark } from "@/components/ui/brand-mark";
+import { CategoryIcon } from "@/components/ui/category-icon";
 
 interface MenuCategory {
   id: string;
   name: string;
   icon: string;
+  /** そのカテゴリで使えるツールの数（表示用。省略すると件数は出さない） */
+  count?: number;
 }
 
 interface SiteMenuProps {
@@ -21,6 +25,8 @@ interface SiteMenuProps {
   showBilling: boolean;
   /** サービス名（siteConfig.shortName） */
   siteName: string;
+  /** 使えるツールの総数（「全ツール一覧」の横に出す。省略すると出さない） */
+  totalCount?: number;
 }
 
 /**
@@ -35,7 +41,7 @@ interface SiteMenuProps {
  * - 中身は開いている間だけ描画する。閉じている時に同じリンクが二重にDOMにある状態を避けるため。
  * - フラグメントで返し、親（Header）の flex の中で order クラスで並べる。
  */
-export function SiteMenu({ categories, showBilling, siteName }: SiteMenuProps) {
+export function SiteMenu({ categories, showBilling, siteName, totalCount }: SiteMenuProps) {
   const [open, setOpen] = useState(false);
   const [focusSearch, setFocusSearch] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -113,7 +119,7 @@ export function SiteMenu({ categories, showBilling, siteName }: SiteMenuProps) {
         aria-expanded={open}
         aria-controls={dialogId}
         onClick={() => openMenu(false)}
-        className="ms-icon-btn order-1"
+        className="ms-icon-btn order-6"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true" className="h-5 w-5">
           <path d="M4 6h16M4 12h16M4 18h16" />
@@ -149,8 +155,10 @@ export function SiteMenu({ categories, showBilling, siteName }: SiteMenuProps) {
         {open && (
           <div className="ms-drawer-panel" onClick={handlePanelClick} onKeyDown={handlePanelKeyDown}>
             <div className="flex items-center justify-between gap-2">
-              <h2 id={titleId} className="text-base font-bold text-ms-text">
-                メニュー
+              <h2 id={titleId} className="flex items-center gap-2 text-base font-bold text-ms-text">
+                <BrandMark size={28} />
+                <span className="sr-only">メニュー</span>
+                <span aria-hidden="true">{siteName}</span>
               </h2>
               <button type="button" aria-label="メニューを閉じる" onClick={close} className="ms-icon-btn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true" className="h-5 w-5">
@@ -171,7 +179,9 @@ export function SiteMenu({ categories, showBilling, siteName }: SiteMenuProps) {
               <ul className="flex flex-col gap-1">
                 <li>
                   <Link href="/" className="ms-menu-link" aria-current={isCurrent("/") ? "page" : undefined}>
-                    <span aria-hidden="true">🏠</span>
+                    <MenuGlyph>
+                      <path d="m3 11 9-7.5L21 11M5.5 9.5V20h13V9.5M10 20v-5.5h4V20" />
+                    </MenuGlyph>
                     ホーム
                   </Link>
                 </li>
@@ -181,8 +191,18 @@ export function SiteMenu({ categories, showBilling, siteName }: SiteMenuProps) {
                     className="ms-menu-link"
                     aria-current={pathname === "/tools" && !activeCategory ? "page" : undefined}
                   >
-                    <span aria-hidden="true">🧰</span>
+                    <MenuGlyph>
+                      <rect x="3.5" y="3.5" width="7" height="7" rx="2" />
+                      <rect x="13.5" y="3.5" width="7" height="7" rx="2" />
+                      <rect x="3.5" y="13.5" width="7" height="7" rx="2" />
+                      <rect x="13.5" y="13.5" width="7" height="7" rx="2" />
+                    </MenuGlyph>
                     全ツール一覧
+                    {totalCount !== undefined && (
+                      <span aria-hidden="true" className="ms-side-count">
+                        {totalCount}
+                      </span>
+                    )}
                   </Link>
                 </li>
               </ul>
@@ -198,8 +218,13 @@ export function SiteMenu({ categories, showBilling, siteName }: SiteMenuProps) {
                       className="ms-menu-link"
                       aria-current={pathname === "/tools" && activeCategory === cat.id ? "page" : undefined}
                     >
-                      <span aria-hidden="true">{cat.icon}</span>
+                      <CategoryIcon id={cat.id} size="sm" />
                       {cat.name}
+                      {cat.count !== undefined && (
+                        <span aria-hidden="true" className="ms-side-count">
+                          {cat.count}
+                        </span>
+                      )}
                     </Link>
                   </li>
                 ))}
@@ -248,5 +273,24 @@ export function SiteMenu({ categories, showBilling, siteName }: SiteMenuProps) {
         )}
       </dialog>
     </>
+  );
+}
+
+/** メニューの「ホーム」「全ツール一覧」の先頭に置く、線画アイコン（装飾） */
+function MenuGlyph({ children }: { children: React.ReactNode }) {
+  return (
+    <span aria-hidden="true" className="inline-flex h-8 w-8 flex-none items-center justify-center text-ms-muted">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-5 w-5"
+      >
+        {children}
+      </svg>
+    </span>
   );
 }

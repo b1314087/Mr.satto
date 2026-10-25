@@ -55,6 +55,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         )}
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          {/* 背景のやわらかい光（装飾。白と薄いグレーだけ。操作や文字には関わらない） */}
+          <div className="ms-ambient" aria-hidden="true" />
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />

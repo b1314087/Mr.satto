@@ -36,7 +36,7 @@ export function PortalLinkButton() {
         type="button"
         onClick={handleClick}
         disabled={loading}
-        className="w-fit rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+        className="w-fit ms-btn ms-btn-secondary"
       >
         {loading ? "移動中..." : "お支払い方法の変更・解約はこちら"}
       </button>

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { tools, getToolById, getToolsByCategory, getMergedTools, isListedTool } from "@/lib/tools/data";
 import { categories, getCategory } from "@/lib/tools/categories";
 import { CategoryBadge } from "@/components/tools/category-badge";
+import { CategoryIcon } from "@/components/ui/category-icon";
 import { ComingSoon } from "@/components/tools/coming-soon";
 import { ToolImplementation } from "@/components/tools/tool-registry";
 import { ToolAccessGate } from "@/components/tools/tool-access-gate";
@@ -127,7 +128,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
     return (
       <>
         <JsonLd data={buildBreadcrumbList(breadcrumbItems)} />
-        <div className="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-6">
+        <div className="mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6">
           <Breadcrumb items={breadcrumbItems} />
         </div>
         <CategoryLanding
@@ -180,18 +181,16 @@ export default async function ToolPage({ params }: ToolPageProps) {
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-2xl" aria-hidden="true">
-              {toolCategory?.icon}
-            </span>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">{tool.name}</h1>
+          <div className="mb-2 flex items-center gap-3">
+            <CategoryIcon id={tool.category} size="lg" />
+            <h1 className="text-2xl font-bold text-ms-text">{tool.name}</h1>
           </div>
-          <p className="text-neutral-600 dark:text-neutral-300">{seo?.lead ?? tool.description}</p>
+          <p className="text-ms-muted">{seo?.lead ?? tool.description}</p>
         </div>
         <CategoryBadge category={tool.category} />
       </div>
 
-      <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-6">
+      <div className="ms-tool-panel p-4 sm:p-6">
         {isAvailable && serverPlan && tool.id === BYPASS_ACCESS_GATE_TOOL_ID ? (
           // Phase 11: 記入済みPDF→Excelは、Free「1ページごとに広告視聴必須・
           // 利用回数無制限」/Standard「広告なし・1回1ページ・利用回数無制限」/
@@ -228,13 +227,13 @@ export default async function ToolPage({ params }: ToolPageProps) {
       {isAvailable && mergedHub && <MergedToolsNav hub={mergedHub} members={mergedMembers} currentId={tool.id} />}
 
       {isAvailable && (
-        <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="mt-3 text-xs text-ms-muted">
           お問い合わせ、不具合の報告、機能改善のご提案は
           <a
             href={siteConfig.contactFormUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mx-1 text-blue-600 hover:underline dark:text-blue-400"
+            className="mx-1 text-ms-accent hover:underline dark:text-ms-focus"
           >
             お問い合わせフォーム
             <span aria-hidden="true"> ↗</span>
@@ -259,12 +258,12 @@ export default async function ToolPage({ params }: ToolPageProps) {
 
       {related.length > 0 && (
         <div className="mt-12">
-          <h2 className="mb-4 text-lg font-semibold text-neutral-900 dark:text-white">
+          <h2 className="mb-4 text-lg font-semibold text-ms-text">
             {related.length <= sameCategoryCandidateCount
               ? `${toolCategory?.name}の他のツール`
               : "こちらのツールもおすすめです"}
           </h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {related.map((t) => (
               <ToolCard key={t.id} tool={t} />
             ))}

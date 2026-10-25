@@ -513,12 +513,13 @@ test.describe("スマホ幅（390px）", () => {
     });
   }
 
-  test("ヘッダーの部品（メニュー・ロゴ・検索）が重ならず、画面内に収まる", async ({ page }) => {
+  test("ヘッダーの部品（ロゴ・検索・メニュー）が重ならず、画面内に収まる", async ({ page }) => {
     await page.goto("/");
+    // 完成図に合わせ、メニューボタンは右端（左からロゴ・検索ボタン・メニュー）
     const boxes = [
-      await menuButton(page).boundingBox(),
       await page.locator("header.ms-bar").getByRole("link", { name: "Mr.Satto" }).boundingBox(),
       await page.locator("header.ms-bar").getByRole("button", { name: "ツールを検索" }).boundingBox(),
+      await menuButton(page).boundingBox(),
     ];
     for (const b of boxes) {
       expect(b).toBeTruthy();
@@ -528,9 +529,11 @@ test.describe("スマホ幅（390px）", () => {
     const [a, b, c] = boxes as NonNullable<(typeof boxes)[number]>[];
     expect(a.x + a.width).toBeLessThanOrEqual(b.x);
     expect(b.x + b.width).toBeLessThanOrEqual(c.x);
-    // タップしやすい大きさ
-    expect(a.width).toBeGreaterThanOrEqual(40);
-    expect(a.height).toBeGreaterThanOrEqual(40);
+    // タップしやすい大きさ（検索ボタン・メニューボタン）
+    for (const t of [b, c]) {
+      expect(t.width).toBeGreaterThanOrEqual(40);
+      expect(t.height).toBeGreaterThanOrEqual(40);
+    }
   });
 
   test("メニューの項目は、タップしやすい高さ（44px以上）", async ({ page }) => {

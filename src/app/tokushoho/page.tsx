@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   ...(featureFlags.billing ? {} : { robots: { index: false, follow: false } }),
 };
 
-const LINK_CLASS = "text-blue-600 hover:underline dark:text-blue-400";
+const LINK_CLASS = "text-ms-accent hover:underline dark:text-ms-focus";
 
 /** 氏名・住所・電話番号は公開せず、請求に応じてお知らせする方針（運営者の判断） */
 const DISCLOSE_ON_REQUEST = "請求があった場合には、遅滞なくお知らせします。";
@@ -23,7 +23,7 @@ const DISCLOSE_ON_REQUEST = "請求があった場合には、遅滞なくお知
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-1 gap-1 px-4 py-4 sm:grid-cols-[12rem_1fr] sm:gap-6">
-      <dt className="font-semibold text-neutral-900 dark:text-white">{label}</dt>
+      <dt className="font-semibold text-ms-text">{label}</dt>
       <dd className="min-w-0 break-words">{children}</dd>
     </div>
   );
@@ -37,14 +37,14 @@ export default function TokushohoPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
-      <h1 className="mb-3 text-2xl font-bold text-neutral-900 dark:text-white">
+      <h1 className="mb-3 text-2xl font-bold text-ms-text">
         特定商取引法に基づく表記
       </h1>
-      <p className="mb-8 text-sm text-neutral-600 dark:text-neutral-300">
+      <p className="mb-8 text-sm text-ms-muted">
         {siteConfig.name}の有料プラン（{premium.name}プラン）に関する表記です。
       </p>
 
-      <dl className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 text-sm leading-relaxed text-neutral-700 dark:divide-neutral-800 dark:border-neutral-800 dark:text-neutral-300">
+      <dl className="ms-glass divide-y divide-ms-border text-sm leading-relaxed text-ms-text">
         <Row label="販売事業者">{DISCLOSE_ON_REQUEST}</Row>
         <Row label="運営統括責任者">{DISCLOSE_ON_REQUEST}</Row>
         <Row label="所在地">{DISCLOSE_ON_REQUEST}</Row>
@@ -118,7 +118,7 @@ export default function TokushohoPage() {
         </Row>
       </dl>
 
-      <p className="mt-6 text-sm text-neutral-600 dark:text-neutral-300">
+      <p className="mt-6 text-sm text-ms-muted">
         サービスの利用条件は
         <Link href="/terms" className={`mx-1 ${LINK_CLASS}`}>
           利用規約
@@ -130,7 +130,7 @@ export default function TokushohoPage() {
         をご確認ください。
       </p>
 
-      <p className="mt-6 text-xs text-neutral-400">最終更新日: 2026年10月</p>
+      <p className="mt-6 text-xs text-ms-muted">最終更新日: 2026年10月</p>
     </div>
   );
 }

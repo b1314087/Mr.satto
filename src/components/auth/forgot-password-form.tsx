@@ -7,7 +7,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { siteConfig } from "@/lib/config/site";
 
 const INPUT_CLASS =
-  "rounded-xl border border-neutral-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
+  "ms-input";
 
 /**
  * 送信結果に関わらず表示する汎用メッセージ。
@@ -54,7 +54,7 @@ export function ForgotPasswordForm() {
 
   if (sent) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-6 text-center text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+      <div className="ms-glass flex flex-col items-center gap-3 p-6 text-center text-sm text-ms-muted">
         <p>{GENERIC_SENT_MESSAGE}</p>
       </div>
     );
@@ -77,7 +77,7 @@ export function ForgotPasswordForm() {
       <button
         type="submit"
         disabled={status === "processing"}
-        className="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        className="w-full ms-btn ms-btn-primary"
       >
         {status === "processing" ? "送信中..." : "再設定メールを送信"}
       </button>

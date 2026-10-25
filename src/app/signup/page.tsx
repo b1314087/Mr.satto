@@ -18,17 +18,17 @@ export default function SignupPage() {
 
   return (
     <div className="mx-auto w-full max-w-sm px-4 py-16 sm:px-6">
-      <h1 className="mb-6 text-center text-2xl font-bold text-neutral-900 dark:text-white">
+      <h1 className="mb-6 text-center text-2xl font-bold text-ms-text">
         会員登録
       </h1>
 
-      <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="ms-glass p-6">
         {isSupabaseConfigured() ? (
           <SignupForm />
         ) : (
-          <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="text-center text-sm text-ms-muted">
             現在、会員登録機能は準備中です。無料でご利用いただけるツールは
-            <Link href="/tools" className="text-blue-600 hover:underline dark:text-blue-400">
+            <Link href="/tools" className="text-ms-accent hover:underline dark:text-ms-focus">
               ツール一覧
             </Link>
             からログインなしでお使いいただけます。
@@ -36,7 +36,7 @@ export default function SignupPage() {
         )}
       </div>
 
-      <p className="mt-4 text-center text-xs text-neutral-400 dark:text-neutral-500">
+      <p className="mt-4 text-center text-xs text-ms-muted">
         会員登録が必要なのはプレミアムプランのご利用時のみです。
         <br />
         無料プランはログインなしでお使いいただけます。

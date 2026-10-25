@@ -8,7 +8,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 
 const INPUT_CLASS =
-  "rounded-xl border border-neutral-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
+  "ms-input";
 
 /**
  * ログイン後のリダイレクト先（?next=）が、外部サイトへ誘導する
@@ -97,7 +97,7 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
       </label>
 
       <div className="text-right text-xs">
-        <Link href="/auth/forgot-password" className="text-blue-600 hover:underline dark:text-blue-400">
+        <Link href="/auth/forgot-password" className="text-ms-accent hover:underline dark:text-ms-focus">
           パスワードをお忘れの場合
         </Link>
       </div>
@@ -105,7 +105,7 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
       <button
         type="submit"
         disabled={status === "processing"}
-        className="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        className="w-full ms-btn ms-btn-primary"
       >
         {status === "processing" ? "ログイン中..." : "ログイン"}
       </button>
@@ -113,9 +113,9 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
       <ProcessingStatus state={status} processingLabel="ログイン中..." successLabel="ログインしました" />
       {error && <ErrorMessage message={error} />}
 
-      <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
+      <p className="text-center text-xs text-ms-muted">
         アカウントをお持ちでないですか？{" "}
-        <Link href="/signup" className="text-blue-600 hover:underline dark:text-blue-400">
+        <Link href="/signup" className="text-ms-accent hover:underline dark:text-ms-focus">
           会員登録
         </Link>
       </p>

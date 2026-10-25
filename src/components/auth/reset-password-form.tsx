@@ -7,7 +7,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 
 const INPUT_CLASS =
-  "rounded-xl border border-neutral-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
+  "ms-input";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -104,7 +104,7 @@ export function ResetPasswordForm() {
       <button
         type="submit"
         disabled={status === "processing"}
-        className="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        className="w-full ms-btn ms-btn-primary"
       >
         {status === "processing" ? "更新中..." : "パスワードを更新"}
       </button>
