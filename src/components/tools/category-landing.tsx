@@ -28,9 +28,9 @@ export function CategoryLanding({
       <p className="mb-8 max-w-2xl text-sm leading-relaxed text-ms-muted">{intro}</p>
 
       {availableTools.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {availableTools.map((tool) => (
-            <ToolCard key={tool.id} tool={tool} showDescription={false} />
+            <ToolCard key={tool.id} tool={tool} compact />
           ))}
         </div>
       )}
@@ -38,9 +38,9 @@ export function CategoryLanding({
       {comingSoonTools.length > 0 && (
         <div className="mt-8">
           <h2 className="mb-4 text-sm font-semibold text-ms-muted">準備中のツール</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {comingSoonTools.map((tool) => (
-              <ToolCard key={tool.id} tool={tool} showDescription={false} />
+              <ToolCard key={tool.id} tool={tool} compact />
             ))}
           </div>
         </div>

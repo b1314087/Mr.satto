@@ -40,44 +40,53 @@ function PlanBadge({ requiredPlan }: { requiredPlan: Tool["requiredPlan"] }) {
  *   （ホバーで浮かない・枠の色も変えない。まだ使えない印象を与えないため）。
  * - カード全体が1つのリンク（<a>）。JavaScriptでの遷移には置き換えていない。
  */
-export function ToolCard({ tool, showDescription = true }: { tool: Tool; showDescription?: boolean }) {
+export function ToolCard({ tool, compact = false }: { tool: Tool; compact?: boolean }) {
   const category = getCategory(tool.category);
   const isComingSoon = tool.status === "coming-soon";
 
+  const badge = isComingSoon ? (
+    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+      準備中
+    </span>
+  ) : featureFlags.billing ? (
+    // 課金オフの間は料金プランが存在しないため、料金区分のバッジは出さない。
+    <PlanBadge requiredPlan={tool.requiredPlan} />
+  ) : null;
+
+  const surface = isComingSoon
+    ? // Phase 19 10章: 実装済みツールと同じクリック体験にしない
+      // （持ち上がるホバー演出や「使える」印象を与える枠線色の変化をつけず、
+      // 破線・低コントラストな配色にとどめる）。
+      "ms-focus-ring rounded-ms-card border border-dashed border-ms-border-strong bg-ms-hover-tint"
+    : glassCardClasses({ interactive: true });
+
+  const titleColor = isComingSoon ? "text-ms-muted" : "text-ms-text group-hover:text-ms-accent dark:group-hover:text-ms-focus";
+
+  const linkProps = {
+    href: `/tools/${tool.id}`,
+    "aria-label": isComingSoon ? `${tool.name}（準備中・まだ利用できません）` : tool.name,
+  };
+
+  // コンパクト表示（カテゴリ別一覧）: アイコン・名前・バッジを1行に並べ、説明文は出さない。
+  // 1画面に並べられるツールの数を増やすための、低いカード。
+  if (compact) {
+    return (
+      <Link {...linkProps} className={cn("group flex h-full items-center gap-3 px-3 py-2.5", surface)}>
+        <CategoryIcon id={category?.id ?? "other"} size="sm" />
+        <h3 className={cn("min-w-0 flex-1 text-sm font-semibold leading-snug", titleColor)}>{tool.name}</h3>
+        {badge}
+      </Link>
+    );
+  }
+
   return (
-    <Link
-      href={`/tools/${tool.id}`}
-      aria-label={isComingSoon ? `${tool.name}（準備中・まだ利用できません）` : tool.name}
-      className={cn(
-        "group flex h-full flex-col gap-2 p-4",
-        isComingSoon
-          ? // Phase 19 10章: 実装済みツールと同じクリック体験にしない
-            // （持ち上がるホバー演出や「使える」印象を与える枠線色の変化をつけず、
-            // 破線・低コントラストな配色にとどめる）。
-            "ms-focus-ring rounded-ms-card border border-dashed border-ms-border-strong bg-ms-hover-tint"
-          : glassCardClasses({ interactive: true })
-      )}
-    >
+    <Link {...linkProps} className={cn("group flex h-full flex-col gap-2 p-4", surface)}>
       <div className="flex items-start justify-between gap-2">
         <CategoryIcon id={category?.id ?? "other"} size="md" />
-        {isComingSoon ? (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            準備中
-          </span>
-        ) : featureFlags.billing ? (
-          // 課金オフの間は料金プランが存在しないため、料金区分のバッジは出さない。
-          <PlanBadge requiredPlan={tool.requiredPlan} />
-        ) : null}
+        {badge}
       </div>
-      <h3
-        className={cn(
-          "font-semibold",
-          isComingSoon ? "text-ms-muted" : "text-ms-text group-hover:text-ms-accent dark:group-hover:text-ms-focus"
-        )}
-      >
-        {tool.name}
-      </h3>
-      {showDescription && <p className="line-clamp-2 text-sm text-ms-muted">{tool.description}</p>}
+      <h3 className={cn("font-semibold", titleColor)}>{tool.name}</h3>
+      <p className="line-clamp-2 text-sm text-ms-muted">{tool.description}</p>
     </Link>
   );
 }
