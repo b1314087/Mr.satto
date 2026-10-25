@@ -102,7 +102,7 @@ test.describe("年度カレンダー: AIで読み取る補助", () => {
     await openTool(page);
     await loadFile(page, ROWS());
     await page.getByTestId("ai-open").click();
-    await expect(page.getByTestId("ai-unavailable")).toContainText("Premiumプランの機能");
+    await expect(page.getByTestId("ai-unavailable")).toContainText("プレミアムプランの機能");
     await expect(page.getByTestId("ai-upgrade-link")).toHaveAttribute("href", "/pricing");
     await expect(page.getByTestId("ai-run")).toHaveCount(0);
     await expect(page.getByTestId("ai-consent")).toHaveCount(0);

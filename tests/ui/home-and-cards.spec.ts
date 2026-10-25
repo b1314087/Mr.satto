@@ -261,7 +261,7 @@ test.describe("ツールカード", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/tools/image");
     const h1 = await page.getByRole("heading", { level: 1 }).boundingBox();
-    const intro = await main(page).locator("p", { hasText: "ブラウザ内で行われ" }).first().boundingBox();
+    const intro = await main(page).locator("p", { hasText: "サーバーへ送られることはありません" }).first().boundingBox();
     expect(h1 && intro).toBeTruthy();
     // 説明文は見出しより右にあり、縦の位置が重なる（同じ行に並ぶ）
     expect(intro!.x).toBeGreaterThan(h1!.x + h1!.width);

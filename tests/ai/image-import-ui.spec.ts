@@ -340,7 +340,7 @@ test.describe("予定表の取り込み: 画像・スキャンPDF（AIで読み�
     await expect(page.getByTestId("events-pending-name")).toHaveText("予定表.png");
     await expect(page.getByTestId("image-thumb")).toHaveCount(1);
     await expect(page.getByTestId("image-send-count")).toContainText("送る画像：1枚");
-    await expect(page.getByTestId("image-assist")).toContainText("元のファイルそのものは送りません");
+    await expect(page.getByTestId("image-assist")).toContainText("元のファイルは送りません");
     await expect(page.getByTestId("ai-usage")).toContainText("残り");
     await expect(page.getByTestId("image-run")).toBeDisabled();
     await page.getByTestId("image-consent").check();

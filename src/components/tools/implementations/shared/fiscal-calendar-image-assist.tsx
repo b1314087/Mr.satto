@@ -1,13 +1,24 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { calendarDateRange, sanitizeEventText } from "@/lib/calendar/events";
 import { parseWeekdayText, weekdayMismatchMessage } from "@/lib/calendar/event-import";
 import type { FiscalCalendar } from "@/lib/calendar/model";
 import type { PreparedImage } from "@/lib/calendar/event-image";
 import { CONSENT_VERSION, isValidIsoDate, type AssistImageSource, type ImageSuggestion } from "@/lib/ai/calendar-assist";
-import { formatAiTokens, type AiModelTier } from "@/lib/ai/pricing";
+import type { AiModelTier } from "@/lib/ai/pricing";
+import {
+  AI_PANEL_CLASS,
+  AiPanelHeader,
+  AiProgress,
+  AiRunButton,
+  AiUnavailableNotice,
+  AiUsageMeter,
+  ConsentBox,
+  StepLabel,
+  TierPicker,
+  type AiUsage,
+} from "./ai-panel-parts";
 
 /**
  * 画像・スキャンPDFを、AIで読み取る。結果は「提案」で、利用者が内容を確認・修正してから、カレンダーに反映する。
@@ -35,12 +46,12 @@ export interface ImageDraft {
 
 type UsageState =
   | { status: "loading" }
-  | { status: "available"; limitAiTokens: number; usedAiTokens: number; remainingAiTokens: number; periodEnd: string }
+  | ({ status: "available" } & AiUsage)
   | { status: "unavailable"; reason: "login_required" | "not_premium" | "unavailable" };
 
 const UNAVAILABLE_TEXT: Record<"login_required" | "not_premium" | "unavailable", string> = {
   login_required: "画像やスキャンPDFの読み取りには、ログインが必要です。",
-  not_premium: "画像やスキャンPDFの読み取り（AI）は、Premiumプランの機能です。",
+  not_premium: "画像やスキャンPDFの読み取り（AI）は、プレミアムプランの機能です。",
   unavailable: "AIによる読み取りは、現在ご利用いただけません。Excel・CSV・文字のPDFは、そのまま読み込めます。",
 };
 
@@ -54,12 +65,6 @@ function newRequestId(): string {
   b[8] = (b[8] & 0x3f) | 0x80;
   const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
-function formatPeriodEnd(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 export function FiscalCalendarImageAssist({
@@ -204,103 +209,73 @@ export function FiscalCalendarImageAssist({
   const chosen = (drafts ?? []).filter((d) => d.adopt && !problem(d));
   const sameDayCount = (date: string) => (drafts ?? []).filter((d) => d.adopt && d.date === date).length;
 
+  const isPdf = source === "scanned-pdf";
+
   return (
-    <div data-testid="image-assist" className="flex flex-col gap-3 rounded-lg border border-violet-300 bg-violet-50 p-3 text-xs dark:border-violet-800 dark:bg-violet-950">
-      <p className="font-medium text-violet-900 dark:text-violet-100">
-        {source === "scanned-pdf" ? "このPDFは文字として読めないため、AIで画像として読み取ります（Premium）" : "画像をAIで読み取ります（Premium）"}
-      </p>
-      {note && <p data-testid="image-note" className="text-neutral-700 dark:text-neutral-200">{note}</p>}
-
-      {usage.status === "loading" && <p data-testid="ai-usage-loading">利用状況を確認しています…</p>}
-      {usage.status === "unavailable" && (
-        <p data-testid="ai-unavailable" className="rounded bg-white px-3 py-2 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-          {UNAVAILABLE_TEXT[usage.reason]}
-          {usage.reason === "not_premium" && (
-            <Link href="/pricing" data-testid="ai-upgrade-link" className="ml-2 font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
-              プレミアムプランを見る
-            </Link>
-          )}
-          {usage.reason === "login_required" && (
-            <Link href="/login?next=%2Ftools%2Ffiscal-calendar" data-testid="ai-login-link" className="ml-2 font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
-              ログインする
-            </Link>
-          )}
-        </p>
-      )}
-      {usage.status === "available" && (
-        <p data-testid="ai-usage" className="text-violet-900 dark:text-violet-100">
-          今期のAI利用枠：残り {formatAiTokens(usage.remainingAiTokens)} AIトークン（使用済み {formatAiTokens(usage.usedAiTokens, "ceil")} / {formatAiTokens(usage.limitAiTokens)}）
-          {usage.periodEnd && <span>　リセット日：{formatPeriodEnd(usage.periodEnd)}</span>}
+    <div data-testid="image-assist" className={AI_PANEL_CLASS}>
+      <AiPanelHeader
+        title={isPdf ? "AIでスキャンPDFを読み取る" : "AIで画像を読み取る"}
+        sub={isPdf ? "文字情報のないPDFなので、画像として読み取ります" : "予定表の画像から、予定を取り出します"}
+      />
+      {note && (
+        <p data-testid="image-note" className="rounded-lg bg-white px-3 py-2 text-xs text-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+          {note}
         </p>
       )}
 
-      <div className="flex flex-col gap-1" data-testid="image-send-preview">
-        <p className="font-medium text-neutral-800 dark:text-neutral-100">① AIに送る画像の確認（この画像だけを送ります）</p>
+      {usage.status === "loading" && <p data-testid="ai-usage-loading" className="text-xs text-neutral-600 dark:text-neutral-300">利用状況を確認しています…</p>}
+      {usage.status === "unavailable" && <AiUnavailableNotice reason={usage.reason} text={UNAVAILABLE_TEXT[usage.reason]} loginNext="/tools/fiscal-calendar" />}
+      {usage.status === "available" && <AiUsageMeter usage={usage} />}
+
+      <div className="flex flex-col gap-2" data-testid="image-send-preview">
+        <StepLabel n={1}>送る画像</StepLabel>
         <ul className="flex flex-wrap gap-2">
           {images.map((im, i) => (
-            <li key={i} className="flex w-28 flex-col gap-0.5">
+            <li key={i} className="flex w-24 flex-col gap-0.5">
               {/* eslint-disable-next-line @next/next/no-img-element -- 送る画像そのもの(data URL)の確認用の表示 */}
-              <img data-testid="image-thumb" src={`data:${im.mediaType};base64,${im.base64}`} alt={`AIに送る画像：${im.label}`} className="h-28 w-28 rounded border border-violet-200 bg-white object-contain dark:border-violet-800" />
+              <img data-testid="image-thumb" src={`data:${im.mediaType};base64,${im.base64}`} alt={`AIに送る画像：${im.label}`} className="h-24 w-24 rounded-lg border border-violet-200 bg-white object-contain shadow-sm dark:border-violet-800" />
               <span className="break-all text-[11px] text-neutral-600 dark:text-neutral-300">{im.label}</span>
             </li>
           ))}
         </ul>
-        <p data-testid="image-send-count" className="text-neutral-700 dark:text-neutral-200">
-          送る画像：{images.length}枚（{fileName}を縮小したもの）。元のファイルそのものは送りません。
+        <p data-testid="image-send-count" className="text-xs text-neutral-700 dark:text-neutral-200">
+          送る画像：{images.length}枚（{fileName}を縮小したもの）。元のファイルは送りません。
         </p>
-        <p className="text-amber-800 dark:text-amber-300">画像に写っている文字は、すべてAIに送られます。他の人の個人情報などが写っていないか、ご確認ください。</p>
+        <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <span aria-hidden="true" className="shrink-0 font-bold">!</span>
+          画像に写る文字は、すべてAIに送られます。個人情報が写っていないか確認してください。
+        </p>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <p className="font-medium text-neutral-800 dark:text-neutral-100">② 読み取りの種類</p>
-        <label className="flex items-start gap-2">
-          <input type="radio" name="image-ai-tier" data-testid="image-tier-standard" checked={tier === "standard"} onChange={() => setTier("standard")} />
-          <span>標準（まずはこちら。利用枠の消費が少ない）</span>
-        </label>
-        <label className="flex items-start gap-2">
-          <input type="radio" name="image-ai-tier" data-testid="image-tier-advanced" checked={tier === "advanced"} onChange={() => setTier("advanced")} />
-          <span>高精度（細かい表や手書きに近い文字用。利用枠の消費が大きい）</span>
-        </label>
+      <div className="flex flex-col gap-2">
+        <StepLabel n={2}>読み取りの種類</StepLabel>
+        <TierPicker
+          name="image-ai-tier"
+          value={tier}
+          onChange={setTier}
+          standardTestId="image-tier-standard"
+          advancedTestId="image-tier-advanced"
+          advancedHint="細かい表・手書き向け"
+        />
       </div>
 
-      <label className="flex items-start gap-2 rounded border border-violet-300 bg-white p-2 dark:border-violet-700 dark:bg-neutral-950">
-        <input type="checkbox" data-testid="image-consent" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-        <span>
-          上の画像（{images.length}枚）を、AI（OpenAI）に送信して読み取ることに同意します。送信した画像と読み取り結果は、このサービスには保存されません。OpenAI側での取り扱い（不正利用の監視のための記録が一定期間保持されることがあります）は、
-          <Link href="/privacy" target="_blank" className="mx-1 text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
-            プライバシーポリシー
-          </Link>
-          をご確認ください。この同意は、実行のたびに確認します。
-        </span>
-      </label>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          data-testid="image-run"
+      <div className="flex flex-col gap-2">
+        <StepLabel n={3}>同意して実行</StepLabel>
+        <ConsentBox testId="image-consent" checked={consent} onChange={setConsent}>
+          上の画像（{images.length}枚）を、AI（OpenAI）に送って読み取ることに同意します
+        </ConsentBox>
+        <AiRunButton
+          testId="image-run"
+          cancelTestId="image-cancel"
           disabled={!canRun}
+          running={running}
+          label={drafts ? "もう一度AIで読み取る" : "AIで読み取る"}
+          consentGiven={consent}
           onClick={() => void run()}
-          className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {running ? "読み取り中…" : drafts ? "もう一度AIで読み取る" : "AIで読み取る"}
-        </button>
-        {running && (
-          <button
-            type="button"
-            data-testid="image-cancel"
-            onClick={() => abortRef.current?.abort()}
-            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
-          >
-            中止する
-          </button>
-        )}
-        {!consent && !running && <span className="text-neutral-600 dark:text-neutral-300">同意にチェックすると実行できます。</span>}
+          onCancel={() => abortRef.current?.abort()}
+        />
       </div>
-      {running && (
-        <p role="status" data-testid="image-progress" className="text-violet-900 dark:text-violet-100">
-          AIが画像を読み取っています…（{elapsed}秒。1〜2分かかることがあります。このままお待ちください）
-        </p>
-      )}
+      {running && <AiProgress testId="image-progress" seconds={elapsed} />}
 
       {error && (
         <p role="alert" data-testid="image-error" className="rounded-lg bg-red-50 px-3 py-2 text-red-800 dark:bg-red-950 dark:text-red-200">
@@ -309,47 +284,54 @@ export function FiscalCalendarImageAssist({
       )}
 
       {drafts && (
-        <div data-testid="image-results" className="flex flex-col gap-2">
-          <p className="font-medium text-neutral-800 dark:text-neutral-100">③ AIの読み取り結果（提案です。画像と見比べて、必要なら直してから反映してください）</p>
-          <p className="text-neutral-600 dark:text-neutral-300">AIは読み間違えることがあります。日付・予定名・時刻を、元の画像と見比べて確認してください。チェックした予定だけが、カレンダーに入ります。</p>
-          {rejectedCount > 0 && <p className="text-amber-800 dark:text-amber-300">形式が正しくなかった{rejectedCount}件の結果は、使わずに捨てました。</p>}
-          {drafts.length === 0 && <p data-testid="image-empty">予定を読み取れませんでした。画像が鮮明か、予定表が写っているかをご確認ください。</p>}
+        <div data-testid="image-results" className="flex flex-col gap-3 border-t border-violet-200 pt-4 dark:border-violet-800">
+          <StepLabel n={4} hint="AIは読み間違えることがあります。画像と見比べてください">
+            読み取り結果
+          </StepLabel>
+          {rejectedCount > 0 && <p className="text-xs text-amber-800 dark:text-amber-300">形式が正しくなかった{rejectedCount}件は、使わずに捨てました。</p>}
+          {drafts.length === 0 && <p data-testid="image-empty" className="text-sm">予定を読み取れませんでした。画像が鮮明か、予定表が写っているかご確認ください。</p>}
           <ul className="flex flex-col gap-2">
             {drafts.map((d) => {
               const p = problem(d);
               const weekdayProblem = d.date ? weekdayMismatchMessage(d.date, parseWeekdayText(d.weekday)) : null;
               const sameDay = d.date ? sameDayCount(d.date) : 0;
+              const checked = d.adopt && !p;
               return (
-                <li key={d.id} data-testid="image-result" data-id={d.id} className="flex flex-col gap-1 rounded border border-violet-200 bg-white p-2 dark:border-violet-800 dark:bg-neutral-950">
+                <li
+                  key={d.id}
+                  data-testid="image-result"
+                  data-id={d.id}
+                  className={`@container flex flex-col gap-2 rounded-xl border-2 p-3 text-xs ${checked ? "border-violet-400 bg-white dark:border-violet-600 dark:bg-neutral-950" : "border-neutral-200 bg-white/70 dark:border-neutral-700 dark:bg-neutral-950"}`}
+                >
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-1">
-                      <input type="checkbox" data-testid="image-result-adopt" checked={d.adopt && !p} disabled={!!p} onChange={(e) => update(d.id, { adopt: e.target.checked })} />
+                    <label className="flex items-center gap-1.5 text-sm font-semibold">
+                      <input type="checkbox" data-testid="image-result-adopt" checked={checked} disabled={!!p} onChange={(e) => update(d.id, { adopt: e.target.checked })} className="h-4 w-4 accent-violet-700" />
                       <span className="font-mono">{d.id}</span>
-                      {d.page !== null && images.length > 1 && <span className="text-neutral-500">（{d.page}枚目）</span>}
+                      {d.page !== null && images.length > 1 && <span className="text-xs font-normal text-neutral-500">（{d.page}枚目）</span>}
                     </label>
                     {d.inferred && (
-                      <span data-testid="image-badge-inferred" className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                      <span data-testid="image-badge-inferred" className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                         AIが推測した日付
                       </span>
                     )}
                     <span
                       data-testid="image-badge-confidence"
-                      className={`rounded px-1.5 py-0.5 ${d.confidence === "high" ? "bg-green-100 text-green-900 dark:bg-green-900 dark:text-green-100" : "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"}`}
+                      className={`rounded-full px-2 py-0.5 ${d.confidence === "high" ? "bg-green-100 text-green-900 dark:bg-green-900 dark:text-green-100" : "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"}`}
                     >
                       {CONFIDENCE_LABEL[d.confidence]}
                     </span>
                     {p && (
-                      <span data-testid="image-badge-problem" className="rounded bg-red-100 px-1.5 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
+                      <span data-testid="image-badge-problem" className="rounded-full bg-red-100 px-2 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
                         {p}
                       </span>
                     )}
                     {weekdayProblem && (
-                      <span data-testid="image-badge-weekday" className="rounded bg-red-100 px-1.5 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
+                      <span data-testid="image-badge-weekday" className="rounded-full bg-red-100 px-2 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
                         曜日が合いません：{weekdayProblem}。日付を確認してください
                       </span>
                     )}
                     {sameDay > 1 && (
-                      <span data-testid="image-badge-sameday" className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                      <span data-testid="image-badge-sameday" className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                         同じ日に{sameDay}件の予定があります
                       </span>
                     )}
@@ -360,18 +342,18 @@ export function FiscalCalendarImageAssist({
                       AIのメモ：{d.note}
                     </p>
                   )}
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <label className="flex flex-col gap-0.5">
+                  <div className="grid grid-cols-2 gap-2 @md:grid-cols-4">
+                    <label className="col-span-2 flex flex-col gap-0.5 text-neutral-600 @md:col-span-1 dark:text-neutral-300">
                       日付
                       <input
                         type="date"
                         data-testid="image-edit-date"
                         value={d.date}
                         onChange={(e) => update(d.id, { date: e.target.value })}
-                        className="rounded border border-neutral-300 bg-white px-1.5 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                        className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                       />
                     </label>
-                    <label className="col-span-2 flex flex-col gap-0.5 sm:col-span-1">
+                    <label className="col-span-2 flex flex-col gap-0.5 text-neutral-600 @md:col-span-1 dark:text-neutral-300">
                       予定名
                       <input
                         type="text"
@@ -379,27 +361,27 @@ export function FiscalCalendarImageAssist({
                         value={d.title}
                         maxLength={200}
                         onChange={(e) => update(d.id, { title: e.target.value })}
-                        className="rounded border border-neutral-300 bg-white px-1.5 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                        className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                       />
                     </label>
-                    <label className="flex flex-col gap-0.5">
+                    <label className="flex flex-col gap-0.5 text-neutral-600 dark:text-neutral-300">
                       開始
                       <input
                         type="time"
                         data-testid="image-edit-start"
                         value={d.startTime}
                         onChange={(e) => update(d.id, { startTime: e.target.value })}
-                        className="rounded border border-neutral-300 bg-white px-1.5 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                        className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                       />
                     </label>
-                    <label className="flex flex-col gap-0.5">
+                    <label className="flex flex-col gap-0.5 text-neutral-600 dark:text-neutral-300">
                       終了
                       <input
                         type="time"
                         data-testid="image-edit-end"
                         value={d.endTime}
                         onChange={(e) => update(d.id, { endTime: e.target.value })}
-                        className="rounded border border-neutral-300 bg-white px-1.5 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                        className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                       />
                     </label>
                   </div>
@@ -407,7 +389,7 @@ export function FiscalCalendarImageAssist({
               );
             })}
           </ul>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col gap-1.5">
             <button
               type="button"
               data-testid="image-apply"
@@ -422,12 +404,12 @@ export function FiscalCalendarImageAssist({
                   })),
                 )
               }
-              className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-xl bg-violet-700 px-5 py-3 text-base font-bold text-white shadow-sm transition-colors hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-40 sm:w-fit"
             >
               チェックした{chosen.length}件をカレンダーに反映する
             </button>
+            <p className="text-xs text-neutral-600 dark:text-neutral-300">チェックしなかった予定は、カレンダーに入りません。</p>
           </div>
-          <p className="text-neutral-600 dark:text-neutral-300">反映したあとも、結果の件数・注意（曜日の不一致など）を確認できます。チェックしなかった予定は、カレンダーに入りません。</p>
         </div>
       )}
     </div>

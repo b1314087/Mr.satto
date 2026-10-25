@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { calendarDateRange, sanitizeEventText, type CalendarEvent } from "@/lib/calendar/events";
 import { cellText, columnLabels, weekdayHintForRow, weekdayMismatchMessage, type EventCellValue, type ImportResult } from "@/lib/calendar/event-import";
@@ -14,7 +13,18 @@ import {
   isValidIsoDate,
   type AssistSuggestion,
 } from "@/lib/ai/calendar-assist";
-import { formatAiTokens, type AiModelTier } from "@/lib/ai/pricing";
+import type { AiModelTier } from "@/lib/ai/pricing";
+import {
+  AI_PANEL_CLASS,
+  AiPanelHeader,
+  AiRunButton,
+  AiUnavailableNotice,
+  AiUsageMeter,
+  ConsentBox,
+  StepLabel,
+  TierPicker,
+  type AiUsage,
+} from "./ai-panel-parts";
 
 /**
  * 日付などを通常の読み取りで認識できなかった行を、AIで読み取る補助。
@@ -29,7 +39,7 @@ const PREVIEW_ROWS = 8;
 
 type UsageState =
   | { status: "loading" }
-  | { status: "available"; limitAiTokens: number; usedAiTokens: number; remainingAiTokens: number; periodEnd: string }
+  | ({ status: "available" } & AiUsage)
   | { status: "unavailable"; reason: "login_required" | "not_premium" | "unavailable" };
 
 interface Draft {
@@ -46,17 +56,11 @@ interface Draft {
 
 const UNAVAILABLE_TEXT: Record<"login_required" | "not_premium" | "unavailable", string> = {
   login_required: "AIによる読み取り補助を使うには、ログインが必要です。",
-  not_premium: "AIによる読み取り補助は、Premiumプランの機能です。",
+  not_premium: "AIによる読み取り補助は、プレミアムプランの機能です。",
   unavailable: "AIによる読み取り補助は、現在ご利用いただけません。通常の読み取り結果はそのまま使えます。",
 };
 
 const CONFIDENCE_LABEL: Record<AssistSuggestion["confidence"], string> = { high: "確度: 高", medium: "確度: 中", low: "確度: 低" };
-
-function formatPeriodEnd(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
-}
 
 function newRequestId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -248,25 +252,25 @@ export function FiscalCalendarAiAssist({
   const unresolved = (drafts ?? []).filter((d) => !d.date || d.confidence === "low").map((d) => d.row);
 
   return (
-    <div data-testid="ai-assist" className="flex flex-col gap-2 rounded-lg border border-violet-300 bg-violet-50 p-3 text-xs dark:border-violet-800 dark:bg-violet-950">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-medium text-violet-900 dark:text-violet-100">
-          AIで読み取る（任意・Premium）
-          {pending.length > 0 && <span className="ml-1 font-normal">— 読み取れなかった{pending.length}行が対象です</span>}
-        </p>
-        <button
-          type="button"
-          data-testid="ai-open"
-          aria-expanded={open}
-          onClick={() => {
-            if (!open) setUsage({ status: "loading" });
-            setOpen((v) => !v);
-          }}
-          className="rounded-lg border border-violet-400 bg-white px-3 py-1.5 text-xs font-medium text-violet-900 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-900 dark:text-violet-50"
-        >
-          {open ? "閉じる" : "AIで読み取る"}
-        </button>
-      </div>
+    <div data-testid="ai-assist" className={AI_PANEL_CLASS}>
+      <AiPanelHeader
+        title="AIで読み取る（任意）"
+        sub={pending.length > 0 ? `読み取れなかった${pending.length}行が対象です` : undefined}
+        action={
+          <button
+            type="button"
+            data-testid="ai-open"
+            aria-expanded={open}
+            onClick={() => {
+              if (!open) setUsage({ status: "loading" });
+              setOpen((v) => !v);
+            }}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${open ? "border border-violet-400 bg-white text-violet-900 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-900 dark:text-violet-50" : "bg-violet-700 text-white shadow-sm hover:bg-violet-800"}`}
+          >
+            {open ? "閉じる" : "AIで読み取る"}
+          </button>
+        }
+      />
 
       {adopted.length > 0 && (
         <div data-testid="ai-adopted" className="flex flex-col gap-1">
@@ -293,28 +297,9 @@ export function FiscalCalendarAiAssist({
 
       {open && (
         <div className="flex flex-col gap-3">
-          {usage.status === "loading" && <p data-testid="ai-usage-loading">利用状況を確認しています…</p>}
-          {usage.status === "unavailable" && (
-            <p data-testid="ai-unavailable" className="rounded bg-white px-3 py-2 text-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-              {UNAVAILABLE_TEXT[usage.reason]}
-              {usage.reason === "not_premium" && (
-                <Link href="/pricing" data-testid="ai-upgrade-link" className="ml-2 font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
-                  プレミアムプランを見る
-                </Link>
-              )}
-              {usage.reason === "login_required" && (
-                <Link href="/login?next=%2Ftools%2Ffiscal-calendar" data-testid="ai-login-link" className="ml-2 font-medium text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
-                  ログインする
-                </Link>
-              )}
-            </p>
-          )}
-          {usage.status === "available" && (
-            <p data-testid="ai-usage" className="text-violet-900 dark:text-violet-100">
-              今期のAI利用枠：残り {formatAiTokens(usage.remainingAiTokens)} AIトークン（使用済み {formatAiTokens(usage.usedAiTokens, "ceil")} / {formatAiTokens(usage.limitAiTokens)}）
-              {usage.periodEnd && <span>　リセット日：{formatPeriodEnd(usage.periodEnd)}</span>}
-            </p>
-          )}
+          {usage.status === "loading" && <p data-testid="ai-usage-loading" className="text-xs text-neutral-600 dark:text-neutral-300">利用状況を確認しています…</p>}
+          {usage.status === "unavailable" && <AiUnavailableNotice reason={usage.reason} text={UNAVAILABLE_TEXT[usage.reason]} loginNext="/tools/fiscal-calendar" />}
+          {usage.status === "available" && <AiUsageMeter usage={usage} />}
 
           {usage.status === "available" && pending.length === 0 && drafts === null && (
             <p data-testid="ai-no-pending">AIで読み取れる行は、もうありません。</p>
@@ -323,7 +308,7 @@ export function FiscalCalendarAiAssist({
           {usage.status === "available" && pending.length > 0 && (
             <>
               <div className="flex flex-col gap-1" data-testid="ai-send-columns">
-                <p className="font-medium text-neutral-800 dark:text-neutral-100">① AIに送る列を選ぶ</p>
+                <StepLabel n={1}>AIに送る列を選ぶ</StepLabel>
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
                   {labels.slice(0, 40).map((label, c) => (
                     <label key={c} className="flex items-center gap-1">
@@ -343,7 +328,7 @@ export function FiscalCalendarAiAssist({
               </div>
 
               <div className="flex flex-col gap-1" data-testid="ai-send-rows">
-                <p className="font-medium text-neutral-800 dark:text-neutral-100">② AIに送る行を選ぶ（読み取れなかった行）</p>
+                <StepLabel n={2} hint="読み取れなかった行">AIに送る行を選ぶ</StepLabel>
                 <ul className="flex max-h-40 flex-col gap-0.5 overflow-y-auto rounded border border-violet-200 bg-white p-2 dark:border-violet-800 dark:bg-neutral-950">
                   {pending.map((row) => (
                     <li key={row}>
@@ -372,7 +357,7 @@ export function FiscalCalendarAiAssist({
               </div>
 
               <div className="flex flex-col gap-1" data-testid="ai-preview">
-                <p className="font-medium text-neutral-800 dark:text-neutral-100">③ 送る内容の確認（この文字だけをAIに送ります）</p>
+                <StepLabel n={3} hint="この文字だけをAIに送ります">送る内容の確認</StepLabel>
                 <div className="overflow-x-auto rounded border border-violet-200 bg-white dark:border-violet-800 dark:bg-neutral-950">
                   <table className="min-w-full text-left">
                     <thead>
@@ -403,53 +388,36 @@ export function FiscalCalendarAiAssist({
                   送る行：{sendable.length}行 ／ 送る列：{sendColumns.length}列
                   {sendable.length > PREVIEW_ROWS && `（上の表は先頭の${PREVIEW_ROWS}行。残りも同じ列だけを送ります）`}
                 </p>
-                <p className="text-neutral-600 dark:text-neutral-300">Excelファイルそのもの、上で選んでいない行・列は送りません。</p>
+                <p className="text-xs text-neutral-600 dark:text-neutral-300">Excelファイルそのもの・選んでいない行や列は送りません。</p>
               </div>
 
-              <div className="flex flex-col gap-1">
-                <p className="font-medium text-neutral-800 dark:text-neutral-100">④ 読み取りの種類</p>
-                <label className="flex items-start gap-2">
-                  <input type="radio" name="ai-tier" data-testid="ai-tier-standard" checked={tier === "standard"} onChange={() => setTier("standard")} />
-                  <span>標準（まずはこちら。利用枠の消費が少ない）</span>
-                </label>
-                <label className="flex items-start gap-2">
-                  <input type="radio" name="ai-tier" data-testid="ai-tier-advanced" checked={tier === "advanced"} onChange={() => setTier("advanced")} />
-                  <span>高精度（標準で読み取れなかった行の再確認用。利用枠の消費が大きい）</span>
-                </label>
+              <div className="flex flex-col gap-2">
+                <StepLabel n={4}>読み取りの種類</StepLabel>
+                <TierPicker
+                  name="ai-tier"
+                  value={tier}
+                  onChange={setTier}
+                  standardTestId="ai-tier-standard"
+                  advancedTestId="ai-tier-advanced"
+                  advancedHint="標準で読めなかった行の再確認用"
+                />
               </div>
 
-              <label className="flex items-start gap-2 rounded border border-violet-300 bg-white p-2 dark:border-violet-700 dark:bg-neutral-950">
-                <input type="checkbox" data-testid="ai-consent" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                <span>
-                  上の内容（選んだ行・列の文字）を、AI（OpenAI）に送信して読み取ることに同意します。送信した内容は、このサービスには保存されません。OpenAI側での取り扱い（不正利用の監視のための記録が一定期間保持されることがあります）は、
-                  <Link href="/privacy" target="_blank" className="mx-1 text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
-                    プライバシーポリシー
-                  </Link>
-                  をご確認ください。この同意は、実行のたびに確認します。
-                </span>
-              </label>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  data-testid="ai-run"
+              <div className="flex flex-col gap-2">
+                <StepLabel n={5}>同意して実行</StepLabel>
+                <ConsentBox testId="ai-consent" checked={consent} onChange={setConsent}>
+                  上の内容（選んだ行・列の文字）を、AI（OpenAI）に送って読み取ることに同意します
+                </ConsentBox>
+                <AiRunButton
+                  testId="ai-run"
+                  cancelTestId="ai-cancel"
                   disabled={!canRun}
+                  running={running}
+                  label="AIで読み取る"
+                  consentGiven={consent}
                   onClick={() => void run()}
-                  className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {running ? "読み取り中…" : "AIで読み取る"}
-                </button>
-                {running && (
-                  <button
-                    type="button"
-                    data-testid="ai-cancel"
-                    onClick={() => abortRef.current?.abort()}
-                    className="rounded-lg border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
-                  >
-                    中止する
-                  </button>
-                )}
-                {!consent && !running && <span className="text-neutral-600 dark:text-neutral-300">同意にチェックすると実行できます。</span>}
+                  onCancel={() => abortRef.current?.abort()}
+                />
               </div>
             </>
           )}
@@ -462,7 +430,7 @@ export function FiscalCalendarAiAssist({
 
           {drafts && (
             <div data-testid="ai-results" className="flex flex-col gap-2">
-              <p className="font-medium text-neutral-800 dark:text-neutral-100">AIの読み取り結果（提案です。内容を確認し、必要なら直してから採用してください）</p>
+              <StepLabel n={6} hint="AIは読み間違えることがあります。確認してから採用してください">読み取り結果</StepLabel>
               {rejectedCount > 0 && <p className="text-amber-800 dark:text-amber-300">形式が正しくなかった{rejectedCount}行の結果は、使わずに捨てました。</p>}
               {drafts.length === 0 && <p>採用できる提案はありません。</p>}
               <ul className="flex flex-col gap-2">
@@ -472,7 +440,7 @@ export function FiscalCalendarAiAssist({
                   // 編集した日付でも照合する（日付を直すと、警告は消える）
                   const weekdayProblem = d.date ? weekdayMismatchMessage(d.date, weekdayHintForRow(rows, headerRow, mapping, d.row)) : null;
                   return (
-                    <li key={d.row} data-testid="ai-result" data-row={d.row} className="flex flex-col gap-1 rounded border border-violet-200 bg-white p-2 dark:border-violet-800 dark:bg-neutral-950">
+                    <li key={d.row} data-testid="ai-result" data-row={d.row} className="@container flex flex-col gap-1 rounded border border-violet-200 bg-white p-2 dark:border-violet-800 dark:bg-neutral-950">
                       <div className="flex flex-wrap items-center gap-2">
                         <label className="flex items-center gap-1 font-mono">
                           <input
@@ -485,36 +453,36 @@ export function FiscalCalendarAiAssist({
                           {d.row}行目
                         </label>
                         {d.inferred && (
-                          <span data-testid="ai-badge-inferred" className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                          <span data-testid="ai-badge-inferred" className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                             AIが推測した日付
                           </span>
                         )}
                         <span
                           data-testid="ai-badge-confidence"
-                          className={`rounded px-1.5 py-0.5 ${d.confidence === "high" ? "bg-green-100 text-green-900 dark:bg-green-900 dark:text-green-100" : "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"}`}
+                          className={`rounded px-2 py-0.5 ${d.confidence === "high" ? "bg-green-100 text-green-900 dark:bg-green-900 dark:text-green-100" : "bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"}`}
                         >
                           {CONFIDENCE_LABEL[d.confidence]}
                         </span>
                         {problem && (
-                          <span data-testid="ai-badge-problem" className="rounded bg-red-100 px-1.5 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
+                          <span data-testid="ai-badge-problem" className="rounded-full bg-red-100 px-2 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
                             {problem}
                           </span>
                         )}
                         {weekdayProblem && (
-                          <span data-testid="ai-badge-weekday" className="rounded bg-red-100 px-1.5 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
+                          <span data-testid="ai-badge-weekday" className="rounded-full bg-red-100 px-2 py-0.5 text-red-900 dark:bg-red-900 dark:text-red-100">
                             曜日が合いません：{weekdayProblem}。日付を確認してください
                           </span>
                         )}
                         {sameDay ? (
-                          <span data-testid="ai-badge-sameday" className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                          <span data-testid="ai-badge-sameday" className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                             同じ日に予定が{sameDay}件あります
                           </span>
                         ) : null}
                       </div>
                       <p className="break-all text-neutral-600 dark:text-neutral-300">元の内容：{cellsOf(d.row).join(" / ")}</p>
                       {d.note && <p data-testid="ai-note" className="break-all text-neutral-700 dark:text-neutral-200">AIのメモ：{d.note}</p>}
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        <label className="flex flex-col gap-0.5">
+                      <div className="grid grid-cols-2 gap-2 @md:grid-cols-4">
+                        <label className="col-span-2 flex flex-col gap-0.5 @md:col-span-1">
                           日付
                           <input
                             type="date"
@@ -524,7 +492,7 @@ export function FiscalCalendarAiAssist({
                             className="rounded border border-neutral-300 bg-white px-1.5 py-1 dark:border-neutral-700 dark:bg-neutral-900"
                           />
                         </label>
-                        <label className="col-span-2 flex flex-col gap-0.5 sm:col-span-1">
+                        <label className="col-span-2 flex flex-col gap-0.5 @md:col-span-1">
                           予定名
                           <input
                             type="text"
@@ -566,7 +534,7 @@ export function FiscalCalendarAiAssist({
                   data-testid="ai-adopt"
                   disabled={!drafts.some((d) => d.adopt && !draftProblem(d))}
                   onClick={adoptSelected}
-                  className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-xl bg-violet-700 px-5 py-3 text-base font-bold text-white shadow-sm hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   チェックした提案をカレンダーに採用する
                 </button>
@@ -586,7 +554,7 @@ export function FiscalCalendarAiAssist({
                   </button>
                 )}
               </div>
-              <p className="text-neutral-600 dark:text-neutral-300">採用しなかった提案は、カレンダーに入りません。通常の読み取り結果は、そのまま使われます。</p>
+              <p className="text-xs text-neutral-600 dark:text-neutral-300">採用しなかった提案は、カレンダーに入りません。</p>
             </div>
           )}
         </div>

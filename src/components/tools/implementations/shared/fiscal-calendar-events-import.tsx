@@ -27,6 +27,17 @@ import { EVENT_FILE_ACCEPT, LEGACY_EXCEL_MESSAGE, UNSUPPORTED_FILE_MESSAGE, clas
 import type { PreparedImage } from "@/lib/calendar/event-image";
 import { FiscalCalendarAiAssist } from "./fiscal-calendar-ai-assist";
 import { FiscalCalendarImageAssist, type ImageDraft } from "./fiscal-calendar-image-assist";
+import { SparkleIcon } from "./ai-panel-parts";
+
+/** 鍵の印（この端末の中だけで処理することを示す） */
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-700 dark:text-green-400">
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
 
 /** 読み込んだExcelの予定表（シートごとの行）と、いま選んでいるシート・列の割り当て・読み取り結果 */
 export interface EventImportState {
@@ -285,11 +296,23 @@ export function FiscalCalendarEventsImport({
   return (
     <fieldset data-testid="events-import" className="flex flex-col gap-2 text-sm">
       <legend className="mb-1 text-neutral-600 dark:text-neutral-300">予定データ</legend>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+      <p className="text-xs text-neutral-600 dark:text-neutral-300">
         {featureFlags.billing
-          ? "日付・予定・開始時刻・終了時刻が並んだ予定表（Excel・CSV・PDF・画像）を選ぶと、カレンダーの該当する日に予定を入れます。Excel・CSV・文字のPDFは、この端末の中だけで処理され、サーバーには送信されません。画像とスキャンしたPDFは、AI（プレミアムの機能）で読み取るため、内容を確認して同意したときだけ、縮小した画像をAIに送ります。"
-          : "日付・予定・開始時刻・終了時刻が並んだ予定表（Excel・CSV・PDF）を選ぶと、カレンダーの該当する日に予定を入れます。Excel・CSV・文字のPDFは、この端末の中だけで処理され、サーバーには送信されません。"}
+          ? "予定表（Excel・CSV・PDF・画像）を選ぶと、該当する日に予定を入れます。"
+          : "予定表（Excel・CSV・PDF）を選ぶと、該当する日に予定を入れます。"}
       </p>
+      <ul className="flex flex-col gap-1 text-xs text-neutral-600 dark:text-neutral-300">
+        <li className="flex items-start gap-1.5">
+          <LockIcon />
+          {featureFlags.billing ? "Excel・CSV・文字のPDFは、この端末の中だけで処理します。" : "この端末の中だけで処理し、サーバーには送信されません。"}
+        </li>
+        {featureFlags.billing && (
+          <li className="flex items-start gap-1.5">
+            <SparkleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
+            画像・スキャンPDFは、AI（プレミアム）で読み取ります。同意したときだけ、縮小した画像を送ります。
+          </li>
+        )}
+      </ul>
       <div
         data-testid="events-dropzone"
         data-dragging={dragging}
@@ -318,7 +341,7 @@ export function FiscalCalendarEventsImport({
         <p data-testid="events-drop-label" className="text-sm font-medium text-ms-text">
           {dragging ? "ここで手を離すと読み込みます" : "ここにファイルをドラッグ＆ドロップ"}
         </p>
-        <p className="text-xs text-ms-muted">またはボタンで選択（スマートフォンでは、ボタンから選べます）。{featureFlags.billing ? "Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）に対応しています。" : "Excel（.xlsx）・CSV・PDFに対応しています。"}</p>
+        <p className="text-xs text-ms-muted">またはボタンで選択。{featureFlags.billing ? "対応：Excel・CSV・PDF・画像" : "対応：Excel・CSV・PDF"}</p>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <FilePickButton
             accept={EVENT_FILE_ACCEPT}
@@ -344,16 +367,17 @@ export function FiscalCalendarEventsImport({
           type="button"
           data-testid="events-pdf-as-image"
           onClick={() => void rereadPdfAsImage()}
-          className="self-start rounded-lg border border-violet-400 px-3 py-1.5 text-xs text-violet-900 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-100 dark:hover:bg-violet-950"
+          className="self-start rounded-lg border border-violet-400 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-900 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-100 dark:hover:bg-violet-900"
         >
-          このPDFを、画像としてAIで読み取り直す（Premium）
+          <SparkleIcon className="mr-1 inline h-3.5 w-3.5 text-violet-600" />
+          画像としてAIで読み取り直す（プレミアム）
         </button>
       )}
 
       {pending && (
-        <div data-testid="events-pending" className="flex flex-col gap-2 rounded-lg border border-neutral-300 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-900">
+        <div data-testid="events-pending" className="flex flex-col gap-2">
           <p className="break-all text-xs text-neutral-600 dark:text-neutral-300">
-            選択中のファイル: <span data-testid="events-pending-name">{pending.fileName}</span>
+            ファイル: <span data-testid="events-pending-name">{pending.fileName}</span>
           </p>
           <FiscalCalendarImageAssist calendar={calendar} source={pending.source} images={pending.images} fileName={pending.fileName} note={pending.note} onApply={applyImageDrafts} />
         </div>
