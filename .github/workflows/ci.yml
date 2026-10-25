@@ -114,6 +114,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # テストの準備（tests/global-setup.ts）が、動画・音声のテスト用ファイルを作るために ffmpeg を使う。
+      # GitHub の実行環境には入っていないため、先に入れる（入っていないと準備の段階で失敗する）。
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
@@ -152,6 +157,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # テストの準備（tests/global-setup.ts）が、動画・音声のテスト用ファイルを作るために ffmpeg を使う。
+      # GitHub の実行環境には入っていないため、先に入れる（入っていないと準備の段階で失敗する）。
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
