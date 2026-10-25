@@ -56,22 +56,22 @@
   /* 背景・面（淡い水色のガラス調） */
   --ms-page: #eaf2fc; /* ページ背景（淡い水色） */
   --ms-surface: #f5f9ff; /* 通常の面 */
-  --ms-surface-glass: rgba(255, 255, 255, 0.58); /* ガラス調の面（背景ぼかしが使える時） */
+  --ms-surface-glass: rgba(255, 255, 255, 0.4); /* ガラス調の面（背景ぼかしが使える時） */
   --ms-surface-glass-solid: rgba(246, 250, 255, 0.94); /* ぼかしが使えない時の面（ほぼ不透明） */
   --ms-surface-strong: #ffffff; /* 入力欄・ダイアログ・エラー表示など、操作上重要な面（不透明） */
-  --ms-surface-tool: rgba(250, 253, 255, 0.7); /* ツール画面の外枠（ぼかしなしの半透明） */
+  --ms-surface-tool: rgba(250, 253, 255, 0.6); /* ツール画面の外枠（ぼかしなしの半透明） */
   --ms-hover-tint: rgba(37, 99, 235, 0.07); /* 押せる面にカーソルを乗せた時の薄い青 */
 
   /* 文字 */
   --ms-text: #0f1f38;
-  --ms-text-muted: #475b78;
+  --ms-text-muted: #3b4e6b;
 
   /* 境界線・ハイライト・影（青みがかった、やわらかい影） */
   --ms-border: rgba(90, 130, 200, 0.22);
   --ms-border-strong: rgba(45, 80, 145, 0.5);
   --ms-dash: rgba(37, 99, 235, 0.38); /* ファイル選択欄の点線 */
-  --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.5); /* ガラスの縁の反射 */
-  --ms-glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 46%); /* ガラスの上半分のつや */
+  --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 0 0 1px rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(120, 160, 230, 0.18); /* ガラスの縁の反射 */
+  --ms-glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.08) 44%, rgba(255, 255, 255, 0) 60%, rgba(255, 255, 255, 0.22)); /* ガラスの斜めのつや */
   --ms-shadow-sm: 0 2px 10px rgba(50, 90, 170, 0.09), 0 1px 2px rgba(50, 90, 170, 0.06);
   --ms-shadow-lift: 0 16px 40px rgba(50, 90, 170, 0.2), 0 4px 10px rgba(50, 90, 170, 0.1);
 
@@ -107,7 +107,7 @@
   /* 形・ぼかし・動き */
   --ms-radius-card: 1rem;
   --ms-radius-control: 0.625rem;
-  --ms-blur: 20px;
+  --ms-blur: 24px;
   --ms-duration: 160ms;
   --ms-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -210,8 +210,8 @@
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .ms-glass {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
     }
   }
 
@@ -354,8 +354,8 @@
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .ms-bar {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
     }
   }
   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
@@ -623,6 +623,32 @@
     background: var(--ms-ambient);
   }
 
+  /* 背景のガラスのリボンと、ぼけた光の玉・斜めの反射（参考画像の透明感）。画像ファイルは使わず、CSSの中のSVGで描く。
+   * 飾りだけで、文字・操作には関わらない（pointer-events: none の .ms-ambient の中）。 */
+  .ms-ambient::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1600 1000%22%3E%3Cdefs%3E%3ClinearGradient id=%22g1%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%220.5%22 stop-color=%22%23cfe3ff%22 stop-opacity=%220.75%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22g2%22 x1=%221%22 y1=%220%22 x2=%220%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23b9d2f7%22 stop-opacity=%220.5%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3C/linearGradient%3E%3Cfilter id=%22b10%22 x=%22-50%25%22 y=%22-50%25%22 width=%22200%25%22 height=%22200%25%22%3E%3CfeGaussianBlur stdDeviation=%229%22/%3E%3C/filter%3E%3Cfilter id=%22b3%22 x=%22-50%25%22 y=%22-50%25%22 width=%22200%25%22 height=%22200%25%22%3E%3CfeGaussianBlur stdDeviation=%222.5%22/%3E%3C/filter%3E%3Cfilter id=%22b60%22 x=%22-80%25%22 y=%22-80%25%22 width=%22260%25%22 height=%22260%25%22%3E%3CfeGaussianBlur stdDeviation=%2255%22/%3E%3C/filter%3E%3Cfilter id=%22b24%22 x=%22-80%25%22 y=%22-80%25%22 width=%22260%25%22 height=%22260%25%22%3E%3CfeGaussianBlur stdDeviation=%2222%22/%3E%3C/filter%3E%3C/defs%3E%3Cg filter=%22url(%23b60)%22%3E%3Ccircle cx=%221280%22 cy=%22260%22 r=%22260%22 fill=%22%23ffffff%22 fill-opacity=%220.85%22/%3E%3Ccircle cx=%221480%22 cy=%22640%22 r=%22200%22 fill=%22%23bcd6ff%22 fill-opacity=%220.55%22/%3E%3Ccircle cx=%221000%22 cy=%22120%22 r=%22170%22 fill=%22%23e3ecff%22 fill-opacity=%220.8%22/%3E%3Ccircle cx=%22640%22 cy=%22760%22 r=%22230%22 fill=%22%23ffffff%22 fill-opacity=%220.7%22/%3E%3C/g%3E%3Cg fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22url(%23g1)%22 stroke-width=%2286%22 filter=%22url(%23b10)%22 opacity=%220.9%22/%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22%23ffffff%22 stroke-width=%2212%22 filter=%22url(%23b3)%22 opacity=%220.9%22 transform=%22translate(-14 -16)%22/%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22%239cc0f2%22 stroke-width=%2210%22 filter=%22url(%23b3)%22 opacity=%220.55%22 transform=%22translate(22 26)%22/%3E%3Cpath d=%22M260 880 C520 760 760 960 1040 840 C1260 745 1400 820 1620 760%22 stroke=%22url(%23g2)%22 stroke-width=%2264%22 filter=%22url(%23b10)%22 opacity=%220.75%22/%3E%3Cpath d=%22M260 880 C520 760 760 960 1040 840 C1260 745 1400 820 1620 760%22 stroke=%22%23ffffff%22 stroke-width=%229%22 filter=%22url(%23b3)%22 opacity=%220.8%22 transform=%22translate(0 -18)%22/%3E%3C/g%3E%3Cg filter=%22url(%23b24)%22 opacity=%220.8%22%3E%3Cpath d=%22M-80 700 L520 -80 L640 -80 L40 760 Z%22 fill=%22%23ffffff%22 fill-opacity=%220.55%22/%3E%3Cpath d=%22M700 1080 L1380 160 L1460 160 L800 1080 Z%22 fill=%22%23ffffff%22 fill-opacity=%220.4%22/%3E%3C/g%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right -6vw top 1rem;
+    background-size: min(1280px, 112vw) auto;
+    /* 絵の端（左・下・上）をなだらかに消して、境目が見えないようにする */
+    -webkit-mask-image:
+      linear-gradient(90deg, transparent 0, #000 24%),
+      linear-gradient(0deg, transparent 0, #000 22%),
+      linear-gradient(180deg, transparent 0, #000 6%);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(90deg, transparent 0, #000 24%),
+      linear-gradient(0deg, transparent 0, #000 22%),
+      linear-gradient(180deg, transparent 0, #000 6%);
+    mask-composite: intersect;
+  }
+  .dark .ms-ambient::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1600 1000%22%3E%3Cdefs%3E%3ClinearGradient id=%22g1%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23bcd2ff%22 stop-opacity=%220.55%22/%3E%3Cstop offset=%220.5%22 stop-color=%22%235a8cf0%22 stop-opacity=%220.45%22/%3E%3Cstop offset=%221%22 stop-color=%22%23bcd2ff%22 stop-opacity=%220.55%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22g2%22 x1=%221%22 y1=%220%22 x2=%220%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23bcd2ff%22 stop-opacity=%220.55%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%234a78e0%22 stop-opacity=%220.5%22/%3E%3Cstop offset=%221%22 stop-color=%22%23bcd2ff%22 stop-opacity=%220.55%22/%3E%3C/linearGradient%3E%3Cfilter id=%22b10%22 x=%22-50%25%22 y=%22-50%25%22 width=%22200%25%22 height=%22200%25%22%3E%3CfeGaussianBlur stdDeviation=%229%22/%3E%3C/filter%3E%3Cfilter id=%22b3%22 x=%22-50%25%22 y=%22-50%25%22 width=%22200%25%22 height=%22200%25%22%3E%3CfeGaussianBlur stdDeviation=%222.5%22/%3E%3C/filter%3E%3Cfilter id=%22b60%22 x=%22-80%25%22 y=%22-80%25%22 width=%22260%25%22 height=%22260%25%22%3E%3CfeGaussianBlur stdDeviation=%2255%22/%3E%3C/filter%3E%3Cfilter id=%22b24%22 x=%22-80%25%22 y=%22-80%25%22 width=%22260%25%22 height=%22260%25%22%3E%3CfeGaussianBlur stdDeviation=%2222%22/%3E%3C/filter%3E%3C/defs%3E%3Cg filter=%22url(%23b60)%22%3E%3Ccircle cx=%221280%22 cy=%22260%22 r=%22260%22 fill=%22%236f9bff%22 fill-opacity=%220.25%22/%3E%3Ccircle cx=%221480%22 cy=%22640%22 r=%22200%22 fill=%22%234a6fe0%22 fill-opacity=%220.28%22/%3E%3Ccircle cx=%221000%22 cy=%22120%22 r=%22170%22 fill=%22%235a86f0%22 fill-opacity=%220.22%22/%3E%3Ccircle cx=%22640%22 cy=%22760%22 r=%22230%22 fill=%22%233b66d8%22 fill-opacity=%220.2%22/%3E%3C/g%3E%3Cg fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22url(%23g1)%22 stroke-width=%2286%22 filter=%22url(%23b10)%22 opacity=%220.55%22/%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22%23cfe0ff%22 stroke-width=%2212%22 filter=%22url(%23b3)%22 opacity=%220.9%22 transform=%22translate(-14 -16)%22/%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22%237fa8ff%22 stroke-width=%2210%22 filter=%22url(%23b3)%22 opacity=%220.55%22 transform=%22translate(22 26)%22/%3E%3Cpath d=%22M260 880 C520 760 760 960 1040 840 C1260 745 1400 820 1620 760%22 stroke=%22url(%23g2)%22 stroke-width=%2264%22 filter=%22url(%23b10)%22 opacity=%220.75%22/%3E%3Cpath d=%22M260 880 C520 760 760 960 1040 840 C1260 745 1400 820 1620 760%22 stroke=%22%23cfe0ff%22 stroke-width=%229%22 filter=%22url(%23b3)%22 opacity=%220.8%22 transform=%22translate(0 -18)%22/%3E%3C/g%3E%3Cg filter=%22url(%23b24)%22 opacity=%220.8%22%3E%3Cpath d=%22M-80 700 L520 -80 L640 -80 L40 760 Z%22 fill=%22%239bbcff%22 fill-opacity=%220.10%22/%3E%3Cpath d=%22M700 1080 L1380 160 L1460 160 L800 1080 Z%22 fill=%22%239bbcff%22 fill-opacity=%220.07%22/%3E%3C/g%3E%3C/svg%3E");
+  }
+
   /* ---- カテゴリのアイコンタイル（色分けした角丸の面＋線画アイコン）。色だけに頼らず、名前も必ず併記する ---- */
   .ms-tile {
     --tile-fg: #475569;
@@ -784,8 +810,8 @@
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .ms-emblem {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.6);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
     }
   }
 
