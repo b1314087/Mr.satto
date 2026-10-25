@@ -89,6 +89,15 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     await expect(cards.filter({ hasText: "プレミアム" })).toHaveCount(0);
   });
 
+  test("カテゴリ別一覧: 課金オフの間は、外部AIの補助つきツール（年度カレンダー）に「AI実装」を出さない。端末内AI（背景透過）は出す", async ({ page }) => {
+    await page.goto("/tools/generator");
+    const calendar = page.locator('a[href="/tools/fiscal-calendar"]');
+    await expect(calendar).toBeVisible();
+    await expect(calendar.getByText("AI実装", { exact: true })).toHaveCount(0);
+    await page.goto("/tools/image");
+    await expect(page.locator('a[href="/tools/background-remover"]').getByText("AI実装", { exact: true })).toHaveCount(1);
+  });
+
   test("サイトの主なページに、料金プラン・広告に触れた文言が一つも残っていない", async ({ request }) => {
     test.setTimeout(900_000);
     // 画面に出る文章（本文・検索結果用の説明文・構造化データ）を、HTMLから取り出して調べる。

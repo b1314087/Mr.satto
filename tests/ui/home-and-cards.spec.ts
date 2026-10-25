@@ -241,6 +241,34 @@ test.describe("ツールカード", () => {
     await expect(main(page).locator('a[href^="/tools/"][aria-label]').first().locator("p")).toHaveCount(1);
   });
 
+  test("カテゴリ別一覧: 「通常」のバッジは出さず、AI機能が入っているツールにだけ「AI実装」が出る", async ({ page }) => {
+    await page.goto("/tools/image");
+    const cards = main(page).locator('a[href^="/tools/"][aria-label]');
+    await expect(cards.getByText("通常", { exact: true })).toHaveCount(0);
+    // 画像カテゴリでAIが入っているのは背景透過だけ（端末内で動くAIモデル）
+    const aiTools = getListedTools().filter((t) => t.category === "image" && t.hasAi && t.status === "available");
+    expect(aiTools.map((t) => t.id)).toEqual(["background-remover"]);
+    await expect(cards.getByText("AI実装", { exact: true })).toHaveCount(1);
+    await expect(main(page).locator('a[href="/tools/background-remover"]').getByText("AI実装", { exact: true })).toHaveCount(1);
+    await expect(main(page).locator('a[href="/tools/image-resize"]').getByText("AI実装", { exact: true })).toHaveCount(0);
+
+    // 年度カレンダー（外部AIの補助つき）は、課金が有効な本番設定では「AI実装」が出る
+    await page.goto("/tools/generator");
+    await expect(main(page).locator('a[href="/tools/fiscal-calendar"]').getByText("AI実装", { exact: true })).toHaveCount(1);
+  });
+
+  test("カテゴリ別一覧: 説明文は見出しの右隣に並ぶ（広い画面）", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/tools/image");
+    const h1 = await page.getByRole("heading", { level: 1 }).boundingBox();
+    const intro = await main(page).locator("p", { hasText: "ブラウザ内で行われ" }).first().boundingBox();
+    expect(h1 && intro).toBeTruthy();
+    // 説明文は見出しより右にあり、縦の位置が重なる（同じ行に並ぶ）
+    expect(intro!.x).toBeGreaterThan(h1!.x + h1!.width);
+    expect(intro!.y).toBeLessThan(h1!.y + h1!.height);
+    expect(intro!.y + intro!.height).toBeGreaterThan(h1!.y);
+  });
+
   test("カードの背景はぼかし付きの半透明で、ぼかしが使えない環境用の不透明な既定値もある", async ({ page }) => {
     const css = read("src/app/globals.css");
     // 既定（ぼかし非対応）: ほぼ不透明の面＋境界線。@supports の中でだけ半透明＋ぼかしにする

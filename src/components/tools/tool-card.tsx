@@ -32,6 +32,23 @@ function PlanBadge({ requiredPlan }: { requiredPlan: Tool["requiredPlan"] }) {
 }
 
 /**
+ * 「AI実装」バッジ（AI機能が入っているツールだけに付ける。カテゴリ別一覧のコンパクト表示で使う）。
+ * 料金区分（通常・プレミアム）や準備中の色とは別の緑系にして、区別する。
+ */
+function AiBadge() {
+  return (
+    <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+      AI実装
+    </span>
+  );
+}
+
+/** AIの印を出すか。外部AIの補助機能は、課金スイッチがオフの間は使えないため出さない。 */
+function showsAiBadge(tool: Tool): boolean {
+  return tool.hasAi === "local" || (tool.hasAi === "cloud" && featureFlags.billing);
+}
+
+/**
  * ツールのカード。全ツール一覧・カテゴリ別一覧・関連ツールなど、すべての一覧で共通に使う。
  *
  * - 実装済みのツール: ガラス調（半透明＋背景ぼかし＋細い境界線＋上端のハイライト＋影）。
@@ -70,11 +87,15 @@ export function ToolCard({ tool, compact = false }: { tool: Tool; compact?: bool
   // コンパクト表示（カテゴリ別一覧）: アイコン・名前・バッジを1行に並べ、説明文は出さない。
   // 1画面に並べられるツールの数を増やすための、低いカード。
   if (compact) {
+    // 「通常」は出さない（ほとんどのツールが通常のため、情報にならない）。出すのは、準備中・プレミアム限定・AI実装だけ。
+    const showPlan = !isComingSoon && featureFlags.billing && tool.requiredPlan === "premium";
     return (
       <Link {...linkProps} className={cn("group flex h-full items-center gap-3 px-3 py-2.5", surface)}>
         <CategoryIcon id={category?.id ?? "other"} size="sm" />
         <h3 className={cn("min-w-0 flex-1 text-sm font-semibold leading-snug", titleColor)}>{tool.name}</h3>
-        {badge}
+        {isComingSoon && badge}
+        {showPlan && <PlanBadge requiredPlan={tool.requiredPlan} />}
+        {!isComingSoon && showsAiBadge(tool) && <AiBadge />}
       </Link>
     );
   }

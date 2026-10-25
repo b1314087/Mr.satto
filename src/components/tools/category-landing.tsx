@@ -20,12 +20,14 @@ export function CategoryLanding({
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
-      <div className="mb-6 flex items-center gap-3">
-        <CategoryIcon id={category.id} size="lg" />
-        <h1 className="text-2xl font-bold text-ms-text">{getCategoryToolsLabel(category)}一覧</h1>
+      {/* 見出しの右隣に説明文を置く（広い画面）。狭い画面では、見出しの下に回り込む。 */}
+      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:gap-8">
+        <div className="flex shrink-0 items-center gap-3">
+          <CategoryIcon id={category.id} size="lg" />
+          <h1 className="text-2xl font-bold text-ms-text">{getCategoryToolsLabel(category)}一覧</h1>
+        </div>
+        <p className="max-w-2xl text-sm leading-relaxed text-ms-muted">{intro}</p>
       </div>
-
-      <p className="mb-8 max-w-2xl text-sm leading-relaxed text-ms-muted">{intro}</p>
 
       {availableTools.length > 0 && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
