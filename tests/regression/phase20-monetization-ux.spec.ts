@@ -66,7 +66,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await page.getByRole("button", { name: "ダウンロード" }).click();
 
     const dialog = page.getByTestId("download-gate-dialog");
-    await expect(dialog.getByText(/Premium（月額1,100円・税込）に加入すると、広告なしでご利用いただけます/)).toBeVisible();
+    await expect(dialog.getByText(/プレミアム（月額1,100円・税込）に加入すると、広告なしでご利用いただけます/)).toBeVisible();
     await expect(dialog.getByRole("link", { name: "料金プランを見る" })).toBeVisible();
   });
 

@@ -70,7 +70,7 @@ export const categorySeoContent: Record<CategoryId, CategorySeoContent> = {
     metaDescription:
       "音声の形式変換（M4AからMP3など）・動画から音声の抽出・カット・結合・音量調整・圧縮など、音声ファイルの加工に使えるツールの一覧です。音声はブラウザ内で処理され、サーバーへアップロードされません。",
     intro:
-      "「iPhoneのボイスメモ（M4A）をMP3にしたい」「動画から音声だけを取り出したい」「音声の必要な部分だけを切り出したい」「複数の録音をつなげたい」「小さすぎる音を大きくしたい」「メールで送れるようファイルサイズを小さくしたい」といった場面で使える音声ツールをまとめています。音声形式変換・動画から音声を抽出・音声カット・音声結合・音量調整とノーマライズ・音声圧縮に分かれています。処理はすべてお使いのブラウザ内で行われ、音声ファイルがMr.Sattoのサーバーへアップロードされることはありません。ブラウザやファイルによっては対応していない形式があります。Freeプランでは広告が表示され、Standardプラン以上では広告なしで使えます。",
+      "「iPhoneのボイスメモ（M4A）をMP3にしたい」「動画から音声だけを取り出したい」「音声の必要な部分だけを切り出したい」「複数の録音をつなげたい」「小さすぎる音を大きくしたい」「メールで送れるようファイルサイズを小さくしたい」といった場面で使える音声ツールをまとめています。音声形式変換・動画から音声を抽出・音声カット・音声結合・音量調整とノーマライズ・音声圧縮に分かれています。処理はすべてお使いのブラウザ内で行われ、音声ファイルがMr.Sattoのサーバーへアップロードされることはありません。ブラウザやファイルによっては対応していない形式があります。無料プランでは広告が表示され、スタンダードプラン以上では広告なしで使えます。",
   },
   file: {
     metaTitle: "ファイルツール一覧｜一括リネーム・ZIP作成",
@@ -87,7 +87,7 @@ export const categorySeoContent: Record<CategoryId, CategorySeoContent> = {
       "「二次元コードを作りたい」「安全なパスワードを生成したい」「配色パレットを作りたい」「印影画像を作りたい」といった、既存のファイルを加工するのではなく、入力した内容から新しい成果物を生成するツールをまとめています。名刺用の連絡先二次元コードもこちらにあります。",
   },
   other: {
-    metaTitle: "便利ツール一覧｜文字数カウント・日付計算・見積書作成など",
+    metaTitle: "その他ツール一覧｜文字数カウント・日付計算・見積書作成など",
     metaDescription:
       "文字数カウント・JSON整形などのテキスト処理、日付・時間計算、単位変換、見積書・請求書・封筒宛名・名簿シートの作成など、特定のカテゴリに当てはまらない便利な無料・プレミアムツールの一覧です。",
     intro:
@@ -96,6 +96,6 @@ export const categorySeoContent: Record<CategoryId, CategorySeoContent> = {
 };
 
 export function getCategorySeoContent(id: CategoryId): CategorySeoContent {
-  // 課金・広告をやめている間は、プランや広告に触れた文言を差し替える（src/lib/seo/feature-copy.ts）。
-  return adaptCategorySeoContent(categorySeoContent[id]);
+  // 課金・広告・提供プラン・プレミアム限定ツールの有無に合わせて、プランや広告に触れた文言を差し替える（src/lib/seo/feature-copy.ts）。
+  return adaptCategorySeoContent(categorySeoContent[id], id);
 }

@@ -66,3 +66,17 @@ export const categories: Category[] = [
 export function getCategory(id: CategoryId): Category | undefined {
   return categories.find((c) => c.id === id);
 }
+
+/**
+ * カテゴリページの見出し・パンくず・パンくずの構造化データに使う名称（例: 「画像ツール」「PDFツール」）。
+ * カテゴリ名が最初から「ツール」で終わる場合（例: 「生成ツール」）は、「ツール」を重ねて付けない。
+ * 画面表示・パンくず・構造化データがずれないよう、必ずこの関数を通す。
+ */
+export function getCategoryToolsLabel(category: Pick<Category, "name">): string {
+  return category.name.endsWith("ツール") ? category.name : `${category.name}ツール`;
+}
+
+/** ツールページの関連ツールの見出し（例: 「PDFの他のツール」）。カテゴリ名が「その他」のときは「その他の他の…」と重ならないようにする */
+export function getRelatedToolsHeading(category: Pick<Category, "name">): string {
+  return category.name.endsWith("その他") ? `${category.name}カテゴリの他のツール` : `${category.name}の他のツール`;
+}

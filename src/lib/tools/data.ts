@@ -390,6 +390,36 @@ const toolDefinitions: Tool[] = [
       "reorder pages",
       "rotate",
     ],
+    relatedToolIds: ["pdf-fix"],
+  },
+  {
+    // 工程12：PDFの修正（記入・注釈・白消し・ページ番号・透かし）を1つの画面にまとめた入口。
+    // 各機能の中身は既存ツール（pdf-fill-annotate / pdf-add-page-numbers / pdf-watermark）の画面を再利用し、
+    // 既存の個別URLはそのまま維持する。PDF編集の処理結果は、ブラウザのメモリ上だけでここへ引き継げる。
+    id: "pdf-fix",
+    name: "PDF修正",
+    category: "pdf",
+    description: "PDFに文字・図形・手書き・印影の追加、白消しと書き直し、ページ番号、透かしを、ひとつの画面で行えます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: [
+      "PDF修正",
+      "PDFを修正",
+      "PDF直す",
+      "PDF書き直し",
+      "白消し",
+      "PDF白消し",
+      "文字を消す",
+      "誤字訂正",
+      "PDF記入",
+      "PDF注釈",
+      "ページ番号",
+      "透かし",
+      "fix pdf",
+      "whiteout",
+    ],
+    relatedToolIds: ["pdf-edit"],
   },
   {
     id: "pdf-merge",
@@ -505,6 +535,8 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["word", "docx", "文書", "変換"],
+    // Officeの書類を扱う利用者に、PowerPointの白黒反転ツールを案内する（単独カテゴリのため、他ページからの導線が少ない）
+    relatedToolIds: ["pptx-invert"],
   },
   {
     id: "excel-to-pdf",
@@ -515,6 +547,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["excel", "xlsx", "表", "変換"],
+    relatedToolIds: ["pptx-invert"],
   },
   {
     id: "ocr",
@@ -546,6 +579,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["ページ番号", "page number", "ノンブル"],
+    relatedToolIds: ["pdf-fix"],
   },
   {
     id: "pdf-watermark",
@@ -556,6 +590,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["透かし", "watermark", "社外秘", "CONFIDENTIAL"],
+    relatedToolIds: ["pdf-fix"],
   },
   {
     id: "pdf-fill-annotate",
@@ -576,6 +611,7 @@ const toolDefinitions: Tool[] = [
       "PDF編集",
       "PDFを編集する",
     ],
+    relatedToolIds: ["pdf-fix"],
   },
   {
     // pdf-libは暗号化の書き込みに対応していないため、Web Crypto APIを使い
@@ -1395,6 +1431,8 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["PowerPoint", "パワーポイント", "pptx", "白黒反転", "ダークモード", "黒背景", "白背景", "反転", "スライド", "プレゼン", "色反転"],
+    // 同じOffice書類を扱うツール。PowerPointのツールは他にないため、同カテゴリ以外から案内する
+    relatedToolIds: ["word-to-pdf", "excel-to-pdf"],
   },
 ];
 

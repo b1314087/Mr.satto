@@ -44,7 +44,14 @@ export function getRelatedTools(tool: Tool, max = 4): RelatedToolsResult {
       ? [...sameCategoryAvailable.slice(selfIndex + 1), ...sameCategoryAvailable.slice(0, selfIndex)]
       : sameCategoryAvailable;
 
-  const related = sameCategoryRelated.slice(0, max);
+  // relatedToolIds で指定された、使う場面が近いツールを先に出す（存在しない・準備中・統合済みのIDは無視する）。
+  // 指定したツールは同カテゴリの候補から外し、重複しないようにする。
+  const pinned = (tool.relatedToolIds ?? [])
+    .map((id) => tools.find((t) => t.id === id))
+    .filter((t): t is Tool => t !== undefined && isRecommendable(t));
+  const pinnedIds = new Set(pinned.map((t) => t.id));
+  const hasCrossCategoryPinned = pinned.some((t) => t.category !== tool.category);
+  const related = [...pinned, ...sameCategoryRelated.filter((t) => !pinnedIds.has(t.id))].slice(0, max);
 
   if (related.length < max) {
     const usedIds = new Set([tool.id, ...related.map((t) => t.id)]);
@@ -62,5 +69,10 @@ export function getRelatedTools(tool: Tool, max = 4): RelatedToolsResult {
     related.push(...rotatedFeaturedPool.slice(0, max - related.length));
   }
 
-  return { related, sameCategoryCandidateCount: sameCategoryRelated.length };
+  // 見出し（「○○の他のツール」か「こちらのツールもおすすめです」か）の出し分け用。
+  // 他カテゴリのツールが混ざる場合は、同カテゴリだけの見出しにならないよう、実際に含まれる同カテゴリの件数を返す。
+  const sameCategoryCandidateCount = hasCrossCategoryPinned
+    ? related.filter((t) => t.category === tool.category).length
+    : sameCategoryRelated.length;
+  return { related, sameCategoryCandidateCount };
 }

@@ -16,6 +16,7 @@ import {
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
+import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 
 const POSITIONS: { value: PageNumberPosition; label: string }[] = [
   { value: "bottom-left", label: "左下" },
@@ -23,8 +24,8 @@ const POSITIONS: { value: PageNumberPosition; label: string }[] = [
   { value: "bottom-right", label: "右下" },
 ];
 
-export function PdfAddPageNumbersTool() {
-  const [file, setFile] = useState<File | null>(null);
+export function PdfAddPageNumbersTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
+  const [file, setFile] = useState<File | null>(initialFile);
   const [startNumber, setStartNumber] = useState(1);
   const [position, setPosition] = useState<PageNumberPosition>("bottom-center");
   const [fontSize, setFontSize] = useState(10);
@@ -45,6 +46,7 @@ export function PdfAddPageNumbersTool() {
 
   function handleFile(files: File[]) {
     setFile(files[0]);
+    onFileChange?.(files[0] ?? null);
     setResult(null);
     setError(null);
     setStatus("idle");
@@ -81,7 +83,10 @@ export function PdfAddPageNumbersTool() {
         onError={setError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <FileList files={[file]} onRemove={() => {
+          setFile(null);
+          onFileChange?.(null);
+        }} />}
 
       {file && (
         <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">

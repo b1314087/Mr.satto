@@ -91,7 +91,10 @@ test.describe("「おすすめツール」の削除", () => {
     const { related, sameCategoryCandidateCount } = getRelatedTools(pptx);
     expect(sameCategoryCandidateCount).toBe(0);
     expect(related.length).toBe(4);
-    expect(related.every((t) => t.featured && t.id !== pptx.id)).toBe(true);
+    // 工程11: relatedToolIds で指定した「使う場面が近いツール」が先頭に入り、残りが featured で補われる
+    const pinnedIds = pptx.relatedToolIds ?? [];
+    expect(related.slice(0, pinnedIds.length).map((t) => t.id)).toEqual(pinnedIds);
+    expect(related.slice(pinnedIds.length).every((t) => t.featured && t.id !== pptx.id)).toBe(true);
   });
 
   test("個別ツールページの関連ツールが従来どおり表示され、ガラス調のカードで正しいリンク先を持つ", async ({ page }) => {

@@ -8,6 +8,7 @@ import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { OpenInPdfFixButton } from "@/components/tools/implementations/shared/open-in-pdf-fix-button";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { fileKey, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
 import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
@@ -239,6 +240,8 @@ export function PdfSplitTool({ initialFile = null, onFileChange }: SharedPdfFile
             disabled={outputs.length > 1 && !zipBlob}
             label={outputs.length === 1 ? "ダウンロード" : "ZIPでダウンロード"}
           />
+          {/* 1つのPDFだけが出力された場合のみ、PDF修正へ引き継げる（複数ファイルの結果は引き継がない） */}
+          {outputs.length === 1 && <OpenInPdfFixButton blob={outputs[0].blob} fileName={outputs[0].suggestedName} />}
         </div>
       )}
     </PreviewSplitLayout>

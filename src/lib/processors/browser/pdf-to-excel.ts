@@ -18,6 +18,7 @@ import {
 } from "@/lib/pdf/table-reconstruction";
 import { buildPageGrid, type BorderPresence, type GridCell, type GridRow, type PageGrid } from "@/lib/pdf/page-grid";
 import { removePageFurniture } from "@/lib/pdf/page-furniture";
+import { PDF_TO_EXCEL_MAX_OCR_PAGES, PDF_TO_EXCEL_MAX_PAGES } from "@/lib/pdf/page-limits";
 import type { PositionedTextItem } from "@/lib/pdf/pdfjs-client";
 import type { Row as ExcelRow, Cell as ExcelCellValue } from "write-excel-file/universal";
 
@@ -83,9 +84,9 @@ import type { Row as ExcelRow, Cell as ExcelCellValue } from "write-excel-file/u
  * - ページごとに別シートに分ける(初期状態は1つのシートに連結)
  */
 
-const MAX_PDF_TO_EXCEL_PAGES = 50;
+const MAX_PDF_TO_EXCEL_PAGES = PDF_TO_EXCEL_MAX_PAGES;
 /** OCRを行うページ数の上限（OCR自体が重く、スマートフォンでのメモリ・処理時間を考慮。他のOCRツールと同じ値） */
-const MAX_OCR_PAGES = 20;
+const MAX_OCR_PAGES = PDF_TO_EXCEL_MAX_OCR_PAGES;
 /** OCR用にページを描画する倍率と、画像の最長辺の上限(px) */
 const OCR_RENDER_SCALE = 2;
 const MAX_OCR_DIMENSION = 2000;

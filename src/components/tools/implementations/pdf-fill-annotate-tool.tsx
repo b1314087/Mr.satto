@@ -30,6 +30,15 @@ import {
 } from "@/lib/pdf-annotate/types";
 import { rotatePointAround } from "@/lib/pdf-annotate/geometry";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
+import {
+  WHITEOUT_COLOR,
+  WHITEOUT_DEFAULT_HEIGHT,
+  WHITEOUT_DEFAULT_WIDTH,
+  WHITEOUT_NOTICE,
+  isWhiteoutObject,
+  whiteoutInsertIndex,
+} from "@/lib/pdf-annotate/whiteout";
 import { SliderField } from "@/components/common/slider-field";
 
 /**
@@ -49,7 +58,7 @@ import { SliderField } from "@/components/common/slider-field";
  * 生成物を保存することは一切行わない。
  */
 
-type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape";
+type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape" | "whiteout";
 type ColorChoice = "black" | "red" | "blue";
 
 interface PageInfo {
@@ -139,7 +148,7 @@ function formatDate(iso: string, style: "slash" | "kanji"): string {
   return style === "kanji" ? `${y}年${m}月${d}日` : `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
 }
 
-export function PdfFillAnnotateTool() {
+export function PdfFillAnnotateTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
   const [pages, setPages] = useState<PageInfo[]>([]);
@@ -410,6 +419,7 @@ export function PdfFillAnnotateTool() {
     setMode("select");
 
     setFile(f);
+    onFileChange?.(f);
     setPageImageUrl(null);
 
     try {
@@ -430,12 +440,23 @@ export function PdfFillAnnotateTool() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました");
       setFile(null);
+      onFileChange?.(null);
       setPdfBytes(null);
       setPages([]);
     } finally {
       setLoading(false);
     }
   }
+
+  // PDF修正の画面などから引き継いだPDFがあれば、ファイル選択と同じ読み込み処理で最初に1回だけ開く。
+  // （StrictModeの開発時の二重実行でも、引き継いだPDFを二重に読み込まないよう ref で守る）
+  const initialFileLoadedRef = useRef(false);
+  useEffect(() => {
+    if (initialFileLoadedRef.current || !initialFile) return;
+    initialFileLoadedRef.current = true;
+    void handleFileSelect([initialFile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function renderPagePreview(
     pdf: Awaited<ReturnType<typeof loadPdfDocument>>,
@@ -602,6 +623,31 @@ export function PdfFillAnnotateTool() {
       commit([...objects, obj]);
       setActiveObjectId(obj.id);
       setPendingImage(null);
+      setMode("select");
+    } else if (mode === "whiteout") {
+      // 白消し：白で塗りつぶした矩形を置く（見た目を隠すだけで、元の文字情報は消えない）。
+      // 後から置いても、すでに書いた文字・図形を隠さないよう、配列の先頭側（＝奥）に差し込む。
+      if (atObjectLimit()) return;
+      const width = WHITEOUT_DEFAULT_WIDTH;
+      const height = WHITEOUT_DEFAULT_HEIGHT;
+      const centerY = screenToPdfY(clickY, 0, currentPageInfo.height, pageRenderScale);
+      const obj: RectangleShapeObject = {
+        id: createAnnotationId("shape"),
+        type: "shape",
+        shapeKind: "rectangle",
+        page: selectedPage,
+        x: Math.max(0, pdfX - width / 2),
+        y: Math.max(0, centerY - height / 2),
+        width,
+        height,
+        rotation: 0,
+        color: WHITEOUT_COLOR,
+        strokeWidth: 1,
+        fill: true,
+      };
+      const at = whiteoutInsertIndex(objects);
+      commit([...objects.slice(0, at), obj, ...objects.slice(at)]);
+      setActiveObjectId(obj.id);
       setMode("select");
     } else if (mode === "shape") {
       if (atObjectLimit()) return;
@@ -857,6 +903,7 @@ export function PdfFillAnnotateTool() {
     { value: "text", label: "テキスト" },
     { value: "checkbox", label: "チェック" },
     { value: "shape", label: "図形" },
+    { value: "whiteout", label: "白消し" },
     { value: "ink", label: "手書き" },
     { value: "image", label: "画像" },
     { value: "stamp", label: "印影" },
@@ -1085,6 +1132,18 @@ export function PdfFillAnnotateTool() {
                   ))}
                 </select>
               </label>
+            </div>
+          )}
+
+          {mode === "whiteout" && (
+            <div
+              data-testid="pdf-whiteout-panel"
+              className="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200"
+            >
+              <span>隠したい文字の上をクリックすると、白い四角形が置かれます。四角形の大きさは、下の「配置した注釈」で調整できます。</span>
+              <span>書き直すときは、そのあと「テキスト」で白消しの上に文字を入れてください。</span>
+              <span className="font-semibold">{WHITEOUT_NOTICE.title}</span>
+              <span>{WHITEOUT_NOTICE.body}</span>
             </div>
           )}
 
@@ -1464,7 +1523,8 @@ export function PdfFillAnnotateTool() {
                     onPointerDown={(e) => handleObjectPointerDown(e, obj)}
                     onPointerMove={handleObjectPointerMove}
                     onPointerUp={handleObjectPointerUp}
-                    onClick={handleObjectInertClick}
+                    // 白消しの上にも、テキストなどを配置できるようにする（白消し→書き直しのため）。選択モードでは従来どおり
+                    onClick={isWhiteoutObject(obj) && mode !== "select" ? undefined : handleObjectInertClick}
                     className={`absolute ${isActive ? "outline outline-2 outline-blue-500" : ""} ${
                       obj.shapeKind === "circle" ? "rounded-full" : ""
                     }`}
@@ -1503,6 +1563,14 @@ export function PdfFillAnnotateTool() {
                     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
                       {obj.page}p
                     </span>
+                    {isWhiteoutObject(obj) && (
+                      <span
+                        data-testid="pdf-whiteout-badge"
+                        className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                      >
+                        白消し
+                      </span>
+                    )}
 
                     {obj.type === "text" && (
                       <>
@@ -1793,6 +1861,15 @@ export function PdfFillAnnotateTool() {
       {file && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">3. PDFを書き出してダウンロード</h2>
+          {objects.some(isWhiteoutObject) && (
+            <p
+              data-testid="pdf-whiteout-export-notice"
+              className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200"
+            >
+              白消しを含んでいます。{WHITEOUT_NOTICE.title}
+              {WHITEOUT_NOTICE.body}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => void handleExport()}

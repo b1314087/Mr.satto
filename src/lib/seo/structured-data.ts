@@ -1,5 +1,6 @@
 import { siteConfig } from "@/lib/config/site";
 import { featureFlags } from "@/lib/config/features";
+import { OFFERED_PLAN_IDS } from "@/lib/plans/types";
 import type { ToolFaqItem } from "@/lib/seo/tool-content";
 
 /**
@@ -89,6 +90,23 @@ export function buildOrganization() {
   };
 }
 
+/**
+ * WebApplication構造化データの offers.description（Offerの補足説明）。
+ * 画面に出している料金ページ・トップの説明と矛盾させない。次の2点に注意する。
+ * - 実際に提供しているプラン（OFFERED_PLAN_IDS）だけを案内する（提供していないStandardには触れない）。
+ * - 広告を出していない間は、広告を避けるためのプランの話をしない。
+ * 課金をやめている間は、プランに一切触れない。
+ */
+export function buildOfferDescription(options: { billing: boolean; ads: boolean; standardOffered: boolean }): string {
+  const { billing, ads, standardOffered } = options;
+  if (!billing) return "会員登録なしで、無料でご利用いただけます。";
+  if (ads) {
+    const paidPlans = standardOffered ? "スタンダード／プレミアムプラン" : "プレミアムプラン";
+    return `広告視聴による1時間の無料利用、または${paidPlans}への加入で利用できます。`;
+  }
+  return "無料でご利用いただけます。AIで読み取る補助機能は、プレミアムプランでご利用いただけます。";
+}
+
 export function buildWebApplication() {
   return {
     "@context": "https://schema.org",
@@ -103,12 +121,11 @@ export function buildWebApplication() {
       price: "0",
       priceCurrency: "JPY",
       // 課金・広告をやめている間は、プランや広告に触れない説明にする（src/lib/config/features.ts）。
-      description:
-        featureFlags.billing && featureFlags.ads
-          ? "広告視聴による1時間の無料利用、またはStandard/Premiumプランへの加入で利用できます。"
-          : featureFlags.billing
-            ? "無料でご利用いただけます。広告なしで使いたい場合は、Standard/Premiumプランをご利用いただけます。"
-            : "会員登録なしで、無料でご利用いただけます。",
+      description: buildOfferDescription({
+        billing: featureFlags.billing,
+        ads: featureFlags.ads,
+        standardOffered: (OFFERED_PLAN_IDS as readonly string[]).includes("standard"),
+      }),
     },
     inLanguage: "ja",
   };

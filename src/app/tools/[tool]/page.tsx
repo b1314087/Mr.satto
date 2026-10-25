@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { tools, getToolById, getToolsByCategory, getMergedTools, isListedTool } from "@/lib/tools/data";
-import { categories, getCategory } from "@/lib/tools/categories";
+import { categories, getCategory, getCategoryToolsLabel, getRelatedToolsHeading } from "@/lib/tools/categories";
 import { CategoryBadge } from "@/components/tools/category-badge";
 import { CategoryIcon } from "@/components/ui/category-icon";
 import { ComingSoon } from "@/components/tools/coming-soon";
@@ -122,7 +122,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
     const comingSoonTools = categoryTools.filter((t) => t.status === "coming-soon");
     const breadcrumbItems = [
       { name: "トップ", path: "/" },
-      { name: `${category.name}ツール`, path: `/tools/${category.id}` },
+      { name: getCategoryToolsLabel(category), path: `/tools/${category.id}` },
     ];
 
     return (
@@ -168,7 +168,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
 
   const breadcrumbItems = [
     { name: "トップ", path: "/" },
-    ...(toolCategory ? [{ name: `${toolCategory.name}ツール`, path: `/tools/${toolCategory.id}` }] : []),
+    ...(toolCategory ? [{ name: getCategoryToolsLabel(toolCategory), path: `/tools/${toolCategory.id}` }] : []),
     { name: tool.name, path: `/tools/${tool.id}` },
   ];
 
@@ -260,7 +260,9 @@ export default async function ToolPage({ params }: ToolPageProps) {
         <div className="mt-12">
           <h2 className="mb-4 text-lg font-semibold text-ms-text">
             {related.length <= sameCategoryCandidateCount
-              ? `${toolCategory?.name}の他のツール`
+              ? toolCategory
+                ? getRelatedToolsHeading(toolCategory)
+                : "他のツール"
               : "こちらのツールもおすすめです"}
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

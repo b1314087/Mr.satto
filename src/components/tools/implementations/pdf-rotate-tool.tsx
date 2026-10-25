@@ -9,6 +9,7 @@ import { usePdfPageAspects } from "@/components/tools/implementations/shared/use
 import { ProcessingStatus } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { OpenInPdfFixButton } from "@/components/tools/implementations/shared/open-in-pdf-fix-button";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
 import { PdfRotateProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
@@ -131,6 +132,7 @@ export function PdfRotateTool({ initialFile = null, onFileChange }: SharedPdfFil
             {result.pageCount}ページ ・ {formatBytes(result.sizeBytes)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
+          <OpenInPdfFixButton blob={result.blob} fileName={downloadName} />
         </div>
       )}
     </PreviewSplitLayout>

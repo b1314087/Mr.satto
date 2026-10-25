@@ -8,6 +8,7 @@ import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { OpenInPdfFixButton } from "@/components/tools/implementations/shared/open-in-pdf-fix-button";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
 import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
@@ -153,6 +154,7 @@ export function PdfExtractPagesTool({ initialFile = null, onFileChange }: Shared
             {result.pageCount}ページ ・ {formatBytes(result.sizeBytes)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
+          <OpenInPdfFixButton blob={result.blob} fileName={downloadName} />
         </div>
       )}
     </PreviewSplitLayout>

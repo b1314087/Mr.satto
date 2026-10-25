@@ -2,6 +2,7 @@ import { BrowserProcessor } from "../types";
 import { loadPdfDocument, getPositionedTextItems, pageHasText } from "@/lib/pdf/pdfjs-client";
 import { recognizeImage, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { loadImage } from "./image";
+import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
 
 /**
  * OCR Processor（Phase 2-D）。
@@ -19,7 +20,7 @@ import { loadImage } from "./image";
  * （数百ページのPDFをそのまま許可すると、ブラウザタブがクラッシュしうるため）。
  */
 
-const MAX_OCR_PAGES = 20;
+const MAX_OCR_PAGES = OCR_MAX_PAGES;
 /** OCR用に描画・縮小する画像の最長辺の上限(px)。過度に大きい画像でのメモリ超過を防ぐ */
 const MAX_OCR_DIMENSION = 2000;
 const PDF_RENDER_SCALE = 2;

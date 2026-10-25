@@ -144,7 +144,7 @@ export function describeConsumeFailure(
       if (!featureFlags.billing) {
         return `1回につき最大${result.maxPages}ページまで処理できます。ページ数を減らしてお試しください。`;
       }
-      return `Free・Standardプランでは、1回につき最大${result.maxPages}ページまで処理できます。ページ数を減らすか、Premiumプランをご利用ください。`;
+      return `ご利用中のプランでは、1回につき最大${result.maxPages}ページまで処理できます。ページ数を減らすか、プレミアムプランをご利用ください。`;
     case "ad-required":
       return "広告の視聴が必要です。下の「広告を見て利用する」ボタンからお試しください。";
   }
@@ -179,8 +179,8 @@ export function UsageGatePanel({
 
       {overPageLimit && (
         <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
-          {featureFlags.billing ? "Free・Standardプランでは、" : ""}1回につき最大{usage?.maxPagesPerUse}ページまで処理できます（選択したファイルの合計は
-          {totalPages}ページです）。ページ数を減らして{featureFlags.billing ? "か、Premiumプランをご利用ください" : "お試しください"}。
+          {featureFlags.billing ? "ご利用中のプランでは、" : ""}1回につき最大{usage?.maxPagesPerUse}ページまで処理できます（選択したファイルの合計は
+          {totalPages}ページです）。ページ数を減らして{featureFlags.billing ? "か、プレミアムプランをご利用ください" : "お試しください"}。
         </div>
       )}
 
@@ -189,9 +189,9 @@ export function UsageGatePanel({
           {!featureFlags.billing && (
             <p>1回につき最大{usage.maxPagesPerUse}ページまで、回数の制限なくご利用いただけます。</p>
           )}
-          {featureFlags.billing && usage.plan === "premium" && <p>Premiumプランのため、ページ数・回数の制限なくご利用いただけます。</p>}
+          {featureFlags.billing && usage.plan === "premium" && <p>プレミアムプランのため、ページ数・回数の制限なくご利用いただけます。</p>}
           {featureFlags.billing && usage.plan === "standard" && (
-            <p>Standardプラン（広告なし）: 1回につき最大{usage.maxPagesPerUse}ページまで、回数制限なくご利用いただけます。</p>
+            <p>スタンダード（旧プラン・広告なし）: 1回につき最大{usage.maxPagesPerUse}ページまで、回数制限なくご利用いただけます。</p>
           )}
           {featureFlags.billing && usage.plan === "free" && (
             <p>

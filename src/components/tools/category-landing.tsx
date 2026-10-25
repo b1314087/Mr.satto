@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Category } from "@/lib/tools/types";
 import type { Tool } from "@/lib/tools/types";
 import { ToolCard } from "@/components/tools/tool-card";
-import { categories } from "@/lib/tools/categories";
+import { categories, getCategoryToolsLabel } from "@/lib/tools/categories";
 import { CategoryIcon } from "@/components/ui/category-icon";
 
 export function CategoryLanding({
@@ -22,7 +22,7 @@ export function CategoryLanding({
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
       <div className="mb-6 flex items-center gap-3">
         <CategoryIcon id={category.id} size="lg" />
-        <h1 className="text-2xl font-bold text-ms-text">{category.name}ツール一覧</h1>
+        <h1 className="text-2xl font-bold text-ms-text">{getCategoryToolsLabel(category)}一覧</h1>
       </div>
 
       <p className="mb-8 max-w-2xl text-sm leading-relaxed text-ms-muted">{intro}</p>

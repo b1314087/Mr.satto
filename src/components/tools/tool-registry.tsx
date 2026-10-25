@@ -96,6 +96,10 @@ const ImageFormatConvertTool = dynamic(() =>
 const PdfEditTool = dynamic(() =>
   import("./implementations/pdf-edit-tool").then((m) => m.PdfEditTool)
 );
+// PDF修正（記入・注釈・白消し／ページ番号／透かし）。PDF編集の処理結果の引き継ぎ先（工程12）
+const PdfFixTool = dynamic(() =>
+  import("./implementations/pdf-fix-tool").then((m) => m.PdfFixTool)
+);
 const ImageToPdfTool = dynamic(() =>
   import("./implementations/image-to-pdf-tool").then((m) => m.ImageToPdfTool)
 );
@@ -392,6 +396,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageBatchConvertTool />;
     case "pdf-edit":
       return <PdfEditTool initialMode="merge" />;
+    case "pdf-fix":
+      return <PdfFixTool />;
     case "pdf-merge":
       return <PdfEditTool initialMode="merge" />;
     case "pdf-split":

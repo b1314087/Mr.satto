@@ -14,6 +14,7 @@ import {
 } from "@/lib/pdf/paragraph-reconstruction";
 import { applyPageStyles, type ExtractedImage } from "@/lib/pdf/pdf-style-sampling";
 import { removePageFurniture } from "@/lib/pdf/page-furniture";
+import { PDF_TO_WORD_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { groupIntoLines } from "@/lib/pdf/table-reconstruction";
 import { buildDocxBlob, type DocxPageSetup } from "./pdf-to-word-docx";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
@@ -44,7 +45,7 @@ import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguag
  * （新しいOCRエンジン・新しい構造推定ロジックは追加せず、既存基盤の組み合わせのみ）。
  */
 
-const MAX_PDF_TO_WORD_PAGES = 50;
+const MAX_PDF_TO_WORD_PAGES = PDF_TO_WORD_MAX_PAGES;
 /** OCR用に描画するページ画像の解像度。filled-pdf-to-excel.tsと同じ値を踏襲する */
 const PDF_RENDER_SCALE = 2;
 const MAX_OCR_DIMENSION = 2000;

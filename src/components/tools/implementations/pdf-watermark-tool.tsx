@@ -16,6 +16,7 @@ import { WATERMARK_PREVIEW_FONT_FAMILY, getWatermarkFont } from "@/lib/pdf/overl
 import { PdfWatermarkProcessor, type WatermarkPosition } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 
 const POSITIONS: { value: WatermarkPosition; label: string }[] = [
   { value: "center", label: "中央" },
@@ -102,8 +103,8 @@ function WatermarkPreview({
   );
 }
 
-export function PdfWatermarkTool() {
-  const [file, setFile] = useState<File | null>(null);
+export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
+  const [file, setFile] = useState<File | null>(initialFile);
   const [text, setText] = useState("CONFIDENTIAL");
   const [opacityPercent, setOpacityPercent] = useState(30);
   const [fontSize, setFontSize] = useState(48);
@@ -124,6 +125,7 @@ export function PdfWatermarkTool() {
 
   function handleFile(files: File[]) {
     setFile(files[0]);
+    onFileChange?.(files[0] ?? null);
     setResult(null);
     setError(null);
     setStatus("idle");
@@ -162,7 +164,10 @@ export function PdfWatermarkTool() {
         onError={setError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <FileList files={[file]} onRemove={() => {
+          setFile(null);
+          onFileChange?.(null);
+        }} />}
 
       {file && (
         <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
