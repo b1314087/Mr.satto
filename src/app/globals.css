@@ -56,21 +56,22 @@
   /* 背景・面（淡い水色のガラス調） */
   --ms-page: #eaf2fc; /* ページ背景（淡い水色） */
   --ms-surface: #f5f9ff; /* 通常の面 */
-  --ms-surface-glass: rgba(255, 255, 255, 0.2); /* ガラス調の面（背景ぼかしが使える時） */
+  --ms-surface-glass: rgba(255, 255, 255, 0.1); /* ガラス調の面（背景ぼかしが使える時） */
   --ms-surface-glass-solid: rgba(246, 250, 255, 0.94); /* ぼかしが使えない時の面（ほぼ不透明） */
+  --ms-surface-input: rgba(255, 255, 255, 0.4); /* 入力欄・補助ボタン（透けるが、文字が読める濃さ） */
   --ms-surface-strong: #ffffff; /* 入力欄・ダイアログ・エラー表示など、操作上重要な面（不透明） */
-  --ms-surface-tool: rgba(250, 253, 255, 0.38); /* ツール画面の外枠（ぼかしなしの半透明） */
+  --ms-surface-tool: rgba(250, 253, 255, 0.12); /* ツール画面の外枠（ぼかしなしの半透明） */
   --ms-hover-tint: rgba(37, 99, 235, 0.07); /* 押せる面にカーソルを乗せた時の薄い青 */
 
   /* 文字 */
   --ms-text: #0f1f38;
-  --ms-text-muted: #34476a;
+  --ms-text-muted: #2c3e5e;
 
   /* 境界線・ハイライト・影（青みがかった、やわらかい影） */
   --ms-border: rgba(90, 130, 200, 0.22);
   --ms-border-strong: rgba(45, 80, 145, 0.5);
   --ms-dash: rgba(37, 99, 235, 0.38); /* ファイル選択欄の点線 */
-  --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 0 0 1px rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(120, 160, 230, 0.18); /* ガラスの縁の反射 */
+  --ms-glass-highlight: inset 2px 2px 1px -1.5px rgba(255, 255, 255, 1), inset -2px -2px 1px -1.5px rgba(255, 255, 255, 0.75), inset 0 0 0 1px rgba(255, 255, 255, 0.6), inset 0 0 18px rgba(255, 255, 255, 0.32); /* ガラスの縁の反射 */
   --ms-glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 64%, rgba(255, 255, 255, 0.2)); /* ガラスの斜めのつや */
   --ms-shadow-sm: 0 2px 10px rgba(50, 90, 170, 0.09), 0 1px 2px rgba(50, 90, 170, 0.06);
   --ms-shadow-lift: 0 16px 40px rgba(50, 90, 170, 0.2), 0 4px 10px rgba(50, 90, 170, 0.1);
@@ -107,9 +108,9 @@
     linear-gradient(118deg, transparent 36%, rgba(255, 255, 255, 0.5) 46%, transparent 56%);
 
   /* 形・ぼかし・動き */
-  --ms-radius-card: 1rem;
+  --ms-radius-card: 1.375rem;
   --ms-radius-control: 0.625rem;
-  --ms-blur: 28px;
+  --ms-blur: 7px;
   --ms-duration: 160ms;
   --ms-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -117,8 +118,9 @@
 .dark {
   --ms-page: #060c1a;
   --ms-surface: #0d1630;
-  --ms-surface-glass: rgba(60, 90, 160, 0.2);
+  --ms-surface-glass: rgba(60, 90, 160, 0.14);
   --ms-surface-glass-solid: rgba(15, 25, 50, 0.94);
+  --ms-surface-input: rgba(15, 26, 53, 0.5);
   --ms-surface-strong: #0f1a35;
   --ms-surface-tool: rgba(18, 30, 58, 0.68);
   --ms-hover-tint: rgba(140, 175, 255, 0.11);
@@ -129,7 +131,7 @@
   --ms-border: rgba(150, 185, 255, 0.2);
   --ms-border-strong: rgba(160, 190, 255, 0.42);
   --ms-dash: rgba(125, 165, 255, 0.45);
-  --ms-glass-highlight: inset 0 1px 0 rgba(200, 220, 255, 0.18), inset 0 0 0 1px rgba(160, 190, 255, 0.06);
+  --ms-glass-highlight: inset 2px 2px 1px -1.5px rgba(255, 255, 255, 0.5), inset -2px -2px 1px -1.5px rgba(255, 255, 255, 0.25), inset 0 0 0 1px rgba(170, 195, 255, 0.16), inset 0 0 18px rgba(170, 200, 255, 0.1);
   --ms-glass-sheen: linear-gradient(180deg, rgba(180, 205, 255, 0.1), rgba(180, 205, 255, 0) 46%);
   --ms-shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.4);
   --ms-shadow-lift: 0 18px 44px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -212,8 +214,8 @@
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .ms-glass {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.9) brightness(1.06);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.9) brightness(1.06);
     }
   }
 
@@ -306,7 +308,9 @@
 
   /* 補助ボタン（白・ニュートラル）。主要ボタンより目立たせない */
   .ms-btn-secondary {
-    background-color: var(--ms-surface-strong);
+    background-color: var(--ms-surface-input);
+    -webkit-backdrop-filter: blur(6px) saturate(1.8);
+    backdrop-filter: blur(6px) saturate(1.8);
     color: var(--ms-text);
     border-color: var(--ms-border-strong);
     box-shadow: var(--ms-shadow-sm);
@@ -356,8 +360,8 @@
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .ms-bar {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.9) brightness(1.06);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.9) brightness(1.06);
     }
   }
   @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
@@ -729,7 +733,9 @@
     width: 100%;
     border-radius: var(--ms-radius-control);
     border: 1px solid var(--ms-border-strong);
-    background-color: var(--ms-surface-strong);
+    background-color: var(--ms-surface-input);
+    -webkit-backdrop-filter: blur(6px) saturate(1.8);
+    backdrop-filter: blur(6px) saturate(1.8);
     color: var(--ms-text);
     padding: 0.625rem 0.875rem;
     font-size: 0.9375rem;
@@ -738,6 +744,10 @@
     transition:
       border-color var(--ms-duration) var(--ms-ease),
       box-shadow var(--ms-duration) var(--ms-ease);
+  }
+  /* 検索欄の虫眼鏡。入力欄にぼかしを付けたので、アイコンが入力欄の下に隠れないよう前に出す */
+  form[role="search"] > svg {
+    z-index: 1;
   }
   .ms-input::placeholder {
     color: var(--ms-text-muted);
@@ -812,8 +822,8 @@
   @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .ms-emblem {
       background-color: var(--ms-surface-glass);
-      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
-      backdrop-filter: blur(var(--ms-blur)) saturate(1.8);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.9) brightness(1.06);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.9) brightness(1.06);
     }
   }
 
@@ -836,6 +846,13 @@
     transition:
       background-color var(--ms-duration) var(--ms-ease),
       border-color var(--ms-duration) var(--ms-ease);
+  }
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .ms-chip {
+      background-color: var(--ms-surface-glass);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.9);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.9);
+    }
   }
   .ms-chip:hover {
     border-color: var(--ms-border-strong);

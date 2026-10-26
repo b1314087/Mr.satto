@@ -334,7 +334,11 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
       expect(sec["border-top-width"]).toBe("1px");
       expect(sec["background-color"]).not.toBe("rgba(37, 99, 235, 1.000)");
       expect(contrast(parseColor(sec["color"]), parseColor(sec["background-color"]))).toBeGreaterThanOrEqual(4.5);
-      expect(sec["background-color"]).toBe(scheme === "light" ? "rgba(255, 255, 255, 1.000)" : "rgba(15, 26, 53, 1.000)");
+      // 補助ボタンは、背景が透けるガラス調（色は白／濃紺のまま、不透明ではない。文字は読める濃さを保つ）
+      const secBg = parseColor(sec["background-color"]);
+      expect([secBg.r, secBg.g, secBg.b].map(Math.round)).toEqual(scheme === "light" ? [255, 255, 255] : [16, 26, 54]);
+      expect(secBg.a).toBeGreaterThan(0.3);
+      expect(secBg.a).toBeLessThan(1);
     });
   });
 }

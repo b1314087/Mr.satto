@@ -1,10 +1,11 @@
 import { cn } from "@/lib/utils/cn";
 
 /**
- * Mr.Satto のロゴマーク（ガラスのタイルに青い「S」）。ヘッダー・メニュー・ホームで共通に使う。
+ * Mr.Satto のロゴマーク（青いガラスのタイルに白い道具箱）。ブラウザのタブのアイコン（src/app/icon.tsx）と同じ図柄。
+ * ヘッダー・メニュー・フッター・ホームで共通に使う。
  *
  * - 装飾なので aria-hidden（サービス名の文字は隣に必ず置く）。
- * - 青のグラデーションはロゴの中だけ。タイルの面は共通のデザイントークンを使い、ライト・ダークに追従する。
+ * - 色はロゴの中で固定（青のタイル＋白い道具箱）。ライト・ダークどちらでも同じに見える。
  * - 画像ファイルではなくインラインのSVGなので、追加の通信・依存関係はない。
  */
 export function BrandMark({ size = 32, className }: { size?: number; className?: string }) {
@@ -18,21 +19,20 @@ export function BrandMark({ size = 32, className }: { size?: number; className?:
       className={cn("shrink-0", className)}
     >
       <defs>
-        <linearGradient id="ms-brand-s" x1="10" y1="8" x2="38" y2="40" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#7cb2ff" />
-          <stop offset="1" stopColor="#2563eb" />
+        <linearGradient id="ms-brand-tile" x1="4" y1="2" x2="44" y2="46" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#3b82f6" />
+          <stop offset="1" stopColor="#1d4ed8" />
         </linearGradient>
       </defs>
-      <rect x="1.5" y="1.5" width="45" height="45" rx="13" fill="var(--ms-surface-strong)" stroke="var(--ms-border)" />
-      <rect x="2.5" y="2.5" width="43" height="22" rx="12" fill="var(--ms-brand-shine)" />
-      <path
-        d="M32.5 15.5c-2.6-2-5.6-2.9-8.9-2.6-4.6.4-7.3 3.3-6.2 6.6 1 3 4.6 3.9 8 4.7 3.9.9 6.9 2.3 6.5 5.8-.4 3.5-4.2 5.4-8.6 5.1-2.9-.2-5.4-1.3-7.3-3"
-        fill="none"
-        stroke="url(#ms-brand-s)"
-        strokeWidth="5.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <rect x="1.5" y="1.5" width="45" height="45" rx="13" fill="url(#ms-brand-tile)" stroke="rgba(255,255,255,0.55)" />
+      <rect x="2.5" y="2.5" width="43" height="22" rx="12" fill="var(--ms-brand-shine)" opacity="0.4" />
+      <g transform="translate(8 8) scale(0.5)">
+        <path d="M22 24 V15 H42 V24" stroke="#ffffff" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        <rect x="6" y="22" width="52" height="36" rx="7" fill="#ffffff" />
+        <rect x="6" y="35" width="52" height="4" fill="#1d4ed8" />
+        <rect x="26" y="31" width="12" height="12" rx="3" fill="#1d4ed8" />
+        <rect x="29.5" y="34.5" width="5" height="5" rx="1.5" fill="#ffffff" />
+      </g>
     </svg>
   );
 }
