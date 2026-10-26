@@ -80,6 +80,12 @@ jobs:
         id: lint
         run: npx eslint
 
+      # テストの準備（tests/global-setup.ts）が、動画・音声のテスト用ファイルを作るために ffmpeg を使う。
+      # カレンダーのテストだけを走らせても、この準備は毎回動く。GitHub の実行環境には ffmpeg が入っていないため、先に入れる。
+      - name: Install ffmpeg
+        if: steps.lint.outcome == 'success'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install Playwright browser
         if: steps.lint.outcome == 'success'
         run: npx playwright install --with-deps chromium
