@@ -35,6 +35,18 @@ async function openMenu(page: Page) {
   }).toPass({ timeout: 20_000 });
 }
 
+/**
+ * メニューの外（暗い背景）をクリックする。クリックする位置は、パネルの実際の位置から求める。
+ * 固定の座標（例: 右寄りの位置）だと、パネルの幅や画面幅によっては、パネルの中のリンクを押してしまう
+ * （ページ移動が起き、「背景のクリックで閉じる」の検証にならず、結果も移動の速さ次第で変わる）。
+ */
+async function clickDrawerBackdrop(page: Page) {
+  const panel = await drawer(page).locator(":scope > div").first().boundingBox();
+  expect(panel, "メニューのパネルの位置が取得できる").toBeTruthy();
+  expect(panel!.x, "パネルの左側に背景の余白がある").toBeGreaterThan(40);
+  await page.mouse.click(panel!.x / 2, 400);
+}
+
 async function gotoToolPage(page: Page) {
   await page.goto(TOOL_PAGE);
   await expect(jsonInput(page)).toBeVisible({ timeout: 30_000 });
@@ -181,8 +193,10 @@ test.describe("メニューの開閉", () => {
     await openMenu(page);
     await drawer(page).getByRole("heading", { name: "メニュー" }).click();
     await expect(drawer(page)).toBeVisible();
-    await page.mouse.click(1100, 400);
+    await clickDrawerBackdrop(page);
     await expect(drawer(page)).toBeHidden();
+    // 背景のクリックでは、ページ移動は起きない
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test("開いている間は背後のページがスクロールしない設定になり、閉じると戻る", async ({ page }) => {
@@ -300,7 +314,7 @@ test.describe("ツールの入力状態がメニューの開閉で消えない",
       "外側クリック",
       async (p) => {
         await openMenu(p);
-        await p.mouse.click(1100, 400);
+        await clickDrawerBackdrop(p);
       },
     ],
   ];
