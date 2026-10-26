@@ -148,7 +148,14 @@ function formatDate(iso: string, style: "slash" | "kanji"): string {
   return style === "kanji" ? `${y}年${m}月${d}日` : `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
 }
 
-export function PdfFillAnnotateTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
+export function PdfFillAnnotateTool({
+  initialFile = null,
+  onFileChange,
+  onDirtyChange,
+}: SharedPdfFileProps & {
+  /** 配置済みの注釈・文字・図形などが1つでもあるかが変わったときに呼ばれる（総合画面が、機能の切り替え前に確認を出すため） */
+  onDirtyChange?: (hasEdits: boolean) => void;
+} = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
   const [pages, setPages] = useState<PageInfo[]>([]);
@@ -162,6 +169,18 @@ export function PdfFillAnnotateTool({ initialFile = null, onFileChange }: Shared
   const canvasWrapRef = useRef<HTMLDivElement>(null);
 
   const [objects, setObjects] = useState<AnnotationObject[]>([]);
+  // 編集中のデータ（配置済みのオブジェクト）の有無を、総合画面へ知らせる。画面が外れるときは「なし」に戻す
+  const hasEdits = objects.length > 0;
+  // 配置済みの編集があるときに別のPDFが選ばれた場合の、確認待ちのファイル（確認するまで、読み込み・編集の消去はしない）
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  useEffect(() => {
+    onDirtyChange?.(hasEdits);
+    // 編集がなくなったら、残っていた確認待ちも捨てる（あとで編集を始めたときに、古い確認が突然出ないように）
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!hasEdits) setPendingFiles(null);
+    return () => onDirtyChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasEdits]);
   const pastRef = useRef<AnnotationObject[][]>([]);
   const futureRef = useRef<AnnotationObject[][]>([]);
   const [canUndo, setCanUndo] = useState(false);
@@ -396,6 +415,17 @@ export function PdfFillAnnotateTool({ initialFile = null, onFileChange }: Shared
   // ---------------------------------------------------------------------
   // 1. PDFアップロード・ページ表示
   // ---------------------------------------------------------------------
+  // 利用者がPDFを選んだとき。配置済みの編集があれば、読み込む（＝編集が消える）前に確認する。なければそのまま読み込む
+  function requestFileSelect(files: File[]) {
+    if (!files[0]) return;
+    if (hasEdits) {
+      setPendingFiles(files);
+      return;
+    }
+    setPendingFiles(null);
+    void handleFileSelect(files);
+  }
+
   async function handleFileSelect(files: File[]) {
     const f = files[0];
     if (!f) return;
@@ -933,9 +963,41 @@ export function PdfFillAnnotateTool({ initialFile = null, onFileChange }: Shared
           accept="application/pdf,.pdf"
           label="PDFをドラッグ&ドロップ"
           hint="またはタップして選択（1ファイル）"
-          onFilesSelected={handleFileSelect}
+          onFilesSelected={requestFileSelect}
           onError={setError}
         />
+        {pendingFiles && hasEdits && (
+          <div
+            role="alertdialog"
+            aria-label="PDFの選び直しの確認"
+            data-testid="pdf-annotate-replace-confirm"
+            className="flex flex-col gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/20 dark:text-red-200"
+          >
+            <p>配置した文字・図形などがあります。「{pendingFiles[0].name}」を選び直すと、これらは消えます（元に戻せません）。</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="pdf-annotate-replace-cancel"
+                onClick={() => setPendingFiles(null)}
+                className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-100 dark:border-red-800 dark:bg-transparent dark:text-red-200 dark:hover:bg-red-900/30"
+              >
+                編集を続ける
+              </button>
+              <button
+                type="button"
+                data-testid="pdf-annotate-replace-ok"
+                onClick={() => {
+                  const next = pendingFiles;
+                  setPendingFiles(null);
+                  void handleFileSelect(next);
+                }}
+                className="rounded-md bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-800"
+              >
+                消して選び直す
+              </button>
+            </div>
+          </div>
+        )}
         {file && <FileList files={[file]} />}
         {loading && <p className="text-xs text-neutral-500">読み込み中...</p>}
       </section>

@@ -87,6 +87,11 @@ test.describe("共通部品のソース", () => {
     // hiddenな<input type="file">を持つ構造（既存のテスト・ヘルパーが前提にしている）
     expect(src).toContain('type="file"');
     expect(src).toContain('className="hidden"');
+    // 同じファイルを続けて選び直せる（FilePickButton と同じ、取り出してから入力欄を空に戻す方式）
+    expect(src).toContain('e.target.value = ""');
+    expect(src.indexOf("Array.from(e.target.files")).toBeLessThan(src.indexOf('e.target.value = ""'));
+    // 空に戻したあとに、取り出したファイルを検査・通知する（空に戻すことで選択が失われない）
+    expect(src.indexOf('e.target.value = ""')).toBeLessThan(src.indexOf("validateAndEmit(files)"));
   });
 
   test("共通部品（ファイル選択・Modal・Spinner・処理中表示）にファイルを送信する処理がない", () => {

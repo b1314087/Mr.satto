@@ -19,6 +19,7 @@ import { AVAILABLE_TOOL_IDS } from "@/lib/tools/registry";
 import {
   PDF_HANDOFF_MAX_SIZE_MB,
   PDF_HANDOFF_TTL_MS,
+  canHandoffPdfSize,
   clearPdfHandoff,
   hasPendingPdfHandoff,
   offerPdfHandoff,
@@ -160,6 +161,20 @@ plainTest.describe("ファイル引き継ぎ部品（file-handoff）", () => {
     plainExpect(validateHandoffFile(pdfFile("empty.pdf", 0))).toContain("空");
     const big = { name: "big.pdf", type: "application/pdf", size: (PDF_HANDOFF_MAX_SIZE_MB + 1) * 1024 * 1024 } as File;
     plainExpect(validateHandoffFile(big)).toContain(`${PDF_HANDOFF_MAX_SIZE_MB}MB`);
+  });
+
+  plainTest("引き継ぎ元の事前確認（工程17）：上限ちょうどまでは渡せる。0・上限超過・数値でないサイズは渡せない。受け取り側と同じ基準", () => {
+    const max = PDF_HANDOFF_MAX_SIZE_MB * 1024 * 1024;
+    plainExpect(canHandoffPdfSize(1)).toBe(true);
+    plainExpect(canHandoffPdfSize(max)).toBe(true);
+    plainExpect(canHandoffPdfSize(max + 1)).toBe(false);
+    plainExpect(canHandoffPdfSize(0)).toBe(false);
+    plainExpect(canHandoffPdfSize(-1)).toBe(false);
+    plainExpect(canHandoffPdfSize(Number.NaN)).toBe(false);
+    plainExpect(canHandoffPdfSize(Number.POSITIVE_INFINITY)).toBe(false);
+    // 事前確認を通る境界のファイルは、受け取り側でも通る。超えるものは、受け取り側でも断られる（確認は残っている）
+    plainExpect(validateHandoffFile({ name: "edge.pdf", type: "application/pdf", size: max } as File)).toBeNull();
+    plainExpect(validateHandoffFile({ name: "over.pdf", type: "application/pdf", size: max + 1 } as File)).toContain(`${PDF_HANDOFF_MAX_SIZE_MB}MB`);
   });
 
   plainTest("処理結果のBlobは、指定したファイル名のPDFファイルになる", async () => {
@@ -495,5 +510,221 @@ test.describe("PDF修正: PDF編集の処理結果の引き継ぎ", () => {
       expect(value, `${where}にファイル名が残っている`).not.toContain("private-name");
       expect(value, `${where}にPDFの内容が残っている`).not.toContain("%PDF");
     }
+  });
+});
+
+test.describe("PDF修正: 機能を切り替えるときの確認（工程17）", () => {
+  test("編集がないときは、確認なしで切り替えられる", async ({ page }) => {
+    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+    await modeButton(page, "page-numbers").click();
+    await expect(modeButton(page, "page-numbers")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
+  });
+
+  test("配置済みの編集があるときは確認が出て、「編集を続ける」なら編集中の状態がそのまま残る", async ({ page }) => {
+    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
+    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await page.locator(CANVAS).click({ position: { x: 100, y: 125 } });
+    await page.locator(OBJECT_LIST).locator("textarea").first().fill("消えてはいけない文字");
+    await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
+
+    await modeButton(page, "watermark").click();
+    const confirm = page.getByTestId("pdf-fix-switch-confirm");
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText("消えます");
+    // まだ切り替わっていない（記入・注釈のまま）
+    await expect(modeButton(page, "annotate")).toHaveAttribute("aria-pressed", "true");
+    await expect(modeButton(page, "watermark")).toHaveAttribute("aria-pressed", "false");
+
+    await page.getByTestId("pdf-fix-switch-cancel").click();
+    await expect(confirm).toHaveCount(0);
+    await expect(modeButton(page, "annotate")).toHaveAttribute("aria-pressed", "true");
+    // 注釈の件数・入力した文字・ファイルがそのまま
+    await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
+    await expect(page.locator(OBJECT_LIST).locator("textarea").first()).toHaveValue("消えてはいけない文字");
+    await expect(page.locator(CANVAS)).toBeVisible();
+  });
+
+  test("「消して切り替える」を選ぶと切り替わり、選んだPDFは引き継がれる。戻ると編集は空から始まる", async ({ page }) => {
+    await openAnnotateWithPdf(page, fixtures.multiPagePdf);
+    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+
+    await modeButton(page, "page-numbers").click();
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toBeVisible();
+    await page.getByTestId("pdf-fix-switch-confirm-ok").click();
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
+    await expect(modeButton(page, "page-numbers")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "ページ番号を追加する" })).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText(/multi-page\.pdf/).first()).toBeVisible();
+
+    // 戻ると、注釈は消えている（確認で承知した動作）。このときはもう確認は出ない
+    await modeButton(page, "annotate").click();
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
+    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
+  });
+
+  test("置いたものをすべて消したあとは、確認なしで切り替えられる（古い確認も残らない）", async ({ page }) => {
+    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+    await modeButton(page, "watermark").click();
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toBeVisible();
+    await page.getByTestId("pdf-fix-switch-cancel").click();
+    // 取り消し（元に戻す）で、置いたものがなくなる
+    await page.getByRole("button", { name: /元に戻す/ }).first().click();
+    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
+    await modeButton(page, "watermark").click();
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
+    await expect(modeButton(page, "watermark")).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+test.describe("PDF修正への引き継ぎボタン: 50MBを超える結果の扱い（工程17）", () => {
+  /** 回転の結果を、指定サイズのPDFとして扱わせる（巨大ファイルを作らず、サイズの表示値だけを差し替える）。選択済みのPDF自体には影響しない */
+  async function rotateWithFakeResultSize(page: Page, sizeBytes: number): Promise<void> {
+    const src = workPath("fake-size.pdf");
+    await writeSequentialPdf(src, 2);
+    await page.goto("/tools/pdf-rotate");
+    await expect(page.locator('input[type="file"]').first()).toBeAttached({ timeout: 30_000 });
+    await expect(page.getByTestId("pdf-edit-modes")).toBeVisible({ timeout: 25_000 });
+    await uploadWhenReady(page, src, page.getByRole("button", { name: "回転する" }), { readyTimeoutMs: 25_000 });
+    // ファイルを選び終えたあとに、「これから作られる結果」のサイズだけを差し替える
+    await page.evaluate((fake) => {
+      const proto = Blob.prototype;
+      const real = Object.getOwnPropertyDescriptor(proto, "size")!.get!;
+      Object.defineProperty(proto, "size", {
+        configurable: true,
+        get() {
+          const actual = real.call(this);
+          // 選んだファイル（File）には触れず、処理結果のBlobだけを対象にする
+          return !(this instanceof File) && (this as Blob).type === "application/pdf" && actual > 0 ? fake : actual;
+        },
+      });
+    }, sizeBytes);
+    await clickWhenReady(page.getByRole("button", { name: "回転する" }), { expectAfter: page.getByText("回転が完了しました") });
+  }
+
+  test("50MBを超える結果：引き継ぎボタンは出ず、理由が案内される（ダウンロードは使える）", async ({ page }) => {
+    await rotateWithFakeResultSize(page, 50 * 1024 * 1024 + 1);
+    await expect(page.getByTestId("open-in-pdf-fix")).toHaveCount(0);
+    await expect(page.getByTestId("open-in-pdf-fix-unavailable")).toContainText("50MBを超えている");
+    await expect(page.getByRole("button", { name: /ダウンロード/ }).first()).toBeVisible();
+  });
+
+  test("ちょうど50MBの結果：従来どおり引き継ぎボタンが出る", async ({ page }) => {
+    await rotateWithFakeResultSize(page, 50 * 1024 * 1024);
+    await expect(page.getByTestId("open-in-pdf-fix")).toBeVisible();
+    await expect(page.getByTestId("open-in-pdf-fix-unavailable")).toHaveCount(0);
+  });
+});
+
+test.describe("PDF修正: PDFの選び直し・「別のファイルを選ぶ」での編集の保護（工程18）", () => {
+  const pickAnother = (page: Page, file: string) => page.locator('input[type="file"]').first().setInputFiles(file);
+
+  test("記入・注釈：編集がないときは、確認なしで別のPDFに切り替わる", async ({ page }) => {
+    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+    await pickAnother(page, fixtures.multiPagePdf);
+    await expect(page.getByText(/multi-page\.pdf/).first()).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByTestId("pdf-annotate-replace-confirm")).toHaveCount(0);
+  });
+
+  test("記入・注釈：編集があるときのPDF選び直しは、確認が出る。続けるなら編集もPDFもそのまま、確定すると新しいPDFで空から始まる", async ({ page }) => {
+    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+
+    await pickAnother(page, fixtures.multiPagePdf);
+    const confirm = page.getByTestId("pdf-annotate-replace-confirm");
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText("multi-page.pdf");
+    // 確認の間は、まだ何も変わっていない
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+    await expect(page.getByText(/single-page\.pdf/).first()).toBeVisible();
+
+    await page.getByTestId("pdf-annotate-replace-cancel").click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+    await expect(page.getByText(/single-page\.pdf/).first()).toBeVisible();
+
+    // 同じPDFをもう一度選び直しても、確認が再び出る（工程19：選択のたびに入力欄を空に戻すため、同じファイルでも変更が通知される）
+    await pickAnother(page, fixtures.multiPagePdf);
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText("multi-page.pdf");
+    // 確認の間も、現在のPDFと編集はそのまま
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+    await expect(page.getByText(/single-page\.pdf/).first()).toBeVisible();
+    await page.getByTestId("pdf-annotate-replace-ok").click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText(/multi-page\.pdf/).first()).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
+  });
+
+  test("「別のファイルを選ぶ」：編集があると確認が出る。続けるなら引き継いだPDFと編集がそのまま、確定すると外れる", async ({ page }) => {
+    await rotateInEditAndOpenInFix(page, "seq3.pdf");
+    await expect(page.getByTestId("pdf-fix-handoff-banner")).toBeVisible({ timeout: 25_000 });
+    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
+    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+
+    await page.getByTestId("pdf-fix-choose-another").click();
+    const confirm = page.getByTestId("pdf-fix-switch-confirm");
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText("別のファイルを選ぶと");
+    await page.getByTestId("pdf-fix-switch-cancel").click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByTestId("pdf-fix-handoff-banner")).toBeVisible();
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+
+    await page.getByTestId("pdf-fix-choose-another").click();
+    await page.getByTestId("pdf-fix-switch-confirm-ok").click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByTestId("pdf-fix-handoff-banner")).toHaveCount(0);
+    await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
+  });
+
+  test("置いたものをすべて消したあとは、「別のファイルを選ぶ」もPDFの選び直しも確認なしで進む（古い確認も残らない）", async ({ page }) => {
+    await rotateInEditAndOpenInFix(page, "seq4.pdf");
+    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
+    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
+    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+    await page.getByTestId("pdf-fix-choose-another").click();
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toBeVisible();
+    await page.getByTestId("pdf-fix-switch-cancel").click();
+    // 置いたものをすべて取り消す
+    await page.getByRole("button", { name: /元に戻す/ }).first().click();
+    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
+    await page.getByTestId("pdf-fix-choose-another").click();
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
+    await expect(page.getByTestId("pdf-fix-handoff-banner")).toHaveCount(0);
+  });
+});
+
+test.describe("共通アップロード欄: 同じファイルの選び直し（工程19）", () => {
+  test("同じPDFを続けて選んでも、そのたびに読み込みが走る（編集のないとき）。形式違いのあとでも選び直せる", async ({ page }) => {
+    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+    const input = page.locator('input[type="file"]').first();
+    // 1回目の読み込みのあとに置いたものは、同じPDFを選び直すと（確認なしで）読み込み直されて消える。
+    // 編集がある場合は確認が出る（別のテストで確認）ので、ここでは編集がない状態で、再選択が受け付けられることだけを見る
+    await input.setInputFiles(fixtures.singlePagePdf);
+    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByTestId("pdf-annotate-replace-confirm")).toHaveCount(0);
+    // 形式違いのファイルは拒否される。その直後に、同じ形式違いのファイルをもう一度選んでも、同様に拒否される（取りこぼさない）
+    await input.setInputFiles({ name: "memo.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
+    await expect(page.getByText(/対応していません/).first()).toBeVisible({ timeout: 10_000 });
+    // 拒否のあとも、現在のPDFはそのまま。正しいPDFをもう一度選べば読み込める
+    await expect(page.locator(CANVAS)).toBeVisible();
+    await input.setInputFiles(fixtures.multiPagePdf);
+    await expect(page.getByText(/multi-page\.pdf/).first()).toBeVisible({ timeout: 25_000 });
   });
 });

@@ -84,7 +84,7 @@ const RESERVE_ERRORS: Record<Exclude<ReserveOutcome, "ok">, { status: number; er
   quota_exceeded: { status: 429, error: "quota_exceeded", message: "今期のAI利用枠を使い切りました。次の更新日にリセットされます。" },
   too_many_concurrent: { status: 429, error: "too_many_concurrent", message: "処理中のAI読み取りがあります。終わってから、もう一度お試しください。" },
   rate_limited: { status: 429, error: "rate_limited", message: "短時間に多く実行されました。少し待ってから、もう一度お試しください。" },
-  not_premium: { status: 403, error: "not_premium", message: "AIによる読み取り補助は、Premiumプランの機能です。" },
+  not_premium: { status: 403, error: "not_premium", message: "AIによる読み取り補助は、プレミアムプランの機能です。" },
   period_unknown: { status: 503, error: "period_unknown", message: "契約期間を確認できませんでした。時間をおいて、もう一度お試しください。" },
   invalid: { status: 400, error: "invalid", message: "依頼の内容が正しくありません。" },
 };
@@ -101,7 +101,7 @@ export async function handleCalendarAssist(
 
   // 権限の確認が先: ログインしていない人・Premiumでない人には、同意や入力の中身を見ずに断る
   if (!caller.userId) return respond(401, { error: "login_required", message: "ログインが必要です。" });
-  if (caller.plan !== "premium") return respond(403, { error: "not_premium", message: "AIによる読み取り補助は、Premiumプランの機能です。" });
+  if (caller.plan !== "premium") return respond(403, { error: "not_premium", message: "AIによる読み取り補助は、プレミアムプランの機能です。" });
 
   // 同意がなければ、何も処理しない（AIは呼ばない）
   const consent = typeof rawBody === "object" && rawBody !== null ? (rawBody as { consent?: unknown }).consent : undefined;

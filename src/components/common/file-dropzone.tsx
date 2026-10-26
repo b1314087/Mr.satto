@@ -64,7 +64,7 @@ export function FileDropzone({
   const inputId = useId();
 
   const validateAndEmit = useCallback(
-    (fileList: FileList | null) => {
+    (fileList: ArrayLike<File> | null) => {
       if (!fileList || fileList.length === 0) return;
       const files = Array.from(fileList);
 
@@ -157,7 +157,15 @@ export function FileDropzone({
         accept={accept}
         multiple={multiple}
         className="hidden"
-        onChange={(e) => validateAndEmit(e.target.files)}
+        onChange={(e) => {
+          // 入力欄を空に戻す前に、選ばれたファイルを取り出しておく（FilePickButton と同じ方式）。
+          // 空に戻さないと、直前と同じファイルを選び直したとき、ブラウザが変更を通知せず（change が発生せず）、
+          // 確認で取り消したあとの選び直しなどができない。取り出した File は入力欄とは独立しているので、空に戻しても失われない。
+          // 取り消し（何も選ばない）の場合は files が空なので、何も処理されない。
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          validateAndEmit(files);
+        }}
       />
     </div>
   );

@@ -64,6 +64,15 @@ export function hasPendingPdfHandoff(): boolean {
 }
 
 /**
+ * 処理結果のサイズが、引き継ぎできる範囲か（0より大きく、上限以下）。引き継ぎ元のボタンが、渡す前に確認するために使う。
+ * 判定は受け取り側（validateHandoffFile）と同じ基準（上限ちょうどは引き継げる）。サイズが数値でない場合は引き継げないとみなす。
+ * 受け取り側の確認は、この確認とは別に必ず行う（ここを通っても、受け取り側で改めて確認する）。
+ */
+export function canHandoffPdfSize(sizeBytes: number): boolean {
+  return Number.isFinite(sizeBytes) && sizeBytes > 0 && sizeBytes <= PDF_HANDOFF_MAX_SIZE_MB * 1024 * 1024;
+}
+
+/**
  * 引き継がれたファイルを、ファイル選択と同じ基準で確認する。問題があれば利用者向けの短いメッセージを返す。
  */
 export function validateHandoffFile(file: File): string | null {

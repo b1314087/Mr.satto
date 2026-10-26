@@ -16,6 +16,8 @@ import { formatBytes } from "@/lib/utils/format";
  * 各機能の中身は、これまでの個別ツールの画面をそのまま使う（処理も表示も変えない）。
  * この画面が足すのは「機能の切り替え」「選択中のPDFの引き継ぎ」「他のツール（PDF編集）からの処理結果の受け取り」だけ。
  * - 機能を切り替えると、前の機能の結果・入力はリセットされる（古い結果をダウンロードさせない）。選んだPDFだけを引き継ぐ。
+ *   ただし「記入・注釈」で配置済みの文字・図形などがある間は、切り替える前に確認を出す
+ *   （切り替えると配置したものが消えるため。確認で「編集を続ける」を選べば、編集中の状態はそのまま残る）。
  * - PDF編集から「PDF修正で開く」で渡されたPDFは、ブラウザのメモリ上から1回だけ受け取る（lib/pdf/file-handoff.ts）。
  *   受け取れなかった（再読み込み・別タブ・期限切れ）場合は何も起きず、通常のファイル選択から始まる。
  * 処理はすべてブラウザ内で行い、PDFは送信・保存しない。
@@ -43,6 +45,10 @@ interface FixState {
 
 export function PdfFixTool() {
   const [mode, setMode] = useState<PdfFixMode>("annotate");
+  // 「記入・注釈」で配置済みの編集があるか（画面側から知らせてもらう）と、確認待ちの切り替え先
+  const [annotateHasEdits, setAnnotateHasEdits] = useState(false);
+  // 確認待ちの操作：機能の切り替え（切り替え先）か、「別のファイルを選ぶ」
+  const [pending, setPending] = useState<{ kind: "mode"; mode: PdfFixMode } | { kind: "another" } | null>(null);
   const [state, setState] = useState<FixState>({ ready: false, sharedFile: null, received: null, handoffError: null });
   // 「別のファイルを選ぶ」で各機能の画面を作り直すための番号
   const [resetKey, setResetKey] = useState(0);
@@ -71,6 +77,33 @@ export function PdfFixTool() {
   // 引き継いだPDFのまま使っている間だけ、引き継ぎの表示を出す（別のPDFを選んだら消す）
   const showReceived = received !== null && sharedFile === received.file;
 
+  // 編集が残っているのは「記入・注釈」を開いている間だけ。それ以外・編集なしのときは、確認なしで切り替える
+  const confirming = pending !== null && mode === "annotate" && annotateHasEdits ? pending : null;
+
+  function handleAnnotateDirty(hasEdits: boolean) {
+    setAnnotateHasEdits(hasEdits);
+    // 編集がなくなったら、残っていた確認待ちも捨てる（あとで編集を始めたときに、古い確認が突然出ないように）
+    if (!hasEdits) setPending(null);
+  }
+
+  function requestMode(next: PdfFixMode) {
+    if (next === mode) return;
+    if (mode === "annotate" && annotateHasEdits) {
+      setPending({ kind: "mode", mode: next });
+      return;
+    }
+    setPending(null);
+    setMode(next);
+  }
+
+  function requestChooseAnotherFile() {
+    if (mode === "annotate" && annotateHasEdits) {
+      setPending({ kind: "another" });
+      return;
+    }
+    chooseAnotherFile();
+  }
+
   function chooseAnotherFile() {
     setState((s) => ({ ...s, sharedFile: null, received: null, handoffError: null }));
     setResetKey((k) => k + 1);
@@ -86,7 +119,7 @@ export function PdfFixTool() {
               type="button"
               aria-pressed={mode === m.mode}
               data-testid={`pdf-fix-mode-${m.mode}`}
-              onClick={() => setMode(m.mode)}
+              onClick={() => requestMode(m.mode)}
               className={activeClass(mode === m.mode)}
             >
               {m.label}
@@ -100,6 +133,44 @@ export function PdfFixTool() {
           処理はすべてブラウザ内で行い、PDFはMr.Sattoのサーバーに送信・保存されません。ページの結合・分割・並び替え・回転は「PDF編集」で行えます。
         </p>
       </div>
+
+      {confirming && (
+        <div
+          role="alertdialog"
+          aria-label="機能の切り替えの確認"
+          data-testid="pdf-fix-switch-confirm"
+          className="flex flex-col gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/20 dark:text-red-200"
+        >
+          <p>
+            {confirming.kind === "mode"
+              ? `配置した文字・図形などがあります。「${getPdfFixMode(confirming.mode).label}」に切り替えると、これらは消えます（元に戻せません）。`
+              : "配置した文字・図形などがあります。別のファイルを選ぶと、これらは消えます（元に戻せません）。"}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="pdf-fix-switch-cancel"
+              onClick={() => setPending(null)}
+              className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-100 dark:border-red-800 dark:bg-transparent dark:text-red-200 dark:hover:bg-red-900/30"
+            >
+              編集を続ける
+            </button>
+            <button
+              type="button"
+              data-testid="pdf-fix-switch-confirm-ok"
+              onClick={() => {
+                const action = confirming;
+                setPending(null);
+                if (action.kind === "mode") setMode(action.mode);
+                else chooseAnotherFile();
+              }}
+              className="rounded-md bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-800"
+            >
+              {confirming.kind === "mode" ? "消して切り替える" : "消して選び直す"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {mode === "annotate" && (
         <p
@@ -134,7 +205,7 @@ export function PdfFixTool() {
           <button
             type="button"
             data-testid="pdf-fix-choose-another"
-            onClick={chooseAnotherFile}
+            onClick={requestChooseAnotherFile}
             className="w-fit rounded-md border border-blue-300 px-2.5 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:text-blue-200 dark:hover:bg-blue-900/30"
           >
             別のファイルを選ぶ
@@ -145,7 +216,7 @@ export function PdfFixTool() {
       {/* key: 機能を切り替えたら、前の機能の状態（結果・入力）を必ず捨てて作り直す */}
       {ready && (
         <div key={`${mode}-${resetKey}`}>
-          {mode === "annotate" && <PdfFillAnnotateTool {...singleFileProps} />}
+          {mode === "annotate" && <PdfFillAnnotateTool {...singleFileProps} onDirtyChange={handleAnnotateDirty} />}
           {mode === "page-numbers" && <PdfAddPageNumbersTool {...singleFileProps} />}
           {mode === "watermark" && <PdfWatermarkTool {...singleFileProps} />}
         </div>
