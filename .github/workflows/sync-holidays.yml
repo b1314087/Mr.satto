@@ -19,6 +19,12 @@
 #   - main にブランチ保護（プルリクエスト必須など）がある場合は、github-actions[bot] の直接 push を許可すること。
 #     許可できない場合、最後の push で失敗し、更新は反映されない（既存データは壊れない）。
 #   - 秘密情報は不要。任意で、Vercel の Deploy Hook を使う場合だけ、Secrets に VERCEL_DEPLOY_HOOK_URL を登録する。
+#
+# 実行環境（OS）について:
+#   GitHub は ubuntu-latest を Ubuntu 24.04 から 26.04 へ、2026年10月19日〜11月19日にかけて順次切り替える（公式の告知）。
+#   Ubuntu 26.04 では同梱ソフトの更新・削除があり、Playwright のブラウザ導入（--with-deps）や ffmpeg の導入に影響しうる。
+#   実行のたびに環境が変わって結果がぶれないよう、ubuntu-24.04 に固定している。26.04 へ上げるときは、
+#   手動実行（Run workflow）で ubuntu-26.04 を試し、全ジョブが通ることを確かめてから変更する。
 
 name: Sync holidays
 
@@ -41,7 +47,7 @@ env:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write # main へ push するため

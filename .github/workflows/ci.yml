@@ -24,6 +24,12 @@
 #   全件の実行は別途（手動／必要になったら別ワークフロー）。
 #   テストはリトライなし（--retries=0）で、1ワーカー（--workers=1）。不安定な失敗を成功に見せず、
 #   2コアの実行環境での負荷による失敗を避けるため（工程13・14の実測に基づく）。
+#
+# 実行環境（OS）について:
+#   GitHub は ubuntu-latest を Ubuntu 24.04 から 26.04 へ、2026年10月19日〜11月19日にかけて順次切り替える（公式の告知）。
+#   Ubuntu 26.04 では同梱ソフトの更新・削除があり、Playwright のブラウザ導入（--with-deps）や ffmpeg の導入に影響しうる。
+#   実行のたびに環境が変わって結果がぶれないよう、ubuntu-24.04 に固定している。26.04 へ上げるときは、
+#   手動実行（Run workflow）で ubuntu-26.04 を試し、全ジョブが通ることを確かめてから変更する。
 
 name: CI
 
@@ -54,7 +60,7 @@ jobs:
   # 1. 型チェック・Lint・本番ビルド（テストとは別のマシンで並行して実行する）
   checks:
     name: 型・Lint・ビルド
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -82,7 +88,7 @@ jobs:
   # 2. 画面のテスト（Playwright）。開発サーバーを起動して実行する（開発専用のプラン上書きCookieを使うテストがあるため）
   tests:
     name: テスト（${{ matrix.name }}）
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -157,7 +163,7 @@ jobs:
   #    package.json の既存スクリプトを使う（フラグとポートはスクリプト側で指定済み）。
   flag-tests:
     name: テスト（機能フラグ別）
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
