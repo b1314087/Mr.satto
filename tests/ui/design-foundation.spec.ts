@@ -249,7 +249,7 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
       expect(cs["backdrop-filter"]).toContain("blur");
       expect(parseColor(cs["background-color"]).a).toBeLessThan(1); // 半透明
       expect(cs["box-shadow"]).not.toBe("none");
-      expect(parseFloat(cs["border-radius"])).toBe(16);
+      expect(parseFloat(cs["border-radius"])).toBe(22);
 
       // 文字と、その下の背景（ガラスを下地に重ねた色）のコントラスト
       const bg = await effectiveBackground(page, sel);

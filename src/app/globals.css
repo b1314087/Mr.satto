@@ -56,22 +56,22 @@
   /* 背景・面（淡い水色のガラス調） */
   --ms-page: #eaf2fc; /* ページ背景（淡い水色） */
   --ms-surface: #f5f9ff; /* 通常の面 */
-  --ms-surface-glass: rgba(255, 255, 255, 0.4); /* ガラス調の面（背景ぼかしが使える時） */
+  --ms-surface-glass: rgba(255, 255, 255, 0.2); /* ガラス調の面（背景ぼかしが使える時） */
   --ms-surface-glass-solid: rgba(246, 250, 255, 0.94); /* ぼかしが使えない時の面（ほぼ不透明） */
   --ms-surface-strong: #ffffff; /* 入力欄・ダイアログ・エラー表示など、操作上重要な面（不透明） */
-  --ms-surface-tool: rgba(250, 253, 255, 0.6); /* ツール画面の外枠（ぼかしなしの半透明） */
+  --ms-surface-tool: rgba(250, 253, 255, 0.38); /* ツール画面の外枠（ぼかしなしの半透明） */
   --ms-hover-tint: rgba(37, 99, 235, 0.07); /* 押せる面にカーソルを乗せた時の薄い青 */
 
   /* 文字 */
   --ms-text: #0f1f38;
-  --ms-text-muted: #3b4e6b;
+  --ms-text-muted: #34476a;
 
   /* 境界線・ハイライト・影（青みがかった、やわらかい影） */
   --ms-border: rgba(90, 130, 200, 0.22);
   --ms-border-strong: rgba(45, 80, 145, 0.5);
   --ms-dash: rgba(37, 99, 235, 0.38); /* ファイル選択欄の点線 */
   --ms-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 0 0 1px rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(120, 160, 230, 0.18); /* ガラスの縁の反射 */
-  --ms-glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.08) 44%, rgba(255, 255, 255, 0) 60%, rgba(255, 255, 255, 0.22)); /* ガラスの斜めのつや */
+  --ms-glass-sheen: linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 64%, rgba(255, 255, 255, 0.2)); /* ガラスの斜めのつや */
   --ms-shadow-sm: 0 2px 10px rgba(50, 90, 170, 0.09), 0 1px 2px rgba(50, 90, 170, 0.06);
   --ms-shadow-lift: 0 16px 40px rgba(50, 90, 170, 0.2), 0 4px 10px rgba(50, 90, 170, 0.1);
 
@@ -99,15 +99,17 @@
   /* 背景のやわらかい光（参考画像のぼけた水色・白・ごく淡い藤色の重なりと、斜めの光の筋） */
   --ms-ambient:
     radial-gradient(60rem 40rem at 86% -10%, rgba(255, 255, 255, 0.95), transparent 62%),
-    radial-gradient(52rem 38rem at -8% 8%, rgba(147, 197, 253, 0.55), transparent 66%),
-    radial-gradient(46rem 34rem at 104% 58%, rgba(165, 180, 252, 0.36), transparent 66%),
-    radial-gradient(54rem 36rem at 12% 108%, rgba(125, 211, 252, 0.45), transparent 66%),
+    radial-gradient(44rem 30rem at 46% 62%, rgba(125, 170, 255, 0.4), transparent 68%),
+    radial-gradient(34rem 24rem at 30% 40%, rgba(180, 160, 255, 0.28), transparent 70%),
+    radial-gradient(52rem 38rem at -8% 8%, rgba(96, 165, 250, 0.7), transparent 66%),
+    radial-gradient(46rem 34rem at 104% 58%, rgba(129, 140, 248, 0.5), transparent 66%),
+    radial-gradient(54rem 36rem at 12% 108%, rgba(56, 189, 248, 0.6), transparent 66%),
     linear-gradient(118deg, transparent 36%, rgba(255, 255, 255, 0.5) 46%, transparent 56%);
 
   /* 形・ぼかし・動き */
   --ms-radius-card: 1rem;
   --ms-radius-control: 0.625rem;
-  --ms-blur: 24px;
+  --ms-blur: 28px;
   --ms-duration: 160ms;
   --ms-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -115,7 +117,7 @@
 .dark {
   --ms-page: #060c1a;
   --ms-surface: #0d1630;
-  --ms-surface-glass: rgba(28, 44, 80, 0.5);
+  --ms-surface-glass: rgba(60, 90, 160, 0.2);
   --ms-surface-glass-solid: rgba(15, 25, 50, 0.94);
   --ms-surface-strong: #0f1a35;
   --ms-surface-tool: rgba(18, 30, 58, 0.68);
@@ -629,7 +631,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1600 1000%22%3E%3Cdefs%3E%3ClinearGradient id=%22g1%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%220.5%22 stop-color=%22%23cfe3ff%22 stop-opacity=%220.75%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22g2%22 x1=%221%22 y1=%220%22 x2=%220%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%23b9d2f7%22 stop-opacity=%220.5%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3C/linearGradient%3E%3Cfilter id=%22b10%22 x=%22-50%25%22 y=%22-50%25%22 width=%22200%25%22 height=%22200%25%22%3E%3CfeGaussianBlur stdDeviation=%229%22/%3E%3C/filter%3E%3Cfilter id=%22b3%22 x=%22-50%25%22 y=%22-50%25%22 width=%22200%25%22 height=%22200%25%22%3E%3CfeGaussianBlur stdDeviation=%222.5%22/%3E%3C/filter%3E%3Cfilter id=%22b60%22 x=%22-80%25%22 y=%22-80%25%22 width=%22260%25%22 height=%22260%25%22%3E%3CfeGaussianBlur stdDeviation=%2255%22/%3E%3C/filter%3E%3Cfilter id=%22b24%22 x=%22-80%25%22 y=%22-80%25%22 width=%22260%25%22 height=%22260%25%22%3E%3CfeGaussianBlur stdDeviation=%2222%22/%3E%3C/filter%3E%3C/defs%3E%3Cg filter=%22url(%23b60)%22%3E%3Ccircle cx=%221280%22 cy=%22260%22 r=%22260%22 fill=%22%23ffffff%22 fill-opacity=%220.85%22/%3E%3Ccircle cx=%221480%22 cy=%22640%22 r=%22200%22 fill=%22%23bcd6ff%22 fill-opacity=%220.55%22/%3E%3Ccircle cx=%221000%22 cy=%22120%22 r=%22170%22 fill=%22%23e3ecff%22 fill-opacity=%220.8%22/%3E%3Ccircle cx=%22640%22 cy=%22760%22 r=%22230%22 fill=%22%23ffffff%22 fill-opacity=%220.7%22/%3E%3C/g%3E%3Cg fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22url(%23g1)%22 stroke-width=%2286%22 filter=%22url(%23b10)%22 opacity=%220.9%22/%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22%23ffffff%22 stroke-width=%2212%22 filter=%22url(%23b3)%22 opacity=%220.9%22 transform=%22translate(-14 -16)%22/%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22%239cc0f2%22 stroke-width=%2210%22 filter=%22url(%23b3)%22 opacity=%220.55%22 transform=%22translate(22 26)%22/%3E%3Cpath d=%22M260 880 C520 760 760 960 1040 840 C1260 745 1400 820 1620 760%22 stroke=%22url(%23g2)%22 stroke-width=%2264%22 filter=%22url(%23b10)%22 opacity=%220.75%22/%3E%3Cpath d=%22M260 880 C520 760 760 960 1040 840 C1260 745 1400 820 1620 760%22 stroke=%22%23ffffff%22 stroke-width=%229%22 filter=%22url(%23b3)%22 opacity=%220.8%22 transform=%22translate(0 -18)%22/%3E%3C/g%3E%3Cg filter=%22url(%23b24)%22 opacity=%220.8%22%3E%3Cpath d=%22M-80 700 L520 -80 L640 -80 L40 760 Z%22 fill=%22%23ffffff%22 fill-opacity=%220.55%22/%3E%3Cpath d=%22M700 1080 L1380 160 L1460 160 L800 1080 Z%22 fill=%22%23ffffff%22 fill-opacity=%220.4%22/%3E%3C/g%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1600 1000%22%3E%3Cdefs%3E%3ClinearGradient id=%22g1%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%220.5%22 stop-color=%22%2380b0ff%22 stop-opacity=%220.75%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3C/linearGradient%3E%3ClinearGradient id=%22g2%22 x1=%221%22 y1=%220%22 x2=%220%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3Cstop offset=%220.55%22 stop-color=%22%2370a5f5%22 stop-opacity=%220.5%22/%3E%3Cstop offset=%221%22 stop-color=%22%23ffffff%22 stop-opacity=%220.95%22/%3E%3C/linearGradient%3E%3Cfilter id=%22b10%22 x=%22-50%25%22 y=%22-50%25%22 width=%22200%25%22 height=%22200%25%22%3E%3CfeGaussianBlur stdDeviation=%229%22/%3E%3C/filter%3E%3Cfilter id=%22b3%22 x=%22-50%25%22 y=%22-50%25%22 width=%22200%25%22 height=%22200%25%22%3E%3CfeGaussianBlur stdDeviation=%222.5%22/%3E%3C/filter%3E%3Cfilter id=%22b60%22 x=%22-80%25%22 y=%22-80%25%22 width=%22260%25%22 height=%22260%25%22%3E%3CfeGaussianBlur stdDeviation=%2255%22/%3E%3C/filter%3E%3Cfilter id=%22b24%22 x=%22-80%25%22 y=%22-80%25%22 width=%22260%25%22 height=%22260%25%22%3E%3CfeGaussianBlur stdDeviation=%2222%22/%3E%3C/filter%3E%3C/defs%3E%3Cg filter=%22url(%23b60)%22%3E%3Ccircle cx=%221280%22 cy=%22260%22 r=%22260%22 fill=%22%23ffffff%22 fill-opacity=%220.85%22/%3E%3Ccircle cx=%221480%22 cy=%22640%22 r=%22200%22 fill=%22%2360a0ff%22 fill-opacity=%220.55%22/%3E%3Ccircle cx=%221000%22 cy=%22120%22 r=%22170%22 fill=%22%23a8c4ff%22 fill-opacity=%220.8%22/%3E%3Ccircle cx=%22640%22 cy=%22760%22 r=%22230%22 fill=%22%23ffffff%22 fill-opacity=%220.7%22/%3E%3C/g%3E%3Cg fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22url(%23g1)%22 stroke-width=%2286%22 filter=%22url(%23b10)%22 opacity=%220.9%22/%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22%23ffffff%22 stroke-width=%2212%22 filter=%22url(%23b3)%22 opacity=%220.9%22 transform=%22translate(-14 -16)%22/%3E%3Cpath d=%22M980 110 C1230 -30 1560 70 1560 310 C1560 520 1330 560 1190 470 C1060 385 1130 250 1290 270 C1420 286 1450 400 1380 470%22 stroke=%22%235b8ff0%22 stroke-width=%2210%22 filter=%22url(%23b3)%22 opacity=%220.55%22 transform=%22translate(22 26)%22/%3E%3Cpath d=%22M260 880 C520 760 760 960 1040 840 C1260 745 1400 820 1620 760%22 stroke=%22url(%23g2)%22 stroke-width=%2264%22 filter=%22url(%23b10)%22 opacity=%220.75%22/%3E%3Cpath d=%22M260 880 C520 760 760 960 1040 840 C1260 745 1400 820 1620 760%22 stroke=%22%23ffffff%22 stroke-width=%229%22 filter=%22url(%23b3)%22 opacity=%220.8%22 transform=%22translate(0 -18)%22/%3E%3C/g%3E%3Cg filter=%22url(%23b24)%22 opacity=%220.8%22%3E%3Cpath d=%22M-80 700 L520 -80 L640 -80 L40 760 Z%22 fill=%22%23ffffff%22 fill-opacity=%220.55%22/%3E%3Cpath d=%22M700 1080 L1380 160 L1460 160 L800 1080 Z%22 fill=%22%23ffffff%22 fill-opacity=%220.4%22/%3E%3C/g%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right -6vw top 1rem;
     background-size: min(1280px, 112vw) auto;
