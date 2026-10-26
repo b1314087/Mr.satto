@@ -20,7 +20,7 @@
 #
 # 実行するテストの範囲（軽量セット）:
 #   全テスト（約130ファイル、1ワーカーで約45分）は重すぎるため、変更の影響が大きい次に絞っています。
-#   PDF修正、PDF記入・注釈、広告・ダウンロードの導線、料金・プラン表示、法務ページ、SEO、ツール登録情報、機能フラグ別の表示。
+#   PDF修正、PDF記入・注釈、Excel・CSV変換、広告・ダウンロードの導線、料金・プラン表示、法務ページ、SEO、ツール登録情報、機能フラグ別の表示。
 #   全件の実行は別途（手動／必要になったら別ワークフロー）。
 #   テストはリトライなし（--retries=0）で、1ワーカー（--workers=1）。不安定な失敗を成功に見せず、
 #   2コアの実行環境での負荷による失敗を避けるため（工程13・14の実測に基づく）。
@@ -104,6 +104,12 @@ jobs:
               tests/tools/pdf-fill-annotate.spec.ts
               tests/tools/pdf-fill-annotate-phase17.spec.ts
               tests/tools/pdf-fill-annotate-unsaved-warning.spec.ts
+          # 日本語のファイル名（例: 売上データ.csv）でダウンロードされるかを含む。実行環境の文字コードの影響を受けやすいため、
+          # playwright.config.ts のLinux向けの文字コード補完（工程23）が働いているかの確認も兼ねる
+          - name: Excel・CSV変換
+            slug: excel-csv
+            paths: >-
+              tests/tools/excel-csv-convert.spec.ts
           - name: SEO・ツール登録情報
             slug: seo-registry
             paths: >-
