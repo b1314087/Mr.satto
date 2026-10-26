@@ -22,6 +22,21 @@ import { defineConfig, devices } from "@playwright/test";
  *   再利用する）。
  */
 
+/**
+ * 文字コード（UTF-8）の保証。
+ * 日本語を含むダウンロード名（例: 売上データ.csv）のテストは、ブラウザを動かす環境の文字コードが
+ * UTF-8でないと、名前が「download」に置き換わって失敗する（実際の利用者のブラウザでは起きない、
+ * テスト環境側の制約）。LinuxでUTF-8指定が無い（POSIXロケールの）環境だけ、このテストの実行中に限って
+ * C.UTF-8 を指定する。すでにUTF-8の環境（Mac、GitHub Actionsの ubuntu など）は何も変えない。
+ * この設定はテストを動かすプロセスと、そこから起動されるブラウザにだけ引き継がれ、OS全体の設定は変えない。
+ */
+if (process.platform === "linux") {
+  const currentLocale = process.env.LC_ALL || process.env.LC_CTYPE || process.env.LANG || "";
+  if (!/utf-?8/i.test(currentLocale)) {
+    process.env.LC_ALL = "C.UTF-8";
+  }
+}
+
 const PORT = process.env.PLAYWRIGHT_TEST_PORT ?? "3100";
 // "127.0.0.1" ではなく "localhost" を使う。Next.js 16のdevサーバーは
 // dev専用リソース（HMR等）へのクロスオリジンアクセスをデフォルトで遮断しており、
