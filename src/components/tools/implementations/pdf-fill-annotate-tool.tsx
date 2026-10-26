@@ -29,7 +29,9 @@ import {
   type TextAnnotationObject,
 } from "@/lib/pdf-annotate/types";
 import { rotatePointAround } from "@/lib/pdf-annotate/geometry";
-import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { saveBlob, stripExtension } from "@/lib/utils/format";
+import { runWithDownloadAccess } from "@/lib/download/download-gate";
+import { useUnsavedChangesWarning } from "./shared/use-unsaved-changes-warning";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import {
   WHITEOUT_COLOR,
@@ -171,6 +173,16 @@ export function PdfFillAnnotateTool({
   const [objects, setObjects] = useState<AnnotationObject[]>([]);
   // 編集中のデータ（配置済みのオブジェクト）の有無を、総合画面へ知らせる。画面が外れるときは「なし」に戻す
   const hasEdits = objects.length > 0;
+  // 「保存した」時点の編集内容（ダウンロードの保存処理が実際に実行された時点の objects）。
+  // objects は編集のたびに新しい配列へ置き換わり、既存の配列は書き換えない。そのため
+  // 「いまの objects が保存した配列そのものか」で、保存後に編集が加わったかを判定できる
+  // （元に戻す操作で保存時点の配列に戻れば、保存済みの状態に戻る）。
+  const [savedObjects, setSavedObjects] = useState<AnnotationObject[] | null>(null);
+  // 直近に書き出し（PDF生成）が成功した時点の objects。画面に出ている生成結果は、この編集内容から作られている
+  const exportedObjectsRef = useRef<AnnotationObject[] | null>(null);
+  // 保存していない編集があるあいだだけ、ブラウザを閉じる・再読み込みする直前に確認を出す
+  const hasUnsavedEdits = hasEdits && objects !== savedObjects;
+  useUnsavedChangesWarning(hasUnsavedEdits);
   // 配置済みの編集があるときに別のPDFが選ばれた場合の、確認待ちのファイル（確認するまで、読み込み・編集の消去はしない）
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
   useEffect(() => {
@@ -440,6 +452,8 @@ export function PdfFillAnnotateTool({
     if (pendingImage) URL.revokeObjectURL(pendingImage.previewUrl);
     setPendingImage(null);
     setObjects([]);
+    setSavedObjects(null);
+    exportedObjectsRef.current = null;
     pastRef.current = [];
     futureRef.current = [];
     setCanUndo(false);
@@ -913,8 +927,12 @@ export function PdfFillAnnotateTool({
     setError(null);
     setStatus("processing");
     setResult(null);
+    exportedObjectsRef.current = null;
+    // 書き出しに使う編集内容を、処理の開始時点で控えておく（処理中に編集が加わっても、結果と対応づけられるように）
+    const snapshot = objects;
     try {
-      const output = await new PdfFillAnnotateProcessor().process({ file, objects });
+      const output = await new PdfFillAnnotateProcessor().process({ file, objects: snapshot });
+      exportedObjectsRef.current = snapshot;
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -925,7 +943,20 @@ export function PdfFillAnnotateTool({
 
   function handleDownload() {
     if (!result || !file) return;
-    downloadBlob(result.blob, `${stripExtension(file.name)}-記入済み.pdf`);
+    const blob = result.blob;
+    const filename = `${stripExtension(file.name)}-記入済み.pdf`;
+    const exported = exportedObjectsRef.current;
+    // downloadBlob() と同じ流れ（広告の確認が必要な場合は保留される）。保存処理が実際に実行された時点でだけ「保存済み」にする。
+    // 保存処理が例外で失敗した場合や、広告の確認画面で取りやめた場合は、保存済みにしない。
+    // ブラウザがファイルを書き終えたか（OSへの保存完了）は、アプリからは検出できない。
+    runWithDownloadAccess({
+      key: blob,
+      label: filename,
+      run: () => {
+        saveBlob(blob, filename);
+        if (exported) setSavedObjects(exported);
+      },
+    });
   }
 
   const MODE_LABELS: { value: ToolMode; label: string }[] = [
