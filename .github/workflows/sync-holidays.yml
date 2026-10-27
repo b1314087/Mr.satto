@@ -26,6 +26,11 @@
 #   実行のたびに環境が変わって結果がぶれないよう、ubuntu-24.04 に固定している。26.04 へ上げるときは、
 #   手動実行（Run workflow）で ubuntu-26.04 を試し、全ジョブが通ることを確かめてから変更する。
 #   （CI #16 の停止は、OSの固定とは無関係だった。ffmpegの導入が時間切れになる問題で、scripts/ci/install-test-deps.sh で対策済み。工程33）
+#
+# 外部アクション（actions/checkout・setup-node・upload-artifact）について:
+#   GitHub は 2026年9月23日に、実行環境から Node.js 20 を削除した（以後、JavaScript のアクションは Node 24 で動く）。
+#   Node 20 向けの古い版（v4）を使い続けると警告が出るため、Node 24 対応の v7 に更新している（工程34）。
+#   新しいメジャー版が出たときは、公式のリリースノートで互換性を確認してから上げる。
 
 name: Sync holidays
 
@@ -54,13 +59,13 @@ jobs:
       contents: write # main へ push するため
       issues: write # 問題を Issue で知らせるため
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

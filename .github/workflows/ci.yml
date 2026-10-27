@@ -31,6 +31,11 @@
 #   実行のたびに環境が変わって結果がぶれないよう、ubuntu-24.04 に固定している。26.04 へ上げるときは、
 #   手動実行（Run workflow）で ubuntu-26.04 を試し、全ジョブが通ることを確かめてから変更する。
 #   （CI #16 の停止は、OSの固定とは無関係だった。ffmpegの導入が時間切れになる問題で、scripts/ci/install-test-deps.sh で対策済み。工程33）
+#
+# 外部アクション（actions/checkout・setup-node・upload-artifact）について:
+#   GitHub は 2026年9月23日に、実行環境から Node.js 20 を削除した（以後、JavaScript のアクションは Node 24 で動く）。
+#   Node 20 向けの古い版（v4）を使い続けると警告が出るため、Node 24 対応の v7 に更新している（工程34）。
+#   新しいメジャー版が出たときは、公式のリリースノートで互換性を確認してから上げる。
 
 name: CI
 
@@ -64,11 +69,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -123,11 +128,11 @@ jobs:
               tests/seo
               tests/registry
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -152,7 +157,7 @@ jobs:
       # 失敗したときだけ、原因調査用のレポート・スクリーンショット・トレースを保存する（7日間）
       - name: Upload test report on failure
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-${{ matrix.slug }}
           path: |
@@ -168,11 +173,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -199,7 +204,7 @@ jobs:
 
       - name: Upload test report on failure
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-flags
           path: |
