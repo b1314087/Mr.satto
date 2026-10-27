@@ -162,6 +162,9 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  /** 使用フレームワークを示す X-Powered-By ヘッダーを送らない（情報の最小化。工程36） */
+  poweredByHeader: false,
+
   /**
    * "stripe" パッケージはNode.js向けとWorker（Cloudflare Workers等）向けで
    * 実装を出し分けており（package.jsonのexports条件分岐）、Next.jsのバンドラーに

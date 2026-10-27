@@ -4,28 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { isSafeInternalPath } from "@/lib/auth/safe-redirect";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 
 const INPUT_CLASS =
   "ms-input";
-
-/**
- * ログイン後のリダイレクト先（?next=）が、外部サイトへ誘導する
- * Open Redirectに使われないことを確認する（Phase 6.5 セキュリティ監査で追加）。
- *
- * "/" で始まっていれば安全、という単純な判定だけでは
- * "//evil.example"（プロトコル相対URL）や "/\evil.example"（一部ブラウザが
- * バックスラッシュをスラッシュとして解釈することを悪用するパターン）を
- * ブラウザ側で外部オリジンへの遷移として扱ってしまう可能性があるため、
- * それらも明示的に拒否する。相対パス内であれば従来通り許可する。
- */
-function isSafeInternalPath(path: string): boolean {
-  if (!path.startsWith("/")) return false;
-  if (path.startsWith("//")) return false;
-  if (path.startsWith("/\\")) return false;
-  return true;
-}
 
 function translateAuthError(message: string): string {
   if (message.includes("Invalid login credentials")) {
