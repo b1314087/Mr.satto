@@ -30,6 +30,7 @@
 #   Ubuntu 26.04 では同梱ソフトの更新・削除があり、Playwright のブラウザ導入（--with-deps）や ffmpeg の導入に影響しうる。
 #   実行のたびに環境が変わって結果がぶれないよう、ubuntu-24.04 に固定している。26.04 へ上げるときは、
 #   手動実行（Run workflow）で ubuntu-26.04 を試し、全ジョブが通ることを確かめてから変更する。
+#   （CI #16 の停止は、OSの固定とは無関係だった。ffmpegの導入が時間切れになる問題で、scripts/ci/install-test-deps.sh で対策済み。工程33）
 
 name: CI
 
@@ -134,13 +135,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # テストの準備（tests/global-setup.ts）が、動画・音声のテスト用ファイルを作るために ffmpeg を使う。
-      # GitHub の実行環境には入っていないため、先に入れる（入っていないと準備の段階で失敗する）。
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      # テスト用の準備: ffmpeg（tests/global-setup.ts が、動画・音声のテスト用ファイルを作るために使う）、
+      # ブラウザ用のOSライブラリ、Playwrightのブラウザ（Chromium）を入れる。
+      # 以前は apt-get が一時的に20分以上止まり、ジョブが30分でキャンセルされたことがある（工程33）。
+      # そのため、段階ごとに制限時間を付け、時間切れのときだけ1回やり直す（詳細は scripts/ci/install-test-deps.sh）。
+      # この手順だけの上限は15分（通常は1分以内）。
+      - name: Install test dependencies (ffmpeg, browser)
+        timeout-minutes: 15
+        run: bash scripts/ci/install-test-deps.sh
 
       - name: Run Playwright tests
         env:
@@ -178,13 +180,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # テストの準備（tests/global-setup.ts）が、動画・音声のテスト用ファイルを作るために ffmpeg を使う。
-      # GitHub の実行環境には入っていないため、先に入れる（入っていないと準備の段階で失敗する）。
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      # テスト用の準備: ffmpeg（tests/global-setup.ts が、動画・音声のテスト用ファイルを作るために使う）、
+      # ブラウザ用のOSライブラリ、Playwrightのブラウザ（Chromium）を入れる。
+      # 以前は apt-get が一時的に20分以上止まり、ジョブが30分でキャンセルされたことがある（工程33）。
+      # そのため、段階ごとに制限時間を付け、時間切れのときだけ1回やり直す（詳細は scripts/ci/install-test-deps.sh）。
+      # この手順だけの上限は15分（通常は1分以内）。
+      - name: Install test dependencies (ffmpeg, browser)
+        timeout-minutes: 15
+        run: bash scripts/ci/install-test-deps.sh
 
       - name: Features off (ads and billing off)
         run: npm run test:features-off -- --workers=1 --retries=0
