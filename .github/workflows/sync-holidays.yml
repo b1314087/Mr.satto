@@ -96,10 +96,10 @@ jobs:
       # テストの準備（tests/global-setup.ts）が、動画・音声のテスト用ファイルを作るために ffmpeg を使うため、
       # カレンダーのテストだけを走らせても、この準備は毎回動く。GitHub の実行環境には ffmpeg が入っていない。
       # apt-get が一時的に長く止まることがあるため、段階ごとの制限時間と、時間切れのときだけの1回の再試行を付けている
-      # （CIと共通。詳細は scripts/ci/install-test-deps.sh）。この手順だけの上限は15分（通常は1分以内）。
+      # （CIと共通。詳細は scripts/ci/install-test-deps.sh）。準備全体の予算は18分（スクリプト側で管理。通常は1分以内）で、この手順だけの上限はその予備を足した20分。
       - name: Install test dependencies (ffmpeg, browser)
         if: steps.lint.outcome == 'success'
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: bash scripts/ci/install-test-deps.sh
 
       - name: Calendar tests (unit + fiscal-calendar screen)
