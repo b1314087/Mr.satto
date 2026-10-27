@@ -127,6 +127,13 @@ jobs:
             paths: >-
               tests/seo
               tests/registry
+          # ログイン・会員登録まわり（ログイン後の移動先の安全確認＝Open Redirect対策、会員登録の同意チェックなど）。
+          # 画面のテストは、ダミーのSupabase設定（下の Run Playwright tests の env）で起動して実行する。
+          # 実際のSupabaseには接続しない（リクエストはテスト内で横取りして模擬の応答を返す）。
+          - name: 認証（ログイン・会員登録）
+            slug: auth
+            paths: >-
+              tests/auth
     steps:
       - uses: actions/checkout@v7
         with:
@@ -150,9 +157,15 @@ jobs:
         timeout-minutes: 20
         run: bash scripts/ci/install-test-deps.sh
 
+      # 「認証」の実行だけ、本物ではないダミーのSupabase設定を渡す（秘密情報ではない、接続先のないただの文字列）。
+      # この設定が無いとログイン・会員登録の画面が出ず、テストが黙ってスキップされてしまう。
+      # REQUIRE_AUTH_SCREEN_TESTS=1 により、設定が反映されていなければスキップではなく失敗になる。
       - name: Run Playwright tests
         env:
           PLAYWRIGHT_TEST_PORT: "3100"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ matrix.slug == 'auth' && 'http://127.0.0.1:54321' || '' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ matrix.slug == 'auth' && 'ci-dummy-anon-key' || '' }}
+          REQUIRE_AUTH_SCREEN_TESTS: ${{ matrix.slug == 'auth' && '1' || '' }}
         run: npx playwright test ${{ matrix.paths }} --workers=1 --retries=0
 
       # 失敗したときだけ、原因調査用のレポート・スクリーンショット・トレースを保存する（7日間）

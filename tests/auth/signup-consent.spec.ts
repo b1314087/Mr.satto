@@ -21,6 +21,11 @@ test.describe("会員登録フォームの同意チェック（画面）", () =>
   test("同意なしでは登録リクエストが送られず、同意すると送られる", async ({ page }) => {
     await page.goto("/signup");
     const form = page.locator("main form");
+    // CIでは REQUIRE_AUTH_SCREEN_TESTS=1 を付け、フォームが出ない（環境変数が反映されていない）場合は
+    // スキップではなく失敗にする。黙ってスキップされ、テストが実行されたように見えるのを防ぐため（工程37）。
+    if (process.env.REQUIRE_AUTH_SCREEN_TESTS === "1") {
+      await expect(form, "Supabaseのダミー環境変数が反映されていません").toHaveCount(1);
+    }
     test.skip((await form.count()) === 0, "会員登録機能が未設定の環境（Supabase環境変数なし）では実行しない");
 
     let signupRequests = 0;
