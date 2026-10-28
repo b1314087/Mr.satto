@@ -11,6 +11,8 @@ import { getOrCreateStripeCustomerId } from "@/lib/stripe/customer";
 import { siteConfig } from "@/lib/config/site";
 import type { Plan } from "@/lib/plans/types";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
+import { getConsentState } from "@/lib/legal/consent-store";
+import { CONSENT_REQUIRED_MESSAGE, CONSENT_UNAVAILABLE_MESSAGE } from "@/lib/legal/consent";
 
 // Checkout Session作成はStripe APIコストが発生する操作のため、
 // 認証済みユーザー単位で乱打を抑制する（Phase 6.5 セキュリティ監査で追加）。
@@ -101,6 +103,16 @@ export async function POST(request: Request) {
       { error: "すでにご契約があります。お支払い方法の変更・解約は、アカウント画面から行ってください。" },
       { status: 409 }
     );
+  }
+
+  // 現在の利用規約・プライバシーポリシーへの同意が、サーバーに記録されているときだけ、決済に進める（工程38）。
+  // 記録が読めないとき（準備が整っていないとき）は、同意を確認できないまま決済に進ませない。
+  const consent = await getConsentState(user.id);
+  if (!consent.ok) {
+    return NextResponse.json({ error: CONSENT_UNAVAILABLE_MESSAGE }, { status: 503 });
+  }
+  if (consent.missing.length > 0) {
+    return NextResponse.json({ error: CONSENT_REQUIRED_MESSAGE, code: "consent_required" }, { status: 403 });
   }
 
   // 表示している料金と、Stripeの実際の価格が一致しているときだけ、決済に進める

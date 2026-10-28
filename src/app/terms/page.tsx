@@ -5,6 +5,7 @@ import { siteConfig } from "@/lib/config/site";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { featureFlags } from "@/lib/config/features";
 import { tools } from "@/lib/tools/data";
+import { formatLegalVersion, LEGAL_VERSIONS } from "@/lib/legal/versions";
 
 /** プレミアムのプラン限定として提供しているツールが、実際にあるか（ツール一覧の実際の設定から判定する） */
 const premiumOnlyToolsExist = tools.some((t) => t.status === "available" && t.requiredPlan === "premium");
@@ -169,6 +170,12 @@ export default function TermsPage() {
             <Clauses>
               <li>有料プランのご利用には、メールアドレスとパスワードによる会員登録が必要です。</li>
               <li>ユーザーは、登録情報を正確に保ち、パスワードを自己の責任で管理するものとします。</li>
+              <li data-testid="terms-consent-record-clause">
+                会員登録の際には、本規約とプライバシーポリシーへの同意を確認します。同意した場合、運営者は、同意した文書の種類・版・日時を、会員のアカウントに関連付けて記録します。本規約またはプライバシーポリシーを改定した場合、その後に有料プランをお申し込みいただく際に、あらためて同意をお願いすることがあります。
+              </li>
+              <li data-testid="terms-account-deletion-clause">
+                ユーザーは、アカウント画面の「アカウントの削除」から、いつでも、ご自身のアカウントを削除できます。削除すると、アカウントと関連するデータは元に戻せません（取り扱いは、プライバシーポリシーに従います）。有料プランのご契約が続いている間は、アカウントを削除できません。先に解約し、契約期間が終了してから削除してください。アカウントを削除しても、お支払い済みの料金の返金は行いません（第6条）。
+              </li>
               <li>
                 登録情報の取り扱いは、
                 <Link href="/privacy" className={`mx-1 ${LINK_CLASS}`}>
@@ -285,7 +292,7 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <p className="text-xs text-ms-muted">最終更新日: 2026年10月</p>
+        <p className="text-xs text-ms-muted">最終更新日: {formatLegalVersion(LEGAL_VERSIONS.terms)}</p>
       </div>
     </div>
   );

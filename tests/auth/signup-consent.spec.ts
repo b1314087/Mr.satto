@@ -18,7 +18,7 @@ test("同意していなければエラーメッセージを返し、同意し�
 });
 
 test.describe("会員登録フォームの同意チェック（画面）", () => {
-  test("同意なしでは登録リクエストが送られず、同意すると送られる", async ({ page }) => {
+  test("同意なしでは送信できず、同意するとサーバー（Server Action）へ送られる。ブラウザはSupabase Authへ直接登録しない", async ({ page }) => {
     await page.goto("/signup");
     const form = page.locator("main form");
     // CIでは REQUIRE_AUTH_SCREEN_TESTS=1 を付け、フォームが出ない（環境変数が反映されていない）場合は
@@ -28,14 +28,16 @@ test.describe("会員登録フォームの同意チェック（画面）", () =>
     }
     test.skip((await form.count()) === 0, "会員登録機能が未設定の環境（Supabase環境変数なし）では実行しない");
 
-    let signupRequests = 0;
-    await page.route("**/auth/v1/signup**", async (route) => {
-      signupRequests += 1;
-      await route.fulfill({
-        status: 422,
-        contentType: "application/json",
-        body: JSON.stringify({ code: 422, error_code: "user_already_exists", msg: "User already registered" }),
-      });
+    // 工程38: 登録はサーバー経由になったため、ブラウザからSupabase Authへの直接のリクエストは発生しない。
+    let browserAuthRequests = 0;
+    await page.route("**/auth/v1/**", async (route) => {
+      browserAuthRequests += 1;
+      await route.abort();
+    });
+    // サーバーへの送信（Server Action = 同じページへのPOST）を数える
+    let serverPosts = 0;
+    page.on("request", (req) => {
+      if (req.method() === "POST" && new URL(req.url()).pathname === "/signup") serverPosts += 1;
     });
 
     await page.getByLabel("メールアドレス").fill("consent-test@example.com");
@@ -49,7 +51,7 @@ test.describe("会員登録フォームの同意チェック（画面）", () =>
     await expect(submit).toBeDisabled();
     await page.getByLabel(/パスワード/).press("Enter");
     await page.waitForTimeout(500);
-    expect(signupRequests).toBe(0);
+    expect(serverPosts).toBe(0);
 
     // 利用規約・プライバシーポリシーへのリンクが、新しいタブで開く設定で用意されている。
     const terms = form.getByRole("link", { name: "利用規約" });
@@ -59,15 +61,18 @@ test.describe("会員登録フォームの同意チェック（画面）", () =>
     await expect(privacy).toHaveAttribute("href", "/privacy");
     await expect(privacy).toHaveAttribute("target", "_blank");
 
-    // 同意すると送信できる（登録リクエストが1回送られる）。
+    // 同意すると送信できる（サーバーへ1回送られる）。ダミーのSupabaseには接続できないので、失敗の案内が表示される。
     await checkbox.check();
     await expect(submit).toBeEnabled();
     await submit.click();
-    await expect(page.getByText("このメールアドレスは既に登録されています")).toBeVisible();
-    expect(signupRequests).toBe(1);
-
-    // 同意を外すとまた押せなくなる。
-    await checkbox.uncheck();
+    await expect(page.getByText(/会員登録に失敗しました|準備中/)).toBeVisible({ timeout: 20_000 });
+    expect(serverPosts).toBe(1);
+    expect(browserAuthRequests).toBe(0);
+    // 入力し直しの手間を減らすため、メールアドレスは残る（パスワードは残らない）
+    await expect(page.getByLabel("メールアドレス")).toHaveValue("consent-test@example.com");
+    await expect(page.getByLabel(/パスワード/)).toHaveValue("");
+    // フォームがリセットされたので、同意のチェックも外れ、ボタンは再び押せない
+    await expect(checkbox).not.toBeChecked();
     await expect(submit).toBeDisabled();
   });
 });

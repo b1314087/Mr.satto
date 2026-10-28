@@ -54,5 +54,10 @@ const ENDED_SUBSCRIPTION_STATUSES = new Set(["canceled", "incomplete_expired"]);
  * 権限の有無（resolveEffectivePlan）とは別の判定: 支払いの遅れ（past_due）などで権限がなくても、契約は続いている。
  */
 export function hasOpenSubscription(subscription: SubscriptionSnapshot | null): boolean {
-  return subscription !== null && !ENDED_SUBSCRIPTION_STATUSES.has(subscription.status);
+  return subscription !== null && isOpenSubscriptionStatus(subscription.status);
+}
+
+/** Stripeの契約の状態（status）が「まだ続いている（または確認中）」か。アカウント削除の可否の判定にも使う */
+export function isOpenSubscriptionStatus(status: string): boolean {
+  return !ENDED_SUBSCRIPTION_STATUSES.has(status);
 }

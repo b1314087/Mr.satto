@@ -7,7 +7,7 @@ import { supabaseServiceConfig, isSupabaseServiceConfigured } from "./service-co
 /**
  * Service Role Key を使うSupabaseクライアント（RLSを経由しない特権クライアント）。
  *
- * 用途は以下の3箇所に限定する。
+ * 用途は以下の5箇所に限定する。
  *   1. Stripe Webhookハンドラ（src/app/api/stripe/webhook/route.ts）。
  *      Webhookはユーザーのログインセッションを持たない（Stripeサーバーからの通知）ため、
  *      通常のRLS前提のクライアントでは subscriptions テーブルを更新できない。
@@ -19,10 +19,15 @@ import { supabaseServiceConfig, isSupabaseServiceConfigured } from "./service-co
  *   3. AI利用台帳の関数呼び出し（src/lib/ai/server.ts）。ai_reserve / ai_settle / ai_release / ai_get_usage は
  *      service_role だけが実行できる。呼び出し元（src/app/api/ai/*）が、ログインとPremiumを確認してから使う。
  *
+ *   4. 利用規約・プライバシーポリシーへの同意の記録（src/lib/legal/consent-store.ts）。terms_consents テーブルは
+ *      service_role だけが読み書きできる。userId は検証済みのセッション、または会員登録の応答から得た値だけを渡す。
+ *   5. アカウント削除（src/lib/account/delete-account-actions.ts）。auth.admin.deleteUser は特権が必要。
+ *      必ず「ログイン中の本人」を確認し、本人のIDだけを渡す（他人のIDを受け取らない）。
+ *
  * 重要：
  * - "server-only" によりクライアントバンドルに紛れ込んだ場合はビルドエラーになる。
  * - SUPABASE_SERVICE_ROLE_KEY は NEXT_PUBLIC_ を付けない秘密情報。
- * - 上記2箇所以外の一般的なリクエスト処理（ユーザーの操作起点のAPI Route等）で
+ * - 上記以外の一般的なリクエスト処理（ユーザーの操作起点のAPI Route等）で
  *   使わないこと。他人の情報を無条件に読める強い権限を持つため、
  *   使う場合は呼び出し元が自分でアクセス制御を行う前提となる。
  */

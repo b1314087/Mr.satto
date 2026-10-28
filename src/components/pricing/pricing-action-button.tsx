@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Plan } from "@/lib/plans/types";
 
 /**
@@ -25,6 +26,7 @@ export function PricingActionButton({
   /** まだ続いている契約がある（契約が二重にならないよう、新しく申し込ませない） */
   hasOpenSubscription?: boolean;
 }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,7 +92,12 @@ export function PricingActionButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan }),
       });
-      const data = (await res.json()) as { url?: string; error?: string };
+      const data = (await res.json()) as { url?: string; error?: string; code?: string };
+      if (data.code === "consent_required") {
+        // 現在の利用規約等への同意が未記録: アカウント画面で同意してもらう
+        router.push("/account?consent=required");
+        return;
+      }
       if (!res.ok || !data.url) {
         setError(data.error ?? "決済ページの作成に失敗しました。");
         setLoading(false);
