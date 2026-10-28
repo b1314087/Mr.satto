@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import {
   PdfMetadataRemoveProcessor,
@@ -156,7 +157,7 @@ export function PdfMetadataRemoveTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">削除後の確認結果</p>
           {hasAnyRemainingValue ? (
             <ul className="flex flex-col gap-1 text-sm text-red-600 dark:text-red-400">
@@ -173,7 +174,7 @@ export function PdfMetadataRemoveTool() {
           )}
           <p className="text-xs text-neutral-500 dark:text-neutral-400">{formatBytes(result.sizeBytes)}</p>
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

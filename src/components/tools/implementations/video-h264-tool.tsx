@@ -7,6 +7,7 @@ import { VideoSizeWarning } from "@/components/tools/implementations/shared/vide
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { VideoH264Processor, type VideoH264Output } from "@/lib/processors/browser/video-h264";
 import {
   VIDEO_INPUT_ACCEPT,
@@ -262,7 +263,7 @@ export function VideoH264Tool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200" data-testid="video-h264-result">
             {result.reencoded
               ? `${videoCodecLabel(result.sourceCodec)} から H.264（AVC）へ再エンコードしました`
@@ -279,7 +280,7 @@ export function VideoH264Tool() {
           </div>
           <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

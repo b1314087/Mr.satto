@@ -9,6 +9,7 @@ import {
 } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   EnvelopeAddressProcessor,
   validateEnvelopeAddressInput,
@@ -691,12 +692,12 @@ export function EnvelopeAddressTool() {
         {error && <ErrorMessage message={error} />}
 
         {result && (
-          <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+          <ResultPopup>
             <RewardedDownloadGate
               onDownload={handleDownload}
               label="PDFをダウンロード"
             />
-          </div>
+          </ResultPopup>
         )}
       </div>
     </div>

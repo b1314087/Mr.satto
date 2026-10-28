@@ -13,6 +13,7 @@ import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementation
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { CsvToExcelProcessor } from "@/lib/processors/browser/csv-excel";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -92,12 +93,12 @@ export function CsvToExcelTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.rowCount}行 ・ {formatBytes(result.blob.size)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

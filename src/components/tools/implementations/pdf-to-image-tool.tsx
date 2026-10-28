@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { PdfToImageProcessor, type PdfToImageOutputItem } from "@/lib/processors/browser/pdf-render";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
@@ -133,7 +134,7 @@ export function PdfToImageTool() {
       {error && <ErrorMessage message={error} />}
 
       {outputs && outputs.length > 0 && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup size="lg">
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
             {thumbUrls.map((url, i) => (
               // eslint-disable-next-line @next/next/no-img-element
@@ -154,7 +155,7 @@ export function PdfToImageTool() {
             disabled={outputs.length > 1 && !zipBlob}
             label={outputs.length === 1 ? "ダウンロード" : "ZIPでダウンロード"}
           />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

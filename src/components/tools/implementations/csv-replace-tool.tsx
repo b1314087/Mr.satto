@@ -14,6 +14,7 @@ import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementation
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { CsvReplaceProcessor, replaceCsvRows } from "@/lib/processors/browser/csv-ops";
 import { parseCsv } from "@/lib/utils/csv";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
@@ -160,7 +161,7 @@ export function CsvReplaceTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.replacedCount}件を置換しました ・ {formatBytes(result.blob.size)}
           </p>
@@ -169,7 +170,7 @@ export function CsvReplaceTool() {
             onDownload={() => downloadBlob(result.blob, "replaced.csv")}
             label="CSVでダウンロード"
           />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

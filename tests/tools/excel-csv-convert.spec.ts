@@ -6,7 +6,7 @@ import { test, expect } from "../fixtures/premium-test";
 import { clearDevOverrides } from "../helpers/dev-plan";
 import { fixtures } from "../fixtures/paths";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
-import { uploadFixture as rawUpload, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { uploadFixture as rawUpload, waitForSuccess, clickAndDownload, assertDownloadedFile, closeResultPopup } from "../helpers/tool-runner";
 import { waitForFileInputHydrated } from "../helpers/tool-ready";
 import type { Page } from "@playwright/test";
 import { readXlsxSheet } from "../helpers/xlsx-inspect";
@@ -54,6 +54,7 @@ async function uploadFixture(page: Page, files: string | string[]) {
 /** 向きを切り替える。画面の準備（hydration）前のクリックは無視されることがあるため、押された状態になるまで確認する */
 async function switchMode(page: Page, mode: string) {
   await waitForFileInputHydrated(page);
+  await closeResultPopup(page); // 結果の完了ポップアップが開いていると、背面のボタンは押せない
   await expect(async () => {
     await page.getByTestId(`excel-csv-mode-${mode}`).click();
     await expect(page.getByTestId(`excel-csv-mode-${mode}`)).toHaveAttribute("aria-pressed", "true", { timeout: 2_000 });

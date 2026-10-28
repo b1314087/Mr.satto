@@ -76,7 +76,7 @@ export default function TokushohoPage() {
             {premium.name}プラン: 月額{premium.priceYen.toLocaleString()}円（税込）
           </p>
           <p className="mt-1">
-            無料プランは0円です。{premium.name}プランには、年度カレンダー作成の「AIで読み取る」補助が含まれます（AIトークン単位の利用枠があり、追加の料金はかかりません）。各プランの内容は
+            無料プランは0円です。{premium.name}プランには、年度カレンダー作成の「AIで読み取る」補助と、記入済みPDF→Excelの「AIで項目を読み取る」補助が含まれます（AIトークン単位の利用枠があり、追加の料金はかかりません）。各プランの内容は
             <Link href="/pricing" className={`mx-1 ${LINK_CLASS}`}>
               料金プラン
             </Link>

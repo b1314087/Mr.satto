@@ -296,23 +296,6 @@ export function FiscalCalendarEventsImport({
   return (
     <fieldset data-testid="events-import" className="flex flex-col gap-2 text-sm">
       <legend className="mb-1 text-neutral-600 dark:text-neutral-300">予定データ</legend>
-      <p className="text-xs text-neutral-600 dark:text-neutral-300">
-        {featureFlags.billing
-          ? "予定表（Excel・CSV・PDF・画像）を選ぶと、該当する日に予定を入れます。"
-          : "予定表（Excel・CSV・PDF）を選ぶと、該当する日に予定を入れます。"}
-      </p>
-      <ul className="flex flex-col gap-1 text-xs text-neutral-600 dark:text-neutral-300">
-        <li className="flex items-start gap-1.5">
-          <LockIcon />
-          {featureFlags.billing ? "Excel・CSV・文字のPDFは、この端末の中だけで処理します。" : "この端末の中だけで処理し、サーバーには送信されません。"}
-        </li>
-        {featureFlags.billing && (
-          <li className="flex items-start gap-1.5">
-            <SparkleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
-            画像・スキャンPDFは、AI（プレミアム）で読み取ります。同意したときだけ、縮小した画像を送ります。
-          </li>
-        )}
-      </ul>
       <div
         data-testid="events-dropzone"
         data-dragging={dragging}
@@ -361,6 +344,18 @@ export function FiscalCalendarEventsImport({
         </div>
         {busy && <ProcessingStatus state="processing" processingLabel={busy} testId="events-busy" />}
       </div>
+      <ul data-testid="events-privacy-notes" className="flex flex-col gap-1 text-xs text-neutral-600 dark:text-neutral-300">
+        <li className="flex items-start gap-1.5">
+          <LockIcon />
+          {featureFlags.billing ? "Excel・CSV・文字のPDFは、この端末の中だけで処理します。" : "この端末の中だけで処理し、サーバーには送信されません。"}
+        </li>
+        {featureFlags.billing && (
+          <li className="flex items-start gap-1.5">
+            <SparkleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
+            画像・スキャンPDFは、AI（プレミアム）で読み取ります。同意したときだけ、縮小した画像を送ります。
+          </li>
+        )}
+      </ul>
       {fileError && <ErrorMessage message={fileError} testId="events-file-error" />}
       {pdfFile && featureFlags.billing && !pending && !busy && (
         <button

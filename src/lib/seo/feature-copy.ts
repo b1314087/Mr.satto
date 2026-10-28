@@ -188,6 +188,16 @@ const TEXT_RULES: TextRule[] = [
   },
   { from: "無料・プレミアムツールの一覧です。", resolve: (ctx) => (notPremiumOnly(ctx) ? "無料ツールの一覧です。" : undefined) },
 
+  // ---- 記入済みPDF→Excel（「AIで項目を読み取る」は課金オンのときだけ提供）----
+  // 課金オンの文言が元の文章。課金オフのときだけ、AIに触れない（AIを使わない）文言へ差し替える。
+  {
+    from: "通常の変換（自動抽出・テンプレート）は、AIを使いません。文字の読み取り（OCR）も項目の整理も、ブラウザの中で、座標に基づく決まった手順で行います。プレミアムプランの「AIで項目を読み取る」を使うときだけ、送る内容を確認して同意したうえで、文字情報のあるPDFの文字（5ページ・6,000文字まで）を外部のAIサービスへ送ります。",
+    resolve: (ctx) =>
+      ctx.billing
+        ? undefined
+        : "このツールは、AIによる読み取り補助や外部のAIサービスを使いません。文字の読み取り（OCR）も項目の整理も、ブラウザの中で、座標に基づく決まった手順で行います。",
+  },
+
   // ---- 年度カレンダー作成（AIで読み取る機能は課金オンのときだけ提供。文言は fiscal-calendar-copy.ts）----
   // 課金オンの文言が元の文章。課金オフのときだけ、AI・画像に触れない文言へ差し替える。
   ...FISCAL_CALENDAR_COPY_PAIRS.map((pair): TextRule => ({ from: pair.on, resolve: (ctx) => (ctx.billing ? undefined : pair.off) })),
@@ -195,6 +205,7 @@ const TEXT_RULES: TextRule[] = [
 
 /** 課金オフのとき、まるごと取り除くFAQの質問 */
 const FAQ_QUESTIONS_REMOVED_WHEN_BILLING_OFF = new Set([
+  "AIで項目を読み取る機能はありますか？",
   "無料プランではどのように使えますか？",
   "スタンダードプランではどのように使えますか？",
   "プレミアムプランの制限は？",

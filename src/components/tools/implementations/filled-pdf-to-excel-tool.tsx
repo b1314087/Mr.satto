@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
+import { ResultPopup } from "@/components/common/result-popup";
+import { FilledPdfAiPanel, formAiEnabled } from "./filled-pdf-to-excel/ai-panel";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
@@ -199,7 +201,9 @@ function AutoExtractSection() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
         <p>
-          このツールでは、AIによる読み取り補助や外部のAIサービスは使いません。
+          {formAiEnabled()
+            ? "通常の変換は、AIを使わず、この端末の中だけで処理します。"
+            : "このツールでは、AIによる読み取り補助や外部のAIサービスは使いません。"}
           複雑なレイアウトや手書き文字は、正しく項目化できない場合があります。
           1ページに複数人分ある帳票は、上の「テンプレート」モードをお試しください。
         </p>
@@ -274,8 +278,10 @@ function AutoExtractSection() {
       <ProcessingStatus state={status} processingLabel={progressLabel || "処理中..."} successLabel="Excelファイルの生成が完了しました" />
       {error && <ErrorMessage message={error} />}
 
+      {files.length > 0 && formAiEnabled() && <FilledPdfAiPanel files={files} totalPages={totalPages} />}
+
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup size="lg">
           <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
             <span>合計ページ数: {result.pageCount}</span>
             <span>検出行数: {result.totalRowCount}</span>
@@ -321,7 +327,7 @@ function AutoExtractSection() {
           >
             Excelファイルをダウンロード
           </button>
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { ResultPopup } from "@/components/common/result-popup";
 import type { ReactNode } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -332,12 +333,9 @@ export function AudioResultCard({
   children: ReactNode;
 }) {
   return (
-    <div
-      data-testid="audio-result"
-      className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
-    >
+    <ResultPopup testId="audio-result">
       <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">{summary}</div>
       {children}
-    </div>
+    </ResultPopup>
   );
 }

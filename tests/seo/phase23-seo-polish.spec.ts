@@ -256,8 +256,8 @@ test.describe("L6: 年度カレンダーのdescription", () => {
   });
 });
 
-test.describe("記入済みPDF→Excel: AIを使わないという説明", () => {
-  test("実装がAIの機能（OpenAI・AI補助・AIのAPI）を使っていないことを確認する（説明の前提）", () => {
+test.describe("記入済みPDF→Excel: 通常の変換はAIを使わないという説明", () => {
+  test("通常の変換の実装が、AIの機能（OpenAI・AI補助・AIのAPI）を使っていないことを確認する（説明の前提）。AIの呼び出しは、任意のAIパネル1か所だけ", () => {
     const dirs = ["src/components/tools/implementations/filled-pdf-to-excel", "src/lib/tools/filled-pdf-to-excel", "src/lib/pdf-template"];
     const files = [
       "src/components/tools/implementations/filled-pdf-to-excel-tool.tsx",
@@ -266,22 +266,41 @@ test.describe("記入済みPDF→Excel: AIを使わないという説明", () =>
     ];
     const walk = (d: string): string[] =>
       fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]));
-    for (const f of [...dirs.flatMap(walk), ...files]) {
+    // 「AIで項目を読み取る」（プレミアム・任意）のパネルだけが、AIを呼ぶ。通常の変換の部品は、AIに触れない
+    const AI_PANEL = "src/components/tools/implementations/filled-pdf-to-excel/ai-panel.tsx";
+    for (const f of [...dirs.flatMap(walk), ...files].filter((x) => x !== AI_PANEL)) {
       const src = read(f);
       expect(src, f).not.toMatch(/from "@\/lib\/ai|api\/ai|openai|calendar-assist|fiscal-calendar-(ai|image)-assist/i);
     }
+    const panel = read(AI_PANEL);
+    expect(panel).toContain("/api/ai/form-extract");
+    expect(panel).not.toMatch(/calendar-assist|fiscal-calendar-(ai|image)-assist/);
+    // AIのパネルは、ツールの画面から1か所だけ呼ばれ、課金がオフの間は出ない
+    expect(read("src/components/tools/implementations/filled-pdf-to-excel-tool.tsx")).toMatch(/formAiEnabled\(\) && <FilledPdfAiPanel/);
   });
 
-  test("FAQと画面の説明は、「AIによる読み取り補助や外部のAIサービスは使わない」と明確に書き、他のAI機能まで否定しない", () => {
+  test("FAQと画面の説明は、「通常の変換はAIを使わない。AIで項目を読み取る（プレミアム・任意）を使うときだけ、同意のうえで文字を送る」と書き、サイト全体でAIを使わないとは言わない", () => {
     const seo = getToolSeoContent("filled-pdf-to-excel")!;
     const faq = seo.faq.find((f) => f.question.startsWith("手書き文字"))!;
-    expect(faq.answer).toContain("AIによる読み取り補助や外部のAIサービスを使いません");
+    expect(faq.answer).toContain("通常の変換（自動抽出・テンプレート）は、AIを使いません");
     expect(faq.answer).toContain("ブラウザの中で");
+    expect(faq.answer).toContain("「AIで項目を読み取る」を使うときだけ、送る内容を確認して同意したうえで");
     expect(faq.answer).not.toContain("LLM");
-    // サイト全体で「AIを使わない」と言い切っていない（年度カレンダーのAI読み取りがあるため、このツールに限った説明）
     expect(faq.answer).not.toMatch(/Mr\.Satto(では|は)AIを使いません/);
+    const aiFaq = seo.faq.find((f) => f.question === "AIで項目を読み取る機能はありますか？")!;
+    expect(aiFaq.answer).toContain("プレミアムプラン");
+    expect(aiFaq.answer).toContain("PDFファイルそのものや画像は送りません");
+    expect(aiFaq.answer).toContain("スキャンした画像のPDFは対象外");
+    // 課金がオフのときは、AIの機能自体を出さないので、従来どおり「AIを使わない」説明に戻る（AIのFAQも出ない）
+    const off = adaptToolSeoContentWith(toolSeoContent["filled-pdf-to-excel"], { billing: false, ads: false, premiumOnly: false, standardOffered: false });
+    const offFaq = off.faq.find((f) => f.question.startsWith("手書き文字"))!;
+    expect(offFaq.answer).toContain("このツールは、AIによる読み取り補助や外部のAIサービスを使いません");
+    expect(offFaq.answer).not.toContain("AIで項目を読み取る");
+    expect(off.faq.some((f) => f.question === "AIで項目を読み取る機能はありますか？")).toBe(false);
+    // 画面の説明: 課金がオフのときの文は従来どおり。通常の変換がAIを使わないことも書いてある
     const ui = read("src/components/tools/implementations/filled-pdf-to-excel-tool.tsx");
     expect(ui).toContain("このツールでは、AIによる読み取り補助や外部のAIサービスは使いません。");
+    expect(ui).toContain("通常の変換は、AIを使わず、この端末の中だけで処理します。");
     expect(ui).not.toContain("AIによる曖昧な判断は行っていません");
   });
 

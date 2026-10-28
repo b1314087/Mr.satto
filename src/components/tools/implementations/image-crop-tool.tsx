@@ -8,6 +8,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { ImageCropProcessor, resolveCropRect, type CropRegion } from "@/lib/processors/browser/image";
 import { useLoadedImage } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
@@ -338,7 +339,7 @@ export function ImageCropTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={result.url}
@@ -349,7 +350,7 @@ export function ImageCropTool() {
             {result.width} × {result.height}px ・ {formatBytes(result.sizeBytes)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
-        </div>
+        </ResultPopup>
       )}
     </PreviewSplitLayout>
   );

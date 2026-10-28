@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { PdfPasswordProtectProcessor, type PdfProtectOutput } from "@/lib/processors/browser/pdf-protect";
 import { getPdfjs, loadPdfDocument, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
@@ -244,7 +245,7 @@ export function PdfPasswordProtectTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <ul className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
             <li>✔ パスワードなしでは開けないことを確認しました</li>
             <li>✔ 設定したパスワードで開け、{result.pageCount}ページすべてを読めることを確認しました</li>
@@ -259,7 +260,7 @@ export function PdfPasswordProtectTool() {
             {result.name} ・ {formatBytes(result.sizeBytes)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, result.name)} />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

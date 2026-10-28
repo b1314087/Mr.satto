@@ -7,6 +7,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { ImageFlipProcessor, ImageRotateProcessor, drawFlipped, drawRotated, rotatedSize } from "@/lib/processors/browser/image";
 import { useDownscaledImage, useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
@@ -235,14 +236,14 @@ export function ImageRotateFlipTool({ initialMode = "rotate" }: { initialMode?: 
       {error && <ErrorMessage message={error} />}
 
       {shownResult && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={shownResult.url} alt="処理結果のプレビュー" className="max-h-64 rounded-lg border border-neutral-200 object-contain dark:border-neutral-700" />
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {detail} ・ {shownResult.width} × {shownResult.height}px ・ {formatBytes(shownResult.sizeBytes)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(shownResult.blob, downloadName)} />
-        </div>
+        </ResultPopup>
       )}
     </PreviewSplitLayout>
   );

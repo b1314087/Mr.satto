@@ -6,6 +6,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { SliderField } from "@/components/common/slider-field";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   DEFAULT_CONTENT,
   DEFAULT_GEOMETRY,
@@ -557,12 +558,12 @@ export function ExcelLabelTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <RewardedDownloadGate
             onDownload={handleDownload}
             label={result.format === "word" ? "Wordファイルをダウンロード" : "Excelファイルをダウンロード"}
           />
-        </div>
+        </ResultPopup>
       )}
     </PreviewSplitLayout>
   );

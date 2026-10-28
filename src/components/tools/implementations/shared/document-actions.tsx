@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   DocumentPdfProcessor,
   buildDocumentFileName,
@@ -66,7 +67,7 @@ export function DocumentActions({ form }: { form: DocumentFormState }) {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.pageCount}ページ ・ {formatBytes(result.sizeBytes)}
           </p>
@@ -88,7 +89,7 @@ export function DocumentActions({ form }: { form: DocumentFormState }) {
           >
             新しいタブでPDFを開く（印刷はこちらから）
           </button>
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

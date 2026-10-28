@@ -15,6 +15,7 @@ import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementation
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { CsvDedupeProcessor, dedupeCsvRows } from "@/lib/processors/browser/csv-ops";
 import { parseCsv } from "@/lib/utils/csv";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
@@ -139,7 +140,7 @@ export function CsvDedupeTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             削除前: {result.beforeCount}行 → 削除後: {result.afterCount}行（
             {result.removedCount}行を重複として削除） ・ {formatBytes(result.blob.size)}
@@ -149,7 +150,7 @@ export function CsvDedupeTool() {
             onDownload={() => downloadBlob(result.blob, "deduped.csv")}
             label="CSVでダウンロード"
           />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

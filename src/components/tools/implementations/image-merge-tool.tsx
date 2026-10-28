@@ -7,6 +7,7 @@ import { ReorderableFileList } from "@/components/tools/implementations/shared/r
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   ImageMergeProcessor,
   type ImageMergeAlignment,
@@ -513,7 +514,7 @@ export function ImageMergeTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <div
             className="rounded-lg border border-neutral-200 p-2 dark:border-neutral-700"
             style={result.mimeType === "image/png" ? CHECKER_STYLE : undefined}
@@ -536,7 +537,7 @@ export function ImageMergeTool() {
               )
             }
           />
-        </div>
+        </ResultPopup>
       )}
     </PreviewSplitLayout>
   );

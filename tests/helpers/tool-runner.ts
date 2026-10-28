@@ -55,7 +55,26 @@ export async function waitForSuccess(page: Page, successText: string, timeoutMs 
   await expect(page.getByText(successText, { exact: false })).toBeVisible({ timeout: timeoutMs });
 }
 
+/**
+ * 完了ポップアップ（ResultPopup）が開いていれば閉じる。
+ *
+ * 作成が終わると、結果（ダウンロードボタンなど）が画面中央のポップアップに出て、背面の画面は暗くなり操作できない。
+ * ポップアップの中のボタン（ダウンロードなど）は、そのまま押せる。
+ * 設定を変える・もう一度作る・別の項目を押す、など「背面の画面」を操作する前に、これで閉じる。
+ * 開いていなければ何もしない。閉じても結果は消えず、「結果を表示する」ボタンから開き直せる。
+ */
+export async function closeResultPopup(page: Page) {
+  const popup = page.getByTestId("result-popup");
+  if (await popup.isVisible()) {
+    await page.keyboard.press("Escape");
+    await expect(popup).toBeHidden();
+  }
+}
+
 export async function clickAndDownload(page: Page, downloadButtonName: string | RegExp): Promise<Download> {
+  // 完了ポップアップを閉じてあるなら、利用者と同じように「結果を表示する」で開き直してから押す
+  const reopen = page.getByTestId("result-popup-reopen").first();
+  if (await reopen.isVisible()) await reopen.click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: downloadButtonName }).click();
   return await downloadPromise;

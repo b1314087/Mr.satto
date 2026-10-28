@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   ExcelToPdfProcessor,
   readExcelSheets,
@@ -262,7 +263,7 @@ export function ExcelToPdfTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
             <span>ページ数: {result.pageCount}</span>
             <span>シート数: {result.sheetCount}</span>
@@ -279,7 +280,7 @@ export function ExcelToPdfTool() {
           )}
 
           <RewardedDownloadGate onDownload={handleDownload} label="PDFをダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

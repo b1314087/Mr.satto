@@ -1,5 +1,5 @@
 import { test, expect } from "../fixtures/premium-test";
-import { clickAndDownload } from "../helpers/tool-runner";
+import { clickAndDownload, closeResultPopup } from "../helpers/tool-runner";
 import { strFromU8, unzipSync } from "fflate";
 import fs from "node:fs";
 
@@ -99,6 +99,7 @@ test.describe("ラベル作成(Word)", () => {
     for (let i = 1; i <= 14; i++) expect(doc).toContain(`宛先${i}<`);
     expect(doc.match(/<w:sectPr/g)?.length).toBe(2);
     // 次のページのプレビュー
+    await closeResultPopup(page);
     await page.getByRole("button", { name: "次のページ" }).click();
     await expect(page.getByTestId("label-page-indicator")).toHaveText("2 / 2ページ");
   });

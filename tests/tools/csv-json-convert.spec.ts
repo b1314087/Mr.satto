@@ -7,7 +7,7 @@ import { test, expect } from "../fixtures/premium-test";
 import { clearDevOverrides } from "../helpers/dev-plan";
 import { fixtures } from "../fixtures/paths";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
-import { uploadFixture as rawUpload, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { uploadFixture as rawUpload, waitForSuccess, clickAndDownload, assertDownloadedFile, closeResultPopup } from "../helpers/tool-runner";
 import { waitForFileInputHydrated } from "../helpers/tool-ready";
 import { siteConfig } from "@/lib/config/site";
 import { getListedTools, getMergedTools, getToolById, getFeaturedTools, tools } from "@/lib/tools/data";
@@ -53,6 +53,7 @@ async function uploadFixture(page: Page, files: string | string[]) {
 async function switchMode(page: Page, mode: string) {
   await waitForFileInputHydrated(page).catch(() => undefined);
   await expect(async () => {
+    await closeResultPopup(page);
     await page.getByTestId(`csv-json-mode-${mode}`).click();
     await expect(page.getByTestId(`csv-json-mode-${mode}`)).toHaveAttribute("aria-pressed", "true", { timeout: 2_000 });
   }).toPass({ timeout: 20_000 });

@@ -29,10 +29,23 @@ import {
   validateImageAssistRequest,
   type AssistImage,
 } from "./calendar-assist";
+import {
+  FORM_CONSENT_VERSION,
+  FORM_INPUT_OVERHEAD_TOKENS,
+  FORM_INSTRUCTIONS,
+  FORM_OUTPUT_SCHEMA,
+  buildFormUserInput,
+  maxOutputTokensForForm,
+  parseFormOutput,
+  totalFormChars,
+  validateFormExtractRequest,
+} from "./form-extract";
 import type { Ledger, PeriodSnapshot, ReserveOutcome } from "./ledger";
 import type { OpenAiCallResult } from "./openai-client";
 
 export const FEATURE_CALENDAR_ASSIST = "calendar-import";
+/** 記入済みPDF→Excelの、AI読み取り補助（利用台帳に残る機能名。内容は入れない） */
+export const FEATURE_FORM_EXTRACT = "form-extract";
 
 /** 1回の依頼で、予約できる額の上限（期間の上限の何分の1か）。1回で枠の大半を使い切る依頼を、AIを呼ぶ前に断る */
 const MAX_SINGLE_RESERVE_MICRO_USD = AI_PERIOD_LIMIT_MICRO_USD / 4;
@@ -48,7 +61,7 @@ export interface AssistDeps {
     instructions: string;
     input: string;
     maxOutputTokens: number;
-    mode?: "rows" | "image";
+    mode?: "rows" | "image" | "form";
     images?: AssistImage[];
   }): Promise<OpenAiCallResult>;
   /** 運用ログ。本文（セルの文字・AIの出力）は渡さない */
@@ -89,36 +102,77 @@ const RESERVE_ERRORS: Record<Exclude<ReserveOutcome, "ok">, { status: number; er
   invalid: { status: 400, error: "invalid", message: "依頼の内容が正しくありません。" },
 };
 
-export async function handleCalendarAssist(
-  deps: AssistDeps,
-  caller: Caller,
-  availability: Availability,
-  rawBody: unknown,
-): Promise<ServiceResponse> {
+/**
+ * 権限と同意の確認（どのAI補助でも共通）。通らなければ、返す応答を返す。通れば null。
+ * 権限の確認が先: ログインしていない人・Premiumでない人には、同意や入力の中身を見ずに断る。
+ */
+function checkAccess(caller: Caller, availability: Availability, rawBody: unknown, consentVersion: string): ServiceResponse | null {
   if (!availability.available) {
     return respond(503, { error: "unavailable", reason: availability.reason, message: "AIによる読み取り補助は、現在ご利用いただけません。" });
   }
-
-  // 権限の確認が先: ログインしていない人・Premiumでない人には、同意や入力の中身を見ずに断る
   if (!caller.userId) return respond(401, { error: "login_required", message: "ログインが必要です。" });
   if (caller.plan !== "premium") return respond(403, { error: "not_premium", message: "AIによる読み取り補助は、プレミアムプランの機能です。" });
 
   // 同意がなければ、何も処理しない（AIは呼ばない）
   const consent = typeof rawBody === "object" && rawBody !== null ? (rawBody as { consent?: unknown }).consent : undefined;
   const consented =
-    typeof consent === "object" && consent !== null && (consent as { accepted?: unknown }).accepted === true && (consent as { version?: unknown }).version === CONSENT_VERSION;
+    typeof consent === "object" && consent !== null && (consent as { accepted?: unknown }).accepted === true && (consent as { version?: unknown }).version === consentVersion;
   if (!consented) {
     return respond(400, { error: "consent_required", message: "AIへ送信することへの同意が確認できませんでした。送信内容を確認し、同意してから実行してください。" });
   }
+  return null;
+}
 
+export async function handleCalendarAssist(
+  deps: AssistDeps,
+  caller: Caller,
+  availability: Availability,
+  rawBody: unknown,
+): Promise<ServiceResponse> {
+  const denied = checkAccess(caller, availability, rawBody, CONSENT_VERSION);
+  if (denied) return denied;
   const plan = buildPlan(rawBody);
   if (!plan.ok) return respond(400, { error: "invalid_request", message: plan.message });
-  return execute(deps, caller.userId, plan.value);
+  return execute(deps, caller.userId as string, plan.value);
+}
+
+/** 記入済みPDF→Excelの、AI読み取り補助（PDFの文字を、表の行に整理する）。流れは年度カレンダーと同じ */
+export async function handleFormExtract(
+  deps: AssistDeps,
+  caller: Caller,
+  availability: Availability,
+  rawBody: unknown,
+): Promise<ServiceResponse> {
+  const denied = checkAccess(caller, availability, rawBody, FORM_CONSENT_VERSION);
+  if (denied) return denied;
+  const validated = validateFormExtractRequest(rawBody);
+  if (!validated.ok) return respond(400, { error: "invalid_request", message: validated.message });
+  const request = validated.value;
+  const input = buildFormUserInput(request);
+  const chars = totalFormChars(request);
+  return execute(deps, caller.userId as string, {
+    mode: "form",
+    feature: FEATURE_FORM_EXTRACT,
+    requestId: request.requestId,
+    tier: request.model,
+    instructions: FORM_INSTRUCTIONS,
+    input,
+    maxOutputTokens: maxOutputTokensForForm(chars),
+    estimatedInputTokens: estimateInputTokens(FORM_INSTRUCTIONS + JSON.stringify(FORM_OUTPUT_SCHEMA) + input) + FORM_INPUT_OVERHEAD_TOKENS,
+    tooLargeMessage: "一度に読み取る量が多すぎます。ページを減らして、もう一度お試しください。",
+    incompleteMessage: "AIの応答が途中で切れたため、結果を使えませんでした。ページを減らして、もう一度お試しください。",
+    parse: (text) => {
+      const parsed = parseFormOutput(text, request);
+      return parsed ? { fields: { rows: parsed.rows, notes: parsed.notes }, rejected: parsed.rejected } : null;
+    },
+  });
 }
 
 /** 1回の依頼の中身（文字の読み取り・画像の読み取りで共通の流れに渡す形） */
 interface Plan {
-  mode: "rows" | "image";
+  mode: "rows" | "image" | "form";
+  /** 利用台帳に残る機能名 */
+  feature: string;
   requestId: string;
   tier: AiModelTier;
   instructions: string;
@@ -127,6 +181,8 @@ interface Plan {
   maxOutputTokens: number;
   estimatedInputTokens: number;
   tooLargeMessage: string;
+  /** AIの応答が途中で切れたときの案内 */
+  incompleteMessage: string;
   /** AIの出力を検証して、画面に返す項目にする。全体が不正なら null */
   parse(text: string): { fields: Record<string, unknown>; rejected: number } | null;
 }
@@ -141,6 +197,7 @@ function buildPlan(rawBody: unknown): { ok: true; value: Plan } | { ok: false; m
       ok: true,
       value: {
         mode: "image",
+        feature: FEATURE_CALENDAR_ASSIST,
         requestId: request.requestId,
         tier: request.model,
         instructions: IMAGE_INSTRUCTIONS,
@@ -149,6 +206,8 @@ function buildPlan(rawBody: unknown): { ok: true; value: Plan } | { ok: false; m
         maxOutputTokens: maxOutputTokensForImages(request.images.length),
         estimatedInputTokens: estimateImageInputTokens(request),
         tooLargeMessage: "一度に読み取る量が多すぎます。画像の枚数（ページ数）を減らして、もう一度お試しください。",
+        incompleteMessage:
+          "AIの応答が途中で切れたため、結果を使えませんでした。予定が多すぎる可能性があります。画像の枚数（ページ数）を減らすか、文字として読めるPDFなら、画像ではなくPDFのまま読み込んでください。",
         parse: (text) => {
           const parsed = parseImageAssistOutput(text, request);
           return parsed ? { fields: { suggestions: parsed.suggestions, source: request.source }, rejected: parsed.rejected } : null;
@@ -164,6 +223,7 @@ function buildPlan(rawBody: unknown): { ok: true; value: Plan } | { ok: false; m
     ok: true,
     value: {
       mode: "rows",
+      feature: FEATURE_CALENDAR_ASSIST,
       requestId: request.requestId,
       tier: request.model,
       instructions: INSTRUCTIONS,
@@ -172,6 +232,7 @@ function buildPlan(rawBody: unknown): { ok: true; value: Plan } | { ok: false; m
       // 入力の見積り（上限）: 指示・スキーマ・本文のすべてのバイト数 + リクエストの枠組みの余裕
       estimatedInputTokens: estimateInputTokens(INSTRUCTIONS + JSON.stringify(OUTPUT_SCHEMA) + input) + 1_000,
       tooLargeMessage: "一度に読み取る量が多すぎます。行を減らして、もう一度お試しください。",
+      incompleteMessage: "AIの応答が途中で切れたため、結果を使えませんでした。行を減らして、もう一度お試しください。",
       parse: (text) => {
         const parsed = parseAssistOutput(text, request);
         return parsed ? { fields: { suggestions: parsed.suggestions }, rejected: parsed.rejected } : null;
@@ -194,7 +255,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
     reservation = await deps.ledger.reserve({
       userId,
       requestId,
-      feature: FEATURE_CALENDAR_ASSIST,
+      feature: plan.feature,
       modelId,
       reserveMicroUsd: reserved,
       ttlSeconds: RESERVATION_TTL_SECONDS,
@@ -225,6 +286,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
       input,
       maxOutputTokens,
       ...(plan.mode === "image" ? { mode: "image" as const, images: plan.images } : {}),
+      ...(plan.mode === "form" ? { mode: "form" as const } : {}),
     });
   } catch {
     // 呼び出しの中で想定外の例外が起きた: 課金されたか分からないので、そのままにする
@@ -265,9 +327,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
       result.kind === "refusal"
         ? "AIがこの内容の読み取りに応じませんでした。通常の読み取り結果はそのまま使えます。"
         : result.kind === "incomplete"
-          ? plan.mode === "image"
-            ? "AIの応答が途中で切れたため、結果を使えませんでした。予定が多すぎる可能性があります。画像の枚数（ページ数）を減らすか、文字として読めるPDFなら、画像ではなくPDFのまま読み込んでください。"
-            : "AIの応答が途中で切れたため、結果を使えませんでした。行を減らして、もう一度お試しください。"
+          ? plan.incompleteMessage
           : "AIの処理に失敗しました。通常の読み取り結果はそのまま使えます。";
     return respond(502, { error: `ai_${result.kind}`, message, usage: usageInfo });
   }
@@ -277,7 +337,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
   if (!parsed) {
     return respond(502, { error: "ai_invalid_output", message: "AIの出力の形式が正しくなかったため、結果を使えませんでした。", usage: usageInfo });
   }
-  return respond(200, { ok: true, model: tier, ...(plan.mode === "image" ? { mode: "image" } : {}), ...parsed.fields, rejected: parsed.rejected, usage: usageInfo });
+  return respond(200, { ok: true, model: tier, ...(plan.mode === "image" ? { mode: "image" } : {}), ...(plan.mode === "form" ? { mode: "form" } : {}), ...parsed.fields, rejected: parsed.rejected, usage: usageInfo });
 }
 
 /** 台帳への確定・解放。一時的な失敗に備えて1回だけやり直す。それでも失敗したら、予約は期限切れで「使用済み」になる */

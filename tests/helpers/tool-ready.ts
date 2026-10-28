@@ -1,6 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { uploadFixture, waitForFileInputHydrated } from "./tool-runner";
+import { closeResultPopup, uploadFixture, waitForFileInputHydrated } from "./tool-runner";
 
 /**
  * ツールページで「ファイルを選ぶ」操作を安全に行うための共通ヘルパー（工程3）。
@@ -151,6 +151,14 @@ export async function clickWhenReady(button: Locator, options: ClickWhenReadyOpt
       timeout: readyTimeoutMs,
     })
     .toBe(true);
+
+  // 完了ポップアップが開いていて、押したいボタンがその外（背面の画面）にあるなら、利用者と同じように先に閉じる。
+  // ポップアップの中のボタン（ダウンロードなど）は、閉じずにそのまま押す。
+  const popup = button.page().getByTestId("result-popup");
+  if (await popup.isVisible()) {
+    const insidePopup = await button.evaluate((el) => !!el.closest('[data-testid="result-popup"]')).catch(() => false);
+    if (!insidePopup) await closeResultPopup(button.page());
+  }
 
   await button.click();
 

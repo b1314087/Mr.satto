@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { PdfToWordProcessor, previewPdfToWordBlocks, type PdfToWordOutput } from "@/lib/processors/browser/pdf-to-word";
 import type { DocumentBlock, RunInfo } from "@/lib/pdf/paragraph-reconstruction";
@@ -241,7 +242,7 @@ export function PdfToWordTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
             <span>ページ数: {result.pageCount}</span>
             <span>段落数: {result.paragraphCount}</span>
@@ -282,7 +283,7 @@ export function PdfToWordTool() {
           </div>
 
           <RewardedDownloadGate onDownload={handleDownload} label="Word文書をダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

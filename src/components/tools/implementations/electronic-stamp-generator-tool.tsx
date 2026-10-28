@@ -9,6 +9,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { FilePickButton } from "@/components/common/file-pick-button";
 import { Button } from "@/components/ui/button";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   STAMP_COLORS,
   STAMP_LIMITS,
@@ -166,7 +167,7 @@ export function ElectronicStampGeneratorTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <div className="rounded-lg border border-neutral-200 p-2 dark:border-neutral-700" style={CHECKER_STYLE}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={result.url} alt="生成された印影画像のプレビュー" className="max-h-56 max-w-full object-contain" />
@@ -178,7 +179,7 @@ export function ElectronicStampGeneratorTool() {
             label="PNGをダウンロード"
             onDownload={() => downloadBlob(result.blob, `electronic-stamp.${extToSuffix()}`)}
           />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   FileRenameProcessor,
   buildSequentialBaseNames,
@@ -191,7 +192,7 @@ export function FileBulkRenameTool() {
       {error && <ErrorMessage message={error} />}
 
       {results && downloadBlobData && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {results.length}件をリネームしました ・ {formatBytes(downloadBlobData.blob.size)}
           </p>
@@ -199,7 +200,7 @@ export function FileBulkRenameTool() {
             onDownload={() => downloadBlob(downloadBlobData.blob, downloadBlobData.name)}
             label={results.length === 1 ? "ダウンロード" : "ZIPでダウンロード"}
           />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

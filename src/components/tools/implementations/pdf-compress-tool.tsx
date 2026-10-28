@@ -7,6 +7,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { usePdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { PdfCompressProcessor } from "@/lib/processors/browser/pdf";
 import type { PdfCompressOutput } from "@/lib/processors/browser/pdf";
@@ -163,7 +164,7 @@ export function PdfCompressTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <div className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
             <p>
               元のサイズ: {formatBytes(result.originalSizeBytes)} → 圧縮後:{" "}
@@ -188,7 +189,7 @@ export function PdfCompressTool() {
               downloadBlob(result.blob, `${stripExtension(file?.name ?? "file")}-compressed.pdf`)
             }
           />
-        </div>
+        </ResultPopup>
       )}
     </PreviewSplitLayout>
   );

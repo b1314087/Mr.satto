@@ -8,6 +8,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { SliderField } from "@/components/common/slider-field";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   ImagePaddingTextProcessor,
   type PaddingTextBandAlign,
@@ -687,16 +688,16 @@ export function ImagePaddingTextTool() {
       {error && <ErrorMessage message={error} />}
 
       {currentResult && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             現在の画像を保存 ・ {formatBytes(currentResult.blob.size)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(currentResult.blob, currentResult.name)} />
-        </div>
+        </ResultPopup>
       )}
 
       {batchResult && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {batchResult.count}件を書き出しました ・ {formatBytes(batchResult.blob.size)}
           </p>
@@ -704,7 +705,7 @@ export function ImagePaddingTextTool() {
             label={batchResult.count === 1 ? "ダウンロード" : "ZIPをダウンロード"}
             onDownload={() => downloadBlob(batchResult.blob, batchResult.name)}
           />
-        </div>
+        </ResultPopup>
       )}
     </PreviewSplitLayout>
   );

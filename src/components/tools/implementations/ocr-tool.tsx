@@ -7,6 +7,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { OcrProcessor, type OcrOutput } from "@/lib/processors/browser/ocr";
 import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
@@ -245,7 +246,7 @@ export function OcrTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup size="lg">
           <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
             {result.cancelled && (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
@@ -303,7 +304,7 @@ export function OcrTool() {
           </div>
 
           <RewardedDownloadGate onDownload={handleDownload} label="TXTをダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

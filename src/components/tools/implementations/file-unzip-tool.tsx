@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   FileUnzipProcessor,
   listZipContents,
@@ -175,7 +176,7 @@ export function FileUnzipTool() {
       {error && <ErrorMessage message={error} />}
 
       {entries && entries.length > 0 && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup size="lg">
           {skippedCount > 0 && (
             <p className="text-xs text-amber-600 dark:text-amber-400">
               サイズ・件数の上限、または対応していない圧縮方式のため{skippedCount}件のファイルをスキップしました。
@@ -202,7 +203,7 @@ export function FileUnzipTool() {
             )}
           </ul>
           <RewardedDownloadGate onDownload={handleDownloadAll} label="まとめてZIPでダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

@@ -2,7 +2,7 @@ import { test as plainTest, expect as plainExpect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
-import { waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { waitForSuccess, clickAndDownload, assertDownloadedFile, closeResultPopup } from "../helpers/tool-runner";
 import { uploadWhenReady } from "../helpers/tool-ready";
 import { clearDevOverrides, setDevAdOutcome } from "../helpers/dev-plan";
 import { PDF_FIX_TOOL_PATH } from "@/lib/tools/pdf-fix-modes";
@@ -31,6 +31,7 @@ async function openToolWithPdf(page: Page) {
 }
 
 async function addText(page: Page, x: number, y: number) {
+  await closeResultPopup(page); // 書き出し後は完了ポップアップが開いていて、背面の画面は操作できない
   await page.getByRole("button", { name: "テキスト", exact: true }).click();
   await page.locator(CANVAS).click({ position: { x, y } });
 }

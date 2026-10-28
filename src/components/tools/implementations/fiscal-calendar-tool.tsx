@@ -5,6 +5,7 @@ import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   FISCAL_YEAR_UI_MAX,
   FISCAL_YEAR_UI_MIN,
@@ -407,7 +408,7 @@ export function FiscalCalendarTool() {
         {error && <ErrorMessage message={error} />}
 
         {(excelResult || pdfResult) && (
-          <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+          <ResultPopup>
             {excelResult && (
               <RewardedDownloadGate
                 onDownload={() => downloadBlob(excelResult, buildFiscalCalendarFileName(baseInput("excel")))}
@@ -420,7 +421,7 @@ export function FiscalCalendarTool() {
                 label="PDFファイルをダウンロード"
               />
             )}
-          </div>
+          </ResultPopup>
         )}
 
         <div className="rounded-lg bg-neutral-50 p-3 text-xs leading-relaxed text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">

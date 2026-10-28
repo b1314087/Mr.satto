@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { FileZipProcessor, planZipEntryNames } from "@/lib/processors/browser/file-ops";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 
@@ -155,7 +156,7 @@ export function FileZipTool() {
       {error && <ErrorMessage message={error} />}
 
       {zipBlob && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {files.length}件をまとめました ・ {formatBytes(zipBlob.size)}
           </p>
@@ -163,7 +164,7 @@ export function FileZipTool() {
             onDownload={() => downloadBlob(zipBlob, "files.zip")}
             label="ZIPでダウンロード"
           />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

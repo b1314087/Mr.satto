@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   ParagraphCompare,
   ParagraphLegend,
@@ -196,12 +197,12 @@ export function WordRenumberTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             変換した行: {result.convertedCount} ・ 対象外だった行: {result.skippedCount}
           </p>
           <RewardedDownloadGate onDownload={handleDownload} label="Wordファイルをダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

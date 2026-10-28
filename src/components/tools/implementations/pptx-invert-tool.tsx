@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { PptxInvertProcessor, type PptxInvertOutput } from "@/lib/processors/browser/pptx-invert";
 import type { ImageOutcome, ImageReport } from "@/lib/pptx/invert-pptx";
 import { DEFAULT_COLOR_CHOICE, PALETTE_PRESETS, contrastRatio, normalizeHex, presetOf, type ColorChoice } from "@/lib/pptx/palette";
@@ -273,7 +274,7 @@ export function PptxInvertTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && imageSummary && (
-        <div data-testid="tool-preview" className="flex flex-col items-start gap-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup testId="tool-preview" size="lg">
           <div className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-200" data-testid="pptx-applied-palette">
             <Swatch background={result.report.colorChoice.background} text={result.report.colorChoice.text} />
             <span>
@@ -323,7 +324,7 @@ export function PptxInvertTool() {
 
           <p className="text-xs text-neutral-500 dark:text-neutral-400">変換後: {result.suggestedName}（{formatBytes(result.sizeBytes)}）</p>
           <RewardedDownloadGate onDownload={handleDownload} label="PowerPointファイルをダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

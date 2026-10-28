@@ -4,7 +4,7 @@ import { test as baseTest } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
 import { clearDevOverrides } from "../helpers/dev-plan";
-import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile, closeResultPopup } from "../helpers/tool-runner";
 import { tools } from "@/lib/tools/data";
 import { detectConvertFormat, isSameFormat, outputFileNames, sizeChangePercent, splitByFormat, transparencyNote } from "@/lib/image-format-convert";
 
@@ -118,6 +118,7 @@ premiumTest.describe("画像形式変換: 変換・プレビュー・ダウン�
     await page.getByRole("button", { name: "1件をJPGに変換する" }).click();
     await waitForSuccess(page, "変換が完了しました");
     await expect(page.getByTestId("convert-result")).toHaveCount(1);
+    await closeResultPopup(page);
     await page.getByTestId("convert-format-png").click();
     await expect(page.getByTestId("convert-results")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "ダウンロード" })).toHaveCount(0);

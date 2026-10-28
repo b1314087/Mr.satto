@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
-import { clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { clickAndDownload, assertDownloadedFile, closeResultPopup } from "../helpers/tool-runner";
 import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { addressOf, excelSerialToIso, readXlsxWorkbook } from "../helpers/xlsx-workbook";
 import { extractTextBoxes } from "../helpers/pdf-text-boxes";
@@ -146,6 +146,7 @@ test.describe("年度カレンダー作成: 画面", () => {
     await yearSelect(page).selectOption("2026");
     await page.getByRole("button", { name: /Excelを作成/ }).click();
     await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 30_000 });
+    await closeResultPopup(page);
     await page.getByRole("button", { name: "縦向き" }).click();
     await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toHaveCount(0);
   });
@@ -237,6 +238,7 @@ test.describe("年度カレンダー作成: ダウンロードしたファイル
     await yearSelect(page).selectOption("2026");
     await page.getByRole("button", { name: /PDFを作成/ }).click();
     await expect(page.getByRole("button", { name: /PDFファイルをダウンロード/ })).toBeVisible({ timeout: 30_000 });
+    await closeResultPopup(page);
     await page.getByRole("button", { name: /Excelを作成/ }).click();
     await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 30_000 });
     const origin = new URL(page.url()).origin;

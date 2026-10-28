@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
-import { clickAndDownload } from "../helpers/tool-runner";
+import { clickAndDownload, closeResultPopup } from "../helpers/tool-runner";
 import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { readXlsxWorkbook } from "../helpers/xlsx-workbook";
 import { readPdfColors } from "../helpers/calendar-pdf-colors";
@@ -318,6 +318,7 @@ test.describe("年度カレンダーのデザイン: ダウンロードしたフ
     await open(page);
     await page.getByRole("button", { name: /Excelを作成/ }).click();
     await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toBeVisible({ timeout: 90_000 });
+    await closeResultPopup(page);
     await themeButton(page, "simple").click();
     await expect(page.getByRole("button", { name: /Excelファイルをダウンロード/ })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Excelを作成/ })).toBeEnabled();

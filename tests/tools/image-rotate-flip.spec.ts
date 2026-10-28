@@ -4,7 +4,7 @@ import { test as baseTest } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
 import { clearDevOverrides } from "../helpers/dev-plan";
-import { waitForSuccess, clickAndDownload, assertDownloadedFile, uploadFixture } from "../helpers/tool-runner";
+import { waitForSuccess, clickAndDownload, assertDownloadedFile, uploadFixture, closeResultPopup } from "../helpers/tool-runner";
 import { tools } from "@/lib/tools/data";
 
 /**
@@ -196,6 +196,7 @@ premiumTest.describe("画像回転・反転: 古い結果が誤ってダウン�
     await page.getByRole("button", { name: "回転する" }).click();
     await waitForSuccess(page, "回転が完了しました");
     await expect(page.getByRole("button", { name: "ダウンロード" })).toBeVisible();
+    await closeResultPopup(page);
     await page.getByTestId("rotate-180").click();
     await expect(page.getByRole("button", { name: "ダウンロード" })).toHaveCount(0);
     await expect(page.getByAltText("処理結果のプレビュー")).toHaveCount(0);
@@ -212,11 +213,13 @@ premiumTest.describe("画像回転・反転: 古い結果が誤ってダウン�
     await uploadQuadrant(page);
     await page.getByRole("button", { name: "反転する" }).click();
     await waitForSuccess(page, "反転が完了しました");
+    await closeResultPopup(page);
     await page.getByTestId("flip-vertical").click();
     await expect(page.getByRole("button", { name: "ダウンロード" })).toHaveCount(0);
     await page.getByRole("button", { name: "反転する" }).click();
     await waitForSuccess(page, "反転が完了しました");
     await expect(page.getByRole("button", { name: "ダウンロード" })).toBeVisible();
+    await closeResultPopup(page);
     await page.getByTestId("transform-mode-rotate").click();
     await expect(page.getByRole("button", { name: "ダウンロード" })).toHaveCount(0);
     await expect(page.getByText("反転が完了しました")).toHaveCount(0);

@@ -1,5 +1,5 @@
 import { test, expect } from "../fixtures/premium-test";
-import { clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { clickAndDownload, assertDownloadedFile, closeResultPopup } from "../helpers/tool-runner";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -69,6 +69,7 @@ test.describe("roster-template", () => {
     const excelDownload = await clickAndDownload(page, /Excelファイルをダウンロード/);
     await assertDownloadedFile(excelDownload, { format: "zip", minBytes: 300 });
 
+    await closeResultPopup(page);
     await page.getByRole("button", { name: "PDFを作成" }).click();
     await expect(page.getByText("作成しました")).toBeVisible({ timeout: 15_000 });
     const pdfDownload = await clickAndDownload(page, /PDFファイルをダウンロード/);

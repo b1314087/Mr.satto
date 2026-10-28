@@ -9,6 +9,7 @@ import { TaxSettings } from "./shared/tax-settings";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { createEmptyDocumentForm, type DocumentFormState } from "@/lib/documents/types";
 import { validateDocumentForm } from "@/lib/documents/validation";
 import {
@@ -199,7 +200,7 @@ export function QuoteOrderGeneratorTool() {
         <ProcessingStatus state={status} processingLabel="PDFを作成中..." successLabel="PDFを作成しました" />
         {error && <ErrorMessage message={error} />}
         {result && (
-          <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+          <ResultPopup>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">1ページ ・ {formatBytes(result.sizeBytes)}</p>
             <RewardedDownloadGate
               onDownload={() => downloadBlob(result.blob, buildQuoteOrderFileName(form))}
@@ -219,7 +220,7 @@ export function QuoteOrderGeneratorTool() {
             >
               新しいタブでPDFを開く（印刷はこちらから）
             </button>
-          </div>
+          </ResultPopup>
         )}
       </section>
     </PreviewSplitLayout>

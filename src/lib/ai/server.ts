@@ -8,6 +8,7 @@ import { createRpcLedger, type Ledger } from "./ledger";
 import { buildImageInput, callOpenAi, type OpenAiInputMessage } from "./openai-client";
 import { AI_MODELS } from "./pricing";
 import { IMAGE_OUTPUT_SCHEMA, OUTPUT_SCHEMA } from "./calendar-assist";
+import { FORM_OUTPUT_SCHEMA } from "./form-extract";
 import type { Availability, AssistDeps, Caller } from "./service";
 
 /**
@@ -59,14 +60,15 @@ export function createAssistDeps(): AssistDeps | null {
     callModel: ({ tier, instructions, input, maxOutputTokens, mode, images }) => {
       const isImage = mode === "image" && images !== undefined && images.length > 0;
       const aiInput: string | OpenAiInputMessage[] = isImage ? buildImageInput(input, images) : input;
+      const isForm = mode === "form";
       return callOpenAi({
         apiKey,
         modelId: AI_MODELS[tier].id,
         instructions,
         input: aiInput,
         maxOutputTokens,
-        schemaName: isImage ? "calendar_image_events" : "calendar_rows",
-        schema: isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
+        schemaName: isForm ? "form_rows" : isImage ? "calendar_image_events" : "calendar_rows",
+        schema: isForm ? FORM_OUTPUT_SCHEMA : isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
         timeoutMs: TIMEOUT_MS,
       });
     },

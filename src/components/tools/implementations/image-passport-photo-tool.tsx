@@ -8,6 +8,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { ImageCropProcessor, type CropRegion } from "@/lib/processors/browser/image";
 import {
   ImageLayoutRenderProcessor,
@@ -656,7 +657,7 @@ export function ImagePassportPhotoTool() {
           <ProcessingStatus state={photoStatus} successLabel="書き出しが完了しました" />
           {photoError && <ErrorMessage message={photoError} />}
           {photoResult && (
-            <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+            <ResultPopup>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={photoResult.url}
@@ -667,7 +668,7 @@ export function ImagePassportPhotoTool() {
                 {photoResult.width} × {photoResult.height}px ・ {formatBytes(photoResult.sizeBytes)}
               </p>
               <RewardedDownloadGate onDownload={() => downloadBlob(photoResult.blob, photoDownloadName)} />
-            </div>
+            </ResultPopup>
           )}
         </div>
       )}
@@ -812,12 +813,12 @@ export function ImagePassportPhotoTool() {
           <ProcessingStatus state={sheetStatus} processingLabel="PDFを作成中..." successLabel="PDFの作成が完了しました" />
           {sheetError && <ErrorMessage message={sheetError} />}
           {sheetResult && (
-            <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+            <ResultPopup>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {PAPER_SIZE_LABELS[paperId]}・{effectiveSheetCount}枚配置 ・ {formatBytes(sheetResult.sizeBytes)}
               </p>
               <RewardedDownloadGate onDownload={() => downloadBlob(sheetResult.blob, sheetDownloadName)} />
-            </div>
+            </ResultPopup>
           )}
         </div>
       )}

@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
 import { PdfFillAnnotateProcessor } from "@/lib/processors/browser/pdf-fill-annotate";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
@@ -1959,12 +1960,12 @@ export function PdfFillAnnotateTool({
           <ProcessingStatus state={status} successLabel="書き出しが完了しました" />
 
           {result && (
-            <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+            <ResultPopup>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {result.pageCount}ページのPDFを生成しました。生成したPDFはMr.Sattoのサーバーへ保存されません。
               </p>
               <RewardedDownloadGate onDownload={handleDownload} label="PDFをダウンロード" />
-            </div>
+            </ResultPopup>
           )}
         </section>
       )}

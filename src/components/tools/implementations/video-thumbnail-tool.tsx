@@ -7,6 +7,7 @@ import { VideoSizeWarning } from "@/components/tools/implementations/shared/vide
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import {
   VideoThumbnailProcessor,
   type ThumbnailImageFormat,
@@ -285,7 +286,7 @@ export function VideoThumbnailTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup>
           {/* eslint-disable-next-line @next/next/no-img-element -- ブラウザ内で生成したObject URLのプレビューのため next/image は不要 */}
           <img src={result.url} alt="抽出したサムネイル" className="max-h-64 max-w-full rounded-lg border border-neutral-200 dark:border-neutral-800" />
           <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
@@ -296,7 +297,7 @@ export function VideoThumbnailTool() {
             <span>時点: {formatTime(result.timestampSec)}</span>
           </div>
           <RewardedDownloadGate onDownload={handleDownload} label="画像をダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { OpenInPdfFixButton } from "@/components/tools/implementations/shared/open-in-pdf-fix-button";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { fileKey, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
@@ -223,7 +224,7 @@ export function PdfSplitTool({ initialFile = null, onFileChange }: SharedPdfFile
       {error && <ErrorMessage message={error} />}
 
       {outputs && outputs.length > 0 && (
-        <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
+        <ResultPopup size="lg">
           <ul className="w-full text-xs text-neutral-600 dark:text-neutral-300">
             {outputs.slice(0, 20).map((o) => (
               <li key={o.suggestedName} className="flex justify-between gap-2 border-b border-neutral-200 py-1 last:border-none dark:border-neutral-800">
@@ -242,7 +243,7 @@ export function PdfSplitTool({ initialFile = null, onFileChange }: SharedPdfFile
           />
           {/* 1つのPDFだけが出力された場合のみ、PDF修正へ引き継げる（複数ファイルの結果は引き継がない） */}
           {outputs.length === 1 && <OpenInPdfFixButton blob={outputs[0].blob} fileName={outputs[0].suggestedName} />}
-        </div>
+        </ResultPopup>
       )}
     </PreviewSplitLayout>
   );

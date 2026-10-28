@@ -128,6 +128,12 @@ export default async function PricingPage({
                   <span aria-hidden="true">・</span>
                   {id === "premium" ? "「記入済みPDF→Excel」は、ページ数・回数の制限なし" : "「記入済みPDF→Excel」は、1回1ページまで"}
                 </li>
+                {id === "premium" && (
+                  <li className="flex items-start gap-2">
+                    <span aria-hidden="true">・</span>
+                    「記入済みPDF→Excel」の「AIで項目を読み取る」補助（文字のPDF／5ページまで・利用枠あり）
+                  </li>
+                )}
               </ul>
 
               <p className="text-xs text-ms-muted">

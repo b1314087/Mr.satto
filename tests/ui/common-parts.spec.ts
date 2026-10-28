@@ -294,6 +294,10 @@ test.describe("広告確認ダイアログ", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(opener).toBeFocused();
+    // 背後の完了ポップアップがまだ開いているので、背景のスクロール停止は続く。それも閉じると解除される
+    await expect(page.locator("html")).toHaveClass(/ms-scroll-lock/);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("result-popup")).toBeHidden();
     await expect(page.locator("html")).not.toHaveClass(/ms-scroll-lock/);
   });
 

@@ -32,6 +32,9 @@ export interface ModalProps {
   className?: string;
 }
 
+/** 開いているダイアログの数。ダイアログが重なっても、最後の1つが閉じるまで背後のスクロールを止め続ける */
+let openModalCount = 0;
+
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function Modal({
@@ -55,19 +58,24 @@ export function Modal({
   // 閉じた時: 元へ戻す。
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    openModalCount += 1;
     document.documentElement.classList.add("ms-scroll-lock");
     // 最初に操作してほしい要素（data-modal-initial-focus）があればそこへ、なければダイアログ自体へ。
     // 開発モードのStrictModeは効果を二重に実行するため、呼び出し側のeffectに任せず、ここで確実に移す。
     const panel = panelRef.current;
     (panel?.querySelector<HTMLElement>("[data-modal-initial-focus]") ?? panel)?.focus();
     return () => {
-      document.documentElement.classList.remove("ms-scroll-lock");
+      openModalCount = Math.max(0, openModalCount - 1);
+      if (openModalCount === 0) document.documentElement.classList.remove("ms-scroll-lock");
       if (opener?.isConnected) opener.focus();
     };
   }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      // ダイアログが重なっている時（完了ポップアップの上に広告確認が出る時など）は、一番上のものだけがキー操作を受け持つ
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (dialogs.length > 1 && dialogs[dialogs.length - 1] !== panelRef.current) return;
       if (event.key === "Escape" && onEscapeRef.current) {
         onEscapeRef.current();
         return;

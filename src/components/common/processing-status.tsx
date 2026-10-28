@@ -1,4 +1,8 @@
+"use client";
+
+import { useEffect } from "react";
 import { Spinner } from "@/components/ui/spinner";
+import { announceProcessingSuccess } from "@/lib/utils/result-events";
 
 export type ProcessingState = "idle" | "processing" | "success" | "error";
 
@@ -20,6 +24,11 @@ export function ProcessingStatus({
   /** 自動テスト用の識別子（省略可） */
   testId?: string;
 }) {
+  // 成功になった時に、完了ポップアップ（ResultPopup）へ知らせる。閉じてあっても、新しい結果でもう一度開く。
+  useEffect(() => {
+    if (state === "success") announceProcessingSuccess();
+  }, [state]);
+
   if (state === "idle" || state === "error") return null;
 
   if (state === "processing") {

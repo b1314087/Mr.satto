@@ -6,6 +6,7 @@ import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { ResultPopup } from "@/components/common/result-popup";
 import { PdfToTextProcessor, type PdfToTextOutput } from "@/lib/processors/browser/pdf-render";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
@@ -127,10 +128,7 @@ export function PdfToTextTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && (
-        <div
-          data-testid="tool-preview"
-          className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
-        >
+        <ResultPopup testId="tool-preview" size="lg">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.pageCount}ページから抽出しました
           </p>
@@ -160,7 +158,7 @@ export function PdfToTextTool() {
           </pre>
 
           <RewardedDownloadGate onDownload={handleDownload} label="テキストをダウンロード" />
-        </div>
+        </ResultPopup>
       )}
     </div>
   );

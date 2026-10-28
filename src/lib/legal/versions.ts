@@ -10,8 +10,8 @@
  *   （すでに契約中の方の利用は止まらない）。
  */
 export const LEGAL_VERSIONS = {
-  terms: "2026-10-28",
-  privacy: "2026-10-28",
+  terms: "2026-10-29",
+  privacy: "2026-10-29",
 } as const;
 
 export type LegalDocument = keyof typeof LEGAL_VERSIONS;
