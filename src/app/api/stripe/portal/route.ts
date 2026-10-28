@@ -8,6 +8,7 @@ import { resolvePortalConfiguration } from "@/lib/stripe/portal-config";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { siteConfig } from "@/lib/config/site";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
+import { rejectUntrustedOrigin } from "@/lib/security/request-origin";
 
 // Customer Portal Session作成もStripe APIコストが発生する操作のため、
 // 認証済みユーザー単位で乱打を抑制する（Phase 6.5 セキュリティ監査で追加）。
@@ -21,11 +22,15 @@ const RATE_LIMIT = { limit: 5, windowMs: 60_000 };
  * Customer Portal（解約・プラン変更・支払い方法変更・請求履歴）に一任する
  * （Phase 3 spec 13章・14章）。
  */
-export async function POST() {
+export async function POST(request: Request) {
   // 課金システムがオフの間は、決済を受け付けない（src/lib/config/features.ts）
   if (!featureFlags.billing) {
     return NextResponse.json({ error: "現在、決済管理機能は提供していません。" }, { status: 404 });
   }
+
+  // 他のサイトからのリクエスト（ログイン中のブラウザを使った不正な送信）を断る（工程39）
+  const untrusted = rejectUntrustedOrigin(request, "stripe/portal");
+  if (untrusted) return untrusted;
 
   if (!isStripeConfigured()) {
     return NextResponse.json(

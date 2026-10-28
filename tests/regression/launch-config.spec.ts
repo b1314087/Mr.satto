@@ -171,9 +171,11 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
   });
 
   test("Stripeの決済・管理APIは、ログインなしでは処理されない（課金オンでも）", async ({ request }) => {
-    const checkout = await request.post("/api/stripe/checkout", { data: { plan: "premium" } });
+    // 工程39: 送信元（Origin）の確認が先に行われるため、正規の送信元のヘッダーを付けて、認証の確認まで進ませる
+    const headers = { origin: "http://localhost:3102" };
+    const checkout = await request.post("/api/stripe/checkout", { data: { plan: "premium" }, headers });
     expect([400, 401, 403, 500, 503]).toContain(checkout.status());
-    const portal = await request.post("/api/stripe/portal");
+    const portal = await request.post("/api/stripe/portal", { headers });
     expect([400, 401, 403, 500, 503]).toContain(portal.status());
   });
 

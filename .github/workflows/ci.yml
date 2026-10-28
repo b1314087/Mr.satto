@@ -134,6 +134,17 @@ jobs:
             slug: auth
             paths: >-
               tests/auth
+          # 課金・管理者・ファイル名の堅牢化（工程39）: Checkoutの二重作成防止、StripeへのPOSTのOrigin確認、管理者のメール確認、
+          # ファイル名の無害化、ツール利用回数SQLの入力検証（使い捨てのPostgreSQLで実行。無い環境ではスキップされる）。
+          - name: 課金・管理者・ファイル名の堅牢化
+            slug: hardening
+            paths: >-
+              tests/security
+              tests/stripe/checkout-flow.spec.ts
+              tests/stripe/origin-routes.spec.ts
+              tests/admin/admin-access.spec.ts
+              tests/tools/file-name-sanitize.spec.ts
+              tests/tools/tool-usage-sql.spec.ts
     steps:
       - uses: actions/checkout@v7
         with:

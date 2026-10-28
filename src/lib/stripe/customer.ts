@@ -34,10 +34,15 @@ export async function getOrCreateStripeCustomerId(userId: string, email: string 
   }
 
   const stripe = getStripeClient();
-  const customer = await stripe.customers.create({
-    email: email ?? undefined,
-    metadata: { supabase_user_id: userId },
-  });
+  // 同時に2つのリクエストが来ても、Customerが2つ作られないよう、ユーザーごとに固定の冪等性キーを付ける（工程39。
+  // Stripeは同じキーのリクエストに、同じ結果を返す）。
+  const customer = await stripe.customers.create(
+    {
+      email: email ?? undefined,
+      metadata: { supabase_user_id: userId },
+    },
+    { idempotencyKey: `supabase-customer:${userId}` },
+  );
 
   // upsert: 初回チェックアウトの場合はsubscriptions行がまだ存在しないため作成する。
   // plan/statusはまだ未確定（Checkout未完了）なのでnullのまま。

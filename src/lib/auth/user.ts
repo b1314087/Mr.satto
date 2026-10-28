@@ -24,6 +24,8 @@ export type UserState = "guest" | "authenticated";
 export interface AuthenticatedUser {
   id: string;
   email: string | null;
+  /** メールアドレスが確認済みか（Supabase Authの email_confirmed_at が設定されているか）。サーバーで検証した値 */
+  emailConfirmed: boolean;
 }
 
 /**
@@ -43,7 +45,7 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   } = await supabase.auth.getUser();
 
   if (!user) return null;
-  return { id: user.id, email: user.email ?? null };
+  return { id: user.id, email: user.email ?? null, emailConfirmed: !!user.email_confirmed_at };
 }
 
 /**

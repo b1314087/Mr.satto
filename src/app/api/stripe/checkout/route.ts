@@ -3,7 +3,9 @@ import { featureFlags } from "@/lib/config/features";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getServerPlan } from "@/lib/plans/current-plan";
 import { siteUrlIssue } from "@/lib/config/site-url";
-import { hasOpenSubscription } from "@/lib/plans/effective-plan";
+import { hasOpenSubscription, isOpenSubscriptionStatus } from "@/lib/plans/effective-plan";
+import { runCheckoutFlow } from "@/lib/stripe/checkout-flow";
+import { rejectUntrustedOrigin } from "@/lib/security/request-origin";
 import { getStripeClient } from "@/lib/stripe/client";
 import { isStripeConfigured, hasPriceIdFor, stripeConfig } from "@/lib/stripe/config";
 import { verifyPremiumPrice } from "@/lib/stripe/price-guard-server";
@@ -39,6 +41,10 @@ export async function POST(request: Request) {
   if (!featureFlags.billing) {
     return NextResponse.json({ error: "現在、決済機能は提供していません。" }, { status: 404 });
   }
+
+  // 他のサイトからのリクエスト（ログイン中のブラウザを使った不正な送信）を断る（工程39）
+  const untrusted = rejectUntrustedOrigin(request, "stripe/checkout");
+  if (untrusted) return untrusted;
 
   if (!isStripeConfigured()) {
     return NextResponse.json(
@@ -128,25 +134,60 @@ export async function POST(request: Request) {
   try {
     const customerId = await getOrCreateStripeCustomerId(user.id, user.email);
     const stripe = getStripeClient();
+    const priceId = stripeConfig.priceIds[plan];
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      client_reference_id: user.id,
-      line_items: [{ price: stripeConfig.priceIds[plan], quantity: 1 }],
-      success_url: `${siteConfig.url}/account?checkout=success`,
-      cancel_url: `${siteConfig.url}/pricing?checkout=cancelled`,
-      subscription_data: {
-        metadata: { supabase_user_id: user.id, plan },
+    // 二重作成の防止（工程39）: Stripe上の最新の契約の確認、開いているCheckoutの再利用、冪等性キーつきの作成
+    const result = await runCheckoutFlow(
+      { customerId, userId: user.id, priceId, nowMs: Date.now() },
+      {
+        async hasOpenStripeSubscription(id) {
+          const list = await stripe.subscriptions.list({ customer: id, status: "all", limit: 100 });
+          return list.data.some((s) => isOpenSubscriptionStatus(s.status));
+        },
+        async findReusableSession(id, uid, price) {
+          const list = await stripe.checkout.sessions.list({ customer: id, status: "open", limit: 10 });
+          for (const candidate of list.data) {
+            if (candidate.mode !== "subscription" || candidate.client_reference_id !== uid || !candidate.url) continue;
+            // 価格が同じCheckoutだけを再利用する（価格の移行中に、古い価格のCheckoutを返さないため）
+            const items = await stripe.checkout.sessions.listLineItems(candidate.id, { limit: 5 });
+            if (items.data.some((li) => li.price?.id === price)) return { url: candidate.url };
+          }
+          return null;
+        },
+        createSession: (idempotencyKey) =>
+          stripe.checkout.sessions.create(
+            {
+              mode: "subscription",
+              customer: customerId,
+              client_reference_id: user.id,
+              line_items: [{ price: priceId, quantity: 1 }],
+              success_url: `${siteConfig.url}/account?checkout=success`,
+              cancel_url: `${siteConfig.url}/pricing?checkout=cancelled`,
+              subscription_data: {
+                metadata: { supabase_user_id: user.id, plan },
+              },
+              allow_promotion_codes: true,
+            },
+            { idempotencyKey },
+          ),
       },
-      allow_promotion_codes: true,
-    });
+    );
 
-    if (!session.url) {
-      return NextResponse.json({ error: "Checkoutセッションの作成に失敗しました。" }, { status: 502 });
+    if (result.status === "already-subscribed") {
+      return NextResponse.json(
+        { error: "すでにご契約があります。お支払い方法の変更・解約は、アカウント画面から行ってください。" },
+        { status: 409 }
+      );
+    }
+    if (result.status === "error") {
+      console.error("[stripe/checkout] checkout flow failed:", result.kind);
+      return NextResponse.json(
+        { error: result.kind === "no-url" ? "Checkoutセッションの作成に失敗しました。" : "決済ページの作成に失敗しました。しばらくしてから再度お試しください。" },
+        { status: 502 }
+      );
     }
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ url: result.url });
   } catch (error) {
     console.error("[stripe/checkout]", error);
     return NextResponse.json(

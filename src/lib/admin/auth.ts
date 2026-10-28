@@ -1,7 +1,8 @@
 import "server-only";
 
 import { getCurrentUser, type AuthenticatedUser } from "@/lib/auth/user";
-import { isAdminEmail } from "./config";
+import { adminConfig } from "./config";
+import { evaluateAdminAccess } from "./access";
 
 /**
  * /admin 配下の唯一のアクセス判定窓口。
@@ -22,7 +23,13 @@ export type AdminAccess =
 
 export async function checkAdminAccess(): Promise<AdminAccess> {
   const user = await getCurrentUser();
-  if (!user) return { status: "unauthenticated" };
-  if (!isAdminEmail(user.email)) return { status: "forbidden", user };
+  // 判定は純粋な関数（access.ts）。管理者として登録されたメールアドレスで、かつ、メールアドレスが確認済みのときだけ認める（工程39）。
+  const decision = evaluateAdminAccess(user, adminConfig.adminEmails);
+  if (!user || decision.status === "unauthenticated") return { status: "unauthenticated" };
+  if (decision.status === "forbidden") {
+    // 管理者として登録されているのに、メール未確認で止めたときだけ、運営者が原因に気づけるよう記録する（メールアドレスは出さない）
+    if (decision.reason === "email-unconfirmed") console.warn("[admin] access denied: admin email is not confirmed");
+    return { status: "forbidden", user };
+  }
   return { status: "ok", user };
 }
