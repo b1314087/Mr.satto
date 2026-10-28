@@ -153,23 +153,12 @@ export function VideoH264Tool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          動画をH.264（AVC）コーデック・MP4形式に変換します。iPhoneなどで撮影したH.265（HEVC）の動画も、どこでも
-          再生しやすいH.264のMP4にできます。この動画はブラウザ上で処理され、Mr.Sattoのサーバーへアップロードされることはありません。
-        </p>
-        <p>
-          元の動画がすでにH.264の場合は再エンコードせずにそのままMP4化するため、画質の劣化はありません。
-          H.265などそれ以外のコーデックの場合は再エンコードが発生し、多少の画質差が生じる場合があります。
-          H.265はH.264より同じ画質でもファイルが小さいため、H.264にするとファイルサイズが大きくなることがあります。
-        </p>
-      </div>
 
       <FileDropzone
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP4 / MOV / WebM。H.265の動画も選べます。サイズの上限はありません）"
+        hint="またはタップして選択（MP4 / MOV / WebM）"
         onFilesSelected={handleSelect}
         onError={setError}
       />
@@ -268,9 +257,7 @@ export function VideoH264Tool() {
         successLabel="H.264への変換が完了しました"
       />
       {wasCanceled && (
-        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-          処理をキャンセルしました。設定を確認して、もう一度実行できます。
-        </div>
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">処理をキャンセルしました。</div>
       )}
       {error && <ErrorMessage message={error} />}
 

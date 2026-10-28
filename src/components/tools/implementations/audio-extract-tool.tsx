@@ -8,7 +8,6 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   AudioBitratePicker,
   AudioFormatPicker,
-  AudioIntro,
   AudioOutputPlayer,
   AudioPreviewPanel,
   AudioResultCard,
@@ -76,15 +75,12 @@ export function AudioExtractTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AudioIntro>
-        動画ファイル（MP4 / MOV / WebM）から、音声だけを取り出して保存します。「元の形式のまま」を選ぶと、音質を落とさず短時間で取り出せます。
-      </AudioIntro>
 
       <FileDropzone
         accept={VIDEO_TO_AUDIO_INPUT_ACCEPT}
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP4 / MOV / WebM。サイズの上限はありません）"
+        hint="またはタップして選択（MP4 / MOV / WebM）"
         onFilesSelected={handleSelect}
         onError={job.setError}
       />

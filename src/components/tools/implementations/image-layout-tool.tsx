@@ -597,9 +597,6 @@ export function ImageLayoutTool() {
             );
           })}
         </div>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          アイテムをドラッグして移動、四隅のハンドルでサイズ変更、上の緑ハンドルで回転できます。
-        </p>
 
         {selectedItem?.kind === "image" && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-700">
@@ -746,9 +743,7 @@ export function ImageLayoutTool() {
 
         <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">グリッドに配置</h3>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            画像を列数×行数のマス目へ一括配置します（列数1なら縦結合、行数1なら横結合と同じ配置になります）。文字は動きません。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">画像をマス目へ一括配置します。</p>
           <label className="flex items-center justify-between text-sm">
             <span>行数を自動計算</span>
             <input type="checkbox" checked={gridRowsAuto} onChange={(e) => setGridRowsAuto(e.target.checked)} />

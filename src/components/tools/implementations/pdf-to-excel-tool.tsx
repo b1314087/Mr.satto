@@ -201,23 +201,7 @@ export function PdfToExcelTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          PDF内の文字の位置情報から表の行・列を推定し、Excelのセルに変換します。処理はブラウザ内で完結し、
-          ファイルが外部のサーバーへ送信されることはありません。
-        </p>
-        <p>
-          罫線・結合セルの再現も試みます。左右に並んだ表の縦への連結、縦書きの区分名の結合、複数行に割れた見出しの
-          1行化、ページ番号の除去も自動で行います（いずれも下の設定でオン・オフできます）。
-          PDFの見た目を解析した推定のため、常に完全に正確とは限らず、複数の表が混在する複雑なレイアウトでは
-          正しく変換できない場合があります。どんなPDFでも完全にExcel化できるものではありません。
-        </p>
-        <p>
-          スキャンした画像のPDF（文字情報のないページ）は、ブラウザ内の文字認識(OCR・日本語と英数字)で読み取ります。
-          OCRは誤読が出ることがあるため、ダウンロード後は必ず内容を確認してください。スキャン画像は最大20ページまでで、
-          罫線は再現されません。画像が鮮明で、傾きや影が少ないほど正確になります。
-        </p>
-      </div>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">文字の位置から表を推定します。複雑なレイアウトでは、正しく変換できない場合があります。</p>
 
       <FileDropzone
         accept="application/pdf,.pdf"

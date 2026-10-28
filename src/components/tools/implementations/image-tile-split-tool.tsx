@@ -157,9 +157,7 @@ export function ImageTileSplitTool() {
               })}
             </div>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            分割線と番号はプレビュー表示専用で、出力画像には焼き込まれません。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">分割線と番号は出力画像には入りません。</p>
         </div>
       ) : null}
     >

@@ -132,9 +132,6 @@ function PaletteSelector({ colors, custom, onPreset, onCustom, onColors }: { col
           背景色と文字色が近く、文字が読みにくくなる可能性があります。
         </p>
       )}
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        白系の背景・図形は背景色に、黒系の文字・線は文字色に、灰色はその間の色になります。赤・青などの色は、そのままです。
-      </p>
     </fieldset>
   );
 }
@@ -250,14 +247,12 @@ export function PptxInvertTool() {
             <input type="checkbox" className="mt-1" checked={invertImages} onChange={(e) => setInvertImages(e.target.checked)} data-testid="pptx-option-images" />
             <span>
               白黒と判定できる画像も反転する
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">資料の図・スクリーンショット・白黒写真など。カラーの写真やイラストは、そのままです。</span>
             </span>
           </label>
           <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
             <input type="checkbox" className="mt-1" checked={brightenDarkText} onChange={(e) => setBrightenDarkText(e.target.checked)} data-testid="pptx-option-brighten" />
             <span>
               濃い色の文字を明るくして、黒背景で読みやすくする
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">紺・濃い赤などの文字が、黒い背景に沈んで見えにくいときに使います（色味は残します）。</span>
             </span>
           </label>
         </div>
@@ -326,9 +321,7 @@ export function PptxInvertTool() {
             </div>
           )}
 
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            変換後のファイル: {result.suggestedName}（{formatBytes(result.sizeBytes)}）。文字・図形・表・グラフは、PowerPointでそのまま編集できます。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">変換後: {result.suggestedName}（{formatBytes(result.sizeBytes)}）</p>
           <RewardedDownloadGate onDownload={handleDownload} label="PowerPointファイルをダウンロード" />
         </div>
       )}

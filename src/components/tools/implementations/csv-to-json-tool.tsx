@@ -82,7 +82,7 @@ export function CsvToJsonTool() {
         <PreviewShell
           title="JSONへの変換プレビュー"
           loading={loading}
-          summary={preview && !preview.error && <span>1行目を見出し(キー名)として、{preview.total}件のオブジェクトになります（値はすべて文字列）</span>}
+          summary={preview && !preview.error && <span>{preview.total}件（1行目をキー名に使用）</span>}
           notes={preview && !preview.error && preview.total > 3 ? ["JSONは先頭3件のみ表示しています。"] : undefined}
         >
           {previewError && <PreviewNotice message={previewError} />}

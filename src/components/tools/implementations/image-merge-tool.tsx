@@ -407,9 +407,7 @@ export function ImageMergeTool() {
                     比率維持+クロップ
                   </button>
                 </div>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  縦横比を無視して引き伸ばすことはありません。フィットは余白が生まれ、クロップは枠いっぱいに埋める代わりに一部が見切れます。
-                </p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">フィットは余白が生まれ、クロップは一部が見切れます。</p>
               </div>
             )}
           </div>

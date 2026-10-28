@@ -101,7 +101,7 @@ function expectOutput(info: OutputPdfInfo, expected: ExpectedOutput) {
 
 test.describe("pdf-delete-pages: 出力PDFの品質", () => {
   const SLUG = "pdf-delete-pages";
-  const ready = (page: Page) => page.getByText("削除するページをタップして選択してください");
+  const ready = (page: Page) => page.getByText(/削除するページを選択/);
   /** ページ選択ボタン。選択後は名前が「n 削除」になるため、どちらの状態にも一致させる */
   const pageButton = (page: Page, n: number) => page.getByRole("button", { name: new RegExp(`^${n}( 削除)?$`) });
 
@@ -119,7 +119,7 @@ test.describe("pdf-delete-pages: 出力PDFの品質", () => {
     await openToolWithPdf(page, SLUG, input, ready(page));
 
     await selectPages(page, [2]);
-    await expect(page.getByText("3ページ中1ページを選択")).toBeVisible();
+    await expect(page.getByText("削除するページを選択（1/3ページ）")).toBeVisible();
     await clickWhenReady(page.getByRole("button", { name: "1ページを削除する", exact: true }), {
       expectAfter: page.getByText("削除が完了しました"),
     });
@@ -184,7 +184,7 @@ test.describe("pdf-delete-pages: 出力PDFの品質", () => {
 
 test.describe("pdf-reorder-pages: 出力PDFの品質", () => {
   const SLUG = "pdf-reorder-pages";
-  const ready = (page: Page) => page.getByText("↑↓ ボタンでページの順序を並び替えられます");
+  const ready = (page: Page) => page.getByText(/↑↓ で並び替え/);
   const moveDown = (page: Page, position: number) => page.getByRole("button", { name: `${position}番目を下へ移動`, exact: true });
   const moveUp = (page: Page, position: number) => page.getByRole("button", { name: `${position}番目を上へ移動`, exact: true });
 

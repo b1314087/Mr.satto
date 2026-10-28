@@ -185,9 +185,7 @@ export function ExcelMergeCenterTool() {
 
       {file && sheetNames.length > 0 && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            対象範囲（行番号・列番号は1始まり。複数行を指定すると各行に同じ処理を適用します）
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">対象範囲（複数行は各行に同じ処理を適用）</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
               開始行
@@ -253,11 +251,6 @@ export function ExcelMergeCenterTool() {
               垂直方向中央揃え
             </label>
           </div>
-          {!merge && (
-            <p className="text-xs text-neutral-400">
-              「セルを結合する」をオフにすると、結合せずに中央揃えだけを適用します
-            </p>
-          )}
         </div>
       )}
 

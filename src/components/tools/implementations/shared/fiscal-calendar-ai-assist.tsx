@@ -554,7 +554,6 @@ export function FiscalCalendarAiAssist({
                   </button>
                 )}
               </div>
-              <p className="text-xs text-neutral-600 dark:text-neutral-300">採用しなかった提案は、カレンダーに入りません。</p>
             </div>
           )}
         </div>

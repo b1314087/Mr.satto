@@ -8,7 +8,6 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   AudioBitratePicker,
   AudioFormatPicker,
-  AudioIntro,
   AudioOutputPlayer,
   AudioPreviewPanel,
   AudioResultCard,
@@ -96,15 +95,12 @@ export function AudioVolumeTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AudioIntro>
-        音声の音量を大きく／小さくします。「ノーマライズ」を選ぶと、一番大きい音が目標の音量になるよう自動で全体を揃えます。
-      </AudioIntro>
 
       <FileDropzone
         accept={AUDIO_INPUT_ACCEPT}
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}
         label="音声ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC など。サイズの上限はありません）"
+        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC）"
         onFilesSelected={handleSelect}
         onError={job.setError}
       />
@@ -157,14 +153,9 @@ export function AudioVolumeTool() {
                   className="w-full"
                 />
               </label>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                +6dBで約2倍、−6dBで約半分の音量です。大きくしすぎると音が割れることがあります
-                （その場合は、音割れしにくいノーマライズをお試しください）。
-              </p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">+6dBで約2倍、−6dBで約半分の音量です。</p>
               {gainDb > 0 && (
-                <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
-                  元の音声がすでに大きい場合、音が割れる（歪む）可能性があります。処理後に再生して確認してください。
-                </p>
+                <p role="status" className="text-xs text-amber-700 dark:text-amber-400">音が割れる可能性があります。処理後に再生して確認してください。</p>
               )}
             </div>
           ) : (
@@ -185,10 +176,7 @@ export function AudioVolumeTool() {
                   </label>
                 ))}
               </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                音声全体で一番大きい部分が、この音量になるように全体を引き上げます（または下げます）。
-                0dBが再生できる最大の音量です。
-              </p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">全体の最大音量を、この値に揃えます。</p>
             </fieldset>
           )}
         </fieldset>

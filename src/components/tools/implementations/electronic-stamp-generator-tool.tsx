@@ -302,8 +302,7 @@ function TextStampPanel({
         <div data-testid="tool-preview" className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700" style={CHECKER_STYLE}>
           <canvas ref={previewRef} aria-label="印影のプレビュー" className="max-h-72 max-w-full" />
         </div>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">背景の市松模様は透明部分を示す表示用のものです</p>
-      </div>
+              </div>
       }
     >
       <div className="flex flex-1 flex-col gap-4">
@@ -840,9 +839,6 @@ function ImportStampPanel({
               ))}
             </div>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            枠をドラッグして印影を囲み、「切り抜く」を押してください。枠にフォーカスして矢印キーで移動もできます。
-          </p>
           <div className="flex gap-2">
             <button
               type="button"
@@ -869,8 +865,7 @@ function ImportStampPanel({
             <div data-testid="tool-preview" className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700" style={CHECKER_STYLE}>
               <canvas ref={finalPreviewRef} data-testid="stamp-final-preview" aria-label="調整後の印影プレビュー" className="max-h-72 max-w-full" />
             </div>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">背景の市松模様は透明部分を示す表示用のものです</p>
-          </div>
+                      </div>
           }
         >
           <div className="flex flex-1 flex-col gap-4">
@@ -894,9 +889,7 @@ function ImportStampPanel({
                 onChange={(e) => setThresholdPercent(Number(e.target.value))}
               />
             </label>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              背景が複雑な画像・影や柄・透かしがある画像では完全に分離できない場合があります。しきい値を調整してご確認ください。
-            </p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">背景が複雑な画像は、完全に分離できない場合があります。しきい値で調整してください。</p>
             <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
               <input
                 type="checkbox"

@@ -137,7 +137,7 @@ export function PdfPasswordProtectTool() {
         accept="application/pdf,.pdf"
         maxSizeMB={100}
         label="PDFをドラッグ&ドロップ"
-        hint="またはタップして選択。ファイルもパスワードも外部へ送信されず、端末の中だけで処理されます"
+        hint="またはタップして選択"
         onFilesSelected={handleFiles}
         onError={setError}
       />
@@ -221,17 +221,11 @@ export function PdfPasswordProtectTool() {
                 onChange={(e) => setOwnerPassword(e.target.value)}
                 className={inputClass}
               />
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                空欄の場合は自動で作られ、後から制限を解除できなくなります。
-              </span>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">空欄なら自動で作成します。</span>
             </label>
           )}
 
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            AES-256で暗号化します。パスワードを忘れるとこのツールを含め誰も開けなくなるため、必ず控えてください。
-            印刷・コピーなどの制限は、ビューアが守ることで成り立つ設定で、対応していないソフトでは無視されることがあります。
-            非常に古いPDFビューア(Acrobat 8以前など)では開けない場合があります。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">パスワードを忘れると、誰も開けなくなります。必ず控えてください。</p>
         </div>
       )}
 

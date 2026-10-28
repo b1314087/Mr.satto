@@ -173,9 +173,7 @@ export function ExcelDateShiftTool() {
               className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
             />
           </label>
-          <p className="text-xs text-neutral-400">
-            シート内の日付として認識できるセルだけを変更します（日付以外のセルは変更されません）
-          </p>
+          <p className="text-xs text-neutral-400">日付として認識できるセルだけを変更します。</p>
         </div>
       )}
 
@@ -200,7 +198,7 @@ export function ExcelDateShiftTool() {
             (preview.changedCount > 0 ? (
               <span>変わる日付セル: {preview.changedCount}個（全シートに同じ設定を適用）</span>
             ) : (
-              <span>日付として認識できるセルが見つかりませんでした。変更されるセルはありません。</span>
+              <span>変更される日付セルがありません。</span>
             ))
           }
           legend={preview && !preview.error && preview.changedCount > 0 ? [{ mark: "changed", label: "変更される日付(変更のある行を優先して表示。左端の数字は元の行番号)" }] : undefined}

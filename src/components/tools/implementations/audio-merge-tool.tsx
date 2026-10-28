@@ -8,7 +8,6 @@ import { ReorderableFileList } from "@/components/tools/implementations/shared/r
 import {
   AudioBitratePicker,
   AudioFormatPicker,
-  AudioIntro,
   AudioOutputPlayer,
   AudioResultCard,
   AudioRunBar,
@@ -90,17 +89,13 @@ export function AudioMergeTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AudioIntro>
-        複数の音声ファイルを、並べた順番に1つのファイルへつなげます。形式やサンプリング周波数が違うファイルも、
-        自動でそろえて結合します（結合後はステレオ・48kHzになります）。
-      </AudioIntro>
 
       <FileDropzone
         accept={AUDIO_INPUT_ACCEPT}
         multiple
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}
         label="音声ファイルをドラッグ&ドロップ（複数選択できます）"
-        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC など）。追加で何度でも選べます"
+        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC）"
         onFilesSelected={handleSelect}
         onError={job.setError}
       />

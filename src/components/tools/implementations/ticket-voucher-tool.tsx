@@ -221,7 +221,7 @@ export function TicketVoucherTool() {
       previewWidth="lg"
       preview={
       <div data-testid="tool-preview" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="mb-2 text-sm font-medium">プレビュー（PDFと同じ配置）</p>
+        <p className="mb-2 text-sm font-medium">プレビュー</p>
         <TicketPreview form={form} />
       </div>
       }
@@ -328,9 +328,7 @@ export function TicketVoucherTool() {
 
       <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <p className="text-sm font-medium">Excel/CSVから一括で読み込む（任意・1行=1枚）</p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          1行目を見出しとして、列ごとに「タイトル」「金額」などを割り当てます。券ごとに違う内容にできます。
-        </p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">列ごとに「タイトル」「金額」などを割り当てます。</p>
         <FileDropzone accept={ACCEPT} maxSizeMB={20} label="CSV/Excelをドラッグ&ドロップ" hint="またはタップして選択" onFilesSelected={handleImportFile} onError={setImportError} />
         {importError && <ErrorMessage message={importError} />}
         {table && (
@@ -435,9 +433,7 @@ export function TicketVoucherTool() {
           </div>
         )}
         {(codes.showQr || codes.showBarcode) && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            内容には、{"{n}"}（連番）・{"{title}"}（タイトル）・{"{date}"}（日付）・{"{amount}"}（金額）・{"{text}"}（任意テキスト）が使えます。Excelから読み込んだときは、見出しの名前（例: {"{氏名}"}）も使えます。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">使える記号: {"{n}"}（連番）・{"{title}"}・{"{date}"}・{"{amount}"}・{"{text}"}。Excel読み込み時は見出し名（例: {"{氏名}"}）も使えます。</p>
         )}
       </div>
 

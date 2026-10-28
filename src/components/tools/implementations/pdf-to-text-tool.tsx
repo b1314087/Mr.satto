@@ -94,9 +94,7 @@ export function PdfToTextTool() {
           data-testid="tool-preview"
           className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            抽出されるテキストのプレビュー(先頭{PREVIEW_PAGES}ページ・先頭{PREVIEW_CHARS}文字)
-          </p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">テキストのプレビュー</p>
           {!currentPreview ? (
             <p className="text-xs text-neutral-400">読み込み中…</p>
           ) : "error" in currentPreview ? (
@@ -153,9 +151,7 @@ export function PdfToTextTool() {
                   d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
                 />
               </svg>
-              <span>
-                このPDFには抽出可能な文字情報がない可能性があります。スキャンした画像のPDFの場合、文字情報を持たないため抽出できません（OCR機能は今回のバージョンでは未対応です）。
-              </span>
+              <span>このPDFには抽出できる文字情報がない可能性があります（スキャン画像のPDFなど）。</span>
             </div>
           )}
 

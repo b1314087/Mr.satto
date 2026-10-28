@@ -105,10 +105,10 @@ function ResizePreview({
         </div>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           {contentMode === "fit"
-            ? `青い枠が新しい用紙です。内容は縦横比を保ったまま${rect.scale > 1 ? "拡大" : "縮小"}して中央に置かれます(約${Math.round(rect.scale * 100)}%)。余白(灰色の部分)は白紙になります。`
+            ? `約${Math.round(rect.scale * 100)}%に${rect.scale > 1 ? "拡大" : "縮小"}して中央に置きます。`
             : clipped
-              ? "青い枠が新しい用紙です。内容の大きさはそのままで、用紙からはみ出す右上側は見切れます。"
-              : "青い枠が新しい用紙です。内容の大きさ・位置(左下基準)はそのままで、余った右上側が余白になります。"}
+              ? "はみ出す部分は見切れます。"
+              : "余った部分は余白になります。"}
         </p>
         {g.rotate !== 0 && (
           <p className="text-xs text-amber-700 dark:text-amber-400">
@@ -125,7 +125,7 @@ function ResizePreview({
       data-testid="tool-preview"
       className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
     >
-      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">サイズ変更のプレビュー(1ページ目)</p>
+      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー(1ページ目)</p>
       {body}
     </section>
   );
@@ -260,9 +260,6 @@ export function PdfResizePagesTool() {
               />
               <span>
                 内容も新しいサイズに合わせて拡大縮小する
-                <span className="block text-xs text-neutral-400">
-                  縦横比を保ったまま中央に配置します（推奨）
-                </span>
               </span>
             </label>
             <label className="flex items-start gap-2 text-sm text-neutral-600 dark:text-neutral-300">
@@ -276,7 +273,7 @@ export function PdfResizePagesTool() {
               <span>
                 内容の大きさは変えず、ページサイズだけ変更する
                 <span className="block text-xs text-neutral-400">
-                  拡大時は余白が増え、縮小時は右上側の内容が見切れる場合があります
+                  縮小時は内容が見切れる場合があります
                 </span>
               </span>
             </label>

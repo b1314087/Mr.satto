@@ -103,9 +103,7 @@ export function PdfReorderPagesTool({ initialFile = null, onFileChange }: Shared
 
       {file && order && (
         <div className="flex flex-col gap-3">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            ↑↓ ボタンでページの順序を並び替えられます（{order.length}ページ）
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">↑↓ で並び替え（{order.length}ページ）</p>
           <PdfPageOrderList order={order} onReorder={(next) => file && setEdited({ file, order: next })} />
         </div>
       )}

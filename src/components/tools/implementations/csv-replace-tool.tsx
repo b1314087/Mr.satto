@@ -131,7 +131,7 @@ export function CsvReplaceTool() {
           summary={
             preview &&
             (search === "" ? (
-              <span>「検索する文字列」を入力すると、置換後の表がここに表示されます。</span>
+              <span>検索する文字列を入力すると、置換後の表が表示されます。</span>
             ) : (
               <span>置換される見込み: {preview.replacedCount}箇所</span>
             ))

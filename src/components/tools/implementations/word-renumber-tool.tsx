@@ -144,9 +144,7 @@ export function WordRenumberTool() {
             <p className="text-xs text-neutral-500 dark:text-neutral-400">変換後の番号形式</p>
             <FormatPicker value={targetFormat} onChange={setTargetFormat} />
           </div>
-          <p className="text-xs text-neutral-400">
-            段落の先頭がこの形式の番号になっている行だけを対象に変換します。本文そのものは変更しません。Wordの自動採番（アウトライン）機能には対応していません。
-          </p>
+          <p className="text-xs text-neutral-400">先頭がこの形式の番号の行だけを変換します。Wordの自動採番には対応していません。</p>
         </div>
       )}
 

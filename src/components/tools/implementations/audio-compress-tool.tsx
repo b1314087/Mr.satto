@@ -8,7 +8,6 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   AudioBitratePicker,
   AudioFormatPicker,
-  AudioIntro,
   AudioOutputPlayer,
   AudioPreviewPanel,
   AudioResultCard,
@@ -77,16 +76,12 @@ export function AudioCompressTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AudioIntro>
-        音声のファイルサイズを小さくします。メールで送る、容量が足りないといったときに使えます。
-        ビットレートを下げるほど小さくなりますが、音質も下がります。
-      </AudioIntro>
 
       <FileDropzone
         accept={AUDIO_INPUT_ACCEPT}
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}
         label="音声ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC など。サイズの上限はありません）"
+        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC）"
         onFilesSelected={handleSelect}
         onError={job.setError}
       />
@@ -126,9 +121,7 @@ export function AudioCompressTool() {
           />
           <span>
             モノラルにする
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">
-              左右の音をまとめて1つにします。話し声ならほとんど違いがなく、さらに小さくなります。
-            </span>
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400">左右の音をまとめます（さらに小さくなります）</span>
           </span>
         </label>
       )}
@@ -180,9 +173,7 @@ export function AudioCompressTool() {
           }
         >
           {job.result.sizeBytes >= job.result.inputSizeBytes && (
-            <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
-              元のファイルより小さくなりませんでした。すでに十分圧縮されている可能性があります。ビットレートをさらに下げるか、モノラルをお試しください。
-            </p>
+            <p role="status" className="text-xs text-amber-700 dark:text-amber-400">元のファイルより小さくなりませんでした。ビットレートを下げるか、モノラルをお試しください。</p>
           )}
           <AudioOutputPlayer url={job.result.url} label="圧縮後の音声（再生して確認できます）" />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />

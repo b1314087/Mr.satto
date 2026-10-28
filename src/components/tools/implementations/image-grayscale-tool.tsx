@@ -84,7 +84,7 @@ export function ImageGrayscaleTool() {
           data-testid="tool-preview"
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（元の画像と白黒化後）</p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
           {previewError && <ErrorMessage message={previewError} />}
           <div className="grid gap-3 sm:grid-cols-2">
             <figure className="flex flex-col gap-1">

@@ -372,10 +372,7 @@ export function FormToIndividualPdfsTool() {
           1人ずつの個別PDFをまとめて作成します。処理はすべてブラウザ内で行われ、
           アップロードしたテンプレート・CSV/Excel・写真・生成したPDFはMr.Sattoのサーバーへ保存されません。
         </p>
-        <p>
-          Googleフォーム・Microsoft Formsとの直接連携は行っていません。各フォームの「回答をダウンロード」機能で
-          書き出したCSV（Googleフォーム）またはExcel（Microsoft Forms）をアップロードしてご利用ください。
-        </p>
+        <p>Googleフォーム／Microsoft Formsから書き出したCSV・Excelを使います（直接連携はしていません）。</p>
       </div>
 
       {error && <ErrorMessage message={error} />}
@@ -428,11 +425,6 @@ export function FormToIndividualPdfsTool() {
           >
             + フィールドを追加
           </button>
-          {placingFieldId && (
-            <p className="text-xs text-blue-600 dark:text-blue-400">
-              プレビュー上の配置したい位置をクリックしてください（項目の左上になります）。
-            </p>
-          )}
           </div>
 
           <div
@@ -619,9 +611,7 @@ export function FormToIndividualPdfsTool() {
       {table && (step === "mapping" || step === "photos" || step === "preview" || step === "generate") && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">4. 列の対応（マッピング）を確認</h2>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            列名が完全一致する場合のみ自動で対応付けています。誤った対応付けを防ぐため、内容を確認し、必要であれば手動で選び直してください。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">列名が完全一致した項目のみ自動で対応付けています。内容を確認してください。</p>
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-neutral-200 dark:border-neutral-800">
@@ -711,9 +701,7 @@ export function FormToIndividualPdfsTool() {
               )}
             </div>
             {filenameStrategy === "name" && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                氏名など個人情報をファイル名に含めると、ダウンロード後の端末上でファイル名がそのまま見える状態になります。
-              </p>
+              <p className="text-xs text-amber-600 dark:text-amber-400">氏名をファイル名に含めると、端末上でそのまま見えます。</p>
             )}
           </div>
 
@@ -748,10 +736,7 @@ export function FormToIndividualPdfsTool() {
       {photoFields.length > 0 && (step === "photos" || step === "preview" || step === "generate") && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">5. 写真をアップロード</h2>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            CSV・Excelの列に記載されたファイル名（拡張子の有無は問いません）と一致する画像だけが対応付けられます。
-            一致しない場合は、その人の写真欄は空欄になります（無関係な写真が代わりに使われることはありません）。JPEG・PNGに対応しています。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">列のファイル名と一致する画像のみ対応付けます（JPEG・PNG）。一致しない人の写真欄は空欄になります。</p>
           <FileDropzone
             accept="image/jpeg,image/png,.jpg,.jpeg,.png"
             multiple
@@ -832,9 +817,7 @@ export function FormToIndividualPdfsTool() {
       {step === "generate" && table && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">7. 全員分を一括生成</h2>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            対象: {table.rows.length}人分。生成後、ZIPファイルとしてまとめてダウンロードできます。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">対象: {table.rows.length}人分</p>
           <button
             type="button"
             onClick={() => void handleGenerateAll()}

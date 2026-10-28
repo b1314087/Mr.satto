@@ -106,12 +106,8 @@ export function FileBulkRenameTool() {
 
       {files.length > 0 && (
         <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            共通の名前＋連番で一括生成（任意）
-          </p>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            例: 「写真」と入力 → 写真_001, 写真_002 ... のように自動生成します
-          </p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">共通の名前＋連番（任意）</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">例: 「写真」→ 写真_001, 写真_002 ...</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
               type="text"

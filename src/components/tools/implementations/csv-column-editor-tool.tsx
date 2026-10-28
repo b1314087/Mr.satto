@@ -193,9 +193,7 @@ export function CsvColumnEditorTool() {
 
       {columns && rowCount !== null && (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            {rowCount}行 ・ {columns.length}列（チェックを外すと削除、↑↓で並び替え、名前欄でリネームできます）
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">{rowCount}行 ・ {columns.length}列</p>
           <ul className="flex flex-col gap-1.5">
             {columns.map((col, index) => (
               <li

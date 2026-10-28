@@ -93,9 +93,7 @@ export function PdfCropPagesTool() {
 
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            余白のプリセット（すべての辺に適用）
-          </p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">余白のプリセット</p>
           <div className="flex gap-2">
             {PRESETS.map((p) => (
               <button
@@ -124,9 +122,7 @@ export function PdfCropPagesTool() {
               </label>
             ))}
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            指定した分だけ表示・印刷される範囲を狭めます（内容自体は削除・再描画されません）。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">表示・印刷の範囲を狭めます（内容は削除されません）。</p>
         </div>
       )}
 

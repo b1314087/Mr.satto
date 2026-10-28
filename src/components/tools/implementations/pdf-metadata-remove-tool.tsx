@@ -90,10 +90,7 @@ export function PdfMetadataRemoveTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        このツールはPDFの標準的な文書情報（タイトル・作成者・件名・キーワード・アプリケーション・PDF変換ツール）を削除します。
-        一部のPDF編集ソフトが別途埋め込むことがあるメタデータ（XMPメタデータ等）については、削除できるとは限りません。「完全に匿名化される」ことを保証するものではないため、機密性の高いファイルは内容自体も併せてご確認ください。
-      </div>
+      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">XMPなど一部のメタデータは、削除できない場合があります。</div>
 
       <FileDropzone
         accept="application/pdf,.pdf"

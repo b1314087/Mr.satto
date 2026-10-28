@@ -82,13 +82,12 @@ export function BusinessCardQrTool() {
         data-testid="tool-preview"
         className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
       >
-        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">プレビュー（入力に合わせて自動で更新されます）</p>
+        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">プレビュー</p>
         {dataUrl ? (
           <div className="flex flex-col items-start gap-4 sm:flex-row">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={dataUrl} alt="生成された名刺二次元コード" className="h-48 w-48 rounded-lg bg-white p-2" />
             <div className="flex flex-col gap-1 text-sm">
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">読み取ると次の連絡先が登録されます</p>
               {[
                 ["氏名", name],
                 ["会社名", org],
@@ -107,9 +106,7 @@ export function BusinessCardQrTool() {
             </div>
           </div>
         ) : (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            氏名を入力すると、ここに名刺二次元コードが表示されます。
-          </p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">氏名を入力してください。</p>
         )}
         {dataUrl && (
           <RewardedDownloadGate onDownload={handleDownload} label="画像としてダウンロード" disabled={!live.fresh} />
@@ -117,9 +114,6 @@ export function BusinessCardQrTool() {
       </div>
       }
     >
-      <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        入力した連絡先はブラウザ内で二次元コード化されるだけで、どこにも送信・保存されません。
-      </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {fields.map((f) => (
           <label key={f.label} className="flex flex-col gap-1.5 text-sm">

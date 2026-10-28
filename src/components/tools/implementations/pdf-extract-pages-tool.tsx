@@ -128,9 +128,7 @@ export function PdfExtractPagesTool({ initialFile = null, onFileChange }: Shared
             placeholder="例: 1,3,5-7"
             className="w-full rounded-md border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
           />
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">
-            カンマ区切りでページ番号や範囲を指定します（例: 1,3,5-7 → 1,3,5,6,7ページを抽出）。指定した順番のまま出力されます。
-          </span>
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">例: 1,3,5-7（指定した順番で出力されます）</span>
         </label>
       )}
 

@@ -61,9 +61,7 @@ export function PdfMergeTool() {
       preview={
         files.length > 0 ? (
         <div data-testid="tool-preview" className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            結合のプレビュー（各PDFの先頭ページ。上から順に結合されます）
-          </p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">結合のプレビュー（上から順に結合）</p>
           <ol className="flex flex-wrap gap-3">
             {files.map((file, index) => (
               <li key={fileKey(file)} className="flex w-[calc(140px+2rem+2px)] max-w-full flex-col gap-1">
@@ -90,7 +88,7 @@ export function PdfMergeTool() {
         multiple
         maxSizeMB={100}
         label="PDFをドラッグ&ドロップ（複数可）"
-        hint="またはタップして選択。結合する順序で選択してください"
+        hint="またはタップして選択"
         onFilesSelected={addFiles}
         onError={setInputError}
       />

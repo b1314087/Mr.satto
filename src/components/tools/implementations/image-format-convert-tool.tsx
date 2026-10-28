@@ -180,7 +180,7 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
       preview={
         previewFile ? (
           <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（選んだ画像を{target}に変換した結果）</p>
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
             {files.length > 1 && (
               <label className="flex flex-col gap-1 text-xs text-neutral-600 dark:text-neutral-300">
                 プレビューする画像（{files.length}枚から選択）
@@ -250,7 +250,7 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
               </p>
             )}
             {files.length > 1 && (
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">ほかの{files.length - 1}枚も同じ形式で変換されます。サイズは画像ごとに異なります。</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">ほかの{files.length - 1}枚も同じ形式で変換されます。</p>
             )}
           </div>
         ) : null

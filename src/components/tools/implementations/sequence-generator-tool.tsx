@@ -116,7 +116,7 @@ export function SequenceGeneratorTool() {
       preview={
         <div className="flex flex-col gap-3" data-testid="tool-preview">
           <label htmlFor="seq-result" className="flex flex-wrap items-baseline justify-between gap-1 text-sm font-medium">
-            <span>生成結果（直接編集できます）</span>
+            <span>生成結果</span>
             <span data-testid="seq-count" className="text-xs font-normal text-neutral-500 dark:text-neutral-400">
               {lineCount}行
             </span>
@@ -176,7 +176,6 @@ export function SequenceGeneratorTool() {
             >
               {copyState === "copied" ? "コピーしました" : "すべてコピー"}
             </button>
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">1行に1項目。Excelにそのまま貼り付けられます。</span>
           </div>
           {copyState === "failed" && (
             <p data-testid="seq-copy-failed" role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-950 dark:text-red-200">
@@ -253,9 +252,7 @@ export function SequenceGeneratorTool() {
                 />
               </label>
             </div>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              開始番号は終了番号以下にしてください（0〜9999、全角の数字も使えます）。一度に作れるのは{SEQUENCE_MAX_LINES.toLocaleString("ja-JP")}行までです。
-            </p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">開始番号は終了番号以下（0〜9999）。最大{SEQUENCE_MAX_LINES.toLocaleString("ja-JP")}行まで。</p>
           </div>
         ) : (
           <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -296,9 +293,7 @@ export function SequenceGeneratorTool() {
                 className={`${fieldClass} font-mono ${templateError ? "border-red-400 focus:border-red-500 focus:ring-red-500/20 dark:border-red-700" : ""}`}
               />
             </label>
-            <p id="seq-template-help" className="text-xs text-neutral-500 dark:text-neutral-400">
-              <code>{"{n}"}</code> が連番、<code>{"{item}"}</code> が項目名に置き換わります（同じ記号は何度でも使えます）。どちらか一方だけ、または記号なしでも使えます。
-            </p>
+            <p id="seq-template-help" className="text-xs text-neutral-500 dark:text-neutral-400"><code>{"{n}"}</code> が連番、<code>{"{item}"}</code> が項目名に置き換わります。</p>
             {templateError && (
               <p data-testid="seq-template-error" role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-950 dark:text-red-200">
                 {templateError}
@@ -343,9 +338,6 @@ export function SequenceGeneratorTool() {
               ))}
             </div>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            入力した内容や結果は、この端末の中だけで処理し、サーバーへ送信しません。
-          </p>
         </div>
       </div>
     </PreviewSplitLayout>

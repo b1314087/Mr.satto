@@ -8,7 +8,6 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   AudioBitratePicker,
   AudioFormatPicker,
-  AudioIntro,
   AudioOutputPlayer,
   AudioPreviewPanel,
   AudioResultCard,
@@ -81,16 +80,12 @@ export function AudioConvertTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AudioIntro>
-        音声ファイル（MP3 / WAV / M4A / AAC / OGG / FLAC など）を、MP3・WAV・M4A・OGG・FLACのいずれかの形式に変換します。
-        M4AからMP3への変換もできます。
-      </AudioIntro>
 
       <FileDropzone
         accept={AUDIO_INPUT_ACCEPT}
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}
         label="音声ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC など。サイズの上限はありません）"
+        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC）"
         onFilesSelected={handleSelect}
         onError={job.setError}
       />

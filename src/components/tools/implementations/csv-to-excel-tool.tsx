@@ -68,7 +68,7 @@ export function CsvToExcelTool() {
         <PreviewShell
           title="Excelに変換される内容(プレビュー)"
           loading={loading}
-          summary={rows && <span>{rows.length}行 × {columnCount}列のシートが作られます（空行は取り除かれます）</span>}
+          summary={rows && <span>{rows.length}行 × {columnCount}列</span>}
         >
           {previewError && <PreviewNotice message={previewError} />}
           {rows && (

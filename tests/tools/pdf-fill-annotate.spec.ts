@@ -199,7 +199,7 @@ test("画像を追加できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
   await page.getByRole("button", { name: "画像", exact: true }).click();
   await page.locator('input[type="file"]').last().setInputFiles(fixtures.png);
-  await expect(page.getByText(/PDF上をクリックして画像を配置してください/)).toBeVisible();
+  await expect(page.getByText(/PDF上をクリックして配置してください/)).toBeVisible();
 
   await clickCanvasAt(page, 100, 120);
   await expect(page.getByText("配置した注釈（1件）")).toBeVisible();

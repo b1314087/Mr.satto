@@ -54,9 +54,7 @@ export function DocumentGeneratorTool({ type }: { type: DocumentType }) {
       </section>
       }
     >
-      <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        入力した内容はこの画面上で{meta.label}のPDFを作成するためだけに使われます。サーバーへの送信・保存は行われず、画面を閉じると内容は消えます。
-      </p>
+      <p className="text-sm text-neutral-500 dark:text-neutral-400">入力内容は画面を閉じると消えます。</p>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">① 基本情報</h2>

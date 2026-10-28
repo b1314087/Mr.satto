@@ -122,7 +122,7 @@ export function ImageRotateFlipTool({ initialMode = "rotate" }: { initialMode?: 
       preview={
         file ? (
           <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（{detail}・選ぶとすぐ変わります）</p>
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（{detail}）</p>
             {previewError && <ErrorMessage message={previewError} />}
             <div className="grid gap-3 sm:grid-cols-2">
               <figure className="flex min-w-0 flex-col gap-1">

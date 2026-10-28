@@ -175,7 +175,7 @@ export function ImageWatermarkTool() {
 
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー(設定に合わせて変わります)</p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
           {previewError && <ErrorMessage message={previewError} />}
           <canvas
             ref={previewCanvasRef}

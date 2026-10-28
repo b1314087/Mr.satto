@@ -144,22 +144,7 @@ export function OcrTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          画像（JPG・PNG・WebP）またはPDFから文字を読み取ります。処理はすべてブラウザ内で行われ、
-          ファイルが外部のサーバーへ送信されることはありません。
-        </p>
-        <p>
-          画像の品質や文字の状態（かすれ・手書き・低解像度など）によって認識結果が異なる場合があります。完全に正確な文字起こしを保証するものではありません。
-        </p>
-        <p>
-          すでに文字情報を持つPDF（コピー&ペーストできるPDF）をお持ちの場合は、
-          <Link href="/tools/pdf-to-text" className="text-blue-600 underline dark:text-blue-400">
-            PDF→テキスト
-          </Link>
-          の方が高速に処理できます。OCRはスキャンした画像・文字情報のないPDF向けです。
-        </p>
-      </div>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">文字入りのPDFは<Link href="/tools/pdf-to-text" className="text-blue-600 underline dark:text-blue-400">PDF→テキスト</Link>のほうが高速です。認識結果が不正確な場合があります。</p>
 
       <FileDropzone
         accept="application/pdf,.pdf,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"

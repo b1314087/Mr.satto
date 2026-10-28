@@ -218,9 +218,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
       previewWidth="lg"
       preview={file ? (
         <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（設定を変えると結果が更新されます）
-          </p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
           {shownError && <ErrorMessage message={shownError} />}
           {tooLarge && (
             <p className="text-xs text-amber-700 dark:text-amber-400">

@@ -315,7 +315,7 @@ export function ExcelReplaceTool() {
           summary={
             preview &&
             (preview.replacedCount === null ? (
-              !preview.error && <span>「検索する文字列」を入力すると、{operation === "delete" ? "削除" : "置換"}後の表がここに表示されます。</span>
+              !preview.error && <span>検索する文字列を入力すると、{operation === "delete" ? "削除" : "置換"}後の表が表示されます。</span>
             ) : (
               <span>
                 {operation === "delete" ? "削除" : "置換"}される見込み: {preview.replacedCount}箇所（文字列のセルだけが対象。全シートに同じ設定を適用）

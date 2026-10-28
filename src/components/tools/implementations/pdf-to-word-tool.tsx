@@ -186,23 +186,7 @@ export function PdfToWordTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          PDF内の文字を編集可能なWord文書（.docx）に変換します。段落・見出し・箇条書き/番号リスト・表（列幅・列の結合）、
-          太字・斜体・文字色・文字サイズ、中央/右揃え・字下げ、ハイパーリンク、画像、用紙サイズ・余白、
-          毎ページのヘッダー/フッター・ページ番号を、読み取れる範囲でWordに反映します。
-          処理はブラウザ内で完結し、ファイルが外部のサーバーへ送信されることはありません。
-        </p>
-        <p>
-          PDFの見た目を100%再現することは目的にしていません。2段組・図形やグラフ（画像でないもの）・
-          背景の塗りや罫線の装飾・特殊なフォントを含む複雑なレイアウトは、元のPDFどおりに再現されない場合があります。
-          Wordで編集しやすい文書にすることを優先しています。
-        </p>
-        <p>
-          文字情報を持たないスキャン画像のPDFにも対応しています（自動的に画像認識(OCR)へ切り替わります）。
-          OCRは手書き文字や画質の悪いスキャンでは誤認識が発生する場合があるため、変換後は内容をご確認ください。
-        </p>
-      </div>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">2段組・図形・特殊なフォントなど、複雑なレイアウトは再現されない場合があります。</p>
 
       <FileDropzone
         accept="application/pdf,.pdf"
@@ -222,9 +206,7 @@ export function PdfToWordTool() {
             aria-label="変換後の文章のプレビュー"
             className="flex min-w-0 flex-1 flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
           >
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-              Word文書の先頭ページのプレビュー(文字・見出し・表のみ)
-            </p>
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Word文書のプレビュー</p>
             {!currentPreview ? (
               <p className="text-xs text-neutral-400">読み込み中…</p>
             ) : "error" in currentPreview ? (
@@ -277,10 +259,7 @@ export function PdfToWordTool() {
 
           {result.usedOcr && (
             <div className="flex items-start gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
-              <span>
-                文字レイヤーの無いページを画像認識(OCR)でテキスト化しました。OCRの精度は元画像の解像度・
-                文字の状態に依存するため、誤認識がないか変換後の文書をご確認ください。
-              </span>
+              <span>OCRで文字を読み取りました。誤認識がないか、変換後に確認してください。</span>
             </div>
           )}
 
@@ -299,10 +278,7 @@ export function PdfToWordTool() {
                 d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
               />
             </svg>
-            <span>
-              複雑なレイアウト（2段組・図形やグラフ・背景の塗り・特殊なフォント等）は元のPDFどおりに
-              再現されていない場合があります。生成後の文書はWordで開いて内容をご確認ください。
-            </span>
+            <span>複雑なレイアウトは、再現されていない場合があります。Wordで内容を確認してください。</span>
           </div>
 
           <RewardedDownloadGate onDownload={handleDownload} label="Word文書をダウンロード" />

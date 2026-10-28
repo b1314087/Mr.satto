@@ -181,7 +181,6 @@ export function FileUnzipTool() {
               サイズ・件数の上限、または対応していない圧縮方式のため{skippedCount}件のファイルをスキップしました。
             </p>
           )}
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">{entries.length}件のファイルを展開しました</p>
           <ul className="w-full divide-y divide-neutral-200 text-xs text-neutral-600 dark:divide-neutral-800 dark:text-neutral-300">
             {entries.slice(0, 200).map((entry, i) => (
               <li key={`${entry.name}-${i}`} className="flex items-center justify-between gap-2 py-1.5">

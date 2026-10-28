@@ -129,9 +129,6 @@ export function PdfFixTool() {
         <p data-testid="pdf-fix-mode-description" className="text-xs text-neutral-500 dark:text-neutral-400">
           {info.description}
         </p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          処理はすべてブラウザ内で行い、PDFはMr.Sattoのサーバーに送信・保存されません。ページの結合・分割・並び替え・回転は「PDF編集」で行えます。
-        </p>
       </div>
 
       {confirming && (
@@ -185,7 +182,6 @@ export function PdfFixTool() {
       {handoffError && (
         <div data-testid="pdf-fix-handoff-error" className="flex flex-col gap-2">
           <ErrorMessage message={handoffError} />
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">下のファイル選択から、PDFを選び直してください。</p>
         </div>
       )}
 
@@ -201,7 +197,7 @@ export function PdfFixTool() {
             </span>
             （{formatBytes(received.file.size)}）
           </p>
-          <p>元のファイルではなく、{received.sourceLabel}で処理したあとのPDFです。違う場合は、別のファイルを選び直せます。</p>
+          <p>元のファイルではなく、{received.sourceLabel}で処理したあとのPDFです。</p>
           <button
             type="button"
             data-testid="pdf-fix-choose-another"

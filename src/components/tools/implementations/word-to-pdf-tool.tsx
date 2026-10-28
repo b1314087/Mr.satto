@@ -74,18 +74,7 @@ export function WordToPdfTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          Word文書（.docx）をPDFに変換します。段落・見出し・太字/斜体/下線・箇条書き・番号付きリスト・
-          改ページ・表・画像・リンクを可能な範囲で反映しますが、元のWordと見た目が完全に一致することは
-          保証しません。処理はブラウザ内で完結し、ファイルが外部のサーバーへ送信されることはありません。
-        </p>
-        <p>
-          テキストボックス・SmartArt・WordArt・複雑な段組み・マクロ・高度なページレイアウトなどは
-          再現できない場合があります。また、太字・斜体は専用の書体データを追加していないため、
-          既存の日本語書体を加工した疑似的な表現になります。
-        </p>
-      </div>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">複雑なレイアウトは、元のWordと一致しない場合があります。</p>
 
       <FileDropzone
         accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"

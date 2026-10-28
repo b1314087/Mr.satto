@@ -67,9 +67,6 @@ export function PdfRotateTool({ initialFile = null, onFileChange }: SharedPdfFil
               return { transform: `rotate(${rotateBy}deg) scale(${scale})` };
             }}
           />
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            すべてのページが時計回りに{rotateBy}°回転します（元の向きに追加で回転）。
-          </p>
         </div>
         ) : (
           <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
@@ -91,7 +88,7 @@ export function PdfRotateTool({ initialFile = null, onFileChange }: SharedPdfFil
       {file && (
         <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            すべてのページを回転します
+            すべてのページを時計回りに{rotateBy}°回転します
           </p>
           <div className="flex gap-2">
             {[90, 180, 270].map((deg) => (

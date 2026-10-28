@@ -228,7 +228,7 @@ export function ExcelLabelTool() {
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            ラベルシートのプレビュー(設定の変更に合わせて更新されます)
+            プレビュー
           </p>
           {plan && plan.pages.length > 1 && (
             <div className="flex items-center gap-2 text-sm">
@@ -298,10 +298,7 @@ export function ExcelLabelTool() {
                 赤い枠のラベルは、文字が枠に収まらない可能性があります（約{overflowCount}枚）。文字の大きさを小さくするか、ラベル内の余白を減らしてください。
               </p>
             )}
-            <p className="text-xs text-neutral-400 dark:text-neutral-500">
-              用紙（{paper.widthMm}×{paper.heightMm}mm）の中のラベルの位置・大きさをmmの比率どおりに描いた配置イメージです。
-              文字の収まり具合は目安で、実際の折り返しはWord・Excel側で決まります。枠線を印刷しない設定のときは、ラベルの範囲を点線で示しています。
-            </p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500">文字の収まり具合は目安です。実際の折り返しはWord・Excel側で決まります。</p>
           </>
         ) : (
           <p className="text-xs text-neutral-400">設定が正しくないため、プレビューを表示できません。</p>
@@ -410,7 +407,7 @@ export function ExcelLabelTool() {
         />
         {content.mode === "same" ? (
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">ラベル内の文字（すべてのラベルに同じ内容が入ります）</span>
+            <span className="text-neutral-600 dark:text-neutral-300">ラベル内の文字（全ラベル共通）</span>
             <textarea
               aria-label="ラベル内の文字"
               value={content.sameText}
@@ -459,10 +456,7 @@ export function ExcelLabelTool() {
                 className={`${FIELD_CLASS} font-mono`}
               />
             </label>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {entryCount}件のラベルを読み取りました
-              {plan ? `（全${plan.pages.length}ページ）` : ""}。1ページに入りきらない分は、次のページに続けて作成します。
-            </p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">{entryCount}件のラベルを読み取りました{plan ? `（全${plan.pages.length}ページ）` : ""}</p>
           </>
         )}
       </section>
@@ -564,7 +558,6 @@ export function ExcelLabelTool() {
 
       {result && (
         <div className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">{result.pageCount}ページ分のラベルシートができました。</p>
           <RewardedDownloadGate
             onDownload={handleDownload}
             label={result.format === "word" ? "Wordファイルをダウンロード" : "Excelファイルをダウンロード"}

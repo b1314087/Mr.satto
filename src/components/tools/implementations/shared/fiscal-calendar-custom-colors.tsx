@@ -55,18 +55,14 @@ export function FiscalCalendarCustomColors({
       data-testid="custom-colors"
       className="flex flex-col gap-3 rounded-lg border border-neutral-300 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-900"
     >
-      <p className="text-xs text-neutral-600 dark:text-neutral-300">
-        4つの色を自由に選べます。変えた色は、プレビューとダウンロードするExcel・PDFの両方に反映されます。
-      </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {CALENDAR_CUSTOM_ROLES.map((role) => {
-          const { label, hint } = CALENDAR_CUSTOM_ROLE_LABELS[role];
+          const { label } = CALENDAR_CUSTOM_ROLE_LABELS[role];
           const draft = drafts[role];
           const invalid = draft !== undefined && normalizeHexColor(draft) === null;
           return (
             <div key={role} className="flex flex-col gap-1">
               <span className="text-sm font-medium">{label}</span>
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">{hint}</span>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
@@ -110,9 +106,7 @@ export function FiscalCalendarCustomColors({
                 />
               </div>
               {invalid && (
-                <span role="alert" className="text-xs text-red-600 dark:text-red-400">
-                  色コードは #1F3864 のように、# と6けたの英数字で入力してください
-                </span>
+                <span role="alert" className="text-xs text-red-600 dark:text-red-400">色コードは #1F3864 の形式で入力してください</span>
               )}
             </div>
           );

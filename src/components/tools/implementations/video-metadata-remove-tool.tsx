@@ -105,24 +105,13 @@ export function VideoMetadataRemoveTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          動画ファイル（MP4 / MOV / WebM）から、撮影日時・位置情報（GPS）・タイトル・作成者・コメントなどの
-          メタデータを削除します。この動画はブラウザ上で処理され、動画ファイルをMr.Sattoのサーバーへ
-          アップロードすることはありません。
-        </p>
-        <p>
-          動画・音声そのものは可能な限り無劣化（再エンコードなしのコピー）で維持されます。ただし、
-          コンテナ形式やメタデータの種類によっては、すべてのメタデータを100%除去できることを
-          保証するものではありません。
-        </p>
-      </div>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">すべてのメタデータの除去を保証するものではありません。</p>
 
       <FileDropzone
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP4 / MOV / WebM。サイズの上限はありません）"
+        hint="またはタップして選択（MP4 / MOV / WebM）"
         onFilesSelected={handleSelect}
         onError={setError}
       />
@@ -185,9 +174,7 @@ export function VideoMetadataRemoveTool() {
         successLabel="メタデータの削除が完了しました"
       />
       {wasCanceled && (
-        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-          処理をキャンセルしました。設定を確認して、もう一度実行できます。
-        </div>
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">処理をキャンセルしました。</div>
       )}
       {error && <ErrorMessage message={error} />}
 

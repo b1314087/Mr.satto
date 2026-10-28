@@ -226,11 +226,11 @@ test.describe("PDF編集: 操作の切り替えと古い結果の無効化", () 
 
     // 分割 → ページ削除へ切り替えても、選んだPDFはそのまま使える
     await switchMode(page, "delete");
-    await uploadWhenReady(page, input, page.getByText("削除するページをタップして選択してください"), { readyTimeoutMs: 25_000 });
+    await uploadWhenReady(page, input, page.getByText(/削除するページを選択/), { readyTimeoutMs: 25_000 });
     await switchMode(page, "split");
     await expect(page.getByText("このPDFは4ページです")).toBeVisible();
     await switchMode(page, "delete");
-    await expect(page.getByText("削除するページをタップして選択してください")).toBeVisible();
+    await expect(page.getByText(/削除するページを選択/)).toBeVisible();
 
     // ページ削除（2ページ目）→ 結果を出す
     await clickWhenReady(page.getByRole("button", { name: /^2$/ }));

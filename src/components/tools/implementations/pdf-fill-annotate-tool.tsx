@@ -979,12 +979,7 @@ export function PdfFillAnnotateTool({
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        PDFに文字・チェック・手書き・画像を書き込んで、その場でダウンロードできます。処理はすべてブラウザ内で行われ、
-        アップロードしたPDF・入力した内容・生成したPDFはMr.Sattoのサーバーに送信・保存されません。ここでの「保存」は
-        「編集後のPDFを端末へダウンロードすること」だけを指し、サーバー側への保存は行っていません。
-        手書き入力は署名欄への記入などにご利用いただけますが、法的な効力を持つ電子署名機能ではありません。
-      </p>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">手書き入力は署名欄への記入などに使えますが、法的な効力を持つ電子署名機能ではありません。</p>
 
       {error && <ErrorMessage message={error} />}
 
@@ -1155,7 +1150,6 @@ export function PdfFillAnnotateTool({
 
           {mode === "text" && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">
-              <span className="text-blue-700 dark:text-blue-300">PDF上をクリックしてテキストを配置してください。</span>
               <div className="w-56">
                 <SliderField label="文字サイズ" value={textFontSize} min={6} max={96} unit="pt" onChange={setTextFontSize} />
               </div>
@@ -1191,15 +1185,12 @@ export function PdfFillAnnotateTool({
                   ))}
                 </select>
               </label>
-              <span className="text-neutral-500 dark:text-neutral-400">
-                複数行にしたい場合は、配置後の入力欄でShift+Enter（またはEnter）で改行できます。
-              </span>
+              <span className="text-neutral-500 dark:text-neutral-400">改行はShift+Enter</span>
             </div>
           )}
 
           {mode === "checkbox" && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">
-              <span className="text-blue-700 dark:text-blue-300">PDF上をクリックしてチェック欄を配置してください。</span>
               <label className="flex items-center gap-1">
                 大きさ
                 <input
@@ -1233,8 +1224,7 @@ export function PdfFillAnnotateTool({
               data-testid="pdf-whiteout-panel"
               className="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200"
             >
-              <span>隠したい文字の上をクリックすると、白い四角形が置かれます。四角形の大きさは、下の「配置した注釈」で調整できます。</span>
-              <span>書き直すときは、そのあと「テキスト」で白消しの上に文字を入れてください。</span>
+              <span>書き直すときは、白消しの上に「テキスト」で入力します。</span>
               <span className="font-semibold">{WHITEOUT_NOTICE.title}</span>
               <span>{WHITEOUT_NOTICE.body}</span>
             </div>
@@ -1242,7 +1232,6 @@ export function PdfFillAnnotateTool({
 
           {mode === "shape" && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">
-              <span className="text-blue-700 dark:text-blue-300">PDF上をクリックして図形を配置してください。</span>
               <label className="flex items-center gap-1">
                 種類
                 <select
@@ -1356,7 +1345,7 @@ export function PdfFillAnnotateTool({
                 />
               ) : (
                 <div className="flex items-center gap-3">
-                  <span className="text-blue-700 dark:text-blue-300">PDF上をクリックして画像を配置してください。</span>
+                  <span className="text-blue-700 dark:text-blue-300">PDF上をクリックして配置してください。</span>
                   <button
                     type="button"
                     onClick={handleCancelPendingImage}
@@ -1371,9 +1360,6 @@ export function PdfFillAnnotateTool({
 
           {mode === "stamp" && (
             <div className="flex flex-col gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">
-              <span className="text-neutral-500 dark:text-neutral-400">
-                「電子印鑑生成」ツールで作った印影PNGなど、印影画像をそのまま配置できます（内部的には画像オブジェクトと同じ扱いです）。
-              </span>
               {!pendingImage ? (
                 <FileDropzone
                   accept="image/png,image/jpeg,.png,.jpg,.jpeg"
@@ -1385,7 +1371,7 @@ export function PdfFillAnnotateTool({
                 />
               ) : (
                 <div className="flex items-center gap-3">
-                  <span className="text-blue-700 dark:text-blue-300">PDF上をクリックして印影を配置してください。</span>
+                  <span className="text-blue-700 dark:text-blue-300">PDF上をクリックして配置してください。</span>
                   <button
                     type="button"
                     onClick={handleCancelPendingImage}
@@ -1399,9 +1385,7 @@ export function PdfFillAnnotateTool({
           )}
 
           {repositioningId && (
-            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-              配置し直したい位置をPDF上でクリックしてください。
-            </p>
+            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">配置し直す位置をクリックしてください。</p>
           )}
 
           </div>

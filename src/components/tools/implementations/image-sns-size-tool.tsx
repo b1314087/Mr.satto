@@ -149,9 +149,7 @@ export function ImageSnsSizeTool() {
           data-testid="tool-preview"
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（{targetWidth} × {targetHeight}px の枠に収めた結果）
-          </p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（{targetWidth} × {targetHeight}px）</p>
           {previewError && <ErrorMessage message={previewError} />}
           <div className="grid gap-3 sm:grid-cols-2">
             <figure className="flex flex-col gap-1">
@@ -270,9 +268,7 @@ export function ImageSnsSizeTool() {
             </div>
           )}
 
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            出力サイズ: {targetWidth} × {targetHeight}px（中央を基準に必要な範囲だけ切り抜き、引き伸ばしは行いません）
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">出力サイズ: {targetWidth} × {targetHeight}px</p>
         </div>
       )}
 

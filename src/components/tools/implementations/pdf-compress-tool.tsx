@@ -97,15 +97,13 @@ export function PdfCompressTool() {
           data-testid="tool-preview"
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">圧縮前後の比較(先頭ページ)</p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">圧縮前後の比較</p>
           <div className="flex flex-wrap items-start gap-6">
             <FirstPageThumb file={file} label="圧縮前" sizeBytes={file.size} />
             {result && compressedFile ? (
               <FirstPageThumb file={compressedFile} label="圧縮後" sizeBytes={result.compressedSizeBytes} />
             ) : (
-              <div className="flex min-h-40 w-[200px] max-w-full items-center justify-center rounded-md border border-dashed border-neutral-300 px-3 text-center text-xs text-neutral-400 dark:border-neutral-700">
-                「圧縮する」を押すと、圧縮後の先頭ページとサイズがここに表示されます
-              </div>
+              <div className="flex min-h-40 w-[200px] max-w-full items-center justify-center rounded-md border border-dashed border-neutral-300 px-3 text-center text-xs text-neutral-400 dark:border-neutral-700">結果がここに表示されます</div>
             )}
           </div>
           {result && (
@@ -126,9 +124,7 @@ export function PdfCompressTool() {
                   }}
                 />
               </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                上が圧縮前、下が圧縮後のサイズです。圧縮しても、ページの見た目は変わりません。
-              </p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">上が圧縮前、下が圧縮後です。</p>
             </div>
           )}
         </section>
@@ -150,9 +146,7 @@ export function PdfCompressTool() {
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        このツールはPDFの内部構造を最適化します。画像の再圧縮は行わないため、写真など画像が中心のPDFでは削減効果がほとんど出ない場合があります。
-      </p>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">画像の再圧縮は行わないため、画像が中心のPDFでは効果が小さい場合があります。</p>
 
       {file && (
         <button

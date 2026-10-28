@@ -420,9 +420,7 @@ export function FiscalCalendarEventsImport({
           )}
 
           {!value.detected && !value.result && !value.error && (
-            <p data-testid="events-undetected" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100">
-              列の見出しから「日付」「予定」の列を自動では判定できませんでした。下で、日付と予定の列を選んでください。
-            </p>
+            <p data-testid="events-undetected" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-100">日付と予定の列を自動判定できませんでした。下で選んでください。</p>
           )}
 
           {summary && placed && (
@@ -431,7 +429,7 @@ export function FiscalCalendarEventsImport({
                 {summary.recognized}件の予定を読み込みました
               </p>
               <p data-testid="events-count-rows" className="text-xs text-neutral-600 dark:text-neutral-300">
-                読み込んだ行数: {summary.totalRows}行（空の行は数えません）
+                読み込んだ行数: {summary.totalRows}行
               </p>
               <p data-testid="events-count-inyear">対象年度内：{summary.inYear}件（{rangeLabel}）</p>
               <p data-testid="events-count-outyear" className={summary.outOfYear > 0 ? "text-amber-800 dark:text-amber-300" : ""}>
@@ -470,9 +468,6 @@ export function FiscalCalendarEventsImport({
           {value.result && value.result.warnings.length > 0 && (
             <div data-testid="events-warnings" className="flex flex-col gap-1 text-xs">
               <p className="font-medium text-neutral-700 dark:text-neutral-200">ご確認ください（読み込みはそのまま行います）</p>
-              <p className="text-neutral-500 dark:text-neutral-400">
-                次の内容は、予定を削除・統合・修正せず、読み込んだままカレンダーに使います。意図したものであれば、そのままで大丈夫です。
-              </p>
               <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded border border-amber-200 bg-amber-50 p-2 dark:border-amber-900 dark:bg-amber-950">
                 {value.result.warnings.slice(0, MAX_ISSUE_ROWS_SHOWN).map((warning) => (
                   <li

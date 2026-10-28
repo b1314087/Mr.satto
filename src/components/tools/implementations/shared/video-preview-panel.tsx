@@ -89,7 +89,7 @@ export function VideoPreviewPanel({
 export function VideoOutputPlayer({ url }: { url: string }) {
   return (
     <div className="flex w-full flex-col gap-1">
-      <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300">変換後の動画（再生して確認できます）</p>
+      <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300">変換後の動画</p>
       <video
         src={url}
         controls

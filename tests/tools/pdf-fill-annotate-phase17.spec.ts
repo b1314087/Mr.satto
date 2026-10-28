@@ -188,7 +188,7 @@ test.describe("印影", () => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     await page.getByRole("button", { name: "印影", exact: true }).click();
     await page.locator('input[type="file"]').last().setInputFiles(fixtures.stampTransparentPng);
-    await expect(page.getByText(/PDF上をクリックして印影を配置してください/)).toBeVisible();
+    await expect(page.getByText(/PDF上をクリックして配置してください/)).toBeVisible();
 
     await clickCanvasAt(page, 150, 150);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();

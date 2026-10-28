@@ -115,9 +115,6 @@ export function PasswordGeneratorTool() {
           data-testid="tool-preview"
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
         >
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            プレビュー（設定を変えると自動で作り直されます）
-          </p>
           <div className="flex items-center justify-between gap-3">
             <code className="break-all text-lg font-semibold text-neutral-800 dark:text-neutral-100">
               {password}
@@ -145,9 +142,7 @@ export function PasswordGeneratorTool() {
               強度: {STRENGTH_LABEL[strength]}
             </span>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            {Array.from(password).length}文字 ／ 12文字以上・3種類以上の文字種で強度が上がります
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">{Array.from(password).length}文字</p>
         </div>
       ) : null
       }
@@ -194,9 +189,7 @@ export function PasswordGeneratorTool() {
       </div>
 
       <label className="flex flex-col gap-1.5 text-sm">
-        <span className="font-medium text-neutral-700 dark:text-neutral-200">
-          使う文字を自分で指定する（入力すると、この文字だけで作成します）
-        </span>
+        <span className="font-medium text-neutral-700 dark:text-neutral-200">使う文字を自分で指定する</span>
         <input
           type="text"
           value={customChars}

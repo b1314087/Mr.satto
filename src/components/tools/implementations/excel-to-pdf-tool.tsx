@@ -131,18 +131,7 @@ export function ExcelToPdfTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          Excelファイル(.xlsx)をPDFに変換します。対応形式は.xlsxのみです（.xlsには対応していません）。
-          数式は再計算せず、Excelに保存されている値をそのまま表示します。処理はブラウザ内で完結し、
-          ファイルが外部のサーバーへ送信されることはありません。
-        </p>
-        <p>
-          印刷範囲・用紙サイズ・向き・余白・列幅・改ページなどはExcelファイル自身に保存されている設定を
-          できるだけ読み取って反映します（取得できない場合のみ下記の指定や自動推定にフォールバックします）。
-          グラフ・図形・結合セルなど、取得できない情報は再現されない場合があります。
-        </p>
-      </div>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">対応形式は.xlsxのみです。数式は再計算せず、保存されている値を表示します。</p>
 
       <FileDropzone
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

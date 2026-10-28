@@ -430,14 +430,9 @@ export function ImageMosaicTool() {
               })}
             </div>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            枠をドラッグして移動、四隅のハンドルでサイズ変更できます。ズームしても範囲は元画像上の同じ位置を維持します。
-          </p>
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-            画像を追加すると、ここで範囲を編集できます。
-          </div>
+          <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">画像を追加してください。</div>
         )
       }
       previewWidth="lg"

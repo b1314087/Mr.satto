@@ -554,9 +554,7 @@ export function ImagePaddingTextTool() {
         </div>
       
         ) : (
-          <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-            画像を追加すると、ここにプレビューが表示されます。
-          </div>
+          <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">画像を追加してください。</div>
         )
       }
     >

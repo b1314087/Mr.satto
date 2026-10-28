@@ -112,22 +112,12 @@ export function VideoCompressTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          動画のファイルサイズを削減します。この動画はブラウザ上で処理され、Mr.Sattoのサーバーへ
-          アップロードされることはありません。
-        </p>
-        <p>
-          動画の内容によってはほとんどサイズが変わらない場合もあります。必ず一定の割合で削減されることを
-          保証するものではありません。
-        </p>
-      </div>
 
       <FileDropzone
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP4 / MOV / WebM。サイズの上限はありません）"
+        hint="またはタップして選択（MP4 / MOV / WebM）"
         onFilesSelected={handleSelect}
         onError={setError}
       />
@@ -255,9 +245,7 @@ export function VideoCompressTool() {
         successLabel="圧縮が完了しました"
       />
       {wasCanceled && (
-        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-          処理をキャンセルしました。設定を確認して、もう一度実行できます。
-        </div>
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">処理をキャンセルしました。</div>
       )}
       {error && <ErrorMessage message={error} />}
 

@@ -176,10 +176,7 @@ export function RosterScanPanel() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <p className="text-sm text-neutral-600 dark:text-neutral-300">
-          紙の名簿をスキャンしたPDFを読み込むと、罫線（枠）の位置から列の幅・行の高さを読み取り、同じ大きさの空欄の枠をExcelで作ります。
-          文字は読み取りません。
-        </p>
+        <p className="text-sm text-neutral-600 dark:text-neutral-300">スキャンしたPDFの罫線から列幅・行の高さを読み取り、同じ大きさの空欄の枠をExcelで作ります（文字は読み取りません）。</p>
         <FileDropzone
           accept=".pdf,application/pdf"
           maxSizeMB={50}
@@ -235,7 +232,7 @@ export function RosterScanPanel() {
 
           <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
             <div>
-              <p className="mb-2 text-sm font-medium">列の幅（mm）— ずれていたら直せます</p>
+              <p className="mb-2 text-sm font-medium">列の幅（mm）</p>
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                 {colWidthsMm.map((w, i) => (
                   <NumberCell key={i} label={`列${i + 1}の幅`} value={w} onChange={(v) => edit(setColWidthsMm, i, v)} />

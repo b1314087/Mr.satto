@@ -150,16 +150,8 @@ export function ImageToPdfTool() {
             ))}
           </ul>
           {files.length > MAX_PREVIEW_PAGES && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              先頭の{MAX_PREVIEW_PAGES}ページだけ表示しています（PDFには{files.length}ページすべてが入ります）。
-            </p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">先頭のページだけ表示しています。</p>
           )}
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">
-            {pageSize === "a4"
-              ? "A4（縦）の用紙に、画像が中央に配置されます。大きい画像は用紙に収まるよう縮小され、小さい画像は拡大されません。"
-              : "各ページは、それぞれの画像と同じ大きさ・同じ形になります。"}
-            並び順は上の一覧で変更できます。
-          </p>
         </div>
       ) : null}
     >

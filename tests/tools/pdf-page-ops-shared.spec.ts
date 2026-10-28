@@ -219,7 +219,7 @@ test.describe("PDFページ編集4ツールの画面", () => {
   test("削除: 実行後に選択ページを変えると古い結果は消え、再実行した結果が出力される", async ({ page }) => {
     const input = workPath("input.pdf");
     await writeSequentialPdf(input, 3);
-    await open(page, "pdf-delete-pages", input, page.getByText("削除するページをタップして選択してください"));
+    await open(page, "pdf-delete-pages", input, page.getByText(/削除するページを選択/));
 
     await clickWhenReady(page.getByRole("button", { name: /^2$/ }));
     await clickWhenReady(page.getByRole("button", { name: "1ページを削除する", exact: true }), {
@@ -259,7 +259,7 @@ test.describe("PDFページ編集4ツールの画面", () => {
   test("並べ替え: 実行後に順序を変えると古い結果は消え、再実行した結果が出力される", async ({ page }) => {
     const input = workPath("input.pdf");
     await writeSequentialPdf(input, 3);
-    await open(page, "pdf-reorder-pages", input, page.getByText("↑↓ ボタンでページの順序を並び替えられます"));
+    await open(page, "pdf-reorder-pages", input, page.getByText(/↑↓ で並び替え/));
 
     await clickWhenReady(page.getByRole("button", { name: "1番目を下へ移動", exact: true })); // [2,1,3]
     await clickWhenReady(page.getByRole("button", { name: "並び替えを適用する" }), { expectAfter: page.getByText("並び替えが完了しました") });

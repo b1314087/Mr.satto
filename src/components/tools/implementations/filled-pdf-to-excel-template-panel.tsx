@@ -517,11 +517,7 @@ export function FilledPdfToExcelTemplatePanel() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          1ページに複数人分の情報が入っている帳票を、あらかじめ登録した空のテンプレートPDF上で
-          入力枠の位置を指定し、その位置だけから値を取り出してExcelへ整理します。
-          テンプレートの設定はこのページを離れると保持されません（サーバーへは保存されません）。
-        </p>
+        <p>空のテンプレートPDF上で入力枠の位置を指定し、その位置だけから値を取り出してExcelへ整理します。設定はこのページを離れると消えます。</p>
       </div>
 
       {error && <ErrorMessage message={error} />}
@@ -585,9 +581,6 @@ export function FilledPdfToExcelTemplatePanel() {
             </div>
           </div>
 
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            枠の位置はPDF実座標で保存されるため、表示倍率を変更しても指定した枠はPDF上の同じ位置に留まります。
-          </p>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div ref={canvasWrapRef} className="relative w-full overflow-auto rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900">
@@ -642,9 +635,7 @@ export function FilledPdfToExcelTemplatePanel() {
                 </div>
               )}
               {pendingFieldPerson !== null && (
-                <p className="p-2 text-xs text-blue-700 dark:text-blue-300">
-                  {pendingFieldPerson}人目の項目を配置する位置をクリックしてください。
-                </p>
+                <p className="p-2 text-xs text-blue-700 dark:text-blue-300">{pendingFieldPerson}人目の項目の位置をクリックしてください。</p>
               )}
             </div>
 
@@ -979,9 +970,7 @@ export function FilledPdfToExcelTemplatePanel() {
             </div>
           )}
 
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            抽出結果に誤りがあれば、下の欄を直接編集できます。編集内容はブラウザ内だけで保持され、サーバーへは送信されません。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">誤りは下の欄で直接編集できます。</p>
 
           <div className="flex flex-col gap-3">
             {includedRecords.map((record, idx) => (

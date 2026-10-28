@@ -188,7 +188,7 @@ export function ImageAdjustTool() {
 
       {selectedFile && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー(スライダーに合わせて変わります)</p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
           {previewError && <ErrorMessage message={previewError} />}
           <div className="grid gap-3 sm:grid-cols-2">
             <figure className="flex flex-col gap-1">
@@ -235,9 +235,6 @@ export function ImageAdjustTool() {
             onChange={setContrast}
             onReset={contrast !== 0 ? () => setContrast(0) : undefined}
           />
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            書き出し時は、元の解像度の画像に同じ設定が適用されます。ファイルは外部へ送信されません。
-          </p>
         </div>
       )}
 

@@ -132,10 +132,6 @@ export function ImageMetadataRemoveTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        画像をCanvasに描き直してから再度書き出すことで、撮影日時・位置情報（GPS）などのEXIF情報を含む元のファイルのバイト列を使わない新しい画像を作成します。
-        出力はJPG・PNG・WebPのいずれかになり、元の形式によっては形式が変わる場合があります。処理後の画像は元のファイルとは別のバイト列になるため、画質が完全に同一（ビット単位で同一）ではありません。
-      </div>
 
       <FileDropzone
         accept="image/*"
@@ -157,7 +153,7 @@ export function ImageMetadataRemoveTool() {
           data-testid="tool-preview"
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（取り除かれる情報）</p>
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">取り除かれる情報</p>
           <div className="grid gap-4 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
             {previewUrl && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -183,9 +179,7 @@ export function ImageMetadataRemoveTool() {
               )}
             </div>
           </div>
-          <p className="text-xs text-neutral-400 dark:text-neutral-500">
-            代表的な情報(JPG・PNG・WebPのEXIF・XMP・IPTC・ICC等)を調べた結果で、すべてのメタデータを網羅するものではありません。
-          </p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500">代表的な情報のみを表示しています。</p>
         </div>
       )}
 

@@ -8,7 +8,6 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   AudioBitratePicker,
   AudioFormatPicker,
-  AudioIntro,
   AudioOutputPlayer,
   AudioPreviewPanel,
   AudioResultCard,
@@ -130,15 +129,12 @@ export function AudioTrimTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AudioIntro>
-        音声ファイルの必要な部分だけを切り出します。開始位置と終了位置を指定して、再生しながら確認できます。
-      </AudioIntro>
 
       <FileDropzone
         accept={AUDIO_INPUT_ACCEPT}
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}
         label="音声ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC など。サイズの上限はありません）"
+        hint="またはタップして選択（MP3 / WAV / M4A / AAC / OGG / FLAC）"
         onFilesSelected={handleSelect}
         onError={job.setError}
       />
@@ -215,9 +211,7 @@ export function AudioTrimTool() {
             aria-label="終了位置のスライダー"
             className="w-full"
           />
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            時間は「1:23.4」（1分23.4秒）や「83.4」（秒）の形式で入力できます。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">入力例: 1:23.4 または 83.4（秒）</p>
         </fieldset>
       )}
 

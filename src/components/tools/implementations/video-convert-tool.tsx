@@ -105,22 +105,12 @@ export function VideoConvertTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>
-          動画ファイル（MP4 / MOV / WebM）を、MP4またはWebM形式に変換します。この動画はブラウザ上で処理され、
-          動画ファイルをMr.Sattoのサーバーへアップロードすることはありません。
-        </p>
-        <p>
-          お使いのブラウザが対応していないコーデックの動画は変換できない場合があります。すべての通信ログが
-          一切存在しないことを保証するものではありませんが、動画ファイルの内容がMr.Satto側に送信・保存されることはありません。
-        </p>
-      </div>
 
       <FileDropzone
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
-        hint="またはタップして選択（MP4 / MOV / WebM。サイズの上限はありません）"
+        hint="またはタップして選択（MP4 / MOV / WebM）"
         onFilesSelected={handleSelect}
         onError={setError}
       />
@@ -209,9 +199,7 @@ export function VideoConvertTool() {
         successLabel="変換が完了しました"
       />
       {wasCanceled && (
-        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-          処理をキャンセルしました。設定を確認して、もう一度実行できます。
-        </div>
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">処理をキャンセルしました。</div>
       )}
       {error && <ErrorMessage message={error} />}
 

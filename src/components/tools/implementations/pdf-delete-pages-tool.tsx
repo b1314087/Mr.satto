@@ -80,11 +80,11 @@ export function PdfDeletePagesTool({ initialFile = null, onFileChange }: SharedP
                 ) : null
               }
             />
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {selected.size === 0
-                ? "サムネイルをタップしても削除するページを選べます。"
-                : `赤く表示されたページが削除され、${Math.max(pageCount - selected.size, 0)}ページが残ります。`}
-            </p>
+            {selected.size > 0 && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {`削除後は${Math.max(pageCount - selected.size, 0)}ページが残ります。`}
+              </p>
+            )}
           </div>
         ) : (
           <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
@@ -106,7 +106,7 @@ export function PdfDeletePagesTool({ initialFile = null, onFileChange }: SharedP
       {file && pageCount !== null && (
         <div className="flex flex-col gap-3">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            削除するページをタップして選択してください（{pageCount}ページ中{selected.size}ページを選択）
+            削除するページを選択（{selected.size}/{pageCount}ページ）
           </p>
           <PdfPageCheckList pageCount={pageCount} selected={selected} onToggle={togglePage} />
           {willDeleteAll && (

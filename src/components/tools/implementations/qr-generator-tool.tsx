@@ -121,7 +121,7 @@ export function QrGeneratorTool() {
         data-testid="tool-preview"
         className="flex flex-col items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-neutral-900"
       >
-        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">プレビュー（入力や設定に合わせて自動で更新されます）</p>
+        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">プレビュー</p>
         {live.dataUrl ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -226,9 +226,6 @@ export function QrGeneratorTool() {
                 {customMark ? "別の画像を選ぶ" : "画像を選ぶ"}
               </FilePickButton>
             </div>
-            {!customMark && (
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">画像を選ぶと二次元コードに表示されます。</span>
-            )}
           </div>
         )}
 
@@ -270,9 +267,7 @@ export function QrGeneratorTool() {
             />
           </div>
         )}
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          マークを付けると、読み取れるように誤り訂正レベルが自動で「H（最高）」になります。印刷や配布の前に、スマートフォンで読み取れることを必ず確認してください。
-        </p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">マークを付けると誤り訂正レベルが自動で「H（最高）」になります。印刷・配布の前に、スマートフォンで読み取れることを必ず確認してください。</p>
       </section>
 
       <button

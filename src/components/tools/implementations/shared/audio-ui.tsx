@@ -16,19 +16,6 @@ import {
 } from "@/lib/audio/shared";
 import { formatBytes } from "@/lib/utils/format";
 
-/** 音声ツール共通の冒頭説明（ブラウザ内処理であることの明記） */
-export function AudioIntro({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-      <p>{children}</p>
-      <p>
-        音声ファイルはブラウザ上で処理され、Mr.Sattoのサーバーへアップロードされることはありません。
-        お使いのブラウザが対応していない形式の音声は、読み込めない場合があります。
-      </p>
-    </div>
-  );
-}
-
 /** 大きいファイルを選んだときの注意（処理は止めない） */
 export function AudioSizeWarning({ sizeBytes }: { sizeBytes: number }) {
   const message = audioSizeWarning(sizeBytes);
@@ -234,9 +221,7 @@ export function AudioFormatPicker({
         </p>
       )}
       {value === "original" && (
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          元の音声を再エンコードせずそのまま取り出すため、音質は変わらず、処理も速く済みます。
-        </p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">音質は変わらず、速く済みます。</p>
       )}
     </fieldset>
   );
@@ -272,9 +257,7 @@ export function AudioBitratePicker({
           </label>
         ))}
       </div>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        数字が大きいほど高音質でファイルも大きくなります。音楽は192kbps以上、話し声は64〜96kbpsでも十分聞き取れます。
-      </p>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">数字が大きいほど高音質・大容量です（目安: 音楽192kbps以上、話し声64〜96kbps）。</p>
     </fieldset>
   );
 }
@@ -333,9 +316,7 @@ export function AudioRunBar({
         successLabel={successLabel}
       />
       {wasCanceled && (
-        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
-          処理をキャンセルしました。設定を確認して、もう一度実行できます。
-        </div>
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">処理をキャンセルしました。</div>
       )}
       {error && <ErrorMessage message={error} />}
     </>

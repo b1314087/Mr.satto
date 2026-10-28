@@ -191,7 +191,7 @@ export function RosterTemplateTool() {
                 className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
               >
                 <p className="mb-2 text-sm font-medium">
-                  プレビュー（出力と同じレイアウト）
+                  プレビュー
                 </p>
                 {activeColumns.length > 0 ? (
                   <RosterPreview
@@ -203,7 +203,7 @@ export function RosterTemplateTool() {
                   />
                 ) : (
                   <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                    使用する列を選ぶと、ここにプレビューが表示されます。
+                    使用する列を選んでください。
                   </p>
                 )}
               </div>

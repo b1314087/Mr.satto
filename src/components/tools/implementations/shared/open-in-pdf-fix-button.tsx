@@ -46,7 +46,7 @@ export function OpenInPdfFixButton({ blob, fileName, sourceLabel = "PDF編集" }
         この結果をPDF修正で開く
       </button>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        ダウンロードせず、このまま文字入れ・白消し・ページ番号などの修正に進めます（ファイルは送信されません）。
+        ダウンロードせず、文字入れ・白消し・ページ番号などの修正に進めます。
       </p>
     </div>
   );

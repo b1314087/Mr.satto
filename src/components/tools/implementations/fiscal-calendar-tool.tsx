@@ -135,7 +135,7 @@ export function FiscalCalendarTool() {
         previewWidth="lg"
         preview={
           <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-            <p className="text-sm font-medium">プレビュー（出力と同じ内容・色分け）</p>
+            <p className="text-sm font-medium">プレビュー</p>
             <div className="flex flex-wrap gap-1" role="group" aria-label="プレビューする月">
               {groups.map((g, i) => {
                 const index = i * monthsPerSheet;
@@ -269,7 +269,6 @@ export function FiscalCalendarTool() {
                       ))}
                     </span>
                     <span className="font-medium">{t.label}</span>
-                    <span className="text-xs text-neutral-500 dark:text-neutral-400">{t.description}</span>
                   </button>
                 );
               })}

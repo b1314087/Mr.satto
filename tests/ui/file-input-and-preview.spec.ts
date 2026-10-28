@@ -292,9 +292,8 @@ test.describe("D-1. QR作成: マーク画像", () => {
   test("画像を選ぶと二次元コードに反映され、ボタンの文言が「別の画像を選ぶ」になる。同じ画像を選び直せる", async ({ page }) => {
     await openCustomMark(page);
     await page.locator("textarea").fill("https://example.com/");
-    await expect(page.getByText("画像を選ぶと二次元コードに表示されます。")).toBeVisible();
+    await expect(page.getByRole("button", { name: "画像を選ぶ", exact: true })).toBeVisible();
     await page.getByLabel("マークにする画像").setInputFiles(fixtures.png);
-    await expect(page.getByText("画像を選ぶと二次元コードに表示されます。")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "別の画像を選ぶ" })).toBeVisible();
     await expect(page.getByRole("button", { name: "画像を選ぶ", exact: true })).toHaveCount(0);
     // 同じ画像をもう一度選んでもエラーにならない（入力欄が空に戻っている）

@@ -137,13 +137,13 @@ export function PdfSplitTool({ initialFile = null, onFileChange }: SharedPdfFile
             <p className="text-xs text-amber-600 dark:text-amber-400">{plan.error}</p>
           ) : mode === "range" && plan.ranges.length === 0 ? (
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              ページ範囲を入力すると、どこで区切られるかをここに表示します。
+              ページ範囲を入力してください。
             </p>
           ) : (
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               {plan.ranges.length}個のPDFに分割されます
               {mode === "range" && `（${plan.ranges.slice(0, 10).map(formatRange).join(" / ")}${plan.ranges.length > 10 ? " …" : ""}）`}
-              。バッジの数字は出力ファイルの番号、赤い点線が区切り位置です。
+              。
             </p>
           )}
         </div>

@@ -281,9 +281,6 @@ export function EnvelopeAddressTool() {
             recipient={previewPerson}
             sender={useSender ? sender : null}
           />
-          <p className="mt-2 hidden text-xs text-neutral-500 dark:text-neutral-400 lg:block">
-            PDFと同じ配置で表示しています（フォントは実際のPDFと多少異なります）。
-          </p>
         </div>
       </div>
 
@@ -369,9 +366,7 @@ export function EnvelopeAddressTool() {
             </div>
           </div>
           <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">
-              敬称（宛先の最後の行につきます）
-            </span>
+            <span className="text-neutral-600 dark:text-neutral-300">敬称（宛先の最後の行）</span>
             <div className="flex gap-2">
               {(["sama", "onchu", "none"] as const).map((h) => (
                 <button
@@ -396,9 +391,7 @@ export function EnvelopeAddressTool() {
         </div>
 
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium">
-            文字の大きさ・位置（スライダーで調整。PDFと同じ配置がプレビューに出ます）
-          </p>
+          <p className="text-sm font-medium">文字の大きさ・位置</p>
           {visibleBlockIds.map((id) => {
             const label = ENVELOPE_BLOCK_LABELS[id];
             const pl = placements[id];
@@ -470,9 +463,7 @@ export function EnvelopeAddressTool() {
         </div>
 
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium">
-            自由に入力するテキスト（「在中」「請求書在中」など。すべての封筒に同じ位置で印刷）
-          </p>
+          <p className="text-sm font-medium">自由入力テキスト（例: 請求書在中。すべての封筒に同じ位置）</p>
           {freeTexts.map((f, i) => (
             <div
               key={f.id}
@@ -560,9 +551,7 @@ export function EnvelopeAddressTool() {
 
         <div className="flex flex-col gap-3">
           <p className="text-sm font-medium">宛先（{recipients.length}件）</p>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            郵便番号・住所・氏名を、1つの枠に自由に入力します（改行できます。敬称は最後の行につきます）。
-          </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">郵便番号・住所・氏名を1つの枠に入力します（敬称は最後の行につきます）。</p>
           {recipients.map((r, i) => (
             <AddressBox
               key={i}

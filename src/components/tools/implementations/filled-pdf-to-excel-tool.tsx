@@ -199,14 +199,9 @@ function AutoExtractSection() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
         <p>
-          記入済みの申請書・帳票のPDF（コピー&ペーストできるPDF、スキャンした画像のPDFのどちらにも対応）を、
-          項目ごとに整理してExcelファイルに変換します。処理はすべてブラウザ内で行われ、
-          アップロードしたPDFやOCRの読み取り結果、生成したExcelファイルがMr.Sattoのサーバーへ保存されることはありません。
-        </p>
-        <p>
-          このツールでは、AIによる読み取り補助や外部のAIサービスは使いません。文字の位置（座標）をもとにした決まった手順で、表・項目を整理します。
-          複雑なレイアウトや手書き文字の状態によっては、正しく項目化できない場合があります。
-          複数人分の情報が1ページに入っている帳票を、決まった位置から正確に取り出したい場合は、上の「テンプレート」モードもお試しください。
+          このツールでは、AIによる読み取り補助や外部のAIサービスは使いません。
+          複雑なレイアウトや手書き文字は、正しく項目化できない場合があります。
+          1ページに複数人分ある帳票は、上の「テンプレート」モードをお試しください。
         </p>
       </div>
 
@@ -285,18 +280,13 @@ function AutoExtractSection() {
             <span>合計ページ数: {result.pageCount}</span>
             <span>検出行数: {result.totalRowCount}</span>
             <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
-            {result.usedOcr && <span>OCRを使用しました</span>}
+            {result.usedOcr && <span>OCRを使用</span>}
           </div>
 
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            処理が完了しました。アップロードしたPDF・読み取り結果・生成したExcelファイルは、Mr.Sattoのサーバーへ保存されません。
-          </p>
 
           {result.pages.some((p) => p.rowCount === 0) && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-              <span>
-                表として認識できなかったページがあります。文字がはっきり読み取れるスキャン画像かご確認ください。
-              </span>
+              <span>表として認識できないページがあります。文字がはっきり読み取れるスキャンかご確認ください。</span>
             </div>
           )}
 

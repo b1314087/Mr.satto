@@ -98,7 +98,7 @@ export function CsvMergeTool() {
         multiple
         maxSizeMB={50}
         label="CSVをドラッグ&ドロップ（複数可）"
-        hint="またはタップして選択。結合する順序で選択してください"
+        hint="またはタップして選択"
         onFilesSelected={addFiles}
         onError={setError}
       />
@@ -108,9 +108,7 @@ export function CsvMergeTool() {
       )}
 
       {files.length > 0 && files.length < 2 && (
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          結合するには、もう1つ以上CSVを追加してください。
-        </p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">CSVをもう1つ以上追加してください。</p>
       )}
 
       {files.length >= 2 && (previewError || loading || preview) && (

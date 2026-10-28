@@ -238,9 +238,7 @@ export function ImageCropTool() {
             data-testid="tool-preview"
             className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
           >
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-              プレビュー（枠を動かすと切り抜き結果がすぐ変わります）
-            </p>
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
             <canvas
               ref={resultCanvasRef}
               aria-label="切り抜き後のプレビュー"
@@ -321,9 +319,6 @@ export function ImageCropTool() {
               ))}
             </div>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            枠をドラッグして移動、四隅のハンドルでサイズ変更できます。
-          </p>
 
         </div>
       )}

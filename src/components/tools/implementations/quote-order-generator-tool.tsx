@@ -144,15 +144,11 @@ export function QuoteOrderGeneratorTool() {
             })}
           </svg>
         </div>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          プレビューの文字の幅は目安です。実際のPDFでは、折り返し位置が少し変わることがあります。
-        </p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">プレビューの折り返し位置は、実際のPDFと少し異なる場合があります。</p>
       </section>
       }
     >
-      <p className="text-sm text-neutral-500 dark:text-neutral-400">
-        1回の入力で、A4の1枚に「上=見積書」「下=注文書」を作ります。お客様が注文書の欄に署名・捺印して返送すれば、そのまま注文の控えになります。入力内容はこの画面上でPDFを作るためだけに使われ、サーバーへの送信・保存は行われません。
-      </p>
+      <p className="text-sm text-neutral-500 dark:text-neutral-400">A4の1枚に「上=見積書」「下=注文書」を作ります。</p>
 
       <section className="flex flex-col gap-3">
         <Heading>① 基本情報（見積書・注文書に共通）</Heading>
