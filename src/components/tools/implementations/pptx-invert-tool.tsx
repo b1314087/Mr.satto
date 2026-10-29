@@ -13,7 +13,7 @@ import { PptxInvertProcessor, type PptxInvertOutput } from "@/lib/processors/bro
 import type { ImageOutcome, ImageReport } from "@/lib/pptx/invert-pptx";
 import { DEFAULT_COLOR_CHOICE, PALETTE_PRESETS, contrastRatio, normalizeHex, presetOf, type ColorChoice } from "@/lib/pptx/palette";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
-import { useObjectUrl } from "@/lib/utils/use-object-url";
+import { ImageCompare } from "./shared/image-compare";
 
 const ACCEPT = ".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
@@ -27,12 +27,6 @@ const OUTCOME_LABEL: Record<ImageOutcome, string> = {
   failed: "読み込めない → そのまま",
   "skipped-option": "画像は反転しない設定 → そのまま",
 };
-
-function useBlobUrl(bytes: Uint8Array | undefined, mime: string | undefined): string | null {
-  // 画像の表示用のURL。作成・解放は共通フックが担当する（画面から外れたら解放。開発モードでも壊れない）
-  const blob = useMemo(() => (bytes ? new Blob([bytes as BlobPart], { type: mime ?? "image/png" }) : null), [bytes, mime]);
-  return useObjectUrl(blob);
-}
 
 /** 色見本（背景色の上に、文字色で「Aa」を表示する） */
 function Swatch({ background, text, className = "" }: { background: string; text: string; className?: string }) {
@@ -139,29 +133,10 @@ function PaletteSelector({ colors, custom, onPreset, onCustom, onColors }: { col
   );
 }
 
-function Thumb({ bytes, mime, label, dark }: { bytes?: Uint8Array; mime?: string; label: string; dark?: boolean }) {
-  const url = useBlobUrl(bytes, mime);
-  if (!bytes) return <div className="h-16 w-24 rounded border border-dashed border-neutral-300 dark:border-neutral-700" aria-hidden />;
-  return (
-    <figure className="flex flex-col items-center gap-1">
-      {/* 透明な部分が分かるよう、背景に市松ではなく単色（元の色）を敷く */}
-      <div className={`flex h-16 w-24 items-center justify-center overflow-hidden rounded border border-neutral-300 dark:border-neutral-700 ${dark ? "bg-neutral-500" : "bg-neutral-200"}`}>
-        {url && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt={label} className="max-h-full max-w-full object-contain" />
-        )}
-      </div>
-      <figcaption className="text-[11px] text-neutral-500 dark:text-neutral-400">{label}</figcaption>
-    </figure>
-  );
-}
-
 function ImageRow({ image }: { image: ImageReport }) {
   const name = image.path.split("/").pop() ?? image.path;
   return (
-    <li className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 p-2 dark:border-neutral-800" data-testid="pptx-image-row" data-outcome={image.outcome}>
-      <Thumb bytes={image.before} mime={image.mime} label="変換前" />
-      {image.after ? <Thumb bytes={image.after} mime={image.mime} label="変換後" dark /> : null}
+    <li className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="pptx-image-row" data-outcome={image.outcome}>
       <div className="min-w-0 text-xs">
         <p className="break-all font-medium text-neutral-800 dark:text-neutral-100">{name}</p>
         <p className="text-neutral-600 dark:text-neutral-300">{OUTCOME_LABEL[image.outcome]}{image.enhanced ? "（文字をくっきり調整）" : ""}{image.upscaled ? "（なめらかに2倍へ拡大）" : ""}</p>
@@ -171,6 +146,12 @@ function ImageRow({ image }: { image: ImageReport }) {
           </p>
         )}
       </div>
+      <ImageCompare
+        items={[
+          { label: "変換前", bytes: image.before, mime: image.mime },
+          { label: "変換後", bytes: image.after, mime: image.mime, dark: true },
+        ]}
+      />
     </li>
   );
 }

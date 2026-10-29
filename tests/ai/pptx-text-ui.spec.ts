@@ -7,7 +7,7 @@ import { buildPptx, picture, readParts } from "../helpers/pptx-builder";
 import { PPTX_TEXT_CONSENT_VERSION } from "@/lib/ai/pptx-text";
 
 /**
- * PowerPoint白黒反転: 「AIで、画像の文字を本物の文字にする」のE2Eテスト。
+ * PowerPoint白黒反転: 「AIの判断で、きれいに反転する」のE2Eテスト。
  * AIのAPI（/api/ai/*）はテスト内で差し替える。実際のOpenAIには接続しない。
  * 実際のAIが画像の文字をどこまで正確に読み取るか・消費するトークンは、このテストでは確認できない。
  */
@@ -88,14 +88,34 @@ async function mockAi(page: Page, opts: Partial<Mocks> = {}): Promise<Mocks> {
   return mocks;
 }
 
-test.describe("PowerPoint白黒反転: AIで画像の文字を本物の文字にする", () => {
-  test("画像を確認して同意しないと実行できない。結果を確認・修正して反映し、ダウンロードできる", async ({ page }) => {
+test.describe("PowerPoint白黒反転: AIの判断で、きれいに反転する", () => {
+  test("変換結果の画像は、大きく見える（小さなサムネイルではない）", async ({ page }) => {
+    await mockAi(page);
+    await open(page);
+    await pickAndConvert(page, await deckWithDocImage(page));
+    const row = page.getByTestId("pptx-image-row").first();
+    const items = row.getByTestId("image-compare-item");
+    await expect(items).toHaveCount(2);
+    for (const label of ["変換前", "変換後"]) {
+      const img = row.getByAltText(label);
+      await expect(img).toBeVisible();
+      // 画像の元の大きさは 1000×700。ポップアップの幅いっぱいに近い大きさで見える
+      await expect.poll(async () => (await img.boundingBox())?.width ?? 0).toBeGreaterThan(250);
+    }
+    await expect(row.getByRole("link", { name: "大きく見る" })).toHaveCount(2);
+  });
+
+  test("画像を確認して同意しないと実行できない。AIが判断した範囲で反転し、通常の変換と並べて見られ、ダウンロードできる", async ({ page }) => {
     const mocks = await mockAi(page);
     await open(page);
     await pickAndConvert(page, await deckWithDocImage(page));
 
     const panel = page.getByTestId("pptx-ai");
     await expect(panel).toBeVisible();
+    // 文字を本物の文字に書き換える機能は、ない（AIは判断だけ）
+    await expect(panel).toContainText("文字の書き換えや、画像の作り直しはしません");
+    await expect(panel).not.toContainText("本物の文字");
+    await expect(page.getByTestId("pptx-ai-apply")).toHaveCount(0);
     // 送る画像の確認
     await expect(page.getByTestId("pptx-ai-send-count")).toContainText("1枚");
     await expect(panel.getByAltText(/AIに送る画像/)).toHaveCount(1);
@@ -108,7 +128,8 @@ test.describe("PowerPoint白黒反転: AIで画像の文字を本物の文字に
     await run.click();
 
     // 送った内容: 同意の版・画像1枚（縮小したJPEG）。元のファイルそのものは送っていない
-    await expect(page.getByTestId("pptx-ai-results")).toBeVisible({ timeout: 20_000 });
+    const result = page.getByTestId("pptx-ai-result");
+    await expect(result).toBeVisible({ timeout: 30_000 });
     expect(mocks.aiBodies).toHaveLength(1);
     const sent = mocks.aiBodies[0] as { consent: { accepted: boolean; version: string }; images: { mediaType: string; base64: string }[]; model: string };
     expect(sent.consent).toEqual({ accepted: true, version: PPTX_TEXT_CONSENT_VERSION });
@@ -119,83 +140,35 @@ test.describe("PowerPoint白黒反転: AIで画像の文字を本物の文字に
     // 同意は実行のたびに外れる
     await expect(page.getByTestId("pptx-ai-consent")).not.toBeChecked();
 
-    // 結果: 文字の行は最初から選択、数式は選べない（画像のまま）、確度が低い行は最初は選択しない
-    const lines = page.getByTestId("pptx-ai-line");
-    await expect(lines).toHaveCount(3);
-    await expect(lines.nth(0).getByTestId("pptx-ai-line-adopt")).toBeChecked();
-    await expect(lines.nth(1)).toHaveAttribute("data-kind", "math");
-    await expect(lines.nth(1).getByTestId("pptx-ai-line-adopt")).toBeDisabled();
-    await expect(lines.nth(1).getByTestId("pptx-ai-line-text")).toBeDisabled();
-    await expect(lines.nth(2).getByTestId("pptx-ai-line-adopt")).not.toBeChecked();
-    const apply = page.getByTestId("pptx-ai-apply");
-    await expect(apply).toContainText("1行");
+    // 結果: 文字・数式の行（確度が低い行は使わない）= 2か所。通常の変換と、AIの判断ありを、大きく並べて見られる
+    await expect(result).toContainText("AIの判断を使って反転しました（1枚の画像・文字の行2か所）");
+    const compare = page.getByTestId("pptx-ai-compare-row");
+    await expect(compare).toHaveCount(1);
+    for (const label of ["通常の変換", "AIの判断あり"]) {
+      const img = compare.getByAltText(label);
+      await expect(img).toBeVisible();
+      await expect.poll(async () => (await img.boundingBox())?.width ?? 0).toBeGreaterThan(250);
+    }
 
-    // 文字を修正して反映する
-    await lines.nth(0).getByTestId("pptx-ai-line-text").fill("∠Cが直角である直角三角形ABCにおいて");
-    await apply.click();
-    const out = page.getByTestId("pptx-ai-output");
-    await expect(out).toBeVisible({ timeout: 20_000 });
-    await expect(out).toContainText("1行を本物の文字にしました");
-
-    const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "文字を置き換えたPowerPointをダウンロード" }).click();
-    const download = await downloadPromise;
-    const parts = readParts(new Uint8Array(fs.readFileSync((await download.path())!)));
-    const slide = strFromU8(parts["ppt/slides/slide1.xml"]);
-    expect(slide).toContain("<a:t>∠Cが直角である直角三角形ABCにおいて</a:t>");
-    expect(slide).not.toContain("BC/AB");
-    expect(slide).not.toContain("自信のない行");
-    // 文字の色は、変換後の文字色（既定は白）
-    expect(slide).toMatch(/<a:rPr[^>]*><a:solidFill><a:srgbClr val="FFFFFF"\/>/);
-    // 画像の、行のあった位置の文字が消えている（背景色＝黒）
-    const px = await page.evaluate(async (b64) => {
-      const bin = atob(b64);
-      const arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      const bmp = await createImageBitmap(new Blob([arr], { type: "image/png" }));
-      const c = document.createElement("canvas");
-      c.width = bmp.width;
-      c.height = bmp.height;
-      const ctx = c.getContext("2d")!;
-      ctx.drawImage(bmp, 0, 0);
-      // 1行目の位置（x: 10〜60%, y: 10〜16%）の中に、白っぽい画素がないか数える
-      const d = ctx.getImageData(Math.round(bmp.width * 0.1), Math.round(bmp.height * 0.1), Math.round(bmp.width * 0.5), Math.round(bmp.height * 0.06)).data;
-      let bright = 0;
-      for (let i = 0; i < d.length; i += 4) if (d[i] > 40) bright++;
-      return bright;
-    }, Buffer.from(parts["ppt/media/doc.png"]).toString("base64"));
-    expect(px).toBe(0);
-  });
-
-  test("画像のまま、AIの判断で反転し直せる（文字を消したり入れ直したりしない）", async ({ page }) => {
-    const mocks = await mockAi(page);
-    await open(page);
-    await pickAndConvert(page, await deckWithDocImage(page));
-    // 読み取る前は、この選択肢は出ない
-    await expect(page.getByTestId("pptx-ai-zone")).toHaveCount(0);
-    await page.getByTestId("pptx-ai-consent").check();
-    await page.getByTestId("pptx-ai-run").click();
-    await expect(page.getByTestId("pptx-ai-results")).toBeVisible({ timeout: 20_000 });
+    // ダウンロード: 文字のテキストボックスは増えていない（画像のまま）。AIへの追加の送信もない
     expect(mocks.aiBodies).toHaveLength(1);
-
-    const zone = page.getByTestId("pptx-ai-zone");
-    await expect(zone).toBeVisible();
-    await expect(zone).toContainText("追加の料金はかかりません");
-    await page.getByTestId("pptx-ai-zone-apply").click();
-    const out = page.getByTestId("pptx-ai-zone-output");
-    await expect(out).toBeVisible({ timeout: 30_000 });
-    await expect(out).toContainText("1枚の画像で、AIの判断を使って反転し直しました");
-    // AIへの追加の送信はない
-    expect(mocks.aiBodies).toHaveLength(1);
-
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "AIの判断で反転し直したPowerPointをダウンロード" }).click();
+    await page.getByRole("button", { name: "AIの判断で反転したPowerPointをダウンロード" }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toContain("_AI判断.pptx");
     const parts = readParts(new Uint8Array(fs.readFileSync((await download.path())!)));
-    // 文字のテキストボックスは増えていない（画像のまま）
     expect(strFromU8(parts["ppt/slides/slide1.xml"])).not.toContain("<a:t>∠Cが直角である");
     expect(parts["ppt/media/doc.png"]).toBeTruthy();
+  });
+
+  test("AIが文字の位置を見つけられなかったときは、通常の変換と同じ結果だと知らせる", async ({ page }) => {
+    await mockAi(page, { ai: (route) => route.fulfill({ json: { ...AI_RESULT, lines: [] } }) });
+    await open(page);
+    await pickAndConvert(page, await deckWithDocImage(page));
+    await page.getByTestId("pptx-ai-consent").check();
+    await page.getByTestId("pptx-ai-run").click();
+    await expect(page.getByTestId("pptx-ai-result")).toContainText("通常の変換と同じ結果です", { timeout: 30_000 });
+    await expect(page.getByTestId("pptx-ai-compare-row")).toHaveCount(0);
   });
 
   test("プレミアムでない場合は、案内と「プレミアムプランを見る」リンクを出し、実行ボタンは出さない", async ({ page }) => {
@@ -215,8 +188,7 @@ test.describe("PowerPoint白黒反転: AIで画像の文字を本物の文字に
     await page.getByTestId("pptx-ai-consent").check();
     await page.getByTestId("pptx-ai-run").click();
     await expect(page.getByTestId("pptx-ai-error")).toContainText("AIとの通信で問題が起きました");
-    await expect(page.getByTestId("pptx-ai-results")).toHaveCount(0);
-    await expect(page.getByTestId("pptx-ai-output")).toHaveCount(0);
+    await expect(page.getByTestId("pptx-ai-result")).toHaveCount(0);
     // 通常の変換結果のダウンロードは、そのまま使える
     await expect(page.getByRole("button", { name: "PowerPointファイルをダウンロード" })).toBeVisible();
   });
