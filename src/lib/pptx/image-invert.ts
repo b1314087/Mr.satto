@@ -88,6 +88,8 @@ export const ENHANCE_THICKEN = 0.6;
 export interface EnhanceOptions {
   width: number;
   height: number;
+  /** 画像を何倍に拡大したあとか（既定は1）。文字の縁の色のにじみを探す範囲を、拡大した分だけ広げる */
+  scale?: number;
 }
 
 /** 見やすさの調整をするかの判定（文書のように、白地や黒地が中心の画像だけ。白黒写真は調整しない） */
@@ -124,7 +126,7 @@ export function invertImagePixels(data: PixelData, decision: ImageDecision, pale
   const lb = custom ? lut(custom.background.b, custom.text.b) : null;
 
   if (enhance && enhance.width * enhance.height * 4 === data.length) {
-    enhanceAndInvert(data, enhance.width, enhance.height, onlyGray, lr, lg, lb);
+    enhanceAndInvert(data, enhance.width, enhance.height, onlyGray, lr, lg, lb, enhance.scale ?? 1);
     return;
   }
   for (let i = 0; i < data.length; i += 4) {
@@ -138,16 +140,109 @@ export function invertImagePixels(data: PixelData, decision: ImageDecision, pale
   }
 }
 
-function enhanceAndInvert(data: PixelData, width: number, height: number, onlyGray: boolean, lr: Uint8Array | null, lg: Uint8Array | null, lb: Uint8Array | null): void {
+/**
+ * 文字の縁の「色のにじみ」の画素を見つける（白黒が中心で、カラーが少し混ざった画像向け）。
+ * Windowsの文字表示などで、黒い文字の縁に、オレンジや青の細い色が付いていることがある。
+ * これを「色のついた部分」として残すと、反転したとき、白い文字のまわりに、元の明るい色が輪のように残り、二重線に見える。
+ * 次の両方を満たす、色のついた画素を、にじみとして扱う（白黒として反転する）。
+ *  - 細い: 色のついた画素の5×5の塊（太い色の部分）に入らない。赤い枠・色つきの図のような、太い色の部分は残す。
+ *  - 色の強さ（RGBの差）が70以下なら、これだけでにじみとする。70を超える画素は、さらに、黒い文字・線の近く（2画素以内）にあるときだけ、にじみとする。
+ *    黒い線から離れた、濃い色の細い線は残す。
+ */
+const FRINGE_REACH = 2;
+/** 「太い色の部分」とみなす広さ（芯の半径。2なら、5×5の画素がすべて色つき）。文字の線より広く、色つきの塗りより狭い */
+const FRINGE_CORE_HALF = 2;
+/** 色のついた画素の「色の強さ」（RGBの差）。これ以下なら、にじみ（黒い線が近くなくても）。これを超えるときは、黒い線が近いときだけ、にじみ */
+const FRINGE_CHROMA_SURE = 70;
+const FRINGE_DARK = 160;
+export function findColorFringe(data: PixelData, width: number, height: number, scale = 1): Uint8Array {
+  // scale: 画像を何倍に拡大した後か（拡大すると、にじみの幅も同じだけ広がるため、見る範囲も同じだけ広げる）
+  const unit = Math.max(1, Math.round(scale));
+  const half = FRINGE_CORE_HALF * unit;
+  const reach = FRINGE_REACH * unit;
   const total = width * height;
-  // ink: 反転後の文字の濃さ。eligible: 反転する画素（色つきの画素は、白黒中心の画像では残す）
-  const ink = new Uint8Array(total);
-  const eligible = new Uint8Array(total);
+  const colored = new Uint8Array(total);
+  const chromaOf = new Uint8Array(total);
+  const dark = new Uint8Array(total);
+  let any = false;
   for (let p = 0, i = 0; p < total; p++, i += 4) {
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
-    if (onlyGray && Math.max(r, g, b) - Math.min(r, g, b) > IMAGE_COLOR_CHROMA) continue;
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+    if (chroma > IMAGE_COLOR_CHROMA) {
+      colored[p] = 1;
+      chromaOf[p] = Math.min(255, chroma);
+      any = true;
+    } else if ((r + g + b) / 3 < FRINGE_DARK && data[i + 3] >= IMAGE_VISIBLE_ALPHA) {
+      dark[p] = 1;
+    }
+  }
+  const fringe = new Uint8Array(total);
+  if (!any) return fringe;
+  // 太い色の部分: まわり（half 画素ぶん）がすべて色つきの画素（芯）と、その範囲
+  const core = new Uint8Array(total);
+  for (let y = half; y < height - half; y++) {
+    for (let x = half; x < width - half; x++) {
+      const p = y * width + x;
+      if (!colored[p]) continue;
+      let all = true;
+      for (let dy = -half; dy <= half && all; dy++) for (let dx = -half; dx <= half; dx++) if (!colored[p + dy * width + dx]) { all = false; break; }
+      if (all) core[p] = 1;
+    }
+  }
+  const solid = new Uint8Array(total);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!core[y * width + x]) continue;
+      for (let dy = -half; dy <= half; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= height) continue;
+        for (let dx = -half; dx <= half; dx++) {
+          const xx = x + dx;
+          if (xx >= 0 && xx < width) solid[yy * width + xx] = 1;
+        }
+      }
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const p = y * width + x;
+      if (!colored[p] || solid[p]) continue;
+      if (chromaOf[p] <= FRINGE_CHROMA_SURE) {
+        fringe[p] = 1;
+        continue;
+      }
+      let near = false;
+      for (let dy = -reach; dy <= reach && !near; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= height) continue;
+        for (let dx = -reach; dx <= reach; dx++) {
+          const xx = x + dx;
+          if (xx >= 0 && xx < width && dark[yy * width + xx]) {
+            near = true;
+            break;
+          }
+        }
+      }
+      if (near) fringe[p] = 1;
+    }
+  }
+  return fringe;
+}
+
+function enhanceAndInvert(data: PixelData, width: number, height: number, onlyGray: boolean, lr: Uint8Array | null, lg: Uint8Array | null, lb: Uint8Array | null, scale: number): void {
+  const total = width * height;
+  // ink: 反転後の文字の濃さ。eligible: 反転する画素（色つきの画素は、白黒中心の画像では残す）
+  const ink = new Uint8Array(total);
+  const eligible = new Uint8Array(total);
+  // 白黒が中心の画像では、文字の縁の色のにじみは、色のついた部分として残さず、白黒として反転する（二重線に見えるのを防ぐ）
+  const fringe = onlyGray ? findColorFringe(data, width, height, scale) : null;
+  for (let p = 0, i = 0; p < total; p++, i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    if (onlyGray && !fringe?.[p] && Math.max(r, g, b) - Math.min(r, g, b) > IMAGE_COLOR_CHROMA) continue;
     eligible[p] = 1;
     ink[p] = toneInk(255 - Math.round((r + g + b) / 3));
   }

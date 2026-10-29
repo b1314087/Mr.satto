@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { analyzeImage, invertImagePixels, shouldEnhance, shouldUpscale, upscale2x } from "@/lib/pptx/image-invert";
+import { analyzeImage, findColorFringe, invertImagePixels, shouldEnhance, shouldUpscale, upscale2x } from "@/lib/pptx/image-invert";
 import { invertPptx, DEFAULT_PPTX_INVERT_OPTIONS } from "@/lib/pptx/invert-pptx";
 import { bwDocument, bwPhoto, buildPptx, encodePng, makeImage, picture, pixelAt, readParts, decodePng, testCodec } from "../helpers/pptx-builder";
 
@@ -57,13 +57,15 @@ test.describe("画像の文字を見やすくする調整", () => {
     expect(pixelAt(out, 3, 1)[0]).toBe(153);
   });
 
-  test("白黒が中心でカラーが混ざる画像は、色のついた画素に手を付けない", () => {
-    const img = makeImage(9, 9, (x, y) => (x === 4 && y === 4 ? [220, 30, 30, 255] : x === 3 && y === 4 ? BLACK : WHITE));
+  test("白黒が中心でカラーが混ざる画像は、太い色のついた部分に手を付けない（細い色のにじみは、白黒として反転する）", () => {
+    // 6×6の赤い塗りに、黒い画素が接している
+    const img = makeImage(14, 14, (x, y) => (x >= 4 && x < 10 && y >= 4 && y < 10 ? [220, 30, 30, 255] : x === 3 && y === 6 ? BLACK : WHITE));
     const out = invert(img, true, "invert-gray");
+    expect(pixelAt(out, 6, 6)).toEqual([220, 30, 30, 255]);
     expect(pixelAt(out, 4, 4)).toEqual([220, 30, 30, 255]);
-    expect(pixelAt(out, 3, 4)[0]).toBe(255);
+    expect(pixelAt(out, 3, 6)[0]).toBe(255);
     // 色のついた画素へは、太らせた線も入らない
-    expect(pixelAt(out, 4, 4)).toEqual([220, 30, 30, 255]);
+    expect(pixelAt(out, 5, 5)).toEqual([220, 30, 30, 255]);
   });
 
   test("配色を指定したときは、調整した濃さを、背景色〜文字色の間に写す", () => {
@@ -156,5 +158,54 @@ test.describe("低い解像度の画像のなめらかな拡大", () => {
     expect(on.report.notes.join("\n")).toContain("2倍に拡大");
     // 報告に出す大きさは、元の画像の大きさのまま
     expect([on.report.images[0].width, on.report.images[0].height]).toEqual([800, 600]);
+  });
+});
+
+test.describe("文字の縁の色のにじみ（二重線の原因）", () => {
+  // 白地に、黒い縦線（x=10）。その両側に、オレンジ（左・x=9）と青（右・x=11）のにじみ
+  const fringed = () =>
+    makeImage(40, 30, (x, y) => {
+      if (y < 6) return WHITE;
+      if (x === 10) return BLACK;
+      if (x === 9) return [255, 200, 130, 255];
+      if (x === 11) return [130, 190, 255, 255];
+      // 太い赤い塗り（20〜31 × 12〜23）
+      if (x >= 20 && x < 32 && y >= 12 && y < 24) return [220, 30, 30, 255];
+      return WHITE;
+    });
+
+  test("黒い線に接した細い色のにじみは、にじみとして見つかる。太い赤い塗りは、見つからない", () => {
+    const img = fringed();
+    const f = findColorFringe(img.data, img.width, img.height);
+    expect(f[10 * img.width + 9]).toBe(1);
+    expect(f[10 * img.width + 11]).toBe(1);
+    expect(f[16 * img.width + 25]).toBe(0);
+    expect(f[16 * img.width + 21]).toBe(0);
+  });
+
+  test("黒い線から離れた、濃い色の細い線は、にじみにしない（色を残す）。色の弱い細い線は、にじみとする", () => {
+    const img = makeImage(40, 30, (x) => (x === 5 ? [20, 20, 200, 255] : x === 30 ? [255, 235, 200, 255] : WHITE));
+    const f = findColorFringe(img.data, img.width, img.height);
+    expect(f[10 * img.width + 5]).toBe(0);
+    expect(f[10 * img.width + 30]).toBe(1);
+  });
+
+  test("拡大した画像では、にじみの幅も広がるので、見る範囲を拡大の倍率に合わせる", () => {
+    // 幅4画素のオレンジのにじみが、黒い線の左に付いている（2倍に拡大したあとの画像を想定）
+    const img = makeImage(60, 30, (x) => (x === 30 ? BLACK : x >= 26 && x < 30 ? [255, 190, 90, 255] : WHITE));
+    expect(findColorFringe(img.data, img.width, img.height, 2)[10 * img.width + 27]).toBe(1);
+  });
+
+  test("調整つきの反転: 黒い線は白い線になり、にじみは色が残らず、灰色の縁になる。赤い塗りは赤のまま", () => {
+    const img = fringed();
+    const out = { ...img, data: new Uint8ClampedArray(img.data) };
+    invertImagePixels(out.data, "invert-gray", null, { width: img.width, height: img.height });
+    const at = (x: number, y: number) => pixelAt(out, x, y);
+    expect(at(10, 12).slice(0, 3)).toEqual([255, 255, 255]);
+    for (const x of [9, 11]) {
+      const [r, g, b] = at(x, 12);
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBe(0);
+    }
+    expect(at(25, 16).slice(0, 3)).toEqual([220, 30, 30]);
   });
 });

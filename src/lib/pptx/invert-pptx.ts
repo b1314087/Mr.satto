@@ -370,7 +370,7 @@ export async function invertPptx(
         // 粗い画像は、反転の前に、なめらかに2倍へ拡大する（縁の濃淡が保たれて、ギザギザが目立たなくなる）
         const upscaled = enhance && shouldUpscale(raster.width, raster.height);
         const work = upscaled ? upscale2x(raster) : raster;
-        invertImagePixels(work.data, decision, palette, enhance ? { width: work.width, height: work.height } : undefined);
+        invertImagePixels(work.data, decision, palette, enhance ? { width: work.width, height: work.height, scale: upscaled ? 2 : 1 } : undefined);
         // 文字を見やすくする調整をしたJPEGは、圧縮の乱れ（文字のまわりの縁）が目立たないよう、画質を高くして保存する
         const encoded = await activeCodec.encode(work, kind, enhance ? 0.98 : undefined);
         out[name] = encoded;
