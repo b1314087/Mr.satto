@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { OcrTool } from "./implementations/ocr-tool";
+import { ToolLoading } from "./tool-loading";
 
 /**
  * Phase 7 軽量化：各ツール実装を next/dynamic() 経由の動的importに変更した。
@@ -38,303 +39,398 @@ import { OcrTool } from "./implementations/ocr-tool";
  * でのみ動的分割の効果を得る、という最小限の対応とした。
  */
 const ImageCanvasTool = dynamic(() =>
-  import("./implementations/image-canvas-tool").then((m) => m.ImageCanvasTool)
+  import("./implementations/image-canvas-tool").then((m) => m.ImageCanvasTool),
+  { loading: ToolLoading }
 );
 const QrGeneratorTool = dynamic(() =>
-  import("./implementations/qr-generator-tool").then((m) => m.QrGeneratorTool)
+  import("./implementations/qr-generator-tool").then((m) => m.QrGeneratorTool),
+  { loading: ToolLoading }
 );
 const BusinessCardQrTool = dynamic(() =>
-  import("./implementations/business-card-qr-tool").then((m) => m.BusinessCardQrTool)
+  import("./implementations/business-card-qr-tool").then((m) => m.BusinessCardQrTool),
+  { loading: ToolLoading }
 );
 const PasswordGeneratorTool = dynamic(() =>
-  import("./implementations/password-generator-tool").then((m) => m.PasswordGeneratorTool)
+  import("./implementations/password-generator-tool").then((m) => m.PasswordGeneratorTool),
+  { loading: ToolLoading }
 );
 const CharCountTool = dynamic(() =>
-  import("./implementations/char-count-tool").then((m) => m.CharCountTool)
+  import("./implementations/char-count-tool").then((m) => m.CharCountTool),
+  { loading: ToolLoading }
 );
 const JsonFormatterTool = dynamic(() =>
-  import("./implementations/json-formatter-tool").then((m) => m.JsonFormatterTool)
+  import("./implementations/json-formatter-tool").then((m) => m.JsonFormatterTool),
+  { loading: ToolLoading }
 );
 const CsvFormatTool = dynamic(() =>
-  import("./implementations/csv-format-tool").then((m) => m.CsvFormatTool)
+  import("./implementations/csv-format-tool").then((m) => m.CsvFormatTool),
+  { loading: ToolLoading }
 );
 const PomodoroTimerTool = dynamic(() =>
-  import("./implementations/pomodoro-timer-tool").then((m) => m.PomodoroTimerTool)
+  import("./implementations/pomodoro-timer-tool").then((m) => m.PomodoroTimerTool),
+  { loading: ToolLoading }
 );
 const UnitConverterTool = dynamic(() =>
-  import("./implementations/unit-converter-tool").then((m) => m.UnitConverterTool)
+  import("./implementations/unit-converter-tool").then((m) => m.UnitConverterTool),
+  { loading: ToolLoading }
 );
 const GradientGeneratorTool = dynamic(() =>
-  import("./implementations/gradient-generator-tool").then((m) => m.GradientGeneratorTool)
+  import("./implementations/gradient-generator-tool").then((m) => m.GradientGeneratorTool),
+  { loading: ToolLoading }
 );
 const BackgroundRemoverTool = dynamic(() =>
-  import("./implementations/background-remover-tool").then((m) => m.BackgroundRemoverTool)
+  import("./implementations/background-remover-tool").then((m) => m.BackgroundRemoverTool),
+  { loading: ToolLoading }
 );
 const PdfPasswordProtectTool = dynamic(() =>
-  import("./implementations/pdf-password-protect-tool").then((m) => m.PdfPasswordProtectTool)
+  import("./implementations/pdf-password-protect-tool").then((m) => m.PdfPasswordProtectTool),
+  { loading: ToolLoading }
 );
 const ColorPaletteTool = dynamic(() =>
-  import("./implementations/color-palette-tool").then((m) => m.ColorPaletteTool)
+  import("./implementations/color-palette-tool").then((m) => m.ColorPaletteTool),
+  { loading: ToolLoading }
 );
 const ImageSnsSizeTool = dynamic(() =>
-  import("./implementations/image-sns-size-tool").then((m) => m.ImageSnsSizeTool)
+  import("./implementations/image-sns-size-tool").then((m) => m.ImageSnsSizeTool),
+  { loading: ToolLoading }
 );
 const ImageCropTool = dynamic(() =>
-  import("./implementations/image-crop-tool").then((m) => m.ImageCropTool)
+  import("./implementations/image-crop-tool").then((m) => m.ImageCropTool),
+  { loading: ToolLoading }
 );
 const ImageBatchConvertTool = dynamic(() =>
-  import("./implementations/image-batch-convert-tool").then((m) => m.ImageBatchConvertTool)
+  import("./implementations/image-batch-convert-tool").then((m) => m.ImageBatchConvertTool),
+  { loading: ToolLoading }
 );
 // JPG変換・PNG変換・WebP変換は、画像一括変換と同じ共通画面（出力形式の初期選択だけが違う）
 const ImageRotateFlipTool = dynamic(() =>
-  import("./implementations/image-rotate-flip-tool").then((m) => m.ImageRotateFlipTool)
+  import("./implementations/image-rotate-flip-tool").then((m) => m.ImageRotateFlipTool),
+  { loading: ToolLoading }
 );
 const ImageFormatConvertTool = dynamic(() =>
-  import("./implementations/image-format-convert-tool").then((m) => m.ImageFormatConvertTool)
+  import("./implementations/image-format-convert-tool").then((m) => m.ImageFormatConvertTool),
+  { loading: ToolLoading }
 );
 // PDF編集（結合・分割・ページ削除・ページ抽出・並び替え・回転）は、1つの共通画面（操作の初期選択だけが違う）
 const PdfEditTool = dynamic(() =>
-  import("./implementations/pdf-edit-tool").then((m) => m.PdfEditTool)
+  import("./implementations/pdf-edit-tool").then((m) => m.PdfEditTool),
+  { loading: ToolLoading }
 );
 // PDF修正（記入・注釈・白消し／ページ番号／透かし）。PDF編集の処理結果の引き継ぎ先（工程12）
 const PdfFixTool = dynamic(() =>
-  import("./implementations/pdf-fix-tool").then((m) => m.PdfFixTool)
+  import("./implementations/pdf-fix-tool").then((m) => m.PdfFixTool),
+  { loading: ToolLoading }
 );
 const ImageToPdfTool = dynamic(() =>
-  import("./implementations/image-to-pdf-tool").then((m) => m.ImageToPdfTool)
+  import("./implementations/image-to-pdf-tool").then((m) => m.ImageToPdfTool),
+  { loading: ToolLoading }
 );
 const PdfToImageTool = dynamic(() =>
-  import("./implementations/pdf-to-image-tool").then((m) => m.PdfToImageTool)
+  import("./implementations/pdf-to-image-tool").then((m) => m.PdfToImageTool),
+  { loading: ToolLoading }
 );
 const FileBulkRenameTool = dynamic(() =>
-  import("./implementations/file-bulk-rename-tool").then((m) => m.FileBulkRenameTool)
+  import("./implementations/file-bulk-rename-tool").then((m) => m.FileBulkRenameTool),
+  { loading: ToolLoading }
 );
 const FileSequentialRenameTool = dynamic(() =>
-  import("./implementations/file-sequential-rename-tool").then((m) => m.FileSequentialRenameTool)
+  import("./implementations/file-sequential-rename-tool").then((m) => m.FileSequentialRenameTool),
+  { loading: ToolLoading }
 );
 const FileZipTool = dynamic(() =>
-  import("./implementations/file-zip-tool").then((m) => m.FileZipTool)
+  import("./implementations/file-zip-tool").then((m) => m.FileZipTool),
+  { loading: ToolLoading }
 );
 const ExcelCsvConvertTool = dynamic(() =>
-  import("./implementations/excel-csv-convert-tool").then((m) => m.ExcelCsvConvertTool)
+  import("./implementations/excel-csv-convert-tool").then((m) => m.ExcelCsvConvertTool),
+  { loading: ToolLoading }
 );
 const CsvMergeTool = dynamic(() =>
-  import("./implementations/csv-merge-tool").then((m) => m.CsvMergeTool)
+  import("./implementations/csv-merge-tool").then((m) => m.CsvMergeTool),
+  { loading: ToolLoading }
 );
 const CsvDedupeTool = dynamic(() =>
-  import("./implementations/csv-dedupe-tool").then((m) => m.CsvDedupeTool)
+  import("./implementations/csv-dedupe-tool").then((m) => m.CsvDedupeTool),
+  { loading: ToolLoading }
 );
 const CsvReplaceTool = dynamic(() =>
-  import("./implementations/csv-replace-tool").then((m) => m.CsvReplaceTool)
+  import("./implementations/csv-replace-tool").then((m) => m.CsvReplaceTool),
+  { loading: ToolLoading }
 );
 const PdfCompressTool = dynamic(() =>
-  import("./implementations/pdf-compress-tool").then((m) => m.PdfCompressTool)
+  import("./implementations/pdf-compress-tool").then((m) => m.PdfCompressTool),
+  { loading: ToolLoading }
 );
 const PdfToTextTool = dynamic(() =>
-  import("./implementations/pdf-to-text-tool").then((m) => m.PdfToTextTool)
+  import("./implementations/pdf-to-text-tool").then((m) => m.PdfToTextTool),
+  { loading: ToolLoading }
 );
 const EstimateGeneratorTool = dynamic(() =>
-  import("./implementations/estimate-generator-tool").then((m) => m.EstimateGeneratorTool)
+  import("./implementations/estimate-generator-tool").then((m) => m.EstimateGeneratorTool),
+  { loading: ToolLoading }
 );
 const QuoteOrderGeneratorTool = dynamic(() =>
-  import("./implementations/quote-order-generator-tool").then((m) => m.QuoteOrderGeneratorTool)
+  import("./implementations/quote-order-generator-tool").then((m) => m.QuoteOrderGeneratorTool),
+  { loading: ToolLoading }
 );
 const InvoiceGeneratorTool = dynamic(() =>
-  import("./implementations/invoice-generator-tool").then((m) => m.InvoiceGeneratorTool)
+  import("./implementations/invoice-generator-tool").then((m) => m.InvoiceGeneratorTool),
+  { loading: ToolLoading }
 );
 const OrderGeneratorTool = dynamic(() =>
-  import("./implementations/order-generator-tool").then((m) => m.OrderGeneratorTool)
+  import("./implementations/order-generator-tool").then((m) => m.OrderGeneratorTool),
+  { loading: ToolLoading }
 );
 const PdfToExcelTool = dynamic(() =>
-  import("./implementations/pdf-to-excel-tool").then((m) => m.PdfToExcelTool)
+  import("./implementations/pdf-to-excel-tool").then((m) => m.PdfToExcelTool),
+  { loading: ToolLoading }
 );
 const PdfToWordTool = dynamic(() =>
-  import("./implementations/pdf-to-word-tool").then((m) => m.PdfToWordTool)
+  import("./implementations/pdf-to-word-tool").then((m) => m.PdfToWordTool),
+  { loading: ToolLoading }
 );
 const WordToPdfTool = dynamic(() =>
-  import("./implementations/word-to-pdf-tool").then((m) => m.WordToPdfTool)
+  import("./implementations/word-to-pdf-tool").then((m) => m.WordToPdfTool),
+  { loading: ToolLoading }
 );
 const ExcelToPdfTool = dynamic(() =>
-  import("./implementations/excel-to-pdf-tool").then((m) => m.ExcelToPdfTool)
+  import("./implementations/excel-to-pdf-tool").then((m) => m.ExcelToPdfTool),
+  { loading: ToolLoading }
 );
 const PdfAddPageNumbersTool = dynamic(() =>
-  import("./implementations/pdf-add-page-numbers-tool").then((m) => m.PdfAddPageNumbersTool)
+  import("./implementations/pdf-add-page-numbers-tool").then((m) => m.PdfAddPageNumbersTool),
+  { loading: ToolLoading }
 );
 const PdfWatermarkTool = dynamic(() =>
-  import("./implementations/pdf-watermark-tool").then((m) => m.PdfWatermarkTool)
+  import("./implementations/pdf-watermark-tool").then((m) => m.PdfWatermarkTool),
+  { loading: ToolLoading }
 );
 const ImageFlipTool = dynamic(() =>
-  import("./implementations/image-flip-tool").then((m) => m.ImageFlipTool)
+  import("./implementations/image-flip-tool").then((m) => m.ImageFlipTool),
+  { loading: ToolLoading }
 );
 const ImageGrayscaleTool = dynamic(() =>
-  import("./implementations/image-grayscale-tool").then((m) => m.ImageGrayscaleTool)
+  import("./implementations/image-grayscale-tool").then((m) => m.ImageGrayscaleTool),
+  { loading: ToolLoading }
 );
 const ImageAdjustTool = dynamic(() =>
-  import("./implementations/image-adjust-tool").then((m) => m.ImageAdjustTool)
+  import("./implementations/image-adjust-tool").then((m) => m.ImageAdjustTool),
+  { loading: ToolLoading }
 );
 const CsvJsonConvertTool = dynamic(() =>
-  import("./implementations/csv-json-convert-tool").then((m) => m.CsvJsonConvertTool)
+  import("./implementations/csv-json-convert-tool").then((m) => m.CsvJsonConvertTool),
+  { loading: ToolLoading }
 );
 const TextLineCleanerTool = dynamic(() =>
-  import("./implementations/text-line-cleaner-tool").then((m) => m.TextLineCleanerTool)
+  import("./implementations/text-line-cleaner-tool").then((m) => m.TextLineCleanerTool),
+  { loading: ToolLoading }
 );
 const FileUnzipTool = dynamic(() =>
-  import("./implementations/file-unzip-tool").then((m) => m.FileUnzipTool)
+  import("./implementations/file-unzip-tool").then((m) => m.FileUnzipTool),
+  { loading: ToolLoading }
 );
 const FileHashTool = dynamic(() =>
-  import("./implementations/file-hash-tool").then((m) => m.FileHashTool)
+  import("./implementations/file-hash-tool").then((m) => m.FileHashTool),
+  { loading: ToolLoading }
 );
 const PdfResizePagesTool = dynamic(() =>
-  import("./implementations/pdf-resize-pages-tool").then((m) => m.PdfResizePagesTool)
+  import("./implementations/pdf-resize-pages-tool").then((m) => m.PdfResizePagesTool),
+  { loading: ToolLoading }
 );
 const PdfMetadataRemoveTool = dynamic(() =>
-  import("./implementations/pdf-metadata-remove-tool").then((m) => m.PdfMetadataRemoveTool)
+  import("./implementations/pdf-metadata-remove-tool").then((m) => m.PdfMetadataRemoveTool),
+  { loading: ToolLoading }
 );
 const PdfCropPagesTool = dynamic(() =>
-  import("./implementations/pdf-crop-pages-tool").then((m) => m.PdfCropPagesTool)
+  import("./implementations/pdf-crop-pages-tool").then((m) => m.PdfCropPagesTool),
+  { loading: ToolLoading }
 );
 const ImageMetadataRemoveTool = dynamic(() =>
-  import("./implementations/image-metadata-remove-tool").then((m) => m.ImageMetadataRemoveTool)
+  import("./implementations/image-metadata-remove-tool").then((m) => m.ImageMetadataRemoveTool),
+  { loading: ToolLoading }
 );
 const ImageWatermarkTool = dynamic(() =>
-  import("./implementations/image-watermark-tool").then((m) => m.ImageWatermarkTool)
+  import("./implementations/image-watermark-tool").then((m) => m.ImageWatermarkTool),
+  { loading: ToolLoading }
 );
 const ImageLayoutTool = dynamic(() =>
-  import("./implementations/image-layout-tool").then((m) => m.ImageLayoutTool)
+  import("./implementations/image-layout-tool").then((m) => m.ImageLayoutTool),
+  { loading: ToolLoading }
 );
 const ImagePassportPhotoTool = dynamic(() =>
-  import("./implementations/image-passport-photo-tool").then((m) => m.ImagePassportPhotoTool)
+  import("./implementations/image-passport-photo-tool").then((m) => m.ImagePassportPhotoTool),
+  { loading: ToolLoading }
 );
 const ImageMergeTool = dynamic(() =>
-  import("./implementations/image-merge-tool").then((m) => m.ImageMergeTool)
+  import("./implementations/image-merge-tool").then((m) => m.ImageMergeTool),
+  { loading: ToolLoading }
 );
 const ImagePaddingTextTool = dynamic(() =>
-  import("./implementations/image-padding-text-tool").then((m) => m.ImagePaddingTextTool)
+  import("./implementations/image-padding-text-tool").then((m) => m.ImagePaddingTextTool),
+  { loading: ToolLoading }
 );
 const ImageTileSplitTool = dynamic(() =>
-  import("./implementations/image-tile-split-tool").then((m) => m.ImageTileSplitTool)
+  import("./implementations/image-tile-split-tool").then((m) => m.ImageTileSplitTool),
+  { loading: ToolLoading }
 );
 const ImageMosaicTool = dynamic(() =>
-  import("./implementations/image-mosaic-tool").then((m) => m.ImageMosaicTool)
+  import("./implementations/image-mosaic-tool").then((m) => m.ImageMosaicTool),
+  { loading: ToolLoading }
 );
 const TextCaseConverterTool = dynamic(() =>
-  import("./implementations/text-case-converter-tool").then((m) => m.TextCaseConverterTool)
+  import("./implementations/text-case-converter-tool").then((m) => m.TextCaseConverterTool),
+  { loading: ToolLoading }
 );
 const CsvColumnEditorTool = dynamic(() =>
-  import("./implementations/csv-column-editor-tool").then((m) => m.CsvColumnEditorTool)
+  import("./implementations/csv-column-editor-tool").then((m) => m.CsvColumnEditorTool),
+  { loading: ToolLoading }
 );
 const VideoConvertTool = dynamic(() =>
-  import("./implementations/video-convert-tool").then((m) => m.VideoConvertTool)
+  import("./implementations/video-convert-tool").then((m) => m.VideoConvertTool),
+  { loading: ToolLoading }
 );
 const VideoCompressTool = dynamic(() =>
-  import("./implementations/video-compress-tool").then((m) => m.VideoCompressTool)
+  import("./implementations/video-compress-tool").then((m) => m.VideoCompressTool),
+  { loading: ToolLoading }
 );
 const VideoResizeTool = dynamic(() =>
-  import("./implementations/video-resize-tool").then((m) => m.VideoResizeTool)
+  import("./implementations/video-resize-tool").then((m) => m.VideoResizeTool),
+  { loading: ToolLoading }
 );
 const VideoFrameRateTool = dynamic(() =>
-  import("./implementations/video-frame-rate-tool").then((m) => m.VideoFrameRateTool)
+  import("./implementations/video-frame-rate-tool").then((m) => m.VideoFrameRateTool),
+  { loading: ToolLoading }
 );
 const VideoH264Tool = dynamic(() =>
-  import("./implementations/video-h264-tool").then((m) => m.VideoH264Tool)
+  import("./implementations/video-h264-tool").then((m) => m.VideoH264Tool),
+  { loading: ToolLoading }
 );
 const VideoThumbnailTool = dynamic(() =>
-  import("./implementations/video-thumbnail-tool").then((m) => m.VideoThumbnailTool)
+  import("./implementations/video-thumbnail-tool").then((m) => m.VideoThumbnailTool),
+  { loading: ToolLoading }
 );
 const VideoMetadataRemoveTool = dynamic(() =>
-  import("./implementations/video-metadata-remove-tool").then((m) => m.VideoMetadataRemoveTool)
+  import("./implementations/video-metadata-remove-tool").then((m) => m.VideoMetadataRemoveTool),
+  { loading: ToolLoading }
 );
 // 音声ツール（mediabunny。MP3書き出し時のみ LAME/WASM を動的に読み込む）
 const AudioConvertTool = dynamic(() =>
-  import("./implementations/audio-convert-tool").then((m) => m.AudioConvertTool)
+  import("./implementations/audio-convert-tool").then((m) => m.AudioConvertTool),
+  { loading: ToolLoading }
 );
 const AudioExtractTool = dynamic(() =>
-  import("./implementations/audio-extract-tool").then((m) => m.AudioExtractTool)
+  import("./implementations/audio-extract-tool").then((m) => m.AudioExtractTool),
+  { loading: ToolLoading }
 );
 const AudioTrimTool = dynamic(() =>
-  import("./implementations/audio-trim-tool").then((m) => m.AudioTrimTool)
+  import("./implementations/audio-trim-tool").then((m) => m.AudioTrimTool),
+  { loading: ToolLoading }
 );
 const AudioMergeTool = dynamic(() =>
-  import("./implementations/audio-merge-tool").then((m) => m.AudioMergeTool)
+  import("./implementations/audio-merge-tool").then((m) => m.AudioMergeTool),
+  { loading: ToolLoading }
 );
 const AudioVolumeTool = dynamic(() =>
-  import("./implementations/audio-volume-tool").then((m) => m.AudioVolumeTool)
+  import("./implementations/audio-volume-tool").then((m) => m.AudioVolumeTool),
+  { loading: ToolLoading }
 );
 const AudioCompressTool = dynamic(() =>
-  import("./implementations/audio-compress-tool").then((m) => m.AudioCompressTool)
+  import("./implementations/audio-compress-tool").then((m) => m.AudioCompressTool),
+  { loading: ToolLoading }
 );
 // Phase 11: OCR(tesseract.js)を内部で使うため、既存のOCRツールと同様の
 // チャンク境界問題が起きないか実機検証したが、こちらは問題なく動作した
 // （OCRツール自体を静的importのまま保護する既存の対応方針は変更していない）。
 const FilledPdfToExcelTool = dynamic(() =>
-  import("./implementations/filled-pdf-to-excel-tool").then((m) => m.FilledPdfToExcelTool)
+  import("./implementations/filled-pdf-to-excel-tool").then((m) => m.FilledPdfToExcelTool),
+  { loading: ToolLoading }
 );
 const FormToIndividualPdfsTool = dynamic(() =>
-  import("./implementations/form-to-individual-pdfs-tool").then((m) => m.FormToIndividualPdfsTool)
+  import("./implementations/form-to-individual-pdfs-tool").then((m) => m.FormToIndividualPdfsTool),
+  { loading: ToolLoading }
 );
 const PdfFillAnnotateTool = dynamic(() =>
-  import("./implementations/pdf-fill-annotate-tool").then((m) => m.PdfFillAnnotateTool)
+  import("./implementations/pdf-fill-annotate-tool").then((m) => m.PdfFillAnnotateTool),
+  { loading: ToolLoading }
 );
 const ElectronicStampGeneratorTool = dynamic(() =>
-  import("./implementations/electronic-stamp-generator-tool").then((m) => m.ElectronicStampGeneratorTool)
+  import("./implementations/electronic-stamp-generator-tool").then((m) => m.ElectronicStampGeneratorTool),
+  { loading: ToolLoading }
 );
 
 // 次工程・軽量便利ツール一括追加（Tool 1〜10）
 const DateWeekdayTool = dynamic(() =>
-  import("./implementations/date-weekday-tool").then((m) => m.DateWeekdayTool)
+  import("./implementations/date-weekday-tool").then((m) => m.DateWeekdayTool),
+  { loading: ToolLoading }
 );
 const TimeCalculatorTool = dynamic(() =>
-  import("./implementations/time-calculator-tool").then((m) => m.TimeCalculatorTool)
+  import("./implementations/time-calculator-tool").then((m) => m.TimeCalculatorTool),
+  { loading: ToolLoading }
 );
 const NumberFormatTool = dynamic(() =>
-  import("./implementations/number-format-tool").then((m) => m.NumberFormatTool)
+  import("./implementations/number-format-tool").then((m) => m.NumberFormatTool),
+  { loading: ToolLoading }
 );
 const ExcelTransposeTool = dynamic(() =>
-  import("./implementations/excel-transpose-tool").then((m) => m.ExcelTransposeTool)
+  import("./implementations/excel-transpose-tool").then((m) => m.ExcelTransposeTool),
+  { loading: ToolLoading }
 );
 const ExcelBlankRemoveTool = dynamic(() =>
-  import("./implementations/excel-blank-remove-tool").then((m) => m.ExcelBlankRemoveTool)
+  import("./implementations/excel-blank-remove-tool").then((m) => m.ExcelBlankRemoveTool),
+  { loading: ToolLoading }
 );
 const ExcelReplaceTool = dynamic(() =>
-  import("./implementations/excel-replace-tool").then((m) => m.ExcelReplaceTool)
+  import("./implementations/excel-replace-tool").then((m) => m.ExcelReplaceTool),
+  { loading: ToolLoading }
 );
 const ExcelMergeCenterTool = dynamic(() =>
-  import("./implementations/excel-merge-center-tool").then((m) => m.ExcelMergeCenterTool)
+  import("./implementations/excel-merge-center-tool").then((m) => m.ExcelMergeCenterTool),
+  { loading: ToolLoading }
 );
 const ExcelDateShiftTool = dynamic(() =>
-  import("./implementations/excel-date-shift-tool").then((m) => m.ExcelDateShiftTool)
+  import("./implementations/excel-date-shift-tool").then((m) => m.ExcelDateShiftTool),
+  { loading: ToolLoading }
 );
 const WordParagraphCleanupTool = dynamic(() =>
-  import("./implementations/word-paragraph-cleanup-tool").then((m) => m.WordParagraphCleanupTool)
+  import("./implementations/word-paragraph-cleanup-tool").then((m) => m.WordParagraphCleanupTool),
+  { loading: ToolLoading }
 );
 const WordRenumberTool = dynamic(() =>
-  import("./implementations/word-renumber-tool").then((m) => m.WordRenumberTool)
+  import("./implementations/word-renumber-tool").then((m) => m.WordRenumberTool),
+  { loading: ToolLoading }
 );
 
 // 次工程・印刷帳票4ツール追加フェーズ
 const ExcelLabelTool = dynamic(() =>
-  import("./implementations/excel-label-tool").then((m) => m.ExcelLabelTool)
+  import("./implementations/excel-label-tool").then((m) => m.ExcelLabelTool),
+  { loading: ToolLoading }
 );
 const EnvelopeAddressTool = dynamic(() =>
-  import("./implementations/envelope-address-tool").then((m) => m.EnvelopeAddressTool)
+  import("./implementations/envelope-address-tool").then((m) => m.EnvelopeAddressTool),
+  { loading: ToolLoading }
 );
 const TicketVoucherTool = dynamic(() =>
-  import("./implementations/ticket-voucher-tool").then((m) => m.TicketVoucherTool)
+  import("./implementations/ticket-voucher-tool").then((m) => m.TicketVoucherTool),
+  { loading: ToolLoading }
 );
 const RosterTemplateTool = dynamic(() =>
-  import("./implementations/roster-template-tool").then((m) => m.RosterTemplateTool)
+  import("./implementations/roster-template-tool").then((m) => m.RosterTemplateTool),
+  { loading: ToolLoading }
 );
 
 // 年度カレンダー作成（日本の祝日入りのExcel・PDF）
 const FiscalCalendarTool = dynamic(() =>
-  import("./implementations/fiscal-calendar-tool").then((m) => m.FiscalCalendarTool)
+  import("./implementations/fiscal-calendar-tool").then((m) => m.FiscalCalendarTool),
+  { loading: ToolLoading }
 );
 const SequenceGeneratorTool = dynamic(() =>
-  import("./implementations/sequence-generator-tool").then((m) => m.SequenceGeneratorTool)
+  import("./implementations/sequence-generator-tool").then((m) => m.SequenceGeneratorTool),
+  { loading: ToolLoading }
 );
 // PowerPoint白黒反転（.pptxの背景・文字・白黒画像を反転）
 const PptxInvertTool = dynamic(() =>
-  import("./implementations/pptx-invert-tool").then((m) => m.PptxInvertTool)
+  import("./implementations/pptx-invert-tool").then((m) => m.PptxInvertTool),
+  { loading: ToolLoading }
 );
 
 const IMAGE_TOOL_IDS = new Set([

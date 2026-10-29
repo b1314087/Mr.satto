@@ -541,6 +541,16 @@
     }
   }
 
+  /* ---- リンクを押してから移動が終わるまでの「読み込み中」の膜（LinkPendingOverlay）。カードに重ねる ---- */
+  .ms-link-pending {
+    opacity: 0;
+    background-color: var(--ms-surface-strong);
+    transition: opacity 0.15s ease 0.1s;
+  }
+  .ms-link-pending[data-pending="true"] {
+    opacity: 0.96;
+  }
+
   /* ---- 処理中のスピナー（文字の「処理中」と一緒に使う。動きを減らす設定では回さない） ---- */
   .ms-spinner {
     display: inline-block;

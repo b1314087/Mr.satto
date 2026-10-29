@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Category } from "@/lib/tools/types";
 import { glassCardClasses } from "@/components/ui/glass-card";
 import { CategoryIcon } from "@/components/ui/category-icon";
+import { LinkPendingOverlay } from "@/components/ui/link-pending";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -15,7 +16,7 @@ export function CategoryCard({ category, toolCount }: { category: Category; tool
   return (
     <Link
       href={`/tools/${category.id}`}
-      className={cn(glassCardClasses({ interactive: true }), "group flex flex-col gap-3 p-4 sm:p-5")}
+      className={cn(glassCardClasses({ interactive: true }), "group relative flex flex-col gap-3 p-4 sm:p-5")}
     >
       <CategoryIcon id={category.id} size="md" />
       <span className="flex min-w-0 items-end justify-between gap-2">
@@ -38,6 +39,7 @@ export function CategoryCard({ category, toolCount }: { category: Category; tool
           <path d="m9 6 6 6-6 6" />
         </svg>
       </span>
+      <LinkPendingOverlay />
     </Link>
   );
 }

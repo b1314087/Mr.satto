@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils/cn";
 import { featureFlags } from "@/lib/config/features";
 import { glassCardClasses } from "@/components/ui/glass-card";
 import { CategoryIcon } from "@/components/ui/category-icon";
+import { LinkPendingOverlay } from "@/components/ui/link-pending";
 
 /**
  * 料金区分バッジ（Phase 19 9章）。
@@ -90,24 +91,26 @@ export function ToolCard({ tool, compact = false }: { tool: Tool; compact?: bool
     // 「通常」は出さない（ほとんどのツールが通常のため、情報にならない）。出すのは、準備中・プレミアム限定・AI実装だけ。
     const showPlan = !isComingSoon && featureFlags.billing && tool.requiredPlan === "premium";
     return (
-      <Link {...linkProps} className={cn("group flex h-full items-center gap-3 px-3 py-2.5", surface)}>
+      <Link {...linkProps} className={cn("group relative flex h-full items-center gap-3 px-3 py-2.5", surface)}>
         <CategoryIcon id={category?.id ?? "other"} size="sm" />
         <h3 className={cn("min-w-0 flex-1 text-sm font-semibold leading-snug", titleColor)}>{tool.name}</h3>
         {isComingSoon && badge}
         {showPlan && <PlanBadge requiredPlan={tool.requiredPlan} />}
         {!isComingSoon && showsAiBadge(tool) && <AiBadge />}
+        <LinkPendingOverlay />
       </Link>
     );
   }
 
   return (
-    <Link {...linkProps} className={cn("group flex h-full flex-col gap-2 p-4", surface)}>
+    <Link {...linkProps} className={cn("group relative flex h-full flex-col gap-2 p-4", surface)}>
       <div className="flex items-start justify-between gap-2">
         <CategoryIcon id={category?.id ?? "other"} size="md" />
         {badge}
       </div>
       <h3 className={cn("font-semibold", titleColor)}>{tool.name}</h3>
       <p className="line-clamp-2 text-sm text-ms-muted">{tool.description}</p>
+      <LinkPendingOverlay />
     </Link>
   );
 }
