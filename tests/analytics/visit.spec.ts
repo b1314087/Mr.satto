@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { excludedEmailsFromEnv, isExcludedFromAccessCount, parseEmailList } from "@/lib/analytics/exclude";
 import { dailyVisitorHash, isLikelyBot, jstDateString, parseVisitPath } from "@/lib/analytics/visit";
 
 /** 訪問数の集計（個人を特定しない・Cookieなし） */
@@ -64,5 +65,29 @@ test.describe("訪問数の受け口 /api/analytics/visit", () => {
       expect(res.headers()["set-cookie"]).toBeUndefined();
       expect(await res.text()).toBe("");
     }
+  });
+});
+
+test.describe("アクセス数に含めないアカウント", () => {
+  test("環境変数のメールアドレス一覧を、空白・大文字・空要素を直して読む", () => {
+    expect(parseEmailList(" A@Example.com, b@example.com ,, ")).toEqual(["a@example.com", "b@example.com"]);
+    expect(parseEmailList(undefined)).toEqual([]);
+    expect(parseEmailList("")).toEqual([]);
+  });
+
+  test("管理者と追加の除外を合わせる（重複は1つにする）", () => {
+    const list = excludedEmailsFromEnv({ ADMIN_EMAILS: "admin@example.com", ANALYTICS_EXCLUDED_EMAILS: "ADMIN@example.com,other@example.com" });
+    expect(list).toEqual(["admin@example.com", "other@example.com"]);
+    expect(excludedEmailsFromEnv({})).toEqual([]);
+  });
+
+  test("一致するメールアドレスだけ除外する（大文字小文字は区別しない・未ログインは除外しない）", () => {
+    const list = ["admin@example.com"];
+    expect(isExcludedFromAccessCount("Admin@Example.com", list)).toBe(true);
+    expect(isExcludedFromAccessCount(" admin@example.com ", list)).toBe(true);
+    expect(isExcludedFromAccessCount("user@example.com", list)).toBe(false);
+    expect(isExcludedFromAccessCount(null, list)).toBe(false);
+    expect(isExcludedFromAccessCount(undefined, list)).toBe(false);
+    expect(isExcludedFromAccessCount("admin@example.com", [])).toBe(false);
   });
 });

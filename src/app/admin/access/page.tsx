@@ -47,7 +47,7 @@ export default async function AdminAccessPage({ searchParams }: { searchParams: 
         <p className="mt-2 max-w-2xl text-sm text-neutral-500 dark:text-neutral-400">
           サイトを開いた人数（訪問者数）と、ページを開いた回数（閲覧数）です。日付は日本時間です。
           個人は特定せず、同じ人が同じ日に何回来ても1人と数えます。週・月・年の訪問者数は、日ごとの人数の合計（延べ人数）です。
-          ボット・管理画面・「トラッキングしない」設定のブラウザは数えません。
+          ボット・管理画面・「トラッキングしない」設定のブラウザ・運営者のアカウントでログイン中のアクセスは数えません。
         </p>
         {visits.status === "unavailable" && (
           <p className="mt-2 max-w-2xl text-sm font-medium text-amber-600 dark:text-amber-400" data-testid="access-unavailable">

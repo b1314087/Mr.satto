@@ -3,13 +3,15 @@ import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { supabaseServiceConfig } from "@/lib/supabase/service-config";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { dailyVisitorHash, isLikelyBot, parseVisitPath } from "@/lib/analytics/visit";
+import { excludedEmailsFromEnv, isExcludedFromAccessCount } from "@/lib/analytics/exclude";
+import { getCurrentUser } from "@/lib/auth/user";
 
 /**
  * サイトの訪問数の記録（個人を特定しない・Cookieなし）。画面（src/components/analytics/visit-beacon.tsx）が、
  * ページを開くたびに、パスだけを送ってくる。保存するのは、日ごとの訪問者数・閲覧数だけ（詳細は src/lib/analytics/visit.ts）。
  *
  * - 記録に失敗しても、利用者には何も影響させない（常に 204 を返す）。
- * - 他のサイトからの送信・ボット・数えないページ・Do Not Track などは、記録しない。
+ * - 他のサイトからの送信・ボット・数えないページ・Do Not Track・運営者のアカウントでのログイン中などは、記録しない。
  */
 const NO_STORE = { "Cache-Control": "no-store" };
 const MAX_BODY_BYTES = 1_000;
@@ -47,6 +49,13 @@ export async function POST(request: Request) {
       return done();
     }
     if (!parseVisitPath(body)) return done();
+
+    // 運営者などのアカウントでログインしている場合は、数えない（ログイン中のブラウザだけが対象。メールアドレスは保存しない）
+    const excluded = excludedEmailsFromEnv({ ADMIN_EMAILS: process.env.ADMIN_EMAILS, ANALYTICS_EXCLUDED_EMAILS: process.env.ANALYTICS_EXCLUDED_EMAILS });
+    if (excluded.length > 0 && (request.headers.get("cookie") ?? "").includes("-auth-token")) {
+      const user = await getCurrentUser().catch(() => null);
+      if (isExcludedFromAccessCount(user?.email, excluded)) return done();
+    }
 
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
     if (checkRateLimit(`visit:${ip}`, VISIT_RATE_LIMIT).limited) return done();
