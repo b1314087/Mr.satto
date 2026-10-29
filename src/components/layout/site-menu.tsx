@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { SearchBar } from "@/components/tools/search-bar";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { AuthStatusLink } from "@/components/auth/auth-status-link";
+import { AdminLink } from "@/components/auth/admin-link";
 import { dispatchToolsNavigate } from "@/lib/navigation/tools-navigate";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { CategoryIcon } from "@/components/ui/category-icon";
@@ -243,6 +244,9 @@ export function SiteMenu({ categories, showBilling, siteName, totalCount }: Site
                     </li>
                     <li>
                       <AuthStatusLink className="ms-menu-link" />
+                    </li>
+                    <li>
+                      <AdminLink className="ms-menu-link" />
                     </li>
                   </>
                 )}

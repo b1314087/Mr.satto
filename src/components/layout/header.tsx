@@ -3,6 +3,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { siteConfig } from "@/lib/config/site";
 import { HeaderSearch } from "@/components/tools/search-bar";
 import { AuthStatusLink } from "@/components/auth/auth-status-link";
+import { AdminLink } from "@/components/auth/admin-link";
 import { SiteMenu } from "@/components/layout/site-menu";
 import { categories } from "@/lib/tools/categories";
 import { getListedTools } from "@/lib/tools/data";
@@ -55,6 +56,7 @@ export function Header() {
                 料金プラン
               </Link>
               <AuthStatusLink className={NAV_LINK} />
+              <AdminLink className={NAV_LINK} />
             </>
           )}
         </nav>
