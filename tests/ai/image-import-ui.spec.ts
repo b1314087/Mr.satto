@@ -287,7 +287,12 @@ test.describe("予定表の取り込み: 文字のPDF", () => {
     expect(rec.usageCalls).toBe(0);
     const origin = new URL(page.url()).origin;
     // 開発サーバー自身のエラー表示用の通信(/__nextjs...)を除き、POSTなどの送信は1つもない
-    expect(recorder.requests.filter((r) => r.method !== "GET" && r.method !== "HEAD" && !new URL(r.url).pathname.startsWith("/__nextjs"))).toEqual([]);
+    // （アクセス数の記録 /api/analytics/visit は、ページのパスだけを送る別の仕組みなので対象外。内容は別のテストで確認している）
+    expect(
+      recorder.requests.filter(
+        (r) => r.method !== "GET" && r.method !== "HEAD" && !new URL(r.url).pathname.startsWith("/__nextjs") && new URL(r.url).pathname !== "/api/analytics/visit"
+      )
+    ).toEqual([]);
     expect(recorder.requests.filter((r) => !r.url.startsWith(origin) && r.method !== "GET")).toEqual([]);
   });
 

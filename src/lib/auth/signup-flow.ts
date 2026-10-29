@@ -1,4 +1,5 @@
 import { getSignupConsentError } from "./signup-consent";
+import { USERNAME_TAKEN_MESSAGE, validateUsername } from "./username";
 
 /**
  * 会員登録の流れ（工程38）。サーバー側（Server Action）で実行し、同意の確認と記録をサーバーで行う。
@@ -21,7 +22,10 @@ export interface SignUpResult {
 }
 
 export interface SignupDeps {
-  signUp(email: string, password: string): Promise<SignUpResult>;
+  /** username は、ルールの確認を通った（保存する形の）ユーザー名 */
+  signUp(email: string, password: string, username: string): Promise<SignUpResult>;
+  /** そのユーザー名が既に使われているか（大文字小文字を区別しない）。確認できないときは false を返してよい（DBの制約が最終的に守る） */
+  isUsernameTaken?(username: string): Promise<boolean>;
   recordConsent(userId: string): Promise<boolean>;
   /** 記録できなかったことを知らせる（個人情報は渡さない） */
   onConsentNotRecorded?(): void;
@@ -43,7 +47,7 @@ export function translateSignupError(message: string): string {
 }
 
 export async function runSignup(
-  input: { email: string; password: string; consentAccepted: boolean },
+  input: { email: string; password: string; username: string; consentAccepted: boolean },
   deps: SignupDeps,
 ): Promise<SignupOutcome> {
   // 1. 同意の確認（サーバー側）。同意がなければ、Supabase Authへは一切リクエストしない。
@@ -54,9 +58,20 @@ export async function runSignup(
     return { status: "error", message: `パスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください。` };
   }
 
+  // ユーザー名（必須）。ルールの確認と、重複の確認を、登録を依頼する前に行う
+  const username = validateUsername(input.username);
+  if (!username.ok) return { status: "error", message: username.message };
+  try {
+    if (deps.isUsernameTaken && (await deps.isUsernameTaken(username.username))) {
+      return { status: "error", message: USERNAME_TAKEN_MESSAGE };
+    }
+  } catch {
+    // 確認できなかったときは、そのまま進む（DBの一意制約が重複を防ぐ。重なった場合も、登録は成功し、ユーザー名だけ未設定になる）
+  }
+
   let result: SignUpResult;
   try {
-    result = await deps.signUp(input.email, input.password);
+    result = await deps.signUp(input.email, input.password, username.username);
   } catch {
     return { status: "error", message: translateSignupError("") };
   }

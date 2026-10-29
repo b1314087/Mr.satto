@@ -41,6 +41,7 @@ test.describe("会員登録フォームの同意チェック（画面）", () =>
     });
 
     await page.getByLabel("メールアドレス").fill("consent-test@example.com");
+    await page.getByTestId("signup-username").fill("consent_tester");
     await page.getByLabel(/パスワード/).fill("password-1234");
 
     const submit = page.getByRole("button", { name: "会員登録" });

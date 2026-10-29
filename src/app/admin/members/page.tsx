@@ -91,14 +91,14 @@ export default async function AdminMembersPage({
       >
         <div className="flex flex-col gap-1">
           <label htmlFor="q" className="text-xs text-neutral-500 dark:text-neutral-400">
-            メールアドレス検索
+            メールアドレス・ユーザー名で検索
           </label>
           <input
             id="q"
             name="q"
             type="text"
             defaultValue={query}
-            placeholder="example@example.com"
+            placeholder="ユーザー名 または メールアドレス"
             className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-950"
           />
         </div>
@@ -155,9 +155,10 @@ export default async function AdminMembersPage({
       </form>
 
       <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="w-full min-w-[1000px] text-left text-sm">
           <thead className="border-b border-neutral-200 text-xs text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
             <tr>
+              <th className="px-4 py-3 font-medium">ユーザー名</th>
               <th className="px-4 py-3 font-medium">メールアドレス</th>
               <th className="px-4 py-3 font-medium">プラン</th>
               <th className="px-4 py-3 font-medium">契約状態</th>
@@ -171,6 +172,9 @@ export default async function AdminMembersPage({
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
             {items.map((m) => (
               <tr key={m.id}>
+                <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100" data-testid="member-username">
+                  {m.username ?? <span className="text-neutral-400 dark:text-neutral-500">未設定</span>}
+                </td>
                 <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">{m.email ?? "-"}</td>
                 <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">
                   {plansReliable ? PLAN_DEFINITIONS[m.effectivePlan].name : "-"}
@@ -197,7 +201,7 @@ export default async function AdminMembersPage({
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-neutral-400 dark:text-neutral-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-neutral-400 dark:text-neutral-500">
                   {profilesStatus === "unavailable" ? "会員データを取得できませんでした" : "条件に一致する会員がいません"}
                 </td>
               </tr>

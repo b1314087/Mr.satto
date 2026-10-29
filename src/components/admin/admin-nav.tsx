@@ -3,6 +3,7 @@ import Link from "next/link";
 const NAV_ITEMS = [
   { href: "/admin", label: "ダッシュボード" },
   { href: "/admin/members", label: "会員一覧" },
+  { href: "/admin/access", label: "アクセス数" },
   { href: "/admin/usage", label: "利用状況" },
 ] as const;
 

@@ -84,6 +84,8 @@ export function findSuspiciousApiUploads(
     const pathname = r.url.slice(origin.length).split("?")[0];
     if (!pathname.startsWith("/api/")) return false;
     if (allowedApiPathPrefixes.some((prefix) => pathname.startsWith(prefix))) return false;
+    // アクセス数の記録（ページのパスだけを送る、200バイト未満の通信）は、ファイルの内容ではないので対象外
+    if (pathname === "/api/analytics/visit" && r.bodySize < 200) return false;
     return r.bodySize >= minSuspiciousBodySize;
   });
 }

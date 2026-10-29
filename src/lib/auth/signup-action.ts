@@ -6,7 +6,9 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { recordCurrentConsents } from "@/lib/legal/consent-store";
 import { siteConfig } from "@/lib/config/site";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
+import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { runSignup } from "./signup-flow";
+import { isUsernameTaken } from "./username-store";
 
 /**
  * 会員登録（Server Action）。工程38で、ブラウザから直接Supabase Authへ登録する方式から、サーバー経由に変更した。
@@ -17,8 +19,9 @@ import { runSignup } from "./signup-flow";
 export interface SignupActionState {
   status: "idle" | "error" | "confirm-email";
   message?: string;
-  /** 入力し直しの手間を減らすため、エラー時にメールアドレスだけ返す（パスワードは返さない） */
+  /** 入力し直しの手間を減らすため、エラー時にメールアドレスとユーザー名だけ返す（パスワードは返さない） */
   email?: string;
+  username?: string;
 }
 
 // 会員登録の乱打を抑える（IPごと）。メモリ内の簡易な制限で、複数インスタンスに分散すると完全ではない（rate-limit.ts 参照）。
@@ -33,25 +36,27 @@ async function clientKey(): Promise<string> {
 export async function signUpAction(_prev: SignupActionState, formData: FormData): Promise<SignupActionState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const username = String(formData.get("username") ?? "");
   // チェックボックスの値。ブラウザの表示ではなく、送られてきた値をサーバーで確認する。
   const consentAccepted = formData.get("consent") === "on";
 
   const limited = checkRateLimit(`signup:${await clientKey()}`, SIGNUP_RATE_LIMIT);
   if (limited.limited) {
-    return { status: "error", message: "リクエストが多すぎます。しばらくしてから再度お試しください。", email };
+    return { status: "error", message: "リクエストが多すぎます。しばらくしてから再度お試しください。", email, username };
   }
 
   const supabase = await getSupabaseServerClient();
-  if (!supabase) return { status: "error", message: "現在、会員登録機能は準備中です。", email };
+  if (!supabase) return { status: "error", message: "現在、会員登録機能は準備中です。", email, username };
 
   const outcome = await runSignup(
-    { email, password, consentAccepted },
+    { email, password, username, consentAccepted },
     {
-      async signUp(addr, pw) {
+      async signUp(addr, pw, name) {
         const { data, error } = await supabase.auth.signUp({
           email: addr,
           password: pw,
-          options: { emailRedirectTo: `${siteConfig.url}/auth/callback` },
+          // ユーザー名は、登録時のトリガー（0006_profile_username.sql）が profiles に保存する
+          options: { emailRedirectTo: `${siteConfig.url}/auth/callback`, data: { username: name } },
         });
         return {
           error: error ? { message: error.message } : null,
@@ -61,6 +66,7 @@ export async function signUpAction(_prev: SignupActionState, formData: FormData)
           hasSession: !!data.session,
         };
       },
+      isUsernameTaken: (name) => isUsernameTaken(getSupabaseServiceClient(), name),
       recordConsent: (userId) => recordCurrentConsents(userId, "signup"),
       onConsentNotRecorded: () => console.error("[signup] consent was not recorded; it will be requested before checkout"),
     },
@@ -68,5 +74,5 @@ export async function signUpAction(_prev: SignupActionState, formData: FormData)
 
   if (outcome.status === "signed-in") redirect("/account");
   if (outcome.status === "confirm-email") return { status: "confirm-email" };
-  return { status: "error", message: outcome.message, email };
+  return { status: "error", message: outcome.message, email, username };
 }

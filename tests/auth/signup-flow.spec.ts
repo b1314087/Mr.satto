@@ -25,7 +25,7 @@ function makeDeps(over: Partial<SignUpResult> = {}, opts: { recordResult?: boole
   return { deps, calls };
 }
 
-const INPUT = { email: "new@example.com", password: "password-1234", consentAccepted: true };
+const INPUT = { email: "new@example.com", password: "password-1234", username: "taro_yamada", consentAccepted: true };
 
 test("同意していなければ、Supabase Authへ登録を依頼せず、同意の記録も作らない", async () => {
   const { deps, calls } = makeDeps();

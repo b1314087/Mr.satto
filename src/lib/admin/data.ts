@@ -5,6 +5,7 @@ import { resolveEffectivePlan, type SubscriptionSnapshot } from "@/lib/plans/cur
 import { type Plan } from "@/lib/plans/types";
 import { classifyQuery, computeDashboardStats, type AdminDashboardStats, type DataStatus } from "./stats";
 import { tools } from "@/lib/tools/data";
+import { matchesMemberQuery } from "./member-search";
 
 /**
  * 管理画面(/admin)専用のデータ取得層。
@@ -29,6 +30,8 @@ import { tools } from "@/lib/tools/data";
 export interface MemberRow {
   id: string;
   email: string | null;
+  /** ユーザー名（登録時または後から設定。未設定の会員は null） */
+  username: string | null;
   /** profiles.created_at（会員登録日） */
   registeredAt: string;
   /** 実効プラン（実際にツール利用へ反映されるプラン。resolveEffectivePlan()で算出） */
@@ -43,6 +46,7 @@ export interface MemberRow {
 interface RawProfileRow {
   id: string;
   email: string | null;
+  username?: string | null;
   created_at: string;
 }
 
@@ -60,6 +64,14 @@ interface RawSubscriptionRow {
 async function fetchAllProfiles(): Promise<{ rows: RawProfileRow[]; status: DataStatus }> {
   const supabase = getSupabaseServiceClient();
   if (!supabase) return { rows: [], status: "unavailable" };
+  const withUsername = await supabase
+    .from("profiles")
+    .select("id, email, username, created_at", { count: "exact" })
+    .order("created_at", { ascending: false });
+  if (!withUsername.error) {
+    return classifyQuery<RawProfileRow>({ data: withUsername.data as RawProfileRow[] | null, error: null, count: withUsername.count });
+  }
+  // ユーザー名の列を追加するSQL（0006）が、まだ適用されていない場合: ユーザー名なしで取得し直す（会員一覧を使えなくしない）
   const result = await supabase
     .from("profiles")
     .select("id, email, created_at", { count: "exact" })
@@ -116,6 +128,7 @@ export async function fetchAllMembersResult(): Promise<MembersFetchResult> {
     return {
       id: profile.id,
       email: profile.email,
+      username: profile.username ?? null,
       registeredAt: profile.created_at,
       effectivePlan: resolveEffectivePlan(subscription),
       subscription,
@@ -127,7 +140,7 @@ export async function fetchAllMembersResult(): Promise<MembersFetchResult> {
 }
 
 export interface MemberListFilter {
-  /** メールアドレスの部分一致検索（大文字小文字を区別しない） */
+  /** メールアドレス・ユーザー名の部分一致検索（大文字小文字・全角半角を区別しない） */
   query?: string;
   plan?: Plan;
   /** 契約状態の生ステータス（"none" = 契約したことがない） */
@@ -137,8 +150,7 @@ export interface MemberListFilter {
 export function filterMembers(members: MemberRow[], filter: MemberListFilter): MemberRow[] {
   return members.filter((m) => {
     if (filter.query) {
-      const q = filter.query.trim().toLowerCase();
-      if (q.length > 0 && !(m.email ?? "").toLowerCase().includes(q)) return false;
+      if (!matchesMemberQuery(m, filter.query)) return false;
     }
     if (filter.plan && m.effectivePlan !== filter.plan) return false;
     if (filter.status) {
@@ -286,4 +298,34 @@ export async function fetchToolUsageSummary(): Promise<ToolUsageSummary> {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return { status, todayTotal, monthTotal, byTool, dailyThisMonth };
+}
+
+// ============================================================
+// サイトの訪問数（site_visits_daily）
+// ============================================================
+
+export interface SiteVisitsResult {
+  rows: { date: string; visitors: number; pageviews: number }[];
+  /** unavailable のとき（表が未作成・接続設定なしなど）、訪問数は「不明」であり0ではない */
+  status: DataStatus;
+}
+
+/** 日ごとの訪問者数・閲覧数を取得する（最大で約5年分）。管理者判定後にのみ呼ぶこと。 */
+export async function fetchSiteVisits(): Promise<SiteVisitsResult> {
+  const supabase = getSupabaseServiceClient();
+  if (!supabase) return { rows: [], status: "unavailable" };
+  const result = await supabase
+    .from("site_visits_daily")
+    .select("visit_date, visitors, pageviews", { count: "exact" })
+    .order("visit_date", { ascending: false })
+    .limit(2000);
+  const outcome = classifyQuery<{ visit_date: string; visitors: number; pageviews: number }>({
+    data: result.data as { visit_date: string; visitors: number; pageviews: number }[] | null,
+    error: result.error,
+    count: result.count,
+  });
+  return {
+    rows: outcome.rows.map((r) => ({ date: r.visit_date, visitors: Number(r.visitors) || 0, pageviews: Number(r.pageviews) || 0 })),
+    status: outcome.status,
+  };
 }

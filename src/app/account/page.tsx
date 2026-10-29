@@ -11,6 +11,9 @@ import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
 import { getConsentState } from "@/lib/legal/consent-store";
 import { acceptCurrentTermsAction } from "@/lib/legal/consent-actions";
 import { formatLegalVersion, LEGAL_VERSIONS } from "@/lib/legal/versions";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getOwnUsername } from "@/lib/auth/username-store";
+import { UsernameForm } from "@/components/account/username-form";
 
 // 個人の契約情報を含むページのため検索エンジンには公開しない（Phase 3 spec 25章）。
 export const metadata: Metadata = {
@@ -64,6 +67,7 @@ export default async function AccountPage({
   // 現在の利用規約・プライバシーポリシーへの同意の記録（読み取れないときは、案内を出さない）
   const consentState = await getConsentState(serverPlan.userId);
   const consentMissing = consentState.ok && consentState.missing.length > 0;
+  const username = await getOwnUsername(await getSupabaseServerClient(), serverPlan.userId);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-12 sm:px-6">
@@ -116,6 +120,8 @@ export default async function AccountPage({
           <p className="text-xs text-ms-muted">メールアドレス</p>
           <p className="text-sm text-ms-text">{serverPlan.userEmail}</p>
         </div>
+
+        <UsernameForm current={username} />
 
         <div>
           <p className="text-xs text-ms-muted">現在のプラン</p>

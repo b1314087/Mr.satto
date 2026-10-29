@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { siteConfig } from "@/lib/config/site";
 import { adConfig, isAdsEnabled } from "@/lib/ads/config";
+import { VisitBeacon } from "@/components/analytics/visit-beacon";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
@@ -57,6 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           {/* 背景のやわらかい光（装飾。白と薄いグレーだけ。操作や文字には関わらない） */}
           <div className="ms-ambient" aria-hidden="true" />
+          <VisitBeacon />
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />

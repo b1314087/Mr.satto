@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ErrorMessage } from "@/components/common/error-message";
 import { signUpAction, type SignupActionState } from "@/lib/auth/signup-action";
 import { MIN_PASSWORD_LENGTH } from "@/lib/auth/signup-flow";
+import { USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH, USERNAME_RULE_HINT } from "@/lib/auth/username";
 
 const INPUT_CLASS =
   "ms-input";
@@ -40,6 +41,21 @@ export function SignupForm() {
           autoComplete="email"
           className={INPUT_CLASS}
         />
+      </label>
+      <label className="flex flex-col gap-1.5 text-sm">
+        ユーザー名
+        <input
+          type="text"
+          name="username"
+          data-testid="signup-username"
+          defaultValue={state.username ?? ""}
+          required
+          minLength={USERNAME_MIN_LENGTH}
+          maxLength={USERNAME_MAX_LENGTH}
+          autoComplete="username"
+          className={INPUT_CLASS}
+        />
+        <span className="text-xs text-ms-muted">{USERNAME_RULE_HINT}</span>
       </label>
       <label className="flex flex-col gap-1.5 text-sm">
         パスワード（{MIN_PASSWORD_LENGTH}文字以上）
