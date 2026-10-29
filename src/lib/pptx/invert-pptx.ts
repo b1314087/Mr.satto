@@ -10,11 +10,16 @@
 import { unzipSync, zipSync, strFromU8, strToU8, type Zippable } from "fflate";
 import { emptyColorStats, parseClrMap, parseThemeColors, swapClrMap, convertColorsInXml, DEFAULT_CLR_MAP, type ClrMap, type ColorContext, type ColorStats, type InvertOptions } from "./invert-xml";
 import { resolvePalette, DEFAULT_COLOR_CHOICE, type ColorChoice } from "./palette";
-import { analyzeImage, createBrowserImageCodec, invertImagePixels, sniffRasterKind, type ImageCodec, type ImageDecision } from "./image-invert";
+import { analyzeImage, createBrowserImageCodec, invertImagePixels, shouldEnhance, sniffRasterKind, type ImageCodec, type ImageDecision } from "./image-invert";
 
 export interface PptxInvertOptions extends InvertOptions {
   /** 白黒と判定できる挿入画像を反転する（既定はオン） */
   invertImages: boolean;
+  /**
+   * 文書のような（白地・黒地が中心の）画像の文字を、反転後に見やすくする（背景のにじみを消し、細い線の明るさを上げ、線を少し太らせる）。
+   * 既定はオフ（従来と同じ単純な反転）。画面からはオンにして渡す。
+   */
+  enhanceText?: boolean;
   /**
    * 反転後の背景色・文字色（6桁の16進）。省略、または純黒×純白のときは、従来の白黒反転と同じ結果になる。
    * （InvertOptions の palette は処理の内部用。ここでは、画面から渡しやすい16進の指定を使う）
@@ -56,6 +61,8 @@ export interface ImageReport {
   height?: number;
   /** 色のついた画素の割合（0〜1） */
   coloredRatio?: number;
+  /** 文字を見やすくする調整をした */
+  enhanced?: boolean;
   /** 画面で変換前後を並べて見せるための、元の画像と変換後の画像のバイト列（PNG・JPEGだけ） */
   mime?: string;
   before?: Uint8Array;
@@ -115,7 +122,7 @@ function dirOf(path: string): string {
   return i < 0 ? "" : path.slice(0, i);
 }
 
-function resolveTarget(sourcePart: string, target: string): string {
+export function resolveTarget(sourcePart: string, target: string): string {
   if (target.startsWith("/")) return target.slice(1);
   const parts = [...(dirOf(sourcePart) ? dirOf(sourcePart).split("/") : []), ...target.split("/")];
   const out: string[] = [];
@@ -357,10 +364,12 @@ export async function invertPptx(
       } else if (decision === "keep-color") {
         images.push({ ...base, outcome: "kept-color", before: original });
       } else {
-        invertImagePixels(raster.data, decision, palette);
-        const encoded = await activeCodec.encode(raster, kind);
+        const enhance = options.enhanceText === true && shouldEnhance(analysis);
+        invertImagePixels(raster.data, decision, palette, enhance ? { width: raster.width, height: raster.height } : undefined);
+        // 文字を見やすくする調整をしたJPEGは、圧縮の乱れ（文字のまわりの縁）が目立たないよう、画質を高くして保存する
+        const encoded = await activeCodec.encode(raster, kind, enhance ? 0.98 : undefined);
         out[name] = encoded;
-        images.push({ ...base, outcome: decision === "invert-all" ? "inverted" : "inverted-gray", before: original, after: encoded });
+        images.push({ ...base, outcome: decision === "invert-all" ? "inverted" : "inverted-gray", enhanced: enhance, before: original, after: encoded });
       }
     } catch (e) {
       images.push({ path: name, outcome: e instanceof Error && e.message === "too-large" ? "too-large" : "failed", mime });

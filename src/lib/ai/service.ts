@@ -40,6 +40,15 @@ import {
   totalFormChars,
   validateFormExtractRequest,
 } from "./form-extract";
+import {
+  PPTX_TEXT_CONSENT_VERSION,
+  PPTX_TEXT_INSTRUCTIONS,
+  buildPptxTextUserText,
+  estimatePptxTextInputTokens,
+  maxOutputTokensForPptxText,
+  parsePptxTextOutput,
+  validatePptxTextRequest,
+} from "./pptx-text";
 import type { Ledger, PeriodSnapshot, ReserveOutcome } from "./ledger";
 import type { OpenAiCallResult } from "./openai-client";
 
@@ -48,6 +57,8 @@ export const FEATURE_CALENDAR_ASSIST = "calendar-import";
 export const FEATURE_FORM_EXTRACT = "form-extract";
 /** PDF→Excelの、AI読み取り補助（同上） */
 export const FEATURE_TABLE_EXTRACT = "table-extract";
+/** PowerPoint白黒反転の、AIによる画像内の文字の読み取り（同上） */
+export const FEATURE_PPTX_TEXT = "pptx-text";
 
 /** 1回の依頼で、予約できる額の上限（期間の上限の何分の1か）。1回で枠の大半を使い切る依頼を、AIを呼ぶ前に断る */
 const MAX_SINGLE_RESERVE_MICRO_USD = AI_PERIOD_LIMIT_MICRO_USD / 4;
@@ -63,7 +74,7 @@ export interface AssistDeps {
     instructions: string;
     input: string;
     maxOutputTokens: number;
-    mode?: "rows" | "image" | "form";
+    mode?: "rows" | "image" | "form" | "pptx";
     images?: AssistImage[];
   }): Promise<OpenAiCallResult>;
   /** 運用ログ。本文（セルの文字・AIの出力）は渡さない */
@@ -171,9 +182,40 @@ export async function handleFormExtract(
   });
 }
 
+/** PowerPoint白黒反転の、画像内の文字の読み取り（画像を行ごとの文字と位置にする）。流れは年度カレンダーの画像の読み取りと同じ */
+export async function handlePptxText(
+  deps: AssistDeps,
+  caller: Caller,
+  availability: Availability,
+  rawBody: unknown,
+): Promise<ServiceResponse> {
+  const denied = checkAccess(caller, availability, rawBody, PPTX_TEXT_CONSENT_VERSION);
+  if (denied) return denied;
+  const validated = validatePptxTextRequest(rawBody);
+  if (!validated.ok) return respond(400, { error: "invalid_request", message: validated.message });
+  const request = validated.value;
+  return execute(deps, caller.userId as string, {
+    mode: "pptx",
+    feature: FEATURE_PPTX_TEXT,
+    requestId: request.requestId,
+    tier: request.model,
+    instructions: PPTX_TEXT_INSTRUCTIONS,
+    input: buildPptxTextUserText(request),
+    images: request.images,
+    maxOutputTokens: maxOutputTokensForPptxText(request.images.length),
+    estimatedInputTokens: estimatePptxTextInputTokens(request),
+    tooLargeMessage: "一度に読み取る量が多すぎます。画像の枚数を減らして、もう一度お試しください。",
+    incompleteMessage: "AIの応答が途中で切れたため、結果を使えませんでした。文字の多い画像が多すぎる可能性があります。もう一度お試しください。",
+    parse: (text) => {
+      const parsed = parsePptxTextOutput(text, request);
+      return parsed ? { fields: { lines: parsed.lines }, rejected: parsed.rejected } : null;
+    },
+  });
+}
+
 /** 1回の依頼の中身（文字の読み取り・画像の読み取りで共通の流れに渡す形） */
 interface Plan {
-  mode: "rows" | "image" | "form";
+  mode: "rows" | "image" | "form" | "pptx";
   /** 利用台帳に残る機能名 */
   feature: string;
   requestId: string;
@@ -289,6 +331,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
       input,
       maxOutputTokens,
       ...(plan.mode === "image" ? { mode: "image" as const, images: plan.images } : {}),
+      ...(plan.mode === "pptx" ? { mode: "pptx" as const, images: plan.images } : {}),
       ...(plan.mode === "form" ? { mode: "form" as const } : {}),
     });
   } catch {
@@ -340,7 +383,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
   if (!parsed) {
     return respond(502, { error: "ai_invalid_output", message: "AIの出力の形式が正しくなかったため、結果を使えませんでした。", usage: usageInfo });
   }
-  return respond(200, { ok: true, model: tier, ...(plan.mode === "image" ? { mode: "image" } : {}), ...(plan.mode === "form" ? { mode: "form" } : {}), ...parsed.fields, rejected: parsed.rejected, usage: usageInfo });
+  return respond(200, { ok: true, model: tier, ...(plan.mode === "image" ? { mode: "image" } : {}), ...(plan.mode === "form" ? { mode: "form" } : {}), ...(plan.mode === "pptx" ? { mode: "pptx" } : {}), ...parsed.fields, rejected: parsed.rejected, usage: usageInfo });
 }
 
 /** 台帳への確定・解放。一時的な失敗に備えて1回だけやり直す。それでも失敗したら、予約は期限切れで「使用済み」になる */

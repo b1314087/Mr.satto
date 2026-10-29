@@ -1430,10 +1430,11 @@ const toolDefinitions: Tool[] = [
     id: "pptx-invert",
     name: "PowerPoint白黒反転",
     category: "pptx",
-    description: "PowerPoint（.pptx）の白い背景・黒い文字を、黒い背景・白い文字に変換して保存します。白黒の画像も反転し、カラー写真・イラストはそのまま。編集できる形式のまま出力し、ファイルは送信されません",
+    description: "PowerPoint（.pptx）の白い背景・黒い文字を、黒い背景・白い文字に変換して保存します。白黒の画像も反転し、カラー写真・イラストはそのまま。編集できる形式のまま出力します。通常の変換はブラウザ内で処理され、ファイルは送信されません",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
+    hasAi: "cloud",
     keywords: ["PowerPoint", "パワーポイント", "pptx", "白黒反転", "ダークモード", "黒背景", "白背景", "反転", "スライド", "プレゼン", "色反転"],
     // 同じOffice書類を扱うツール。PowerPointのツールは他にないため、同カテゴリ以外から案内する
     relatedToolIds: ["word-to-pdf", "excel-to-pdf"],

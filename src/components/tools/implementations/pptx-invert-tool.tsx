@@ -7,6 +7,8 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
+import { featureFlags } from "@/lib/config/features";
+import { PptxInvertAiPanel } from "./pptx-invert-ai-panel";
 import { PptxInvertProcessor, type PptxInvertOutput } from "@/lib/processors/browser/pptx-invert";
 import type { ImageOutcome, ImageReport } from "@/lib/pptx/invert-pptx";
 import { DEFAULT_COLOR_CHOICE, PALETTE_PRESETS, contrastRatio, normalizeHex, presetOf, type ColorChoice } from "@/lib/pptx/palette";
@@ -162,7 +164,7 @@ function ImageRow({ image }: { image: ImageReport }) {
       {image.after ? <Thumb bytes={image.after} mime={image.mime} label="変換後" dark /> : null}
       <div className="min-w-0 text-xs">
         <p className="break-all font-medium text-neutral-800 dark:text-neutral-100">{name}</p>
-        <p className="text-neutral-600 dark:text-neutral-300">{OUTCOME_LABEL[image.outcome]}</p>
+        <p className="text-neutral-600 dark:text-neutral-300">{OUTCOME_LABEL[image.outcome]}{image.enhanced ? "（文字をくっきり調整）" : ""}</p>
         {image.coloredRatio !== undefined && (
           <p className="text-neutral-500 dark:text-neutral-400">
             {image.width}×{image.height}px ／ 色のついた部分 {(image.coloredRatio * 100).toFixed(1)}%
@@ -177,12 +179,14 @@ export function PptxInvertTool() {
   const [file, setFile] = useState<File | null>(null);
   const [invertImages, setInvertImages] = useState(true);
   const [brightenDarkText, setBrightenDarkText] = useState(false);
+  const [enhanceText, setEnhanceText] = useState(true);
   const [colors, setColors] = useState<ColorChoice>(DEFAULT_COLOR_CHOICE);
   const [customColors, setCustomColors] = useState(false);
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PptxInvertOutput | null>(null);
+  const [runId, setRunId] = useState(0);
 
   function handleSelect(files: File[]) {
     setFile(files[0]);
@@ -198,8 +202,9 @@ export function PptxInvertTool() {
     setError(null);
     setResult(null);
     try {
-      const output = await new PptxInvertProcessor().process({ file, options: { invertImages, brightenDarkText, colors }, onProgress: setProgress });
+      const output = await new PptxInvertProcessor().process({ file, options: { invertImages, enhanceText, brightenDarkText, colors }, onProgress: setProgress });
       setResult(output);
+      setRunId((n) => n + 1);
       setStatus("success");
     } catch (e) {
       setError(e instanceof Error ? e.message : "処理に失敗しました");
@@ -248,6 +253,13 @@ export function PptxInvertTool() {
             <input type="checkbox" className="mt-1" checked={invertImages} onChange={(e) => setInvertImages(e.target.checked)} data-testid="pptx-option-images" />
             <span>
               白黒と判定できる画像も反転する
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            <input type="checkbox" className="mt-1" checked={enhanceText} disabled={!invertImages} onChange={(e) => setEnhanceText(e.target.checked)} data-testid="pptx-option-enhance" />
+            <span>
+              画像の中の文字を、くっきり見やすくする
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">細い文字を明るく・少し太くし、文字のまわりのにじみ（二重に見える原因）を減らします。文書のような画像だけに使います。</span>
             </span>
           </label>
           <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
@@ -324,6 +336,7 @@ export function PptxInvertTool() {
 
           <p className="text-xs text-neutral-500 dark:text-neutral-400">変換後: {result.suggestedName}（{formatBytes(result.sizeBytes)}）</p>
           <RewardedDownloadGate onDownload={handleDownload} label="PowerPointファイルをダウンロード" />
+          {file && featureFlags.billing && <PptxInvertAiPanel key={runId} file={file} result={result} />}
         </ResultPopup>
       )}
     </div>

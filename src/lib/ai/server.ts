@@ -9,6 +9,7 @@ import { buildImageInput, callOpenAi, type OpenAiInputMessage } from "./openai-c
 import { AI_MODELS } from "./pricing";
 import { IMAGE_OUTPUT_SCHEMA, OUTPUT_SCHEMA } from "./calendar-assist";
 import { FORM_OUTPUT_SCHEMA } from "./form-extract";
+import { PPTX_TEXT_OUTPUT_SCHEMA } from "./pptx-text";
 import type { Availability, AssistDeps, Caller } from "./service";
 
 /**
@@ -58,7 +59,8 @@ export function createAssistDeps(): AssistDeps | null {
   return {
     ledger,
     callModel: ({ tier, instructions, input, maxOutputTokens, mode, images }) => {
-      const isImage = mode === "image" && images !== undefined && images.length > 0;
+      const isPptx = mode === "pptx";
+      const isImage = (mode === "image" || isPptx) && images !== undefined && images.length > 0;
       const aiInput: string | OpenAiInputMessage[] = isImage ? buildImageInput(input, images) : input;
       const isForm = mode === "form";
       return callOpenAi({
@@ -67,8 +69,8 @@ export function createAssistDeps(): AssistDeps | null {
         instructions,
         input: aiInput,
         maxOutputTokens,
-        schemaName: isForm ? "form_rows" : isImage ? "calendar_image_events" : "calendar_rows",
-        schema: isForm ? FORM_OUTPUT_SCHEMA : isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
+        schemaName: isForm ? "form_rows" : isPptx ? "pptx_text_lines" : isImage ? "calendar_image_events" : "calendar_rows",
+        schema: isForm ? FORM_OUTPUT_SCHEMA : isPptx ? PPTX_TEXT_OUTPUT_SCHEMA : isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
         timeoutMs: TIMEOUT_MS,
       });
     },

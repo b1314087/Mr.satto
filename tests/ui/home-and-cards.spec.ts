@@ -263,7 +263,7 @@ test.describe("ツールカード", () => {
     }
     await expect(main(page).locator('a[href="/tools/csv-to-excel"]').getByText("AI実装", { exact: true })).toHaveCount(0);
     const cloudAi = getListedTools().filter((t) => t.hasAi === "cloud" && t.status === "available").map((t) => t.id).sort();
-    expect(cloudAi).toEqual(["filled-pdf-to-excel", "fiscal-calendar", "pdf-to-excel"]);
+    expect(cloudAi).toEqual(["filled-pdf-to-excel", "fiscal-calendar", "pdf-to-excel", "pptx-invert"]);
   });
 
   test("カテゴリ別一覧: 説明文は見出しの右隣に並ぶ（広い画面）", async ({ page }) => {

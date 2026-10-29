@@ -90,6 +90,24 @@ export async function prepareImageFile(file: File): Promise<PreparedImage> {
   }
 }
 
+/** 画像のバイト列（PNG/JPEG）→ AIに送るJPEG（PowerPointに挿入された画像など、ファイルではない画像用） */
+export async function prepareImageBytes(bytes: Uint8Array, mime: "image/png" | "image/jpeg", label: string): Promise<PreparedImage> {
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
+  } catch {
+    throw new Error(`${label} を画像として読み込めませんでした。`);
+  }
+  try {
+    if (bitmap.width * bitmap.height > MAX_PIXELS) throw new Error(`${label} は、縦横の大きさが大きすぎます。`);
+    const prepared = await encodeWithin(bitmap, bitmap.width, bitmap.height, label);
+    if (!prepared) throw new Error(TOO_BIG);
+    return prepared;
+  } finally {
+    bitmap.close();
+  }
+}
+
 export interface PreparedPdfPages {
   images: PreparedImage[];
   pageCount: number;

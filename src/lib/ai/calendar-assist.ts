@@ -54,7 +54,7 @@ export interface AssistSuggestion {
   note: string;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -308,19 +308,13 @@ function matchesMagic(mediaType: string, base64: string): boolean {
   return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
 }
 
-/** 画像モードの依頼（同意を除く）を検証する。形式・大きさ・枚数がおかしいものは、AIを呼ぶ前に断る */
-export function validateImageAssistRequest(body: unknown): ValidationResult<ImageAssistRequest> {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) return fail("依頼の形式が正しくありません。");
-  const b = body as Record<string, unknown>;
-  if (typeof b.requestId !== "string" || !UUID_RE.test(b.requestId)) return fail("依頼の識別子が正しくありません。");
-  if (!isModelTier(b.model)) return fail("読み取りの種類が正しくありません。");
-  if (!isValidIsoDate(b.rangeStart) || !isValidIsoDate(b.rangeEnd) || b.rangeStart > b.rangeEnd) return fail("対象年度の範囲が正しくありません。");
-  if (b.source !== "image" && b.source !== "scanned-pdf") return fail("読み取る対象の種類が正しくありません。");
-  if (!Array.isArray(b.images) || b.images.length === 0) return fail("読み取る画像がありません。");
-  if (b.images.length > MAX_IMAGES) return fail(`一度に読み取れる画像は${MAX_IMAGES}枚（ページ）までです。`);
+/** 画像の一覧（JPEG/PNGのbase64）を検証する。形式・大きさ・枚数がおかしいものは、AIを呼ぶ前に断る（ほかのAI補助でも共通で使う） */
+export function validateImageList(rawImages: unknown): ValidationResult<AssistImage[]> {
+  if (!Array.isArray(rawImages) || rawImages.length === 0) return fail("読み取る画像がありません。");
+  if (rawImages.length > MAX_IMAGES) return fail(`一度に読み取れる画像は${MAX_IMAGES}枚（ページ）までです。`);
   const images: AssistImage[] = [];
   let total = 0;
-  for (const im of b.images) {
+  for (const im of rawImages) {
     if (typeof im !== "object" || im === null) return fail("画像の形式が正しくありません。");
     const o = im as Record<string, unknown>;
     if (o.mediaType !== "image/jpeg" && o.mediaType !== "image/png") return fail("対応している画像は、PNGとJPEGだけです。");
@@ -332,6 +326,20 @@ export function validateImageAssistRequest(body: unknown): ValidationResult<Imag
     images.push({ mediaType: o.mediaType, base64: o.base64 });
   }
   if (total > MAX_IMAGES_TOTAL_BYTES) return fail("画像の合計が大きすぎます。枚数（ページ数）を減らしてください。");
+  return { ok: true, value: images };
+}
+
+/** 画像モードの依頼（同意を除く）を検証する。形式・大きさ・枚数がおかしいものは、AIを呼ぶ前に断る */
+export function validateImageAssistRequest(body: unknown): ValidationResult<ImageAssistRequest> {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return fail("依頼の形式が正しくありません。");
+  const b = body as Record<string, unknown>;
+  if (typeof b.requestId !== "string" || !UUID_RE.test(b.requestId)) return fail("依頼の識別子が正しくありません。");
+  if (!isModelTier(b.model)) return fail("読み取りの種類が正しくありません。");
+  if (!isValidIsoDate(b.rangeStart) || !isValidIsoDate(b.rangeEnd) || b.rangeStart > b.rangeEnd) return fail("対象年度の範囲が正しくありません。");
+  if (b.source !== "image" && b.source !== "scanned-pdf") return fail("読み取る対象の種類が正しくありません。");
+  const list = validateImageList(b.images);
+  if (!list.ok) return list;
+  const images = list.value;
   return { ok: true, value: { requestId: b.requestId, model: b.model, rangeStart: b.rangeStart, rangeEnd: b.rangeEnd, source: b.source, images } };
 }
 

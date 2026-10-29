@@ -190,7 +190,10 @@ test.describe("PowerPoint白黒反転: 画面", () => {
     for (const [x, y] of [[0, 0], [12, 3], [12, 20]]) expect(trans.at(x, y)[3]).toBe(pixelAt(transSrc, x, y)[3]); // 透明度は変わらない
     const mixed = await toPixels(page, out["ppt/media/mixed.png"], "image/png");
     expect(mixed.at(2, 2)).toEqual([220, 30, 30, 255]); // 色のついた図は残る
-    expect(mixed.at(21, 20)).toEqual([0, 0, 0, 255]);
+    // 「文字をくっきり」が標準でオン：文字（細い斜線）から離れた背景は黒のまま、文字は白、文字のすぐ隣は少し太る
+    expect(mixed.at(21, 21)).toEqual([0, 0, 0, 255]);
+    expect(mixed.at(20, 20)).toEqual([255, 255, 255, 255]);
+    expect(mixed.at(21, 20)).toEqual([153, 153, 153, 255]);
     expect(Buffer.from(out["ppt/media/color.png"]).equals(Buffer.from(parts["ppt/media/color.png"]))).toBe(true); // カラーは変更なし
     // 画像: JPEG
     const grayLeft = await samplePixel(page, out["ppt/media/gray.jpeg"], "image/jpeg", 1, 5);
