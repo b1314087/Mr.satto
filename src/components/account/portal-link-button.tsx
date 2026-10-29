@@ -38,6 +38,7 @@ export function PortalLinkButton() {
         type="button"
         onClick={handleClick}
         disabled={loading}
+        aria-busy={loading || undefined}
         className="w-fit ms-btn ms-btn-secondary"
       >
         {loading ? "移動中..." : "お支払い方法の変更・解約はこちら"}

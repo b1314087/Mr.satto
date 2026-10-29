@@ -175,15 +175,15 @@ export default async function AdminMembersPage({
       </form>
 
       <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
-        <table className="w-full min-w-[960px] text-left text-sm">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="border-b border-neutral-200 text-xs text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
             <tr>
-              <th className="px-4 py-3 font-medium">ユーザー名</th>
-              <th className="px-4 py-3 font-medium">メールアドレス</th>
-              <th className="px-4 py-3 font-medium">プラン</th>
-              <th className="px-4 py-3 font-medium">契約状況</th>
-              <th className="px-4 py-3 font-medium">ステータス変更</th>
-              <th className="px-4 py-3 font-medium">詳細</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">ユーザー名</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">メールアドレス</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">プラン</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">契約状況</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">ステータス変更</th>
+              <th className="whitespace-nowrap px-4 py-3 font-medium">詳細</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -192,11 +192,11 @@ export default async function AdminMembersPage({
               const detailHref = memberDetailPath(m.id);
               return (
                 <tr key={m.id} data-testid="member-row">
-                  <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100" data-testid="member-username">
+                  <td className="whitespace-nowrap px-4 py-3 text-neutral-800 dark:text-neutral-100" data-testid="member-username">
                     {m.username ?? <span className="text-neutral-400 dark:text-neutral-500">未設定</span>}
                   </td>
-                  <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">{m.email ?? "-"}</td>
-                  <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">
+                  <td className="break-all px-4 py-3 text-neutral-800 dark:text-neutral-100">{m.email ?? "-"}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-neutral-800 dark:text-neutral-100">
                     {plansReliable ? PLAN_DEFINITIONS[m.effectivePlan].name : "-"}
                     {grant?.active && (
                       <span className="mt-0.5 block text-xs font-medium text-emerald-700 dark:text-emerald-400">
@@ -204,7 +204,7 @@ export default async function AdminMembersPage({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-neutral-800 dark:text-neutral-100">
+                  <td className="whitespace-nowrap px-4 py-3 text-neutral-800 dark:text-neutral-100">
                     {!plansReliable
                       ? "-"
                       : m.subscription
@@ -218,12 +218,12 @@ export default async function AdminMembersPage({
                       <span className="text-xs text-neutral-400 dark:text-neutral-500">利用できません</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap px-4 py-3">
                     {detailHref && (
                       <Link
                         href={detailHref}
                         data-testid="member-detail-link"
-                        className="rounded-lg border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                        className="inline-block whitespace-nowrap rounded-lg border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
                       >
                         詳細
                       </Link>

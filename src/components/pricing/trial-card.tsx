@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FormSubmitButton } from "@/components/ui/form-submit-button";
 import { startTrialAction } from "@/lib/plans/trial-actions";
 import { GRANT_SOURCE_LABEL, TRIAL_DAYS, formatGrantEnd, type GrantSource, type TrialOfferState } from "@/lib/plans/grants";
 
@@ -39,9 +40,9 @@ export function TrialCard({
       </div>
       {state === "available" ? (
         <form action={startTrialAction}>
-          <button type="submit" className="ms-btn ms-btn-primary" data-testid="trial-start">
+          <FormSubmitButton className="ms-btn ms-btn-primary" data-testid="trial-start" pendingLabel="開始しています...">
             {TRIAL_DAYS}日間、無料でためす
-          </button>
+          </FormSubmitButton>
         </form>
       ) : (
         <Link href="/signup" className="ms-btn ms-btn-primary w-fit" data-testid="trial-signup">

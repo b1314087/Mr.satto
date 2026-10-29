@@ -118,6 +118,7 @@ export function PricingActionButton({
         type="button"
         onClick={handleClick}
         disabled={loading}
+        aria-busy={loading || undefined}
         className="w-full ms-btn ms-btn-primary"
       >
         {loading ? "移動中..." : "プレミアムを始める"}

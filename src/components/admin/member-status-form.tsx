@@ -1,3 +1,4 @@
+import { FormSubmitButton } from "@/components/ui/form-submit-button";
 import { changeMemberStatusAction } from "@/app/admin/members/actions";
 import { jstDateAfterDays } from "@/lib/plans/grants";
 
@@ -20,29 +21,39 @@ export function MemberStatusForm({
   withNote?: boolean;
 }) {
   return (
-    <form action={changeMemberStatusAction} className="flex flex-wrap items-center gap-2" data-testid="member-status-form">
+    <form
+      action={changeMemberStatusAction}
+      className="flex min-w-[15rem] flex-col items-start gap-2"
+      data-testid="member-status-form"
+    >
       <input type="hidden" name="userId" value={userId} />
       <input type="hidden" name="returnTo" value={returnTo} />
-      <select
-        name="status"
-        defaultValue={active ? "premium" : "free"}
-        aria-label="変更後のステータス"
-        className="rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-      >
-        <option value="premium">プレミアム（無料付与）</option>
-        <option value="free">無料プラン</option>
-      </select>
-      <label className="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-        最終日
-        <input
-          type="date"
-          name="until"
-          defaultValue={grantEndsAt && active ? grantEndsAt.slice(0, 10) : jstDateAfterDays(30)}
-          min={jstDateAfterDays(1)}
-          aria-label="プレミアムの最終日（その日の終わりまで）"
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          name="status"
+          defaultValue={active ? "premium" : "free"}
+          aria-label="変更後のステータス"
           className="rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-        />
-      </label>
+        >
+          <option value="premium">プレミアム（無料付与）</option>
+          <option value="free">無料プラン</option>
+        </select>
+        <label className="flex items-center gap-1 whitespace-nowrap text-xs text-neutral-500 dark:text-neutral-400">
+          最終日
+          <input
+            type="date"
+            name="until"
+            defaultValue={
+              grantEndsAt && active
+                ? grantEndsAt.slice(0, 10)
+                : jstDateAfterDays(30)
+            }
+            min={jstDateAfterDays(1)}
+            aria-label="プレミアムの最終日（その日の終わりまで）"
+            className="rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+          />
+        </label>
+      </div>
       {withNote && (
         <input
           type="text"
@@ -53,12 +64,12 @@ export function MemberStatusForm({
           className="w-48 rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-950"
         />
       )}
-      <button
-        type="submit"
-        className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+      <FormSubmitButton
+        pendingLabel="変更中..."
+        className="whitespace-nowrap rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-progress"
       >
         変更する
-      </button>
+      </FormSubmitButton>
     </form>
   );
 }

@@ -50,7 +50,7 @@ test.describe("実装の静的確認", () => {
   const actions = readFileSync("src/app/admin/members/actions.ts", "utf8");
 
   test("会員一覧の表の項目は、ユーザー名・メール・プラン・契約状況・ステータス変更・詳細だけ", () => {
-    const headers = [...list.matchAll(/<th className="px-4 py-3 font-medium">([^<]+)<\/th>/g)].map((m) => m[1]);
+    const headers = [...list.matchAll(/<th className="whitespace-nowrap px-4 py-3 font-medium">([^<]+)<\/th>/g)].map((m) => m[1]);
     expect(headers).toEqual(["ユーザー名", "メールアドレス", "プラン", "契約状況", "ステータス変更", "詳細"]);
   });
 

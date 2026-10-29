@@ -17,6 +17,7 @@ import { acceptCurrentTermsAction } from "@/lib/legal/consent-actions";
 import { formatLegalVersion, LEGAL_VERSIONS } from "@/lib/legal/versions";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnUsername } from "@/lib/auth/username-store";
+import { FormSubmitButton } from "@/components/ui/form-submit-button";
 import { UsernameForm } from "@/components/account/username-form";
 
 // 個人の契約情報を含むページのため検索エンジンには公開しない（Phase 3 spec 25章）。
@@ -137,9 +138,9 @@ export default async function AccountPage({
               （{formatLegalVersion(LEGAL_VERSIONS.privacy)}版）（どちらも新しいタブで開きます）を確認し、同意します。
             </span>
           </label>
-          <button type="submit" className="ms-btn ms-btn-primary self-start">
+          <FormSubmitButton className="ms-btn ms-btn-primary self-start" pendingLabel="記録しています...">
             同意する
-          </button>
+          </FormSubmitButton>
         </form>
       )}
 
@@ -214,12 +215,9 @@ export default async function AccountPage({
             </Link>
           )}
           <form action={signOutAction}>
-            <button
-              type="submit"
-              className="ms-btn ms-btn-secondary"
-            >
+            <FormSubmitButton className="ms-btn ms-btn-secondary" pendingLabel="ログアウト中...">
               ログアウト
-            </button>
+            </FormSubmitButton>
           </form>
         </div>
 
