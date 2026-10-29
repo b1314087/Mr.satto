@@ -39,6 +39,8 @@ export interface MemberRow {
   /** Stripe契約のスナップショット（契約したことが一度もない場合はnull） */
   subscription: SubscriptionSnapshot | null;
   stripeCustomerId: string | null;
+  /** Stripe の契約ID（詳細ページで表示する。契約したことがなければ null） */
+  stripeSubscriptionId: string | null;
   /** subscriptions行のcreated_at（＝Stripe Customer/契約が最初に紐付いた日。契約開始日の目安） */
   contractStartedAt: string | null;
 }
@@ -133,10 +135,58 @@ export async function fetchAllMembersResult(): Promise<MembersFetchResult> {
       effectivePlan: resolveEffectivePlan(subscription),
       subscription,
       stripeCustomerId: raw?.stripe_customer_id ?? null,
+      stripeSubscriptionId: raw?.stripe_subscription_id ?? null,
       contractStartedAt: raw?.created_at ?? null,
     };
   });
   return { members, profiles: profiles.status, subscriptions: subs.status };
+}
+
+export type MemberDetailResult =
+  | { status: "ok"; member: MemberRow }
+  | { status: "not_found" }
+  | { status: "unavailable" };
+
+/** 会員1人分の情報を取得する（詳細ページ用）。管理者判定後にのみ呼ぶこと。 */
+export async function fetchMemberById(userId: string): Promise<MemberDetailResult> {
+  const supabase = getSupabaseServiceClient();
+  if (!supabase) return { status: "unavailable" };
+
+  let profile: RawProfileRow | null = null;
+  const withUsername = await supabase.from("profiles").select("id, email, username, created_at").eq("id", userId).maybeSingle();
+  if (!withUsername.error) {
+    profile = withUsername.data as RawProfileRow | null;
+  } else {
+    // ユーザー名の列を追加するSQL（0006）が未適用のとき: ユーザー名なしで取得し直す
+    const fallback = await supabase.from("profiles").select("id, email, created_at").eq("id", userId).maybeSingle();
+    if (fallback.error) return { status: "unavailable" };
+    profile = fallback.data as RawProfileRow | null;
+  }
+  if (!profile) return { status: "not_found" };
+
+  const subResult = await supabase
+    .from("subscriptions")
+    .select("user_id, stripe_customer_id, stripe_subscription_id, plan, status, current_period_end, cancel_at_period_end, created_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  // 契約情報を読めないときに「未契約（Free）」と誤って見せないよう、読めなかったことを返す
+  if (subResult.error) return { status: "unavailable" };
+  const raw = (subResult.data as RawSubscriptionRow | null) ?? undefined;
+  const subscription = toSnapshot(raw);
+  return {
+    status: "ok",
+    member: {
+      id: profile.id,
+      email: profile.email,
+      username: profile.username ?? null,
+      registeredAt: profile.created_at,
+      effectivePlan: resolveEffectivePlan(subscription),
+      subscription,
+      stripeCustomerId: raw?.stripe_customer_id ?? null,
+      stripeSubscriptionId: raw?.stripe_subscription_id ?? null,
+      contractStartedAt: raw?.created_at ?? null,
+    },
+  };
 }
 
 export interface MemberListFilter {

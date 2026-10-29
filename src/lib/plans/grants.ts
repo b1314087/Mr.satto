@@ -67,6 +67,12 @@ export function applyGrantToPlan(subscriptionPlan: Plan, grant: PremiumGrant | n
   return isGrantActive(grant, nowMs) ? "premium" : subscriptionPlan;
 }
 
+/** 「いま有効か」がすでに分かっている付与を、プランに加味する（applyGrantToPlan と同じ規則。時刻を読まないので、画面の描画中にも使える） */
+export function applyActiveGrantToPlan(subscriptionPlan: Plan, grantActive: boolean): Plan {
+  if (subscriptionPlan === "premium") return subscriptionPlan;
+  return grantActive ? "premium" : subscriptionPlan;
+}
+
 /** 付与の期限を、画面に出す日付の文字列にする（例: 2026/11/5）。日本時間 */
 export function formatGrantEnd(endsAt: string): string {
   const d = new Date(endsAt);

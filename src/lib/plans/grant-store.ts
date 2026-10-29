@@ -61,6 +61,32 @@ export async function fetchAllGrants(): Promise<{ status: "ok" | "not_ready" | "
   return { status: "ok", map };
 }
 
+/** 管理画面用: 1人分の付与（期限切れも返す）。保存先がまだ無い／読めないときは status で区別する */
+export async function fetchGrantFor(
+  userId: string
+): Promise<{ status: "ok" | "not_ready" | "unavailable"; grant: GrantListEntry | null }> {
+  const supabase = getSupabaseServiceClient();
+  if (!supabase) return { status: "unavailable", grant: null };
+  const { data, error } = await supabase
+    .from("premium_grants")
+    .select("user_id, source, starts_at, ends_at, note")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) return { status: TABLE_MISSING_CODES.has(error.code ?? "") ? "not_ready" : "unavailable", grant: null };
+  const grant = toGrant(data as RawGrant | null);
+  if (!grant) return { status: "ok", grant: null };
+  return { status: "ok", grant: { ...grant, note: (data as RawGrant).note ?? null, active: isGrantActive(grant, Date.now()) } };
+}
+
+/** 管理画面用: 無料お試しを使った日時（使っていなければ null。読めないときは "unknown"） */
+export async function fetchTrialClaimedAt(userId: string): Promise<string | null | "unknown"> {
+  const supabase = getSupabaseServiceClient();
+  if (!supabase) return "unknown";
+  const { data, error } = await supabase.from("premium_trial_claims").select("claimed_at").eq("user_id", userId).maybeSingle();
+  if (error) return "unknown";
+  return (data as { claimed_at: string } | null)?.claimed_at ?? null;
+}
+
 export type GrantWriteResult = { ok: true; endsAt: string } | { ok: false; reason: "not_ready" | "unavailable" | "invalid" };
 
 /** 付与する（すでにあれば上書き）。期限は days（1〜上限の整数）か、endMs（終了時刻）のどちらかで指定する */
