@@ -135,6 +135,8 @@ export interface OcrWord {
   y0: number;
   x1: number;
   y1: number;
+  /** OCRが同じ行と判断した単語には同じ番号が付く(ページ内で一意)。古い呼び出し元・テストでは未指定 */
+  lineIndex?: number;
 }
 
 export interface OcrRecognizeWithWordsResult extends OcrRecognizeResult {
@@ -156,18 +158,25 @@ export interface OcrRecognizeWithWordsResult extends OcrRecognizeResult {
 export async function recognizeImageWithWords(
   image: File | Blob | HTMLCanvasElement | string,
   langOption: OcrLanguageOption,
-  onProgress?: (progress: OcrProgress) => void
+  onProgress?: (progress: OcrProgress) => void,
+  options: { pageSegMode?: "6" } = {}
 ): Promise<OcrRecognizeWithWordsResult> {
   const langCode = toTesseractLangCode(langOption);
   const worker = await getWorker(langCode);
 
   currentProgressCallback = onProgress ?? null;
+  // ページ全体を「1つの文字ブロック」として読む(6)と、罫線を消した表の行が安定して読める。
+  // Workerは他の呼び出しと共有のため、使い終わったら既定(3=自動)へ戻す。
+  const customPsm = options.pageSegMode;
   try {
+    if (customPsm) await worker.setParameters({ tessedit_pageseg_mode: customPsm as never });
     const { data } = await worker.recognize(image, {}, { blocks: true });
     const words: OcrWord[] = [];
+    let lineIndex = 0;
     for (const block of data.blocks ?? []) {
       for (const paragraph of block.paragraphs) {
         for (const line of paragraph.lines) {
+          lineIndex++;
           for (const word of line.words) {
             const text = word.text.trim();
             if (!text) continue;
@@ -178,6 +187,7 @@ export async function recognizeImageWithWords(
               y0: word.bbox.y0,
               x1: word.bbox.x1,
               y1: word.bbox.y1,
+              lineIndex,
             });
           }
         }
@@ -186,6 +196,13 @@ export async function recognizeImageWithWords(
     return { text: data.text ?? "", confidence: data.confidence ?? 0, words };
   } finally {
     currentProgressCallback = null;
+    if (customPsm) {
+      try {
+        await worker.setParameters({ tessedit_pageseg_mode: "3" as never });
+      } catch {
+        // 戻せなくても致命的ではない(次回の呼び出しで再設定される)
+      }
+    }
   }
 }
 
@@ -201,15 +218,81 @@ export async function recognizeImageWithWords(
  * 「同じページ内で一貫している」ことだけが重要。
  */
 export function ocrWordsToPositionedTextItems(words: OcrWord[]): PositionedTextItem[] {
-  return words.map((w) => ({
+  const byLine = new Map<number, OcrWord[]>();
+  const loose: OcrWord[] = [];
+  for (const w of words) {
+    if (w.lineIndex === undefined) {
+      loose.push(w);
+      continue;
+    }
+    const list = byLine.get(w.lineIndex);
+    if (list) list.push(w);
+    else byLine.set(w.lineIndex, [w]);
+  }
+
+  const toItem = (w: OcrWord, y: number, height: number): PositionedTextItem => ({
     str: w.text,
     x: w.x0,
-    y: -w.y0,
+    y,
     width: Math.max(0, w.x1 - w.x0),
-    height: Math.max(1, w.y1 - w.y0),
-    fontHeight: Math.max(1, w.y1 - w.y0),
+    height: Math.max(1, height),
+    fontHeight: Math.max(1, height),
     hasEOL: false,
-  }));
+  });
+
+  // 行の情報がない単語は、従来どおり単語ごとの位置をそのまま使う
+  const items: PositionedTextItem[] = loose.map((w) => toItem(w, -w.y0, w.y1 - w.y0));
+
+  for (const lineWords of byLine.values()) {
+    // OCRは1つの行の中でも、文字の形(数字・かな・漢字・濁点など)によって単語の上端や高さが
+    // ばらつく。そのまま使うと、同じ行の電話番号や住所だけが「別の行」と判定され、
+    // 表の1行が2行に割れてしまう。そこで同じ行の単語は、行の代表値(中央値)の
+    // 縦位置・高さに揃える。
+    const sorted = [...lineWords].sort((a, b) => a.x0 - b.x0);
+    const heights = sorted.map((w) => w.y1 - w.y0);
+    const centers = sorted.map((w) => (w.y0 + w.y1) / 2);
+    const lineHeight = Math.max(1, medianOf(heights));
+    const lineCenter = medianOf(centers);
+
+    // 日本語は単語の間に空白を入れない言語だが、OCRは文字の間に細い隙間があると
+    // 単語を分けてしまう(「ヤマダ タ ロウ」「フリ ガ ナ」など)。
+    // 日本語の文字同士で、隙間が文字の高さの半分以下のものは1つの単語につなぐ。
+    const merged: OcrWord[] = [];
+    for (const w of sorted) {
+      const prev = merged[merged.length - 1];
+      if (prev && canJoinJapanese(prev.text, w.text) && w.x0 - prev.x1 < lineHeight * 0.5) {
+        merged[merged.length - 1] = { ...prev, text: prev.text + w.text, x1: Math.max(prev.x1, w.x1) };
+      } else {
+        merged.push(w);
+      }
+    }
+    for (const w of merged) items.push(toItem(w, -lineCenter, lineHeight));
+  }
+  return items;
+}
+
+function medianOf(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// ひらがな・カタカナ・漢字(全角のもの)。半角カナ・英数字・記号は含めない
+const CJK_CHAR_RE = /[\u3041-\u30ff\u3400-\u9fff\uf900-\ufaff]/;
+const DIGIT_RE = /[0-9０-９]/;
+/**
+ * 2つの単語を空白なしでつないでよいか。境目の文字が両方とも「日本語の文字か数字」で、
+ * 少なくとも片方が日本語の文字のとき(「令和8」+「年」、「東京」+「都」など)。
+ * 数字同士(別々の数値の列)や英数字同士はつながない。
+ */
+function canJoinJapanese(left: string, right: string): boolean {
+  if (left.length === 0 || right.length === 0) return false;
+  const a = left[left.length - 1];
+  const b = right[0];
+  const aCjk = CJK_CHAR_RE.test(a);
+  const bCjk = CJK_CHAR_RE.test(b);
+  if (aCjk && bCjk) return true;
+  return (aCjk && DIGIT_RE.test(b)) || (bCjk && DIGIT_RE.test(a));
 }
 
 /** OCR用Workerを終了する（キャンセル・後始末用のベストエフォート実装） */

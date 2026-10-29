@@ -80,6 +80,64 @@ import type { PositionedTextItem } from "./pdfjs-client";
  * 集計すれば十分な根拠が得られるようにしている。
  */
 
+// ---------------------------------------------------------------------------
+// 1つの項目の中に隠れた「数値同士の隙間」の分割
+// ---------------------------------------------------------------------------
+
+/** 数値・金額・割合として読める1語(例: 1,234 / -2 / △500 / ¥1,500 / 20.0% / 1,000円) */
+const NUMERIC_TOKEN_RE = /^[+\-△▲]?[¥￥$]?\d[\d,]*(\.\d+)?[%％円]?$/;
+
+function numericCharWidthEm(ch: string): number {
+  if (ch === "," || ch === ".") return 0.278;
+  if (ch === "%") return 0.889;
+  if (ch === "-" || ch === "+") return 0.333;
+  return 0.556; // 数字・通貨記号など
+}
+
+/**
+ * pdfjsは、Chrome等で作られたPDFの隣り合う文字列を、間の隙間を空白1文字として
+ * 1つの項目にまとめることがある(例: 「3,456,789」と「2,765,432」の間の細い隙間が
+ * 「789 2」という1つの項目の中の空白になる)。項目の外形(x〜x+width)だけを見る
+ * 列区切りの検出では、この細い隙間が見えず、詰まった数値の列が1列につながってしまう。
+ *
+ * そこで、空白で区切られた隣り合う2語が「どちらも数値」の項目を、語ごとの項目に分ける。
+ * 各語の位置は、数字の幅(フォントの大きさの約0.556倍)を使って推定し、
+ * 余った幅(項目の幅 - 語の幅の合計)を空白の幅とみなす。
+ * 見積もった空白の幅が不自然(負、またはフォントの大きさの3倍超)な場合は分けない。
+ * 数値以外(文章や、ラベルと数値の組み合わせ)の項目は、元の判定を保つため分けない。
+ */
+export function splitItemsAtNumericGaps(items: PositionedTextItem[]): PositionedTextItem[] {
+  const out: PositionedTextItem[] = [];
+  for (const item of items) {
+    const parts = splitOneItem(item);
+    if (parts) out.push(...parts);
+    else out.push(item);
+  }
+  return out;
+}
+
+function splitOneItem(item: PositionedTextItem): PositionedTextItem[] | null {
+  if (!/\S\s+\S/.test(item.str)) return null;
+  const trimmed = item.str.trim();
+  const tokens = trimmed.split(/\s+/);
+  if (tokens.length < 2 || !tokens.every((t) => NUMERIC_TOKEN_RE.test(t))) return null;
+  const fh = item.fontHeight;
+  if (!(fh > 0) || !(item.width > 0)) return null;
+
+  const tokenWidths = tokens.map((t) => [...t].reduce((sum, ch) => sum + numericCharWidthEm(ch) * fh, 0));
+  const spaceCount = tokens.length - 1;
+  const spaceWidth = (item.width - tokenWidths.reduce((a, b) => a + b, 0)) / spaceCount;
+  if (!(spaceWidth > 0) || spaceWidth > fh * 3) return null;
+
+  const parts: PositionedTextItem[] = [];
+  let x = item.x;
+  tokens.forEach((t, i) => {
+    parts.push({ ...item, str: t, x, width: tokenWidths[i], hasEOL: i === tokens.length - 1 ? item.hasEOL : false });
+    x += tokenWidths[i] + spaceWidth;
+  });
+  return parts;
+}
+
 /** 行のグルーピング結果。PDF→Word（paragraph-reconstruction.ts）とも共通利用する（開発指示書■21） */
 export interface Line {
   y: number;
@@ -90,11 +148,18 @@ const MIN_GAP_TOLERANCE = 3; // pt
 const BIN_SIZE_PT = 1;
 /** 列区切りの「候補」とみなすための最小幅(pt)。本物の判定はこれだけでなく
  *  countColumnGapSupportによる複数行での再現性チェックで行う。 */
-const MIN_GAP_WIDTH_PT = 5;
-/** 列区切り候補の検出で、外れ値として許容する行の割合(行数が多いページのみ効く。例: 75行なら2行まで) */
-const OUTLIER_LINE_RATIO = 0.03;
+const MIN_GAP_WIDTH_PT = 4;
+/** 列区切り候補の検出で、外れ値として許容する行の割合(文字情報のページは8行以上で約3割まで。OCRは4行以上で約1割(切り上げ)) */
+const OUTLIER_LINE_RATIO = 0.1;
+/** 従来から許容している外れ値の行の割合(行数が多いページで、どんな行でも約3%まで) */
+const LEGACY_OUTLIER_LINE_RATIO = 0.03;
+/** この倍率(フォントの大きさに対する幅)以上の文字列は「複数の列にまたがりうる長い文字列」とみなす */
+const WIDE_RUN_FONT_RATIO = 3.5;
+/** 文字情報のあるページで外れ値として許容する行の割合。表の上に「請求日」「請求番号」などの
+ *  行が表の列にまたがって並ぶ書類(請求書・見積書)を想定している */
+const TEXT_OUTLIER_LINE_RATIO = 0.3;
 /** 行単独での隙間（内部の自由記述の分割等との区別に使う）を認識する最小幅(pt) */
-const PER_LINE_GAP_MIN_WIDTH_PT = 4;
+const PER_LINE_GAP_MIN_WIDTH_PT = 2.5;
 /** 列区切り候補として「再現された」とみなすために必要な行数の割合・下限 */
 const MIN_SUPPORT_RATIO = 0.15;
 const MIN_SUPPORT_FLOOR = 2;
@@ -139,7 +204,23 @@ export function groupIntoLines(items: PositionedTextItem[]): Line[] {
  * その範囲(開始x, 終了x)を候補として返す。まだ複数行での再現性チェックは
  * 行わない（それはcountColumnGapSupportで行う）。
  */
-function pageCandidateGapRanges(lines: Line[]): [number, number][] {
+/** 隙間なくつながった項目(隙間が文字の高さの0.3倍未満)を1つの連なりにして、範囲を返す */
+function touchingRuns(items: PositionedTextItem[]): { left: number; right: number; fontHeight: number }[] {
+  const runs: { left: number; right: number; fontHeight: number }[] = [];
+  for (const item of items) {
+    const right = item.x + item.width;
+    const last = runs[runs.length - 1];
+    if (last && item.x - last.right < Math.min(last.fontHeight, item.fontHeight) * 0.3) {
+      last.right = Math.max(last.right, right);
+      last.fontHeight = Math.max(last.fontHeight, item.fontHeight);
+    } else {
+      runs.push({ left: item.x, right, fontHeight: item.fontHeight });
+    }
+  }
+  return runs;
+}
+
+function pageCandidateGapRanges(lines: Line[], noisyBoxes = false): [number, number][] {
   const contentItems = lines.flatMap((line) => line.items);
   if (contentItems.length === 0) return [];
 
@@ -160,24 +241,51 @@ function pageCandidateGapRanges(lines: Line[]): [number, number][] {
   const binCount = Math.max(1, Math.ceil((maxX - minX) / BIN_SIZE_PT) + 1);
   const coverCount = new Uint16Array(binCount);
   const stamp = new Int32Array(binCount).fill(-1);
+  // 「短い文字列(1つの列に収まる程度の値)」がかかっている行数。長い文字列(複数の列にまたがる
+  // 文章・ラベル)だけがかかっている位置と区別するために使う。
+  const narrowCount = new Uint16Array(binCount);
+  const narrowStamp = new Int32Array(binCount).fill(-1);
   lines.forEach((line, lineIndex) => {
-    for (const item of line.items) {
-      const startBin = Math.max(0, Math.floor((item.x - minX) / BIN_SIZE_PT));
-      const endBin = Math.min(binCount, Math.ceil((item.x + item.width - minX) / BIN_SIZE_PT));
+    for (const run of touchingRuns(line.items)) {
+      const startBin = Math.max(0, Math.floor((run.left - minX) / BIN_SIZE_PT));
+      const endBin = Math.min(binCount, Math.ceil((run.right - minX) / BIN_SIZE_PT));
+      const isWide = run.right - run.left >= run.fontHeight * WIDE_RUN_FONT_RATIO;
       for (let b = startBin; b < endBin; b++) {
         if (stamp[b] !== lineIndex) {
           stamp[b] = lineIndex;
           coverCount[b]++;
         }
+        if (!isWide && narrowStamp[b] !== lineIndex) {
+          narrowStamp[b] = lineIndex;
+          narrowCount[b]++;
+        }
       }
     }
   });
-  const outlierTolerance = Math.floor(lines.length * OUTLIER_LINE_RATIO);
+  // 外れ値の行を許容する。請求書の「小計」「消費税(10%)」や、その上の「請求日：…」のように、
+  // 隣の列の位置まで伸びる長い文字列の行があっても、列区切りが消えないようにするため。
+  // ただし許容するのは「長い文字列だけがかかっている位置」に限る。1つの列に収まる短い値
+  // (数量の列の「1」「3」など)がかかっている位置は、行数が少なくても本物の列なので隙間にしない。
+  // 8行以上の場合に限り、約3割の行まで許容する。
+  // OCR(スキャン画像)の文字の枠は実際の文字より広く検出されることがある(1つの漢字の枠が
+  // 隣の列にはみ出す等)ため、OCRの場合は長さを問わず、4行以上あれば約1割(切り上げ)まで許容する。
+  // どちらも、本物の列区切りかどうかは、この後の複数行での再現性チェックで確認される。
+  const baseTolerance = Math.floor(lines.length * LEGACY_OUTLIER_LINE_RATIO);
+  const wideRunTolerance = noisyBoxes
+    ? lines.length >= 4
+      ? Math.ceil(lines.length * OUTLIER_LINE_RATIO)
+      : 0
+    : lines.length >= 8
+      ? Math.floor(lines.length * TEXT_OUTLIER_LINE_RATIO)
+      : 0;
+  const isFree = (bin: number): boolean =>
+    coverCount[bin] <= baseTolerance ||
+    (coverCount[bin] <= wideRunTolerance && (noisyBoxes || narrowCount[bin] === 0));
 
   const ranges: [number, number][] = [];
   let gapStartBin: number | null = null;
   for (let b = 0; b < binCount; b++) {
-    if (coverCount[b] <= outlierTolerance) {
+    if (isFree(b)) {
       if (gapStartBin === null) gapStartBin = b;
       continue;
     }
@@ -261,11 +369,11 @@ function clusterCandidateRanges(ranges: [number, number][], proximityPt: number)
  * 文書全体で一貫した列区切りのx座標一覧を推定する（ファイル先頭のコメント
  * 「さらなる改良」「複数ページにまたがる表への対応」を参照）。
  */
-export function computeColumnBreaksAcrossPages(linesByPage: Line[][]): number[] {
+export function computeColumnBreaksAcrossPages(linesByPage: Line[][], options: { noisyBoxes?: boolean } = {}): number[] {
   const allLines = linesByPage.flat();
   if (allLines.length === 0) return [];
 
-  const candidateRanges = linesByPage.flatMap((lines) => pageCandidateGapRanges(lines));
+  const candidateRanges = linesByPage.flatMap((lines) => pageCandidateGapRanges(lines, options.noisyBoxes));
   const clustered = clusterCandidateRanges(candidateRanges, CANDIDATE_CLUSTER_PROXIMITY_PT);
 
   const perLineGapsByLine = linesByPage.flatMap((lines) => {
@@ -438,7 +546,10 @@ export function reconstructTable(items: PositionedTextItem[], breaksOverride?: n
 
   // 字間を広げたタイトル(「高 等 学 校 …」のように1文字ずつ別の項目になっているもの)は
   // 1つの文字列へまとめる。列の推定自体は元の項目で行い、行の組み立てからまとめた項目を使う。
-  const lines: Line[] = rawLines.map((line) => ({ y: line.y, items: mergeSpacedCharacterRuns(line.items, breaks) }));
+  const lines: Line[] = rawLines.map((line) => ({
+    y: line.y,
+    items: mergeTouchingRunsAcrossBreaks(mergeSpacedCharacterRuns(line.items, breaks), breaks),
+  }));
 
   const rows: string[][] = [];
   const columnSpans: ColumnSpanHint[] = [];
@@ -624,6 +735,50 @@ function mergeSpacedCharacterRuns(items: PositionedTextItem[], breaks: number[])
   return out;
 }
 
+/**
+ * 隙間なくつながった文章が、列区切りの位置で途中から切れてしまうのを防ぐ。
+ * PDFでは1つの文が、フォントや文字種の切り替わりごとに複数の項目に分かれることがある
+ * (「請求日：2026」+「年10月30日」、「見積内訳」の文字ごと等)。ほかの行の隙間が
+ * たまたまその位置にそろって列区切りになっていると、文章の途中で別のセルに分かれてしまう。
+ * 項目同士の隙間が文字の高さの0.3倍未満(=実質的に接している)で、その並びが列区切りを
+ * またぐ場合は、1つの項目にまとめる(まとめた項目は、列をまたぐセル=結合セルとして扱われる)。
+ * 数値同士(隣の列の数値が接近している場合)は、別々の列の値なのでまとめない。
+ */
+function mergeTouchingRunsAcrossBreaks(items: PositionedTextItem[], breaks: number[]): PositionedTextItem[] {
+  if (breaks.length === 0 || items.length < 2) return items;
+  const out: PositionedTextItem[] = [];
+  let run: PositionedTextItem[] = [];
+  const flush = () => {
+    if (run.length === 0) return;
+    if (run.length === 1) {
+      out.push(run[0]);
+    } else {
+      const first = run[0];
+      const last = run[run.length - 1];
+      const startCol = columnIndexFor(first.x, breaks);
+      const endCol = columnIndexFor(last.x + last.width, breaks);
+      if (endCol > startCol) {
+        out.push({ ...first, str: run.map((r) => r.str).join(""), width: last.x + last.width - first.x, hasEOL: last.hasEOL });
+      } else {
+        out.push(...run);
+      }
+    }
+    run = [];
+  };
+  for (const item of items) {
+    const prev = run[run.length - 1];
+    if (prev) {
+      const gap = item.x - (prev.x + prev.width);
+      const touching = gap < Math.min(prev.fontHeight, item.fontHeight) * 0.3;
+      const bothNumbers = tryParseNumberCell(prev.str) !== null && tryParseNumberCell(item.str) !== null;
+      if (!touching || bothNumbers) flush();
+    }
+    run.push(item);
+  }
+  flush();
+  return out;
+}
+
 function isEvenlySpaced(run: PositionedTextItem[]): boolean {
   const pitches: number[] = [];
   for (let k = 1; k < run.length; k++) pitches.push(run[k].x - run[k - 1].x);
@@ -754,8 +909,11 @@ export function tryParseNumberCell(text: string): number | null {
 
 function safeDate(y: number, mo: number, d: number): Date | null {
   if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-  const dt = new Date(y, mo - 1, d);
-  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+  // write-excel-file はDateをUTC基準でExcelのシリアル値に変換する。ローカル時刻の0時で作ると
+  // 日本(UTC+9)のブラウザでは前日の15:00(UTC)になり、Excel上で1日前の日付になってしまうため、
+  // UTCの0時で作る(カレンダー作成ツールと同じ扱い)。
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
   return dt;
 }
 

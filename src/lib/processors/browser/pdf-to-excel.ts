@@ -6,12 +6,14 @@ import {
   renderPageToCanvas,
   type PdfjsPage,
 } from "@/lib/pdf/pdfjs-client";
+import { removeRuledLinesFromCanvas } from "@/lib/ocr/remove-ruled-lines";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import {
   reconstructTable,
   groupIntoLines,
   computeColumnBreaksAcrossPages,
   extractVerticalLabels,
+  splitItemsAtNumericGaps,
   tryParseNumberCell,
   tryParseDateCell,
   type VerticalLabel,
@@ -88,8 +90,8 @@ const MAX_PDF_TO_EXCEL_PAGES = PDF_TO_EXCEL_MAX_PAGES;
 /** OCRを行うページ数の上限（OCR自体が重く、スマートフォンでのメモリ・処理時間を考慮。他のOCRツールと同じ値） */
 const MAX_OCR_PAGES = PDF_TO_EXCEL_MAX_OCR_PAGES;
 /** OCR用にページを描画する倍率と、画像の最長辺の上限(px) */
-const OCR_RENDER_SCALE = 2;
-const MAX_OCR_DIMENSION = 2000;
+const OCR_RENDER_SCALE = 2.5;
+const MAX_OCR_DIMENSION = 2200;
 const PREVIEW_ROW_LIMIT = 30;
 /** 画面の先頭ページのプレビューで見せる行数(変換前の確認用) */
 const FILE_PREVIEW_ROW_LIMIT = 40;
@@ -470,14 +472,20 @@ interface PreparedPage {
  * 余白の位置の判定が使えないため行わない)。
  */
 function prepareItems(pageData: PageData[], options: PdfToExcelOptions): PreparedPage[] {
-  const prepared: PreparedPage[] = pageData.map((p) => ({ items: p.items, labels: [], furnitureRemoved: 0 }));
+  // 文字情報のページは、1つの項目に隠れた「詰まった数値同士の隙間」を先に分けておく
+  // (列区切りの検出が、項目の外形だけを見るため)
+  const prepared: PreparedPage[] = pageData.map((p) => ({
+    items: p.method === "text-layer" ? splitItemsAtNumericGaps(p.items) : p.items,
+    labels: [],
+    furnitureRemoved: 0,
+  }));
   const textIndexes = pageData.map((p, i) => (p.method === "text-layer" ? i : -1)).filter((i) => i >= 0);
 
   if (options.removePageFurniture && textIndexes.length > 0) {
     const results = removePageFurniture(
       textIndexes.map((i) => {
         const [, y0, , y1] = pageData[i].page.view;
-        return { items: pageData[i].items, pageHeight: y1 - y0, pageBottom: y0 };
+        return { items: prepared[i].items, pageHeight: y1 - y0, pageBottom: y0 };
       })
     );
     textIndexes.forEach((i, k) => {
@@ -514,7 +522,10 @@ async function buildGrids(
     if (indexes.length > 0) {
       sharedBreaksByMethod.set(
         m,
-        computeColumnBreaksAcrossPages(indexes.map((i) => groupIntoLines(prepared[i].items)))
+        computeColumnBreaksAcrossPages(
+          indexes.map((i) => groupIntoLines(prepared[i].items)),
+          { noisyBoxes: m === "ocr" }
+        )
       );
     }
   }
@@ -711,9 +722,16 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
         } catch {
           throw new Error(`${pageNumber}ページ目の画像化に失敗しました`);
         }
-        const result = await recognizeImageWithWords(canvas, language, (p) => {
-          onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method, ocrProgress: p.progress });
-        });
+        // 罫線を消してから読む(罫線を「|」などの文字と誤認して行全体が文字化けするのを防ぐ)。
+        // 罫線の位置は文字の座標から推定するため、OCRに罫線の情報は不要。
+        const result = await recognizeImageWithWords(
+          removeRuledLinesFromCanvas(canvas),
+          language,
+          (p) => {
+            onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method, ocrProgress: p.progress });
+          },
+          { pageSegMode: "6" }
+        );
         confidence = result.confidence;
         ocrConfidences.push(result.confidence);
         items = ocrWordsToPositionedTextItems(result.words);
