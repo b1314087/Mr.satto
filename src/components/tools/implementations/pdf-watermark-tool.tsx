@@ -249,7 +249,7 @@ export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdf
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || text.trim() === ""}
+          disabled={status === "processing" || text.trim() === ""} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           透かしを追加する

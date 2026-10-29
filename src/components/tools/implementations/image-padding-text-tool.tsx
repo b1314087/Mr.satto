@@ -667,7 +667,7 @@ export function ImagePaddingTextTool() {
             <button
               type="button"
               onClick={() => void handleSaveCurrent()}
-              disabled={status === "processing"}
+              disabled={status === "processing"} aria-busy={status === "processing" || undefined}
               className="w-fit rounded-lg bg-neutral-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
             >
               この画像だけ保存
@@ -675,7 +675,7 @@ export function ImagePaddingTextTool() {
             <button
               type="button"
               onClick={() => void handleExportAll()}
-              disabled={status === "processing"}
+              disabled={status === "processing"} aria-busy={status === "processing" || undefined}
               className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             >
               {files.length}件を一括出力

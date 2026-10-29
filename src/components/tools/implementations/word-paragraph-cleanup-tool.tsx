@@ -160,7 +160,7 @@ export function WordParagraphCleanupTool() {
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || !hasAnyOption}
+          disabled={status === "processing" || !hasAnyOption} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           整理を実行する

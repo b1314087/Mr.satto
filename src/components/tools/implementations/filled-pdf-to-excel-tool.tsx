@@ -268,7 +268,7 @@ function AutoExtractSection() {
         <button
           type="button"
           onClick={() => void handleRun()}
-          disabled={!canRun || status === "processing"}
+          disabled={!canRun || status === "processing"} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           Excelに変換する

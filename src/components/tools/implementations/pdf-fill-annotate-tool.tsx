@@ -1951,7 +1951,7 @@ export function PdfFillAnnotateTool({
           <button
             type="button"
             onClick={() => void handleExport()}
-            disabled={status === "processing"}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             PDFを書き出す

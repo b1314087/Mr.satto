@@ -131,7 +131,7 @@ export function BusinessCardQrTool() {
       <button
         type="button"
         onClick={handleGenerate}
-        disabled={!name.trim() || status === "processing"}
+        disabled={!name.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
         className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
         名刺二次元コードを生成する

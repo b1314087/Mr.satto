@@ -273,7 +273,7 @@ export function QrGeneratorTool() {
       <button
         type="button"
         onClick={handleGenerate}
-        disabled={!text.trim() || status === "processing"}
+        disabled={!text.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
         className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
         二次元コードを生成する

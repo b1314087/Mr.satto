@@ -88,7 +88,7 @@ export function LoginForm({ nextPath }: { nextPath?: string }) {
 
       <button
         type="submit"
-        disabled={status === "processing"}
+        disabled={status === "processing"} aria-busy={status === "processing" || undefined}
         className="w-full ms-btn ms-btn-primary"
       >
         {status === "processing" ? "ログイン中..." : "ログイン"}

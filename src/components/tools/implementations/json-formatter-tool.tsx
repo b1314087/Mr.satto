@@ -93,7 +93,7 @@ export function JsonFormatterTool() {
         <button
           type="button"
           onClick={() => run(false)}
-          disabled={status === "processing"}
+          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {status === "processing" ? "処理中..." : "整形する"}
@@ -101,7 +101,7 @@ export function JsonFormatterTool() {
         <button
           type="button"
           onClick={() => run(true)}
-          disabled={status === "processing"}
+          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
           className="rounded-lg bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 transition-colors hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
         >
           圧縮(minify)する

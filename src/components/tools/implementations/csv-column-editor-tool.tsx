@@ -272,7 +272,7 @@ export function CsvColumnEditorTool() {
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || columns.filter((c) => c.included).length === 0}
+          disabled={status === "processing" || columns.filter((c) => c.included).length === 0} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           この内容で保存する

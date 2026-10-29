@@ -78,6 +78,45 @@ function AddressBox({
   );
 }
 
+/** 手順ごとのまとまり。番号つきの見出しで、上から順に進められるようにする */
+function StepCard({
+  step,
+  title,
+  hint,
+  testId,
+  children,
+}: {
+  step: number;
+  title: string;
+  hint: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      data-testid={testId}
+      className="flex flex-col gap-5 rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800 sm:p-5"
+    >
+      <header className="flex items-start gap-3">
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white"
+        >
+          {step}
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">
+            <span className="sr-only">手順{step}：</span>
+            {title}
+          </h2>
+          <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>
+        </div>
+      </header>
+      {children}
+    </section>
+  );
+}
+
 export function EnvelopeAddressTool() {
   const [envelopeSize, setEnvelopeSize] = useState<EnvelopeSizeId>("chou3");
   const [writingMode, setWritingMode] =
@@ -227,7 +266,7 @@ export function EnvelopeAddressTool() {
   );
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,420px)] lg:items-start">
+    <div data-preview-split className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,460px)] lg:items-start">
       {/* プレビュー: 設定を操作しているあいだも見えるように、画面に固定する（スマホは下部、PC幅は右側） */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-200 bg-white/95 px-2 pb-2 pt-1 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 lg:sticky lg:inset-x-auto lg:bottom-auto lg:top-20 lg:order-2 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none lg:dark:bg-transparent">
         <div
@@ -285,8 +324,9 @@ export function EnvelopeAddressTool() {
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-col gap-6 pb-[42vh] lg:order-1 lg:pb-0">
-        <div className="flex flex-wrap gap-4">
+      <div className="flex min-w-0 flex-col gap-5 pb-[42vh] lg:order-1 lg:pb-0">
+        <StepCard step={1} title="封筒を選ぶ" hint="まず、封筒の大きさと向きを決めます。" testId="envelope-step-size">
+          <div className="flex flex-wrap gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-neutral-600 dark:text-neutral-300">
               封筒サイズ
@@ -313,35 +353,6 @@ export function EnvelopeAddressTool() {
           </div>
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-neutral-600 dark:text-neutral-300">
-              書字方向
-            </span>
-            <div className="flex gap-2">
-              {(["vertical", "horizontal"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => {
-                    setWritingMode(mode);
-                    resetBlockPositions();
-                    // 封筒の向きは書字方向とは独立。ここでは変えない
-                    clearResult();
-                  }}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    writingMode === mode
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
-                >
-                  {mode === "vertical" ? "縦書き" : "横書き"}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-4">
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">
               封筒の向き
             </span>
             <div className="flex gap-2">
@@ -366,6 +377,114 @@ export function EnvelopeAddressTool() {
               ))}
             </div>
           </div>
+          </div>
+        </StepCard>
+
+        <StepCard step={2} title="宛先を入れる" hint="郵便番号・住所・氏名を入力するか、Excel/CSVから読み込みます。" testId="envelope-step-input">
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-medium">宛先を入力（{recipients.length}件）</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">郵便番号・住所・氏名を1つの枠に入力します（敬称は最後の行につきます）。</p>
+          {recipients.map((r, i) => (
+            <AddressBox
+              key={i}
+              value={r}
+              label={`宛先${i + 1}`}
+              onChange={(v) => {
+                const next = [...recipients];
+                next[i] = v;
+                setRecipients(next);
+                clearResult();
+              }}
+              onRemove={
+                recipients.length > 1
+                  ? () => setRecipients(recipients.filter((_, idx) => idx !== i))
+                  : undefined
+              }
+            />
+          ))}
+          <button
+            type="button"
+            onClick={() => setRecipients([...recipients, ""])}
+            className="w-fit rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
+          >
+            + 宛先を追加
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+          <p className="text-sm font-medium">
+            または、Excel/CSVから複数の宛先をまとめて読み込む（任意）
+          </p>
+          <FileDropzone
+            accept={ACCEPT}
+            maxSizeMB={20}
+            label="CSV/Excelをドラッグ&ドロップ"
+            hint="またはタップして選択"
+            onFilesSelected={handleImportFile}
+            onError={setImportError}
+          />
+          {importError && <ErrorMessage message={importError} />}
+          {importTable && (
+            <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <label className="flex flex-col gap-1 text-xs text-neutral-500">
+                  郵便番号の列
+                  <select
+                    value={colPostal}
+                    onChange={(e) => setColPostal(e.target.value)}
+                    className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    <option value="">使用しない</option>
+                    {importTable.headers.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-neutral-500">
+                  住所の列
+                  <select
+                    value={colAddress}
+                    onChange={(e) => setColAddress(e.target.value)}
+                    className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    <option value="">使用しない</option>
+                    {importTable.headers.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-neutral-500">
+                  氏名の列
+                  <select
+                    value={colName}
+                    onChange={(e) => setColName(e.target.value)}
+                    className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    <option value="">使用しない</option>
+                    {importTable.headers.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={applyImport}
+                className="w-fit rounded-lg bg-neutral-800 px-4 py-2 text-sm font-medium text-white dark:bg-neutral-200 dark:text-neutral-900"
+              >
+                読み込んだ{importTable.rows.length}件を宛先に反映
+              </button>
+            </div>
+          )}
+        </div>
+
+          <div className="flex flex-wrap gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-neutral-600 dark:text-neutral-300">敬称（宛先の最後の行）</span>
             <div className="flex gap-2">
@@ -389,9 +508,64 @@ export function EnvelopeAddressTool() {
               ))}
             </div>
           </div>
-        </div>
+          </div>
 
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <div className="flex flex-col gap-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={useSender}
+              onChange={(e) => {
+                setUseSender(e.target.checked);
+                clearResult();
+              }}
+            />
+            差出人を印刷する
+          </label>
+          {useSender && (
+            <AddressBox
+              value={sender}
+              label="差出人"
+              onChange={(v) => {
+                setSender(v);
+                clearResult();
+              }}
+            />
+          )}
+        </div>
+        </StepCard>
+
+        <StepCard step={3} title="レイアウトを整える" hint="書字方向・文字の大きさ・位置を調整します。右（スマホは下）のプレビューで確かめられます。" testId="envelope-step-layout">
+          <div className="flex flex-wrap gap-x-8 gap-y-4">
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-neutral-600 dark:text-neutral-300">
+              書字方向
+            </span>
+            <div className="flex gap-2">
+              {(["vertical", "horizontal"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    setWritingMode(mode);
+                    resetBlockPositions();
+                    // 封筒の向きは書字方向とは独立。ここでは変えない
+                    clearResult();
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    writingMode === mode
+                      ? "bg-blue-600 text-white"
+                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                  }`}
+                >
+                  {mode === "vertical" ? "縦書き" : "横書き"}
+                </button>
+              ))}
+            </div>
+          </div>
+          </div>
+
+        <div className="flex flex-col gap-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
           <p className="text-sm font-medium">文字の大きさ・位置</p>
           {visibleBlockIds.map((id) => {
             const label = ENVELOPE_BLOCK_LABELS[id];
@@ -463,7 +637,7 @@ export function EnvelopeAddressTool() {
           })}
         </div>
 
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <div className="flex flex-col gap-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
           <p className="text-sm font-medium">自由入力テキスト（例: 請求書在中。すべての封筒に同じ位置）</p>
           {freeTexts.map((f, i) => (
             <div
@@ -549,143 +723,18 @@ export function EnvelopeAddressTool() {
             + 自由に入力するテキストを追加
           </button>
         </div>
+        </StepCard>
 
-        <div className="flex flex-col gap-3">
-          <p className="text-sm font-medium">宛先（{recipients.length}件）</p>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">郵便番号・住所・氏名を1つの枠に入力します（敬称は最後の行につきます）。</p>
-          {recipients.map((r, i) => (
-            <AddressBox
-              key={i}
-              value={r}
-              label={`宛先${i + 1}`}
-              onChange={(v) => {
-                const next = [...recipients];
-                next[i] = v;
-                setRecipients(next);
-                clearResult();
-              }}
-              onRemove={
-                recipients.length > 1
-                  ? () => setRecipients(recipients.filter((_, idx) => idx !== i))
-                  : undefined
-              }
-            />
-          ))}
-          <button
-            type="button"
-            onClick={() => setRecipients([...recipients, ""])}
-            className="w-fit rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
-          >
-            + 宛先を追加
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium">
-            Excel/CSVから複数宛先をまとめて読み込む（任意）
-          </p>
-          <FileDropzone
-            accept={ACCEPT}
-            maxSizeMB={20}
-            label="CSV/Excelをドラッグ&ドロップ"
-            hint="またはタップして選択"
-            onFilesSelected={handleImportFile}
-            onError={setImportError}
-          />
-          {importError && <ErrorMessage message={importError} />}
-          {importTable && (
-            <div className="flex flex-col gap-2">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <label className="flex flex-col gap-1 text-xs text-neutral-500">
-                  郵便番号の列
-                  <select
-                    value={colPostal}
-                    onChange={(e) => setColPostal(e.target.value)}
-                    className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                  >
-                    <option value="">使用しない</option>
-                    {importTable.headers.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-neutral-500">
-                  住所の列
-                  <select
-                    value={colAddress}
-                    onChange={(e) => setColAddress(e.target.value)}
-                    className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                  >
-                    <option value="">使用しない</option>
-                    {importTable.headers.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-neutral-500">
-                  氏名の列
-                  <select
-                    value={colName}
-                    onChange={(e) => setColName(e.target.value)}
-                    className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                  >
-                    <option value="">使用しない</option>
-                    {importTable.headers.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={applyImport}
-                className="w-fit rounded-lg bg-neutral-800 px-4 py-2 text-sm font-medium text-white dark:bg-neutral-200 dark:text-neutral-900"
-              >
-                読み込んだ{importTable.rows.length}件を宛先に反映
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              checked={useSender}
-              onChange={(e) => {
-                setUseSender(e.target.checked);
-                clearResult();
-              }}
-            />
-            差出人を印刷する
-          </label>
-          {useSender && (
-            <AddressBox
-              value={sender}
-              label="差出人"
-              onChange={(v) => {
-                setSender(v);
-                clearResult();
-              }}
-            />
-          )}
-        </div>
 
         {validationError && <ErrorMessage message={validationError} />}
 
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || !!validationError}
+          disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
-          PDFを作成
+          {status === "processing" ? "作成中…" : "PDFを作成"}
         </button>
 
         <ProcessingStatus state={status} successLabel="封筒PDFを作成しました" />

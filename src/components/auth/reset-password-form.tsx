@@ -103,7 +103,7 @@ export function ResetPasswordForm() {
 
       <button
         type="submit"
-        disabled={status === "processing"}
+        disabled={status === "processing"} aria-busy={status === "processing" || undefined}
         className="w-full ms-btn ms-btn-primary"
       >
         {status === "processing" ? "更新中..." : "パスワードを更新"}

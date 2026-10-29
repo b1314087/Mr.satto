@@ -844,7 +844,7 @@ export function ImageLayoutTool() {
           <button
             type="button"
             onClick={handleConvert}
-            disabled={status === "processing" || items.length === 0}
+            disabled={status === "processing" || items.length === 0} aria-busy={status === "processing" || undefined}
             className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             書き出す

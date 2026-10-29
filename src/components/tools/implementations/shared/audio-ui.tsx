@@ -295,7 +295,7 @@ export function AudioRunBar({
         <button
           type="button"
           onClick={onRun}
-          disabled={runDisabled || status === "processing"}
+          disabled={runDisabled || status === "processing"} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {runLabel}

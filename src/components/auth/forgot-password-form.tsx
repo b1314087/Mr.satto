@@ -76,7 +76,7 @@ export function ForgotPasswordForm() {
 
       <button
         type="submit"
-        disabled={status === "processing"}
+        disabled={status === "processing"} aria-busy={status === "processing" || undefined}
         className="w-full ms-btn ms-btn-primary"
       >
         {status === "processing" ? "送信中..." : "再設定メールを送信"}

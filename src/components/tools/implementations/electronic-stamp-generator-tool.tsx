@@ -505,7 +505,7 @@ function TextStampPanel({
 
         <button
           type="button"
-          disabled={status === "processing" || text.trim() === "" || textTooLong}
+          disabled={status === "processing" || text.trim() === "" || textTooLong} aria-busy={status === "processing" || undefined}
           onClick={() => {
             if (latestCanvasRef.current) void onExport(latestCanvasRef.current);
           }}
@@ -927,7 +927,7 @@ function ImportStampPanel({
               </button>
               <button
                 type="button"
-                disabled={status === "processing"}
+                disabled={status === "processing"} aria-busy={status === "processing" || undefined}
                 onClick={() => {
                   if (finalCanvasRef.current) void onExport(finalCanvasRef.current);
                 }}

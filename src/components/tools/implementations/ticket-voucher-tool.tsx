@@ -255,13 +255,6 @@ export function TicketVoucherTool() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800 sm:grid-cols-4">
-        <NumberField label="1枚の幅 (mm)" value={form.cellWidthMm} onChange={(v) => update("cellWidthMm", v)} step={0.5} />
-        <NumberField label="1枚の高さ (mm)" value={form.cellHeightMm} onChange={(v) => update("cellHeightMm", v)} step={0.5} />
-        <NumberField label="余白 (mm)" value={form.marginMm} onChange={(v) => update("marginMm", v)} step={0.5} />
-        <NumberField label="間隔 (mm)" value={form.gapMm} onChange={(v) => update("gapMm", v)} step={0.5} />
-      </div>
-
       {usingRows ? (
         <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
           <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
@@ -363,6 +356,13 @@ export function TicketVoucherTool() {
         )}
       </div>
 
+      <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800 sm:grid-cols-4">
+        <NumberField label="1枚の幅 (mm)" value={form.cellWidthMm} onChange={(v) => update("cellWidthMm", v)} step={0.5} />
+        <NumberField label="1枚の高さ (mm)" value={form.cellHeightMm} onChange={(v) => update("cellHeightMm", v)} step={0.5} />
+        <NumberField label="余白 (mm)" value={form.marginMm} onChange={(v) => update("marginMm", v)} step={0.5} />
+        <NumberField label="間隔 (mm)" value={form.gapMm} onChange={(v) => update("gapMm", v)} step={0.5} />
+      </div>
+
       <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.showCutLines} onChange={(e) => update("showCutLines", e.target.checked)} />
@@ -444,7 +444,7 @@ export function TicketVoucherTool() {
       <button
         type="button"
         onClick={handleRun}
-        disabled={status === "processing" || !!validationError}
+        disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
         className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >
         PDFを作成

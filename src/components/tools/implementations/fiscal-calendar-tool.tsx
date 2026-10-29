@@ -389,7 +389,7 @@ export function FiscalCalendarTool() {
           <button
             type="button"
             onClick={() => handleGenerate("excel")}
-            disabled={status === "processing"}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             {monthsPerSheet === 2 ? "Excelを作成（2か月ずつ6シート）" : "Excelを作成（月別12シート）"}
@@ -397,7 +397,7 @@ export function FiscalCalendarTool() {
           <button
             type="button"
             onClick={() => handleGenerate("pdf")}
-            disabled={status === "processing"}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-neutral-800 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-200 dark:text-neutral-900"
           >
             {monthsPerSheet === 2 ? "PDFを作成（2か月ずつ6ページ）" : "PDFを作成（月別12ページ）"}

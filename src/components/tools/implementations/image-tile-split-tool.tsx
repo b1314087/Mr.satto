@@ -250,7 +250,7 @@ export function ImageTileSplitTool() {
         <button
           type="button"
           onClick={() => void handleExport()}
-          disabled={!canProcess || status === "processing"}
+          disabled={!canProcess || status === "processing"} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {tileCount}枚に分割する

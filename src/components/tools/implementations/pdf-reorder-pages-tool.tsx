@@ -113,7 +113,7 @@ export function PdfReorderPagesTool({ initialFile = null, onFileChange }: Shared
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || isUnchanged}
+          disabled={status === "processing" || isUnchanged} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           並び替えを適用する

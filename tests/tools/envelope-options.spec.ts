@@ -124,7 +124,7 @@ test("設定を操作しても、プレビューは常に画面内に見えて�
   await fillRecipient(page);
   const slider = page.getByLabel("宛先のX位置の数値");
   await slider.scrollIntoViewIfNeeded();
-  await page.mouse.wheel(0, 600);
+  await page.mouse.wheel(0, 150);
   const preview = page.getByTestId("tool-preview");
   await expect(preview).toBeInViewport({ ratio: 0.9 });
   await setSlider(page, "宛先のX位置", 20);

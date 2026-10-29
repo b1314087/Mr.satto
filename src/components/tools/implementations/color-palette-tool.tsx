@@ -139,7 +139,7 @@ export function ColorPaletteTool() {
         <button
           type="button"
           onClick={() => generate()}
-          disabled={status === "processing"}
+          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
           className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {status === "processing" ? "生成中..." : "パレットを生成する"}

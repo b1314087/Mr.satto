@@ -259,7 +259,7 @@ export function VideoThumbnailTool() {
           <button
             type="button"
             onClick={handleExtract}
-            disabled={status === "processing"}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             この時点を抽出する

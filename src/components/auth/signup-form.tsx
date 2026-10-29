@@ -103,6 +103,7 @@ export function SignupForm() {
       <button
         type="submit"
         disabled={pending || !termsAccepted}
+        aria-busy={pending || undefined}
         className="w-full ms-btn ms-btn-primary"
       >
         {pending ? "登録中..." : "会員登録"}

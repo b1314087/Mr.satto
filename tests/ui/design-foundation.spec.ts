@@ -421,7 +421,8 @@ test("通常の設定では、処理中のボタンにスピナーが回り、�
   });
   expect(r.anim).toBe("ms-spin");
   expect(r.cursor).toBe("progress");
-  expect(parseFloat(r.opacity)).toBeLessThan(0.8);
+  // 処理中は薄くせず、周りを光が一周するリングで「動いている」ことを示す
+  expect(parseFloat(r.opacity)).toBe(1);
 });
 
 test("既存のツール数・カテゴリ構成は変わっていない（今回はUIの土台だけ）", () => {

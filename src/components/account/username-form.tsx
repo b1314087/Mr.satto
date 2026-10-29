@@ -27,7 +27,7 @@ export function UsernameForm({ current }: { current: string | null }) {
         />
       </label>
       <p className="text-xs text-ms-muted">{USERNAME_RULE_HINT}</p>
-      <button type="submit" disabled={pending} className="ms-btn ms-btn-secondary self-start">
+      <button type="submit" disabled={pending} aria-busy={pending || undefined} className="ms-btn ms-btn-secondary self-start">
         {pending ? "保存中..." : current ? "ユーザー名を変更する" : "ユーザー名を設定する"}
       </button>
       {state.status === "saved" && state.message && (

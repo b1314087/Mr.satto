@@ -405,7 +405,7 @@ export function BackgroundRemoverTool() {
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || (mode === "ai" && analyzing)}
+          disabled={status === "processing" || (mode === "ai" && analyzing)} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {files.length > 1 ? `${files.length}枚の背景を透明にする` : "背景を透明にする"}

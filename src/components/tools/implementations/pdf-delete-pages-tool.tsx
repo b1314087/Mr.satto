@@ -122,7 +122,7 @@ export function PdfDeletePagesTool({ initialFile = null, onFileChange }: SharedP
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || selected.size === 0 || willDeleteAll}
+          disabled={status === "processing" || selected.size === 0 || willDeleteAll} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {selected.size}ページを削除する

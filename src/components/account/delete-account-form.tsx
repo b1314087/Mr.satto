@@ -21,7 +21,7 @@ export function DeleteAccountForm() {
         確認のため「{DELETE_CONFIRMATION_WORD}」と入力してください
         <input type="text" name="confirmation" required autoComplete="off" className="ms-input" />
       </label>
-      <button type="submit" disabled={pending} className="ms-btn ms-btn-secondary w-full">
+      <button type="submit" disabled={pending} aria-busy={pending || undefined} className="ms-btn ms-btn-secondary w-full">
         {pending ? "削除中..." : "アカウントを完全に削除する"}
       </button>
       {state.error && <ErrorMessage message={state.error} />}

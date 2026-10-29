@@ -126,7 +126,7 @@ export function ExcelTransposeTool() {
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing"}
+          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           行と列を入れ替える

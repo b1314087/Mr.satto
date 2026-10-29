@@ -298,7 +298,7 @@ export function RosterTemplateTool() {
                 <button
                   type="button"
                   onClick={() => handleGenerate("excel")}
-                  disabled={status === "processing" || !!previewValidationError}
+                  disabled={status === "processing" || !!previewValidationError} aria-busy={status === "processing" || undefined}
                   className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
                 >
                   Excelを作成
@@ -306,7 +306,7 @@ export function RosterTemplateTool() {
                 <button
                   type="button"
                   onClick={() => handleGenerate("pdf")}
-                  disabled={status === "processing" || !!previewValidationError}
+                  disabled={status === "processing" || !!previewValidationError} aria-busy={status === "processing" || undefined}
                   className="w-fit rounded-lg bg-neutral-800 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-200 dark:text-neutral-900"
                 >
                   PDFを作成

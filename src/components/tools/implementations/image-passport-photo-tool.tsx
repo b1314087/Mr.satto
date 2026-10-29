@@ -649,7 +649,7 @@ export function ImagePassportPhotoTool() {
           <button
             type="button"
             onClick={handlePhotoOutput}
-            disabled={photoStatus === "processing"}
+            disabled={photoStatus === "processing"} aria-busy={photoStatus === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             画像を書き出す
@@ -805,7 +805,7 @@ export function ImagePassportPhotoTool() {
           <button
             type="button"
             onClick={handleSheetOutput}
-            disabled={sheetStatus === "processing" || maxSheetCells === 0}
+            disabled={sheetStatus === "processing" || maxSheetCells === 0} aria-busy={sheetStatus === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             PDFを書き出す

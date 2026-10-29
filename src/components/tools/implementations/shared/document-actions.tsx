@@ -56,7 +56,7 @@ export function DocumentActions({ form }: { form: DocumentFormState }) {
       <button
         type="button"
         onClick={handleGenerate}
-        disabled={status === "processing"}
+        disabled={status === "processing"} aria-busy={status === "processing" || undefined}
         title={preValidationError ?? undefined}
         className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
       >

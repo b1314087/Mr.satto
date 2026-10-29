@@ -645,7 +645,7 @@ export function ImageMosaicTool() {
             <button
               type="button"
               onClick={() => void handleSave("png")}
-              disabled={status === "processing" || regions.length === 0}
+              disabled={status === "processing" || regions.length === 0} aria-busy={status === "processing" || undefined}
               className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             >
               PNGで保存
@@ -653,7 +653,7 @@ export function ImageMosaicTool() {
             <button
               type="button"
               onClick={() => void handleSave("jpeg")}
-              disabled={status === "processing" || regions.length === 0}
+              disabled={status === "processing" || regions.length === 0} aria-busy={status === "processing" || undefined}
               className="w-fit rounded-lg bg-neutral-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
             >
               JPEGで保存

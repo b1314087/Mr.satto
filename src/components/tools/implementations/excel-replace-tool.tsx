@@ -336,7 +336,7 @@ export function ExcelReplaceTool() {
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || find === ""}
+          disabled={status === "processing" || find === ""} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {operation === "delete" ? "削除を実行する" : "置換を実行する"}
