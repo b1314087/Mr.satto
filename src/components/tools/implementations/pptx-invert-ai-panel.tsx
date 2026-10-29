@@ -7,6 +7,8 @@ import { prepareImageBytes, type PreparedImage } from "@/lib/calendar/event-imag
 import { PPTX_TEXT_CONSENT_VERSION, PPTX_TEXT_MAX_IMAGES_PER_REQUEST, type PptxTextLine } from "@/lib/ai/pptx-text";
 import type { AiModelTier } from "@/lib/ai/pricing";
 import { sniffRasterKind } from "@/lib/pptx/image-invert";
+import { invertPptx } from "@/lib/pptx/invert-pptx";
+import { buildTextZoneMask, ZONE_KINDS } from "@/lib/pptx/text-zones";
 import { applyTextReplacements, scanSlidePictures, type ImageReplacement, type TextReplaceReport } from "@/lib/pptx/text-replace";
 import { PPTX_MIME, type PptxInvertOutput } from "@/lib/processors/browser/pptx-invert";
 import { stripExtension, downloadBlob, formatBytes } from "@/lib/utils/format";
@@ -94,6 +96,8 @@ export function PptxInvertAiPanel({ file, result }: { file: File; result: PptxIn
   const [rejected, setRejected] = useState(0);
   const [applying, setApplying] = useState(false);
   const [output, setOutput] = useState<{ blob: Blob; name: string; report: TextReplaceReport } | null>(null);
+  const [zoning, setZoning] = useState(false);
+  const [zoneOutput, setZoneOutput] = useState<{ blob: Blob; name: string; zoned: number; notes: string[] } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const runningRef = useRef(false);
 
@@ -284,6 +288,41 @@ export function PptxInvertAiPanel({ file, result }: { file: File; result: PptxIn
     }
   }
 
+  /** AIが見つけた文字・数式の行の範囲を使って、画像は画像のまま、白黒を反転し直す（文字を消したり入れ直したりしない） */
+  const zoneLineCount = useMemo(() => {
+    let n = 0;
+    for (const list of drafts?.values() ?? []) n += list.filter((l) => ZONE_KINDS.has(l.kind)).length;
+    return n;
+  }, [drafts]);
+
+  async function applyZones() {
+    if (!drafts || zoneLineCount === 0 || zoning) return;
+    setZoning(true);
+    setError(null);
+    try {
+      const byPath = new Map<string, { x: number; y: number; w: number; h: number }[]>();
+      for (const [path, list] of drafts) {
+        const lines = list.filter((l) => ZONE_KINDS.has(l.kind)).map((l) => ({ x: l.x, y: l.y, w: l.w, h: l.h }));
+        if (lines.length > 0) byPath.set(path, lines);
+      }
+      const original = new Uint8Array(await file.arrayBuffer());
+      const done = await invertPptx(original, {
+        ...result.options,
+        textZoneFor: (path, image) => {
+          const lines = byPath.get(path);
+          return lines ? buildTextZoneMask(image, lines) : null;
+        },
+      });
+      const blob = new Blob([done.bytes as BlobPart], { type: PPTX_MIME });
+      const zoned = done.report.images.filter((i) => i.zoned).length;
+      setZoneOutput({ blob, name: `${stripExtension(result.suggestedName)}_AI判断.pptx`, zoned, notes: done.report.notes.filter((n) => n.startsWith("AIが見つけた文字の範囲")) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "反転し直しに失敗しました。");
+    } finally {
+      setZoning(false);
+    }
+  }
+
   return (
     <div data-testid="pptx-ai" className={AI_PANEL_CLASS}>
       <AiPanelHeader title="AIで、画像の文字を本物の文字にする" sub="画像の中の文字を読み取り、PowerPointで編集できる文字に置き換えます" />
@@ -436,6 +475,46 @@ export function PptxInvertAiPanel({ file, result }: { file: File; result: PptxIn
             </button>
             <p className="text-xs text-neutral-600 dark:text-neutral-300">チェックした行は、画像から消して、テキストボックスとして重ねます。チェックしなかった行は、画像のままです。</p>
           </div>
+        </div>
+      )}
+
+      {drafts && candidates && zoneLineCount > 0 && (
+        <div data-testid="pptx-ai-zone" className="flex flex-col gap-2 rounded-xl border border-violet-200 bg-white p-3 text-xs text-neutral-700 dark:border-violet-800 dark:bg-neutral-950 dark:text-neutral-200">
+          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">もう一つの方法（試作）：画像のまま、AIの判断で反転し直す</p>
+          <p>
+            文字を消したり、入れ直したりしません。AIが見つけた文字の範囲（{zoneLineCount}行）の中だけ、文字のふちの色のにじみや、文字に重なった細い色を、白黒にそろえて反転します。
+            位置やフォントは、元の画像のままです。
+          </p>
+          <button
+            type="button"
+            data-testid="pptx-ai-zone-apply"
+            disabled={zoning}
+            aria-busy={zoning || undefined}
+            onClick={() => void applyZones()}
+            className="w-full rounded-xl border border-violet-700 bg-white px-5 py-3 text-base font-bold text-violet-800 shadow-sm transition-colors hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-neutral-900 dark:text-violet-200 sm:w-fit"
+          >
+            {zoning ? "作成中…" : "画像のまま、AIの判断で反転し直す"}
+          </button>
+          <p className="text-neutral-500 dark:text-neutral-400">追加の料金はかかりません（すでに読み取った結果を使います）。</p>
+        </div>
+      )}
+
+      {zoneOutput && (
+        <div data-testid="pptx-ai-zone-output" className="flex flex-col gap-2 rounded-lg bg-white p-3 text-xs text-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            {zoneOutput.zoned > 0 ? `${zoneOutput.zoned}枚の画像で、AIの判断を使って反転し直しました` : "AIの判断を使える画像がありませんでした（通常の反転と同じ結果です）"}
+          </p>
+          {zoneOutput.notes.length > 0 && (
+            <ul className="list-disc pl-5">
+              {zoneOutput.notes.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          )}
+          <p className="text-neutral-500 dark:text-neutral-400">
+            {zoneOutput.name}（{formatBytes(zoneOutput.blob.size)}）
+          </p>
+          <RewardedDownloadGate onDownload={() => downloadBlob(zoneOutput.blob, zoneOutput.name)} label="AIの判断で反転し直したPowerPointをダウンロード" />
         </div>
       )}
 

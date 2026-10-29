@@ -10,7 +10,7 @@
 import { unzipSync, zipSync, strFromU8, strToU8, type Zippable } from "fflate";
 import { emptyColorStats, parseClrMap, parseThemeColors, swapClrMap, convertColorsInXml, DEFAULT_CLR_MAP, type ClrMap, type ColorContext, type ColorStats, type InvertOptions } from "./invert-xml";
 import { resolvePalette, DEFAULT_COLOR_CHOICE, type ColorChoice } from "./palette";
-import { analyzeImage, createBrowserImageCodec, invertImagePixels, shouldEnhance, shouldUpscale, sniffRasterKind, upscale2x, type ImageCodec, type ImageDecision } from "./image-invert";
+import { analyzeImage, createBrowserImageCodec, invertImagePixels, shouldEnhance, shouldUpscale, sniffRasterKind, upscale2x, type ImageCodec, type ImageDecision, type RasterImage } from "./image-invert";
 
 export interface PptxInvertOptions extends InvertOptions {
   /** 白黒と判定できる挿入画像を反転する（既定はオン） */
@@ -25,6 +25,12 @@ export interface PptxInvertOptions extends InvertOptions {
    * （InvertOptions の palette は処理の内部用。ここでは、画面から渡しやすい16進の指定を使う）
    */
   colors?: ColorChoice;
+  /**
+   * 画像ごとの「文字の範囲」の地図を作る関数（AIが見つけた文字の行をもとにする）。
+   * 画像のパスと、反転する直前の画像（拡大した場合は拡大後）を受け取り、画像と同じ大きさの地図（1が範囲の中）を返す。null なら範囲なし。
+   * 文字を見やすくする調整（enhanceText）をする、白黒中心の画像だけに使われる。
+   */
+  textZoneFor?: (imagePath: string, image: RasterImage) => Uint8Array | null;
 }
 
 export const DEFAULT_PPTX_INVERT_OPTIONS: PptxInvertOptions = { invertImages: true, brightenDarkText: false, colors: DEFAULT_COLOR_CHOICE };
@@ -65,6 +71,8 @@ export interface ImageReport {
   enhanced?: boolean;
   /** 低い解像度の画像を、なめらかに2倍へ拡大した（文字をくっきり調整する画像だけ） */
   upscaled?: boolean;
+  /** AIが見つけた文字の範囲を使って、細い色を白黒にそろえた */
+  zoned?: boolean;
   /** 画面で変換前後を並べて見せるための、元の画像と変換後の画像のバイト列（PNG・JPEGだけ） */
   mime?: string;
   before?: Uint8Array;
@@ -370,11 +378,12 @@ export async function invertPptx(
         // 粗い画像は、反転の前に、なめらかに2倍へ拡大する（縁の濃淡が保たれて、ギザギザが目立たなくなる）
         const upscaled = enhance && shouldUpscale(raster.width, raster.height);
         const work = upscaled ? upscale2x(raster) : raster;
-        invertImagePixels(work.data, decision, palette, enhance ? { width: work.width, height: work.height, scale: upscaled ? 2 : 1 } : undefined);
+        const textZone = enhance ? (options.textZoneFor?.(name, work) ?? undefined) : undefined;
+        invertImagePixels(work.data, decision, palette, enhance ? { width: work.width, height: work.height, scale: upscaled ? 2 : 1, textZone } : undefined);
         // 文字を見やすくする調整をしたJPEGは、圧縮の乱れ（文字のまわりの縁）が目立たないよう、画質を高くして保存する
         const encoded = await activeCodec.encode(work, kind, enhance ? 0.98 : undefined);
         out[name] = encoded;
-        images.push({ ...base, outcome: decision === "invert-all" ? "inverted" : "inverted-gray", enhanced: enhance, upscaled, before: original, after: encoded });
+        images.push({ ...base, outcome: decision === "invert-all" ? "inverted" : "inverted-gray", enhanced: enhance, upscaled, zoned: textZone !== undefined, before: original, after: encoded });
       }
     } catch (e) {
       images.push({ path: name, outcome: e instanceof Error && e.message === "too-large" ? "too-large" : "failed", mime });
@@ -394,6 +403,8 @@ export async function invertPptx(
   }
   const upscaledCount = images.filter((i) => i.upscaled).length;
   if (upscaledCount > 0) notes.push(`解像度の低い画像（${upscaledCount}枚）は、文字や線の縁がなめらかになるよう、縦横2倍に拡大して反転しました（ファイルの大きさは増えます）。`);
+  const zonedCount = images.filter((i) => i.zoned).length;
+  if (zonedCount > 0) notes.push(`AIが見つけた文字の範囲（${zonedCount}枚の画像）では、文字の縁や文字に重なった細い色を、白黒にそろえて反転しました。画像は、消したり入れ直したりせず、画像のままです。`);
   const count = (re: RegExp) => names.filter((n) => re.test(n)).length;
   const notesSlides = count(/^ppt\/notesSlides\/[^/]+\.xml$/);
   if (notesSlides > 0) notes.push(`発表者ノート（${notesSlides}件）は、変更していません。`);

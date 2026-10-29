@@ -167,6 +167,37 @@ test.describe("PowerPoint白黒反転: AIで画像の文字を本物の文字に
     expect(px).toBe(0);
   });
 
+  test("画像のまま、AIの判断で反転し直せる（文字を消したり入れ直したりしない）", async ({ page }) => {
+    const mocks = await mockAi(page);
+    await open(page);
+    await pickAndConvert(page, await deckWithDocImage(page));
+    // 読み取る前は、この選択肢は出ない
+    await expect(page.getByTestId("pptx-ai-zone")).toHaveCount(0);
+    await page.getByTestId("pptx-ai-consent").check();
+    await page.getByTestId("pptx-ai-run").click();
+    await expect(page.getByTestId("pptx-ai-results")).toBeVisible({ timeout: 20_000 });
+    expect(mocks.aiBodies).toHaveLength(1);
+
+    const zone = page.getByTestId("pptx-ai-zone");
+    await expect(zone).toBeVisible();
+    await expect(zone).toContainText("追加の料金はかかりません");
+    await page.getByTestId("pptx-ai-zone-apply").click();
+    const out = page.getByTestId("pptx-ai-zone-output");
+    await expect(out).toBeVisible({ timeout: 30_000 });
+    await expect(out).toContainText("1枚の画像で、AIの判断を使って反転し直しました");
+    // AIへの追加の送信はない
+    expect(mocks.aiBodies).toHaveLength(1);
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "AIの判断で反転し直したPowerPointをダウンロード" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toContain("_AI判断.pptx");
+    const parts = readParts(new Uint8Array(fs.readFileSync((await download.path())!)));
+    // 文字のテキストボックスは増えていない（画像のまま）
+    expect(strFromU8(parts["ppt/slides/slide1.xml"])).not.toContain("<a:t>∠Cが直角である");
+    expect(parts["ppt/media/doc.png"]).toBeTruthy();
+  });
+
   test("プレミアムでない場合は、案内と「プレミアムプランを見る」リンクを出し、実行ボタンは出さない", async ({ page }) => {
     const mocks = await mockAi(page, { usage: { available: false, reason: "not_premium" } });
     await open(page);

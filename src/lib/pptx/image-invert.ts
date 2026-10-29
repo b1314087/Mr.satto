@@ -90,6 +90,12 @@ export interface EnhanceOptions {
   height: number;
   /** 画像を何倍に拡大したあとか（既定は1）。文字の縁の色のにじみを探す範囲を、拡大した分だけ広げる */
   scale?: number;
+  /**
+   * 「文字の範囲」の地図（1が範囲の中。画像と同じ大きさ）。AIが見つけた文字の行の範囲を、画像の文字に合わせたもの。
+   * 範囲の中では、細い色の画素（文字の縁のにじみ・文字に重なった細い色）を、色の強さに関係なく、白黒として反転する。
+   * 太い色の部分（色つきの図形・太い線）は、範囲の中でも色のまま残す。
+   */
+  textZone?: Uint8Array;
 }
 
 /** 見やすさの調整をするかの判定（文書のように、白地や黒地が中心の画像だけ。白黒写真は調整しない） */
@@ -126,7 +132,8 @@ export function invertImagePixels(data: PixelData, decision: ImageDecision, pale
   const lb = custom ? lut(custom.background.b, custom.text.b) : null;
 
   if (enhance && enhance.width * enhance.height * 4 === data.length) {
-    enhanceAndInvert(data, enhance.width, enhance.height, onlyGray, lr, lg, lb, enhance.scale ?? 1);
+    const zone = enhance.textZone && enhance.textZone.length === enhance.width * enhance.height ? enhance.textZone : undefined;
+    enhanceAndInvert(data, enhance.width, enhance.height, onlyGray, lr, lg, lb, enhance.scale ?? 1, zone);
     return;
   }
   for (let i = 0; i < data.length; i += 4) {
@@ -155,7 +162,7 @@ const FRINGE_CORE_HALF = 2;
 /** 色のついた画素の「色の強さ」（RGBの差）。これ以下なら、にじみ（黒い線が近くなくても）。これを超えるときは、黒い線が近いときだけ、にじみ */
 const FRINGE_CHROMA_SURE = 70;
 const FRINGE_DARK = 160;
-export function findColorFringe(data: PixelData, width: number, height: number, scale = 1): Uint8Array {
+export function findColorFringe(data: PixelData, width: number, height: number, scale = 1, textZone?: Uint8Array): Uint8Array {
   // scale: 画像を何倍に拡大した後か（拡大すると、にじみの幅も同じだけ広がるため、見る範囲も同じだけ広げる）
   const unit = Math.max(1, Math.round(scale));
   const half = FRINGE_CORE_HALF * unit;
@@ -209,6 +216,11 @@ export function findColorFringe(data: PixelData, width: number, height: number, 
     for (let x = 0; x < width; x++) {
       const p = y * width + x;
       if (!colored[p] || solid[p]) continue;
+      // AIが見つけた文字の範囲の中の、細い色は、色の強さに関係なく、文字のにじみ・文字に重なった線として、白黒にそろえる
+      if (textZone?.[p]) {
+        fringe[p] = 1;
+        continue;
+      }
       if (chromaOf[p] <= FRINGE_CHROMA_SURE) {
         fringe[p] = 1;
         continue;
@@ -231,13 +243,13 @@ export function findColorFringe(data: PixelData, width: number, height: number, 
   return fringe;
 }
 
-function enhanceAndInvert(data: PixelData, width: number, height: number, onlyGray: boolean, lr: Uint8Array | null, lg: Uint8Array | null, lb: Uint8Array | null, scale: number): void {
+function enhanceAndInvert(data: PixelData, width: number, height: number, onlyGray: boolean, lr: Uint8Array | null, lg: Uint8Array | null, lb: Uint8Array | null, scale: number, textZone?: Uint8Array): void {
   const total = width * height;
   // ink: 反転後の文字の濃さ。eligible: 反転する画素（色つきの画素は、白黒中心の画像では残す）
   const ink = new Uint8Array(total);
   const eligible = new Uint8Array(total);
   // 白黒が中心の画像では、文字の縁の色のにじみは、色のついた部分として残さず、白黒として反転する（二重線に見えるのを防ぐ）
-  const fringe = onlyGray ? findColorFringe(data, width, height, scale) : null;
+  const fringe = onlyGray ? findColorFringe(data, width, height, scale, textZone) : null;
   for (let p = 0, i = 0; p < total; p++, i += 4) {
     const r = data[i];
     const g = data[i + 1];

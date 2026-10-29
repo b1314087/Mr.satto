@@ -18,6 +18,8 @@ export interface PptxInvertOutput {
   suggestedName: string;
   sizeBytes: number;
   report: PptxInvertReport;
+  /** 変換に使った設定（AIの判断を使って、同じ設定でもう一度反転するときに使う） */
+  options: PptxInvertOptions;
 }
 
 export const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -44,9 +46,10 @@ export class PptxInvertProcessor extends BrowserProcessor<PptxInvertInput, PptxI
       throw new Error("ファイルの読み込みに失敗しました");
     }
     try {
-      const result = await invertPptx(data, { ...DEFAULT_PPTX_INVERT_OPTIONS, ...options }, undefined, (p) => onProgress?.(STAGE_LABEL[p.stage]));
+      const used: PptxInvertOptions = { ...DEFAULT_PPTX_INVERT_OPTIONS, ...options };
+      const result = await invertPptx(data, used, undefined, (p) => onProgress?.(STAGE_LABEL[p.stage]));
       const blob = new Blob([result.bytes as BlobPart], { type: PPTX_MIME });
-      return { blob, suggestedName: invertedFileName(file.name), sizeBytes: blob.size, report: result.report };
+      return { blob, suggestedName: invertedFileName(file.name), sizeBytes: blob.size, report: result.report, options: used };
     } catch (e) {
       if (e instanceof PptxInvertError) throw new Error(e.message);
       throw new Error("変換に失敗しました。ファイルが壊れているか、対応していない内容を含んでいる可能性があります。");
