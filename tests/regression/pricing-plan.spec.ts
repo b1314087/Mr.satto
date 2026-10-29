@@ -26,7 +26,7 @@ test("pricing: 現行の料金は ¥0 / ¥1,100 の2つだけ。旧Standard(¥55
   await expect(page.getByText("1,100円", { exact: false }).first()).toBeVisible();
   const text = await page.locator("main").innerText();
   expect(text).not.toMatch(/550|980|スタンダード/);
-  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(3); // 無料・プレミアム・お支払い/解約
+  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(4); // 無料お試しの案内・無料・プレミアム・お支払い/解約
 });
 
 test("filled-pdf-to-excel: free/standard/premiumで利用制限の表示が切り替わる（dev cookie経由）", async ({

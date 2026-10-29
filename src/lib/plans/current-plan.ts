@@ -6,6 +6,8 @@ import { getCurrentUser } from "@/lib/auth/user";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { checkTemporaryAccess } from "./temporary-access-actions";
 import { resolveEffectivePlan, type SubscriptionSnapshot } from "./effective-plan";
+import { applyGrantToPlan, isGrantActive, type PremiumGrant } from "./grants";
+import { fetchOwnGrant } from "./grant-store";
 
 /**
  * 現在のユーザーのプランを取得する唯一の窓口（Phase 3: サーバー側プラン判定）。
@@ -46,6 +48,10 @@ export interface ServerPlanContext {
   userEmail: string | null;
   /** DB上の契約行（未契約・未ログインの場合はnull） */
   subscription: SubscriptionSnapshot | null;
+  /** プレミアムの無料付与・無料お試し（なければnull。期限が切れていても返す。有効かは isGrantActive で判定する） */
+  grant: PremiumGrant | null;
+  /** 有効な付与があるか（期限内）。plan が premium でも、Stripeの契約ではなく付与によることがある */
+  grantActive: boolean;
   /** Freeユーザーのリワード広告による一時利用権が現在有効か */
   temporaryAccessActive: boolean;
   temporaryAccessExpiresAtMs: number | null;
@@ -85,6 +91,8 @@ export async function getServerPlan(): Promise<ServerPlanContext> {
       userId: null,
       userEmail: null,
       subscription: null,
+      grant: null,
+      grantActive: false,
       temporaryAccessActive: false,
       temporaryAccessExpiresAtMs: null,
       isDevOverride: true,
@@ -101,6 +109,8 @@ export async function getServerPlan(): Promise<ServerPlanContext> {
       userId: null,
       userEmail: null,
       subscription: null,
+      grant: null,
+      grantActive: false,
       temporaryAccessActive: temp.active,
       temporaryAccessExpiresAtMs: temp.expiresAtMs,
       isDevOverride: false,
@@ -108,7 +118,10 @@ export async function getServerPlan(): Promise<ServerPlanContext> {
   }
 
   const subscription = await fetchSubscriptionSnapshot(user.id);
-  const effectivePlan: Plan = resolveEffectivePlan(subscription);
+  const grant = await fetchOwnGrant(user.id);
+  const nowMs = Date.now();
+  // Stripeの契約でのプラン。有効な付与（無料付与・無料お試し）があれば、プレミアムに引き上げる（期限が切れれば、自動で戻る）
+  const effectivePlan: Plan = applyGrantToPlan(resolveEffectivePlan(subscription), grant, nowMs);
 
   // 認証済みだが契約が無い(free相当の)ユーザーにも、Freeユーザーとして
   // Temporary Accessを適用する（Phase 3 spec 4章：「Standard会員/Premium会員には
@@ -121,6 +134,8 @@ export async function getServerPlan(): Promise<ServerPlanContext> {
     userId: user.id,
     userEmail: user.email,
     subscription,
+    grant,
+    grantActive: isGrantActive(grant, nowMs),
     temporaryAccessActive: temp.active,
     temporaryAccessExpiresAtMs: temp.expiresAtMs,
     isDevOverride: false,

@@ -19,7 +19,7 @@ export async function GET() {
   const caller = await getCaller();
   if (!caller.userId) return unavailable("login_required");
   if (caller.plan !== "premium") return unavailable("not_premium");
-  const ledger = getLedger();
+  const ledger = getLedger(caller.aiLimitMicroUsd);
   if (!ledger) return unavailable("unavailable");
   try {
     const usage = await ledger.getUsage(caller.userId);

@@ -46,11 +46,11 @@ export async function POST(request: Request) {
   }
 
   const availability = getAiAvailability();
-  const deps = availability.available ? createAssistDeps() : null;
+  const caller = await getCaller();
+  const deps = availability.available ? createAssistDeps(caller.aiLimitMicroUsd) : null;
   if (!deps) {
     return json(503, { error: "unavailable", reason: availability.available ? "not_configured" : availability.reason, message: "AIによる読み取り補助は、現在ご利用いただけません。" });
   }
-  const caller = await getCaller();
   const result = await handlePptxText(deps, caller, availability, body);
   return json(result.status, result.body);
 }

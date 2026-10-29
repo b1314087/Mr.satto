@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getServerPlan } from "@/lib/plans/current-plan";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { resolveEffectivePlan } from "@/lib/plans/effective-plan";
+import { GRANT_SOURCE_LABEL, formatGrantEnd, trialOfferState } from "@/lib/plans/grants";
+import { hasUsedTrial } from "@/lib/plans/grant-store";
+import { TrialCard } from "@/components/pricing/trial-card";
 import { signOutAction } from "@/lib/auth/actions";
 import { PortalLinkButton } from "@/components/account/portal-link-button";
 import { isStripeConfigured } from "@/lib/stripe/config";
@@ -27,15 +31,24 @@ function formatDate(iso: string | null): string {
   return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium" }).format(new Date(iso));
 }
 
+const TRIAL_MESSAGES: Record<string, string> = {
+  started: "3日間の無料お試しを始めました。プレミアムの機能をお使いいただけます。",
+  already_used: "無料お試しは、1アカウントにつき1回だけです。すでにご利用済みです。",
+  already_active: "すでにプレミアムを無料でご利用中です。",
+  premium: "すでにプレミアムプランをご契約中です。",
+  not_ready: "現在、無料お試しを準備中です。しばらくしてから、もう一度お試しください。",
+  unavailable: "無料お試しを始められませんでした。しばらくしてから、もう一度お試しください。",
+};
+
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams: Promise<{ checkout?: string; consent?: string }>;
+  searchParams: Promise<{ checkout?: string; consent?: string; trial?: string }>;
 }) {
   // 課金システムがオフの間は準備中の案内だけを表示する（src/lib/config/features.ts）
   if (!featureFlags.billing) return <FeatureUnavailable title="アカウント" />;
 
-  const { checkout, consent: consentParam } = await searchParams;
+  const { checkout, consent: consentParam, trial: trialParam } = await searchParams;
   const serverPlan = await getServerPlan();
 
   if (!serverPlan.userId) {
@@ -68,6 +81,13 @@ export default async function AccountPage({
   const consentState = await getConsentState(serverPlan.userId);
   const consentMissing = consentState.ok && consentState.missing.length > 0;
   const username = await getOwnUsername(await getSupabaseServerClient(), serverPlan.userId);
+  const subscriptionPremium = resolveEffectivePlan(serverPlan.subscription) === "premium";
+  const trialState = trialOfferState({
+    signedIn: true,
+    subscriptionPremium,
+    grantActive: serverPlan.grantActive,
+    trialUsed: !serverPlan.grantActive && !subscriptionPremium ? await hasUsedTrial(serverPlan.userId) : false,
+  });
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-12 sm:px-6">
@@ -78,6 +98,14 @@ export default async function AccountPage({
           お申し込みありがとうございます。契約状況への反映まで数秒ほどかかる場合があります。反映されない場合はページを再読み込みしてください。
         </p>
       )}
+
+      {trialParam && TRIAL_MESSAGES[trialParam] && (
+        <p role="status" data-testid="trial-message" className="ms-glass mb-6 px-4 py-3 text-sm text-ms-text">
+          {TRIAL_MESSAGES[trialParam]}
+        </p>
+      )}
+
+      <TrialCard state={trialState} grant={serverPlan.grantActive ? serverPlan.grant : null} />
 
       {consentParam === "done" && (
         <p className="ms-glass mb-6 px-4 py-3 text-sm text-ms-text">同意を記録しました。</p>
@@ -127,6 +155,11 @@ export default async function AccountPage({
           <p className="text-xs text-ms-muted">現在のプラン</p>
           <p className="text-lg font-semibold text-ms-text">
             {planDefinition.name}
+            {serverPlan.grantActive && !subscriptionPremium && serverPlan.grant && (
+              <span className="ml-2 text-xs font-normal text-ms-muted">
+                （{GRANT_SOURCE_LABEL[serverPlan.grant.source]}・{formatGrantEnd(serverPlan.grant.endsAt)} まで）
+              </span>
+            )}
           </p>
         </div>
 
@@ -172,7 +205,7 @@ export default async function AccountPage({
 
         <div className="flex flex-wrap items-center gap-4 border-t border-ms-border pt-6">
           {isStripeConfigured() && serverPlan.subscription && <PortalLinkButton />}
-          {serverPlan.plan === "free" && (
+          {(serverPlan.plan === "free" || (serverPlan.grantActive && !subscriptionPremium)) && (
             <Link
               href="/pricing"
               className="ms-btn ms-btn-primary"

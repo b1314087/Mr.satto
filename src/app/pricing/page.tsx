@@ -5,7 +5,10 @@ import { featureFlags } from "@/lib/config/features";
 import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
 import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { getServerPlan } from "@/lib/plans/current-plan";
-import { hasOpenSubscription } from "@/lib/plans/effective-plan";
+import { hasOpenSubscription, resolveEffectivePlan } from "@/lib/plans/effective-plan";
+import { trialOfferState } from "@/lib/plans/grants";
+import { hasUsedTrial } from "@/lib/plans/grant-store";
+import { TrialCard } from "@/components/pricing/trial-card";
 import { isStripeConfigured } from "@/lib/stripe/config";
 import { verifyPremiumPrice } from "@/lib/stripe/price-guard-server";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
@@ -75,6 +78,14 @@ export default async function PricingPage({
   // 画面の料金とStripeの実際の価格が一致しているときだけ、お申し込みを受け付ける
   const stripeConfigured = isStripeConfigured() && (await verifyPremiumPrice()).ok;
   const adGateActive = isRewardedAdGateActive();
+  // Stripeの契約でのプラン（無料付与・お試しによるプレミアムとは分ける。付与中の人も、通常どおり申し込める）
+  const subscriptionPlan = resolveEffectivePlan(serverPlan.subscription);
+  const trialState = trialOfferState({
+    signedIn: serverPlan.userId !== null,
+    subscriptionPremium: subscriptionPlan === "premium",
+    grantActive: serverPlan.grantActive,
+    trialUsed: serverPlan.userId !== null && !serverPlan.grantActive && subscriptionPlan !== "premium" ? await hasUsedTrial(serverPlan.userId) : false,
+  });
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-12 sm:px-6">
@@ -88,6 +99,8 @@ export default async function PricingPage({
           お申し込みは完了していません。もう一度お試しいただけます。
         </p>
       )}
+
+      <TrialCard state={trialState} grant={serverPlan.grantActive ? serverPlan.grant : null} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {OFFERED_PLAN_IDS.map((id) => {
@@ -157,13 +170,13 @@ export default async function PricingPage({
 
               {id === "free" ? (
                 <span className="mt-auto w-full rounded-lg border border-dashed border-ms-border-strong px-4 py-2 text-center text-sm text-ms-muted">
-                  {serverPlan.plan === "free" ? "現在ご利用中のプランです" : "ログイン不要"}
+                  {subscriptionPlan === "free" && !serverPlan.grantActive ? "現在ご利用中のプランです" : "ログイン不要"}
                 </span>
               ) : (
                 <PricingActionButton
                   plan={id}
                   isAuthenticated={serverPlan.userId !== null}
-                  currentPlan={serverPlan.plan}
+                  currentPlan={subscriptionPlan}
                   stripeConfigured={stripeConfigured}
                   hasOpenSubscription={hasOpenSubscription(serverPlan.subscription)}
                 />

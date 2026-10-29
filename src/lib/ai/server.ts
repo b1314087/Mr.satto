@@ -3,7 +3,8 @@ import "server-only";
 import { featureFlags } from "@/lib/config/features";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { getServerPlan } from "@/lib/plans/current-plan";
-import { resolveAiPlan } from "@/lib/plans/effective-plan";
+import { resolveAiPlan, resolveEffectivePlan } from "@/lib/plans/effective-plan";
+import { AI_TRIAL_LIMIT_MICRO_USD } from "@/lib/plans/grants";
 import { createRpcLedger, type Ledger } from "./ledger";
 import { buildImageInput, callOpenAi, type OpenAiInputMessage } from "./openai-client";
 import { AI_MODELS } from "./pricing";
@@ -40,20 +41,31 @@ export function getAiAvailability(): Availability {
  */
 export async function getCaller(): Promise<Caller> {
   const ctx = await getServerPlan();
-  return { userId: ctx.userId, plan: resolveAiPlan(ctx.plan, ctx.subscription, Date.now()) };
+  if (ctx.isDevOverride || ctx.userId === null) return { userId: ctx.userId, plan: resolveAiPlan(ctx.plan, ctx.subscription, Date.now()) };
+  const now = Date.now();
+  // Stripeの契約だけで見たときのプラン（契約の期間が過ぎて更新が確認できなければ、AIは使えない）
+  const bySubscription = resolveAiPlan(resolveEffectivePlan(ctx.subscription), ctx.subscription, now);
+  if (bySubscription === "premium" || !ctx.grantActive) {
+    return { userId: ctx.userId, plan: bySubscription === "premium" ? "premium" : ctx.plan === "premium" ? "free" : ctx.plan };
+  }
+  // 無料付与・無料お試しによるプレミアム。無料お試しは、費用を抑えるため、AIの利用枠を小さくする
+  return { userId: ctx.userId, plan: "premium", aiLimitMicroUsd: ctx.grant?.source === "trial" ? AI_TRIAL_LIMIT_MICRO_USD : undefined };
 }
 
-export function getLedger(): Ledger | null {
+export function getLedger(periodLimitMicroUsd?: number): Ledger | null {
   const supabase = getSupabaseServiceClient();
   if (!supabase) return null;
-  return createRpcLedger(async (fn, args) => {
-    const { data, error } = await supabase.rpc(fn, args);
-    return { data, error: error ? { message: error.message } : null };
-  });
+  return createRpcLedger(
+    async (fn, args) => {
+      const { data, error } = await supabase.rpc(fn, args);
+      return { data, error: error ? { message: error.message } : null };
+    },
+    periodLimitMicroUsd === undefined ? undefined : { periodLimitMicroUsd },
+  );
 }
 
-export function createAssistDeps(): AssistDeps | null {
-  const ledger = getLedger();
+export function createAssistDeps(periodLimitMicroUsd?: number): AssistDeps | null {
+  const ledger = getLedger(periodLimitMicroUsd);
   const apiKey = (process.env.OPENAI_API_KEY ?? "").trim();
   if (!ledger || apiKey.length === 0) return null;
   return {

@@ -84,6 +84,8 @@ export interface AssistDeps {
 export interface Caller {
   userId: string | null;
   plan: "free" | "standard" | "premium";
+  /** 1期間のAI利用枠（マイクロドル）。省略すると通常の枠。無料お試しなど、小さくしたいときだけ指定する */
+  aiLimitMicroUsd?: number;
 }
 
 export type Availability = { available: true } | { available: false; reason: "not_configured" | "preview" | "billing_off" };

@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Plan } from "@/lib/plans/types";
+import { siteConfig } from "@/lib/config/site";
+import { wrongAddressMessage } from "@/lib/stripe/wrong-address";
 
 /**
  * /pricing の各プランカードのアクションボタン。
@@ -99,7 +101,7 @@ export function PricingActionButton({
         return;
       }
       if (!res.ok || !data.url) {
-        setError(data.error ?? "決済ページの作成に失敗しました。");
+        setError(wrongAddressMessage(res.status, "/pricing", window.location.origin, siteConfig.url) ?? data.error ?? "決済ページの作成に失敗しました。");
         setLoading(false);
         return;
       }

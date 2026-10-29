@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { ErrorMessage } from "@/components/common/error-message";
+import { siteConfig } from "@/lib/config/site";
+import { wrongAddressMessage } from "@/lib/stripe/wrong-address";
 
 /**
  * Stripe Customer Portal（お支払い方法の変更・プラン変更・解約）への導線。
@@ -19,7 +21,7 @@ export function PortalLinkButton() {
       const res = await fetch("/api/stripe/portal", { method: "POST" });
       const data = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || !data.url) {
-        setError(data.error ?? "契約管理ページの作成に失敗しました。");
+        setError(wrongAddressMessage(res.status, "/account", window.location.origin, siteConfig.url) ?? data.error ?? "契約管理ページの作成に失敗しました。");
         setLoading(false);
         return;
       }
