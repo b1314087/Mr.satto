@@ -94,6 +94,11 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     const calendar = page.locator('a[href="/tools/fiscal-calendar"]');
     await expect(calendar).toBeVisible();
     await expect(calendar.getByText("AI実装", { exact: true })).toHaveCount(0);
+    // PDF→Excel・記入済みPDF→Excelも、課金オフの間は「AI実装」を出さない
+    await page.goto("/tools/csv-excel");
+    for (const id of ["pdf-to-excel", "filled-pdf-to-excel"]) {
+      await expect(page.locator(`a[href="/tools/${id}"]`).getByText("AI実装", { exact: true }), id).toHaveCount(0);
+    }
     await page.goto("/tools/image");
     await expect(page.locator('a[href="/tools/background-remover"]').getByText("AI実装", { exact: true })).toHaveCount(1);
   });

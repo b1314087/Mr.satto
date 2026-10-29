@@ -255,6 +255,15 @@ test.describe("ツールカード", () => {
     // 年度カレンダー（外部AIの補助つき）は、課金が有効な本番設定では「AI実装」が出る
     await page.goto("/tools/generator");
     await expect(main(page).locator('a[href="/tools/fiscal-calendar"]').getByText("AI実装", { exact: true })).toHaveCount(1);
+
+    // PDF→Excel・記入済みPDF→Excel（外部AIの補助つき）にも「AI実装」が出る。AIのないCSV・Excel系ツールには出ない
+    await page.goto("/tools/csv-excel");
+    for (const id of ["pdf-to-excel", "filled-pdf-to-excel"]) {
+      await expect(main(page).locator(`a[href="/tools/${id}"]`).getByText("AI実装", { exact: true }), id).toHaveCount(1);
+    }
+    await expect(main(page).locator('a[href="/tools/csv-to-excel"]').getByText("AI実装", { exact: true })).toHaveCount(0);
+    const cloudAi = getListedTools().filter((t) => t.hasAi === "cloud" && t.status === "available").map((t) => t.id).sort();
+    expect(cloudAi).toEqual(["filled-pdf-to-excel", "fiscal-calendar", "pdf-to-excel"]);
   });
 
   test("カテゴリ別一覧: 説明文は見出しの右隣に並ぶ（広い画面）", async ({ page }) => {

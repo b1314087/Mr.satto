@@ -16,6 +16,7 @@ import {
   type PdfToExcelOptions,
   type PdfToExcelOutput,
 } from "@/lib/processors/browser/pdf-to-excel";
+import { FilledPdfAiPanel, formAiEnabled } from "./filled-pdf-to-excel/ai-panel";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
@@ -312,6 +313,8 @@ export function PdfToExcelTool() {
         successLabel="Excelファイルの生成が完了しました"
       />
       {error && <ErrorMessage message={error} />}
+
+      {file && formAiEnabled() && <FilledPdfAiPanel files={[file]} totalPages={null} purpose="table" />}
 
       {result && (
         <ResultPopup>

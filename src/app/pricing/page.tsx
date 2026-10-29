@@ -134,6 +134,12 @@ export default async function PricingPage({
                     「記入済みPDF→Excel」の「AIで項目を読み取る」補助（文字のPDF／5ページまで・利用枠あり）
                   </li>
                 )}
+                {id === "premium" && (
+                  <li className="flex items-start gap-2">
+                    <span aria-hidden="true">・</span>
+                    「PDF→Excel」の「AIで表を読み取る」補助（文字のPDF／5ページまで・利用枠あり）
+                  </li>
+                )}
               </ul>
 
               <p className="text-xs text-ms-muted">

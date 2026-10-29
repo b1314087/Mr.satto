@@ -75,6 +75,9 @@ async function openAndUpload(page: Page, file: { name: string; mimeType: string;
 }
 
 test.describe("記入済みPDF→Excel: AIで項目を読み取る（任意・プレミアム）", () => {
+  // 開発サーバーの初回コンパイルに時間がかかることがあるため、余裕をもたせる
+  test.setTimeout(150_000);
+
   test("同意が必要: 送る内容を確認し、同意するまで実行できない。送るのは文字だけで、同意は実行のたびに外れる", async ({ page }) => {
     const rec = await mockAi(page, { extract: okExtract(RESULT_ROWS) });
     await openAndUpload(page, await textPdf());
@@ -131,20 +134,19 @@ test.describe("記入済みPDF→Excel: AIで項目を読み取る（任意・�
     expect(fs.statSync(saved).size).toBeGreaterThan(1000);
   });
 
-  test("利用できない状態: プレミアムでない・ログインしていない場合は、理由を示し、実行の入口を出さない", async ({ page }) => {
-    for (const [reason, text] of [
-      ["not_premium", "プレミアムプランの機能です"],
-      ["login_required", "ログインが必要です"],
-    ] as const) {
+  for (const [reason, text] of [
+    ["not_premium", "プレミアムプランの機能です"],
+    ["login_required", "ログインが必要です"],
+  ] as const) {
+    test(`利用できない状態（${reason}）: 理由を示し、実行の入口を出さない`, async ({ page }) => {
       const rec = await mockAi(page, { usage: { available: false, reason } });
       await openAndUpload(page, await textPdf());
       await page.getByTestId("form-ai-toggle").click();
       await expect(page.getByTestId("form-ai-panel")).toContainText(text);
       await expect(page.getByTestId("form-ai-run")).toHaveCount(0);
       expect(rec.bodies).toHaveLength(0);
-      await page.unrouteAll({ behavior: "ignoreErrors" });
-    }
-  });
+    });
+  }
 
   test("文字のないPDF（スキャン）は対象外と案内し、AIには何も送らない", async ({ page }) => {
     const rec = await mockAi(page, { extract: okExtract(RESULT_ROWS) });

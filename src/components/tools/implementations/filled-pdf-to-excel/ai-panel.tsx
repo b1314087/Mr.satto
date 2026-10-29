@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ResultPopup } from "@/components/common/result-popup";
 import { ErrorMessage } from "@/components/common/error-message";
 import { featureFlags } from "@/lib/config/features";
-import { FORM_CONSENT_VERSION, FORM_MAX_CHARS_TOTAL, FORM_MAX_PAGES, type FormExtractRow } from "@/lib/ai/form-extract";
+import { FORM_CONSENT_VERSION, FORM_MAX_CHARS_TOTAL, FORM_MAX_PAGES, type FormExtractRow, type FormPurpose } from "@/lib/ai/form-extract";
 import type { AiModelTier } from "@/lib/ai/pricing";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
 import { loadPdfDocument, getPositionedTextItems, pageHasText, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
@@ -85,7 +85,14 @@ export function itemsToPageText(items: PositionedTextItem[]): string {
     .join("\n");
 }
 
-export function FilledPdfAiPanel({ files, totalPages }: { files: File[]; totalPages: number | null }) {
+/** 目的ごとの画面の文言（記入済みPDF→Excelは「項目」、PDF→Excelは「表」） */
+const PURPOSE_COPY: Record<FormPurpose, { title: string; sub: string; sheet: string; loginNext: string }> = {
+  form: { title: "AIで項目を読み取る（任意）", sub: "文字のPDFを、AIが項目ごとの表に整理します", sheet: "AI読み取り", loginNext: "/tools/filled-pdf-to-excel" },
+  table: { title: "AIで表を読み取る（任意）", sub: "文字のPDFの表を、AIが整理してExcelの行にします", sheet: "AI読み取り", loginNext: "/tools/pdf-to-excel" },
+};
+
+export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { files: File[]; totalPages: number | null; purpose?: FormPurpose }) {
+  const copy = PURPOSE_COPY[purpose];
   const [open, setOpen] = useState(false);
   const [usage, setUsage] = useState<UsageState>({ status: "loading" });
   const [text, setText] = useState<TextState>({ status: "idle" });
@@ -150,6 +157,10 @@ export function FilledPdfAiPanel({ files, totalPages }: { files: File[]; totalPa
     (async () => {
       try {
         const pdf = await loadPdfDocument(eligibleFile);
+        if (pdf.numPages > FORM_MAX_PAGES) {
+          if (!cancelled) setText({ status: "problem", message: `AIで読み取れるのは${FORM_MAX_PAGES}ページまでです（このPDFは${pdf.numPages}ページ）。` });
+          return;
+        }
         const pages: { page: number; text: string }[] = [];
         for (let p = 1; p <= pdf.numPages; p++) {
           const items = await getPositionedTextItems(await pdf.getPage(p));
@@ -205,6 +216,8 @@ export function FilledPdfAiPanel({ files, totalPages }: { files: File[]; totalPa
         body: JSON.stringify({
           requestId: newRequestId(),
           model: tier,
+          // 記入済みPDF→Excelは、目的を省略して送る（従来どおりの依頼）。PDF→Excelだけ "table" を付ける
+          ...(purpose === "table" ? { purpose } : {}),
           pages: text.pages,
           consent: { accepted: true, version: FORM_CONSENT_VERSION },
         }),
@@ -259,7 +272,7 @@ export function FilledPdfAiPanel({ files, totalPages }: { files: File[]; totalPa
     if (!rows || rows.length === 0 || !eligibleFile) return;
     const sheetRows = rows.map((r) => r.cells.map((c) => (r.kind === "header" ? { value: c, fontWeight: "bold" } : c)));
     try {
-      const blob = await writeXlsxSheets([{ name: "AI読み取り", rows: sheetRows }]);
+      const blob = await writeXlsxSheets([{ name: copy.sheet, rows: sheetRows }]);
       setExcel({ blob, name: `${stripExtension(eligibleFile.name)}_AI読み取り.xlsx`, rowCount: rows.length });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Excelファイルの生成に失敗しました");
@@ -271,8 +284,8 @@ export function FilledPdfAiPanel({ files, totalPages }: { files: File[]; totalPa
   return (
     <div data-testid="form-ai-panel" className={AI_PANEL_CLASS}>
       <AiPanelHeader
-        title="AIで項目を読み取る（任意）"
-        sub="文字のPDFを、AIが項目ごとの表に整理します"
+        title={copy.title}
+        sub={copy.sub}
         action={
           <button
             type="button"
@@ -290,7 +303,7 @@ export function FilledPdfAiPanel({ files, totalPages }: { files: File[]; totalPa
         <>
           {usage.status === "loading" && <p className="text-sm text-neutral-600 dark:text-neutral-300">利用状況を確認しています…</p>}
           {usage.status === "unavailable" && (
-            <AiUnavailableNotice reason={usage.reason} text={UNAVAILABLE_TEXT[usage.reason]} loginNext="/tools/filled-pdf-to-excel" />
+            <AiUnavailableNotice reason={usage.reason} text={UNAVAILABLE_TEXT[usage.reason]} loginNext={copy.loginNext} />
           )}
 
           {usage.status === "available" && (
@@ -303,7 +316,7 @@ export function FilledPdfAiPanel({ files, totalPages }: { files: File[]; totalPa
                 </p>
               )}
               {text.status === "reading" && <p className="text-sm text-neutral-600 dark:text-neutral-300">PDFの文字を取り出しています…（この端末の中だけで行います）</p>}
-              {text.status === "problem" && (
+              {text.status === "problem" && !pageLimitProblem && (
                 <p data-testid="form-ai-problem" role="alert" className="rounded-lg bg-white px-3 py-2 text-sm text-red-700 dark:bg-neutral-900 dark:text-red-300">
                   {text.message}
                 </p>

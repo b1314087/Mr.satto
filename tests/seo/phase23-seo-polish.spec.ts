@@ -304,6 +304,27 @@ test.describe("記入済みPDF→Excel: 通常の変換はAIを使わないと�
     expect(ui).not.toContain("AIによる曖昧な判断は行っていません");
   });
 
+  test("PDF→Excel: 「AIで表を読み取る」（プレミアム・任意）の説明と、サーバーへ送信されない説明の例外が書かれている。課金オフでは従来の説明に戻る", () => {
+    const seo = getToolSeoContent("pdf-to-excel")!;
+    const ai = seo.faq.find((f) => f.question === "AIで表を読み取る機能はありますか？")!;
+    expect(ai.answer).toContain("プレミアムプラン");
+    expect(ai.answer).toContain("PDFファイルそのものや画像は送りません");
+    expect(ai.answer).toContain("スキャンした画像のPDFは対象外");
+    const saved = seo.faq.find((f) => f.question === "アップロードしたPDFはサーバーに保存されますか？")!;
+    expect(saved.answer).toContain("通常の変換は、すべてお使いのブラウザの中で行われ");
+    expect(saved.answer).toContain("「AIで表を読み取る」（プレミアム・任意）を使う場合だけ");
+    const off = adaptToolSeoContentWith(toolSeoContent["pdf-to-excel"], { billing: false, ads: false, premiumOnly: false, standardOffered: false });
+    expect(off.faq.some((f) => f.question === "AIで表を読み取る機能はありますか？")).toBe(false);
+    const offSaved = off.faq.find((f) => f.question === "アップロードしたPDFはサーバーに保存されますか？")!;
+    expect(offSaved.answer).toContain("このツールの処理はすべてお使いのブラウザの中で行われ、ファイルの内容がMr.Sattoのサーバーへ送信されることはありません");
+    expect(JSON.stringify(off)).not.toContain("AIで表を");
+    // 記入済みPDF→Excelも、AIを使う場合の例外を書く（課金オフでは従来どおり）
+    const filled = getToolSeoContent("filled-pdf-to-excel")!.faq.find((f) => f.answer.includes("PDFの読み込み・OCR・Excel生成"))!;
+    expect(filled.answer).toContain("「AIで項目を読み取る」を使う場合だけ");
+    const offFilled = adaptToolSeoContentWith(toolSeoContent["filled-pdf-to-excel"], { billing: false, ads: false, premiumOnly: false, standardOffered: false });
+    expect(JSON.stringify(offFilled)).not.toContain("AIで項目を");
+  });
+
   test("工程10の修正（スタンダード非提供・1ページ制限）が維持されている", () => {
     const seo = getToolSeoContent("filled-pdf-to-excel")!;
     const text = [seo.metaDescription, ...seo.faq.flatMap((f) => [f.question, f.answer])].join("\n");

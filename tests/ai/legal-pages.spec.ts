@@ -23,6 +23,8 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("「AIで項目を読み取る」");
     expect(text).toContain("最大5ページ、合計6,000文字まで");
     expect(text).toContain("通常の記入済みPDF→Excel（自動抽出・テンプレート）");
+    expect(text).toContain("「AIで表を読み取る」は、PDF→Excelツールで");
+    expect(text).toContain("通常のPDF→Excel、通常の記入済みPDF→Excel");
     expect(text).toContain("新規のお申し込みを終了");
     expect(text).toContain("移行が完了するまで");
     expect(text).not.toMatch(/スタンダードプランが月額|550円（税込）/);
@@ -46,6 +48,10 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("およびPDFから取り出した文字は、すべてAIに送られます");
     // 記入済みPDF→Excelの「AIで項目を読み取る」: 送る内容（PDFの文字だけ・ファイルや画像は送らない）と、通常の変換はAIなし
     expect(text).toContain("「AIで項目を読み取る」は、同じく外部のAIサービス");
+    // PDF→Excelの「AIで表を読み取る」も、同じ範囲・同じ扱い
+    expect(text).toContain("「AIで表を読み取る」は、同じく外部のAIサービス");
+    expect(text).toContain("PDF→Excelの「AIで表を読み取る」：");
+    expect(text).toContain("通常のPDF→Excel、通常の記入済みPDF→Excel");
     expect(text).toContain("文字情報のあるPDF（スキャンした画像のPDFは対象外です）から、ブラウザの中で取り出した文字だけを送信します");
     expect(text).toContain("1つのPDFの最大5ページ、合計6,000文字まで");
     expect(text).toContain("PDFファイルそのもの、画像は送信しません");
@@ -69,6 +75,7 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("「記入済みPDF→Excel」は、ページ数・回数の制限なし");
     expect(text).toContain("「記入済みPDF→Excel」は、1回1ページまで");
     expect(text).toContain("「記入済みPDF→Excel」の「AIで項目を読み取る」補助");
+    expect(text).toContain("「PDF→Excel」の「AIで表を読み取る」補助");
     expect(text).not.toContain("プレミアム対象ツール");
     expect(text).not.toContain("通常ツールを利用可能");
   });

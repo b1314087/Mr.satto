@@ -514,6 +514,7 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
+    hasAi: "cloud",
     keywords: ["excel", "表"],
   },
   {
@@ -1162,6 +1163,7 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
+    hasAi: "cloud",
     keywords: [
       "記入済み",
       "申請書",

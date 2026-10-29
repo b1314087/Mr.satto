@@ -32,9 +32,9 @@ import {
 import {
   FORM_CONSENT_VERSION,
   FORM_INPUT_OVERHEAD_TOKENS,
-  FORM_INSTRUCTIONS,
   FORM_OUTPUT_SCHEMA,
   buildFormUserInput,
+  instructionsForPurpose,
   maxOutputTokensForForm,
   parseFormOutput,
   totalFormChars,
@@ -46,6 +46,8 @@ import type { OpenAiCallResult } from "./openai-client";
 export const FEATURE_CALENDAR_ASSIST = "calendar-import";
 /** 記入済みPDF→Excelの、AI読み取り補助（利用台帳に残る機能名。内容は入れない） */
 export const FEATURE_FORM_EXTRACT = "form-extract";
+/** PDF→Excelの、AI読み取り補助（同上） */
+export const FEATURE_TABLE_EXTRACT = "table-extract";
 
 /** 1回の依頼で、予約できる額の上限（期間の上限の何分の1か）。1回で枠の大半を使い切る依頼を、AIを呼ぶ前に断る */
 const MAX_SINGLE_RESERVE_MICRO_USD = AI_PERIOD_LIMIT_MICRO_USD / 4;
@@ -150,15 +152,16 @@ export async function handleFormExtract(
   const request = validated.value;
   const input = buildFormUserInput(request);
   const chars = totalFormChars(request);
+  const instructions = instructionsForPurpose(request.purpose);
   return execute(deps, caller.userId as string, {
     mode: "form",
-    feature: FEATURE_FORM_EXTRACT,
+    feature: request.purpose === "table" ? FEATURE_TABLE_EXTRACT : FEATURE_FORM_EXTRACT,
     requestId: request.requestId,
     tier: request.model,
-    instructions: FORM_INSTRUCTIONS,
+    instructions,
     input,
     maxOutputTokens: maxOutputTokensForForm(chars),
-    estimatedInputTokens: estimateInputTokens(FORM_INSTRUCTIONS + JSON.stringify(FORM_OUTPUT_SCHEMA) + input) + FORM_INPUT_OVERHEAD_TOKENS,
+    estimatedInputTokens: estimateInputTokens(instructions + JSON.stringify(FORM_OUTPUT_SCHEMA) + input) + FORM_INPUT_OVERHEAD_TOKENS,
     tooLargeMessage: "一度に読み取る量が多すぎます。ページを減らして、もう一度お試しください。",
     incompleteMessage: "AIの応答が途中で切れたため、結果を使えませんでした。ページを減らして、もう一度お試しください。",
     parse: (text) => {

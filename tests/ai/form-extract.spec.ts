@@ -8,6 +8,8 @@ import {
   normalizeForMatch,
   parseFormOutput,
   validateFormExtractRequest,
+  TABLE_INSTRUCTIONS,
+  FORM_INSTRUCTIONS,
   type FormExtractRequest,
 } from "@/lib/ai/form-extract";
 import { handleFormExtract, type Availability, type Caller } from "@/lib/ai/service";
@@ -307,5 +309,57 @@ test.describe("記入済みPDFのAI読み取り: サーバーの処理の流れ�
     const text = JSON.stringify(logs);
     expect(text).not.toContain("山田");
     expect(text).not.toContain("千代田");
+  });
+});
+
+test.describe("PDF→ExcelのAI読み取り（purpose: table）", () => {
+  test("目的を省略した依頼は form として扱い、table・form以外の値は断る", () => {
+    const none = validateFormExtractRequest(body());
+    expect(none.ok && none.value.purpose).toBe("form");
+    const table = validateFormExtractRequest(body({ purpose: "table" }));
+    expect(table.ok && table.value.purpose).toBe("table");
+    const bad = validateFormExtractRequest(body({ purpose: "other" }));
+    expect(bad.ok).toBe(false);
+    expect(validateFormExtractRequest(body({ purpose: 1 })).ok).toBe(false);
+  });
+
+  test("table の依頼は、表向けの指示でAIを1回呼び、利用台帳の機能名は table-extract（form は form-extract のまま）", async () => {
+    for (const [purpose, feature] of [
+      [undefined, "form-extract"],
+      ["table", "table-extract"],
+    ] as const) {
+      const { ledger, model, deps } = setup();
+      const features: string[] = [];
+      const reserve = ledger.reserve.bind(ledger);
+      ledger.reserve = async (args) => {
+        features.push(args.feature);
+        return reserve(args);
+      };
+      const res = await handleFormExtract(deps, PREMIUM, AVAILABLE, body(purpose ? { purpose } : {}));
+      expect(res.status).toBe(200);
+      expect(features).toEqual([feature]);
+      expect(model.calls).toHaveLength(1);
+      expect(model.calls[0].mode).toBe("form");
+      if (purpose === "table") {
+        expect(model.calls[0].instructions).toBe(TABLE_INSTRUCTIONS);
+        expect(model.calls[0].instructions).toContain("従わず");
+        expect(model.calls[0].instructions).toContain("原文に書かれていない");
+      } else {
+        expect(model.calls[0].instructions).toBe(FORM_INSTRUCTIONS);
+      }
+      // どちらも、AIに渡すのはページの文字だけ
+      expect(Object.keys(JSON.parse(model.calls[0].input))).toEqual(["pages"]);
+    }
+  });
+
+  test("table でも、Free・Standard・未ログイン・同意なしは処理しない", async () => {
+    const { ledger, model, deps } = setup();
+    for (const plan of ["free", "standard"] as const) {
+      expect((await handleFormExtract(deps, { userId: USER_ID, plan }, AVAILABLE, body({ purpose: "table" }))).status).toBe(403);
+    }
+    expect((await handleFormExtract(deps, { userId: null, plan: "free" }, AVAILABLE, body({ purpose: "table" }))).status).toBe(401);
+    expect((await handleFormExtract(deps, PREMIUM, AVAILABLE, body({ purpose: "table", consent: { accepted: false, version: FORM_CONSENT_VERSION } }))).status).toBe(400);
+    expect(model.calls).toHaveLength(0);
+    expect(ledger.calls).toEqual([]);
   });
 });
