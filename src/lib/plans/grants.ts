@@ -17,10 +17,8 @@ export interface PremiumGrant {
 }
 
 export const TRIAL_DAYS = 3;
-/** 管理者が一度に付与できる最長の日数（入力ミスで何年分も付与してしまうのを防ぐ） */
-export const ADMIN_GRANT_MAX_DAYS = 366;
-/** 管理者が選べる日数（画面の選択肢） */
-export const ADMIN_GRANT_DAY_CHOICES = [3, 7, 14, 30, 90, 180, 365] as const;
+/** 管理者が一度に付与できる最長の日数（入力ミスで何年分も付与してしまうのを防ぐ。約3年） */
+export const ADMIN_GRANT_MAX_DAYS = 1095;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -36,6 +34,28 @@ export function isGrantActive(grant: PremiumGrant | null, nowMs: number): boolea
 export function grantEndMs(nowMs: number, days: number): number | null {
   if (!Number.isInteger(days) || days < 1 || days > ADMIN_GRANT_MAX_DAYS) return null;
   return nowMs + days * DAY_MS;
+}
+
+const JST_OFFSET = "+09:00";
+
+/**
+ * 管理者が指定した「最終日」（YYYY-MM-DD、日本時間）から、付与の終了時刻（その日の終わり）を決める。
+ * 形式が正しくない・今日より前（または今日の終わりを過ぎている）・上限（約3年）を超える場合は null。
+ */
+export function grantEndFromDate(dateText: string, nowMs: number): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) return null;
+  const end = Date.parse(`${dateText}T23:59:59.999${JST_OFFSET}`);
+  if (!Number.isFinite(end)) return null;
+  // 「2026-02-30」のような存在しない日付は、Dateが別の日に繰り上げるので、同じ日付に戻るかで確かめる
+  const roundTrip = new Date(end + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (roundTrip !== dateText) return null;
+  if (end <= nowMs || end > nowMs + ADMIN_GRANT_MAX_DAYS * DAY_MS) return null;
+  return end;
+}
+
+/** 画面の日付入力の初期値・最小値に使う、日本時間のいまの日付からN日後（YYYY-MM-DD） */
+export function jstDateAfterDays(days: number): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000 + days * DAY_MS).toISOString().slice(0, 10);
 }
 
 /**
@@ -59,8 +79,11 @@ export const GRANT_SOURCE_LABEL: Record<GrantSource, string> = {
   trial: "無料お試し",
 };
 
-/** AIの利用枠（マイクロドル）。無料お試しは、費用を抑えるため、通常の月間の枠より小さくする */
-export const AI_TRIAL_LIMIT_MICRO_USD = 500_000;
+/**
+ * AIの利用枠（マイクロドル）。無料お試しは、費用を抑えるため、通常の月間の枠より小さくする。
+ * 0.60ドル ≒ 99円（165円/ドル。src/lib/ai/pricing.ts の JPY_PER_USD）で、100円相当を超えない。
+ */
+export const AI_TRIAL_LIMIT_MICRO_USD = 600_000;
 
 /**
  * 無料お試しの案内の状態（画面の出し分け）。

@@ -1,9 +1,11 @@
 import { test, expect } from "@playwright/test";
 import {
-  ADMIN_GRANT_DAY_CHOICES,
   ADMIN_GRANT_MAX_DAYS,
   TRIAL_DAYS,
   applyGrantToPlan,
+  grantEndFromDate,
+  AI_TRIAL_LIMIT_MICRO_USD,
+  jstDateAfterDays,
   grantEndMs,
   isGrantActive,
   trialOfferState,
@@ -11,7 +13,7 @@ import {
 } from "@/lib/plans/grants";
 
 /** プレミアムの無料付与・3日間の無料お試しの、判定ルールのテスト（画面・DBは使わない） */
-const NOW = Date.parse("2026-10-30T00:00:00Z");
+const NOW = Date.parse("2026-10-30T00:00:00Z"); // 日本時間 2026-10-30 09:00
 const DAY = 24 * 60 * 60 * 1000;
 const grant = (startOffsetDays: number, endOffsetDays: number, source: PremiumGrant["source"] = "admin"): PremiumGrant => ({
   source,
@@ -39,8 +41,35 @@ test.describe("grantEndMs", () => {
     expect(grantEndMs(NOW, ADMIN_GRANT_MAX_DAYS)).toBe(NOW + ADMIN_GRANT_MAX_DAYS * DAY);
     for (const bad of [0, -1, 1.5, ADMIN_GRANT_MAX_DAYS + 1, Number.NaN]) expect(grantEndMs(NOW, bad)).toBeNull();
   });
-  test("画面の選択肢は、すべて上限以内", () => {
-    for (const d of ADMIN_GRANT_DAY_CHOICES) expect(grantEndMs(NOW, d)).not.toBeNull();
+});
+
+test.describe("grantEndFromDate（管理者が指定する最終日）", () => {
+  // NOW = 2026-10-30 09:00（日本時間）
+  test("指定した日の終わり（日本時間 23:59:59.999）まで有効", () => {
+    const end = grantEndFromDate("2026-11-05", NOW);
+    expect(end).toBe(Date.parse("2026-11-05T23:59:59.999+09:00"));
+    expect(isGrantActive({ source: "admin", startsAt: new Date(NOW).toISOString(), endsAt: new Date(end as number).toISOString() }, Date.parse("2026-11-05T23:00:00+09:00"))).toBe(true);
+    expect(isGrantActive({ source: "admin", startsAt: new Date(NOW).toISOString(), endsAt: new Date(end as number).toISOString() }, Date.parse("2026-11-06T00:00:00+09:00"))).toBe(false);
+  });
+  test("今日（まだ終わっていない）を指定できる。過去の日は不可", () => {
+    expect(grantEndFromDate("2026-10-30", NOW)).not.toBeNull();
+    expect(grantEndFromDate("2026-10-29", NOW)).toBeNull();
+  });
+  test("形式が正しくない・存在しない日付・上限（約3年）超えは不可", () => {
+    for (const bad of ["", "2026/11/05", "2026-11-5", "2026-02-30", "2026-13-01", "abc", "2026-11-05T00:00"]) expect(grantEndFromDate(bad, NOW), bad).toBeNull();
+    expect(grantEndFromDate("2026-11-05", NOW)).not.toBeNull();
+    expect(grantEndFromDate("2031-01-01", NOW)).toBeNull();
+    expect(grantEndFromDate("2029-10-01", NOW)).not.toBeNull();
+  });
+  test("画面の初期値の日付は YYYY-MM-DD", () => {
+    expect(jstDateAfterDays(30)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+test.describe("無料お試しのAI枠", () => {
+  test("100円相当（165円/ドル）を超えない", () => {
+    expect((AI_TRIAL_LIMIT_MICRO_USD / 1_000_000) * 165).toBeLessThanOrEqual(100);
+    expect((AI_TRIAL_LIMIT_MICRO_USD / 1_000_000) * 165).toBeGreaterThan(95);
   });
 });
 

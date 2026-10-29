@@ -6,8 +6,8 @@ import { describeMembersIssue } from "@/lib/admin/stats";
 import { PLAN_DEFINITIONS, PLAN_IDS, type Plan } from "@/lib/plans/types";
 import { SUBSCRIPTION_STATUS_LABEL } from "@/lib/plans/status-labels";
 import { fetchAllGrants } from "@/lib/plans/grant-store";
-import { ADMIN_GRANT_DAY_CHOICES, GRANT_SOURCE_LABEL, formatGrantEnd } from "@/lib/plans/grants";
-import { grantPremiumAction, revokeGrantAction } from "./actions";
+import { GRANT_SOURCE_LABEL, formatGrantEnd, jstDateAfterDays } from "@/lib/plans/grants";
+import { changeMemberStatusAction } from "./actions";
 
 export const metadata: Metadata = {
   title: "会員一覧 | 管理画面",
@@ -17,8 +17,9 @@ export const metadata: Metadata = {
 const PAGE_SIZE = 25;
 
 const NOTICE_MESSAGES: Record<string, string> = {
-  granted: "プレミアムを無料で付与しました。",
-  revoked: "無料付与を取り消しました。",
+  granted: "会員のステータスを「プレミアム（無料付与）」に変更しました。",
+  revoked: "会員のステータスを「無料プラン」に戻しました。",
+  invalid_date: "最終日が正しくありません。明日以降の日付を、約3年以内で指定してください。",
   invalid: "入力が正しくありません。もう一度お試しください。",
   failed: "保存できませんでした。しばらくしてから、もう一度お試しください。",
   not_ready: "付与の保存先（データベース）がまだ用意できていません。SQL（0008_premium_grants.sql）を実行してください。",
@@ -195,7 +196,7 @@ export default async function AdminMembersPage({
               <th className="px-4 py-3 font-medium">登録日</th>
               <th className="px-4 py-3 font-medium">Stripe Customer ID</th>
               <th className="px-4 py-3 font-medium">ユーザーID</th>
-              <th className="px-4 py-3 font-medium">無料付与（プレミアム）</th>
+              <th className="px-4 py-3 font-medium">ステータス変更（無料付与）</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -276,7 +277,7 @@ export default async function AdminMembersPage({
   );
 }
 
-/** 1人分の「無料付与」欄: いまの付与の状態と、付与・取り消しのフォーム */
+/** 1人分の「ステータス変更」欄: いまの無料付与の状態と、ステータス（プレミアム／無料）・最終日を指定して変更するフォーム */
 function GrantCell({
   userId,
   grant,
@@ -289,7 +290,7 @@ function GrantCell({
   ready: boolean;
 }) {
   return (
-    <div className="flex min-w-[260px] flex-col gap-2">
+    <div className="flex min-w-[320px] flex-col gap-2">
       {grant && (
         <p className="text-xs">
           {active ? (
@@ -305,40 +306,43 @@ function GrantCell({
         </p>
       )}
       {ready && (
-        <div className="flex flex-wrap items-center gap-2">
-          <form action={grantPremiumAction} className="flex flex-wrap items-center gap-1">
-            <input type="hidden" name="userId" value={userId} />
-            <select
-              name="days"
-              defaultValue="30"
-              aria-label="付与する日数"
+        <form action={changeMemberStatusAction} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="userId" value={userId} />
+          <select
+            name="status"
+            defaultValue={active ? "premium" : "free"}
+            aria-label="変更後のステータス"
+            className="rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+          >
+            <option value="premium">プレミアム（無料付与）</option>
+            <option value="free">無料プラン</option>
+          </select>
+          <label className="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+            最終日
+            <input
+              type="date"
+              name="until"
+              defaultValue={grant && active ? grant.endsAt.slice(0, 10) : jstDateAfterDays(30)}
+              min={jstDateAfterDays(1)}
+              aria-label="プレミアムの最終日（その日の終わりまで）"
               className="rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-            >
-              {ADMIN_GRANT_DAY_CHOICES.map((d) => (
-                <option key={d} value={d}>
-                  {d}日間
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
-            >
-              {active ? "期間を上書きして付与" : "無料で付与"}
-            </button>
-          </form>
-          {active && (
-            <form action={revokeGrantAction}>
-              <input type="hidden" name="userId" value={userId} />
-              <button
-                type="submit"
-                className="rounded-lg border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-              >
-                取り消す
-              </button>
-            </form>
-          )}
-        </div>
+            />
+          </label>
+          <input
+            type="text"
+            name="note"
+            maxLength={200}
+            placeholder="メモ（任意）"
+            aria-label="メモ（任意）"
+            className="w-36 rounded-lg border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+          />
+          <button
+            type="submit"
+            className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+          >
+            変更する
+          </button>
+        </form>
       )}
     </div>
   );

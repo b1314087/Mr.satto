@@ -63,18 +63,19 @@ export async function fetchAllGrants(): Promise<{ status: "ok" | "not_ready" | "
 
 export type GrantWriteResult = { ok: true; endsAt: string } | { ok: false; reason: "not_ready" | "unavailable" | "invalid" };
 
-/** 付与する（すでにあれば上書き）。days は 1〜366 の整数 */
+/** 付与する（すでにあれば上書き）。期限は days（1〜上限の整数）か、endMs（終了時刻）のどちらかで指定する */
 export async function grantPremium(args: {
   userId: string;
   source: GrantSource;
-  days: number;
+  days?: number;
+  endMs?: number;
   grantedBy: string | null;
   note?: string | null;
   nowMs?: number;
 }): Promise<GrantWriteResult> {
   const now = args.nowMs ?? Date.now();
-  const end = grantEndMs(now, args.days);
-  if (end === null) return { ok: false, reason: "invalid" };
+  const end = args.endMs ?? (args.days === undefined ? null : grantEndMs(now, args.days));
+  if (end === null || end <= now) return { ok: false, reason: "invalid" };
   const supabase = getSupabaseServiceClient();
   if (!supabase) return { ok: false, reason: "unavailable" };
   const row = {
