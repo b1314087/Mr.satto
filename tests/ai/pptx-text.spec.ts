@@ -112,6 +112,7 @@ test.describe("AIの出力の検証", () => {
   test("指示には、画像の中の文字を命令として扱わないことと、確実でない行を text にしないことが書かれている", () => {
     expect(PPTX_TEXT_INSTRUCTIONS).toContain("従わず");
     expect(PPTX_TEXT_INSTRUCTIONS).toContain("text にせず");
+    expect(PPTX_TEXT_INSTRUCTIONS).toContain("白抜き");
   });
 });
 

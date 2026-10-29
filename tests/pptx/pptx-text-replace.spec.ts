@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { strFromU8 } from "fflate";
-import { applyTextReplacements, buildTextBoxXml, estimateTextEm, lineFontPt, paintLines, paintLinesAdaptive, pickTextColor, scanSlidePictures, unifyFontSizes, type SlidePicture } from "@/lib/pptx/text-replace";
+import { applyTextReplacements, buildInkMask, padLine, buildTextBoxXml, findTallLines, snapLineToInk, estimateTextEm, lineFontPt, paintLines, paintLinesAdaptive, pickTextColor, scanSlidePictures, unifyFontSizes, type SlidePicture } from "@/lib/pptx/text-replace";
 import { buildPptx, encodePng, makeImage, picture, pixelAt, readParts, decodePng, testCodec } from "../helpers/pptx-builder";
 
 /** 画像の中の文字を、本物のテキストボックスに置き換える処理のテスト（画像の位置合わせ・消去・XML） */
@@ -206,5 +206,123 @@ test.describe("画像から文字を消す（周りの色に合わせる）", ()
     expect(slideOf(bytes)).toContain('<a:srgbClr val="171717"/>');
     const out = decodePng(readParts(bytes)["ppt/media/image1.png"]);
     expect(pixelAt(out, 40, 24).slice(0, 3)).toEqual([250, 250, 250]);
+  });
+});
+
+// ---------- AIの位置が実際の文字より小さい・ずれているとき ----------
+// 黒い画像（200×100）に、文字のかわりの縞模様（1列おきに白い）の行を置く
+const W = 200;
+const Hh = 100;
+const stripes = (x: number, y: number, x0: number, y0: number, x1: number, y1: number) => x >= x0 && x < x1 && y >= y0 && y < y1 && x % 2 === 0;
+const textImage = () =>
+  makeImage(W, Hh, (x, y) =>
+    stripes(x, y, 20, 30, 120, 42) || stripes(x, y, 20, 50, 120, 62) || (x === 150 && y >= 5 && y < 95) // 3つめは、縦の細い線（枠線）
+      ? [255, 255, 255, 255]
+      : (x + y) % 2 === 0 && y >= 80
+        ? [24, 24, 24, 255] // うすい方眼（文字の画素にしない）
+        : [0, 0, 0, 255],
+  );
+const maskOf = (image: ReturnType<typeof textImage>) => buildInkMask(image.data, image.width, image.height, "000000", "FFFFFF");
+const aiLine = (x: number, y: number, w: number, h: number) => ({ text: "あいうえお", x, y, w, h, underline: false, bold: false });
+
+test.describe("文字の画素の地図", () => {
+  test("明るい文字は文字の画素になり、うすい方眼・背景は含まれない", () => {
+    const image = textImage();
+    const mask = maskOf(image);
+    expect(mask[30 * W + 20]).toBe(1);
+    expect(mask[31 * W + 21]).toBe(0); // 縞のすき間
+    expect(mask[85 * W + 41]).toBe(0); // うすい方眼
+    expect(mask[10 * W + 100]).toBe(0);
+  });
+});
+
+test.describe("AIの位置を、画像の文字に合わせる", () => {
+  test("AIの行が実際より小さく・上にずれていても、実際の文字の範囲（1行ぶん）に合わせる", () => {
+    const mask = maskOf(textImage());
+    // 実際は x 20〜119、y 30〜41。AIは、左上だけ近く、幅・高さが0.4倍で、少し上
+    const r = snapLineToInk(mask, W, Hh, aiLine(20 / W, 27 / Hh, 40 / W, 5 / Hh));
+    expect(r.snapped).toBe(true);
+    expect(r.line.x * W).toBeCloseTo(20, 0);
+    expect(r.line.y * Hh).toBeCloseTo(30, 0);
+    expect((r.line.x + r.line.w) * W).toBeGreaterThanOrEqual(118);
+    expect((r.line.y + r.line.h) * Hh).toBeCloseTo(42, 0);
+    // 下の行（すき間7行）・縦の細い線（x=150）には広がらない
+    expect((r.line.x + r.line.w) * W).toBeLessThan(125);
+    expect((r.line.y + r.line.h) * Hh).toBeLessThan(46);
+    expect(r.density).toBeGreaterThan(0.3);
+  });
+
+  test("AIの位置がほぼ合っているときは、そのまま（動かさない）", () => {
+    const mask = maskOf(textImage());
+    const r = snapLineToInk(mask, W, Hh, aiLine(20 / W, 30 / Hh, 100 / W, 12 / Hh));
+    expect(r.snapped).toBe(false);
+    expect(r.line.y).toBeCloseTo(30 / Hh);
+  });
+
+  test("文字がない場所の行は、そのまま（探しても見つからない）", () => {
+    const mask = maskOf(textImage());
+    const r = snapLineToInk(mask, W, Hh, aiLine(0.6, 0.05, 0.1, 0.05));
+    expect(r.snapped).toBe(false);
+  });
+
+  test("ほぼ全面が塗りつぶされた帯は、文字ではないので、動かさない", () => {
+    const band = makeImage(W, Hh, (_x, y) => (y >= 15 && y < 35 ? [255, 255, 255, 255] : [0, 0, 0, 255]));
+    const r = snapLineToInk(maskOf(band), W, Hh, aiLine(0.2, 0.2, 0.5, 0.08));
+    expect(r.snapped).toBe(false);
+  });
+
+  test("上下の行がくっついて、AIの高さの3.6倍を超えるまとまりのときは、直さない", () => {
+    const tall = makeImage(W, Hh, (x, y) => (x % 2 === 0 && x >= 20 && x < 120 && y >= 10 && y < 90 ? [255, 255, 255, 255] : [0, 0, 0, 255]));
+    const r = snapLineToInk(maskOf(tall), W, Hh, aiLine(20 / W, 12 / Hh, 40 / W, 6 / Hh));
+    expect(r.snapped).toBe(false);
+  });
+});
+
+test.describe("背の高い式（分数など）", () => {
+  test("ほかの行より1.6倍を超えて背が高く、まばらなものだけが、式とみなされる", () => {
+    expect(findTallLines([17, 17, 17, 33], [0.5, 0.5, 0.5, 0.2])).toEqual([false, false, false, true]);
+    // 白い帯のように密なものは、文字として置き換えられるので、式とみなさない
+    expect(findTallLines([17, 17, 17, 33], [0.5, 0.5, 0.5, 0.9])).toEqual([false, false, false, false]);
+    // 行が少ないと、比べられない
+    expect(findTallLines([17, 33], [0.5, 0.2])).toEqual([false, false]);
+  });
+});
+
+test.describe("applyTextReplacements（AIの位置が小さいとき）", () => {
+  test("元の文字が残らないよう画像から消し、文字の大きさを実際の行に合わせる。背の高い式は残す", async () => {
+    // 3行（高さ12）と、背の高いまばらな式（高さ26: x 20〜100 の縞）
+    const rows = (x: number, y: number) =>
+      stripes(x, y, 20, 8, 120, 20) || stripes(x, y, 20, 28, 120, 40) || stripes(x, y, 20, 48, 120, 60) || (x >= 20 && x < 100 && y >= 68 && y < 94 && x % 4 === 0);
+    const image = makeImage(W, Hh, (x, y) => (rows(x, y) ? [255, 255, 255, 255] : [0, 0, 0, 255]));
+    const src = buildPptx({ slides: [{ shapes: picture(2, "rId2"), images: [{ name: "image1.png", bytes: encodePng(image) }] }] });
+    const small = (y: number) => ({ ...LINE, x: 20 / W, y: (y - 2) / Hh, w: 40 / W, h: 5 / Hh });
+    const lines = [small(8), small(28), small(48), { ...small(68), h: 10 / Hh }];
+    const { bytes, report } = await applyTextReplacements(src, [{ imagePath: "ppt/media/image1.png", lines }], { textColor: "FFFFFF", backgroundColor: "000000" }, testCodec);
+    expect(report).toMatchObject({ lines: 3, skippedLines: 1, snappedLines: 3, tallLines: 1 });
+    expect(report.notes.join("\n")).toContain("縦に2段以上");
+    // 3行とも、同じ大きさになり、AIの小さい高さ（5）から決めた大きさ（約1.3pt→下限4pt）ではなく、実際の高さから決まる
+    const sizes = [...slideOf(bytes).matchAll(/ sz="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(new Set(sizes).size).toBe(1);
+    expect(sizes[0]).toBeGreaterThan(400);
+    // 画像: 3行の文字は消え、背の高い式は残っている
+    const out = decodePng(readParts(bytes)["ppt/media/image1.png"]);
+    expect(pixelAt(out, 60, 14).slice(0, 3)).toEqual([0, 0, 0]);
+    expect(pixelAt(out, 60, 34).slice(0, 3)).toEqual([0, 0, 0]);
+    expect(pixelAt(out, 40, 54).slice(0, 3)).toEqual([0, 0, 0]);
+    expect(pixelAt(out, 40, 69).slice(0, 3)).toEqual([255, 255, 255]);
+  });
+});
+
+test.describe("消す範囲を広げる", () => {
+  test("行の高さの約15%（最低1px）、上下左右に広げ、画像の外には出ない", () => {
+    const r = padLine(aiLine(0.1, 0.3, 0.5, 0.2), 200, 100); // 高さ20px → 3px
+    expect(r.x * 200).toBeCloseTo(17, 5);
+    expect(r.y * 100).toBeCloseTo(27, 5);
+    expect((r.x + r.w) * 200).toBeCloseTo(123, 5);
+    expect((r.y + r.h) * 100).toBeCloseTo(53, 5);
+    const edge = padLine(aiLine(0, 0, 1, 0.1), 200, 100);
+    expect(edge.x).toBe(0);
+    expect(edge.x + edge.w).toBe(1);
+    expect(edge.y).toBe(0);
   });
 });

@@ -128,6 +128,10 @@ export interface TextReplaceReport {
   images: number;
   /** 位置が確実でないなどの理由で、置き換えなかった行の数 */
   skippedLines: number;
+  /** AIの位置が実際の文字と合っていなかったため、画像の文字に合わせて位置・大きさを直した行の数 */
+  snappedLines: number;
+  /** 分数のような縦に2段以上の式とみなして、置き換えなかった行の数（skippedLines にも含む） */
+  tallLines: number;
   notes: string[];
 }
 
@@ -320,6 +324,167 @@ export function pickTextColor(fillHex: string, textColor: string, backgroundColo
 }
 
 /**
+ * AIが返した行の位置・大きさは、実際の文字より小さい（または、ずれている）ことがある。
+ * 小さいままだと、文字を消す範囲が足りず（元の文字が残って二重になる）、置く文字も小さくなる。
+ * そこで、画像の中の「文字の画素」を実際に探して、行の位置・大きさを合わせ直す。
+ *  - 文字の画素: 背景色との明るさの差が大きい画素（方眼のうすい線などは含まない）。
+ *  - AIの位置の近くで、縦に並んだ文字の画素のまとまり（1行ぶん）を探し、その左右を、すき間が空くまで広げる。
+ *  - 見つからない・まとまりが大きすぎる（図や、ほかの行とくっついている）ときは、AIの位置のまま。
+ */
+export interface SnapResult {
+  line: ReplaceLine;
+  /** 画像の文字に合わせて、位置・大きさを直した */
+  snapped: boolean;
+  /** 直した範囲の中の、文字の画素の割合（0〜1）。白い帯のような塗りは高く、文字・式はまばら */
+  density: number;
+}
+
+const lumaRgb = (r: number, g: number, b: number) => 0.299 * r + 0.587 * g + 0.114 * b;
+
+/** 画像の「文字の画素」の地図（1が文字）。背景色との明るさの差が、しきい値以上の画素 */
+export function buildInkMask(data: Uint8ClampedArray | Uint8Array, width: number, height: number, backgroundColor: string, textColor: string): Uint8Array {
+  const bg = parseHex(backgroundColor) ?? { r: 0, g: 0, b: 0 };
+  const tx = parseHex(textColor) ?? { r: 255, g: 255, b: 255 };
+  const bgL = lumaRgb(bg.r, bg.g, bg.b);
+  const span = Math.abs(lumaRgb(tx.r, tx.g, tx.b) - bgL);
+  const threshold = Math.max(50, span * 0.4);
+  const mask = new Uint8Array(width * height);
+  for (let p = 0, i = 0; p < mask.length; p++, i += 4) {
+    if (data[i + 3] < 128) continue;
+    if (Math.abs(lumaRgb(data[i], data[i + 1], data[i + 2]) - bgL) >= threshold) mask[p] = 1;
+  }
+  return mask;
+}
+
+/** 位置を直す対象の行の高さの上限（AIの高さの何倍まで広げるか）。これを超えるまとまりは、図や別の行とくっついているとみなす */
+const SNAP_MAX_GROWTH = 3.6;
+/** 文字の画素の割合がこれを超えるまとまりは、塗りつぶし（帯など）とみなして、位置を直さない */
+const SNAP_MAX_DENSITY = 0.85;
+
+export function snapLineToInk(mask: Uint8Array, width: number, height: number, line: ReplaceLine): SnapResult {
+  const keep: SnapResult = { line, snapped: false, density: 0 };
+  const bx0 = line.x * width;
+  const by0 = line.y * height;
+  const bw = Math.max(1, line.w * width);
+  const bh = Math.max(2, line.h * height);
+  // 探す範囲: 縦は、AIの位置の少し上〜大きく下（AIが小さく・上にずれる場合が多い）。
+  // 横は、AIの横の範囲だけ（広げると、隣の枠の線などを拾って、行がつながってしまう）
+  const wx0 = clamp(Math.floor(bx0 - bh * 0.5), 0, width);
+  const wx1 = clamp(Math.ceil(bx0 + bw + bh * 0.5), 0, width);
+  const wy0 = clamp(Math.floor(by0 - bh * 1.2), 0, height);
+  const wy1 = clamp(Math.ceil(by0 + bh * (1 + SNAP_MAX_GROWTH)), 0, height);
+  if (wx1 - wx0 < 2 || wy1 - wy0 < 2) return keep;
+
+  // 行ごとの文字の画素の数 → 縦のまとまり（すき間1行までは、つなげる）
+  const rowHas = new Uint8Array(wy1 - wy0);
+  for (let y = wy0; y < wy1; y++) {
+    let n = 0;
+    for (let x = wx0; x < wx1; x++) n += mask[y * width + x];
+    // 画像の端の枠線のような、細い縦線だけの行は、文字の行とみなさない
+    rowHas[y - wy0] = n >= Math.max(2, Math.ceil((wx1 - wx0) * 0.03)) ? 1 : 0;
+  }
+  const runs: { a: number; b: number }[] = [];
+  let a = -1;
+  let last = -1;
+  for (let i = 0; i < rowHas.length; i++) {
+    if (!rowHas[i]) continue;
+    if (a >= 0 && i - last > 2) {
+      runs.push({ a, b: last });
+      a = -1;
+    }
+    if (a < 0) a = i;
+    last = i;
+  }
+  if (a >= 0) runs.push({ a, b: last });
+  // AIの行（by0〜by0+bh）といちばん重なるまとまりを選ぶ
+  let best: { a: number; b: number } | null = null;
+  let bestOverlap = 0;
+  for (const run of runs) {
+    const ya = wy0 + run.a;
+    const yb = wy0 + run.b + 1;
+    const overlap = Math.min(yb, by0 + bh) - Math.max(ya, by0);
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      best = run;
+    }
+  }
+  if (!best || bestOverlap <= 0) return keep;
+  const ry0 = wy0 + best.a;
+  const ry1 = wy0 + best.b + 1;
+  const rh = ry1 - ry0;
+  if (rh > bh * SNAP_MAX_GROWTH || rh < 2) return keep;
+
+  // 横: まとまりの行の範囲で、文字の画素がある列。AIの位置から、すき間が空くまで左右へ広げる
+  const colHas = new Uint8Array(width);
+  for (let x = 0; x < width; x++) {
+    for (let y = ry0; y < ry1; y++) {
+      if (mask[y * width + x]) {
+        colHas[x] = 1;
+        break;
+      }
+    }
+  }
+  const gap = Math.max(4, Math.round(rh));
+  // 種になる列: AIの横の範囲の中の、いちばん左の文字の列
+  let seed = -1;
+  for (let x = clamp(Math.floor(bx0 - bh), 0, width); x < clamp(Math.ceil(bx0 + bw + bh), 0, width); x++) {
+    if (colHas[x]) {
+      seed = x;
+      break;
+    }
+  }
+  if (seed < 0) return keep;
+  let left = seed;
+  for (let x = seed - 1, miss = 0; x >= 0 && miss <= gap; x--) {
+    if (colHas[x]) {
+      left = x;
+      miss = 0;
+    } else miss++;
+  }
+  let right = seed;
+  const maxRight = clamp(Math.ceil(bx0 + bw * SNAP_MAX_GROWTH + bh * 4), 0, width);
+  for (let x = seed + 1, miss = 0; x < maxRight && miss <= gap; x++) {
+    if (colHas[x]) {
+      right = x;
+      miss = 0;
+    } else miss++;
+  }
+  const nx = left / width;
+  const ny = ry0 / height;
+  const nw = (right + 1 - left) / width;
+  const nh = rh / height;
+  // ほとんど変わらないときは、AIの位置のまま（わずかな差で、毎回動かさない）
+  if (Math.abs(nx - line.x) < 0.004 && Math.abs(ny - line.y) < 0.004 && Math.abs(nw - line.w) < 0.01 && Math.abs(nh - line.h) < 0.006) return keep;
+  let ink = 0;
+  for (let y = ry0; y < ry1; y++) for (let x = left; x <= right; x++) ink += mask[y * width + x];
+  const density = ink / ((right + 1 - left) * rh);
+  // ほぼ全面が塗りつぶされているもの（帯・図形）は、文字ではなく塗り。文字の範囲を決められないので、AIの位置のまま
+  if (density > SNAP_MAX_DENSITY) return keep;
+  return { line: { ...line, x: nx, y: ny, w: nw, h: nh }, snapped: true, density };
+}
+
+/** 消す範囲を、上下左右に、行の高さの約15%（最低1px）広げる */
+export function padLine(line: ReplaceLine, width: number, height: number): ReplaceLine {
+  const px = Math.max(1, Math.round(line.h * height * 0.15));
+  const x0 = Math.max(0, line.x - px / width);
+  const y0 = Math.max(0, line.y - px / height);
+  const x1 = Math.min(1, line.x + line.w + px / width);
+  const y1 = Math.min(1, line.y + line.h + px / height);
+  return { ...line, x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** 同じ画像の行のうち、ほかの行より極端に背の高い行（分数など、縦に2段以上の式）。文字の行として置き換えると崩れるので、画像のまま残す */
+export const TALL_LINE_RATIO = 1.6;
+/** 白い帯の見出しのような「塗り」は背が高くても文字として置き換えられる。まばらなもの（分数など）だけを、背の高い式とみなす */
+export const TALL_LINE_MAX_DENSITY = 0.4;
+export function findTallLines(heights: number[], densities: number[]): boolean[] {
+  if (heights.length < 3) return heights.map(() => false);
+  const sorted = [...heights].sort((p, q) => p - q);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  return heights.map((h, i) => h > med * TALL_LINE_RATIO && densities[i] < TALL_LINE_MAX_DENSITY);
+}
+
+/**
  * 変換後の .pptx（bytes）に、文字の置き換えを適用する。
  * 位置の対応が取れない画像（回転・グループの中など）の行は置き換えず、skippedLines に数える。
  */
@@ -337,7 +502,7 @@ export async function applyTextReplacements(bytes: Uint8Array, replacements: Ima
   const slideXml = new Map<string, string>();
   const additions = new Map<string, string[]>();
   const nextId = new Map<string, number>();
-  const report: TextReplaceReport = { lines: 0, images: 0, skippedLines: 0, notes: [] };
+  const report: TextReplaceReport = { lines: 0, images: 0, skippedLines: 0, snappedLines: 0, tallLines: 0, notes: [] };
 
   for (const rep of replacements) {
     if (rep.lines.length === 0) continue;
@@ -348,17 +513,39 @@ export async function applyTextReplacements(bytes: Uint8Array, replacements: Ima
       report.skippedLines += rep.lines.length;
       continue;
     }
+    const raster = await activeCodec.decode(original, kind);
+    // AIの位置が実際の文字より小さい・ずれているときは、画像の文字に合わせて直す
+    const mask = buildInkMask(raster.data, raster.width, raster.height, options.backgroundColor, options.textColor);
+    const snaps = rep.lines.map((line) => snapLineToInk(mask, raster.width, raster.height, line));
+    const tall = findTallLines(snaps.map((r) => r.line.h), snaps.map((r) => r.density));
+    let snappedCount = 0;
+    let tallCount = 0;
+    const candidates: ReplaceLine[] = [];
+    const wasSnapped = new Map<ReplaceLine, boolean>();
+    snaps.forEach((r, n) => {
+      if (tall[n] && r.snapped) {
+        tallCount++;
+        return;
+      }
+      if (r.snapped) snappedCount++;
+      candidates.push(r.line);
+      wasSnapped.set(r.line, r.snapped);
+    });
+    report.snappedLines += snappedCount;
+    report.tallLines += tallCount;
+    report.skippedLines += tallCount;
     // まず、テキストボックスにできる行を決める（どのスライドの画像でも作れない行は、画像からも消さない）
     const usable: ReplaceLine[] = [];
-    for (const line of rep.lines) {
+    for (const line of candidates) {
       const ok = pics.some((pic) => buildTextBoxXml(1, pic, line, options.textColor) !== null);
       if (ok) usable.push(line);
       else report.skippedLines++;
     }
     if (usable.length === 0) continue;
     // ① 画像から文字を消す
-    const raster = await activeCodec.decode(original, kind);
-    const { fills } = paintLinesAdaptive(raster.data, raster.width, raster.height, usable, options.backgroundColor);
+    // 画像の文字に合わせて直した行は、文字のふちのうすい画素まで消すため、消す範囲だけ少し広げる（文字の大きさ・位置には影響しない）
+    const erase = usable.map((line) => (wasSnapped.get(line) ? padLine(line, raster.width, raster.height) : line));
+    const { fills } = paintLinesAdaptive(raster.data, raster.width, raster.height, erase, options.backgroundColor);
     const colors = usable.map((_, i) => pickTextColor(fills[i], options.textColor, options.backgroundColor));
     out[rep.imagePath] = await activeCodec.encode(raster, kind, 0.98);
     report.images++;
@@ -393,7 +580,9 @@ export async function applyTextReplacements(bytes: Uint8Array, replacements: Ima
     if (at < 0 || boxes.length === 0) continue;
     out[slide] = strToU8(xml.slice(0, at) + boxes.join("") + xml.slice(at));
   }
-  if (report.skippedLines > 0) report.notes.push(`位置を確実に合わせられない${report.skippedLines}行（回転した画像・グループの中の画像など）は、置き換えていません。`);
+  if (report.tallLines > 0) report.notes.push(`分数など、縦に2段以上の式とみなした${report.tallLines}行は、文字にすると崩れるため、画像のまま残しています。`);
+  if (report.skippedLines - report.tallLines > 0) report.notes.push(`位置を確実に合わせられない${report.skippedLines - report.tallLines}行（回転した画像・グループの中の画像など）は、置き換えていません。`);
+  if (report.snappedLines > 0) report.notes.push(`AIが読み取った位置が実際の文字と合っていなかった${report.snappedLines}行は、画像の文字の位置に合わせて直しました。`);
   report.notes.push("置き換えた文字は、元の画像の文字を消したあとに重ねたテキストボックスです。同じ大きさの行は、文字の大きさをそろえています。フォントや文字の幅は元の画像と少し違うことがあります。PowerPointで確認・調整してください。");
   const zippable: Zippable = {};
   for (const name of Object.keys(out)) {
