@@ -10,7 +10,7 @@
 import { unzipSync, zipSync, strFromU8, strToU8, type Zippable } from "fflate";
 import { emptyColorStats, parseClrMap, parseThemeColors, swapClrMap, convertColorsInXml, DEFAULT_CLR_MAP, type ClrMap, type ColorContext, type ColorStats, type InvertOptions } from "./invert-xml";
 import { resolvePalette, DEFAULT_COLOR_CHOICE, type ColorChoice } from "./palette";
-import { analyzeImage, createBrowserImageCodec, invertImagePixels, shouldEnhance, sniffRasterKind, type ImageCodec, type ImageDecision } from "./image-invert";
+import { analyzeImage, createBrowserImageCodec, invertImagePixels, shouldEnhance, shouldUpscale, sniffRasterKind, upscale2x, type ImageCodec, type ImageDecision } from "./image-invert";
 
 export interface PptxInvertOptions extends InvertOptions {
   /** 白黒と判定できる挿入画像を反転する（既定はオン） */
@@ -63,6 +63,8 @@ export interface ImageReport {
   coloredRatio?: number;
   /** 文字を見やすくする調整をした */
   enhanced?: boolean;
+  /** 低い解像度の画像を、なめらかに2倍へ拡大した（文字をくっきり調整する画像だけ） */
+  upscaled?: boolean;
   /** 画面で変換前後を並べて見せるための、元の画像と変換後の画像のバイト列（PNG・JPEGだけ） */
   mime?: string;
   before?: Uint8Array;
@@ -365,11 +367,14 @@ export async function invertPptx(
         images.push({ ...base, outcome: "kept-color", before: original });
       } else {
         const enhance = options.enhanceText === true && shouldEnhance(analysis);
-        invertImagePixels(raster.data, decision, palette, enhance ? { width: raster.width, height: raster.height } : undefined);
+        // 粗い画像は、反転の前に、なめらかに2倍へ拡大する（縁の濃淡が保たれて、ギザギザが目立たなくなる）
+        const upscaled = enhance && shouldUpscale(raster.width, raster.height);
+        const work = upscaled ? upscale2x(raster) : raster;
+        invertImagePixels(work.data, decision, palette, enhance ? { width: work.width, height: work.height } : undefined);
         // 文字を見やすくする調整をしたJPEGは、圧縮の乱れ（文字のまわりの縁）が目立たないよう、画質を高くして保存する
-        const encoded = await activeCodec.encode(raster, kind, enhance ? 0.98 : undefined);
+        const encoded = await activeCodec.encode(work, kind, enhance ? 0.98 : undefined);
         out[name] = encoded;
-        images.push({ ...base, outcome: decision === "invert-all" ? "inverted" : "inverted-gray", enhanced: enhance, before: original, after: encoded });
+        images.push({ ...base, outcome: decision === "invert-all" ? "inverted" : "inverted-gray", enhanced: enhance, upscaled, before: original, after: encoded });
       }
     } catch (e) {
       images.push({ path: name, outcome: e instanceof Error && e.message === "too-large" ? "too-large" : "failed", mime });
@@ -387,6 +392,8 @@ export async function invertPptx(
       "配色を指定した場合、元の白系の色は背景色、黒系の色は文字色に、灰色はその間の色になります。色の指定のない既定の文字・背景（テーマの標準の黒・白）と、色つきの図形の上の白い文字は、純黒・純白のまま表示されることがあります。",
     );
   }
+  const upscaledCount = images.filter((i) => i.upscaled).length;
+  if (upscaledCount > 0) notes.push(`解像度の低い画像（${upscaledCount}枚）は、文字や線の縁がなめらかになるよう、縦横2倍に拡大して反転しました（ファイルの大きさは増えます）。`);
   const count = (re: RegExp) => names.filter((n) => re.test(n)).length;
   const notesSlides = count(/^ppt\/notesSlides\/[^/]+\.xml$/);
   if (notesSlides > 0) notes.push(`発表者ノート（${notesSlides}件）は、変更していません。`);

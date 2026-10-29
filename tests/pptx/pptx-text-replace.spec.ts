@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { strFromU8 } from "fflate";
-import { applyTextReplacements, buildTextBoxXml, estimateTextEm, paintLines, scanSlidePictures, type SlidePicture } from "@/lib/pptx/text-replace";
+import { applyTextReplacements, buildTextBoxXml, estimateTextEm, lineFontPt, paintLines, paintLinesAdaptive, pickTextColor, scanSlidePictures, unifyFontSizes, type SlidePicture } from "@/lib/pptx/text-replace";
 import { buildPptx, encodePng, makeImage, picture, pixelAt, readParts, decodePng, testCodec } from "../helpers/pptx-builder";
 
 /** 画像の中の文字を、本物のテキストボックスに置き換える処理のテスト（画像の位置合わせ・消去・XML） */
@@ -137,5 +137,74 @@ test.describe("applyTextReplacements", () => {
     expect(a.report.lines).toBe(0);
     const b = await applyTextReplacements(src, [{ imagePath: "ppt/media/none.png", lines: [LINE] }], OPT, testCodec);
     expect(b.report).toMatchObject({ lines: 0, skippedLines: 1 });
+  });
+});
+
+test.describe("文字の大きさをそろえる", () => {
+  test("近い大きさの行は、中央値にそろう。大きく違う行（見出しなど）は、別のまとまり", () => {
+    const out = unifyFontSizes([20, 20.8, 21.5, 40, 41]);
+    expect(out[0]).toBe(out[1]);
+    expect(out[1]).toBe(out[2]);
+    expect(out[3]).toBe(out[4]);
+    expect(out[0]).toBeCloseTo(20.8);
+    expect(out[3]).toBeGreaterThan(out[0]!);
+  });
+
+  test("幅に収めるために小さくなっていた行は、小さいまま。作れない行（null）は null のまま", () => {
+    const out = unifyFontSizes([20, 20, 20, 17, null]);
+    expect(out[3]).toBe(17);
+    expect(out[0]).toBe(20);
+    expect(out[4]).toBeNull();
+    expect(unifyFontSizes([])).toEqual([]);
+  });
+
+  test("スライドでは、高さが少しずれた同じ段落の行が、同じ文字の大きさ（sz）になる", async () => {
+    const lines = [0.4, 0.46, 0.52].map((y, n) => ({ ...LINE, text: "あいうえお", y, h: 0.05 + n * 0.002, w: 0.4 }));
+    const { bytes } = await applyTextReplacements(deck(picture(2, "rId2")), [{ imagePath: "ppt/media/image1.png", lines }], OPT, testCodec);
+    const sizes = [...slideOf(bytes).matchAll(/ sz="(\d+)"/g)].map((m) => m[1]);
+    expect(sizes).toHaveLength(3);
+    expect(new Set(sizes).size).toBe(1);
+  });
+
+  test("lineFontPt は、行の高さと幅から決める（トリミングの外の行は null）", () => {
+    const pic: SlidePicture = { slidePath: "s", imagePath: "i", offX: 0, offY: 0, cx: 9144000, cy: 5143500, cropL: 0.05, cropT: 0, cropR: 0, cropB: 0 };
+    expect(lineFontPt(pic, { ...LINE, x: 0.01 })).toBeNull();
+    expect(lineFontPt(pic, LINE)).toBeGreaterThan(4);
+  });
+});
+
+test.describe("画像から文字を消す（周りの色に合わせる）", () => {
+  // 元が白文字の帯だった見出しを想定: 反転後は、白い帯の上に、黒っぽい文字の跡
+  const bar = () => makeImage(100, 80, (x, y) => (y >= 15 && y < 35 ? [250, 250, 250, 255] : [23, 23, 23, 255]));
+
+  test("周りが背景色に近いときは、これまでどおり背景色で塗る", () => {
+    const image = img();
+    const { fills } = paintLinesAdaptive(image.data, image.width, image.height, [LINE], "171717");
+    expect(fills).toEqual(["171717"]);
+    expect(pixelAt(image, 40, 24).slice(0, 3)).toEqual([23, 23, 23]);
+  });
+
+  test("周りが背景色と大きく違う帯の上では、周りの色で塗る（黒い四角を残さない）", () => {
+    const image = bar();
+    const line = { ...LINE, x: 0.2, y: 0.25, w: 0.5, h: 0.1 }; // y 20〜28: 白い帯の中
+    const { fills } = paintLinesAdaptive(image.data, image.width, image.height, [line], "171717");
+    expect(fills).toEqual(["FAFAFA"]);
+    expect(pixelAt(image, 40, 24).slice(0, 3)).toEqual([250, 250, 250]);
+    expect(pixelAt(image, 5, 70).slice(0, 3)).toEqual([23, 23, 23]);
+  });
+
+  test("文字の色: 塗った色の上で読めるなら指定の色。読めないときは、差が大きいほう", () => {
+    expect(pickTextColor("171717", "F2F2F2", "171717")).toBe("F2F2F2");
+    expect(pickTextColor("FAFAFA", "F2F2F2", "171717")).toBe("171717");
+    expect(pickTextColor("zzz", "F2F2F2", "171717")).toBe("F2F2F2");
+  });
+
+  test("スライド全体: 白い帯の上の見出しは、暗い文字色のテキストボックスになる", async () => {
+    const src = buildPptx({ slides: [{ shapes: picture(2, "rId2"), images: [{ name: "image1.png", bytes: encodePng(bar()) }] }] });
+    const line = { ...LINE, x: 0.2, y: 0.25, w: 0.5, h: 0.1 };
+    const { bytes } = await applyTextReplacements(src, [{ imagePath: "ppt/media/image1.png", lines: [line] }], OPT, testCodec);
+    expect(slideOf(bytes)).toContain('<a:srgbClr val="171717"/>');
+    const out = decodePng(readParts(bytes)["ppt/media/image1.png"]);
+    expect(pixelAt(out, 40, 24).slice(0, 3)).toEqual([250, 250, 250]);
   });
 });

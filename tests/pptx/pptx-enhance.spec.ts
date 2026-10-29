@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { analyzeImage, invertImagePixels, shouldEnhance } from "@/lib/pptx/image-invert";
+import { analyzeImage, invertImagePixels, shouldEnhance, shouldUpscale, upscale2x } from "@/lib/pptx/image-invert";
 import { invertPptx, DEFAULT_PPTX_INVERT_OPTIONS } from "@/lib/pptx/invert-pptx";
 import { bwDocument, bwPhoto, buildPptx, encodePng, makeImage, picture, pixelAt, readParts, decodePng, testCodec } from "../helpers/pptx-builder";
 
@@ -108,5 +108,53 @@ test.describe("pptx全体（enhanceText）", () => {
     expect(readParts(on.bytes)["ppt/media/image2.png"]).toEqual(readParts(off.bytes)["ppt/media/image2.png"]);
     // 透明度は変わらない
     for (const [x, y] of [[0, 0], [12, 3], [39, 29]]) expect(pixelAt(onDoc, x, y)[3]).toBe(255);
+  });
+});
+
+test.describe("低い解像度の画像のなめらかな拡大", () => {
+  test("拡大する大きさの目安: 小さすぎる・十分に大きい画像は、そのまま", () => {
+    expect(shouldUpscale(40, 30)).toBe(false);
+    expect(shouldUpscale(599, 300)).toBe(false);
+    expect(shouldUpscale(960, 540)).toBe(true);
+    expect(shouldUpscale(1600, 900)).toBe(true);
+    expect(shouldUpscale(1601, 900)).toBe(false);
+    expect(shouldUpscale(2560, 1440)).toBe(false);
+  });
+
+  test("縦横2倍になり、一様な画像は一様のまま、境目は元の値の範囲で、なめらかに変わる", () => {
+    const flat = upscale2x(makeImage(6, 4, () => [90, 120, 200, 255]));
+    expect([flat.width, flat.height]).toEqual([12, 8]);
+    for (let i = 0; i < flat.data.length; i += 4) expect(Array.from(flat.data.slice(i, i + 4))).toEqual([90, 120, 200, 255]);
+
+    const edge = upscale2x(makeImage(8, 2, (x) => (x < 4 ? [0, 0, 0, 255] : [255, 255, 255, 255])));
+    const row = Array.from({ length: 16 }, (_, x) => pixelAt(edge, x, 1)[0]);
+    // 左は黒・右は白で、途中に灰色の画素が入る（階段状にならない）。値は 0〜255 の範囲に収まる
+    expect(row[0]).toBe(0);
+    expect(row[15]).toBe(255);
+    expect(row.some((v) => v > 0 && v < 255)).toBe(true);
+    for (let x = 1; x < 16; x++) expect(row[x]).toBeGreaterThanOrEqual(row[x - 1] - 12);
+  });
+
+  test("透明度も、いっしょに拡大される（不透明のままなら不透明）", () => {
+    const up = upscale2x(makeImage(4, 4, (x) => [10, 10, 10, x < 2 ? 0 : 255]));
+    expect(pixelAt(up, 0, 0)[3]).toBe(0);
+    expect(pixelAt(up, 7, 7)[3]).toBe(255);
+  });
+
+  test("パワーポイント全体: 解像度が中くらいで文書のような画像だけ、2倍に拡大して反転する（調整オンのときだけ）", async () => {
+    const big = makeImage(800, 600, (x, y) => (y % 50 < 3 && x > 40 && x < 700 ? [0, 0, 0, 255] : [255, 255, 255, 255]));
+    const src = buildPptx({ slides: [{ shapes: picture(2, "rId2") + picture(3, "rId3"), images: [{ name: "image1.png", bytes: encodePng(big) }, { name: "image2.png", bytes: encodePng(bwDocument()) }] }] });
+    const off = await invertPptx(src, { ...DEFAULT_PPTX_INVERT_OPTIONS }, testCodec);
+    const on = await invertPptx(src, { ...DEFAULT_PPTX_INVERT_OPTIONS, enhanceText: true }, testCodec);
+    expect(off.report.images.map((i) => !!i.upscaled)).toEqual([false, false]);
+    expect(on.report.images.map((i) => !!i.upscaled)).toEqual([true, false]);
+    const outBig = decodePng(readParts(on.bytes)["ppt/media/image1.png"]);
+    expect([outBig.width, outBig.height]).toEqual([1600, 1200]);
+    // 小さい画像（40×30）は、大きさが変わらない
+    const outSmall = decodePng(readParts(on.bytes)["ppt/media/image2.png"]);
+    expect([outSmall.width, outSmall.height]).toEqual([40, 30]);
+    expect(on.report.notes.join("\n")).toContain("2倍に拡大");
+    // 報告に出す大きさは、元の画像の大きさのまま
+    expect([on.report.images[0].width, on.report.images[0].height]).toEqual([800, 600]);
   });
 });

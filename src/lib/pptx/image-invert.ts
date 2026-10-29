@@ -175,6 +175,72 @@ function enhanceAndInvert(data: PixelData, width: number, height: number, onlyGr
   }
 }
 
+/**
+ * 低い解像度の画像を、なめらかに2倍へ拡大するかの判定（文字をくっきり調整する画像だけ）。
+ * 画面の大きさに対して粗い画像は、スライドに大きく映すと、文字や数式の縁がギザギザに見える。
+ * 反転の前に、なめらかに2倍へ拡大しておくと、縁の濃淡が保たれて、きれいに見える（ファイルは少し大きくなる）。
+ * 小さすぎる画像（アイコンなど）と、もともと十分に大きい画像は、そのまま。
+ */
+export const UPSCALE_MIN_LONG_SIDE = 600;
+export const UPSCALE_MAX_LONG_SIDE = 1600;
+
+export function shouldUpscale(width: number, height: number): boolean {
+  const long = Math.max(width, height);
+  return long >= UPSCALE_MIN_LONG_SIDE && long <= UPSCALE_MAX_LONG_SIDE;
+}
+
+/** Catmull-Rom の重み（t は 0〜1。4つの隣の画素に対する重みを返す） */
+function catmullRomWeights(t: number): [number, number, number, number] {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return [(-t3 + 2 * t2 - t) / 2, (3 * t3 - 5 * t2 + 2) / 2, (-3 * t3 + 4 * t2 + t) / 2, (t3 - t2) / 2];
+}
+
+/** 画像（RGBA）を、バイキュービック（Catmull-Rom）で縦横2倍に拡大する。透明度もいっしょに拡大する。元の画像は変えない */
+export function upscale2x(image: RasterImage): RasterImage {
+  const { width: w, height: h, data } = image;
+  const w2 = w * 2;
+  const h2 = h * 2;
+  // 横方向: 出力の列ごとの、参照する列4つと重み
+  const colIndex = new Int32Array(w2 * 4);
+  const colWeight = new Float32Array(w2 * 4);
+  for (let o = 0; o < w2; o++) {
+    const s = (o + 0.5) / 2 - 0.5;
+    const i = Math.floor(s);
+    const wt = catmullRomWeights(s - i);
+    for (let k = 0; k < 4; k++) {
+      colIndex[o * 4 + k] = Math.min(w - 1, Math.max(0, i - 1 + k));
+      colWeight[o * 4 + k] = wt[k];
+    }
+  }
+  const tmp = new Float32Array(w2 * h * 4);
+  for (let y = 0; y < h; y++) {
+    const rowBase = y * w * 4;
+    for (let o = 0; o < w2; o++) {
+      for (let c = 0; c < 4; c++) {
+        let acc = 0;
+        for (let k = 0; k < 4; k++) acc += data[rowBase + colIndex[o * 4 + k] * 4 + c] * colWeight[o * 4 + k];
+        tmp[(y * w2 + o) * 4 + c] = acc;
+      }
+    }
+  }
+  const out = new Uint8ClampedArray(w2 * h2 * 4);
+  for (let oy = 0; oy < h2; oy++) {
+    const s = (oy + 0.5) / 2 - 0.5;
+    const i = Math.floor(s);
+    const wt = catmullRomWeights(s - i);
+    const rows = [0, 1, 2, 3].map((k) => Math.min(h - 1, Math.max(0, i - 1 + k)));
+    for (let x = 0; x < w2; x++) {
+      for (let c = 0; c < 4; c++) {
+        let acc = 0;
+        for (let k = 0; k < 4; k++) acc += tmp[(rows[k] * w2 + x) * 4 + c] * wt[k];
+        out[(oy * w2 + x) * 4 + c] = acc;
+      }
+    }
+  }
+  return { width: w2, height: h2, data: out };
+}
+
 export type RasterKind = "png" | "jpeg";
 
 /** ファイルの先頭のバイトから、PNG・JPEGを見分ける（拡張子は当てにしない）。それ以外は null */

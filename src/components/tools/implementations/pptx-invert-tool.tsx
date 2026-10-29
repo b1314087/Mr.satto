@@ -164,7 +164,7 @@ function ImageRow({ image }: { image: ImageReport }) {
       {image.after ? <Thumb bytes={image.after} mime={image.mime} label="変換後" dark /> : null}
       <div className="min-w-0 text-xs">
         <p className="break-all font-medium text-neutral-800 dark:text-neutral-100">{name}</p>
-        <p className="text-neutral-600 dark:text-neutral-300">{OUTCOME_LABEL[image.outcome]}{image.enhanced ? "（文字をくっきり調整）" : ""}</p>
+        <p className="text-neutral-600 dark:text-neutral-300">{OUTCOME_LABEL[image.outcome]}{image.enhanced ? "（文字をくっきり調整）" : ""}{image.upscaled ? "（なめらかに2倍へ拡大）" : ""}</p>
         {image.coloredRatio !== undefined && (
           <p className="text-neutral-500 dark:text-neutral-400">
             {image.width}×{image.height}px ／ 色のついた部分 {(image.coloredRatio * 100).toFixed(1)}%
