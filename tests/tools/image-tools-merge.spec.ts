@@ -75,7 +75,7 @@ plainTest.describe("画像ツールの統合: 登録と一覧・検索・SEO", (
     const ids = new Set(getListedTools().map((t) => t.id));
     for (const h of ALL_HUBS) plainExpect(ids.has(h), `${h}が一覧に無い`).toBe(true);
     for (const m of ALL_MEMBERS) plainExpect(ids.has(m), `${m}が一覧に残っている`).toBe(false);
-    for (const id of ["image-resize", "image-compress", "image-compress-to-size", "image-crop", "image-sns-size", "pdf-to-image", "image-to-pdf"]) {
+    for (const id of ["image-resize", "image-compress", "image-crop", "image-sns-size", "pdf-to-image", "image-to-pdf"]) {
       plainExpect(ids.has(id), `${id}が一覧から消えている`).toBe(true);
     }
     plainExpect(getListedTools().length).toBe(tools.filter((t) => !t.mergedInto).length);

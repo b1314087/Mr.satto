@@ -24,11 +24,23 @@ interface ImageToolSpec {
   actionLabel: string;
 }
 
+const SPEC_COMPRESS: ImageToolSpec = { mode: "compress", actionLabel: "圧縮する" };
+const SPEC_COMPRESS_TO_SIZE: ImageToolSpec = { mode: "compress-to-size", actionLabel: "圧縮する" };
+
 const IMAGE_TOOL_CONFIG: Record<string, ImageToolSpec> = {
   "image-resize": { mode: "resize", actionLabel: "リサイズする" },
-  "image-compress": { mode: "compress", actionLabel: "圧縮する" },
-  "image-compress-to-size": { mode: "compress-to-size", actionLabel: "圧縮する" },
+  // 画像圧縮は、画面の切り替えで「画質を指定」と「目標サイズ(KB)を指定」を選べる（下の compressKind）
+  "image-compress": SPEC_COMPRESS,
 };
+
+/** 画像圧縮の2つのやり方 */
+type CompressKind = "quality" | "size";
+
+/** 目標サイズに届かなかったときの案内（届いたときは null） */
+function missedTargetMessage(output: ImageProcessorOutput, targetKB: number): string | null {
+  if (output.sizeBytes <= targetKB * 1024) return null;
+  return `目標の${targetKB}KBまで小さくできませんでした（現在 ${formatBytes(output.sizeBytes)}）。先に「画像リサイズ」で縦横のサイズを小さくしてから、もう一度お試しください。`;
+}
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -68,7 +80,9 @@ const PREVIEW_MAX_PIXELS = 40_000_000;
 const PREVIEW_DEBOUNCE_MS = 250;
 
 export function ImageCanvasTool({ toolId }: { toolId: string }) {
-  const spec = IMAGE_TOOL_CONFIG[toolId];
+  const [compressKind, setCompressKind] = useState<CompressKind>("quality");
+  const isCompress = toolId === "image-compress";
+  const spec = isCompress && compressKind === "size" ? SPEC_COMPRESS_TO_SIZE : IMAGE_TOOL_CONFIG[toolId];
   const [file, setFile] = useState<File | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [width, setWidth] = useState(800);
@@ -80,10 +94,21 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImageProcessorOutput | null>(null);
+  // 書き出した時点の目標サイズ（あとで入力欄を変えても、結果の案内がぶれないように）
+  const [resultTargetKB, setResultTargetKB] = useState<number | null>(null);
   const [preview, setPreview] = useState<{ key: string; file: File; output: ImageProcessorOutput } | null>(null);
   const [previewError, setPreviewError] = useState<{ key: string; message: string } | null>(null);
 
   const originalUrl = useObjectUrl(file);
+
+  // 古い「指定KBまで圧縮」のアドレスから転送されてきたとき（?mode=size）は、目標サイズの指定を最初から選んでおく
+  useEffect(() => {
+    if (toolId !== "image-compress") return;
+    if (new URLSearchParams(window.location.search).get("mode") === "size") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCompressKind("size");
+    }
+  }, [toolId]);
 
   // 設定が処理可能な値かどうか(リサイズの幅・高さ、目標KB)
   const settingsValid =
@@ -98,6 +123,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     ? ""
     : [
         toolId,
+        spec.mode,
         file.name,
         file.size,
         file.lastModified,
@@ -200,6 +226,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     try {
       const output = await runImageProcessor(spec, file, { width, height, quality, targetKB });
       setResult(output);
+      setResultTargetKB(spec.mode === "compress-to-size" ? targetKB : null);
       setStatus("success");
     } catch (e) {
       setError(e instanceof Error ? e.message : "処理に失敗しました");
@@ -224,6 +251,11 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
           {tooLarge && (
             <p className="text-xs text-amber-700 dark:text-amber-400">
               指定サイズが大きすぎるため、プレビューは表示できません（書き出しは実行できます）。
+            </p>
+          )}
+          {spec.mode === "compress-to-size" && shownPreview && !previewStale && missedTargetMessage(shownPreview.output, targetKB) && (
+            <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="compress-target-missed">
+              {missedTargetMessage(shownPreview.output, targetKB)}
             </p>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -268,6 +300,40 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         </div>
       ) : null}
     >
+      {isCompress && (
+        <div role="radiogroup" aria-label="圧縮のしかた" className="flex flex-wrap gap-2" data-testid="compress-kind">
+          {(
+            [
+              { id: "quality", label: "画質を指定して圧縮", hint: "スライダーで画質を決めます" },
+              { id: "size", label: "目標サイズ(KB)を指定して圧縮", hint: "指定したサイズ以下になるよう自動で調整します" },
+            ] as const
+          ).map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={compressKind === o.id}
+              data-testid={`compress-kind-${o.id}`}
+              onClick={() => {
+                setCompressKind(o.id);
+                // やり方を変えたら、前のやり方の結果は消す
+                setResult(null);
+                setStatus("idle");
+                setError(null);
+              }}
+              className={`flex flex-col items-start rounded-lg border px-4 py-2 text-left text-sm transition-colors ${
+                compressKind === o.id
+                  ? "border-blue-600 bg-blue-50 text-blue-900 dark:border-blue-400 dark:bg-blue-950 dark:text-blue-100"
+                  : "border-neutral-300 text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+              }`}
+            >
+              <span className="font-medium">{o.label}</span>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">{o.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <FileDropzone
         accept="image/*"
         label="画像をドラッグ&ドロップ"
@@ -360,6 +426,11 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px ・ {formatBytes(result.sizeBytes)}
           </p>
+          {resultTargetKB !== null && missedTargetMessage(result, resultTargetKB) && (
+            <p className="text-sm text-amber-700 dark:text-amber-400" data-testid="compress-result-missed">
+              {missedTargetMessage(result, resultTargetKB)}
+            </p>
+          )}
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </ResultPopup>
       )}

@@ -264,6 +264,13 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      // 「指定KBまで圧縮」は「画像圧縮」に統合した（画面で「目標サイズ(KB)を指定して圧縮」を選べる）。
+      // 旧アドレスは、統合先で目標サイズの指定を最初から選んだ状態（?mode=size）へ恒久的に転送する。
+      {
+        source: "/tools/image-compress-to-size",
+        destination: "/tools/image-compress?mode=size",
+        permanent: true,
+      },
       {
         source: "/contact",
         destination: "/",

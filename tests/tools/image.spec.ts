@@ -44,9 +44,11 @@ test("image-batch-convert: 複数画像を一括変換し、ZIPでダウンロ�
   expect(size).toBeGreaterThan(0);
 });
 
-test("image-compress-to-size: 目標KBを指定して圧縮し、ダウンロードできる", async ({ page }) => {
-  await page.goto("/tools/image-compress-to-size");
+test("image-compress（目標サイズ指定）: 目標KBを指定して圧縮し、ダウンロードできる", async ({ page }) => {
+  await page.goto("/tools/image-compress");
   await uploadFixture(page, fixtures.jpg);
+  await page.getByTestId("compress-kind-size").click();
+  await expect(page.getByLabel("目標サイズ (KB)")).toBeVisible();
 
   await page.getByRole("button", { name: "圧縮する" }).click();
   await waitForSuccess(page, "完了");

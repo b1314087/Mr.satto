@@ -436,7 +436,6 @@ const PptxInvertTool = dynamic(() =>
 const IMAGE_TOOL_IDS = new Set([
   "image-resize",
   "image-compress",
-  "image-compress-to-size",
 ]);
 
 /**
