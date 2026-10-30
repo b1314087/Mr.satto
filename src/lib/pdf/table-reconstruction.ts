@@ -145,7 +145,7 @@ export interface Line {
 }
 
 const MIN_GAP_TOLERANCE = 3; // pt
-const BIN_SIZE_PT = 1;
+const BIN_SIZE_PT = 0.5;
 /** 列区切りの「候補」とみなすための最小幅(pt)。本物の判定はこれだけでなく
  *  countColumnGapSupportによる複数行での再現性チェックで行う。 */
 const MIN_GAP_WIDTH_PT = 4;
@@ -205,16 +205,17 @@ export function groupIntoLines(items: PositionedTextItem[]): Line[] {
  * 行わない（それはcountColumnGapSupportで行う）。
  */
 /** 隙間なくつながった項目(隙間が文字の高さの0.3倍未満)を1つの連なりにして、範囲を返す */
-function touchingRuns(items: PositionedTextItem[]): { left: number; right: number; fontHeight: number }[] {
-  const runs: { left: number; right: number; fontHeight: number }[] = [];
+function touchingRuns(items: PositionedTextItem[]): { left: number; right: number; fontHeight: number; text: string }[] {
+  const runs: { left: number; right: number; fontHeight: number; text: string }[] = [];
   for (const item of items) {
     const right = item.x + item.width;
     const last = runs[runs.length - 1];
     if (last && item.x - last.right < Math.min(last.fontHeight, item.fontHeight) * 0.3) {
       last.right = Math.max(last.right, right);
       last.fontHeight = Math.max(last.fontHeight, item.fontHeight);
+      last.text += item.str;
     } else {
-      runs.push({ left: item.x, right, fontHeight: item.fontHeight });
+      runs.push({ left: item.x, right, fontHeight: item.fontHeight, text: item.str });
     }
   }
   return runs;
@@ -249,7 +250,11 @@ function pageCandidateGapRanges(lines: Line[], noisyBoxes = false): [number, num
     for (const run of touchingRuns(line.items)) {
       const startBin = Math.max(0, Math.floor((run.left - minX) / BIN_SIZE_PT));
       const endBin = Math.min(binCount, Math.ceil((run.right - minX) / BIN_SIZE_PT));
-      const isWide = run.right - run.left >= run.fontHeight * WIDE_RUN_FONT_RATIO;
+      // 数値・日付は、幅が広くても1つの列に収まる値(別の列にまたがる文章ではない)なので「短い値」として扱う
+      const isWide =
+        run.right - run.left >= run.fontHeight * WIDE_RUN_FONT_RATIO &&
+        tryParseNumberCell(run.text.trim()) === null &&
+        tryParseDateCell(run.text.trim()) === null;
       for (let b = startBin; b < endBin; b++) {
         if (stamp[b] !== lineIndex) {
           stamp[b] = lineIndex;
@@ -266,7 +271,7 @@ function pageCandidateGapRanges(lines: Line[], noisyBoxes = false): [number, num
   // 隣の列の位置まで伸びる長い文字列の行があっても、列区切りが消えないようにするため。
   // ただし許容するのは「長い文字列だけがかかっている位置」に限る。1つの列に収まる短い値
   // (数量の列の「1」「3」など)がかかっている位置は、行数が少なくても本物の列なので隙間にしない。
-  // 8行以上の場合に限り、約3割の行まで許容する。
+  // 8行以上の場合は約3割の行まで、4〜7行の場合は1行まで許容する。
   // OCR(スキャン画像)の文字の枠は実際の文字より広く検出されることがある(1つの漢字の枠が
   // 隣の列にはみ出す等)ため、OCRの場合は長さを問わず、4行以上あれば約1割(切り上げ)まで許容する。
   // どちらも、本物の列区切りかどうかは、この後の複数行での再現性チェックで確認される。
@@ -277,7 +282,16 @@ function pageCandidateGapRanges(lines: Line[], noisyBoxes = false): [number, num
       : 0
     : lines.length >= 8
       ? Math.floor(lines.length * TEXT_OUTLIER_LINE_RATIO)
-      : 0;
+      : lines.length >= 4
+        ? 1 // 4〜7行の小さな表でも、表全体にまたがる長い行(結合セルの注記・タイトル)は1行まで許容する
+        : 0;
+  // OCRの座標は画素単位で、1文字が約30画素ある。文字や単語のすき間(数画素)を列区切りと
+  // 見間違えないよう、OCRでは「文字の高さの約半分」以上の隙間だけを候補にする。
+  let minGapWidth = MIN_GAP_WIDTH_PT;
+  if (noisyBoxes) {
+    const heights = contentItems.map((i) => i.fontHeight).sort((a, b) => a - b);
+    minGapWidth = Math.max(MIN_GAP_WIDTH_PT, heights[Math.floor(heights.length / 2)] * 0.5);
+  }
   const isFree = (bin: number): boolean =>
     coverCount[bin] <= baseTolerance ||
     (coverCount[bin] <= wideRunTolerance && (noisyBoxes || narrowCount[bin] === 0));
@@ -292,7 +306,7 @@ function pageCandidateGapRanges(lines: Line[], noisyBoxes = false): [number, num
     if (gapStartBin !== null) {
       const xStart = minX + gapStartBin * BIN_SIZE_PT;
       const xEnd = minX + b * BIN_SIZE_PT;
-      if (xEnd - xStart >= MIN_GAP_WIDTH_PT) ranges.push([xStart, xEnd]);
+      if (xEnd - xStart >= minGapWidth) ranges.push([xStart, xEnd]);
       gapStartBin = null;
     }
   }
@@ -546,10 +560,13 @@ export function reconstructTable(items: PositionedTextItem[], breaksOverride?: n
 
   // 字間を広げたタイトル(「高 等 学 校 …」のように1文字ずつ別の項目になっているもの)は
   // 1つの文字列へまとめる。列の推定自体は元の項目で行い、行の組み立てからまとめた項目を使う。
-  const lines: Line[] = rawLines.map((line) => ({
-    y: line.y,
-    items: mergeTouchingRunsAcrossBreaks(mergeSpacedCharacterRuns(line.items, breaks), breaks),
-  }));
+  const lines: Line[] = mergeWrappedContinuationLines(
+    rawLines.map((line) => ({
+      y: line.y,
+      items: mergeTouchingRunsAcrossBreaks(mergeSpacedCharacterRuns(line.items, breaks), breaks),
+    })),
+    breaks
+  );
 
   const rows: string[][] = [];
   const columnSpans: ColumnSpanHint[] = [];
@@ -733,6 +750,68 @@ function mergeSpacedCharacterRuns(items: PositionedTextItem[], breaks: number[])
     i = j;
   }
   return out;
+}
+
+/**
+ * セルの中で折り返された文章(2行目以降)を、1つ上の行の同じセルにつなげる。
+ *
+ * 折り返しの2行目は、PDFの上では「別の行」として取り出されるため、そのままだと
+ * Excelで1つのセルの文章が複数の行に分かれてしまう。次の条件がすべて揃うときだけつなげる:
+ *  - その行の文字が1つの列だけにある(ほかの列は空)
+ *  - 1つ上の行は複数の列に値がある(=表の行であり、ただの文章の段落ではない)
+ *  - 1つ上の行の同じ列にも文字がある。その文章が列の右端近くまで届いていて(折り返した証拠)、
+ *    2行目の左端が同じ位置にそろっている
+ *  - 行の間隔が文字の高さの約0.8〜1.9倍(セルの上下の余白を含む通常の行間より狭い)
+ */
+function mergeWrappedContinuationLines(lines: Line[], breaks: number[]): Line[] {
+  if (lines.length < 3 || breaks.length === 0) return lines;
+  const maxRight = Math.max(...lines.flatMap((l) => l.items.map((i) => i.x + i.width)));
+  const colOf = (item: PositionedTextItem) => columnIndexFor(item.x, breaks);
+  // 結合後の行ごとに、最初の行のy・最後の行のy(折り返しがあれば下の行)を持つ
+  const out: { line: Line; startY: number; endY: number }[] = [];
+  for (const line of lines) {
+    const cur = out[out.length - 1];
+    const before = out[out.length - 2];
+    const items = line.items.filter((i) => i.str.trim() !== "");
+    let merged = false;
+    if (cur && before && items.length > 0) {
+      const cols = new Set(items.map(colOf));
+      const col = colOf(items[0]);
+      const prevItems = cur.line.items.filter((i) => i.str.trim() !== "");
+      const prevCols = new Set(prevItems.map(colOf));
+      const prevInCol = prevItems.filter((i) => colOf(i) === col);
+      if (cols.size === 1 && prevCols.size >= 2 && prevInCol.length > 0) {
+        const fh = median(items.map((i) => i.fontHeight));
+        const pitch = cur.endY - line.y;
+        // 通常の行どうしの間隔(1つ前の行の最後〜この行の最初)より、明らかに狭いこと。
+        // 全部の行が同じ間隔で並ぶ詰まった表(折り返しではない)を結合しないための条件
+        const rowPitch = before.endY - cur.startY;
+        const colRight = col < breaks.length ? breaks[col] : maxRight;
+        const prevRight = Math.max(...prevInCol.map((i) => i.x + i.width));
+        const prevLeft = Math.min(...prevInCol.map((i) => i.x));
+        const left = Math.min(...items.map((i) => i.x));
+        const text = items.map((i) => i.str).join("");
+        if (
+          pitch >= fh * 0.8 &&
+          pitch <= fh * 1.9 &&
+          pitch < rowPitch * 0.85 &&
+          prevRight >= colRight - fh * 2.5 &&
+          Math.abs(left - prevLeft) <= fh * 1.5 &&
+          tryParseNumberCell(text.trim()) === null
+        ) {
+          // 英数字どうしがつながる折り返しは、単語の間に空白が入るよう、位置を少しずらす
+          const last = prevInCol[prevInCol.length - 1];
+          const needsSpace = /[A-Za-z0-9]$/.test(last.str.trim()) && /^[A-Za-z0-9]/.test(items[0].str.trim());
+          const shifted = items.map((it, k) => (k === 0 && needsSpace ? { ...it, x: last.x + last.width + it.fontHeight * 0.3 } : it));
+          cur.line.items = [...cur.line.items, ...shifted];
+          cur.endY = line.y;
+          merged = true;
+        }
+      }
+    }
+    if (!merged) out.push({ line: { y: line.y, items: line.items }, startY: line.y, endY: line.y });
+  }
+  return out.map((o) => o.line);
 }
 
 /**

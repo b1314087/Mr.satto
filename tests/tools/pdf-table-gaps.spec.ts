@@ -144,3 +144,61 @@ test.describe("接している文字列は列区切りで切らない", () => {
     expect(title.filter((c) => c !== "")).toEqual(["作業予定2026年度"]);
   });
 });
+
+test.describe("セルの中で折り返した文章", () => {
+  test("折り返した2行目は、1つ上の行の同じセルにつなげる。通常の行は別の行のまま", () => {
+    // 列: No(x50) / 項目(x90) / 内容(x160〜420)。通常の行間は30、折り返しの行間は16
+    const items: PositionedTextItem[] = [];
+    const rowY = [700, 670, 624, 594];
+    ["No.", "1", "2", "3"].forEach((v, i) => items.push(t(v, 50, rowY[i])));
+    ["項目", "目的", "対象", "期間"].forEach((v, i) => items.push(t(v, 90, rowY[i])));
+    items.push(t("内容", 160, 700));
+    // 1行目の内容は右端(420)近くまで届いて折り返し、2行目(y=654)は「る。」だけ
+    items.push(item("新入社員の研修計画を立て、早期に業務へ慣れてもらう", 160, 670, 255));
+    items.push(item("る。", 160, 654, 20));
+    items.push(item("今年度入社の全社員。", 160, 624, 100));
+    items.push(item("4月から6月までとする。", 160, 594, 110));
+    const table = tableOf(items);
+    const texts = table.rows.map((r) => r.join("|"));
+    expect(table.rows.length).toBe(4);
+    expect(texts[1]).toContain("新入社員の研修計画を立て、早期に業務へ慣れてもらうる。");
+    expect(texts[2]).toContain("今年度入社の全社員。");
+  });
+
+  test("全部の行が同じ間隔で並ぶ詰まった表の、1つの列だけが入った行は、結合しない", () => {
+    const items: PositionedTextItem[] = [];
+    // 行間12で並ぶ表(文字の高さ10)。3行目は1列だけに値がある
+    const ys = [700, 688, 676, 664, 652];
+    items.push(t("A", 50, ys[0]), t("B", 200, ys[0]));
+    items.push(t("りんご", 50, ys[1]), t("みかん", 200, ys[1]));
+    items.push(t("ぶどう", 50, ys[2]));
+    items.push(t("もも", 50, ys[3]), t("なし", 200, ys[3]));
+    items.push(t("かき", 50, ys[4]), t("くり", 200, ys[4]));
+    const table = tableOf(items);
+    expect(table.rows.length).toBe(5);
+  });
+});
+
+test.describe("数値の列は、行数が少なくても隙間に埋もれない", () => {
+  test("出金・入金のように、片方にしか値が入らない行が多い列も、別の列として分かれる", () => {
+    const items: PositionedTextItem[] = [];
+    for (let i = 0; i < 12; i++) {
+      const y = 700 - i * 20;
+      items.push(t(`2026/09/${String(i + 1).padStart(2, "0")}`, 52, y), t("摘要" + i, 160, y));
+      if (i % 3 === 0) {
+        const v = "280,000";
+        items.push(t(v, 449 - textWidth(v), y)); // 入金(右端449)
+      } else {
+        const v = "4,370";
+        items.push(t(v, 369 - textWidth(v), y)); // 出金(右端369)
+      }
+    }
+    const table = tableOf(items);
+    // 出金の値と入金の値が、別々の列に入る
+    const outCol = table.rows[1].findIndex((c) => c === "4,370");
+    const inCol = table.rows[0].findIndex((c) => c === "280,000");
+    expect(outCol).toBeGreaterThan(-1);
+    expect(inCol).toBeGreaterThan(-1);
+    expect(outCol).not.toBe(inCol);
+  });
+});

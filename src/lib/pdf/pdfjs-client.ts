@@ -94,23 +94,35 @@ export interface PositionedTextItem {
 }
 
 /**
- * ページからテキストを座標付きで取得する。
- * PDF→Excelの表構造推定・PDF→Wordの段落構造推定・OCRでの
- * 「文字情報を持つPDFかどうか」判定のすべてがこれを共通利用する。
- */
-/**
  * PDFから取り出した文字の、見た目は同じだが別の文字コードになっているものを、普通の文字に直す。
  * 一部のPDF(Chrome等で印刷したもの)では、「会」「日」「月」「金」などの漢字が
  * 「康熙部首」(U+2F00〜2FDF。例: ⽇ ⽉ ⾦ ⽅)や「CJK部首補助」(U+2E80〜2EFF)という
  * 見た目がそっくりな別の文字として入っており、Excelに貼ると検索や並べ替えで
- * 普通の漢字と一致しなくなる。NFKC正規化で対応する漢字に直す(この範囲の文字だけ)。
+ * 普通の漢字と一致しなくなる。対応する漢字に直す(この範囲の文字だけ)。
  * また、中黒に似た「ハイフネーションポイント」(U+2027)は「・」に直す。
  */
+// CJK部首補助(U+2E80〜2EFF)は、NFKC正規化では普通の漢字に直らない(対応表が無い)ため、
+// 日本語の書類で実際に出てくる、見た目が同じ漢字の対応を自前で持つ。
+const CJK_RADICAL_SUPPLEMENT_TO_KANJI: Record<string, string> = {
+  "\u2e9c": "日", "\u2e9d": "月", "\u2e9f": "母", "\u2ea0": "民", "\u2ebc": "月",
+  "\u2ec1": "虎", "\u2ec3": "西", "\u2ec4": "西", "\u2eca": "足", "\u2ed1": "長",
+  "\u2ed2": "長", "\u2ed7": "雨", "\u2ed8": "青", "\u2ee1": "頁", "\u2ee3": "骨",
+  "\u2ee4": "鬼", "\u2ee8": "麦", "\u2ee9": "黄", "\u2eed": "歯", "\u2eef": "竜",
+  "\u2ef2": "亀",
+};
+
 export function normalizeExtractedText(text: string): string {
   if (!/[\u2e80-\u2fdf\u2027]/.test(text)) return text;
-  return text.replace(/[\u2e80-\u2fdf]/g, (ch) => ch.normalize("NFKC")).replace(/\u2027/g, "・");
+  return text
+    .replace(/[\u2e80-\u2fdf]/g, (ch) => CJK_RADICAL_SUPPLEMENT_TO_KANJI[ch] ?? ch.normalize("NFKC"))
+    .replace(/\u2027/g, "・");
 }
 
+/**
+ * ページからテキストを座標付きで取得する。
+ * PDF→Excelの表構造推定・PDF→Wordの段落構造推定・OCRでの
+ * 「文字情報を持つPDFかどうか」判定のすべてがこれを共通利用する。
+ */
 export async function getPositionedTextItems(page: PdfjsPage): Promise<PositionedTextItem[]> {
   const textContent = await page.getTextContent();
   const items: PositionedTextItem[] = [];

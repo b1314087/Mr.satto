@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { removeRuledLines } from "@/lib/ocr/remove-ruled-lines";
+import { deskewGray, estimateSkewDegrees, invertDarkBlocks, normalizeIllumination, removeRuledLines } from "@/lib/ocr/remove-ruled-lines";
 import { normalizeExtractedText } from "@/lib/pdf/pdfjs-client";
-import { ocrWordsToPositionedTextItems, type OcrWord } from "@/lib/ocr/tesseract-client";
+import { fixOcrThousandsSeparator, ocrWordsToPositionedTextItems, type OcrWord } from "@/lib/ocr/tesseract-client";
 import { computeColumnBreaksAcrossPages, groupIntoLines, reconstructTable, tryParseDateCell } from "@/lib/pdf/table-reconstruction";
 
 /** スキャンした表のOCRの前処理（罫線の除去・行と単語の整え方）と、日付セルの値のテスト */
@@ -154,6 +154,101 @@ test.describe("PDFの文字の正規化", () => {
   test("康熙部首など見た目が同じ別の文字は、普通の漢字に直す。それ以外の文字は変えない", () => {
     expect(normalizeExtractedText("⽇⽉⾦⽅")).toBe("日月金方");
     expect(normalizeExtractedText("会議‧資料")).toBe("会議・資料");
+    // CJK部首補助(NFKCでは直らないもの): 「西新宿」の「西」
+    expect(normalizeExtractedText("\u2ec4新宿")).toBe("西新宿");
     expect(normalizeExtractedText("ＡＢＣ１２３ ｱｲｳ")).toBe("ＡＢＣ１２３ ｱｲｳ");
+  });
+});
+
+test.describe("スキャンの影・傾きの補正", () => {
+  /** 文字の行のかわりに、点線の横線(長さ6の短い棒を等間隔に並べたもの)を何本か置く。傾きは度 */
+  const lines = (deg: number, w = 900, h = 700) => {
+    const slope = Math.tan((deg * Math.PI) / 180);
+    return image(w, h, (x, y) => {
+      for (let row = 0; row < 12; row++) {
+        const cy = 80 + row * 45 + (x - w / 2) * slope;
+        if (Math.abs(y - cy) < 5 && x % 12 < 8 && x > 60 && x < w - 60) return true;
+      }
+      return false;
+    });
+  };
+
+  test("右下がり・左下がりの傾きを、符号つきでおおよそ推定できる。傾きなしは0", () => {
+    expect(estimateSkewDegrees(lines(1.5))).toBeGreaterThan(1.0);
+    expect(estimateSkewDegrees(lines(1.5))).toBeLessThan(2.0);
+    expect(estimateSkewDegrees(lines(-2))).toBeLessThan(-1.5);
+    expect(estimateSkewDegrees(lines(0))).toBe(0);
+  });
+
+  test("傾きを直すと、行がそろって、もう一度推定すると傾きがほぼ無い", () => {
+    const img = lines(2);
+    const deg = estimateSkewDegrees(img);
+    const fixed = deskewGray(img, deg);
+    expect(Math.abs(estimateSkewDegrees({ width: img.width, height: img.height, gray: fixed }))).toBeLessThan(0.4);
+  });
+
+  test("片側が暗い影(右へ行くほど暗い)は、背景がそろって明るくなり、文字は暗いまま残る", () => {
+    const w = 600;
+    const h = 400;
+    const gray = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) gray[y * w + x] = Math.round(240 - (x / w) * 110);
+    // 文字のかわりの太い棒を、明るい側と暗い側に1つずつ
+    for (let y = 100; y < 130; y++) {
+      for (let x = 80; x < 90; x++) gray[y * w + x] = 20;
+      for (let x = 500; x < 510; x++) gray[y * w + x] = 20;
+    }
+    const { gray: even, changed } = normalizeIllumination({ width: w, height: h, gray });
+    expect(changed).toBe(true);
+    expect(even[200 * w + 550]).toBeGreaterThan(220); // 暗かった背景が明るくなる
+    expect(even[200 * w + 100]).toBeGreaterThan(220);
+    expect(even[110 * w + 505]).toBeLessThan(80); // 暗い側の文字も暗いまま
+    expect(even[110 * w + 85]).toBeLessThan(80);
+  });
+
+  test("ほぼ一様な白い背景は、そのまま(changed=false)", () => {
+    const { changed } = normalizeIllumination(image(400, 300, () => false));
+    expect(changed).toBe(false);
+  });
+});
+
+test.describe("濃い帯の上の白抜き文字", () => {
+  test("濃く塗った大きな帯の中だけを反転し、白抜きの文字が黒になる。帯の外の黒い文字は変えない", () => {
+    const w = 400;
+    const h = 200;
+    const gray = new Uint8Array(w * h).fill(255);
+    // 帯(x40〜359・y30〜69)を濃く塗り、白抜きの文字のかわりの短い棒(幅3・高さ16)を置く
+    for (let y = 30; y < 70; y++) for (let x = 40; x < 360; x++) gray[y * w + x] = 60;
+    for (const sx of [80, 160, 240]) for (let y = 42; y < 58; y++) for (let x = sx; x < sx + 3; x++) gray[y * w + x] = 255;
+    // 帯の外の普通の文字(黒い短い棒)
+    for (let y = 120; y < 136; y++) for (let x = 100; x < 103; x++) gray[y * w + x] = 20;
+    const n = invertDarkBlocks({ width: w, height: h, gray }, gray);
+    expect(n).toBe(1);
+    expect(gray[50 * w + 81]).toBeLessThan(80); // 白抜きだった棒 → 黒
+    expect(gray[35 * w + 200]).toBeGreaterThan(240); // 帯の塗り → 白に近い色
+    expect(gray[125 * w + 101]).toBeLessThan(80); // 帯の外の文字はそのまま
+    expect(gray[20 * w + 20]).toBe(255); // 何もない所はそのまま
+  });
+
+  test("小さな文字や細い線は、濃くても反転しない", () => {
+    const w = 400;
+    const h = 200;
+    const gray = new Uint8Array(w * h).fill(255);
+    for (let y = 100; y < 116; y++) for (let x = 100; x < 103; x++) gray[y * w + x] = 20; // 文字の一画
+    for (let x = 20; x < 380; x++) for (let y = 150; y < 153; y++) gray[y * w + x] = 20; // 細い罫線
+    expect(invertDarkBlocks({ width: w, height: h, gray }, gray)).toBe(0);
+  });
+});
+
+test.describe("OCRの3桁区切りの読み違い", () => {
+  test("「1.980」「1.234.567」「¥1.500」「1.000円」は、3桁区切りのカンマに直す", () => {
+    expect(fixOcrThousandsSeparator("1.980")).toBe("1,980");
+    expect(fixOcrThousandsSeparator("1.234.567")).toBe("1,234,567");
+    expect(fixOcrThousandsSeparator("¥1.500")).toBe("¥1,500");
+    expect(fixOcrThousandsSeparator("1.000円")).toBe("1,000円");
+  });
+  test("小数として確実なもの・数字でないものは直さない", () => {
+    for (const t of ["0.500", "12.5", "1.98", "3.14159", "Ver.1.234", "2026.10.30", "12.345.6", "1,980"]) {
+      expect(fixOcrThousandsSeparator(t)).toBe(t);
+    }
   });
 });

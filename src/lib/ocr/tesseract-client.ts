@@ -217,7 +217,11 @@ export async function recognizeImageWithWords(
  * 方針を踏襲）。ページごとに単独で使う値のため、PDFの実座標系と一致させる必要はなく、
  * 「同じページ内で一貫している」ことだけが重要。
  */
-export function ocrWordsToPositionedTextItems(words: OcrWord[]): PositionedTextItem[] {
+export function ocrWordsToPositionedTextItems(rawWords: OcrWord[]): PositionedTextItem[] {
+  const words = rawWords.map((w) => {
+    const fixed = fixOcrThousandsSeparator(w.text);
+    return fixed === w.text ? w : { ...w, text: fixed };
+  });
   const byLine = new Map<number, OcrWord[]>();
   const loose: OcrWord[] = [];
   for (const w of words) {
@@ -269,6 +273,19 @@ export function ocrWordsToPositionedTextItems(words: OcrWord[]): PositionedTextI
     for (const w of merged) items.push(toItem(w, -lineCenter, lineHeight));
   }
   return items;
+}
+
+/**
+ * OCRは、3桁区切りのカンマ「,」をピリオド「.」と読み違えることが多い(「1,980」→「1.980」)。
+ * このまま表にすると「1.98」という小数の数値になり、桁がずれて値が変わってしまう。
+ * 日本語の帳票では「小数点以下がちょうど3桁」の小数はほとんど無く、3桁区切りのほうが
+ * はるかに多いので、「1〜3桁.3桁(.3桁…)」の形の数字(円・¥付きを含む)は区切りのカンマに直す。
+ * 0から始まる「0.500」は小数として確実なので直さない。
+ */
+export function fixOcrThousandsSeparator(text: string): string {
+  const m = text.match(/^([¥￥$]?)(\d{1,3}(?:\.\d{3})+)(円?)$/);
+  if (!m || m[2].startsWith("0.")) return text;
+  return `${m[1]}${m[2].replace(/\./g, ",")}${m[3]}`;
 }
 
 function medianOf(values: number[]): number {
