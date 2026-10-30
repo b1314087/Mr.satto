@@ -88,3 +88,48 @@ test.describe("実装の静的確認", () => {
     expect(list).not.toMatch(/<th className="px-4/);
   });
 });
+
+test.describe("リンクを押した間の光（ボタンの処理中と同じ表示）", () => {
+  test("ツールのカードを押すと、カードの縁に沿って光が回り、ページが開くと消える", async ({ page }) => {
+    await page.goto("/");
+    await page.route(
+      (url) => url.pathname.startsWith("/tools/") && url.pathname.split("/").length === 3,
+      async (route) => {
+        await new Promise((r) => setTimeout(r, 2000));
+        await route.continue();
+      }
+    );
+    const card = page.locator('main a[href^="/tools/"]').first();
+    await card.scrollIntoViewIfNeeded();
+    const glow = card.getByTestId("link-glow");
+    await expect(glow).toHaveAttribute("data-pending", "false");
+    await card.click();
+    await expect(glow).toHaveAttribute("data-pending", "true", { timeout: 1500 });
+    const css = await glow.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { animation: s.animationName, opacity: s.opacity, background: s.backgroundImage.slice(0, 15) };
+    });
+    expect(css.animation).toBe("ms-busy-orbit");
+    expect(css.opacity).toBe("1");
+    expect(css.background).toContain("conic-gradient");
+    await expect(page).toHaveURL(/\/tools\//, { timeout: 15_000 });
+  });
+
+  test("ボタンのように見えるリンク（ブロック表示）には光の印が付き、文章の中の文字リンクには付かない", async ({ page }) => {
+    await page.goto("/pricing");
+    await page.evaluate(() => {
+      const box = document.createElement("div");
+      box.innerHTML =
+        '<a id="glow-block" href="/tools" style="display:block;padding:8px">ブロックのリンク</a><p>文章の中の<a id="glow-inline" href="/tools">文字リンク</a>です</p>';
+      document.body.appendChild(box);
+      // クリックしても移動しないよう、移動そのものは止める（印が付くかだけを見る）
+      box.addEventListener("click", (e) => e.preventDefault());
+    });
+    await page.locator("#glow-block").click();
+    await expect(page.locator("#glow-block")).toHaveAttribute("data-nav-pending", "true");
+    await expect(page.locator("#glow-block")).toHaveAttribute("data-nav-glow", "true");
+    await page.locator("#glow-inline").click();
+    await expect(page.locator("#glow-inline")).toHaveAttribute("data-nav-pending", "true");
+    await expect(page.locator("#glow-inline")).not.toHaveAttribute("data-nav-glow", "true");
+  });
+});

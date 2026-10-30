@@ -51,11 +51,20 @@ function NavigationFeedbackInner() {
       if (`${url.pathname}${url.search}` === currentKey()) return;
 
       anchor.setAttribute("data-nav-pending", "true");
+      // ボタンやカードのように見えるリンク（文章の中の文字リンクではないもの）には、ボタンと同じ光を回す。
+      // カードは中の LinkPendingOverlay が光を出すので、重ねない
+      const style = window.getComputedStyle(anchor);
+      if (style.display !== "inline" && (style.position === "static" || style.position === "relative") && !anchor.querySelector(".ms-link-pending")) {
+        anchor.setAttribute("data-nav-glow", "true");
+      }
       setStartedAt(currentKey());
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         setStartedAt(null);
-        document.querySelectorAll("[data-nav-pending]").forEach((el) => el.removeAttribute("data-nav-pending"));
+        document.querySelectorAll("[data-nav-pending]").forEach((el) => {
+          el.removeAttribute("data-nav-pending");
+          el.removeAttribute("data-nav-glow");
+        });
       }, MAX_WAIT_MS);
     }
     document.addEventListener("click", onClick);
@@ -67,7 +76,10 @@ function NavigationFeedbackInner() {
 
   // アドレスが変わった（移動が終わった）ら、押したリンクの印を外す
   useEffect(() => {
-    document.querySelectorAll("[data-nav-pending]").forEach((el) => el.removeAttribute("data-nav-pending"));
+    document.querySelectorAll("[data-nav-pending]").forEach((el) => {
+          el.removeAttribute("data-nav-pending");
+          el.removeAttribute("data-nav-glow");
+        });
     if (timer.current) clearTimeout(timer.current);
   }, [key]);
 

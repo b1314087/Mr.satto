@@ -18,6 +18,16 @@ import { Spinner } from "@/components/ui/spinner";
 export function LinkPendingOverlay() {
   const { pending } = useLinkStatus();
   return (
+    <>
+      {/* 押している間、カードの縁に沿って光が一周する（ボタンの処理中と同じ表示） */}
+      <LinkPendingBody pending={pending} />
+      <span aria-hidden="true" data-testid="link-glow" data-pending={pending ? "true" : "false"} className="ms-link-glow" />
+    </>
+  );
+}
+
+function LinkPendingBody({ pending }: { pending: boolean }) {
+  return (
     <span
       aria-hidden={pending ? undefined : true}
       data-testid="link-pending"
