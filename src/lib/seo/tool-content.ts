@@ -13,6 +13,7 @@
 
 import { adaptToolSeoContent } from "@/lib/seo/feature-copy";
 import { REDACT_MAX_PAGES, REDACT_MAX_REDACTED_PAGES } from "@/lib/pdf/redact";
+import { SEATING_MAX_PARTICIPANTS, SEATING_MAX_SEATS_PER_TABLE, SEATING_MAX_TABLES } from "@/lib/seating/participants";
 import { OCR_MAX_PAGES, PDF_TO_EXCEL_MAX_OCR_PAGES, PDF_TO_EXCEL_MAX_PAGES, PDF_TO_WORD_MAX_PAGES } from "@/lib/pdf/page-limits";
 import {
   FISCAL_CALENDAR_HOWTO_IMPORT,
@@ -2522,6 +2523,29 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "二次元コード・バーコードの内容に連番を入れることはできますか？", answer: "はい。内容の入力欄に「{n}」と入力すると、その部分が各券の連番（0埋め桁数も指定可）に置き換わります。「{title}」「{amount}」などや、Excelの見出し名（例:「{氏名}」）も使えます。" },
       { question: "何枚まで一度に作成できますか？", answer: "1回の処理で最大2000枚まで対応しています。用紙サイズとサイズ指定によって1ページに収まる枚数が決まり、自動的に複数ページへ分けて配置されます。" },
       { question: "作成したファイルはサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
+    ],
+  },
+  "seating-chart": {
+    metaTitle: "座席表作成｜名簿から席順を自動で作成（同じテーブル・別テーブルの指定、PDF・Excel出力）",
+    metaDescription:
+      "宴会・懇親会・研修の座席表を、名簿から自動で作成する無料ツール。同じテーブルにしたい人・別々にしたい人・席の固定を指定でき、手で入れ替えてPDF・Excel・CSVで保存できます。名前はサーバーに送信されません。",
+    lead: "参加者の名簿を入力（または貼り付け・CSV・Excelから読み込み）して、テーブル数と席数を決めるだけで、席順を作れます。「同じテーブルにしたい」「別々にしたい」「この席に固定したい」といった条件も指定できます。",
+    howTo: [
+      "参加者の名前を、1行に1人ずつ入力します（Excelの列をそのまま貼り付けられます）。CSV・Excelのファイルから読み込むこともできます。",
+      "テーブル数と1テーブルの席数を決めます。席が足りないときは、何席足りないかが表示されます。",
+      "必要なら、同じテーブルにしたい人、別々のテーブルにしたい人、席を固定する人を指定します。",
+      "「席順を作る」を押します。気に入らなければ「席順を再抽選する」で、条件はそのまま、何度でも作り直せます。",
+      "席を押して入れ替えたい席を選ぶと、手で席順を調整できます。できあがったら、PDF・Excel・CSVでダウンロードします。",
+    ],
+    faq: [
+      { question: "席の条件が守れないときは、どうなりますか？", answer: "条件を無視して席順を作ることはありません。どの条件が衝突しているかを説明するので、条件を調整してください。たとえば、同じテーブルにしたい人が1テーブルの席数を超えるときや、別々にしたい人数がテーブル数を超えるときなどが該当します。" },
+      { question: "席順は公平に決まりますか？", answer: "条件のない人どうしの席は、すべて同じ確率でランダムに決まります。特定の人が有利・不利になるような並べ方はしていません。「席順を再抽選する」を押すたびに、別の席順になります。" },
+      { question: "手で入れ替えたあとに、条件が守られなくなったらどうなりますか？", answer: "手で入れ替えた結果、条件（同席・別席・固定）が守られなくなった場合は、画面に注意が表示されます。入れ替え自体は止めません。再抽選すると、手で入れ替えた内容は消えます。" },
+      { question: "同じ名前の人がいる場合は？", answer: "既定では、同じ名前は1人として扱い、2人目以降を除きます（除いた件数が表示されます）。同じ名前の別人がいるときは「同じ名前も別の人として扱う」を選ぶと、「山田太郎(2)」のように番号を付けて、全員を席に入れます。" },
+      { question: "どんなファイルから名簿を読み込めますか？", answer: "CSVとExcel（.xlsx）に対応しています。名前が1列に並んでいれば読み込めます。1行目に「氏名」「名前」などの見出しがあれば、その列を使います。古い形式（.xls）は、Excelで.xlsxに保存し直してください。" },
+      { question: "人数やテーブル数に上限はありますか？", answer: `参加者は${SEATING_MAX_PARTICIPANTS}人まで、テーブルは${SEATING_MAX_TABLES}つまで、1テーブルの席数は${SEATING_MAX_SEATS_PER_TABLE}席までです。` },
+      { question: "どんな形式で保存できますか？", answer: "PDF（A4横・テーブルごとの枠）、Excel（座席表のシートと一覧のシート）、CSV（氏名・テーブル・席番号の一覧）で保存できます。" },
+      { question: "入力した名前はサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
     ],
   },
   "roster-template": {

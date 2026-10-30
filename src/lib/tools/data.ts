@@ -1224,6 +1224,38 @@ const toolDefinitions: Tool[] = [
     keywords: ["名簿", "一覧表", "出席簿", "台帳"],
   },
   {
+    // 工程5：座席表・席順作成。名簿から、同席・別席・固定の条件に沿って席順を作り、手で入れ替えてPDF・Excel・CSVで保存する。
+    id: "seating-chart",
+    name: "座席表作成",
+    category: "generator",
+    description: "参加者の名簿から、宴会・懇親会・研修などの座席表を作ります。同じテーブル・別々のテーブル・席の固定といった条件に沿って席順を自動で作り、手で入れ替えて、PDF・Excel・CSVで保存できます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: [
+      "座席表",
+      "席順",
+      "席次表",
+      "席次",
+      "座席表作成",
+      "席順作成",
+      "席替え",
+      "テーブル割り",
+      "席割り",
+      "宴会",
+      "懇親会",
+      "忘年会",
+      "歓迎会",
+      "研修",
+      "同じテーブル",
+      "別のテーブル",
+      "ランダム",
+      "seating chart",
+      "seat plan",
+    ],
+    relatedToolIds: ["roster-template"],
+  },
+  {
     // Phase 11: この2ツールは料金・利用制限の仕組みがページ数ベース・
     // 日次回数ベースの専用設計のため、requiredPlanは他ツールと同様に型上の
     // 分類（SEO・カテゴリ表示用）として設定しつつ、実際のアクセス制御は

@@ -125,6 +125,10 @@ const PdfRedactTool = dynamic(() =>
   import("./implementations/pdf-redact-tool").then((m) => m.PdfRedactTool),
   { loading: ToolLoading }
 );
+const SeatingChartTool = dynamic(() =>
+  import("./implementations/seating-chart-tool").then((m) => m.SeatingChartTool),
+  { loading: ToolLoading }
+);
 const ImageToPdfTool = dynamic(() =>
   import("./implementations/image-to-pdf-tool").then((m) => m.ImageToPdfTool),
   { loading: ToolLoading }
@@ -503,6 +507,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfFixTool />;
     case "pdf-redact":
       return <PdfRedactTool />;
+    case "seating-chart":
+      return <SeatingChartTool />;
     case "pdf-merge":
       return <PdfEditTool initialMode="merge" />;
     case "pdf-split":
