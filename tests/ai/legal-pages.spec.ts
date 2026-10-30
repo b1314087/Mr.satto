@@ -55,6 +55,9 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("文字情報のあるPDF（スキャンした画像のPDFは対象外です）から、ブラウザの中で取り出した文字だけを送信します");
     expect(text).toContain("1つのPDFの最大5ページ、合計6,000文字まで");
     expect(text).toContain("PDFファイルそのもの、画像は送信しません");
+    // PDF→Excelの表の読み取りは、スキャンしたページの縮小した画像と、OCRの文字（参考）も送る
+    expect(text).toContain("文字情報のないページ（スキャンした画像）は、ブラウザの中でJPEGに縮小した画像を、最大4ページ分送信します");
+    expect(text).toContain("文字認識（OCR）で読み取った文字も、AIが画像を読み取るときの参考として送信します");
     expect(text).toContain("通常の記入済みPDF→Excel（自動抽出・テンプレート）");
     expect(text).toContain("本サービスのサーバー側でも、AIによる処理を行いません");
     expect(text).toContain("通常の年度カレンダー作成");

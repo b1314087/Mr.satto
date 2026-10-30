@@ -72,9 +72,11 @@ export function createAssistDeps(periodLimitMicroUsd?: number): AssistDeps | nul
     ledger,
     callModel: ({ tier, instructions, input, maxOutputTokens, mode, images }) => {
       const isPptx = mode === "pptx";
-      const isImage = (mode === "image" || isPptx) && images !== undefined && images.length > 0;
-      const aiInput: string | OpenAiInputMessage[] = isImage ? buildImageInput(input, images) : input;
       const isForm = mode === "form";
+      // 画像つきの入力: カレンダー・PowerPointの画像、PDF→Excelのスキャンしたページ
+      const isImage = (mode === "image" || isPptx) && images !== undefined && images.length > 0;
+      const hasImages = (isImage || isForm) && images !== undefined && images.length > 0;
+      const aiInput: string | OpenAiInputMessage[] = hasImages ? buildImageInput(input, images) : input;
       return callOpenAi({
         apiKey,
         modelId: AI_MODELS[tier].id,

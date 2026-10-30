@@ -4,10 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ResultPopup } from "@/components/common/result-popup";
 import { ErrorMessage } from "@/components/common/error-message";
 import { featureFlags } from "@/lib/config/features";
-import { FORM_CONSENT_VERSION, FORM_MAX_CHARS_TOTAL, FORM_MAX_PAGES, type FormExtractRow, type FormPurpose } from "@/lib/ai/form-extract";
+import { FORM_CONSENT_VERSION, FORM_MAX_CHARS_TOTAL, FORM_MAX_IMAGE_PAGES, FORM_MAX_PAGES, type FormExtractRow, type FormPurpose } from "@/lib/ai/form-extract";
 import type { AiModelTier } from "@/lib/ai/pricing";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
-import { loadPdfDocument, getPositionedTextItems, pageHasText, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
+import { loadPdfDocument, getPositionedTextItems, pageHasText, renderPageToCanvas, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
+import { ocrWordsToPositionedTextItems, recognizeImageWithWords } from "@/lib/ocr/tesseract-client";
+import { removeRuledLinesFromCanvas } from "@/lib/ocr/remove-ruled-lines";
+import { encodeCanvasForAi, type PreparedImage } from "@/lib/calendar/event-image";
 import { groupIntoLines } from "@/lib/pdf/table-reconstruction";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import {
@@ -27,8 +30,9 @@ import {
  * 記入済みPDF→Excel の「AIで読み取る」補助（プレミアム）。
  *
  * - 従来の自動抽出・テンプレートは、このパネルを開かなくても、すべて今までどおり動く（AIは任意）。
- * - AIに送るのは、PDFから取り出した「文字」だけ（5ページ・6,000文字まで）。PDFファイルそのもの・画像は送らない。
- * - 文字として読めるPDFだけが対象。スキャンPDFは、従来の変換（OCR）をお使いください。
+ * - 文字のあるPDFは、PDFから取り出した「文字」だけを送る（5ページ・6,000文字まで）。PDFファイルそのものは送らない。
+ * - スキャンしたページ（PDF→Excelだけ・4ページまで）は、端末内でOCRして文字（参考）を取り出し、
+ *   縮小した画像（JPEG）と一緒に送る。送る画像は画面に出して見せ、同意を取る。
  * - 送る内容を画面に出し、実行のたびに同意を取る。
  * - AIの結果は「提案」。原文に見つからない文字は目立たせ、利用者が直してから、Excelにする。
  */
@@ -38,10 +42,21 @@ type UsageState =
   | ({ status: "available" } & AiUsage)
   | { status: "unavailable"; reason: "login_required" | "not_premium" | "unavailable" };
 
+/** 画面に出し、AIに送るページ。スキャンしたページは image がある（text は端末内のOCRの文字） */
+interface SendPage {
+  page: number;
+  text: string;
+  image?: PreparedImage;
+}
+
+/** スキャンしたページを画像にするときの、OCR用の描画サイズ（PDF→Excelの変換と同じ） */
+const OCR_RENDER_SCALE = 2.5;
+const MAX_OCR_DIMENSION = 2200;
+
 type TextState =
   | { status: "idle" }
-  | { status: "reading" }
-  | { status: "ready"; pages: { page: number; text: string }[]; chars: number }
+  | { status: "reading"; message: string }
+  | { status: "ready"; pages: SendPage[]; chars: number; imageCount: number }
   | { status: "problem"; message: string };
 
 interface DraftRow {
@@ -88,7 +103,7 @@ export function itemsToPageText(items: PositionedTextItem[]): string {
 /** 目的ごとの画面の文言（記入済みPDF→Excelは「項目」、PDF→Excelは「表」） */
 const PURPOSE_COPY: Record<FormPurpose, { title: string; sub: string; sheet: string; loginNext: string }> = {
   form: { title: "AIで項目を読み取る（任意）", sub: "文字のPDFを、AIが項目ごとの表に整理します", sheet: "AI読み取り", loginNext: "/tools/filled-pdf-to-excel" },
-  table: { title: "AIで表を読み取る（任意）", sub: "文字のPDFの表を、AIが整理してExcelの行にします", sheet: "AI読み取り", loginNext: "/tools/pdf-to-excel" },
+  table: { title: "AIで表を読み取る（任意）", sub: "PDFの表（スキャンしたPDFも）を、AIが整理してExcelの行にします", sheet: "AI読み取り", loginNext: "/tools/pdf-to-excel" },
 };
 
 export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { files: File[]; totalPages: number | null; purpose?: FormPurpose }) {
@@ -153,7 +168,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     if (!open || !eligibleFile || pageLimitProblem) return;
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setText({ status: "reading" });
+    setText({ status: "reading", message: "PDFの文字を取り出しています…（この端末の中だけで行います）" });
     (async () => {
       try {
         const pdf = await loadPdfDocument(eligibleFile);
@@ -161,22 +176,55 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
           if (!cancelled) setText({ status: "problem", message: `AIで読み取れるのは${FORM_MAX_PAGES}ページまでです（このPDFは${pdf.numPages}ページ）。` });
           return;
         }
-        const pages: { page: number; text: string }[] = [];
+        const pages: SendPage[] = [];
         for (let p = 1; p <= pdf.numPages; p++) {
-          const items = await getPositionedTextItems(await pdf.getPage(p));
-          if (!pageHasText(items)) {
-            if (!cancelled) setText({ status: "problem", message: `${p}ページ目に文字がありません（スキャンした画像のPDFです）。AIには送れません。従来の変換（OCR）をお使いください。` });
+          const page = await pdf.getPage(p);
+          const items = await getPositionedTextItems(page);
+          if (pageHasText(items)) {
+            pages.push({ page: p, text: itemsToPageText(items) });
+            continue;
+          }
+          // 文字のないページ（スキャンした画像）
+          if (purpose !== "table") {
+            if (!cancelled) setText({ status: "problem", message: `${p}ページ目に文字がありません（スキャンした画像のPDFです）。この機能では送れません。従来の変換（OCR）をお使いください。` });
             return;
           }
-          pages.push({ page: p, text: itemsToPageText(items) });
+          if (pages.filter((pg) => pg.image).length >= FORM_MAX_IMAGE_PAGES) {
+            if (!cancelled) setText({ status: "problem", message: `スキャンしたページ（画像）は、AIで${FORM_MAX_IMAGE_PAGES}ページまで読み取れます。ページを減らしたPDFでお試しください。` });
+            return;
+          }
+          if (!cancelled) setText({ status: "reading", message: `${p}ページ目はスキャンした画像です。画像にして、文字を読み取っています…（この端末の中だけで行います。時間がかかることがあります）` });
+          let canvas: HTMLCanvasElement;
+          try {
+            canvas = (await renderPageToCanvas(page, OCR_RENDER_SCALE, MAX_OCR_DIMENSION)).canvas;
+          } catch {
+            if (!cancelled) setText({ status: "problem", message: `${p}ページ目を画像にできませんでした。` });
+            return;
+          }
+          // 参考にする文字（端末内のOCR）。読めなくても、画像は送れる
+          let ocrText = "";
+          try {
+            const result = await recognizeImageWithWords(removeRuledLinesFromCanvas(canvas), "ja+en", () => {}, { pageSegMode: "6" });
+            ocrText = itemsToPageText(ocrWordsToPositionedTextItems(result.words));
+          } catch {
+            ocrText = "";
+          }
+          if (cancelled) return;
+          const image = await encodeCanvasForAi(canvas, `${p}ページ目`);
+          if (!image) {
+            setText({ status: "problem", message: `${p}ページ目の画像を、送れる大きさに小さくできませんでした。` });
+            return;
+          }
+          pages.push({ page: p, text: ocrText, image });
         }
         const chars = pages.reduce((sum, pg) => sum + pg.text.length, 0);
+        const imageCount = pages.filter((pg) => pg.image).length;
         if (cancelled) return;
         if (chars > FORM_MAX_CHARS_TOTAL) {
           setText({ status: "problem", message: `文字が多すぎます（${chars.toLocaleString("ja-JP")}文字。送れるのは${FORM_MAX_CHARS_TOTAL.toLocaleString("ja-JP")}文字まで）。ページを減らしたPDFでお試しください。` });
           return;
         }
-        setText({ status: "ready", pages, chars });
+        setText({ status: "ready", pages, chars, imageCount });
       } catch {
         if (!cancelled) setText({ status: "problem", message: "PDFの文字を取り出せませんでした。" });
       }
@@ -184,7 +232,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     return () => {
       cancelled = true;
     };
-  }, [open, eligibleFile, pageLimitProblem]);
+  }, [open, eligibleFile, pageLimitProblem, purpose]);
 
   // 経過時間（読み取り中だけ）
   useEffect(() => {
@@ -197,6 +245,8 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
 
   const canRun = usage.status === "available" && text.status === "ready" && consent && !running;
   const sendPages = text.status === "ready" ? text.pages : [];
+  // 結果を出したときに、画像つきで送ったか（黄色い欄の説明に使う）
+  const [sentImages, setSentImages] = useState(false);
   const unverifiedTotal = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.unverified.size, 0), [rows]);
 
   async function run() {
@@ -218,7 +268,12 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
           model: tier,
           // 記入済みPDF→Excelは、目的を省略して送る（従来どおりの依頼）。PDF→Excelだけ "table" を付ける
           ...(purpose === "table" ? { purpose } : {}),
-          pages: text.pages,
+          // スキャンしたページは、縮小した画像（JPEG）を付ける。表示用の名前・大きさは送らない
+          pages: text.pages.map((pg) => ({
+            page: pg.page,
+            text: pg.text,
+            ...(pg.image ? { image: { mediaType: pg.image.mediaType, base64: pg.image.base64 } } : {}),
+          })),
           consent: { accepted: true, version: FORM_CONSENT_VERSION },
         }),
       });
@@ -229,6 +284,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
         return;
       }
       const incoming = (data.rows as FormExtractRow[]).map((r, i) => ({ id: i, page: r.page, kind: r.kind, cells: [...r.cells], unverified: new Set(r.unverified) }));
+      setSentImages(text.imageCount > 0);
       setRows(incoming);
       setNotes(Array.isArray(data.notes) ? (data.notes as string[]) : []);
       setRejected(typeof data.rejected === "number" ? data.rejected : 0);
@@ -315,7 +371,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                   {pageLimitProblem}
                 </p>
               )}
-              {text.status === "reading" && <p className="text-sm text-neutral-600 dark:text-neutral-300">PDFの文字を取り出しています…（この端末の中だけで行います）</p>}
+              {text.status === "reading" && <p data-testid="form-ai-reading" className="text-sm text-neutral-600 dark:text-neutral-300">{text.message}</p>}
               {text.status === "problem" && !pageLimitProblem && (
                 <p data-testid="form-ai-problem" role="alert" className="rounded-lg bg-white px-3 py-2 text-sm text-red-700 dark:bg-neutral-900 dark:text-red-300">
                   {text.message}
@@ -325,19 +381,38 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
               {text.status === "ready" && (
                 <>
                   <div className="flex flex-col gap-1" data-testid="form-ai-preview">
-                    <StepLabel n={1} hint="この文字だけをAIに送ります">送る内容の確認</StepLabel>
+                    <StepLabel n={1} hint={text.imageCount > 0 ? "この文字と画像だけをAIに送ります" : "この文字だけをAIに送ります"}>送る内容の確認</StepLabel>
                     <div className="max-h-56 overflow-auto rounded border border-violet-200 bg-white p-2 dark:border-violet-800 dark:bg-neutral-950">
                       {sendPages.map((pg) => (
                         <div key={pg.page} className="mb-2 last:mb-0">
-                          <p className="text-[11px] font-semibold text-violet-800 dark:text-violet-200">{pg.page}ページ目</p>
-                          <pre className="whitespace-pre-wrap break-all font-sans text-xs text-neutral-800 dark:text-neutral-100">{pg.text}</pre>
+                          <p className="text-[11px] font-semibold text-violet-800 dark:text-violet-200">
+                            {pg.page}ページ目{pg.image ? "（スキャンした画像）" : ""}
+                          </p>
+                          {pg.image && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              data-testid="form-ai-image"
+                              src={`data:${pg.image.mediaType};base64,${pg.image.base64}`}
+                              alt={`AIに送る${pg.page}ページ目の画像`}
+                              className="mb-1 max-h-48 rounded border border-neutral-200 dark:border-neutral-700"
+                            />
+                          )}
+                          {pg.image && (
+                            <p className="text-[11px] text-neutral-600 dark:text-neutral-300">
+                              {pg.text.trim() === "" ? "端末内のOCRでは文字を読み取れませんでした（画像だけを送ります）。" : "下の文字は、端末内のOCRが読み取った参考です（誤りを含むことがあります）。"}
+                            </p>
+                          )}
+                          {pg.text.trim() !== "" && <pre className="whitespace-pre-wrap break-all font-sans text-xs text-neutral-800 dark:text-neutral-100">{pg.text}</pre>}
                         </div>
                       ))}
                     </div>
                     <p data-testid="form-ai-count" className="text-xs text-neutral-700 dark:text-neutral-200">
                       送るページ：{sendPages.length}ページ ／ 送る文字：{text.chars.toLocaleString("ja-JP")}文字
+                      {text.imageCount > 0 ? ` ／ 送る画像：${text.imageCount}枚` : ""}
                     </p>
-                    <p className="text-xs text-neutral-600 dark:text-neutral-300">PDFファイルそのもの・画像は送りません。</p>
+                    <p className="text-xs text-neutral-600 dark:text-neutral-300">
+                      {text.imageCount > 0 ? "PDFファイルそのものは送りません。スキャンしたページは、縮小した画像を送ります。" : "PDFファイルそのもの・画像は送りません。"}
+                    </p>
                   </div>
 
                   <div className="flex flex-col gap-2">
@@ -355,7 +430,9 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                   <div className="flex flex-col gap-2">
                     <StepLabel n={3}>同意して実行</StepLabel>
                     <ConsentBox testId="form-ai-consent" checked={consent} onChange={setConsent}>
-                      上の内容（PDFの文字）を、AI（OpenAI）に送って読み取ることに同意します
+                      {text.imageCount > 0
+                        ? "上の内容（PDFの文字と、スキャンしたページの画像）を、AI（OpenAI）に送って読み取ることに同意します"
+                        : "上の内容（PDFの文字）を、AI（OpenAI）に送って読み取ることに同意します"}
                     </ConsentBox>
                     <AiRunButton
                       testId="form-ai-run"
@@ -384,7 +461,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                   ))}
                   {unverifiedTotal > 0 && (
                     <p data-testid="form-ai-unverified-note" role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                      黄色い欄（{unverifiedTotal}か所）は、元のPDFの文字の中に見つかりませんでした。AIが読み違えた可能性があるので、PDFと見比べて直してください。
+                      黄色い欄（{unverifiedTotal}か所）は、{sentImages ? "端末内のOCRの文字やPDFの文字の中に" : "元のPDFの文字の中に"}見つかりませんでした。AIが読み違えた可能性があるので、PDFと見比べて直してください。
                     </p>
                   )}
                   {rejected > 0 && <p className="text-xs text-neutral-600 dark:text-neutral-300">形式が正しくなかった{rejected}行は、使っていません。</p>}

@@ -5,6 +5,9 @@ import {
   FORM_MAX_PAGES,
   FORM_OUTPUT_SCHEMA,
   maxOutputTokensForForm,
+  FORM_MAX_IMAGE_PAGES,
+  TABLE_IMAGE_INSTRUCTIONS,
+  buildFormUserInput,
   normalizeForMatch,
   parseFormOutput,
   validateFormExtractRequest,
@@ -80,10 +83,10 @@ test.describe("記入済みPDFのAI読み取り: 入力の検証", () => {
     expect(bad({ model: "ultra" }).ok).toBe(false);
   });
 
-  test("文字のないページ（スキャンPDFなど）は、OCRの案内つきで断る", () => {
+  test("文字のないページは、画像が付いていなければ断る（スキャンPDFは画像を付けて送る）", () => {
     const v = validateFormExtractRequest(body({ pages: [{ page: 1, text: " \n\t " }] }));
     expect(v.ok).toBe(false);
-    if (!v.ok) expect(v.message).toContain("OCR");
+    if (!v.ok) expect(v.message).toContain("画像");
   });
 
   test(`文字数の合計が${FORM_MAX_CHARS_TOTAL}文字を超える依頼は断る（ちょうどなら通る）`, () => {
@@ -361,5 +364,127 @@ test.describe("PDF→ExcelのAI読み取り（purpose: table）", () => {
     expect((await handleFormExtract(deps, PREMIUM, AVAILABLE, body({ purpose: "table", consent: { accepted: false, version: FORM_CONSENT_VERSION } }))).status).toBe(400);
     expect(model.calls).toHaveLength(0);
     expect(ledger.calls).toEqual([]);
+  });
+});
+
+// ═════════════ スキャンしたページ（画像つき）の読み取り ═════════════
+
+/** JPEGの先頭だけを持つ、最小の画像（検証は形式・大きさだけなので、これで足りる） */
+function fakeJpeg(extraBytes = 0): { mediaType: "image/jpeg"; base64: string } {
+  const bytes = Buffer.alloc(16 + extraBytes, 1);
+  bytes[0] = 0xff;
+  bytes[1] = 0xd8;
+  bytes[2] = 0xff;
+  return { mediaType: "image/jpeg", base64: bytes.toString("base64") };
+}
+
+const SCAN_OCR_TEXT = "Name\tScore\nAlice\t10\nBob\t20";
+
+function scanBody(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return body({ purpose: "table", pages: [{ page: 1, text: SCAN_OCR_TEXT, image: fakeJpeg() }], ...over });
+}
+
+test.describe("PDF→ExcelのAI読み取り: スキャンしたページ（画像つき）", () => {
+  test("table なら、画像つきのページを受け付ける。OCRの文字が空でも画像があれば通る", () => {
+    const v = validateFormExtractRequest(scanBody());
+    expect(v.ok).toBe(true);
+    if (v.ok) expect(v.value.pages[0].image?.mediaType).toBe("image/jpeg");
+    expect(validateFormExtractRequest(scanBody({ pages: [{ page: 1, text: "", image: fakeJpeg() }] })).ok).toBe(true);
+  });
+
+  test("form（記入済みPDF→Excel）や目的の省略では、画像を送れない", () => {
+    expect(validateFormExtractRequest(scanBody({ purpose: "form" })).ok).toBe(false);
+    const noPurpose = scanBody();
+    delete noPurpose.purpose;
+    expect(validateFormExtractRequest(noPurpose).ok).toBe(false);
+  });
+
+  test("画像の枚数・形式・大きさがおかしい依頼は断る", () => {
+    const five = Array.from({ length: FORM_MAX_IMAGE_PAGES + 1 }, (_, i) => ({ page: i + 1, text: "", image: fakeJpeg() }));
+    const tooMany = validateFormExtractRequest(scanBody({ pages: five }));
+    expect(tooMany.ok).toBe(false);
+    expect(validateFormExtractRequest(scanBody({ pages: [{ page: 1, text: "a", image: { mediaType: "image/gif", base64: fakeJpeg().base64 } }] })).ok).toBe(false);
+    expect(validateFormExtractRequest(scanBody({ pages: [{ page: 1, text: "a", image: { mediaType: "image/jpeg", base64: "not base64!!" } }] })).ok).toBe(false);
+    expect(validateFormExtractRequest(scanBody({ pages: [{ page: 1, text: "a", image: fakeJpeg(800_000) }] })).ok).toBe(false);
+    // JPEGの印（先頭のバイト）がないデータ
+    expect(validateFormExtractRequest(scanBody({ pages: [{ page: 1, text: "a", image: { mediaType: "image/jpeg", base64: Buffer.alloc(16, 2).toString("base64") } }] })).ok).toBe(false);
+  });
+
+  test("文字のページと画像のページを混ぜられる。文字のページは画像なしでよい", () => {
+    const v = validateFormExtractRequest(scanBody({ pages: [{ page: 1, text: "Item\tQty" }, { page: 2, text: "", image: fakeJpeg() }] }));
+    expect(v.ok).toBe(true);
+    if (v.ok) {
+      expect(v.value.pages[0].image).toBeUndefined();
+      expect(v.value.pages[1].image).toBeDefined();
+    }
+  });
+
+  test("AIへの入力: 画像のないときは従来と同じ形。画像があるときだけ image_pages と scanned が付く", () => {
+    const plain = validateFormExtractRequest(body({ purpose: "table" }));
+    if (!plain.ok) throw new Error(plain.message);
+    expect(Object.keys(JSON.parse(buildFormUserInput(plain.value)))).toEqual(["pages"]);
+    const scan = validateFormExtractRequest(scanBody({ pages: [{ page: 1, text: "Item\tQty" }, { page: 2, text: SCAN_OCR_TEXT, image: fakeJpeg() }] }));
+    if (!scan.ok) throw new Error(scan.message);
+    const input = JSON.parse(buildFormUserInput(scan.value)) as { image_pages: number[]; pages: { page: number; scanned: boolean }[] };
+    expect(input.image_pages).toEqual([2]);
+    expect(input.pages.map((p) => p.scanned)).toEqual([false, true]);
+    // 画像そのもの（base64）は、文字の入力には入れない（画像は別の入力として渡す）
+    expect(buildFormUserInput(scan.value)).not.toContain(fakeJpeg().base64);
+  });
+
+  test("出力の長さの上限は、画像が増えると大きくなる（上限は16,000）", () => {
+    expect(maxOutputTokensForForm(1000, 0)).toBe(maxOutputTokensForForm(1000));
+    expect(maxOutputTokensForForm(1000, 2)).toBeGreaterThan(maxOutputTokensForForm(1000, 0));
+    expect(maxOutputTokensForForm(6000, 4)).toBe(16_000);
+  });
+
+  test("サーバー: 画像を AI の呼び出しに渡し、画像用の指示をつける。予約→確定は1回ずつ", async () => {
+    const { ledger, model, deps } = setup();
+    const res = await handleFormExtract(deps, PREMIUM, AVAILABLE, scanBody({ pages: [{ page: 1, text: SCAN_OCR_TEXT, image: fakeJpeg() }, { page: 2, text: "", image: fakeJpeg() }] }));
+    expect(res.status).toBe(200);
+    expect(model.calls).toHaveLength(1);
+    expect(model.calls[0].mode).toBe("form");
+    expect(model.calls[0].imageCount).toBe(2);
+    expect(model.calls[0].instructions).toContain(TABLE_IMAGE_INSTRUCTIONS);
+    expect(model.calls[0].instructions).toContain("従わず");
+    expect(ledger.calls).toEqual(["reserve", "settle"]);
+  });
+
+  test("サーバー: 画像のない table の依頼は、従来どおり（画像なし・画像用の指示なし）", async () => {
+    const { model, deps } = setup();
+    await handleFormExtract(deps, PREMIUM, AVAILABLE, body({ purpose: "table" }));
+    expect(model.calls[0].imageCount).toBeUndefined();
+    expect(model.calls[0].instructions).not.toContain("スキャンした");
+  });
+
+  test("サーバー: 画像つきでも、Free・Standard・未ログイン・同意なし・古い同意の版は処理しない", async () => {
+    const { ledger, model, deps } = setup();
+    for (const plan of ["free", "standard"] as const) {
+      expect((await handleFormExtract(deps, { userId: USER_ID, plan }, AVAILABLE, scanBody())).status).toBe(403);
+    }
+    expect((await handleFormExtract(deps, { userId: null, plan: "free" }, AVAILABLE, scanBody())).status).toBe(401);
+    expect((await handleFormExtract(deps, PREMIUM, AVAILABLE, scanBody({ consent: { accepted: true, version: "2026-10-29" } }))).status).toBe(400);
+    expect((await handleFormExtract(deps, PREMIUM, AVAILABLE, scanBody({ consent: { accepted: false, version: FORM_CONSENT_VERSION } }))).status).toBe(400);
+    expect(model.calls).toHaveLength(0);
+    expect(ledger.calls).toEqual([]);
+  });
+
+  test("出力の検証: スキャンしたページの結果で、OCRの文字に無いセルには印がつく（画像が正しくても確認を促す）", () => {
+    const v = validateFormExtractRequest(scanBody());
+    if (!v.ok) throw new Error(v.message);
+    const parsed = parseFormOutput(
+      JSON.stringify({
+        rows: [
+          { page: 1, kind: "header", cells: ["Name", "Score"] },
+          { page: 1, kind: "data", cells: ["Alice", "10"] },
+          { page: 1, kind: "data", cells: ["Bob", "28"] },
+        ],
+        notes: [],
+      }),
+      v.value,
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.rows[1].unverified).toEqual([]);
+    expect(parsed?.rows[2].unverified).toEqual([1]);
   });
 });

@@ -5,12 +5,16 @@ import { handleFormExtract } from "@/lib/ai/service";
 /**
  * 記入済みPDF→Excelの、AI読み取り補助（Premium限定・利用者が同意したPDFの「文字」だけを処理）。
  * 処理の流れと利用枠の扱いは src/lib/ai/service.ts を参照。
- * リクエスト本文・AIの応答は、ログにもデータベースにも保存しない。
+ * スキャンしたページは、ブラウザで縮小した画像を送る（PDF→Excelの表の読み取りだけ）。
+ * リクエスト本文（画像を含む）・AIの応答は、ログにもデータベースにも保存しない。
  */
 export const maxDuration = 120;
 
-/** 本文の上限。送れる文字は6,000文字までで、JSONにしても余裕をもって収まる大きさ */
-const MAX_BODY_BYTES = 120_000;
+/**
+ * 本文の上限。文字は6,000文字まで（JSONにしても120KB以内）。スキャンしたページの画像は、
+ * 合計2.6MB（base64で約3.5MB）までで、Vercelの本文の上限（4.5MB）に収まる大きさ
+ */
+const MAX_BODY_BYTES = 3_800_000;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 function json(status: number, body: Record<string, unknown>) {

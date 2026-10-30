@@ -34,7 +34,9 @@ import {
   FORM_INPUT_OVERHEAD_TOKENS,
   FORM_OUTPUT_SCHEMA,
   buildFormUserInput,
-  instructionsForPurpose,
+  formImageTokenEstimate,
+  formRequestImages,
+  instructionsForRequest,
   maxOutputTokensForForm,
   parseFormOutput,
   totalFormChars,
@@ -165,7 +167,8 @@ export async function handleFormExtract(
   const request = validated.value;
   const input = buildFormUserInput(request);
   const chars = totalFormChars(request);
-  const instructions = instructionsForPurpose(request.purpose);
+  const instructions = instructionsForRequest(request);
+  const images = formRequestImages(request);
   return execute(deps, caller.userId as string, {
     mode: "form",
     feature: request.purpose === "table" ? FEATURE_TABLE_EXTRACT : FEATURE_FORM_EXTRACT,
@@ -173,8 +176,10 @@ export async function handleFormExtract(
     tier: request.model,
     instructions,
     input,
-    maxOutputTokens: maxOutputTokensForForm(chars),
-    estimatedInputTokens: estimateInputTokens(instructions + JSON.stringify(FORM_OUTPUT_SCHEMA) + input) + FORM_INPUT_OVERHEAD_TOKENS,
+    ...(images.length > 0 ? { images } : {}),
+    maxOutputTokens: maxOutputTokensForForm(chars, images.length),
+    estimatedInputTokens:
+      estimateInputTokens(instructions + JSON.stringify(FORM_OUTPUT_SCHEMA) + input) + FORM_INPUT_OVERHEAD_TOKENS + formImageTokenEstimate(request),
     tooLargeMessage: "一度に読み取る量が多すぎます。ページを減らして、もう一度お試しください。",
     incompleteMessage: "AIの応答が途中で切れたため、結果を使えませんでした。ページを減らして、もう一度お試しください。",
     parse: (text) => {
@@ -334,7 +339,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
       maxOutputTokens,
       ...(plan.mode === "image" ? { mode: "image" as const, images: plan.images } : {}),
       ...(plan.mode === "pptx" ? { mode: "pptx" as const, images: plan.images } : {}),
-      ...(plan.mode === "form" ? { mode: "form" as const } : {}),
+      ...(plan.mode === "form" ? { mode: "form" as const, ...(plan.images ? { images: plan.images } : {}) } : {}),
     });
   } catch {
     // 呼び出しの中で想定外の例外が起きた: 課金されたか分からないので、そのままにする

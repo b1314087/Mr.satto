@@ -308,8 +308,10 @@ test.describe("記入済みPDF→Excel: 通常の変換はAIを使わないと�
     const seo = getToolSeoContent("pdf-to-excel")!;
     const ai = seo.faq.find((f) => f.question === "AIで表を読み取る機能はありますか？")!;
     expect(ai.answer).toContain("プレミアムプラン");
-    expect(ai.answer).toContain("PDFファイルそのものや画像は送りません");
-    expect(ai.answer).toContain("スキャンした画像のPDFは対象外");
+    expect(ai.answer).toContain("PDFファイルそのものは送りません");
+    expect(ai.answer).toContain("スキャンしたページの縮小した画像");
+    expect(ai.answer).toContain("スキャンした画像のページも、4ページまで読み取れます");
+    expect(ai.answer).not.toContain("対象外");
     const saved = seo.faq.find((f) => f.question === "アップロードしたPDFはサーバーに保存されますか？")!;
     expect(saved.answer).toContain("通常の変換は、すべてお使いのブラウザの中で行われ");
     expect(saved.answer).toContain("「AIで表を読み取る」（プレミアム・任意）を使う場合だけ");

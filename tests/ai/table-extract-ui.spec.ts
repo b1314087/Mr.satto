@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { test, expect } from "../fixtures/premium-test";
 import { FORM_CONSENT_VERSION } from "@/lib/ai/form-extract";
+import { fixtures } from "../fixtures/paths";
 
 /**
  * PDF→Excel: 「AIで表を読み取る」パネルのE2Eテスト。
@@ -52,9 +53,9 @@ async function tablePdf(pages = 1): Promise<{ name: string; mimeType: string; bu
   return { name: "invoice.pdf", mimeType: "application/pdf", buffer: Buffer.from(await doc.save()) };
 }
 
-async function blankPdf(): Promise<{ name: string; mimeType: string; buffer: Buffer }> {
+async function blankPdf(pages = 1): Promise<{ name: string; mimeType: string; buffer: Buffer }> {
   const doc = await PDFDocument.create();
-  doc.addPage([595, 842]);
+  for (let i = 0; i < pages; i++) doc.addPage([595, 842]);
   return { name: "scan.pdf", mimeType: "application/pdf", buffer: Buffer.from(await doc.save()) };
 }
 
@@ -126,11 +127,64 @@ test.describe("PDF→Excel: AIで表を読み取る（任意・プレミアム�
     expect(rec.bodies).toHaveLength(0);
   });
 
-  test("文字のないPDF（スキャン）は対象外と案内し、AIには何も送らない", async ({ page }) => {
+  test("スキャンPDF: 画像とOCRの文字（参考）を画面に出し、同意すると画像つきで送る。結果の原文に無い数字は目立つ", async ({ page }) => {
+    const rec = await mockAi(page, {
+      extract: okExtract([
+        { page: 1, kind: "header", cells: ["Name", "Score"], unverified: [] },
+        { page: 1, kind: "data", cells: ["Alice", "10"], unverified: [] },
+        { page: 1, kind: "data", cells: ["Bob", "28"], unverified: [1] },
+      ]),
+    });
+    await openAndUpload(page, { name: "scanned.pdf", mimeType: "application/pdf", buffer: fs.readFileSync(fixtures.pdfToExcelScannedTablePdf) });
+    await page.getByTestId("form-ai-toggle").click();
+    // OCRと画像化は端末の中で行う（時間がかかる）
+    await expect(page.getByTestId("form-ai-image")).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByTestId("form-ai-preview")).toContainText("スキャンした画像");
+    await expect(page.getByTestId("form-ai-count")).toContainText("送る画像：1枚");
+    await expect(page.getByTestId("form-ai-preview")).toContainText("OCRが読み取った参考");
+    await expect(page.getByTestId("form-ai-consent")).toBeVisible();
+    await expect(page.getByText("スキャンしたページの画像）を、AI（OpenAI）に送って読み取ることに同意します")).toBeVisible();
+    expect(rec.bodies).toHaveLength(0);
+    await expect(page.getByTestId("form-ai-run")).toBeDisabled();
+    await page.getByTestId("form-ai-consent").check();
+    await page.getByTestId("form-ai-run").click();
+    await expect(page.getByTestId("form-ai-row")).toHaveCount(3);
+
+    expect(rec.bodies).toHaveLength(1);
+    const sent = rec.bodies[0] as { purpose: string; consent: unknown; pages: { page: number; text: string; image?: { mediaType: string; base64: string } }[] };
+    expect(sent.purpose).toBe("table");
+    expect(sent.consent).toEqual({ accepted: true, version: FORM_CONSENT_VERSION });
+    expect(Object.keys(sent).sort()).toEqual(["consent", "model", "pages", "purpose", "requestId"]);
+    expect(sent.pages).toHaveLength(1);
+    expect(Object.keys(sent.pages[0]).sort()).toEqual(["image", "page", "text"]);
+    expect(sent.pages[0].image?.mediaType).toBe("image/jpeg");
+    // JPEGのデータ（base64で /9j/ から始まる）。元のPDFそのものではない
+    expect(sent.pages[0].image?.base64.startsWith("/9j/")).toBe(true);
+    expect(Object.keys(sent.pages[0].image ?? {}).sort()).toEqual(["base64", "mediaType"]);
+    expect((sent.pages[0].image?.base64.length ?? 0) * 0.75).toBeLessThan(750_000);
+    expect(sent.pages[0].text).toMatch(/Alice/i);
+    await expect(page.getByTestId("form-ai-unverified-note")).toContainText("OCR");
+  });
+
+  test("文字がまったく読めないスキャンページでも、画像だけで送れる（OCRの文字は空）", async ({ page }) => {
     const rec = await mockAi(page, { extract: okExtract(RESULT_ROWS) });
     await openAndUpload(page, await blankPdf());
     await page.getByTestId("form-ai-toggle").click();
-    await expect(page.getByTestId("form-ai-problem")).toContainText("OCR", { timeout: 30_000 });
+    await expect(page.getByTestId("form-ai-image")).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByTestId("form-ai-preview")).toContainText("文字を読み取れませんでした（画像だけを送ります）");
+    await page.getByTestId("form-ai-consent").check();
+    await page.getByTestId("form-ai-run").click();
+    await expect(page.getByTestId("form-ai-row")).toHaveCount(3);
+    const sent = rec.bodies[0] as { pages: { text: string; image?: unknown }[] };
+    expect(sent.pages[0].text).toBe("");
+    expect(sent.pages[0].image).toBeDefined();
+  });
+
+  test("スキャンしたページが5ページあると、画像は4ページまでと案内し、AIには何も送らない", async ({ page }) => {
+    const rec = await mockAi(page, { extract: okExtract(RESULT_ROWS) });
+    await openAndUpload(page, await blankPdf(5));
+    await page.getByTestId("form-ai-toggle").click();
+    await expect(page.getByTestId("form-ai-problem")).toContainText("4ページまで", { timeout: 120_000 });
     await expect(page.getByTestId("form-ai-run")).toHaveCount(0);
     expect(rec.bodies).toHaveLength(0);
   });

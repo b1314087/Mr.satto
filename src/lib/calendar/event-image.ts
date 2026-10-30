@@ -68,6 +68,11 @@ async function encodeWithin(source: CanvasImageSource, width: number, height: nu
   return null;
 }
 
+/** キャンバス（PDFのページなど）→ AIに送るJPEG。上限に収まらなければ null */
+export async function encodeCanvasForAi(canvas: HTMLCanvasElement, label: string): Promise<PreparedImage | null> {
+  return encodeWithin(canvas, canvas.width, canvas.height, label);
+}
+
 const TOO_BIG = "画像を小さくできませんでした。画像を切り取るなどして、もう一度お試しください。";
 
 /** 画像ファイル（PNG/JPEG）→ AIに送るJPEG */
