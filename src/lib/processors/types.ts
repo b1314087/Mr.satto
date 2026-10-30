@@ -4,8 +4,8 @@
  *   Tool
  *    ↓
  *   Processor
- *    ├── BrowserProcessor  (Phase 1 で実装)
- *    └── ServerProcessor   (Phase 1 はインターフェースのみ。実装はPhase 2以降)
+ *    ├── BrowserProcessor  (ファイルをブラウザ内で処理する。現在のツールはすべてこちら)
+ *    └── ServerProcessor   (インターフェースのみ。実装したものは現在ない)
  *
  * UI コンポーネントは Processor クラスの process() だけを呼び出し、
  * 画像処理・PDF処理などの具体的なロジックには直接触れない。
@@ -30,8 +30,8 @@ export abstract class BrowserProcessor<Input, Output>
 
 /**
  * サーバー側で処理するための Processor。
- * Phase 1 では本格実装せず、将来 API Route / Edge Function 等を
- * 呼び出す実装に差し替えられるようインターフェースのみ用意する（7章）。
+ * 現在これを継承した実装はない（ファイルはブラウザ内で処理する方針。AI補助は src/lib/ai/ が
+ * API Route 経由で行う）。将来必要になったときの差し替え口として、インターフェースだけ残している。
  */
 export abstract class ServerProcessor<Input, Output>
   implements Processor<Input, Output>

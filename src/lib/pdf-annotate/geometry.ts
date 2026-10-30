@@ -90,8 +90,3 @@ export function rectPivotForCenterRotation(
     y: centerY - rotatedHalfY,
   };
 }
-
-/** 矩形/画像の中心座標（回転前のx,y,width,heightから計算） */
-export function rectCenter(x: number, y: number, width: number, height: number): Point {
-  return { x: x + width / 2, y: y + height / 2 };
-}

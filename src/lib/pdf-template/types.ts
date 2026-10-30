@@ -110,17 +110,3 @@ export function fieldDisplayId(personIndex: number, fieldIndex: number): string 
   return `${personIndex}-${circledNumber(fieldIndex)}`;
 }
 
-export function nextPersonIndex(template: Template): number {
-  const known = new Set(template.fields.map((f) => f.personIndex));
-  // 空の人物（フィールド0件で作成しただけ）も数えられるよう、呼び出し側が
-  // personIndexes（後述）を別管理する設計とする。ここではフィールドからの
-  // 復元用フォールバックとしてのみ使う。
-  if (known.size === 0) return 1;
-  return Math.max(...known) + 1;
-}
-
-export function nextFieldIndex(template: Template, personIndex: number): number {
-  const indices = template.fields.filter((f) => f.personIndex === personIndex).map((f) => f.fieldIndex);
-  if (indices.length === 0) return 1;
-  return Math.max(...indices) + 1;
-}

@@ -3,8 +3,8 @@ import type { Tool } from "./types";
 /**
  * 全ツールの一覧（データ駆動）。
  *
- * status: "available"    -> Phase 1 で実際に動作する
- *         "coming-soon"  -> 仮ページ（準備中）
+ * status: "available"    -> 実際に動作する
+ *         "coming-soon"  -> 仮ページ（準備中。現在この状態のツールはない）
  * processor: 将来 BrowserProcessor / ServerProcessor のどちらを
  *            使うかの想定。"auto" はファイルサイズ等で自動切り替えする想定。
  */

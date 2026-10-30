@@ -5,7 +5,7 @@
  * ExcelもPDFも画面のプレビューも、予定の解釈（日付・時刻・並び順・表示用の文字）はここだけで行い、
  * 出力ごとに別々の解釈をしない。祝日・年度の計算（model.ts / holidays.ts）には触れない。
  */
-import type { CalendarMonth, FiscalCalendar } from "./model";
+import type { FiscalCalendar } from "./model";
 
 export interface CalendarEvent {
   /** YYYY-MM-DD（Excelの日付の列を、タイムゾーンに左右されない形で読み取った日付） */
@@ -91,13 +91,6 @@ export function placeEvents(calendar: FiscalCalendar, events: readonly CalendarE
   const outOfRange: CalendarEvent[] = [];
   for (const e of events) (e.date >= start && e.date <= end ? inRange : outOfRange).push(e);
   return { inRange, outOfRange, byDate: groupEventsByDate(inRange) };
-}
-
-/** 月の中（前後の月の日を除く）の予定の件数 */
-export function countEventsInMonth(month: CalendarMonth, byDate: CalendarEventMap): number {
-  let n = 0;
-  for (const week of month.weeks) for (const d of week) if (d.inMonth) n += byDate.get(d.iso)?.length ?? 0;
-  return n;
 }
 
 /**

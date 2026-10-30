@@ -30,10 +30,6 @@ export const SEQUENCE_WIDTHS: { value: SequenceWidth; label: string }[] = [
   { value: "half", label: "半角（123）" },
 ];
 
-export function isSequenceWidth(v: unknown): v is SequenceWidth {
-  return v === "full" || v === "half";
-}
-
 /** テンプレートの初期値（全角スペース区切り） */
 export const DEFAULT_TEMPLATE = "第{n}回　{item}";
 /** 画面に出す、テンプレートの入力例 */

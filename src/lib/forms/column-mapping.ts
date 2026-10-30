@@ -25,8 +25,3 @@ export function autoMapColumns(fields: FieldDefinition[], headers: string[]): Co
 
   return mapping;
 }
-
-/** マッピングが完了しているか（全フィールドに列が割り当てられているか）を確認する */
-export function isMappingComplete(fields: FieldDefinition[], mapping: ColumnMapping): boolean {
-  return fields.every((f) => Boolean(mapping[f.id]));
-}

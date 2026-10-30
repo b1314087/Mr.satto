@@ -204,8 +204,3 @@ export function holidayDisplayName(day: CalendarDay): string {
   if (!day.holiday) return "";
   return day.holiday.status === "estimated" ? `${day.holiday.name}${ESTIMATED_MARK}` : day.holiday.name;
 }
-
-/** 出力ファイル名の元になる、年度の表記（例: 2026年度） */
-export function fiscalYearFileLabel(fiscalYear: number): string {
-  return `${fiscalYear}年度`;
-}
