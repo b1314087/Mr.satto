@@ -121,6 +121,10 @@ const PdfFixTool = dynamic(() =>
   import("./implementations/pdf-fix-tool").then((m) => m.PdfFixTool),
   { loading: ToolLoading }
 );
+const PdfRedactTool = dynamic(() =>
+  import("./implementations/pdf-redact-tool").then((m) => m.PdfRedactTool),
+  { loading: ToolLoading }
+);
 const ImageToPdfTool = dynamic(() =>
   import("./implementations/image-to-pdf-tool").then((m) => m.ImageToPdfTool),
   { loading: ToolLoading }
@@ -497,6 +501,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfEditTool initialMode="merge" />;
     case "pdf-fix":
       return <PdfFixTool />;
+    case "pdf-redact":
+      return <PdfRedactTool />;
     case "pdf-merge":
       return <PdfEditTool initialMode="merge" />;
     case "pdf-split":

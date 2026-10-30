@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ErrorMessage } from "@/components/common/error-message";
 import { PdfFillAnnotateTool } from "./pdf-fill-annotate-tool";
@@ -176,6 +177,11 @@ export function PdfFixTool() {
         >
           <span className="font-semibold">{WHITEOUT_NOTICE.title}</span>
           {WHITEOUT_NOTICE.body}
+          個人情報などを確実に消したいときは、
+          <Link href="/tools/pdf-redact" className="underline">
+            PDF黒塗り・墨消し
+          </Link>
+          を使ってください。
         </p>
       )}
 
