@@ -208,4 +208,39 @@ test.describe("文字の縁の色のにじみ（二重線の原因）", () => {
     }
     expect(at(25, 16).slice(0, 3)).toEqual([220, 30, 30]);
   });
+
+  test("見やすさの調整をしない（従来の反転）ときも、白黒中心の画像では、にじみが色のまま残らず、白い文字のまわりに色の輪が出ない", () => {
+    const img = fringed();
+    const out = { ...img, data: new Uint8ClampedArray(img.data) };
+    invertImagePixels(out.data, "invert-gray", null, undefined, { width: img.width, height: img.height });
+    const at = (x: number, y: number) => pixelAt(out, x, y);
+    expect(at(10, 12).slice(0, 3)).toEqual([255, 255, 255]);
+    for (const x of [9, 11]) {
+      const [r, g, b] = at(x, 12);
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBe(0);
+    }
+    // 太い赤い塗りは、従来どおり赤のまま
+    expect(at(25, 16).slice(0, 3)).toEqual([220, 30, 30]);
+    // 大きさを渡さない（従来の呼び方）ときは、これまでと同じ動き（にじみは色のまま）
+    const legacy = { ...img, data: new Uint8ClampedArray(img.data) };
+    invertImagePixels(legacy.data, "invert-gray", null);
+    expect(pixelAt(legacy, 9, 12)).toEqual([255, 200, 130, 255]);
+  });
+  test("オプション reduceColorFringe: 既定（オン）はにじみを白黒にし、false にすると従来どおり色のまま残す。太い赤い塗りはどちらも赤のまま", async () => {
+    const src = buildPptx({
+      slides: [{ shapes: picture(2, "rId2"), images: [{ name: "image1.png", bytes: encodePng(fringed()) }] }],
+    });
+    const on = await invertPptx(src, { ...DEFAULT_PPTX_INVERT_OPTIONS }, testCodec);
+    const off = await invertPptx(src, { ...DEFAULT_PPTX_INVERT_OPTIONS, reduceColorFringe: false }, testCodec);
+    const onImg = decodePng(readParts(on.bytes)["ppt/media/image1.png"]);
+    const offImg = decodePng(readParts(off.bytes)["ppt/media/image1.png"]);
+    const chroma = (img: ReturnType<typeof decodePng>, x: number, y: number) => {
+      const [r, g, b] = pixelAt(img, x, y);
+      return Math.max(r, g, b) - Math.min(r, g, b);
+    };
+    expect(chroma(onImg, 9, 12)).toBe(0);
+    expect(chroma(offImg, 9, 12)).toBeGreaterThan(30);
+    expect(pixelAt(onImg, 25, 16).slice(0, 3)).toEqual([220, 30, 30]);
+    expect(pixelAt(offImg, 25, 16).slice(0, 3)).toEqual([220, 30, 30]);
+  });
 });

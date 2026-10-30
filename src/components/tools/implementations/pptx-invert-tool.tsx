@@ -126,6 +126,7 @@ export function PptxInvertTool() {
   const [invertImages, setInvertImages] = useState(true);
   const [brightenDarkText, setBrightenDarkText] = useState(false);
   const [enhanceText, setEnhanceText] = useState(true);
+  const [reduceColorFringe, setReduceColorFringe] = useState(true);
   const [colors, setColors] = useState<ColorChoice>(DEFAULT_COLOR_CHOICE);
   const [customColors, setCustomColors] = useState(false);
   const [status, setStatus] = useState<ProcessingState>("idle");
@@ -148,7 +149,7 @@ export function PptxInvertTool() {
     setError(null);
     setResult(null);
     try {
-      const output = await new PptxInvertProcessor().process({ file, options: { invertImages, enhanceText, brightenDarkText, colors }, onProgress: setProgress });
+      const output = await new PptxInvertProcessor().process({ file, options: { invertImages, enhanceText, reduceColorFringe, brightenDarkText, colors }, onProgress: setProgress });
       setResult(output);
       setRunId((n) => n + 1);
       setStatus("success");
@@ -206,6 +207,13 @@ export function PptxInvertTool() {
             <span>
               画像の中の文字を、くっきり見やすくする
               <span className="block text-xs text-neutral-500 dark:text-neutral-400">細い文字を明るく・少し太くし、文字のまわりのにじみ（二重に見える原因）を減らします。文書のような画像だけに使います。</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            <input type="checkbox" className="mt-1" checked={reduceColorFringe || enhanceText} disabled={!invertImages || enhanceText} onChange={(e) => setReduceColorFringe(e.target.checked)} data-testid="pptx-option-fringe" />
+            <span>
+              文字の縁の細い色（オレンジや青）も、白黒として反転する
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">オンにすると、白い文字のまわりに色の輪が浮いて二重線に見えるのを防ぎます。赤い枠や色つきの図は、色のまま残ります。オフにすると、従来どおり色のついた部分はすべて残します。「画像の中の文字を、くっきり見やすくする」がオンのときは、この処理も自動で行われます（オフにして使い分けられます）。</span>
             </span>
           </label>
           <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">

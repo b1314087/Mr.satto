@@ -5,7 +5,7 @@ import { test, expect } from "../fixtures/premium-test";
 import { waitForFileInputHydrated } from "../helpers/tool-ready";
 import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { checkXmlWellFormed } from "../helpers/xlsx-strict";
-import { bwDocument, buildPptx, colorPhoto, decodePng, encodePng, mixedDocument, picture, pixelAt, readParts, rect, srgb, transparentBw } from "../helpers/pptx-builder";
+import { bwDocument, buildPptx, colorPhoto, decodePng, encodePng, makeImage, mixedDocument, picture, pixelAt, readParts, rect, srgb, transparentBw } from "../helpers/pptx-builder";
 
 /**
  * PowerPoint白黒反転（/tools/pptx-invert）のE2Eテスト。
@@ -231,6 +231,60 @@ test.describe("PowerPoint白黒反転: 画面", () => {
     await page.getByRole("button", { name: "PowerPointファイルをダウンロード" }).click();
     const out = readParts(new Uint8Array(fs.readFileSync((await (await downloadPromise).path())!)));
     expect(Buffer.from(out["ppt/media/a.png"]).equals(Buffer.from(img))).toBe(true);
+  });
+
+  test("文字の縁の細い色: 既定（オン）は白黒として反転し、オフにすると従来どおり色のまま残る", async ({ page }) => {
+    // 白地に黒い縦線（x=10）。左（x=9）にオレンジ、右（x=11）に青のにじみ。右下に太い赤い塗り
+    const white: [number, number, number, number] = [255, 255, 255, 255];
+    const fringed = makeImage(40, 30, (x, y) => {
+      if (y < 6) return white;
+      if (x === 10) return [0, 0, 0, 255];
+      if (x === 9) return [255, 200, 130, 255];
+      if (x === 11) return [130, 190, 255, 255];
+      if (x >= 20 && x < 32 && y >= 12 && y < 24) return [220, 30, 30, 255];
+      return white;
+    });
+    const input = buildPptx({ slides: [{ shapes: picture(2, "rId2"), images: [{ name: "a.png", bytes: encodePng(fringed) }] }] });
+    const run = async (turnOff: boolean) => {
+      await open(page);
+      await pickFile(page, upload("a.pptx", input));
+      // 「くっきり見やすくする」がオンの間は、にじみの処理も自動で行われる（この項目は選べない）。従来の反転を試すため、先にオフにする
+      const box = page.getByTestId("pptx-option-fringe");
+      await expect(box).toBeDisabled();
+      await page.getByTestId("pptx-option-enhance").uncheck();
+      await expect(box).toBeEnabled();
+      await expect(box).toBeChecked();
+      if (turnOff) await box.uncheck();
+      await RUN.click();
+      await expect(page.getByTestId("pptx-image-row")).toHaveAttribute("data-outcome", "inverted-gray", { timeout: 30_000 });
+      const downloadPromise = page.waitForEvent("download");
+      await page.getByRole("button", { name: "PowerPointファイルをダウンロード" }).click();
+      const out = readParts(new Uint8Array(fs.readFileSync((await (await downloadPromise).path())!)));
+      // ブラウザが書き出したPNG（フィルタつき）は、ブラウザ側で読み直して、2つの画素の色を調べる
+      return page.evaluate(
+        async (b64) => {
+          const bin = atob(b64);
+          const arr = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          const bmp = await createImageBitmap(new Blob([arr], { type: "image/png" }));
+          const canvas = document.createElement("canvas");
+          canvas.width = bmp.width;
+          canvas.height = bmp.height;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(bmp, 0, 0);
+          const px = (x: number, y: number) => Array.from(ctx.getImageData(x, y, 1, 1).data).slice(0, 3);
+          return { fringe: px(9, 12), red: px(25, 16) };
+        },
+        Buffer.from(out["ppt/media/a.png"]).toString("base64")
+      );
+    };
+    const chroma = ([r, g, b]: number[]) => Math.max(r, g, b) - Math.min(r, g, b);
+    const on = await run(false);
+    expect(chroma(on.fringe)).toBe(0);
+    expect(on.red).toEqual([220, 30, 30]);
+    const off = await run(true);
+    expect(chroma(off.fringe)).toBeGreaterThan(30);
+    expect(off.red).toEqual([220, 30, 30]);
   });
 
   test("pptxではないファイルは、わかりやすいメッセージで断る", async ({ page }) => {

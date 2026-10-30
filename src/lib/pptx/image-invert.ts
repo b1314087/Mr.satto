@@ -117,7 +117,7 @@ function toneInk(ink: number): number {
  * 配色を渡さない、または既定（純黒×純白）のときは、単純な反転（255 から引く）。
  * enhance を渡すと、文書のような画像向けに、背景のにじみを消し・細い線の明るさを上げ・線を少し太らせて、文字を見やすくする。
  */
-export function invertImagePixels(data: PixelData, decision: ImageDecision, palette?: Palette | null, enhance?: EnhanceOptions): void {
+export function invertImagePixels(data: PixelData, decision: ImageDecision, palette?: Palette | null, enhance?: EnhanceOptions, plainSize?: { width: number; height: number; scale?: number }): void {
   if (decision !== "invert-all" && decision !== "invert-gray") return;
   const onlyGray = decision === "invert-gray";
   const custom = palette && !isDefaultPalette(palette) ? palette : null;
@@ -136,11 +136,18 @@ export function invertImagePixels(data: PixelData, decision: ImageDecision, pale
     enhanceAndInvert(data, enhance.width, enhance.height, onlyGray, lr, lg, lb, enhance.scale ?? 1, zone);
     return;
   }
+  // 白黒が中心の画像では、文字の縁の色のにじみ（オレンジや青の細い色）を、見やすさの調整をしない場合でも、白黒として反転する。
+  // 色のついたまま残すと、反転したとき、白い文字のまわりに明るい色が輪のように残り、二重線に見える。
+  const plainFringe = onlyGray && plainSize && plainSize.width * plainSize.height * 4 === data.length ? findColorFringe(data, plainSize.width, plainSize.height, plainSize.scale ?? 1) : null;
   for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    if (onlyGray && Math.max(r, g, b) - Math.min(r, g, b) > IMAGE_COLOR_CHROMA) continue;
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+    if (onlyGray && Math.max(r, g, b) - Math.min(r, g, b) > IMAGE_COLOR_CHROMA) {
+      if (!plainFringe?.[i / 4]) continue;
+      // にじみの画素は、色を捨てて明るさだけにそろえてから反転する（色を残したまま反転すると、補色の縁になる）
+      r = g = b = Math.round((r + g + b) / 3);
+    }
     data[i] = lr ? lr[255 - r] : 255 - r;
     data[i + 1] = lg ? lg[255 - g] : 255 - g;
     data[i + 2] = lb ? lb[255 - b] : 255 - b;

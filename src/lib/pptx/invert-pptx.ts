@@ -21,6 +21,11 @@ export interface PptxInvertOptions extends InvertOptions {
    */
   enhanceText?: boolean;
   /**
+   * 白黒が中心の画像で、文字の縁に付いた細い色（オレンジや青のにじみ）も、白黒として反転する（二重線に見えるのを防ぐ）。
+   * 既定はオン。false にすると、従来どおり、色のついた部分はすべて色のまま残す（enhanceText をオンにした画像は、この指定に関係なくにじみを白黒にする）。
+   */
+  reduceColorFringe?: boolean;
+  /**
    * 反転後の背景色・文字色（6桁の16進）。省略、または純黒×純白のときは、従来の白黒反転と同じ結果になる。
    * （InvertOptions の palette は処理の内部用。ここでは、画面から渡しやすい16進の指定を使う）
    */
@@ -379,7 +384,7 @@ export async function invertPptx(
         const upscaled = enhance && shouldUpscale(raster.width, raster.height);
         const work = upscaled ? upscale2x(raster) : raster;
         const textZone = enhance ? (options.textZoneFor?.(name, work) ?? undefined) : undefined;
-        invertImagePixels(work.data, decision, palette, enhance ? { width: work.width, height: work.height, scale: upscaled ? 2 : 1, textZone } : undefined);
+        invertImagePixels(work.data, decision, palette, enhance ? { width: work.width, height: work.height, scale: upscaled ? 2 : 1, textZone } : undefined, options.reduceColorFringe === false ? undefined : { width: work.width, height: work.height });
         // 文字を見やすくする調整をしたJPEGは、圧縮の乱れ（文字のまわりの縁）が目立たないよう、画質を高くして保存する
         const encoded = await activeCodec.encode(work, kind, enhance ? 0.98 : undefined);
         out[name] = encoded;
