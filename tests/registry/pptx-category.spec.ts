@@ -51,7 +51,7 @@ test.describe("PowerPointカテゴリー: 画面", () => {
   test("「その他」で絞り込んでも、PowerPoint白黒反転は出ない", async ({ page }) => {
     await page.goto("/tools?category=other");
     const main = page.locator("main");
-    await expect(main.getByRole("link", { name: /見積書作成/ })).toBeVisible({ timeout: 30_000 });
+    await expect(main.getByRole("link", { name: /文字数カウント/ })).toBeVisible({ timeout: 30_000 });
     await expect(main.getByRole("link", { name: /PowerPoint白黒反転/ })).toHaveCount(0);
   });
 

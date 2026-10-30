@@ -52,13 +52,13 @@ export const categories: Category[] = [
   {
     id: "generator",
     name: "生成ツール",
-    description: "二次元コード・パスワード・配色パレットなどを新規生成するツール",
+    description: "見積書・請求書などの書類、二次元コード、パスワード、配色パレットなどを新規生成するツール",
     icon: "🛠️",
   },
   {
     id: "other",
     name: "その他",
-    description: "文字数カウントや日付計算、見積書・請求書作成など、特定のカテゴリに当てはまらない便利なツール",
+    description: "文字数カウントや日付計算など、特定のカテゴリに当てはまらない便利なツール",
     icon: "✨",
   },
 ];

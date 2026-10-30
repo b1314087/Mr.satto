@@ -107,7 +107,7 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
   });
 
   test("カテゴリページ: 説明文・紹介文に「プレミアム専用」「無料・プレミアム」が出ない", async ({ request }) => {
-    for (const id of ["pdf", "csv-excel", "word", "video", "other"]) {
+    for (const id of ["pdf", "csv-excel", "word", "video", "generator", "other"]) {
       const { description, visible } = await readSeo(request, `/tools/${id}`);
       expect(description, id).not.toContain("プレミアム");
       expect(visible, id).not.toContain("プレミアムプラン専用");
