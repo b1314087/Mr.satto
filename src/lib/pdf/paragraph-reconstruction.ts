@@ -1,5 +1,6 @@
 import type { PositionedTextItem } from "./pdfjs-client";
-import { groupIntoLines, reconstructTable, type Line, type ColumnSpanHint } from "./table-reconstruction";
+import { computeColumnBreaks, groupIntoLines, reconstructTable, type Line, type ColumnSpanHint } from "./table-reconstruction";
+import { computeRuledColumnBreaks, mergeRuledBreaks, type FilledRect, type VerticalRule } from "./ruling-lines";
 
 /**
  * PDFの座標付きテキストから、Word文書として自然な段落構造を推定する
@@ -50,6 +51,8 @@ export interface RunInfo {
   serif?: boolean;
   mono?: boolean;
   link?: string;
+  /** 文字の背景色（蛍光ペン・色つきの帯。"RRGGBB"） */
+  highlight?: string;
 }
 
 export type BlockAlign = "left" | "center" | "right";
@@ -71,6 +74,8 @@ export interface ParagraphBlock {
   indent?: number;
   /** 1行目だけの字下げ(pt) */
   firstLineIndent?: number;
+  /** このブロックは、ページの区切り（改ページ）だけを表す空の段落 */
+  pageBreak?: boolean;
   y?: number;
 }
 export interface ListItemBlock {
@@ -93,6 +98,10 @@ export interface TableBlock {
   spans?: ColumnSpanHint[];
   /** 表の文字の大きさ(pt) */
   fontSize?: number;
+  /** セルごとの文字の揃え（rowsと同じ形）。PDF上のセルの中の文字の位置から求める */
+  aligns?: ("left" | "center" | "right")[][];
+  /** セルごとの背景色（6桁の16進。rowsと同じ形）。PDF上の塗りの矩形から求める */
+  fills?: (string | null)[][];
   y?: number;
 }
 export interface ImageBlock {
@@ -111,6 +120,10 @@ export interface ReconstructOptions {
   /** 本文領域の左端・右端のx座標（複数ページ全体から求めた値。中央/右揃えの判定の基準） */
   contentLeft?: number;
   contentRight?: number;
+  /** そのページの縦の罫線（表の列の区切りに使う） */
+  verticalRules?: VerticalRule[] | null;
+  /** そのページの塗りの矩形（表のセルの背景色に使う） */
+  fillRects?: FilledRect[] | null;
 }
 
 /** 行間がこの倍率(本文行の高さ比)を超えたら段落の切れ目とみなす */
@@ -197,6 +210,7 @@ function styleOf(item: PositionedTextItem): Omit<RunInfo, "text"> {
   if (item.serif) style.serif = true;
   if (item.mono) style.mono = true;
   if (item.link) style.link = item.link;
+  if (item.highlight) style.highlight = item.highlight;
   return style;
 }
 
@@ -208,7 +222,8 @@ function sameStyle(a: Omit<RunInfo, "text">, b: Omit<RunInfo, "text">): boolean 
     a.color === b.color &&
     a.serif === b.serif &&
     a.mono === b.mono &&
-    a.link === b.link
+    a.link === b.link &&
+    a.highlight === b.highlight
   );
 }
 
@@ -423,6 +438,130 @@ function columnWidthsOf(
 }
 
 /**
+ * 縦の罫線から、結合したセルを見つける。ある行で、2つの列の境目の罫線がその行の高さにだけ引かれていなければ、
+ * その2つの列は1つのセルにつながっている（例: 合計欄が、左の3列にまたがる）。
+ */
+function spansFromRules(table: ReturnType<typeof reconstructTable>, rules: VerticalRule[], range: [number, number]): ColumnSpanHint[] {
+  const edges = table.colBoundariesX;
+  const cols = table.columnCount;
+  if (edges.length !== cols + 1 || table.rowYs.length !== table.rows.length) return [];
+  const out: ColumnSpanHint[] = [];
+  table.rows.forEach((_, r) => {
+    const y = table.rowYs[r];
+    const joined: boolean[] = [];
+    for (let k = 0; k < cols - 1; k++) {
+      const bx = edges[k + 1];
+      if (bx < range[0] - 1.5 || bx > range[1] + 1.5) {
+        joined.push(false);
+        continue;
+      }
+      const covered = rules.some((rule) => Math.abs(rule.x - bx) <= 2 && rule.y0 - 1 <= y && rule.y1 + 1 >= y);
+      joined.push(!covered);
+    }
+    let k = 0;
+    while (k < cols - 1) {
+      if (!joined[k]) {
+        k++;
+        continue;
+      }
+      let end = k;
+      while (end < cols - 1 && joined[end]) end++;
+      // 列k〜列end（end-k+1列）が1つのセル
+      out.push({ row: r, col: k, span: end - k + 1 });
+      k = end;
+    }
+  });
+  return out;
+}
+
+/**
+ * 表のセルごとの、文字の揃え（左・中央・右）と背景色を求める。
+ *  - 揃え: セルの文字が、列の右端に寄っていれば右、左右の余白が同じくらいなら中央。
+ *    1つのセルだけでは偶然のことがあるため、同じ列で右寄せの文字が多数のときだけ、その列を右揃えにする。
+ *  - 背景色: セルの文字の中心を含む、塗りの矩形（ページ全体を覆う大きな矩形は除く）のうち最も小さいもの。
+ */
+function cellStyles(
+  table: ReturnType<typeof reconstructTable>,
+  fills: FilledRect[] | null,
+  spans?: ColumnSpanHint[]
+): { aligns: ("left" | "center" | "right")[][] | undefined; fills: (string | null)[][] | undefined } {
+  const rowsN = table.rows.length;
+  const cols = table.columnCount;
+  const edges = table.colBoundariesX;
+  let aligns: ("left" | "center" | "right")[][] | undefined;
+  if (edges.length === cols + 1 && table.cellExtents.length === rowsN) {
+    const spanAt = new Map<string, number>();
+    for (const sp of spans ?? []) spanAt.set(`${sp.row}:${sp.col}`, sp.span);
+    const cellAlign = (r: number, c: number): "left" | "center" | "right" | null => {
+      const span = Math.max(1, Math.min(spanAt.get(`${r}:${c}`) ?? 1, cols - c));
+      // 結合したセルは、結合した範囲の中の文字すべての位置から見る
+      let ext: { left: number; right: number } | null = null;
+      for (let k = c; k < c + span; k++) {
+        const e = table.cellExtents[r][k];
+        if (e) ext = ext ? { left: Math.min(ext.left, e.left), right: Math.max(ext.right, e.right) } : e;
+      }
+      if (!ext || table.rows[r].slice(c, c + span).every((t) => t.trim() === "")) return null;
+      const colLeft = edges[c];
+      const colRight = edges[c + span];
+      const width = colRight - colLeft;
+      if (!(width > 12)) return null;
+      const gapL = ext.left - colLeft;
+      const gapR = colRight - ext.right;
+      const tol = Math.max(3, width * 0.06);
+      if (gapR <= tol && gapL > tol * 2) return "right";
+      if (Math.abs(gapL - gapR) <= tol && gapL > tol * 2) return "center";
+      return "left";
+    };
+    const perCol: ("left" | "center" | "right")[] = [];
+    for (let c = 0; c < cols; c++) {
+      const votes = { left: 0, center: 0, right: 0 };
+      for (let r = 0; r < rowsN; r++) {
+        const a = cellAlign(r, c);
+        if (a) votes[a]++;
+      }
+      const total = votes.left + votes.center + votes.right;
+      let pick: "left" | "center" | "right" = "left";
+      if (total > 0) {
+        if (votes.right * 2 > total) pick = "right";
+        else if (votes.center * 2 > total) pick = "center";
+      }
+      perCol.push(pick);
+    }
+    // 列の多数派に合わせる。ただし、その列の中で1行だけ中央寄せの見出し（表題）は、見出しの位置を優先する
+    aligns = table.rows.map((row, r) =>
+      row.map((_, c) => {
+        const a = cellAlign(r, c);
+        // 結合したセルは、結合した範囲の中での位置を優先する
+        if ((spanAt.get(`${r}:${c}`) ?? 1) > 1 && a) return a;
+        if (a === "center" && perCol[c] !== "center") return "center";
+        return perCol[c];
+      })
+    );
+    if (aligns.every((row) => row.every((a) => a === "left"))) aligns = undefined;
+  }
+
+  let cellFills: (string | null)[][] | undefined;
+  if (fills && fills.length > 0 && edges.length === cols + 1 && table.rowYs.length === rowsN) {
+    const usable = fills.filter((f) => f.x1 - f.x0 < 2000);
+    const grid = table.rows.map((row, r) =>
+      row.map((_, c) => {
+        const ext = table.cellExtents[r]?.[c];
+        const cx = ext ? (ext.left + ext.right) / 2 : (edges[c] + edges[c + 1]) / 2;
+        const cy = table.rowYs[r];
+        let best: FilledRect | null = null;
+        for (const f of usable) {
+          if (cx < f.x0 || cx > f.x1 || cy < f.y0 || cy > f.y1) continue;
+          if (!best || (f.x1 - f.x0) * (f.y1 - f.y0) < (best.x1 - best.x0) * (best.y1 - best.y0)) best = f;
+        }
+        return best ? best.color : null;
+      })
+    );
+    if (grid.some((row) => row.some((v) => v !== null))) cellFills = grid;
+  }
+  return { aligns, fills: cellFills };
+}
+
+/**
  * lines[startIndex] から始まる、表として成立する最大の連続行数を探す。
  * 各行が2項目以上を持ち、かつ座標ベースの表構造推定（reconstructTable、
  * PDF→Excelと共通）で2列以上・行数が一致する結果が得られる間、
@@ -434,7 +573,8 @@ function tryExtendTableRun(
   lines: Line[],
   startIndex: number,
   bodyFontHeight: number,
-  boxRight: number
+  boxRight: number,
+  geometry: { rules?: VerticalRule[] | null; fills?: FilledRect[] | null } = {}
 ): { block: TableBlock; lineCount: number } | null {
   const canBeTableLine = (line: Line) =>
     line.items.length >= 2 &&
@@ -452,18 +592,51 @@ function tryExtendTableRun(
     if (!canBeTableLine(windowLines[windowLines.length - 1])) break;
 
     const items = windowLines.flatMap((l) => l.items);
-    const table = reconstructTable(items);
+    // 縦の罫線がある表は、罫線の位置を列の区切りにする（文字の隙間が小さい列・右寄せの数字の列を、正しく分けるため）
+    let ruled: ReturnType<typeof computeRuledColumnBreaks> = null;
+    let table = reconstructTable(items);
+    if (geometry.rules && geometry.rules.length > 0) {
+      const ys = items.map((it) => it.y);
+      const heights = items.map((it) => it.fontHeight);
+      const yLo = Math.min(...ys) - 3;
+      const yHi = Math.max(...ys.map((y, k) => y + heights[k])) + 3;
+      const near = geometry.rules.filter((r) => r.y1 >= yLo && r.y0 <= yHi);
+      ruled = computeRuledColumnBreaks(near, items);
+      if (ruled) {
+        const textBreaks = computeColumnBreaks(windowLines);
+        table = reconstructTable(items, mergeRuledBreaks(textBreaks, ruled), ruled.breaks);
+      }
+    }
     if (table.columnCount >= 2 && table.rows.length === windowLines.length) {
       // 行を足したら列数が減る（＝その行は表の行ではなかった）場合は、そこで打ち切る
       if (best && best.block.rows[0].length > table.columnCount) break;
-      const widths = columnWidthsOf(table, items, boxRight);
+      let widths = columnWidthsOf(table, items, boxRight);
+      if (ruled && table.colBoundariesX.length === table.columnCount + 1) {
+        // 罫線がある表: 列の幅は、罫線の位置（外枠を含む）から求める
+        const edges = [...table.colBoundariesX];
+        edges[0] = Math.min(edges[0], ruled.range[0]);
+        edges[edges.length - 1] = Math.max(edges[edges.length - 1], ruled.range[1]);
+        const w = edges.slice(1).map((e, k) => e - edges[k]);
+        if (w.every((v) => v > 4)) widths = w;
+      }
+      let spans = table.columnSpans.length > 0 ? table.columnSpans : undefined;
+      if (ruled && geometry.rules) {
+        const extra = spansFromRules(table, geometry.rules, ruled.range);
+        if (extra.length > 0) {
+          const taken = new Set((spans ?? []).map((sp) => `${sp.row}:${sp.col}`));
+          spans = [...(spans ?? []), ...extra.filter((e) => !taken.has(`${e.row}:${e.col}`))];
+        }
+      }
+      const { aligns, fills } = cellStyles(table, geometry.fills ?? null, spans);
       best = {
         block: {
           type: "table",
           rows: table.rows,
           colWidths: widths,
-          spans: table.columnSpans.length > 0 ? table.columnSpans : undefined,
+          spans,
           fontSize: Math.round((windowLines.reduce((sum, l) => sum + averageLineFontHeight(l), 0) / windowLines.length) * 2) / 2,
+          aligns,
+          fills,
           y: windowLines[0].y,
         },
         lineCount: windowSize,
@@ -605,7 +778,7 @@ export function reconstructParagraphs(items: PositionedTextItem[], options: Reco
       i += Math.max(1, list.lineCount);
       continue;
     }
-    const tableRun = tryExtendTableRun(lines, i, bodyFontHeight, box.right);
+    const tableRun = tryExtendTableRun(lines, i, bodyFontHeight, box.right, { rules: options.verticalRules, fills: options.fillRects });
     if (tableRun) {
       flushParagraphBuffer();
       result.push(tableRun.block);

@@ -958,6 +958,38 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         contentLastCol = Math.max(contentLastCol, drawingLastCol);
       }
 
+      // 最後の列にある長い文字列は、右隣の空き列にはみ出して印刷される(Excelと同じ)。
+      // 値のある最終列より右に何列ぶん必要かを求め、印刷範囲の指定が無いときだけ描画対象に加える。
+      let overflowLastCol = -1;
+      {
+        const MAX_EXTRA_COLS = 40;
+        for (let r = 0; r < sheet.rows.length; r++) {
+          const row = sheet.rows[r];
+          if (settings?.hiddenRows.has(r)) continue;
+          let lc = row.length - 1;
+          while (lc >= 0 && cellDisplayText(row, r, lc) === "") lc--;
+          if (lc < 0) continue;
+          const value = row[lc] ?? null;
+          if (typeof value === "number" || value instanceof Date || typeof value === "boolean") continue;
+          if (mergeByCell.has(`${r}:${lc}`)) continue;
+          const align = settings?.cellAlign.get(`${r}:${lc}`) ?? null;
+          if (align?.wrapText || (align?.textRotation ?? 0) !== 0) continue;
+          const horizontal = align?.horizontal ?? "left";
+          if (horizontal !== "left" && horizontal !== "distributed") continue;
+          const text = cellDisplayText(row, r, lc).split("\n")[0];
+          const need = textWidth(font, text, fontSizeFor(r, lc)) + cellPadding * 2 + (align?.indent ?? 0) * defaultFontSize * 0.6;
+          let have = 0;
+          let c = lc;
+          // 最終列(値のある列)から右へ、はみ出す文字が収まるまでの列を数える
+          while (have < need && c < lc + MAX_EXTRA_COLS) {
+            have += colWidthOf(c);
+            if (have >= need) break;
+            c++;
+          }
+          if (c > overflowLastCol && c > totalColCount - 1) overflowLastCol = c;
+        }
+      }
+
       // ヘッダー/フッターは、全ページ数が確定してから描く(複数の印刷範囲があっても通しのページ番号にするため)
       const pendingHeaderFooter: { page: PDFPage; pageNo: number }[] = [];
       let pageInSheet = 0;
@@ -967,7 +999,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         const rangeStartRow = area ? Math.max(0, area.startRow) : 0;
         const rangeEndRow = area ? Math.min(contentLastRow, area.endRow) : Math.max(sheet.rows.length - 1, drawingLastRow);
         const rangeStartCol = area ? Math.max(0, area.startCol) : 0;
-        const rangeEndCol = area ? Math.min(contentLastCol, area.endCol) : Math.max(totalColCount - 1, drawingLastCol);
+        const rangeEndCol = area ? Math.min(contentLastCol, area.endCol) : Math.max(totalColCount - 1, drawingLastCol, overflowLastCol);
         if (area) {
           warnings.push(`「${sheet.name}」はExcelの印刷範囲(${rangeStartRow + 1}〜${rangeEndRow + 1}行目)だけをPDF化しました`);
         }

@@ -90,10 +90,39 @@ interface NumberSection {
   scaleCommas: number;
   percentCount: number;
   hasNumberPattern: boolean;
+  /**
+   * 数字の桁の途中に挟まった記号（電話番号 0##-####-####・郵便番号 000-0000 のハイフンなど）。
+   * pos = その記号より前にある桁（0・#・?）の数。空でないときは、桁区切り(,)ではなく
+   * 「右から桁を埋めて、記号を所定の位置に差し込む」方法で整形する。
+   */
+  midLiterals: { pos: number; text: string }[];
   /** 指数表記: 指数部の桁数(0の個数)と、+を常に付けるか */
   exponent: { digits: number; plus: boolean } | null;
   /** 分数: 整数部を分けるか・分母の桁数または固定の分母・分子の?の個数 */
   fraction: { withWhole: boolean; denominatorDigits: number; fixedDenominator: number | null; numeratorWidth: number } | null;
+}
+
+/** section の index 以降（引用符・\\x・[..]の中は除く）に、整数部の桁を表す 0・#・? がまだあるか */
+function placeholderAhead(section: string, from: number): boolean {
+  for (let i = from; i < section.length; i++) {
+    const ch = section[i];
+    if (ch === '"') {
+      const end = section.indexOf('"', i + 1);
+      if (end === -1) return false;
+      i = end;
+    } else if (ch === "\\" || ch === "_" || ch === "*") {
+      i++;
+    } else if (ch === "[") {
+      const end = section.indexOf("]", i + 1);
+      if (end === -1) return false;
+      i = end;
+    } else if (ch === ".") {
+      return false; // 小数点より後ろの桁は、整数部の途中の記号の対象にしない
+    } else if (ch === "0" || ch === "#" || ch === "?") {
+      return true;
+    }
+  }
+  return false;
 }
 
 function parseNumberSection(section: string): NumberSection | null {
@@ -113,6 +142,7 @@ function parseNumberSection(section: string): NumberSection | null {
       scaleCommas: 0,
       percentCount: 0,
       hasNumberPattern: true,
+      midLiterals: [],
       exponent: null,
       fraction: {
         withWhole,
@@ -135,8 +165,14 @@ function parseNumberSection(section: string): NumberSection | null {
   let ended = false;
   let hasNumberPattern = false;
   let exponent: NumberSection["exponent"] = null;
+  const midLiterals: NumberSection["midLiterals"] = [];
 
-  const addLiteral = (text: string) => {
+  /** nextIndex = このリテラルの直後の位置。後ろにまだ桁があれば、桁の途中の記号として扱う */
+  const addLiteral = (text: string, nextIndex: number) => {
+    if (started && !ended && !inDecimal && placeholderAhead(section, nextIndex)) {
+      midLiterals.push({ pos: intPattern.length, text });
+      return;
+    }
     if (!started) prefix += text;
     else {
       ended = true;
@@ -149,23 +185,23 @@ function parseNumberSection(section: string): NumberSection | null {
     if (ch === '"') {
       const end = section.indexOf('"', i + 1);
       const text = section.slice(i + 1, end === -1 ? section.length : end);
-      addLiteral(text);
+      addLiteral(text, end === -1 ? section.length : end + 1);
       i = end === -1 ? section.length : end;
     } else if (ch === "\\") {
-      if (i + 1 < section.length) addLiteral(section[i + 1]);
+      if (i + 1 < section.length) addLiteral(section[i + 1], i + 2);
       i++;
     } else if (ch === "[") {
       const end = section.indexOf("]", i + 1);
       const inner = end === -1 ? "" : section.slice(i + 1, end);
       // [$¥-411] のような通貨指定は記号を表示する。色・条件・言語のみの指定は読み飛ばす。
       const currency = /^\$([^-\]]*)/.exec(inner);
-      if (currency && currency[1]) addLiteral(currency[1]);
+      if (currency && currency[1]) addLiteral(currency[1], end === -1 ? section.length : end + 1);
       i = end === -1 ? section.length : end;
     } else if (ch === "_" || ch === "*") {
       i++; // 次の1文字(桁揃え・繰り返しの対象)ごと読み飛ばす
     } else if (ch === "%") {
       percentCount++;
-      addLiteral("%");
+      addLiteral("%", i + 1);
     } else if ((ch === "E" || ch === "e") && started && !ended && /[+-]/.test(section[i + 1] ?? "")) {
       const plus = section[i + 1] === "+";
       let j = i + 2;
@@ -182,18 +218,19 @@ function parseNumberSection(section: string): NumberSection | null {
       hasNumberPattern = true;
       if (inDecimal) decPattern += ch;
       else intPattern += ch;
-    } else if (ch === "," && started && !ended && !inDecimal) {
+    } else if (ch === "," && started && !ended) {
       // 数字パターンの直後(次が0・#・?でない)のカンマは桁区切りではなく「1000で割る」指定
+      // （小数部の後ろ 0.0,,"M" のカンマも同じ）
       const next = section[i + 1] ?? "";
-      if (/[0#?]/.test(next)) grouping = true;
+      if (!inDecimal && /[0#?]/.test(next)) grouping = true;
       else scaleCommas++;
     } else if (ch === "." && started && !ended && !inDecimal) {
       inDecimal = true;
     } else {
-      addLiteral(ch);
+      addLiteral(ch, i + 1);
     }
   }
-  return { prefix, suffix, intPattern, decPattern, grouping, scaleCommas, percentCount, hasNumberPattern, exponent, fraction: null };
+  return { prefix, suffix, intPattern, decPattern, grouping, scaleCommas, percentCount, hasNumberPattern, midLiterals, exponent, fraction: null };
 }
 
 function bestFraction(frac: number, maxDen: number, fixedDen: number | null): { n: number; d: number } {
@@ -209,6 +246,31 @@ function bestFraction(frac: number, maxDen: number, fixedDen: number | null): { 
     }
   }
   return best;
+}
+
+/**
+ * 桁の途中に記号が挟まる書式（0##-####-####・000-0000 など）。Excelと同じく、桁は右から埋める。
+ * 桁が足りないとき: 0 は「0」、? は空白、# は何も出さない（記号は残る）。桁が余ったときは、一番左の桁にまとめて入れる。
+ */
+function applyMidLiterals(intDigits: string, s: NumberSection): string {
+  const pattern = s.intPattern;
+  const digits = intDigits === "0" && !pattern.includes("0") ? "" : intDigits;
+  const pieces: string[] = new Array(pattern.length).fill("");
+  let di = digits.length - 1;
+  for (let k = pattern.length - 1; k >= 0; k--) {
+    if (di >= 0) {
+      pieces[k] = digits[di];
+      di--;
+    } else if (pattern[k] === "0") pieces[k] = "0";
+    else if (pattern[k] === "?") pieces[k] = " ";
+  }
+  if (di >= 0 && pattern.length > 0) pieces[0] = digits.slice(0, di + 1) + pieces[0];
+  let out = "";
+  for (let k = 0; k <= pattern.length; k++) {
+    for (const lit of s.midLiterals) if (lit.pos === k) out += lit.text;
+    if (k < pattern.length) out += pieces[k];
+  }
+  return out;
 }
 
 function applyNumberSection(abs: number, s: NumberSection): string {
@@ -259,6 +321,10 @@ function applyNumberSection(abs: number, s: NumberSection): string {
   const text = toFixedExcel(value, decimals);
   let [intPart, decPart = ""] = text.split(".");
   // 先頭の0埋め(0の個数ぶんの桁数まで)。#のみのときは、整数部が0なら空にする(Excelは".5"のように表示する)
+  if (s.midLiterals.length > 0) {
+    const withLiterals = applyMidLiterals(intPart, s);
+    return decPart ? `${withLiterals}.${decPart}` : withLiterals;
+  }
   const minInt = (s.intPattern.match(/0/g) ?? []).length;
   if (intPart === "0" && minInt === 0) intPart = "";
   if (intPart.length < minInt) intPart = intPart.padStart(minInt, "0");
@@ -309,7 +375,12 @@ export function formatExcelNumber(value: number, code: string | null): string | 
   }
 
   const section = parseNumberSection(sectionText);
-  if (!section || !section.hasNumberPattern) return null;
+  if (!section) return null;
+  // 数字の桁が無く、記号・文字だけのセクション（ゼロのとき "-" を出す #,##0;-#,##0;"-" など）は、その文字をそのまま出す
+  if (!section.hasNumberPattern) {
+    const literalOnly = `${section.prefix}${section.suffix}`;
+    return literalOnly !== "" ? literalOnly : null;
+  }
 
   // 負数: 専用のセクション(2つ目)を選んだときは符号を付けない(括弧などの書式で表す)。それ以外は先頭に「-」。
   const negativeSign = value < 0 && !implicitNegative ? "-" : "";

@@ -16,6 +16,7 @@ import { applyPageStyles, type ExtractedImage } from "@/lib/pdf/pdf-style-sampli
 import { removePageFurniture } from "@/lib/pdf/page-furniture";
 import { PDF_TO_WORD_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { groupIntoLines } from "@/lib/pdf/table-reconstruction";
+import { extractFilledRects, extractVerticalRules, type FilledRect, type VerticalRule } from "@/lib/pdf/ruling-lines";
 import { buildDocxBlob, type DocxPageSetup } from "./pdf-to-word-docx";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 
@@ -85,9 +86,36 @@ interface PageData {
   fromTextLayer: boolean;
   images: ExtractedImage[];
   view: number[];
+  /** 縦の罫線・塗りの矩形（文字レイヤーのページだけ。表の列と背景色に使う） */
+  rules?: VerticalRule[] | null;
+  fills?: FilledRect[] | null;
 }
 
+/** 前のページの本文がページの上のほうで終わっているとき（下がこの割合より空いている）は、改ページを残す */
+const SPARSE_PAGE_BLANK_RATIO = 0.25;
+
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/**
+ * 文字の背景に、その文字の高さ程度の塗り（蛍光ペン・色つきの帯・枠つきの段落の背景）があれば、文字の背景色として記録する。
+ * 表のセルの背景のような、文字より大きく広い塗りは、ここでは扱わない（表のセルの背景色として別に使う）。
+ */
+function markHighlights(items: PositionedTextItem[], fills: FilledRect[] | null): void {
+  if (!fills || fills.length === 0) return;
+  for (const item of items) {
+    if (item.str.trim() === "" || item.fontHeight <= 0) continue;
+    const cx = item.x + item.width / 2;
+    const cy = item.y + item.fontHeight * 0.35;
+    let best: FilledRect | null = null;
+    for (const f of fills) {
+      const h = f.y1 - f.y0;
+      if (h > item.fontHeight * 2.4 || h < item.fontHeight * 0.6) continue;
+      if (cx < f.x0 || cx > f.x1 || cy < f.y0 || cy > f.y1) continue;
+      if (!best || (f.x1 - f.x0) * h < (best.x1 - best.x0) * (best.y1 - best.y0)) best = f;
+    }
+    if (best) item.highlight = best.color;
+  }
+}
 
 const PAGE_NUMBER_TEXT_RE = /^[-‐‑–—―ー\s]*(p\.?|page|ページ|第)?\s*[0-9０-９]{1,4}\s*(\/\s*[0-9０-９]{1,4}|ページ|頁)?[-‐‑–—―ー\s]*$/i;
 
@@ -169,7 +197,17 @@ export class PdfToWordProcessor extends BrowserProcessor<PdfToWordInput, PdfToWo
           images = [];
         }
         totalImages += images.length;
-        pages.push({ pageNumber, items: textItems, fromTextLayer: true, images, view });
+        let rules: VerticalRule[] | null = null;
+        let fills: FilledRect[] | null = null;
+        try {
+          rules = await extractVerticalRules(page);
+          fills = await extractFilledRects(page);
+        } catch {
+          rules = null;
+          fills = null;
+        }
+        markHighlights(textItems, fills);
+        pages.push({ pageNumber, items: textItems, fromTextLayer: true, images, view, rules, fills });
       } else {
         // 文字レイヤーの無いページ（紙をスキャンした画像PDF等）は、
         // filled-pdf-to-excel.tsと同じ方式でページを画像化してOCRする(§27-28)。
@@ -228,13 +266,19 @@ export class PdfToWordProcessor extends BrowserProcessor<PdfToWordInput, PdfToWo
       const p = pages[i];
       const blocks = reconstructParagraphs(
         filteredByPage[i],
-        p.fromTextLayer ? { contentLeft, contentRight } : {}
+        p.fromTextLayer ? { contentLeft, contentRight, verticalRules: p.rules, fillRects: p.fills } : {}
       );
       const withImages = insertImages(blocks, p.images, p.view, contentLeft, contentRight);
       if (i > 0 && withImages.length > 0 && allBlocks.length > 0) {
-        // ページの区切りが分かるよう、空段落を1つはさむ（見た目の再現よりも
-        // 読みやすさ・編集しやすさを優先する方針のため、明示的な改ページは入れない）
-        allBlocks.push({ type: "paragraph", text: "" });
+        // ページの区切りが分かるよう、空段落を1つはさむ。ページが続けて文章で埋まっている文書は、
+        // 編集しやすさを優先して改ページを入れない。ただし、前のページが途中（下が大きく空いている）で
+        // 終わっているとき（表紙・章の終わり・署名ページなど）は、改ページとして残す。
+        const prev = pages[i - 1];
+        const prevBody = filteredByPage[i - 1].filter((it) => it.str.trim() !== "");
+        const prevPageHeight = prev.view[3] - prev.view[1];
+        const lowest = prevBody.length > 0 ? Math.min(...prevBody.map((it) => it.y)) - prev.view[1] : Infinity;
+        const sparse = prev.fromTextLayer && prevPageHeight > 0 && lowest / prevPageHeight > SPARSE_PAGE_BLANK_RATIO;
+        allBlocks.push(sparse ? { type: "paragraph", text: "", pageBreak: true } : { type: "paragraph", text: "" });
       }
       allBlocks.push(...withImages);
     }

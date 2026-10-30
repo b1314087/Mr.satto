@@ -2,6 +2,11 @@ import { unzipSync } from "fflate";
 import { baseCellOf, type ConditionalRule, type DxfStyle } from "@/lib/excel/conditional-format";
 import { parseSheetDrawings, type SheetDrawings } from "@/lib/excel/ooxml-drawings";
 
+/** OOXMLの真偽値の属性。"1" だけでなく "true" も真（LibreOfficeやGoogleスプレッドシート等は "true" と書く） */
+function isTrueAttr(value: string | null | undefined): boolean {
+  return value === "1" || value === "true";
+}
+
 /**
  * XLSX（OOXML/SpreadsheetML）内部XMLから、印刷に関わる設定を直接読み取る
  * （Phase 18.2 B-19）。
@@ -961,8 +966,8 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
       if (left) styles.left = left;
       if (right) styles.right = right;
       const diag = parseBorderSide(b, "diagonal", ctx);
-      const diagUp = b.getAttribute("diagonalUp") === "1" || b.getAttribute("diagonalUp") === "true";
-      const diagDown = b.getAttribute("diagonalDown") === "1" || b.getAttribute("diagonalDown") === "true";
+      const diagUp = isTrueAttr(b.getAttribute("diagonalUp"));
+      const diagDown = isTrueAttr(b.getAttribute("diagonalDown"));
       borderDefs.push({
         top: !!top,
         bottom: !!bottom,
@@ -1031,8 +1036,8 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
                     ? "distributed"
                     : null,
           vertical: v === "center" ? "center" : v === "top" ? "top" : v === "bottom" ? "bottom" : null,
-          wrapText: wrap === "1" || wrap === "true",
-          shrinkToFit: shrink === "1" || shrink === "true",
+          wrapText: isTrueAttr(wrap),
+          shrinkToFit: isTrueAttr(shrink),
           indent: Number(alignEl.getAttribute("indent") ?? "0") || 0,
           textRotation,
           centerContinuous: h === "centerContinuous",
@@ -1140,7 +1145,7 @@ function parseSheetXml(
 
   // sheetPr/pageSetUpPr@fitToPage
   const pageSetUpPr = doc.getElementsByTagName("pageSetUpPr")[0];
-  result.fitToPageEnabled = pageSetUpPr?.getAttribute("fitToPage") === "1";
+  result.fitToPageEnabled = isTrueAttr(pageSetUpPr?.getAttribute("fitToPage"));
 
   // sheetFormatPr@defaultRowHeight（明示的なht指定の無い行の実際の高さ）
   const sheetFormatPr = doc.getElementsByTagName("sheetFormatPr")[0];
@@ -1168,7 +1173,7 @@ function parseSheetXml(
     const paperSizeAttr = pageSetup.getAttribute("paperSize");
     result.paperSize = paperSizeAttr ? (PAPER_SIZE_MAP[Number(paperSizeAttr)] ?? null) : null;
     result.paperSizeCode = paperSizeAttr ? Number(paperSizeAttr) : null;
-    result.blackAndWhite = pageSetup.getAttribute("blackAndWhite") === "1" || pageSetup.getAttribute("blackAndWhite") === "true";
+    result.blackAndWhite = isTrueAttr(pageSetup.getAttribute("blackAndWhite"));
     const orientationAttr = pageSetup.getAttribute("orientation");
     result.orientation = orientationAttr === "landscape" || orientationAttr === "portrait" ? orientationAttr : null;
     const fitToWidthAttr = pageSetup.getAttribute("fitToWidth");
@@ -1193,9 +1198,9 @@ function parseSheetXml(
 
   // printOptions(ページ内での中央配置)
   const printOptions = doc.getElementsByTagName("printOptions")[0];
-  result.horizontalCentered = printOptions?.getAttribute("horizontalCentered") === "1";
-  result.verticalCentered = printOptions?.getAttribute("verticalCentered") === "1";
-  result.printGridLines = printOptions?.getAttribute("gridLines") === "1";
+  result.horizontalCentered = isTrueAttr(printOptions?.getAttribute("horizontalCentered"));
+  result.verticalCentered = isTrueAttr(printOptions?.getAttribute("verticalCentered"));
+  result.printGridLines = isTrueAttr(printOptions?.getAttribute("gridLines"));
 
   // pageMargins
   const pageMargins = doc.getElementsByTagName("pageMargins")[0];
@@ -1237,7 +1242,7 @@ function parseSheetXml(
     for (const col of Array.from(colsEl.getElementsByTagName("col"))) {
       const min = Number(col.getAttribute("min") ?? "0");
       const max = Number(col.getAttribute("max") ?? String(min));
-      const hidden = col.getAttribute("hidden") === "1";
+      const hidden = isTrueAttr(col.getAttribute("hidden"));
       const width = col.getAttribute("width");
       for (let c = min; c <= max && c <= min + 1000; c++) {
         if (hidden) hiddenCols.add(c - 1);
@@ -1252,7 +1257,7 @@ function parseSheetXml(
       const rowNumAttr = rowEl.getAttribute("r");
       if (!rowNumAttr) continue;
       const rowIndex = Number(rowNumAttr) - 1;
-      if (rowEl.getAttribute("hidden") === "1") hiddenRows.add(rowIndex);
+      if (isTrueAttr(rowEl.getAttribute("hidden"))) hiddenRows.add(rowIndex);
       const ht = rowEl.getAttribute("ht");
       if (ht) rowHeightsPt.set(rowIndex, Number(ht));
 
@@ -1360,13 +1365,13 @@ function parseSheetXml(
         operator: ruleEl.getAttribute("operator"),
         text: ruleEl.getAttribute("text"),
         priority: Number(ruleEl.getAttribute("priority") ?? "0"),
-        stopIfTrue: ruleEl.getAttribute("stopIfTrue") === "1",
+        stopIfTrue: isTrueAttr(ruleEl.getAttribute("stopIfTrue")),
         dxf,
         rank: ruleEl.getAttribute("rank") !== null ? Number(ruleEl.getAttribute("rank")) : undefined,
-        percent: ruleEl.getAttribute("percent") === "1",
-        bottom: ruleEl.getAttribute("bottom") === "1",
+        percent: isTrueAttr(ruleEl.getAttribute("percent")),
+        bottom: isTrueAttr(ruleEl.getAttribute("bottom")),
         aboveAverage: ruleEl.getAttribute("aboveAverage") !== "0",
-        equalAverage: ruleEl.getAttribute("equalAverage") === "1",
+        equalAverage: isTrueAttr(ruleEl.getAttribute("equalAverage")),
       };
       // 色スケール・データバー
       const cfvoOf = (el: Element) =>
@@ -1428,8 +1433,8 @@ function parseSheetXml(
     };
     result.header = pick("oddHeader");
     result.footer = pick("oddFooter");
-    result.differentFirst = headerFooterEl.getAttribute("differentFirst") === "1";
-    result.differentOddEven = headerFooterEl.getAttribute("differentOddEven") === "1";
+    result.differentFirst = isTrueAttr(headerFooterEl.getAttribute("differentFirst"));
+    result.differentOddEven = isTrueAttr(headerFooterEl.getAttribute("differentOddEven"));
     result.firstHeader = pick("firstHeader");
     result.firstFooter = pick("firstFooter");
     result.evenHeader = pick("evenHeader");

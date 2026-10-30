@@ -70,6 +70,8 @@ export async function buildDocxBlob(input: DocxBuildInput): Promise<Blob> {
     Footer,
     PageNumber,
     PageOrientation,
+    PageBreak,
+    ShadingType,
     UnderlineType,
   } = docx;
 
@@ -96,6 +98,7 @@ export async function buildDocxBlob(input: DocxBuildInput): Promise<Blob> {
         italics: r.italic ? true : undefined,
         size: r.size ? Math.max(2, Math.round(r.size * 2)) : undefined,
         font: fontOf(r),
+        shading: r.highlight ? { type: ShadingType.CLEAR, color: "auto", fill: r.highlight } : undefined,
       };
       if (r.link) {
         return new ExternalHyperlink({
@@ -145,12 +148,15 @@ export async function buildDocxBlob(input: DocxBuildInput): Promise<Blob> {
         const span = Math.max(1, Math.min(spans.get(`${r}:${c}`) ?? 1, colCount - c));
         const text = (span > 1 ? row.slice(c, c + span).filter(Boolean).join(" ") : (row[c] ?? "")).trim();
         const width = dxa.slice(c, c + span).reduce((a, b) => a + b, 0);
+        const fill = block.fills?.[r]?.[c] ?? null;
         cells.push(
           new TableCell({
             width: { size: width, type: WidthType.DXA },
             columnSpan: span > 1 ? span : undefined,
+            shading: fill ? { type: ShadingType.CLEAR, color: "auto", fill } : undefined,
             children: [
               new Paragraph({
+                alignment: alignOf(block.aligns?.[r]?.[c]),
                 children: [new TextRun({ text, size, font: fontOf({}) })],
               }),
             ],
@@ -220,6 +226,9 @@ export async function buildDocxBlob(input: DocxBuildInput): Promise<Blob> {
           children: makeRuns(item.runs, item.text, false),
         })
       );
+    } else if (block.type === "paragraph" && block.pageBreak) {
+      // 元のPDFで、ページの途中までしか文字が無いページの区切り（表紙・署名ページなど）を、改ページとして残す
+      children.push(new Paragraph({ children: [new PageBreak()] }));
     } else if (block.type === "paragraph") {
       children.push(
         new Paragraph({

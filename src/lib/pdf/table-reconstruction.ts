@@ -419,7 +419,59 @@ export function computeColumnBreaksAcrossPages(linesByPage: Line[][], options: {
     merged.push(range);
   }
 
-  return merged.map((range) => refineBreakPosition(range, allLines));
+  const refined = merged.map((range) => refineBreakPosition(range, allLines));
+  return moveBreaksLeftOfSnugHeaders(refined, linesByPage);
+}
+
+/** 見出しの左端と、左の列の数字の右端の間が、この幅(pt)以下なら「ぴったり続いている」とみなす */
+const SNUG_HEADER_GAP_PT = 4;
+/** 見出しとみなす1項目の文字数の上限と、見出しの行に必要な項目数 */
+const HEADER_ITEM_MAX_CHARS = 8;
+const HEADER_LINE_MIN_ITEMS = 3;
+
+/**
+ * 右揃えの数字の列に、左揃えの見出し（「出金」「入金」など）が付いている表の補正。
+ *
+ * 数字が右揃えで、隣の列の見出しが左揃えだと、左の列の数字の右端と、右の列の見出しの左端が
+ * 2pt前後まで近づく。見出しの「入金」が隙間の候補の範囲の外（細すぎて隙間と認められない位置）に
+ * あるため、列区切りが見出しの右側に置かれ、「出金」と「入金」が1つのセルにくっついてしまう。
+ *
+ * 各ページの先頭の行（見出し）で、隣り合う2項目が同じ列に入っているとき、その右側の項目が
+ * 「ほかの行の項目の右端から4pt以内に始まっていて、かつその位置から見出しの右端までの間に
+ * ほかの行の文字が1つも無い」なら、列区切りをその直前の細い隙間へ移す。見出しの行だけが
+ * 隣の列へ移り、ほかの行の列の割り当ては変わらない。
+ */
+function moveBreaksLeftOfSnugHeaders(breaks: number[], linesByPage: Line[][]): number[] {
+  if (breaks.length === 0) return breaks;
+  const result = [...breaks];
+  const colOf = (x: number) => columnIndexFor(x, result);
+  for (const lines of linesByPage) {
+    if (lines.length < 3) continue;
+    const header = lines[0];
+    const items = header.items.filter((it) => it.str.trim() !== "");
+    if (items.length < HEADER_LINE_MIN_ITEMS) continue;
+    if (items.some((it) => [...it.str.trim()].length > HEADER_ITEM_MAX_CHARS)) continue;
+    const others = lines.slice(1).flatMap((l) => l.items.filter((it) => it.str.trim() !== ""));
+    for (let k = 1; k < items.length; k++) {
+      const prev = items[k - 1];
+      const cur = items[k];
+      if (colOf(prev.x) !== colOf(cur.x)) continue; // 同じ列に入っていなければ、補正の必要は無い
+      const curEnd = cur.x + cur.width;
+      // 見出しの左端のすぐ左（4pt以内）に右端がある、ほかの行の項目。その右端の最大値が、左の列の数字の右端
+      const leftNeighbours = others.filter((o) => o.x + o.width <= cur.x && cur.x - (o.x + o.width) <= SNUG_HEADER_GAP_PT && o.x >= prev.x);
+      if (leftNeighbours.length === 0) continue;
+      const m = Math.max(...leftNeighbours.map((o) => o.x + o.width));
+      // 見出しの下（左端〜右端）に、ほかの行の文字が重なっていないこと
+      if (others.some((o) => o.x < curEnd && o.x + o.width > cur.x)) continue;
+      // 区切りは、いま見出しの右側にあるはず（見出しが左の列に入っている）
+      const bi = result.findIndex((b) => b >= curEnd - 0.5 && b > cur.x);
+      if (bi < 0 || colOf(cur.x) !== bi) continue;
+      const moved = (m + cur.x) / 2;
+      if (bi > 0 && moved <= result[bi - 1]) continue;
+      result[bi] = moved;
+    }
+  }
+  return result;
 }
 
 /**
@@ -464,7 +516,7 @@ function refineBreakPosition(range: [number, number], lines: Line[]): number {
 }
 
 /** 1ページ分の行だけから列区切りを推定する(computeColumnBreaksAcrossPagesの単一ページ版) */
-function computeColumnBreaks(lines: Line[]): number[] {
+export function computeColumnBreaks(lines: Line[]): number[] {
   return computeColumnBreaksAcrossPages([lines]);
 }
 
@@ -539,7 +591,7 @@ function averageItemFontHeight(items: PositionedTextItem[]): number {
  * （computeColumnBreaksAcrossPages参照。pdf-to-excel.tsが全ページの
  * 行をまとめて1回だけ推定した結果を、各ページの再構築にそのまま渡す）。
  */
-export function reconstructTable(items: PositionedTextItem[], breaksOverride?: number[]): ReconstructedTable {
+export function reconstructTable(items: PositionedTextItem[], breaksOverride?: number[], hardBreaks: number[] = []): ReconstructedTable {
   const rawLines = groupIntoLines(items);
   if (rawLines.length === 0) {
     return {
@@ -563,7 +615,7 @@ export function reconstructTable(items: PositionedTextItem[], breaksOverride?: n
   const lines: Line[] = mergeWrappedContinuationLines(
     rawLines.map((line) => ({
       y: line.y,
-      items: mergeTouchingRunsAcrossBreaks(mergeSpacedCharacterRuns(line.items, breaks), breaks),
+      items: mergeTouchingRunsAcrossBreaks(mergeSpacedCharacterRuns(line.items, breaks), breaks, hardBreaks),
     })),
     breaks
   );
@@ -822,8 +874,10 @@ function mergeWrappedContinuationLines(lines: Line[], breaks: number[]): Line[] 
  * 項目同士の隙間が文字の高さの0.3倍未満(=実質的に接している)で、その並びが列区切りを
  * またぐ場合は、1つの項目にまとめる(まとめた項目は、列をまたぐセル=結合セルとして扱われる)。
  * 数値同士(隣の列の数値が接近している場合)は、別々の列の値なのでまとめない。
+ * 2つの項目の間に、実際に描かれた罫線（hardBreaks）がある場合も、別々のセルの文字なのでまとめない
+ * （セルの余白が小さいと、隣のセルの文字が「接している」ように見えるため）。
  */
-function mergeTouchingRunsAcrossBreaks(items: PositionedTextItem[], breaks: number[]): PositionedTextItem[] {
+function mergeTouchingRunsAcrossBreaks(items: PositionedTextItem[], breaks: number[], hardBreaks: number[] = []): PositionedTextItem[] {
   if (breaks.length === 0 || items.length < 2) return items;
   const out: PositionedTextItem[] = [];
   let run: PositionedTextItem[] = [];
@@ -850,7 +904,9 @@ function mergeTouchingRunsAcrossBreaks(items: PositionedTextItem[], breaks: numb
       const gap = item.x - (prev.x + prev.width);
       const touching = gap < Math.min(prev.fontHeight, item.fontHeight) * 0.3;
       const bothNumbers = tryParseNumberCell(prev.str) !== null && tryParseNumberCell(item.str) !== null;
-      if (!touching || bothNumbers) flush();
+      const prevEnd = prev.x + prev.width;
+      const ruleBetween = hardBreaks.some((b) => b >= prevEnd - 0.5 && b <= item.x + 0.5);
+      if (!touching || bothNumbers || ruleBetween) flush();
     }
     run.push(item);
   }

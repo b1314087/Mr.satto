@@ -36,14 +36,14 @@ const FONTS = `<fonts count="8">
 
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet ${NS.split(" xmlns:r")[0]}>
-<numFmts count="3"><numFmt numFmtId="164" formatCode="#,##0.00"/><numFmt numFmtId="165" formatCode="@&quot;様&quot;"/><numFmt numFmtId="166" formatCode="0.0%"/></numFmts>
+<numFmts count="5"><numFmt numFmtId="164" formatCode="#,##0.00"/><numFmt numFmtId="165" formatCode="@&quot;様&quot;"/><numFmt numFmtId="166" formatCode="0.0%"/><numFmt numFmtId="167" formatCode="000\-0000\-0000"/><numFmt numFmtId="168" formatCode="000\-0000"/></numFmts>
 ${FONTS}
 <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
 <borders count="3"><border><left/><right/><top/><bottom/><diagonal/></border>
 <border diagonalUp="1" diagonalDown="1"><left/><right/><top/><bottom/><diagonal style="thin"><color rgb="FF0000FF"/></diagonal></border>
 <border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="11">
+<cellXfs count="13">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
@@ -55,6 +55,8 @@ ${FONTS}
 <xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="2" xfId="0" applyBorder="1"/>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment textRotation="255"/></xf>
+<xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="168" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 </cellXfs>
 </styleSheet>`;
 
@@ -378,4 +380,29 @@ test("非表示のシートは、最初は変換対象に選ばれない", async
   const text = pdfText(pdf);
   expect(text).toContain("VISIBLE_SHEET");
   expect(text).not.toContain("HIDDEN_SHEET");
+});
+
+test("電話番号・郵便番号の書式（000-0000-0000・000-0000）が、ハイフン入りで印刷される", async ({ page }) => {
+  test.setTimeout(120_000);
+  const rows = cellsXml({ 1: { A: { v: 9012345678, s: 11 } }, 2: { A: { v: 1600023, s: 12 } }, 3: { A: { v: 600023, s: 12 } } });
+  const { pdf } = await convert(page, buildXlsx({ sheets: [{ name: "番号", xml: sheetXml({ cols: '<col min="1" max="1" width="20" customWidth="1"/>', rows }) }] }));
+  const text = pdfText(pdf);
+  expect(text).toContain("090-1234-5678");
+  expect(text).toContain("160-0023");
+  expect(text).toContain("060-0023");
+  expect(text).not.toContain("9012345678");
+});
+
+test("非表示の行・列は、hidden=\"true\"（LibreOffice等の書き方）でも印刷されない", async ({ page }) => {
+  test.setTimeout(120_000);
+  const rows = `<row r="1"><c r="A1" t="inlineStr"><is><t>SHOWN_A1</t></is></c><c r="B1" t="inlineStr"><is><t>HIDDEN_COL_B</t></is></c><c r="C1" t="inlineStr"><is><t>SHOWN_C1</t></is></c></row><row r="2" hidden="true"><c r="A2" t="inlineStr"><is><t>HIDDEN_ROW_2</t></is></c></row><row r="3" hidden="1"><c r="A3" t="inlineStr"><is><t>HIDDEN_ROW_3</t></is></c></row><row r="4"><c r="A4" t="inlineStr"><is><t>SHOWN_A4</t></is></c></row>`;
+  const cols = '<col min="1" max="1" width="14" customWidth="1"/><col min="2" max="2" width="14" customWidth="1" hidden="true"/><col min="3" max="3" width="14" customWidth="1"/>';
+  const { pdf } = await convert(page, buildXlsx({ sheets: [{ name: "隠し行列", xml: sheetXml({ cols, rows }) }] }));
+  const text = pdfText(pdf);
+  expect(text).toContain("SHOWN_A1");
+  expect(text).toContain("SHOWN_C1");
+  expect(text).toContain("SHOWN_A4");
+  expect(text).not.toContain("HIDDEN_COL_B");
+  expect(text).not.toContain("HIDDEN_ROW_2");
+  expect(text).not.toContain("HIDDEN_ROW_3");
 });

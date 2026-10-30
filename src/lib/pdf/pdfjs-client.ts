@@ -91,6 +91,8 @@ export interface PositionedTextItem {
   color?: string;
   /** この文字がリンク（ハイパーリンク）の範囲内にあるときのURL */
   link?: string;
+  /** この文字の背景に塗りがあるとき、その色（"RRGGBB"。蛍光ペン・色つきの帯）。PDF→Wordで使う */
+  highlight?: string;
 }
 
 /**

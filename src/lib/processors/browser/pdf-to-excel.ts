@@ -20,6 +20,7 @@ import {
 } from "@/lib/pdf/table-reconstruction";
 import { buildPageGrid, type BorderPresence, type GridCell, type GridRow, type PageGrid } from "@/lib/pdf/page-grid";
 import { removePageFurniture } from "@/lib/pdf/page-furniture";
+import { computeRuledColumnBreaks, extractVerticalRules, mergeRuledBreaks } from "@/lib/pdf/ruling-lines";
 import { PDF_TO_EXCEL_MAX_OCR_PAGES, PDF_TO_EXCEL_MAX_PAGES } from "@/lib/pdf/page-limits";
 import type { PositionedTextItem } from "@/lib/pdf/pdfjs-client";
 import type { Row as ExcelRow, Cell as ExcelCellValue } from "write-excel-file/universal";
@@ -536,7 +537,19 @@ async function buildGrids(
   const out: { pageNumber: number; method: "text-layer" | "ocr"; confidence: number | null; grid: PageGrid | null }[] = [];
   for (let i = 0; i < pageData.length; i++) {
     const { pageNumber, page, method, confidence } = pageData[i];
-    const table = reconstructTable(prepared[i].items, sharedBreaksByMethod.get(method));
+    // 罫線で区切られた表は、描かれている縦の罫線を列の区切りにする（文字の隙間が小さいと、
+    // 隣り合う列が1つのセルにくっついてしまうため）。罫線が足りないページは、これまでどおり
+    // 文字の隙間から推定した区切りを使う。OCRのページは座標系が違うため対象外。
+    let breaks = sharedBreaksByMethod.get(method);
+    let hardBreaks: number[] = [];
+    if (method === "text-layer") {
+      const ruled = computeRuledColumnBreaks(await extractVerticalRules(page), prepared[i].items);
+      if (ruled) {
+        breaks = mergeRuledBreaks(breaks ?? [], ruled);
+        hardBreaks = ruled.breaks;
+      }
+    }
+    const table = reconstructTable(prepared[i].items, breaks, hardBreaks);
     if (table.rows.length === 0) {
       out.push({ pageNumber, method, confidence, grid: null });
       continue;
