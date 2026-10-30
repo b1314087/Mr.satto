@@ -132,4 +132,15 @@ test.describe("リンクを押した間の光（ボタンの処理中と同じ�
     await expect(page.locator("#glow-inline")).toHaveAttribute("data-nav-pending", "true");
     await expect(page.locator("#glow-inline")).not.toHaveAttribute("data-nav-glow", "true");
   });
+  test("ヘッダーのリンクには光の印を付けない（上端のバーと薄くなる表示だけ）", async ({ page }) => {
+    await page.goto("/pricing");
+    // クリックしても移動しないよう、移動そのものは止める（印が付くかだけを見る）
+    await page.evaluate(() => {
+      document.querySelector("header")?.addEventListener("click", (e) => e.preventDefault());
+    });
+    const link = page.locator('header nav a[href="/tools"]');
+    await link.click();
+    await expect(link).toHaveAttribute("data-nav-pending", "true");
+    await expect(link).not.toHaveAttribute("data-nav-glow", "true");
+  });
 });

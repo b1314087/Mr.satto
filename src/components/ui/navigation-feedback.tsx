@@ -11,6 +11,7 @@ import { usePathname, useSearchParams } from "next/navigation";
  *   2. 押したリンクが、少し薄くなって「処理中」のカーソルになる
  * 次のページの準備ができて、アドレス（パス・クエリ）が変わったら、どちらも消える。
  *
+ * - ヘッダー・メニューのリンクには、光は回さない（バーと薄くなる表示だけ）。
  * - 新しいタブで開くリンク・ダウンロード・外部サイト・同じページ内の移動（ページ内リンク・同じアドレス）では出さない。
  * - Ctrl/⌘/Shift/Alt を押しながらのクリック、右クリックでも出さない（ページが切り替わらないため）。
  * - 万一、移動が起きなかったときのために、一定時間（12秒）で自動的に消す。
@@ -53,8 +54,10 @@ function NavigationFeedbackInner() {
       anchor.setAttribute("data-nav-pending", "true");
       // ボタンやカードのように見えるリンク（文章の中の文字リンクではないもの）には、ボタンと同じ光を回す。
       // カードは中の LinkPendingOverlay が光を出すので、重ねない
+      // ヘッダー（ロゴ・ナビ）とメニューのリンクは、光を回さない（上端のバーと薄くなる表示だけにする）
+      const inHeaderMenu = anchor.closest("header, .ms-menu-link") !== null;
       const style = window.getComputedStyle(anchor);
-      if (style.display !== "inline" && (style.position === "static" || style.position === "relative") && !anchor.querySelector(".ms-link-pending")) {
+      if (!inHeaderMenu && style.display !== "inline" && (style.position === "static" || style.position === "relative") && !anchor.querySelector(".ms-link-pending")) {
         anchor.setAttribute("data-nav-glow", "true");
       }
       setStartedAt(currentKey());
