@@ -253,11 +253,6 @@ export function OcrTool() {
                 中断されました（途中のページまでの結果です）
               </span>
             )}
-            <span>
-              {result.isSingleImage
-                ? "1枚の画像を処理しました"
-                : `${result.pages.length}ページを処理しました`}
-            </span>
           </div>
 
           {!result.isSingleImage && result.pages.length > 1 && (

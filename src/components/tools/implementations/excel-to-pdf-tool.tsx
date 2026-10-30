@@ -264,12 +264,6 @@ export function ExcelToPdfTool() {
 
       {result && (
         <ResultPopup>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>ページ数: {result.pageCount}</span>
-            <span>シート数: {result.sheetCount}</span>
-            <span>合計行数: {result.totalRowCount}</span>
-            <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
-          </div>
 
           {result.warnings.length > 0 && (
             <div className="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">

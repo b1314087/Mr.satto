@@ -252,20 +252,6 @@ export function VideoCompressTool() {
 
       {result && (
         <ResultPopup>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>
-              サイズ: {formatBytes(result.inputSizeBytes)} → {formatBytes(result.sizeBytes)}（
-              {result.sizeBytes < result.inputSizeBytes
-                ? `${Math.round((1 - result.sizeBytes / result.inputSizeBytes) * 100)}%削減`
-                : result.sizeBytes === result.inputSizeBytes
-                  ? "サイズは変わりませんでした"
-                  : "元の動画がすでに高効率で圧縮されているため、サイズが増加しました"}
-              ）
-            </span>
-            <span>
-              解像度: {result.width}×{result.height}
-            </span>
-          </div>
           <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </ResultPopup>

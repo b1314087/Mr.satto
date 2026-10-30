@@ -282,12 +282,6 @@ function AutoExtractSection() {
 
       {result && (
         <ResultPopup size="lg">
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>合計ページ数: {result.pageCount}</span>
-            <span>検出行数: {result.totalRowCount}</span>
-            <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
-            {result.usedOcr && <span>OCRを使用</span>}
-          </div>
 
 
           {result.pages.some((p) => p.rowCount === 0) && (

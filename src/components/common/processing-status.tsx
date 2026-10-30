@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { announceProcessingSuccess } from "@/lib/utils/result-events";
+import { busyHoldRemaining, markBusyStart } from "@/lib/utils/busy-hold";
 
 export type ProcessingState = "idle" | "processing" | "success" | "error";
 
@@ -13,7 +14,7 @@ export type ProcessingState = "idle" | "processing" | "success" | "error";
  * どちらも role="status" で、スクリーンリーダーに状態の変化が伝わる。
  */
 export function ProcessingStatus({
-  state,
+  state: actualState,
   processingLabel = "処理中...",
   successLabel = "処理が完了しました",
   testId,
@@ -24,6 +25,20 @@ export function ProcessingStatus({
   /** 自動テスト用の識別子（省略可） */
   testId?: string;
 }) {
+  // 処理が速く終わっても、最低0.6秒は「処理中」の表示を続ける（src/lib/utils/busy-hold.ts）
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (actualState === "processing") {
+      markBusyStart();
+      return;
+    }
+    const remaining = busyHoldRemaining();
+    if (remaining <= 0) return;
+    const timer = setTimeout(() => setTick((n) => n + 1), remaining + 5);
+    return () => clearTimeout(timer);
+  }, [actualState]);
+  const state: ProcessingState = actualState !== "processing" && busyHoldRemaining() > 0 ? "processing" : actualState;
+
   // 成功になった時に、完了ポップアップ（ResultPopup）へ知らせる。閉じてあっても、新しい結果でもう一度開く。
   useEffect(() => {
     if (state === "success") announceProcessingSuccess();

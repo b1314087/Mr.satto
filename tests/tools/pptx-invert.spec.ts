@@ -144,12 +144,12 @@ test.describe("PowerPoint白黒反転: 画面", () => {
     await RUN.click();
     const preview = page.getByTestId("tool-preview");
     await expect(preview).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("pptx-slide-count")).toHaveText("2");
+    await expect(page.getByTestId("pptx-result")).toHaveAttribute("data-slide-count", "2");
 
     // 画像ごとの判定
     const outcomes: Record<string, string> = {};
     for (const row of await page.getByTestId("pptx-image-row").all()) {
-      const name = (await row.locator("p").first().textContent()) ?? "";
+      const name = (await row.getAttribute("data-image-name")) ?? "";
       outcomes[name] = (await row.getAttribute("data-outcome")) ?? "";
     }
     expect(outcomes).toEqual({
@@ -160,7 +160,7 @@ test.describe("PowerPoint白黒反転: 画面", () => {
       "gray.jpeg": "inverted",
       "colorphoto.jpeg": "kept-color",
     });
-    await expect(page.getByTestId("pptx-notes")).toContainText("テーマの色");
+    await expect(page.getByTestId("pptx-result")).toHaveAttribute("data-notes", /テーマの色/);
 
     // ダウンロード
     const downloadPromise = page.waitForEvent("download");
@@ -286,7 +286,7 @@ test.describe("PowerPoint白黒反転: 配色（背景色・文字色）", () =>
     const slide = strFromU8(out["ppt/slides/slide1.xml"]);
     expect(slide).toMatch(/<p:bgPr><a:solidFill><a:srgbClr val="000000"/);
     expect(slide).toMatch(/<a:rPr lang="ja-JP" sz="2400"><a:solidFill><a:srgbClr val="FFFFFF"/);
-    await expect(page.getByTestId("pptx-applied-palette")).toContainText("#000000");
+    await expect(page.getByTestId("pptx-result")).toHaveAttribute("data-palette-background", "000000");
   });
 
   for (const [id, bg, fg] of [["dark-gray", "171717", "F2F2F2"], ["charcoal", "262626", "FFF4E5"]] as const) {
@@ -318,7 +318,7 @@ test.describe("PowerPoint白黒反転: 配色（背景色・文字色）", () =>
       const problems: string[] = [];
       for (const [n, b] of Object.entries(out)) if (/\.(xml|rels)$/.test(n)) problems.push(...checkXmlWellFormed(strFromU8(b), n));
       expect(problems).toEqual([]);
-      await expect(page.getByTestId("pptx-applied-palette")).toContainText(`#${bg}`);
+      await expect(page.getByTestId("pptx-result")).toHaveAttribute("data-palette-background", bg);
 
       const origin = new URL(baseURL!).origin;
       expect(findSuspiciousApiUploads(recorder, origin)).toEqual([]);
@@ -345,8 +345,8 @@ test.describe("PowerPoint白黒反転: 配色（背景色・文字色）", () =>
     const slide = strFromU8(out["ppt/slides/slide1.xml"]);
     expect(slide).toContain('<p:bgPr><a:solidFill><a:srgbClr val="1A2B4C"');
     expect(slide).toContain('<a:rPr lang="ja-JP" sz="2400"><a:solidFill><a:srgbClr val="FFE08A"');
-    await expect(page.getByTestId("pptx-applied-palette")).toContainText("#1A2B4C");
-    await expect(page.getByTestId("pptx-applied-palette")).toContainText("#FFE08A");
+    await expect(page.getByTestId("pptx-result")).toHaveAttribute("data-palette-background", "1A2B4C");
+    await expect(page.getByTestId("pptx-result")).toHaveAttribute("data-palette-text", "FFE08A");
   });
 
   test("自由指定: 16進の入力の途中・正しくない入力でも壊れず、最後の正しい色で変換できる。色が近いときは注意が出る", async ({ page }) => {

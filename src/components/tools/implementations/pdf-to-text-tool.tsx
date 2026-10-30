@@ -129,9 +129,6 @@ export function PdfToTextTool() {
 
       {result && (
         <ResultPopup testId="tool-preview" size="lg">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            {result.pageCount}ページから抽出しました
-          </p>
 
           {!result.hasExtractableText && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">

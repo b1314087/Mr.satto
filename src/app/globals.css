@@ -1044,6 +1044,10 @@ button[aria-busy="true"] {
   position: relative;
   cursor: progress;
 }
+/* 処理が速く終わっても、光を最低0.6秒は見せ続ける間（src/lib/utils/busy-hold.ts）は、押せない */
+button[data-ms-hold="true"] {
+  pointer-events: none;
+}
 /* 処理中は、薄くしない（薄いと「壊れている」ように見えるため） */
 button[aria-busy="true"]:disabled {
   opacity: 1;

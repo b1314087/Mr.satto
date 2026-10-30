@@ -243,44 +243,9 @@ export function PdfToWordTool() {
 
       {result && (
         <ResultPopup>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>ページ数: {result.pageCount}</span>
-            <span>段落数: {result.paragraphCount}</span>
-            <span>見出し数: {result.headingCount}</span>
-            <span>表: {result.tableCount}個</span>
-            {result.imageCount > 0 && <span>画像: {result.imageCount}個</span>}
-            {result.listItemCount > 0 && <span>箇条書き: {result.listItemCount}項目</span>}
-            <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
-            {result.usedOcr && (
-              <span>
-                OCR使用{result.ocrConfidence !== null ? `（信頼度目安: ${Math.round(result.ocrConfidence)}%）` : ""}
-              </span>
-            )}
-          </div>
-
           {result.usedOcr && (
-            <div className="flex items-start gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
-              <span>OCRで文字を読み取りました。誤認識がないか、変換後に確認してください。</span>
-            </div>
+            <p data-testid="pdf-to-word-ocr-note" className="text-xs text-blue-800 dark:text-blue-300">OCR使用：誤認識がないか、変換後にご確認ください。</p>
           )}
-
-          <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            <svg
-              className="mt-0.5 h-4 w-4 shrink-0"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
-              />
-            </svg>
-            <span>複雑なレイアウトは、再現されていない場合があります。Wordで内容を確認してください。</span>
-          </div>
 
           <RewardedDownloadGate onDownload={handleDownload} label="Word文書をダウンロード" />
         </ResultPopup>

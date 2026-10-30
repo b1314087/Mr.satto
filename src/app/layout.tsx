@@ -8,6 +8,7 @@ import { siteConfig } from "@/lib/config/site";
 import { adConfig, isAdsEnabled } from "@/lib/ads/config";
 import { VisitBeacon } from "@/components/analytics/visit-beacon";
 import { NavigationFeedback } from "@/components/ui/navigation-feedback";
+import { BusyHold } from "@/components/ui/busy-hold";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="ms-ambient" aria-hidden="true" />
           <VisitBeacon />
           <NavigationFeedback />
+          <BusyHold />
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />

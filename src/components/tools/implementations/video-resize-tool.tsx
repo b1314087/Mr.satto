@@ -255,14 +255,6 @@ export function VideoResizeTool() {
 
       {result && (
         <ResultPopup>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>
-              サイズ: {formatBytes(result.inputSizeBytes)} → {formatBytes(result.sizeBytes)}
-            </span>
-            <span>
-              解像度: {result.inputWidth}×{result.inputHeight} → {result.outputWidth}×{result.outputHeight}
-            </span>
-          </div>
           <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </ResultPopup>

@@ -11,7 +11,7 @@ import { invertPptx } from "@/lib/pptx/invert-pptx";
 import { scanSlidePictures } from "@/lib/pptx/slide-pictures";
 import { buildTextZoneMask, ZONE_KINDS, type ZoneLine } from "@/lib/pptx/text-zones";
 import { PPTX_MIME, type PptxInvertOutput } from "@/lib/processors/browser/pptx-invert";
-import { stripExtension, downloadBlob, formatBytes } from "@/lib/utils/format";
+import { stripExtension, downloadBlob } from "@/lib/utils/format";
 import {
   AI_PANEL_CLASS,
   AiPanelHeader,
@@ -20,7 +20,6 @@ import {
   AiUnavailableNotice,
   AiUsageMeter,
   ConsentBox,
-  StepLabel,
   TierPicker,
   type AiUsage,
 } from "./shared/ai-panel-parts";
@@ -282,10 +281,7 @@ export function PptxInvertAiPanel({ file, result }: { file: File; result: PptxIn
 
   return (
     <div data-testid="pptx-ai" className={AI_PANEL_CLASS}>
-      <AiPanelHeader title="AIの判断で、きれいに反転する" sub="AIが画像の文字の位置を見つけ、文字のふちのにじみを減らして反転します" />
-      <p className="rounded-lg bg-white px-3 py-2 text-sm text-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
-        AIは「文字がどこにあるか」を判断するだけです。文字の書き換えや、画像の作り直しはしません。位置もフォントも、元の画像のままです。
-      </p>
+      <AiPanelHeader title="AIできれいに反転する" />
 
       {usage.status === "loading" && <p className="text-xs text-neutral-600 dark:text-neutral-300">利用状況を確認しています…</p>}
       {usage.status === "unavailable" && <AiUnavailableNotice reason={usage.reason} text={UNAVAILABLE_TEXT[usage.reason]} loginNext="/tools/pptx-invert" />}
@@ -306,7 +302,6 @@ export function PptxInvertAiPanel({ file, result }: { file: File; result: PptxIn
       {candidates && candidates.length > 0 && (
         <>
           <div className="flex flex-col gap-2" data-testid="pptx-ai-send-preview">
-            <StepLabel n={1}>AIに送る画像を確認する</StepLabel>
             <ul className="flex flex-wrap gap-3">
               {candidates.map((c) => (
                 <li key={c.path} className="flex w-36 flex-col gap-1">
@@ -316,23 +311,17 @@ export function PptxInvertAiPanel({ file, result }: { file: File; result: PptxIn
                 </li>
               ))}
             </ul>
-            <p data-testid="pptx-ai-send-count" className="text-sm text-neutral-800 dark:text-neutral-100">
-              送る画像：{candidates.length}枚（{file.name}の中の、白地に黒文字の画像を縮小したもの）。元のファイルそのものは送りません。
+            <p data-testid="pptx-ai-send-count" className="text-xs text-neutral-700 dark:text-neutral-200">
+              送る画像：{candidates.length}枚
             </p>
             {prepareNote && <p className="text-xs text-neutral-600 dark:text-neutral-300">{prepareNote}</p>}
-            <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-              <span aria-hidden="true" className="shrink-0 font-bold">!</span>
-              画像に写る内容は、すべてAIに送られます。個人情報や、公開できない内容（未公開のテスト問題など）が写っていないか確認してください。
-            </p>
           </div>
 
           <div className="flex flex-col gap-2">
-            <StepLabel n={2}>AIの種類を選ぶ</StepLabel>
             <TierPicker name="pptx-ai-tier" value={tier} onChange={setTier} standardTestId="pptx-ai-tier-standard" advancedTestId="pptx-ai-tier-advanced" advancedHint="小さい文字・細かい表向け" />
           </div>
 
           <div className="flex flex-col gap-2">
-            <StepLabel n={3}>同意して実行する</StepLabel>
             <ConsentBox testId="pptx-ai-consent" checked={consent} onChange={setConsent}>
               上の画像（{candidates.length}枚）を、AI（OpenAI）に送って、文字の位置を判断してもらうことに同意します
             </ConsentBox>
@@ -360,23 +349,13 @@ export function PptxInvertAiPanel({ file, result }: { file: File; result: PptxIn
 
       {judged && (
         <div data-testid="pptx-ai-result" className="flex flex-col gap-3 border-t border-violet-200 pt-4 dark:border-violet-800">
-          <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-            {judged.rows.length > 0
-              ? `AIの判断を使って反転しました（${judged.rows.length}枚の画像・文字の行${judged.lineCount}か所）`
-              : "AIが文字の位置を見つけられなかったため、通常の変換と同じ結果です"}
+          <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            {judged.rows.length > 0 ? "AIで反転しました" : "AIが文字を見つけられなかったため、通常の変換と同じ結果です"}
           </p>
-          {judged.notes.length > 0 && (
-            <ul className="list-disc pl-5 text-sm text-neutral-700 dark:text-neutral-200">
-              {judged.notes.map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-          )}
           {judged.rows.length > 0 && (
             <ul className="flex flex-col gap-4" data-testid="pptx-ai-compare">
               {judged.rows.map((r) => (
                 <li key={r.path} data-testid="pptx-ai-compare-row" className="flex flex-col gap-2 rounded-xl border border-violet-200 bg-white p-3 dark:border-violet-800 dark:bg-neutral-950">
-                  <p className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{r.label}</p>
                   <ImageCompare
                     items={[
                       { label: "通常の変換", bytes: r.normal, mime: r.mime, dark: true },
@@ -387,10 +366,7 @@ export function PptxInvertAiPanel({ file, result }: { file: File; result: PptxIn
               ))}
             </ul>
           )}
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            {judged.name}（{formatBytes(judged.blob.size)}）
-          </p>
-          <RewardedDownloadGate onDownload={() => downloadBlob(judged.blob, judged.name)} label="AIの判断で反転したPowerPointをダウンロード" />
+          <RewardedDownloadGate onDownload={() => downloadBlob(judged.blob, judged.name)} label="AI版のPowerPointをダウンロード" />
         </div>
       )}
     </div>

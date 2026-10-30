@@ -158,7 +158,6 @@ export function PdfMetadataRemoveTool() {
 
       {result && (
         <ResultPopup>
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">削除後の確認結果</p>
           {hasAnyRemainingValue ? (
             <ul className="flex flex-col gap-1 text-sm text-red-600 dark:text-red-400">
               {FIELD_LABELS.filter((f) => result.remainingMetadata[f.key]).map((f) => (

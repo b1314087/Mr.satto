@@ -3,6 +3,7 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Modal } from "@/components/ui/modal";
 import { PROCESSING_STATE_EVENT } from "@/lib/utils/result-events";
+import { busyHoldRemaining } from "@/lib/utils/busy-hold";
 
 /**
  * 完了ポップアップ（全ツール共通）。
@@ -32,7 +33,15 @@ export function ResultPopup({
   testId?: string;
 }) {
   const [open, setOpen] = useState(true);
+  // 処理が速く終わっても、ボタンの光を最低0.6秒は見せるため、その分だけ、出すのを待つ（src/lib/utils/busy-hold.ts）
+  const [waiting, setWaiting] = useState(() => busyHoldRemaining() > 0);
   const titleId = useId();
+
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setTimeout(() => setWaiting(false), busyHoldRemaining());
+    return () => clearTimeout(timer);
+  }, [waiting]);
 
   useEffect(() => {
     function handleSuccess(event: Event) {
@@ -43,6 +52,8 @@ export function ResultPopup({
   }, []);
 
   const close = () => setOpen(false);
+
+  if (waiting) return null;
 
   if (!open) {
     return (

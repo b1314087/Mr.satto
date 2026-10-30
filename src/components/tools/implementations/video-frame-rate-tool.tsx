@@ -281,14 +281,6 @@ export function VideoFrameRateTool() {
 
       {result && (
         <ResultPopup>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>
-              サイズ: {formatBytes(result.inputSizeBytes)} → {formatBytes(result.sizeBytes)}
-            </span>
-            <span>
-              フレームレート: 約{result.sourceFps.toFixed(1)}fps → {target}fps
-            </span>
-          </div>
           <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </ResultPopup>

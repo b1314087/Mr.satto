@@ -21,7 +21,7 @@ import {
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
 import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
 
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 /**
  * 動画メタデータ削除。
@@ -181,15 +181,6 @@ export function VideoMetadataRemoveTool() {
 
       {result && (
         <ResultPopup>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>
-              サイズ: {formatBytes(result.inputSizeBytes)} → {formatBytes(result.sizeBytes)}
-            </span>
-            <span>
-              解像度: {result.width}×{result.height}
-            </span>
-            <span>長さ: {result.durationSec.toFixed(1)}秒</span>
-          </div>
           <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </ResultPopup>

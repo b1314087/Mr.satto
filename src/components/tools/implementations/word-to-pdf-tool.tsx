@@ -122,32 +122,6 @@ export function WordToPdfTool() {
 
       {result && (
         <ResultPopup>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>ページ数: {result.pageCount}</span>
-            <span>段落数: {result.paragraphCount}</span>
-            <span>表: {result.tableCount}個</span>
-            <span>画像: {result.imageCount}個</span>
-            <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
-          </div>
-
-          <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            <svg
-              className="mt-0.5 h-4 w-4 shrink-0"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
-              />
-            </svg>
-            <span>複雑なレイアウトは元のWordと完全に一致しない場合があります。生成後のPDFを開いて内容をご確認ください。</span>
-          </div>
-
           {result.warnings.length > 0 && (
             <div className="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
               {result.warnings.map((w, i) => (

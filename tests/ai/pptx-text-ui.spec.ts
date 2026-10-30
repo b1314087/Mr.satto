@@ -112,9 +112,9 @@ test.describe("PowerPoint白黒反転: AIの判断で、きれいに反転する
 
     const panel = page.getByTestId("pptx-ai");
     await expect(panel).toBeVisible();
-    // 文字を本物の文字に書き換える機能は、ない（AIは判断だけ）
-    await expect(panel).toContainText("文字の書き換えや、画像の作り直しはしません");
+    // 文字を本物の文字に書き換える機能は、ない（AIは判断だけ）。長い説明は出さない
     await expect(panel).not.toContainText("本物の文字");
+    await expect(panel).not.toContainText("文字の書き換え");
     await expect(page.getByTestId("pptx-ai-apply")).toHaveCount(0);
     // 送る画像の確認
     await expect(page.getByTestId("pptx-ai-send-count")).toContainText("1枚");
@@ -141,7 +141,7 @@ test.describe("PowerPoint白黒反転: AIの判断で、きれいに反転する
     await expect(page.getByTestId("pptx-ai-consent")).not.toBeChecked();
 
     // 結果: 文字・数式の行（確度が低い行は使わない）= 2か所。通常の変換と、AIの判断ありを、大きく並べて見られる
-    await expect(result).toContainText("AIの判断を使って反転しました（1枚の画像・文字の行2か所）");
+    await expect(result).toContainText("AIで反転しました");
     const compare = page.getByTestId("pptx-ai-compare-row");
     await expect(compare).toHaveCount(1);
     for (const label of ["通常の変換", "AIの判断あり"]) {
@@ -153,7 +153,7 @@ test.describe("PowerPoint白黒反転: AIの判断で、きれいに反転する
     // ダウンロード: 文字のテキストボックスは増えていない（画像のまま）。AIへの追加の送信もない
     expect(mocks.aiBodies).toHaveLength(1);
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: "AIの判断で反転したPowerPointをダウンロード" }).click();
+    await page.getByRole("button", { name: "AI版のPowerPointをダウンロード" }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toContain("_AI判断.pptx");
     const parts = readParts(new Uint8Array(fs.readFileSync((await download.path())!)));

@@ -318,36 +318,10 @@ export function PdfToExcelTool() {
 
       {result && (
         <ResultPopup>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>検出ページ数: {result.pageCount}</span>
-            <span>検出行数: {result.totalRowCount}</span>
-            <span>ファイルサイズ: {(result.sizeBytes / 1024).toFixed(1)} KB</span>
-          </div>
 
-          {describeLayout(result.layout, options).length > 0 && (
-            <ul
-              data-testid="result-layout-notes"
-              className="flex list-disc flex-col gap-0.5 pl-5 text-xs text-emerald-700 dark:text-emerald-400"
-            >
-              {describeLayout(result.layout, options).map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          )}
 
           {result.usedOcr && (
-            <div className="flex items-start gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
-              <span>
-                スキャン画像のページ（
-                {result.pages
-                  .filter((p) => p.method === "ocr")
-                  .map((p) => p.pageNumber)
-                  .join(", ")}
-                ページ目）はOCRで読み取りました
-                {result.ocrAverageConfidence !== null && `（信頼度の目安 ${Math.round(result.ocrAverageConfidence)}%）`}
-                。誤読や列のずれがあり得るため、ダウンロード後に内容をご確認ください。
-              </span>
-            </div>
+            <p className="text-xs text-blue-800 dark:text-blue-300">スキャン画像はOCRで読み取りました。誤読や列のずれがあり得るため、内容をご確認ください。</p>
           )}
 
           {result.pages.some((p) => p.rowCount === 0) && (

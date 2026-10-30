@@ -20,7 +20,7 @@ import {
   thumbnailCanvasOptionsFor,
 } from "@/lib/video/shared";
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 const FORMAT_OPTIONS: { value: ThumbnailImageFormat; label: string }[] = [
   { value: "png", label: "PNG" },
@@ -289,13 +289,6 @@ export function VideoThumbnailTool() {
         <ResultPopup>
           {/* eslint-disable-next-line @next/next/no-img-element -- ブラウザ内で生成したObject URLのプレビューのため next/image は不要 */}
           <img src={result.url} alt="抽出したサムネイル" className="max-h-64 max-w-full rounded-lg border border-neutral-200 dark:border-neutral-800" />
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>
-              サイズ: {result.width}×{result.height}
-            </span>
-            <span>ファイルサイズ: {formatBytes(result.sizeBytes)}</span>
-            <span>時点: {formatTime(result.timestampSec)}</span>
-          </div>
           <RewardedDownloadGate onDownload={handleDownload} label="画像をダウンロード" />
         </ResultPopup>
       )}

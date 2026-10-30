@@ -269,15 +269,6 @@ export function VideoH264Tool() {
               ? `${videoCodecLabel(result.sourceCodec)} から H.264（AVC）へ再エンコードしました`
               : "すでにH.264だったため、再エンコードせずにMP4へ入れ直しました"}
           </p>
-          <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-            <span>
-              サイズ: {formatBytes(result.inputSizeBytes)} → {formatBytes(result.sizeBytes)}
-            </span>
-            <span>
-              解像度: {result.width}×{result.height}
-            </span>
-            <span>長さ: {result.durationSec.toFixed(1)}秒</span>
-          </div>
           <VideoOutputPlayer url={result.url} />
           <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
         </ResultPopup>

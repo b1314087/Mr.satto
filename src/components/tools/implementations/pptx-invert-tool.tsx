@@ -10,23 +10,11 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { featureFlags } from "@/lib/config/features";
 import { PptxInvertAiPanel } from "./pptx-invert-ai-panel";
 import { PptxInvertProcessor, type PptxInvertOutput } from "@/lib/processors/browser/pptx-invert";
-import type { ImageOutcome, ImageReport } from "@/lib/pptx/invert-pptx";
 import { DEFAULT_COLOR_CHOICE, PALETTE_PRESETS, contrastRatio, normalizeHex, presetOf, type ColorChoice } from "@/lib/pptx/palette";
-import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { downloadBlob } from "@/lib/utils/format";
 import { ImageCompare } from "./shared/image-compare";
 
 const ACCEPT = ".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation";
-
-const OUTCOME_LABEL: Record<ImageOutcome, string> = {
-  inverted: "白黒と判定 → 反転",
-  "inverted-gray": "白黒が中心 → 白黒部分だけ反転",
-  "kept-color": "カラーと判定 → そのまま",
-  "kept-transparent": "透明な画像 → そのまま",
-  unsupported: "この形式は反転できない → そのまま",
-  "too-large": "大きすぎる → そのまま",
-  failed: "読み込めない → そのまま",
-  "skipped-option": "画像は反転しない設定 → そのまま",
-};
 
 /** 色見本（背景色の上に、文字色で「Aa」を表示する） */
 function Swatch({ background, text, className = "" }: { background: string; text: string; className?: string }) {
@@ -130,29 +118,6 @@ function PaletteSelector({ colors, custom, onPreset, onCustom, onColors }: { col
         </p>
       )}
     </fieldset>
-  );
-}
-
-function ImageRow({ image }: { image: ImageReport }) {
-  const name = image.path.split("/").pop() ?? image.path;
-  return (
-    <li className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="pptx-image-row" data-outcome={image.outcome}>
-      <div className="min-w-0 text-xs">
-        <p className="break-all font-medium text-neutral-800 dark:text-neutral-100">{name}</p>
-        <p className="text-neutral-600 dark:text-neutral-300">{OUTCOME_LABEL[image.outcome]}{image.enhanced ? "（文字をくっきり調整）" : ""}{image.upscaled ? "（なめらかに2倍へ拡大）" : ""}</p>
-        {image.coloredRatio !== undefined && (
-          <p className="text-neutral-500 dark:text-neutral-400">
-            {image.width}×{image.height}px ／ 色のついた部分 {(image.coloredRatio * 100).toFixed(1)}%
-          </p>
-        )}
-      </div>
-      <ImageCompare
-        items={[
-          { label: "変換前", bytes: image.before, mime: image.mime },
-          { label: "変換後", bytes: image.after, mime: image.mime, dark: true },
-        ]}
-      />
-    </li>
   );
 }
 
@@ -268,54 +233,28 @@ export function PptxInvertTool() {
 
       {result && imageSummary && (
         <ResultPopup testId="tool-preview" size="lg">
-          <div className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-200" data-testid="pptx-applied-palette">
-            <Swatch background={result.report.colorChoice.background} text={result.report.colorChoice.text} />
-            <span>
-              適用した配色: 背景 #{result.report.colorChoice.background} ／ 文字 #{result.report.colorChoice.text}
-            </span>
+          {/* 結果の画面は、プレビューとダウンロードだけ。件数や判定の説明は、データ属性にだけ残す（自動テスト用） */}
+          <div
+            className="flex w-full flex-col gap-3"
+            data-testid="pptx-result"
+            data-slide-count={result.report.slideCount}
+            data-inverted-images={imageSummary.inverted}
+            data-total-images={imageSummary.total}
+            data-palette-background={result.report.colorChoice.background}
+            data-palette-text={result.report.colorChoice.text}
+            data-notes={result.report.notes.join(" / ")}
+          >
+            {result.report.images.map((img) => (
+              <div key={img.path} data-testid="pptx-image-row" data-outcome={img.outcome} data-image-name={img.path.split("/").pop() ?? img.path} className="w-full">
+                <ImageCompare
+                  items={[
+                    { label: "変換前", bytes: img.before, mime: img.mime },
+                    { label: "変換後", bytes: img.after, mime: img.mime, dark: true },
+                  ]}
+                />
+              </div>
+            ))}
           </div>
-          <dl className="grid w-full grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-            <div>
-              <dt className="text-neutral-500 dark:text-neutral-400">スライド数</dt>
-              <dd className="font-medium text-neutral-800 dark:text-neutral-100" data-testid="pptx-slide-count">{result.report.slideCount}</dd>
-            </div>
-            <div>
-              <dt className="text-neutral-500 dark:text-neutral-400">反転した色</dt>
-              <dd className="font-medium text-neutral-800 dark:text-neutral-100">{result.report.colors.inverted}か所</dd>
-            </div>
-            <div>
-              <dt className="text-neutral-500 dark:text-neutral-400">そのままの色</dt>
-              <dd className="font-medium text-neutral-800 dark:text-neutral-100">{result.report.colors.kept}か所</dd>
-            </div>
-            <div>
-              <dt className="text-neutral-500 dark:text-neutral-400">画像（反転／全体）</dt>
-              <dd className="font-medium text-neutral-800 dark:text-neutral-100">{imageSummary.inverted}／{imageSummary.total}</dd>
-            </div>
-          </dl>
-
-          {result.report.images.length > 0 && (
-            <div className="w-full">
-              <h3 className="mb-2 text-sm font-semibold text-neutral-800 dark:text-neutral-100">画像の判定</h3>
-              <ul className="flex flex-col gap-2">
-                {result.report.images.map((img) => (
-                  <ImageRow key={img.path} image={img} />
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {result.report.notes.length > 0 && (
-            <div className="w-full" data-testid="pptx-notes">
-              <h3 className="mb-1 text-sm font-semibold text-neutral-800 dark:text-neutral-100">確認してください</h3>
-              <ul className="list-disc pl-5 text-xs text-neutral-600 dark:text-neutral-300">
-                {result.report.notes.map((n) => (
-                  <li key={n}>{n}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">変換後: {result.suggestedName}（{formatBytes(result.sizeBytes)}）</p>
           <RewardedDownloadGate onDownload={handleDownload} label="PowerPointファイルをダウンロード" />
           {file && featureFlags.billing && <PptxInvertAiPanel key={runId} file={file} result={result} />}
         </ResultPopup>
