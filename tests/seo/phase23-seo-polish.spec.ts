@@ -174,7 +174,10 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
   test("relatedToolIds は少数に限られ、存在する利用可能なツールだけを指している（無関係なリンクを増やさない）", () => {
     const withPins = tools.filter((t) => t.relatedToolIds && t.relatedToolIds.length > 0);
     // 工程11: Office文書系（word-to-pdf / excel-to-pdf / pptx-invert）、工程12: PDF修正への導線（pdf-edit / 記入・注釈 / ページ番号 / 透かし / pdf-fix）
+    // 新プロジェクト工程3: Excelファイル結合（excel-merge）と、近い用途のCSV結合（csv-merge）を互いに案内
     expect(withPins.map((t) => t.id).sort()).toEqual([
+      "csv-merge",
+      "excel-merge",
       "excel-to-pdf",
       "pdf-add-page-numbers",
       "pdf-edit",

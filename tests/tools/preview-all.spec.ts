@@ -31,6 +31,7 @@ const CASES: [string, Input][] = [
   ...(["image-sns-size", "image-crop", "image-batch-convert", "image-format-convert", "image-rotate-flip", "image-to-pdf", "image-flip", "image-grayscale", "image-metadata-remove", "image-layout", "image-passport-photo", "image-padding-text", "image-tile-split", "image-mosaic", "image-resize", "image-compress", "image-rotate"] as const).map((id) => [id, img] as [string, Input]),
   ["image-merge", { kind: "file", files: [fixtures.png, fixtures.jpg] }],
   ["csv-merge", { kind: "file", files: [fixtures.csv, fixtures.csvForMerge] }],
+  ["excel-merge", { kind: "file", files: [fixtures.csv, fixtures.csvForMerge] }],
   ["csv-format", { kind: "text", text: "a, b ,c\n 1,2 ,3\n\n4,5,6" }],
   ["excel-label", { kind: "text", text: "山田太郎\n佐藤花子" }],
   // 表

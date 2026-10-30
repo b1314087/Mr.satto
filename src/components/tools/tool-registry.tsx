@@ -149,6 +149,10 @@ const CsvMergeTool = dynamic(() =>
   import("./implementations/csv-merge-tool").then((m) => m.CsvMergeTool),
   { loading: ToolLoading }
 );
+const ExcelMergeTool = dynamic(() =>
+  import("./implementations/excel-merge-tool").then((m) => m.ExcelMergeTool),
+  { loading: ToolLoading }
+);
 const CsvDedupeTool = dynamic(() =>
   import("./implementations/csv-dedupe-tool").then((m) => m.CsvDedupeTool),
   { loading: ToolLoading }
@@ -521,6 +525,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelCsvConvertTool initialMode="excel-to-csv" />;
     case "csv-merge":
       return <CsvMergeTool />;
+    case "excel-merge":
+      return <ExcelMergeTool />;
     case "csv-dedupe":
       return <CsvDedupeTool />;
     case "csv-replace":
