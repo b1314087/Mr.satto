@@ -879,6 +879,7 @@ export function FilledPdfToExcelTemplatePanel() {
             <button
               type="button"
               disabled={capturingFixedText}
+              aria-busy={capturingFixedText || undefined}
               onClick={() => void handleConfirmTemplate()}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
@@ -946,6 +947,7 @@ export function FilledPdfToExcelTemplatePanel() {
             <button
               type="button"
               disabled={!canRunExtraction}
+              aria-busy={isSubmittingExtraction || undefined}
               onClick={() => void handleRunExtraction()}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >

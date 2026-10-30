@@ -223,6 +223,7 @@ export function AiRunButton({
           type="button"
           data-testid={testId}
           disabled={disabled}
+          aria-busy={running || undefined}
           onClick={onClick}
           className="inline-flex min-w-48 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-base font-bold text-white shadow-sm transition-colors hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
         >
