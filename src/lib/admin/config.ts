@@ -23,8 +23,5 @@ export const adminConfig = {
   adminEmails: parseAdminEmails(process.env.ADMIN_EMAILS ?? ""),
 };
 
-/** このメールアドレスが管理者として登録されているか（大文字小文字を区別しない） */
-export function isAdminEmail(email: string | null): boolean {
-  if (!email) return false;
-  return adminConfig.adminEmails.includes(email.trim().toLowerCase());
-}
+// 管理者かどうかの判定は、メールアドレスの確認状態も見る src/lib/admin/access.ts の evaluateAdminAccess() だけを使うこと
+// （登録メールアドレスとの一致だけを見る関数は、メール未確認のアカウントを通してしまうため、置かない）。
