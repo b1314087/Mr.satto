@@ -725,6 +725,9 @@ test("receipt-accounting: 出力形式を選べる。freee向けCSVは必要項�
   const freeeRows = page.getByTestId("freee-row");
   await expect(freeeRows).toHaveCount(2); // 確認済みの2行だけ（未確認の行は出ない）
   await expect(freeeRows.nth(0)).toHaveAttribute("data-valid", "false");
+  // 取引先が「=」で始まる行にだけ、「'」を付けて出力する旨が出る
+  await expect(freeeRows.nth(1).getByTestId("freee-row-formula-note")).toContainText("先頭に");
+  await expect(freeeRows.nth(0).getByTestId("freee-row-formula-note")).toHaveCount(0);
   await expect(freeeRows.nth(0).getByTestId("freee-row-errors")).toContainText("勘定科目が入力されていません");
   await expect(freeeRows.nth(0).getByTestId("freee-row-errors")).toContainText("税区分が入力されていません");
 
@@ -833,4 +836,27 @@ plainTest("receipt-accounting: 無料プランでも、CSVのダウンロード�
   plainExpect(download.suggestedFilename()).toMatch(/\.csv$/);
   await plainExpect(page.getByTestId("download-gate-dialog")).toHaveCount(0);
   void context;
+});
+
+plainTest("receipt-accounting: 無料プランでも、freee向けCSVのダウンロード前に広告の確認画面を出さない（入力不足の間は出力できない）", async ({ page }) => {
+  plainTest.setTimeout(180_000);
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const pdfPath = path.join(dir, "ad-free-check-freee.pdf");
+  fs.writeFileSync(pdfPath, await buildTextPdf([RECEIPT_TEXT]));
+  await page.goto("/tools/receipt-accounting-csv");
+  await plainExpect(page.getByTestId("receipt-tool")).toBeVisible();
+  await uploadWhenReady(page, pdfPath, page.getByTestId("receipt-row").first(), { readyTimeoutMs: 60_000 });
+  await plainExpect(page.getByTestId("receipt-row")).toHaveCount(1, { timeout: 60_000 });
+  await page.getByTestId("receipt-confirm").click();
+  await page.getByTestId("receipt-format-freee").check();
+  await plainExpect(page.getByRole("button", { name: "CSVをダウンロード" })).toBeDisabled();
+  await page.getByTestId("freee-direction").selectOption("支出");
+  await page.getByTestId("freee-payment-mode").selectOption("unpaid");
+  await page.getByTestId("freee-account").fill("消耗品費");
+  await page.getByTestId("freee-tax").fill("課対仕入10%");
+  const downloadPromise = page.waitForEvent("download", { timeout: 15_000 });
+  await page.getByRole("button", { name: "CSVをダウンロード" }).click();
+  const download = await downloadPromise;
+  plainExpect(download.suggestedFilename()).toMatch(/^receipts-freee-\d{8}\.csv$/);
+  await plainExpect(page.getByTestId("download-gate-dialog")).toHaveCount(0);
 });

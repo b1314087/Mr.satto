@@ -197,3 +197,34 @@ test("freee-csv: 汎用CSVの出力は、freee対応を足しても変わらな�
   expect(buildGenericCsv(records)).toBe("﻿日付,取引先,合計金額\r\n2026/09/15,株式会社テスト商店,1320\r\n2026/09/16,'=SUM(A1:A2),500");
   expect(buildGenericCsv([])).toBeNull();
 });
+
+test("freee-csv: 数式対策の「'」は1回だけ付き、CSVの引用符と二重にならない（パースし直すと「'」が1つ）", () => {
+  const vendors = ["=1,2", '+A"B"', "-カンマ,店", "@SUM(1)", "'=すでに引用符", "=普通"];
+  const csv = buildFreeeCsv(vendors.map((v) => record({ vendor: v })), UNPAID)!;
+  const parsed = parseCsv(csv).slice(1).map((cells) => cells[5]);
+  expect(parsed).toEqual(["'=1,2", "'+A\"B\"", "'-カンマ,店", "'@SUM(1)", "'=すでに引用符", "'=普通"]);
+  // CSVの書式としては、カンマ・引用符を含む場合だけ全体を囲む
+  expect(csv).toContain(',"\'=1,2",');
+  expect(csv).toContain(',"\'+A""B""",');
+  // 数式対策は、パースした値の先頭が「'」になっていること（「=」「+」「-」「@」で始まるセルが残らない）で確認する
+  for (const cells of parseCsv(csv).slice(1)) {
+    for (const cell of cells) expect(/^[=+\-@\t\r]/.test(cell), cell).toBe(false);
+  }
+});
+
+test("freee-csv: 公式ヘルプのファイルサイズ上限（5MB）に、画面の上限（60件）の最悪ケースでも収まる", async () => {
+  const worst = record({ vendor: "あ".repeat(255), account: "い".repeat(255), taxCategory: "う".repeat(255), total: 999_999_999 });
+  const settings: FreeeSettings = { ...PAID, paymentAccount: "え".repeat(255) };
+  const blob = buildFreeeCsvBlob(Array.from({ length: 60 }, () => worst), settings)!;
+  expect(blob.size).toBeLessThan(5 * 1024 * 1024);
+  expect(blob.size).toBeGreaterThan(60 * 255 * 3 * 3); // 日本語は1文字3バイト。巨大な値でも切り捨てず出していること
+});
+
+test("freee-csv: 空欄・前後の空白・制御文字の扱い（取引先は整えた値、勘定科目・税区分も前後の空白は除く）", () => {
+  const out = resolveFreeeRow({ date: "2026-09-05", vendor: "店", total: 100 }, { account: "  消耗品費  ", taxCategory: "\t課対仕入10%\u200b" }, UNPAID);
+  expect(out.resolved).toMatchObject({ account: "消耗品費", taxCategory: "課対仕入10%" });
+  // 空白・制御文字だけの入力は、未入力として扱う
+  const blank = resolveFreeeRow({ date: "2026-09-05", vendor: "店", total: 100 }, { account: "\u200b", taxCategory: " " }, EMPTY_FREEE_SETTINGS);
+  expect(blank.resolved).toBeNull();
+  expect(blank.errors).toHaveLength(2);
+});

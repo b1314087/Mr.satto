@@ -946,6 +946,11 @@ export function ReceiptAccountingTool() {
                       />
                     </label>
                   </div>
+                  {neutralizeFormula(r.record.vendor) !== r.record.vendor && (
+                    <p data-testid="freee-row-formula-note" className="text-[11px] text-amber-700 dark:text-amber-300">
+                      この行の取引先は「=」「+」「-」「@」で始まるため、CSVでは先頭に「&apos;」を付けて出力します（freeeには「&apos;」も含めた名前で登録されます）。
+                    </p>
+                  )}
                   {r.errors.length > 0 && (
                     <ul data-testid="freee-row-errors" className="list-disc pl-5 text-xs text-red-700 dark:text-red-300">
                       {r.errors.map((e) => (
