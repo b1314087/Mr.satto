@@ -1,4 +1,5 @@
 import type { Tool } from "./types";
+import { TOOL_HANDOFF } from "@/lib/handoff/config";
 
 /**
  * 全ツールの一覧（データ駆動）。
@@ -1616,9 +1617,10 @@ const toolDefinitions: Tool[] = [
   },
 ];
 
-export const tools: Tool[] = ALL_TOOLS_STANDARD
-  ? toolDefinitions.map((t) => ({ ...t, requiredPlan: "standard" as const }))
-  : toolDefinitions;
+// ツール間のファイル受け渡しの設定（工程16）は src/lib/handoff/config.ts の1か所で決め、ここで各ツールに付ける
+export const tools: Tool[] = (
+  ALL_TOOLS_STANDARD ? toolDefinitions.map((t) => ({ ...t, requiredPlan: "standard" as const })) : toolDefinitions
+).map((t) => (TOOL_HANDOFF[t.id] ? { ...t, handoff: TOOL_HANDOFF[t.id] } : t));
 
 export function getToolById(id: string): Tool | undefined {
   return tools.find((t) => t.id === id);

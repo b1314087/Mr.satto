@@ -1339,6 +1339,7 @@ export function PdfFillAnnotateTool({
                 <FileDropzone
                   accept="image/png,image/jpeg,.png,.jpg,.jpeg"
                   maxSizeMB={PDF_FILL_ANNOTATE_LIMITS.maxImageSizeMB}
+                  acceptHandoff={false}
                   label="画像をドラッグ&ドロップ"
                   hint="PNG・JPEGに対応（1枚）"
                   onFilesSelected={(files) => void handleImageStage(files, false)}
@@ -1365,6 +1366,7 @@ export function PdfFillAnnotateTool({
                 <FileDropzone
                   accept="image/png,image/jpeg,.png,.jpg,.jpeg"
                   maxSizeMB={PDF_FILL_ANNOTATE_LIMITS.maxImageSizeMB}
+                  acceptHandoff={false}
                   label="印影画像をドラッグ&ドロップ"
                   hint="PNG・JPEGに対応（1枚、背景透過PNG推奨）"
                   onFilesSelected={(files) => void handleImageStage(files, true)}

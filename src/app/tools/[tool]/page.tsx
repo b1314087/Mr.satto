@@ -25,6 +25,8 @@ import { buildBreadcrumbList, buildFaqPage } from "@/lib/seo/structured-data";
 import { getToolSeoContent } from "@/lib/seo/tool-content";
 import { getCategorySeoContent } from "@/lib/seo/category-content";
 import { siteConfig } from "@/lib/config/site";
+import { ToolHandoffProvider } from "@/components/handoff/handoff-provider";
+import { buildHandoffPageProps } from "@/lib/handoff/page-props";
 
 interface ToolPageProps {
   params: Promise<{ tool: string }>;
@@ -166,6 +168,8 @@ export default async function ToolPage({ params }: ToolPageProps) {
   const mergedHub = tool.mergedInto ? getToolById(tool.mergedInto) : getMergedTools(tool.id).length > 0 ? tool : undefined;
   const mergedMembers = mergedHub ? getMergedTools(mergedHub.id) : [];
   const seo = isAvailable ? getToolSeoContent(tool.id) : undefined;
+  // 工程16：ほかのツールとのファイル受け渡し（設定は src/lib/handoff/config.ts）
+  const handoff = serverPlan ? buildHandoffPageProps(tool, serverPlan.plan) : null;
 
   const breadcrumbItems = [
     { name: "トップ", path: "/" },
@@ -206,19 +210,23 @@ export default async function ToolPage({ params }: ToolPageProps) {
           // （serverPlanは isAvailable のときのみ非nullだが、TypeScriptの型上は
           //   ここで明示的にチェックしておく必要がある）
           <CurrentPlanProvider plan={serverPlan.plan}>
-            <ToolImplementation toolId={tool.id} />
+            <ToolHandoffProvider {...handoff!}>
+              <ToolImplementation toolId={tool.id} />
+            </ToolHandoffProvider>
           </CurrentPlanProvider>
         ) : isAvailable && serverPlan ? (
           <CurrentPlanProvider plan={serverPlan.plan}>
-            <ToolAccessGate
-              toolId={tool.id}
-              requiredPlan={tool.requiredPlan}
-              plan={serverPlan.plan}
-              temporaryAccessActive={serverPlan.temporaryAccessActive}
-              temporaryAccessExpiresAtMs={serverPlan.temporaryAccessExpiresAtMs}
-            >
-              <ToolImplementation toolId={tool.id} />
-            </ToolAccessGate>
+            <ToolHandoffProvider {...handoff!}>
+              <ToolAccessGate
+                toolId={tool.id}
+                requiredPlan={tool.requiredPlan}
+                plan={serverPlan.plan}
+                temporaryAccessActive={serverPlan.temporaryAccessActive}
+                temporaryAccessExpiresAtMs={serverPlan.temporaryAccessExpiresAtMs}
+              >
+                <ToolImplementation toolId={tool.id} />
+              </ToolAccessGate>
+            </ToolHandoffProvider>
           </CurrentPlanProvider>
         ) : (
           <ComingSoon tool={tool} />

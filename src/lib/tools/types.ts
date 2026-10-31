@@ -6,6 +6,7 @@
  */
 
 import type { RequiredPlan } from "@/lib/plans/types";
+import type { ToolHandoffSpec } from "@/lib/handoff/types";
 
 /** どこで処理するか。将来 "auto" で条件に応じた自動切り替えも可能にする */
 export type ProcessorEngine = "browser" | "server" | "auto";
@@ -78,4 +79,9 @@ export interface Tool {
    * 各ツールのUI側でプラン判定を直接書かず、必ず canUseTool() 経由で判定すること。
    */
   requiredPlan: RequiredPlan;
+  /**
+   * ほかのツールとのファイル受け渡し（工程16）の設定。src/lib/handoff/config.ts の1か所で決め、
+   * ツール一覧（data.ts）の組み立て時にここへ入る。未設定のツールは、受け取りも送り出しもしない。
+   */
+  handoff?: ToolHandoffSpec;
 }

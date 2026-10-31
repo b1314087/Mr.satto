@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { matchesAccept } from "@/lib/utils/file-accept";
+import { useHandoffReceiver } from "@/components/handoff/handoff-provider";
 
 interface FileDropzoneProps {
   accept?: string;
@@ -10,34 +12,11 @@ interface FileDropzoneProps {
   hint?: string;
   onFilesSelected: (files: File[]) => void;
   onError?: (message: string) => void;
-}
-
-/**
- * `accept` に指定されたパターン（MIMEタイプ／"image/*"／".csv" のような拡張子）
- * のいずれかにファイルが一致するかを判定する。
- * ファイル選択ダイアログの `accept` 属性はドラッグ&ドロップには効かないため、
- * ドロップ時にも同じ判定を通すために使う。
- */
-function matchesAccept(file: File, accept: string): boolean {
-  const patterns = accept
-    .split(",")
-    .map((p) => p.trim().toLowerCase())
-    .filter(Boolean);
-  if (patterns.length === 0) return true;
-
-  const name = file.name.toLowerCase();
-  const type = (file.type || "").toLowerCase();
-
-  return patterns.some((pattern) => {
-    if (pattern.startsWith(".")) {
-      return name.endsWith(pattern);
-    }
-    if (pattern.endsWith("/*")) {
-      const prefix = pattern.slice(0, pattern.indexOf("/"));
-      return type.startsWith(`${prefix}/`);
-    }
-    return type === pattern;
-  });
+  /**
+   * ほかのツールから受け渡されたファイル（工程16）を、この欄で受け取るか。既定は受け取る。
+   * 受け取るのは、ページで最初に表示された1つの欄だけ。補助的な欄（ロゴ画像など）は false にする。
+   */
+  acceptHandoff?: boolean;
 }
 
 /**
@@ -49,6 +28,9 @@ function matchesAccept(file: File, accept: string): boolean {
  * 通すことで、形式チェック・サイズチェックを共通化している。
  * ここでの形式チェックは「明らかに対象外のファイルを早期に弾く」ためのもので、
  * 各Processor側のエラー処理を代替するものではない。
+ *
+ * ほかのツールから受け渡されたファイル（工程16、src/components/handoff/handoff-provider.tsx）も、
+ * 利用者が選んだときと同じ確認（形式・サイズ・数）を通してから onFilesSelected に渡す。
  */
 export function FileDropzone({
   accept,
@@ -58,40 +40,63 @@ export function FileDropzone({
   hint = "またはタップして選択",
   onFilesSelected,
   onError,
+  acceptHandoff = true,
 }: FileDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
 
-  const validateAndEmit = useCallback(
-    (fileList: ArrayLike<File> | null) => {
-      if (!fileList || fileList.length === 0) return;
-      const files = Array.from(fileList);
-
+  // 形式・サイズの確認。問題があれば利用者向けのメッセージを返す（選択・ドロップ・受け渡しで共通）
+  const findProblem = useCallback(
+    (files: File[]): string | null => {
       if (accept) {
         // ファイル選択ダイアログのaccept属性はドラッグ&ドロップには効かないため、
         // ここで両方の経路に共通のチェックをかける
         const unsupported = files.find((f) => !matchesAccept(f, accept));
         if (unsupported) {
-          onError?.(
-            `このファイル形式には対応していません（${unsupported.name}）。対応している形式のファイルを選択してください。`
-          );
-          return;
+          return `このファイル形式には対応していません（${unsupported.name}）。対応している形式のファイルを選択してください。`;
         }
       }
 
       const maxBytes = maxSizeMB * 1024 * 1024;
       const tooLarge = files.find((f) => f.size > maxBytes);
       if (tooLarge) {
-        onError?.(
-          `ファイルサイズが大きすぎます（上限 ${maxSizeMB}MB）。ファイルを確認してください。`
-        );
+        return `ファイルサイズが大きすぎます（上限 ${maxSizeMB}MB）。ファイルを確認してください。`;
+      }
+      return null;
+    },
+    [accept, maxSizeMB]
+  );
+
+  const validateAndEmit = useCallback(
+    (fileList: ArrayLike<File> | null) => {
+      if (!fileList || fileList.length === 0) return;
+      const files = Array.from(fileList);
+      const problem = findProblem(files);
+      if (problem) {
+        onError?.(problem);
         return;
       }
       onFilesSelected(multiple ? files : [files[0]]);
     },
-    [accept, maxSizeMB, multiple, onFilesSelected, onError]
+    [findProblem, multiple, onFilesSelected, onError]
   );
+
+  // ほかのツールから受け渡されたファイルがあれば、最初に表示された欄で1回だけ受け取る（工程16）
+  const handoff = useHandoffReceiver();
+  const hasPendingHandoff = acceptHandoff && handoff !== null && handoff.hasPending;
+  useEffect(() => {
+    if (!hasPendingHandoff || !handoff) return;
+    handoff.claim((files) => {
+      if (!multiple && files.length > 1) return "このツールは、ファイルを1つずつしか受け取れません。";
+      const problem = findProblem(files);
+      if (problem) return problem;
+      onFilesSelected(files);
+      return null;
+    });
+    // 受け取りは1回だけ（claim側でも二重に受け取らないよう守っている）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPendingHandoff]);
 
   const hintId = `${inputId}-hint`;
 

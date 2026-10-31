@@ -1,4 +1,5 @@
 import { runWithDownloadAccess } from "@/lib/download/download-gate";
+import { captureIfActive } from "@/lib/handoff/capture";
 
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -37,8 +38,12 @@ export function saveBlob(blob: Blob, filename: string) {
  * （src/lib/download/download-gate.ts、src/components/ads/download-gate-provider.tsx）。
  * それ以外（Standard/Premium、利用権あり、関所のないページ）は、従来どおりすぐに保存する。
  * 呼び出し側のAPI（引数・戻り値）は従来から変わらない。
+ *
+ * 「ほかのツールで使う」（工程16）で結果を受け取っている間だけは、保存せずに受け取り口へ渡す
+ * （src/lib/handoff/capture.ts）。受け渡しの実行時に、この関所と同じ広告の確認を通す。
  */
 export function downloadBlob(blob: Blob, filename: string) {
+  if (captureIfActive(blob, sanitizeFileName(filename))) return;
   runWithDownloadAccess({ key: blob, label: filename, run: () => saveBlob(blob, filename) });
 }
 

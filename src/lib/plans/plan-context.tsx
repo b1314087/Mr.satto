@@ -42,3 +42,12 @@ export function useShouldShowDownloadAds(): boolean {
   if (plan === null) return true;
   return shouldShowAds(plan);
 }
+
+/**
+ * 表示用に、サーバーで確定したプランを返す（Providerの外では null）。
+ * ツール間の受け渡し（工程16）で、使えないツールを受け渡し先の候補に出さないために使う。
+ * 利用可否そのものの判定は、送り先のページの ToolAccessGate が行う（ここでの結果を信用してアクセスを許可しない）。
+ */
+export function useCurrentPlan(): Plan | null {
+  return useContext(CurrentPlanContext);
+}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { DEFAULT_DOWNLOAD_ACCESS_MODE, type DownloadAccessMode } from "@/lib/download/types";
+import { HandoffSend } from "@/components/handoff/handoff-send";
 
 interface RewardedDownloadGateProps {
   /** 現時点では常に "free"。将来 "rewarded" / "premium" に切り替えられる */
@@ -59,6 +60,9 @@ function DownloadTriggerButton({
  *
  * 広告とダウンロードボタンは視覚的に分離し、
  * 広告をダウンロードボタンのように見せない（誤クリック防止）。
+ *
+ * 工程16：ダウンロードボタンの下に、全ツール共通の「ほかのツールで使う」（HandoffSend）を出す。
+ * 受け渡せる候補がないツールでは何も表示しない。受け渡しも、ダウンロードと同じ広告の確認を通す。
  */
 export function RewardedDownloadGate({
   mode = DEFAULT_DOWNLOAD_ACCESS_MODE,
@@ -78,7 +82,12 @@ export function RewardedDownloadGate({
   // 既に実現できているため、このmode切り替え自体は現時点では使用しない
   // （DEFAULT_DOWNLOAD_ACCESS_MODEは常に"free"。src/lib/download/types.ts参照）。
   if (mode === "premium") {
-    return <DownloadTriggerButton onClick={onDownload} label={label} disabled={disabled} />;
+    return (
+      <div className="flex flex-col items-center gap-3">
+        <DownloadTriggerButton onClick={onDownload} label={label} disabled={disabled} />
+        <HandoffSend onDownload={onDownload} disabled={disabled} />
+      </div>
+    );
   }
 
   // rewarded: リワード広告の視聴完了後にダウンロードを解除する
@@ -104,6 +113,7 @@ export function RewardedDownloadGate({
   return (
     <div className="flex flex-col items-center gap-3">
       <DownloadTriggerButton onClick={onDownload} label={label} disabled={disabled} />
+      <HandoffSend onDownload={onDownload} disabled={disabled} />
     </div>
   );
 }
