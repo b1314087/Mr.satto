@@ -686,6 +686,134 @@ test("receipt-accounting: スマートフォンの幅（390px）でも、横に�
 });
 
 // ---------------------------------------------------------------------------
+// 3-2. freee会計向けCSV（工程10）
+// ---------------------------------------------------------------------------
+const FREEE_HEADER_LINE =
+  "収支区分,管理番号,発生日,決済期日,取引先コード,取引先,勘定科目,税区分,金額,税計算区分,税額,備考,品目,部門,メモタグ（複数指定可、カンマ区切り）,セグメント1,セグメント2,セグメント3,決済日,決済口座,決済金額";
+
+test("receipt-accounting: 出力形式を選べる。freee向けCSVは必要項目を入力するまで出力できず、不足項目と直し方が出る。形式を切り替えても入力は消えない", async ({ page }) => {
+  await openTool(page);
+  const a = await makeImageFile(page, "fa.png", ["A"]);
+  const b = await makeImageFile(page, "fb.png", ["B"]);
+  const c = await makeImageFile(page, "fc.png", ["C"]);
+  await loadFiles(page, [a, b, c], 3);
+  await fillRow(page, 0, { date: "2026-09-15", vendor: "株式会社テスト商店", total: "1,320" });
+  await fillRow(page, 1, { date: "2026-09-16", vendor: "=SUM(A1:A2)", total: "500" });
+  await fillRow(page, 2, { date: "2026-09-17", vendor: 'カンマ,引用"符"店', total: "2000" });
+  const rows = page.getByTestId("receipt-row");
+  await rows.nth(0).getByTestId("receipt-confirm").click();
+  await rows.nth(1).getByTestId("receipt-confirm").click(); // 2行目（c）は未確認のまま
+
+  // 既定は汎用CSV（従来どおり）
+  await expect(page.getByTestId("receipt-format-generic")).toBeChecked();
+  await expect(page.getByTestId("receipt-export-preview")).toBeVisible();
+  await expect(page.getByTestId("freee-settings")).toHaveCount(0);
+
+  // freee向けに切り替える：説明が出て、必要な入力が足りないので出力できない
+  await page.getByTestId("receipt-format-freee").check();
+  await expect(page.getByTestId("freee-explain")).toContainText("取引データのインポート");
+  await expect(page.getByTestId("freee-explain")).toContainText("保証するものではありません");
+  await expect(page.getByTestId("freee-explain")).toContainText("推測しません");
+  await expect(page.getByTestId("freee-direction")).toHaveValue(""); // 初期値は空（推測して入れない）
+  await expect(page.getByTestId("freee-payment-mode")).toHaveValue("");
+  await expect(page.getByTestId("freee-account")).toHaveValue("");
+  await expect(page.getByTestId("freee-tax")).toHaveValue("");
+  await expect(page.getByTestId("freee-problems")).toContainText("収支区分を選んでください");
+  await expect(page.getByTestId("freee-problems")).toContainText("支払い状況を選んでください");
+  await expect(page.getByTestId("freee-blocked-note")).toContainText("まだ出力できません");
+  await expect(page.getByRole("button", { name: "CSVをダウンロード" })).toBeDisabled();
+  const freeeRows = page.getByTestId("freee-row");
+  await expect(freeeRows).toHaveCount(2); // 確認済みの2行だけ（未確認の行は出ない）
+  await expect(freeeRows.nth(0)).toHaveAttribute("data-valid", "false");
+  await expect(freeeRows.nth(0).getByTestId("freee-row-errors")).toContainText("勘定科目が入力されていません");
+  await expect(freeeRows.nth(0).getByTestId("freee-row-errors")).toContainText("税区分が入力されていません");
+
+  // 収支区分・支払い状況（未決済）を選んでも、勘定科目・税区分が空なら出力できない
+  await page.getByTestId("freee-direction").selectOption("支出");
+  await page.getByTestId("freee-payment-mode").selectOption("unpaid");
+  await expect(page.getByTestId("freee-problems")).toHaveCount(0);
+  await expect(page.getByTestId("freee-blocked-note")).toContainText("勘定科目・税区分が決まっていない行が2件");
+  await expect(page.getByRole("button", { name: "CSVをダウンロード" })).toBeDisabled();
+
+  // 勘定科目の先頭が数式になりうる文字のときは、理由つきのエラー
+  await page.getByTestId("freee-account").fill("=消耗品費");
+  await expect(freeeRows.nth(0).getByTestId("freee-row-errors")).toContainText("勘定科目の先頭に");
+  await page.getByTestId("freee-account").fill("消耗品費");
+  await page.getByTestId("freee-tax").fill("課対仕入10%");
+  await expect(freeeRows.nth(0)).toHaveAttribute("data-valid", "true");
+  await expect(page.getByTestId("freee-blocked-note")).toHaveCount(0);
+
+  // 行ごとの上書き
+  await freeeRows.nth(1).getByTestId("freee-row-account").fill("会議費");
+
+  // 汎用CSVへ戻しても、freeeの入力は残る。汎用CSVは従来どおり
+  await page.getByTestId("receipt-format-generic").check();
+  await expect(page.getByTestId("receipt-export-preview")).toContainText("株式会社テスト商店");
+  const generic = await clickAndDownload(page, "CSVをダウンロード");
+  expect(generic.suggestedFilename()).toMatch(/^receipts-\d{8}\.csv$/);
+  const { path: genericPath } = await assertDownloadedFile(generic, { minBytes: 20 });
+  expect(readCsv(genericPath)).toEqual(["日付,取引先,合計金額", "2026/09/15,株式会社テスト商店,1320", "2026/09/16,'=SUM(A1:A2),500"]);
+  await page.getByTestId("receipt-format-freee").check();
+  await expect(page.getByTestId("freee-direction")).toHaveValue("支出");
+  await expect(page.getByTestId("freee-account")).toHaveValue("消耗品費");
+  await expect(page.getByTestId("freee-tax")).toHaveValue("課対仕入10%");
+  await expect(freeeRows.nth(1).getByTestId("freee-row-account")).toHaveValue("会議費");
+
+  // 出力：公式サンプルと同じ見出し・列順。確認済みの2行だけ。未決済なので決済の3列は空
+  const freee = await clickAndDownload(page, "CSVをダウンロード");
+  expect(freee.suggestedFilename()).toMatch(/^receipts-freee-\d{8}\.csv$/);
+  const { path: freeePath } = await assertDownloadedFile(freee, { minBytes: 100 });
+  const raw = fs.readFileSync(freeePath);
+  expect([raw[0], raw[1], raw[2]]).toEqual([0xef, 0xbb, 0xbf]);
+  const text = raw.toString("utf8").replace(/^\ufeff/, "");
+  expect(text.endsWith("\n")).toBe(false);
+  expect(text.split("\r\n")).toEqual([
+    FREEE_HEADER_LINE,
+    "支出,,2026/09/15,,,株式会社テスト商店,消耗品費,課対仕入10%,1320,,,,,,,,,,,,",
+    "支出,,2026/09/16,,,'=SUM(A1:A2),会議費,課対仕入10%,500,,,,,,,,,,,,",
+  ]);
+
+  // 未確認だった行を確認済みにすると、引用符・カンマを含む取引先が、CSVの書式どおりに出る
+  await rows.nth(2).getByTestId("receipt-confirm").click();
+  await expect(freeeRows).toHaveCount(3);
+  await page.getByTestId("freee-payment-mode").selectOption("paid");
+  await expect(page.getByTestId("freee-problems")).toContainText("決済口座が入力されていません");
+  await expect(page.getByRole("button", { name: "CSVをダウンロード" })).toBeDisabled();
+  await page.getByTestId("freee-payment-account").fill("現金");
+  const freee2 = await clickAndDownload(page, "CSVをダウンロード");
+  const { path: freeePath2 } = await assertDownloadedFile(freee2, { minBytes: 100 });
+  const lines2 = fs.readFileSync(freeePath2, "utf8").replace(/^\ufeff/, "").split("\r\n");
+  expect(lines2).toHaveLength(4);
+  expect(lines2[1]).toBe("支出,,2026/09/15,,,株式会社テスト商店,消耗品費,課対仕入10%,1320,,,,,,,,,,2026/09/15,現金,1320");
+  expect(lines2[3]).toBe('支出,,2026/09/17,,,"カンマ,引用""符""店",消耗品費,課対仕入10%,2000,,,,,,,,,,2026/09/17,現金,2000');
+
+  // 確認済みを外して0件になると、freee向けでも出力できない
+  await page.getByRole("button", { name: "確認済みをすべて外す" }).click();
+  await expect(page.getByTestId("receipt-export-empty")).toBeVisible();
+  await expect(page.getByRole("button", { name: "CSVをダウンロード" })).toBeDisabled();
+});
+
+test("receipt-accounting: スマートフォンの幅（390px）でも、freee向けCSVの入力欄が横にはみ出さない", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/tools/receipt-accounting-csv");
+  await expect(page.getByTestId("receipt-tool")).toBeVisible();
+  await loadFiles(page, [files.textPdf], 2);
+  await page.getByTestId("receipt-row").first().getByTestId("receipt-confirm").click();
+  await page.getByTestId("receipt-format-freee").check();
+  await page.getByTestId("freee-payment-mode").selectOption("paid");
+  const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  await expect(page.getByTestId("freee-row")).toHaveCount(1);
+  await page.getByTestId("freee-account").scrollIntoViewIfNeeded();
+  expect(await overflow()).toBeLessThanOrEqual(1);
+  for (const id of ["freee-direction", "freee-payment-mode", "freee-payment-account", "freee-account", "freee-tax"]) {
+    const box = await page.getByTestId(id).boundingBox();
+    expect(box && box.x >= 0 && box.x + box.width <= 390, id).toBeTruthy();
+  }
+  const rowBox = await page.getByTestId("freee-row-account").boundingBox();
+  expect(rowBox && rowBox.x >= 0 && rowBox.x + rowBox.width <= 390).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
 // 4. 広告（工程9）：このツールでは、ダウンロード時の広告確認も出さない
 // ---------------------------------------------------------------------------
 plainTest("receipt-accounting: 無料プランでも、CSVのダウンロード前に広告の確認画面を出さない", async ({ page, context }) => {

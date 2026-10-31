@@ -6,6 +6,19 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { useUnsavedChangesWarning } from "@/components/tools/implementations/shared/use-unsaved-changes-warning";
 import { buildGenericCsvBlob, neutralizeFormula, type CsvRecord } from "@/lib/accounting/csv-generic";
+import {
+  EMPTY_FREEE_ROW_OVERRIDE,
+  EMPTY_FREEE_SETTINGS,
+  FREEE_TEXT_MAX_LENGTH,
+  buildFreeeCsvBlob,
+  resolveFreeeRow,
+  validateFreeeSettings,
+  type FreeeDirection,
+  type FreeePaymentMode,
+  type FreeeRecord,
+  type FreeeRowOverride,
+  type FreeeSettings,
+} from "@/lib/accounting/csv-freee";
 import { extractReceipt, formatDateSlash } from "@/lib/accounting/receipt-extract";
 import { checkReceiptFile, detectReceiptFileKind, type ReceiptFileKind } from "@/lib/accounting/receipt-file-kind";
 import {
@@ -44,6 +57,8 @@ interface DocRow {
   /** 確認済みにしようとして、検証に通らなかったときのエラー */
   attemptErrors: string[] | null;
 }
+
+type CsvFormat = "generic" | "freee";
 
 type JobStatus = "queued" | "reading" | "done" | "error";
 
@@ -107,6 +122,10 @@ export function ReceiptAccountingTool() {
   const [exportedSignature, setExportedSignature] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  // 出力形式と、freee向けCSVの入力。形式を切り替えても、どちらの入力も消えないよう、別々の状態として持つ
+  const [format, setFormat] = useState<CsvFormat>("generic");
+  const [freeeSettings, setFreeeSettings] = useState<FreeeSettings>(EMPTY_FREEE_SETTINGS);
+  const [freeeOverrides, setFreeeOverrides] = useState<Record<string, FreeeRowOverride>>({});
 
   const docsRef = useRef<DocRow[]>([]);
   const queueRef = useRef<QueueItem[]>([]);
@@ -294,12 +313,19 @@ export function ReceiptAccountingTool() {
     setExportedSignature(null);
     setExpandedId(null);
     setConfirmReset(false);
+    setFreeeOverrides({});
   }
 
   function deleteDoc(id: string) {
     const target = docsRef.current.find((d) => d.id === id);
     if (target) URL.revokeObjectURL(target.previewUrl);
     commitDocs((prev) => prev.filter((d) => d.id !== id));
+    setFreeeOverrides((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     if (expandedId === id) setExpandedId(null);
   }
 
@@ -335,19 +361,38 @@ export function ReceiptAccountingTool() {
   // 出力の対象：確認済みで、検証を通った行だけ
   const exportPlan = useMemo(() => {
     const records: CsvRecord[] = [];
+    const entries: { id: string; label: string; record: CsvRecord }[] = [];
     const problems: string[] = [];
     for (const d of docs) {
       if (!d.confirmed) continue;
       const result = validateRow(d.values, { today });
-      if (result.normalized) records.push(result.normalized);
-      else problems.push(`「${d.label}」：${result.errors.join(" ")}`);
+      if (result.normalized) {
+        records.push(result.normalized);
+        entries.push({ id: d.id, label: d.label, record: result.normalized });
+      } else problems.push(`「${d.label}」：${result.errors.join(" ")}`);
     }
-    return { records, problems };
+    return { records, entries, problems };
   }, [docs, today]);
+
+  // freee向けCSV：共通の設定と、確認済みの各行の勘定科目・税区分が、CSVに出せる状態かを調べる
+  const freeePlan = useMemo(() => {
+    const settingsProblems = validateFreeeSettings(freeeSettings);
+    const records: FreeeRecord[] = [];
+    const rows = exportPlan.entries.map((e) => {
+      const { errors, resolved } = resolveFreeeRow(e.record, freeeOverrides[e.id] ?? EMPTY_FREEE_ROW_OVERRIDE, freeeSettings);
+      if (resolved) records.push(resolved);
+      return { ...e, errors };
+    });
+    const rowProblemCount = rows.filter((r) => r.errors.length > 0).length;
+    return { settingsProblems, rows, records, rowProblemCount };
+  }, [exportPlan.entries, freeeSettings, freeeOverrides]);
 
   const confirmedCount = docs.filter((d) => d.confirmed).length;
   const unconfirmedCount = docs.length - confirmedCount;
-  const signature = JSON.stringify(exportPlan.records);
+  const signature =
+    format === "freee"
+      ? JSON.stringify({ f: "freee", records: exportPlan.records, settings: freeeSettings, rows: exportPlan.entries.map((e) => freeeOverrides[e.id] ?? null) })
+      : JSON.stringify(exportPlan.records);
   const needsExport = docs.length > 0 && (unconfirmedCount > 0 || exportedSignature !== signature);
   useUnsavedChangesWarning(needsExport);
 
@@ -355,21 +400,41 @@ export function ReceiptAccountingTool() {
   const activeJobs = jobs.filter((j) => j.status === "queued" || j.status === "reading");
   const doneJobs = jobs.filter((j) => j.status === "done");
 
+  const freeeBlocked =
+    format === "freee" && (freeePlan.settingsProblems.length > 0 || freeePlan.rowProblemCount > 0 || freeePlan.records.length !== exportPlan.records.length);
+
   function exportCsv() {
     setExportError(null);
     if (exportPlan.problems.length > 0) {
       setExportError("確認済みの行に、入力の不備があります。該当の行を直してください。");
       return;
     }
-    const blob = buildGenericCsvBlob(exportPlan.records);
+    let blob: Blob | null;
+    if (format === "freee") {
+      if (freeeBlocked) {
+        setExportError("freee向けCSVに必要な入力が足りません。上の赤い表示の項目を入力してください。");
+        return;
+      }
+      blob = buildFreeeCsvBlob(freeePlan.records, freeeSettings);
+    } else {
+      blob = buildGenericCsvBlob(exportPlan.records);
+    }
     if (!blob) {
       setExportError("確認済みのデータがありません。");
       return;
     }
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-    downloadBlob(blob, `receipts-${stamp}.csv`);
+    downloadBlob(blob, format === "freee" ? `receipts-freee-${stamp}.csv` : `receipts-${stamp}.csv`);
     setExportedSignature(signature);
+  }
+
+  function setFreee<K extends keyof FreeeSettings>(key: K, value: FreeeSettings[K]) {
+    setFreeeSettings((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function setFreeeOverride(id: string, key: keyof FreeeRowOverride, value: string) {
+    setFreeeOverrides((prev) => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY_FREEE_ROW_OVERRIDE), [key]: value } }));
   }
 
   return (
@@ -666,19 +731,158 @@ export function ReceiptAccountingTool() {
         <h2 id="receipt-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
           3. CSVを出力する
         </h2>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          確認済みにした行だけを、日付・取引先・合計金額のCSV（UTF-8・Excelで開けます）として保存します。書類に書かれた合計金額をそのまま出力し、税込・税抜は区別しません。勘定科目・税区分は含みません。
-          特定の会計ソフト専用の形式ではなく、会計ソフトへの取り込みを保証するものではありません。会計・税務の助言ではなく、電子帳簿保存法に対応した保存の仕組みでもありません。
-        </p>
+
+        <fieldset className="flex flex-col gap-2" data-testid="receipt-format">
+          <legend className="text-xs font-medium text-neutral-700 dark:text-neutral-200">出力する形式</legend>
+          <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-100">
+            <input
+              type="radio"
+              name="receipt-format"
+              data-testid="receipt-format-generic"
+              checked={format === "generic"}
+              onChange={() => setFormat("generic")}
+              className="mt-1"
+            />
+            <span>
+              汎用CSV（日付・取引先・合計金額）
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Excelなどで開いて使う、特定の会計ソフト専用ではない形式です。</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-100">
+            <input
+              type="radio"
+              name="receipt-format"
+              data-testid="receipt-format-freee"
+              checked={format === "freee"}
+              onChange={() => setFormat("freee")}
+              className="mt-1"
+            />
+            <span>
+              freee会計向けCSV（取引インポート用）
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                freee会計の「取引データのインポート」に使う形式です。収支区分・勘定科目・税区分などの入力が必要です。
+              </span>
+            </span>
+          </label>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">形式を切り替えても、入力した内容は消えません。</p>
+        </fieldset>
+
+        {format === "generic" ? (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            確認済みにした行だけを、日付・取引先・合計金額のCSV（UTF-8・Excelで開けます）として保存します。書類に書かれた合計金額をそのまま出力し、税込・税抜は区別しません。勘定科目・税区分は含みません。
+            特定の会計ソフト専用の形式ではなく、会計ソフトへの取り込みを保証するものではありません。会計・税務の助言ではなく、電子帳簿保存法に対応した保存の仕組みでもありません。
+          </p>
+        ) : (
+          <div data-testid="freee-explain" className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <p>
+              確認済みにした行だけを、freee会計の公式ヘルプに添付されている取引インポート用サンプルと同じ列・同じ順序のCSV（UTF-8・BOM付き）として保存します。保存したCSVは、freee会計の［取引入力］→［収入・支出形式］→右上の［…］→「取引データのインポート」から取り込みます。
+            </p>
+            <p>
+              金額は書類の合計金額（税込）をそのまま出し、税額・税計算区分は空欄にします（freeeが勘定科目と日付から計算します）。このツールは、勘定科目や税区分を書類の内容から推測しません。下の欄に、ご自身のfreeeに登録されている名前をそのまま入力してください。
+            </p>
+            <p>
+              このツールからfreeeへ直接登録することはなく、freeeへの取り込みが成功することを保証するものではありません（実際のfreeeでの取り込み確認はしていません）。取り込み前に、freeeの確認画面で内容を確かめてください。会計・税務の助言ではありません。
+            </p>
+          </div>
+        )}
+
         <p data-testid="receipt-export-count" className="text-sm text-neutral-700 dark:text-neutral-200">
           出力される書類：{exportPlan.records.length}件（確認済み {confirmedCount}件／未確認 {unconfirmedCount}件。未確認の行は出力されません）
         </p>
+
+        {format === "freee" && (
+          <fieldset className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="freee-settings">
+            <legend className="px-1 text-xs font-medium text-neutral-700 dark:text-neutral-200">freee向けの共通の入力（初期値はありません）</legend>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+                収支区分（必須）
+                <select
+                  data-testid="freee-direction"
+                  value={freeeSettings.direction}
+                  onChange={(e) => setFreee("direction", e.target.value as FreeeDirection)}
+                  className={inputClass}
+                >
+                  <option value="">選択してください</option>
+                  <option value="支出">支出（支払った領収書・レシート）</option>
+                  <option value="収入">収入（受け取った代金の領収書）</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+                支払い状況（必須）
+                <select
+                  data-testid="freee-payment-mode"
+                  value={freeeSettings.paymentMode}
+                  onChange={(e) => setFreee("paymentMode", e.target.value as FreeePaymentMode)}
+                  className={inputClass}
+                >
+                  <option value="">選択してください</option>
+                  <option value="paid">支払い済み（決済日は領収書の日付、決済金額は合計金額で出力）</option>
+                  <option value="unpaid">未決済（決済日・決済口座・決済金額は空欄で出力）</option>
+                </select>
+              </label>
+              {freeeSettings.paymentMode === "paid" && (
+                <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400 md:col-span-2">
+                  決済口座（支払い済みの場合は必須）
+                  <input
+                    type="text"
+                    data-testid="freee-payment-account"
+                    value={freeeSettings.paymentAccount}
+                    maxLength={FREEE_TEXT_MAX_LENGTH}
+                    placeholder="freeeに登録されている口座の名前"
+                    onChange={(e) => setFreee("paymentAccount", e.target.value)}
+                    className={inputClass}
+                  />
+                  <span className="text-[11px]">
+                    プライベートな資金で支払った場合は、freeeの公式ヘルプでは、個人事業主は「事業主借」、法人は「役員借入金」を指定するとされています。
+                  </span>
+                </label>
+              )}
+              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+                勘定科目（全行に使います。行ごとに変えることもできます）
+                <input
+                  type="text"
+                  data-testid="freee-account"
+                  value={freeeSettings.account}
+                  maxLength={FREEE_TEXT_MAX_LENGTH}
+                  placeholder="freeeに登録されている勘定科目の名前"
+                  onChange={(e) => setFreee("account", e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+                税区分（全行に使います。行ごとに変えることもできます）
+                <input
+                  type="text"
+                  data-testid="freee-tax"
+                  value={freeeSettings.taxCategory}
+                  maxLength={FREEE_TEXT_MAX_LENGTH}
+                  placeholder="freeeの税区分の名前"
+                  onChange={(e) => setFreee("taxCategory", e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+            </div>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+              勘定科目・税区分は、freeeに登録されている名前と同じでないと取り込めません。使える税区分は、事業者の区分・課税方式・取引の日付によって変わります（例：公式サンプルには「課対仕入10%」「課対仕入8%（軽）」などの表記が出ていますが、ご自身の設定で使えるとは限りません）。freeeの画面で確かめた名前を入力してください。勘定科目や税区分を、このツールが推測して入れることはありません。
+            </p>
+            {freeePlan.settingsProblems.length > 0 && (
+              <div data-testid="freee-problems" role="alert" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+                freee向けCSVを出力するには、次を入力してください：
+                <ul className="list-disc pl-5">
+                  {freeePlan.settingsProblems.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </fieldset>
+        )}
 
         {exportPlan.records.length === 0 ? (
           <p data-testid="receipt-export-empty" className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
             確認済みのデータがありません。上の一覧で、内容を確かめた行の「確認済みにする」を押すと、ここに出力内容が表示されます。
           </p>
-        ) : (
+        ) : format === "generic" ? (
           <div className="overflow-x-auto" data-testid="receipt-export-preview">
             <table className="w-full min-w-[20rem] border-collapse text-left text-xs">
               <thead>
@@ -699,10 +903,65 @@ export function ReceiptAccountingTool() {
               </tbody>
             </table>
           </div>
+        ) : (
+          <ul className="flex flex-col gap-2" data-testid="freee-export-preview">
+            {freeePlan.rows.map((r) => {
+              const override = freeeOverrides[r.id] ?? EMPTY_FREEE_ROW_OVERRIDE;
+              return (
+                <li
+                  key={r.id}
+                  data-testid="freee-row"
+                  data-valid={r.errors.length === 0 ? "true" : "false"}
+                  className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800"
+                >
+                  <p className="text-xs text-neutral-700 dark:text-neutral-200">
+                    <span className="font-medium">{formatDateSlash(r.record.date)}</span>　{r.record.vendor}　
+                    <span className="font-medium">{r.record.total.toLocaleString("ja-JP")}円</span>
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      勘定科目（空欄なら共通の入力を使います）
+                      <input
+                        type="text"
+                        data-testid="freee-row-account"
+                        aria-label={`${r.label}の勘定科目`}
+                        value={override.account}
+                        maxLength={FREEE_TEXT_MAX_LENGTH}
+                        placeholder={freeeSettings.account.trim() !== "" ? `共通：${freeeSettings.account}` : "未入力"}
+                        onChange={(e) => setFreeeOverride(r.id, "account", e.target.value)}
+                        className={inputClass}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      税区分（空欄なら共通の入力を使います）
+                      <input
+                        type="text"
+                        data-testid="freee-row-tax"
+                        aria-label={`${r.label}の税区分`}
+                        value={override.taxCategory}
+                        maxLength={FREEE_TEXT_MAX_LENGTH}
+                        placeholder={freeeSettings.taxCategory.trim() !== "" ? `共通：${freeeSettings.taxCategory}` : "未入力"}
+                        onChange={(e) => setFreeeOverride(r.id, "taxCategory", e.target.value)}
+                        className={inputClass}
+                      />
+                    </label>
+                  </div>
+                  {r.errors.length > 0 && (
+                    <ul data-testid="freee-row-errors" className="list-disc pl-5 text-xs text-red-700 dark:text-red-300">
+                      {r.errors.map((e) => (
+                        <li key={e}>{e}</li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
         {formulaGuarded > 0 && (
           <p data-testid="receipt-formula-note" className="text-xs text-neutral-500 dark:text-neutral-400">
-            取引先が「=」「+」「-」「@」で始まる{formulaGuarded}件は、Excelで数式として実行されないよう、CSVでは先頭に「&apos;」を付けて出力します。
+            取引先が「=」「+」「-」「@」で始まる{formulaGuarded}件は、Excelで数式として実行されないよう、CSVでは先頭に「&apos;」を付けて出力します
+            {format === "freee" ? "（freeeには、先頭の「'」も含めた名前で取引先が登録されます。取り込み後に直してください）。" : "。"}
           </p>
         )}
         {exportPlan.problems.length > 0 && (
@@ -715,12 +974,19 @@ export function ReceiptAccountingTool() {
             </ul>
           </div>
         )}
+        {format === "freee" && exportPlan.records.length > 0 && freeeBlocked && (
+          <p data-testid="freee-blocked-note" className="text-xs text-red-700 dark:text-red-300">
+            まだ出力できません。
+            {freeePlan.settingsProblems.length > 0 && "上の「freee向けCSVを出力するには」の項目を入力してください。"}
+            {freeePlan.rowProblemCount > 0 && `勘定科目・税区分が決まっていない行が${freeePlan.rowProblemCount}件あります（各行の赤い表示を確認してください）。`}
+          </p>
+        )}
         {exportError && <ErrorMessage message={exportError} />}
         <div>
           <RewardedDownloadGate
             onDownload={exportCsv}
             label="CSVをダウンロード"
-            disabled={exportPlan.records.length === 0 || exportPlan.problems.length > 0}
+            disabled={exportPlan.records.length === 0 || exportPlan.problems.length > 0 || freeeBlocked}
           />
         </div>
       </section>
