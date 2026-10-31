@@ -116,7 +116,7 @@ const PdfEditTool = dynamic(() =>
   import("./implementations/pdf-edit-tool").then((m) => m.PdfEditTool),
   { loading: ToolLoading }
 );
-// PDF修正（記入・注釈・白消し／ページ番号／透かし）。PDF編集の処理結果の引き継ぎ先（工程12）
+// PDF修正（記入・注釈・白消し／ページ番号／透かし）を1つの画面にまとめた総合ツール（工程12）
 const PdfFixTool = dynamic(() =>
   import("./implementations/pdf-fix-tool").then((m) => m.PdfFixTool),
   { loading: ToolLoading }

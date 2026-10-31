@@ -9,7 +9,6 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { OpenInPdfFixButton } from "@/components/tools/implementations/shared/open-in-pdf-fix-button";
 import { PdfPageCheckList } from "@/components/tools/implementations/shared/pdf-page-list";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
@@ -138,7 +137,6 @@ export function PdfDeletePagesTool({ initialFile = null, onFileChange }: SharedP
             {result.pageCount}ページ ・ {formatBytes(result.sizeBytes)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
-          <OpenInPdfFixButton blob={result.blob} fileName={downloadName} />
         </ResultPopup>
       )}
     </PreviewSplitLayout>

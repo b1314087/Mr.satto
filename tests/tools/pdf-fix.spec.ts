@@ -4,7 +4,6 @@ import path from "node:path";
 import { test as plainTest, expect as plainExpect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
-import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { fixtures } from "../fixtures/paths";
 import { clickAndDownload, assertDownloadedFile, waitForSuccess } from "../helpers/tool-runner";
 import { clickWhenReady, uploadWhenReady } from "../helpers/tool-ready";
@@ -17,17 +16,6 @@ import { PDF_FIX_MODES, PDF_FIX_TOOL_ID, PDF_FIX_TOOL_PATH } from "@/lib/tools/p
 import { toolSeoContent } from "@/lib/seo/tool-content";
 import { AVAILABLE_TOOL_IDS } from "@/lib/tools/registry";
 import {
-  PDF_HANDOFF_MAX_SIZE_MB,
-  PDF_HANDOFF_TTL_MS,
-  canHandoffPdfSize,
-  clearPdfHandoff,
-  hasPendingPdfHandoff,
-  offerPdfHandoff,
-  pdfBlobToFile,
-  takePdfHandoff,
-  validateHandoffFile,
-} from "@/lib/pdf/file-handoff";
-import {
   WHITEOUT_COLOR,
   WHITEOUT_NOTICE,
   isWhiteoutObject,
@@ -37,9 +25,10 @@ import type { AnnotationObject, RectangleShapeObject } from "@/lib/pdf-annotate/
 import sitemap from "@/app/sitemap";
 
 /**
- * 工程12：PDF修正（統合ツール）と、PDF編集からのファイル引き継ぎのテスト。
- *  - 前半: ツール登録・一覧・関連リンク・sitemap・SEO・引き継ぎ部品（メモリ上の受け渡し）・白消し部品
- *  - 後半: 画面（機能の切り替え・白消しと書き直し・ページ番号・PDF編集の処理結果の引き継ぎ・再読み込み・送信/保存がないこと）
+ * 工程12：PDF修正（統合ツール）のテスト。
+ *  - 前半: ツール登録・一覧・関連リンク・sitemap・SEO・白消し部品
+ *  - 後半: 画面（機能の切り替え・白消しと書き直し・ページ番号・PDFの選び直し）
+ * 工程15：PDF編集→PDF修正の個別の引き継ぎ（「この結果をPDF修正で開く」）を撤去した。撤去が残っていないことも確かめる。
  */
 
 const CANVAS = '[data-testid="pdf-annotate-canvas"]';
@@ -72,7 +61,7 @@ plainTest.describe("PDF修正: ツール登録・SEO・既存URLの維持", () =
     plainExpect(new Set(PDF_FIX_MODES.map((m) => m.mode)).size).toBe(PDF_FIX_MODES.length);
   });
 
-  plainTest("SEO文言：タイトル・説明・白消しの注意・引き継ぎの説明がある", () => {
+  plainTest("SEO文言：タイトル・説明・白消しの注意がある。撤去した引き継ぎの説明は残っていない（工程15）", () => {
     const seo = toolSeoContent[PDF_FIX_TOOL_ID];
     plainExpect(seo.metaTitle.startsWith("PDF修正")).toBe(true);
     const faqText = seo.faq.map((f) => `${f.question}${f.answer}`).join("\n");
@@ -81,10 +70,13 @@ plainTest.describe("PDF修正: ツール登録・SEO・既存URLの維持", () =
     plainExpect(faqText).toContain("元の文字情報がファイル内に残る場合があり");
     plainExpect(faqText).toContain("機密情報を完全に削除する機能ではありません");
     plainExpect(answerText).not.toMatch(/完全に(消え|削除され)ます/);
-    plainExpect(faqText).toContain("この結果をPDF修正で開く");
-    plainExpect(faqText).toContain("元のファイルではありません");
-    plainExpect(faqText).toContain("サーバーへの送信や保存はありません");
     plainExpect(seo.howTo.join("\n")).toContain("上限50MB");
+    // 撤去した「この結果をPDF修正で開く」の案内が、PDF修正・PDF編集のどちらのSEO文にも残っていない
+    for (const id of [PDF_FIX_TOOL_ID, "pdf-edit"]) {
+      const all = JSON.stringify(toolSeoContent[id]);
+      plainExpect(all, id).not.toContain("PDF修正で開く");
+      plainExpect(all, id).not.toContain("ダウンロードせずに");
+    }
     // 既存ツールのSEOにも、白消しの注意と案内が入っている
     plainExpect(JSON.stringify(toolSeoContent["pdf-fill-annotate"].faq)).toContain("白消し");
     plainExpect(JSON.stringify(toolSeoContent["pdf-edit"].faq)).toContain("PDF修正");
@@ -114,93 +106,8 @@ plainTest.describe("PDF修正: ツール登録・SEO・既存URLの維持", () =
 });
 
 // ---------------------------------------------------------------------------
-// 2. 引き継ぎ部品（メモリ上の受け渡し）・白消し部品
+// 2. 白消し部品
 // ---------------------------------------------------------------------------
-function pdfFile(name = "result.pdf", bytes = 100): File {
-  return new File([new Uint8Array(bytes)], name, { type: "application/pdf" });
-}
-
-plainTest.describe("ファイル引き継ぎ部品（file-handoff）", () => {
-  plainTest.beforeEach(() => clearPdfHandoff());
-  plainTest.afterEach(() => clearPdfHandoff());
-
-  plainTest("1回だけ受け取れ、受け取ると空になる（意図しない再利用がない）", () => {
-    offerPdfHandoff(pdfFile("a.pdf"), "PDF編集", PDF_FIX_TOOL_ID);
-    plainExpect(hasPendingPdfHandoff()).toBe(true);
-    const first = takePdfHandoff(PDF_FIX_TOOL_ID);
-    plainExpect(first?.file.name).toBe("a.pdf");
-    plainExpect(first?.sourceLabel).toBe("PDF編集");
-    plainExpect(hasPendingPdfHandoff()).toBe(false);
-    plainExpect(takePdfHandoff(PDF_FIX_TOOL_ID)).toBeNull();
-  });
-
-  plainTest("宛先が違うツールは受け取れず、引き継ぎも消えない", () => {
-    offerPdfHandoff(pdfFile(), "PDF編集", PDF_FIX_TOOL_ID);
-    plainExpect(takePdfHandoff("pdf-compress")).toBeNull();
-    plainExpect(hasPendingPdfHandoff()).toBe(true);
-    plainExpect(takePdfHandoff(PDF_FIX_TOOL_ID)).not.toBeNull();
-  });
-
-  plainTest("期限切れの引き継ぎは破棄され、受け取れない", () => {
-    offerPdfHandoff(pdfFile(), "PDF編集", PDF_FIX_TOOL_ID);
-    plainExpect(takePdfHandoff(PDF_FIX_TOOL_ID, Date.now() + PDF_HANDOFF_TTL_MS + 1000)).toBeNull();
-    plainExpect(hasPendingPdfHandoff()).toBe(false);
-  });
-
-  plainTest("新しい引き継ぎは古い引き継ぎを置き換える（取り違えない）", () => {
-    offerPdfHandoff(pdfFile("old.pdf"), "PDF編集", PDF_FIX_TOOL_ID);
-    offerPdfHandoff(pdfFile("new.pdf"), "PDF編集", PDF_FIX_TOOL_ID);
-    plainExpect(takePdfHandoff(PDF_FIX_TOOL_ID)?.file.name).toBe("new.pdf");
-    plainExpect(takePdfHandoff(PDF_FIX_TOOL_ID)).toBeNull();
-  });
-
-  plainTest("受け取り側の確認：PDF以外・空・上限超過は拒否し、通常のPDFは通す", () => {
-    plainExpect(validateHandoffFile(pdfFile("ok.pdf"))).toBeNull();
-    plainExpect(validateHandoffFile(new File([new Uint8Array(10)], "ok2.PDF", { type: "" }))).toBeNull();
-    plainExpect(validateHandoffFile(new File([new Uint8Array(10)], "a.png", { type: "image/png" }))).toContain("PDFではありません");
-    plainExpect(validateHandoffFile(pdfFile("empty.pdf", 0))).toContain("空");
-    const big = { name: "big.pdf", type: "application/pdf", size: (PDF_HANDOFF_MAX_SIZE_MB + 1) * 1024 * 1024 } as File;
-    plainExpect(validateHandoffFile(big)).toContain(`${PDF_HANDOFF_MAX_SIZE_MB}MB`);
-  });
-
-  plainTest("引き継ぎ元の事前確認（工程17）：上限ちょうどまでは渡せる。0・上限超過・数値でないサイズは渡せない。受け取り側と同じ基準", () => {
-    const max = PDF_HANDOFF_MAX_SIZE_MB * 1024 * 1024;
-    plainExpect(canHandoffPdfSize(1)).toBe(true);
-    plainExpect(canHandoffPdfSize(max)).toBe(true);
-    plainExpect(canHandoffPdfSize(max + 1)).toBe(false);
-    plainExpect(canHandoffPdfSize(0)).toBe(false);
-    plainExpect(canHandoffPdfSize(-1)).toBe(false);
-    plainExpect(canHandoffPdfSize(Number.NaN)).toBe(false);
-    plainExpect(canHandoffPdfSize(Number.POSITIVE_INFINITY)).toBe(false);
-    // 事前確認を通る境界のファイルは、受け取り側でも通る。超えるものは、受け取り側でも断られる（確認は残っている）
-    plainExpect(validateHandoffFile({ name: "edge.pdf", type: "application/pdf", size: max } as File)).toBeNull();
-    plainExpect(validateHandoffFile({ name: "over.pdf", type: "application/pdf", size: max + 1 } as File)).toContain(`${PDF_HANDOFF_MAX_SIZE_MB}MB`);
-  });
-
-  plainTest("処理結果のBlobは、指定したファイル名のPDFファイルになる", async () => {
-    const file = pdfBlobToFile(new Blob([new Uint8Array([1, 2, 3])]), "doc-rotated.pdf");
-    plainExpect(file.name).toBe("doc-rotated.pdf");
-    plainExpect(file.type).toBe("application/pdf");
-    plainExpect(file.size).toBe(3);
-  });
-
-  plainTest("プライバシー：引き継ぎ部品は通信・永続保存・URLを使わない", () => {
-    const src = fs.readFileSync(path.join(process.cwd(), "src/lib/pdf/file-handoff.ts"), "utf-8");
-    // コメント行を除いて確認する
-    const code = src
-      .split("\n")
-      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
-      .join("\n");
-    for (const forbidden of ["localStorage", "sessionStorage", "indexedDB", "document.cookie", "fetch(", "XMLHttpRequest", "sendBeacon", "location", "console."]) {
-      plainExpect(code, forbidden).not.toContain(forbidden);
-    }
-    const button = fs.readFileSync(path.join(process.cwd(), "src/components/tools/implementations/shared/open-in-pdf-fix-button.tsx"), "utf-8");
-    plainExpect(button).toContain("router.push(PDF_FIX_TOOL_PATH)");
-    // 遷移先のURLにファイル名・内容を付けない（クエリ・フラグメントなし）
-    plainExpect(PDF_FIX_TOOL_PATH).not.toMatch(/[?#]/);
-  });
-});
-
 plainTest.describe("白消し部品", () => {
   const rect = (over: Partial<RectangleShapeObject> = {}): RectangleShapeObject => ({
     id: "r1",
@@ -276,22 +183,6 @@ async function openFix(page: Page) {
 async function openAnnotateWithPdf(page: Page, fixture: string) {
   await openFix(page);
   await uploadWhenReady(page, fixture, page.locator(CANVAS), { readyTimeoutMs: 25_000 });
-}
-
-/** PDF編集で、2ページのPDFを回転し、「PDF修正で開く」まで進める。回転済みの結果ファイル名（-rotated）を返す */
-async function rotateInEditAndOpenInFix(page: Page, sourceName: string): Promise<void> {
-  const src = workPath(sourceName);
-  await writeSequentialPdf(src, 2);
-  // 開発サーバーは操作画面の部品を初めて読み込むときに一瞬失敗することがあるため、先に1度開いて読み込んでおく
-  await page.goto("/tools/pdf-rotate");
-  await expect(page.locator('input[type="file"]').first()).toBeAttached({ timeout: 30_000 });
-  await expect(page.getByTestId("pdf-edit-modes")).toBeVisible({ timeout: 25_000 });
-  await uploadWhenReady(page, src, page.getByRole("button", { name: "回転する" }), { readyTimeoutMs: 25_000 });
-  await clickWhenReady(page.getByRole("button", { name: "回転する" }), { expectAfter: page.getByText("回転が完了しました") });
-  const open = page.getByTestId("open-in-pdf-fix");
-  await expect(open).toBeVisible();
-  await open.click();
-  await expect(page).toHaveURL(/\/tools\/pdf-fix$/, { timeout: 25_000 });
 }
 
 test.describe("PDF修正: 画面と機能", () => {
@@ -407,112 +298,6 @@ test.describe("PDF修正: 画面と機能", () => {
   });
 });
 
-test.describe("PDF修正: PDF編集の処理結果の引き継ぎ", () => {
-  test("PDF編集の処理結果（元ファイルではない）がPDF修正に読み込まれ、そのまま修正できる", async ({ page }) => {
-    await rotateInEditAndOpenInFix(page, "seq.pdf");
-
-    // ファイル名と、PDF編集の処理結果であることが表示される
-    const banner = page.getByTestId("pdf-fix-handoff-banner");
-    await expect(banner).toBeVisible({ timeout: 25_000 });
-    await expect(banner).toContainText("PDF編集の処理結果");
-    await expect(banner).toContainText("元のファイルではなく");
-    await expect(page.getByTestId("pdf-fix-handoff-filename")).toHaveText("seq-rotated.pdf");
-    // 再アップロードなしで、すでにPDFが読み込まれている
-    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
-
-    // ページ番号の機能に切り替えても、そのまま使える。出力は「回転済み」＝処理結果であることを確認する
-    await modeButton(page, "page-numbers").click();
-    await clickWhenReady(page.getByRole("button", { name: "ページ番号を追加する" }), { expectAfter: page.getByText("追加が完了しました") });
-    const download = await clickAndDownload(page, /^ダウンロード$/);
-    const saved = workPath("fixed.pdf");
-    await download.saveAs(saved);
-    // 元のPDFは回転なし。回転済みの処理結果を引き継いでいれば、全ページの/Rotateが90になる
-    const { PDFDocument } = await import("pdf-lib");
-    const doc = await PDFDocument.load(fs.readFileSync(saved), { updateMetadata: false });
-    expect(doc.getPageCount()).toBe(2);
-    for (const p of doc.getPages()) expect(p.getRotation().angle).toBe(90);
-    // ダウンロード名は引き継ぎ後のファイル名をもとにする
-    expect(download.suggestedFilename()).toContain("seq-rotated");
-  });
-
-  test("「別のファイルを選ぶ」で引き継いだPDFを外し、通常のファイル選択から始められる", async ({ page }) => {
-    await rotateInEditAndOpenInFix(page, "seq2.pdf");
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toBeVisible({ timeout: 25_000 });
-    await page.getByTestId("pdf-fix-choose-another").click();
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toHaveCount(0);
-    await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible();
-    await expect(page.locator(CANVAS)).toHaveCount(0);
-  });
-
-  test("再読み込みすると引き継ぎは残らず、空の状態から通常どおり始められる（永続保存なし）", async ({ page }) => {
-    await rotateInEditAndOpenInFix(page, "seq3.pdf");
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toBeVisible({ timeout: 25_000 });
-    await page.reload();
-    await expect(page.getByTestId("pdf-fix-modes")).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toHaveCount(0);
-    await expect(page.getByTestId("pdf-fix-handoff-error")).toHaveCount(0);
-    await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible();
-    await expect(page.locator(CANVAS)).toHaveCount(0);
-    // 通常のファイル選択は動く
-    await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS), { readyTimeoutMs: 25_000 });
-  });
-
-  test("引き継ぎは1回だけ：PDF編集へ戻ってからPDF修正を開き直しても、前のファイルは読み込まれない", async ({ page }) => {
-    await rotateInEditAndOpenInFix(page, "seq4.pdf");
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toBeVisible({ timeout: 25_000 });
-    await page.goBack();
-    await expect(page.getByTestId("pdf-edit-modes")).toBeVisible({ timeout: 25_000 });
-    // 画面内のリンクで開き直す（ページ全体の再読み込みなし）。回転の個別ページ → PDF編集 → PDF修正（関連ツール）の順に移動する
-    await page.locator('main a[href="/tools/pdf-edit"]').first().click();
-    await expect(page).toHaveURL(/\/tools\/pdf-edit$/, { timeout: 25_000 });
-    await page.locator('main a[href="/tools/pdf-fix"]').first().click();
-    await expect(page).toHaveURL(/\/tools\/pdf-fix$/, { timeout: 25_000 });
-    await expect(page.getByTestId("pdf-fix-modes")).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toHaveCount(0);
-    await expect(page.locator(CANVAS)).toHaveCount(0);
-  });
-
-  test("プライバシー：引き継ぎ中にPDFが送信されず、ストレージ・Cookie・URLにも残らない", async ({ page, baseURL }) => {
-    const recorder = new NetworkRecorder(page);
-    await rotateInEditAndOpenInFix(page, "private-name.pdf");
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toBeVisible({ timeout: 25_000 });
-    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
-
-    const origin = new URL(baseURL!).origin;
-    const apiLeaks = findSuspiciousApiUploads(recorder, origin, ["/api/stripe"]);
-    const externalLeaks = findSuspiciousExternalUploads(recorder, origin);
-    expect(apiLeaks, `自社APIへの不審なアップロード: ${JSON.stringify(apiLeaks)}`).toEqual([]);
-    expect(externalLeaks, `外部への不審なアップロード: ${JSON.stringify(externalLeaks)}`).toEqual([]);
-
-    // URLにファイル名・内容がない
-    expect(new URL(page.url()).search).toBe("");
-    expect(new URL(page.url()).hash).toBe("");
-    // localStorage / sessionStorage / IndexedDB / Cookie にファイル名・内容が保存されていない
-    const stored = await page.evaluate(async () => {
-      const dump: Record<string, string> = {};
-      for (const [name, store] of [["local", window.localStorage], ["session", window.sessionStorage]] as const) {
-        try {
-          dump[name] = JSON.stringify(Object.fromEntries(Object.entries(store)));
-        } catch {
-          dump[name] = "";
-        }
-      }
-      dump.cookie = document.cookie;
-      try {
-        const dbs = (await indexedDB.databases?.()) ?? [];
-        dump.idb = JSON.stringify(dbs.map((d) => d.name));
-      } catch {
-        dump.idb = "";
-      }
-      return dump;
-    });
-    for (const [where, value] of Object.entries(stored)) {
-      expect(value, `${where}にファイル名が残っている`).not.toContain("private-name");
-      expect(value, `${where}にPDFの内容が残っている`).not.toContain("%PDF");
-    }
-  });
-});
-
 test.describe("PDF修正: 機能を切り替えるときの確認（工程17）", () => {
   test("編集がないときは、確認なしで切り替えられる", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.singlePagePdf);
@@ -585,46 +370,7 @@ test.describe("PDF修正: 機能を切り替えるときの確認（工程17）"
   });
 });
 
-test.describe("PDF修正への引き継ぎボタン: 50MBを超える結果の扱い（工程17）", () => {
-  /** 回転の結果を、指定サイズのPDFとして扱わせる（巨大ファイルを作らず、サイズの表示値だけを差し替える）。選択済みのPDF自体には影響しない */
-  async function rotateWithFakeResultSize(page: Page, sizeBytes: number): Promise<void> {
-    const src = workPath("fake-size.pdf");
-    await writeSequentialPdf(src, 2);
-    await page.goto("/tools/pdf-rotate");
-    await expect(page.locator('input[type="file"]').first()).toBeAttached({ timeout: 30_000 });
-    await expect(page.getByTestId("pdf-edit-modes")).toBeVisible({ timeout: 25_000 });
-    await uploadWhenReady(page, src, page.getByRole("button", { name: "回転する" }), { readyTimeoutMs: 25_000 });
-    // ファイルを選び終えたあとに、「これから作られる結果」のサイズだけを差し替える
-    await page.evaluate((fake) => {
-      const proto = Blob.prototype;
-      const real = Object.getOwnPropertyDescriptor(proto, "size")!.get!;
-      Object.defineProperty(proto, "size", {
-        configurable: true,
-        get() {
-          const actual = real.call(this);
-          // 選んだファイル（File）には触れず、処理結果のBlobだけを対象にする
-          return !(this instanceof File) && (this as Blob).type === "application/pdf" && actual > 0 ? fake : actual;
-        },
-      });
-    }, sizeBytes);
-    await clickWhenReady(page.getByRole("button", { name: "回転する" }), { expectAfter: page.getByText("回転が完了しました") });
-  }
-
-  test("50MBを超える結果：引き継ぎボタンは出ず、理由が案内される（ダウンロードは使える）", async ({ page }) => {
-    await rotateWithFakeResultSize(page, 50 * 1024 * 1024 + 1);
-    await expect(page.getByTestId("open-in-pdf-fix")).toHaveCount(0);
-    await expect(page.getByTestId("open-in-pdf-fix-unavailable")).toContainText("50MBを超えている");
-    await expect(page.getByRole("button", { name: /ダウンロード/ }).first()).toBeVisible();
-  });
-
-  test("ちょうど50MBの結果：従来どおり引き継ぎボタンが出る", async ({ page }) => {
-    await rotateWithFakeResultSize(page, 50 * 1024 * 1024);
-    await expect(page.getByTestId("open-in-pdf-fix")).toBeVisible();
-    await expect(page.getByTestId("open-in-pdf-fix-unavailable")).toHaveCount(0);
-  });
-});
-
-test.describe("PDF修正: PDFの選び直し・「別のファイルを選ぶ」での編集の保護（工程18）", () => {
+test.describe("PDF修正: PDFの選び直しでの編集の保護（工程18）", () => {
   const pickAnother = (page: Page, file: string) => page.locator('input[type="file"]').first().setInputFiles(file);
 
   test("記入・注釈：編集がないときは、確認なしで別のPDFに切り替わる", async ({ page }) => {
@@ -665,48 +411,59 @@ test.describe("PDF修正: PDFの選び直し・「別のファイルを選ぶ」
     await expect(page.getByText(/multi-page\.pdf/).first()).toBeVisible({ timeout: 25_000 });
     await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
   });
+});
 
-  test("「別のファイルを選ぶ」：編集があると確認が出る。続けるなら引き継いだPDFと編集がそのまま、確定すると外れる", async ({ page }) => {
-    await rotateInEditAndOpenInFix(page, "seq3.pdf");
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toBeVisible({ timeout: 25_000 });
-    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
-    await page.getByRole("button", { name: "白消し", exact: true }).click();
-    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
-    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
-
-    await page.getByTestId("pdf-fix-choose-another").click();
-    const confirm = page.getByTestId("pdf-fix-switch-confirm");
-    await expect(confirm).toBeVisible();
-    await expect(confirm).toContainText("別のファイルを選ぶと");
-    await page.getByTestId("pdf-fix-switch-cancel").click();
-    await expect(confirm).toHaveCount(0);
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toBeVisible();
-    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
-
-    await page.getByTestId("pdf-fix-choose-another").click();
-    await page.getByTestId("pdf-fix-switch-confirm-ok").click();
-    await expect(confirm).toHaveCount(0);
-    await expect(page.getByTestId("pdf-fix-handoff-banner")).toHaveCount(0);
-    await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
+plainTest.describe("個別連携の撤去（工程15）: ソース", () => {
+  plainTest("引き継ぎ部品と専用ボタンのファイルがなく、ソースのどこからも参照されていない", () => {
+    const root = process.cwd();
+    plainExpect(fs.existsSync(path.join(root, "src/lib/pdf/file-handoff.ts"))).toBe(false);
+    plainExpect(fs.existsSync(path.join(root, "src/components/tools/implementations/shared/open-in-pdf-fix-button.tsx"))).toBe(false);
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) walk(full);
+        else if (/\.(ts|tsx)$/.test(ent.name)) {
+          const code = fs.readFileSync(full, "utf-8");
+          for (const word of ["file-handoff", "open-in-pdf-fix", "OpenInPdfFixButton", "PdfHandoff", "offerPdfHandoff", "takePdfHandoff"]) {
+            if (code.includes(word)) hits.push(`${path.relative(root, full)}: ${word}`);
+          }
+        }
+      }
+    };
+    walk(path.join(root, "src"));
+    plainExpect(hits).toEqual([]);
   });
+});
 
-  test("置いたものをすべて消したあとは、「別のファイルを選ぶ」もPDFの選び直しも確認なしで進む（古い確認も残らない）", async ({ page }) => {
-    await rotateInEditAndOpenInFix(page, "seq4.pdf");
-    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
-    await page.getByRole("button", { name: "白消し", exact: true }).click();
-    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
-    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
-    await page.getByTestId("pdf-fix-choose-another").click();
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toBeVisible();
-    await page.getByTestId("pdf-fix-switch-cancel").click();
-    // 置いたものをすべて取り消す
-    await page.getByRole("button", { name: /元に戻す/ }).first().click();
-    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
-    await page.getByTestId("pdf-fix-choose-another").click();
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
+test.describe("個別連携の撤去（工程15）: 画面", () => {
+  test("PDF編集の結果画面に「PDF修正で開く」は出ず、ダウンロードは使える。PDF修正は空の状態から始まる", async ({ page }) => {
+    const src = workPath("seq.pdf");
+    await writeSequentialPdf(src, 2);
+    await page.goto("/tools/pdf-rotate");
+    await expect(page.locator('input[type="file"]').first()).toBeAttached({ timeout: 30_000 });
+    await expect(page.getByTestId("pdf-edit-modes")).toBeVisible({ timeout: 25_000 });
+    await uploadWhenReady(page, src, page.getByRole("button", { name: "回転する" }), { readyTimeoutMs: 25_000 });
+    await clickWhenReady(page.getByRole("button", { name: "回転する" }), { expectAfter: page.getByText("回転が完了しました") });
+    await expect(page.getByTestId("open-in-pdf-fix")).toHaveCount(0);
+    await expect(page.getByTestId("open-in-pdf-fix-unavailable")).toHaveCount(0);
+    await expect(page.getByText("この結果をPDF修正で開く")).toHaveCount(0);
+    // 通常のダウンロードは、これまでどおり使える（回転済みのPDFが保存される）
+    const download = await clickAndDownload(page, /^ダウンロード$/);
+    const saved = workPath("rotated.pdf");
+    await download.saveAs(saved);
+    const { PDFDocument } = await import("pdf-lib");
+    const doc = await PDFDocument.load(fs.readFileSync(saved), { updateMetadata: false });
+    expect(doc.getPageCount()).toBe(2);
+    for (const p of doc.getPages()) expect(p.getRotation().angle).toBe(90);
+
+    // そのあとPDF修正を開いても、何も受け取らず、通常のファイル選択から始まる
+    await page.goto(PDF_FIX_TOOL_PATH);
+    await expect(page.getByTestId("pdf-fix-modes")).toBeVisible({ timeout: 25_000 });
     await expect(page.getByTestId("pdf-fix-handoff-banner")).toHaveCount(0);
+    await expect(page.getByTestId("pdf-fix-handoff-error")).toHaveCount(0);
+    await expect(page.locator(CANVAS)).toHaveCount(0);
+    await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS), { readyTimeoutMs: 25_000 });
   });
 });
 

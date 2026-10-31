@@ -493,7 +493,7 @@ export function PdfFillAnnotateTool({
     }
   }
 
-  // PDF修正の画面などから引き継いだPDFがあれば、ファイル選択と同じ読み込み処理で最初に1回だけ開く。
+  // PDF修正の画面で機能を切り替える前に選んでいたPDFがあれば、ファイル選択と同じ読み込み処理で最初に1回だけ開く。
   // （StrictModeの開発時の二重実行でも、引き継いだPDFを二重に読み込まないよう ref で守る）
   const initialFileLoadedRef = useRef(false);
   useEffect(() => {

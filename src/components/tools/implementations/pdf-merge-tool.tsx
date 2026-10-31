@@ -9,7 +9,6 @@ import { ProcessingStatus } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { OpenInPdfFixButton } from "@/components/tools/implementations/shared/open-in-pdf-fix-button";
 import { fileKey as fileIdentity, revokeOutputUrl, useKeyedRun } from "@/components/tools/implementations/shared/use-keyed-run";
 import { PdfMergeProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
@@ -124,7 +123,6 @@ export function PdfMergeTool() {
             {result.pageCount}ページ ・ {formatBytes(result.sizeBytes)}
           </p>
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
-          <OpenInPdfFixButton blob={result.blob} fileName={downloadName} />
         </ResultPopup>
       )}
     </PreviewSplitLayout>

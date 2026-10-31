@@ -385,7 +385,7 @@ const toolDefinitions: Tool[] = [
   {
     // 工程12：PDFの修正（記入・注釈・白消し・ページ番号・透かし）を1つの画面にまとめた入口。
     // 各機能の中身は既存ツール（pdf-fill-annotate / pdf-add-page-numbers / pdf-watermark）の画面を再利用し、
-    // 既存の個別URLはそのまま維持する。PDF編集の処理結果は、ブラウザのメモリ上だけでここへ引き継げる。
+    // 既存の個別URLはそのまま維持する。
     id: "pdf-fix",
     name: "PDF修正",
     category: "pdf",
