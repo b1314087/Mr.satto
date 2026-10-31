@@ -640,7 +640,7 @@ export function ReceiptAccountingTool() {
                                 <span className="text-[11px] text-amber-700 dark:text-amber-300">{field.note}</span>
                               )}
                               {field.lowConfidence && current === row.autoValues[key] && current !== "" && (
-                                <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                                <span data-testid={`receipt-lowconf-${key}`} className="text-[11px] text-amber-700 dark:text-amber-300">
                                   文字の認識に自信が低い行から読み取った値です。元の書類と見比べてください。
                                 </span>
                               )}

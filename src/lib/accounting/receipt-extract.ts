@@ -1,4 +1,5 @@
 import {
+  AUTOFILL_STOP_CONFIDENCE,
   LOW_CONFIDENCE_THRESHOLD,
   TOTAL_MAX_YEN,
   VENDOR_MAX_LENGTH,
@@ -67,6 +68,15 @@ function prepareLines(lines: TextLine[]): PreparedLine[] {
 
 function isLowConfidence(confidence: number | null): boolean {
   return confidence !== null && confidence < LOW_CONFIDENCE_THRESHOLD;
+}
+
+/** 信頼度が非常に低い行から読み取った値は、自動では入れない（工程12） */
+function isTooLowToAutofill(confidence: number | null): boolean {
+  return confidence !== null && confidence < AUTOFILL_STOP_CONFIDENCE;
+}
+
+function lowConfidenceStopNote(label: string): string {
+  return `文字の認識に自信がとても低い行から読み取った${label}のため、自動では入れていません。元の書類と見比べて、候補を選ぶか、入力してください。`;
 }
 
 function emptyField(note: string | null): FieldExtraction {
@@ -174,6 +184,10 @@ function extractDateFromPrepared(prepared: PreparedLine[]): FieldExtraction {
       note: "「日付」などの表記がある行を読み取れませんでした。見つかった日付が取引日か確認して、選ぶか入力してください。",
       lowConfidence: false,
     };
+  }
+  if (distinct.size === 1 && isTooLowToAutofill(prepared[[...distinct.values()][0].lineIndex]?.confidence ?? null)) {
+    const hit = [...distinct.values()][0];
+    return { value: null, candidates: [toCandidate(hit)], note: lowConfidenceStopNote("日付"), lowConfidence: false };
   }
   if (distinct.size === 1) {
     const hit = [...distinct.values()][0];
@@ -378,6 +392,14 @@ function extractTotalFromPrepared(prepared: PreparedLine[]): FieldExtraction {
       lowConfidence: false,
     };
   }
+  if (strong.size === 1 && isTooLowToAutofill(prepared[[...strong.values()][0].lineIndex]?.confidence ?? null)) {
+    return {
+      value: null,
+      candidates: [...strongCandidates([...strong.values()]), ...otherCandidates],
+      note: lowConfidenceStopNote("合計金額"),
+      lowConfidence: false,
+    };
+  }
   if (strong.size === 1) {
     const hit = [...strong.values()][0];
     return {
@@ -478,6 +500,24 @@ function extractVendorFromPrepared(prepared: PreparedLine[]): FieldExtraction {
   const hinted = unique(hits.filter((h) => h.hinted));
   const lowConf = (hit: VendorHit) => isLowConfidence(prepared[hit.lineIndex]?.confidence ?? null);
 
+  const tooLow = (hit: VendorHit) => isTooLowToAutofill(prepared[hit.lineIndex]?.confidence ?? null);
+
+  if (labeled.length === 1 && tooLow(labeled[0])) {
+    return {
+      value: null,
+      candidates: [{ value: labeled[0].value, reason: "「発行元」などの表記がある行" }],
+      note: lowConfidenceStopNote("取引先"),
+      lowConfidence: false,
+    };
+  }
+  if (labeled.length === 0 && hinted.length === 1 && tooLow(hinted[0])) {
+    return {
+      value: null,
+      candidates: [{ value: hinted[0].value, reason: "書類の上部にある、店名・会社名らしい行" }],
+      note: lowConfidenceStopNote("取引先"),
+      lowConfidence: false,
+    };
+  }
   if (labeled.length === 1) {
     return {
       value: labeled[0].value,
