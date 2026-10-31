@@ -129,6 +129,13 @@ const SeatingChartTool = dynamic(() =>
   import("./implementations/seating-chart-tool").then((m) => m.SeatingChartTool),
   { loading: ToolLoading }
 );
+const GaijiCheckerTool = dynamic(() =>
+  import("./implementations/gaiji-checker-tool").then((m) => m.GaijiCheckerTool),
+  { loading: ToolLoading }
+);
+const ShiftScheduleTool = dynamic(() =>
+  import("./implementations/shift-schedule-tool").then((m) => m.ShiftScheduleTool),
+);
 const ReceiptAccountingTool = dynamic(() =>
   import("./implementations/receipt-accounting-tool").then((m) => m.ReceiptAccountingTool),
   { loading: ToolLoading }
@@ -513,6 +520,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfRedactTool />;
     case "seating-chart":
       return <SeatingChartTool />;
+    case "gaiji-checker":
+      return <GaijiCheckerTool />;
+    case "shift-schedule":
+      return <ShiftScheduleTool />;
     case "receipt-accounting-csv":
       return <ReceiptAccountingTool />;
     case "pdf-merge":

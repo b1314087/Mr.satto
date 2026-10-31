@@ -62,6 +62,10 @@ const CASES: [string, Input][] = [
   ["qr-generator", { kind: "text", text: "https://example.com" }],
   // 座席表は、名簿を入れて「席順を作る」を押すと結果が出る
   ["seating-chart", { kind: "text", text: "山田太郎\n佐藤花子\n鈴木一郎\n高橋次郎", thenClick: "席順を作る" }],
+  // 外字・特殊文字チェックは、文字を入れて「調べる」を押すと結果が出る
+  ["gaiji-checker", { kind: "text", text: "髙橋\u200b花子", thenClick: "調べる" }],
+  // シフト表作成は、入力なしでも、既定の勤務区分とスタッフで表が出る
+  ["shift-schedule", none],
   // 領収書・レシートは、画像を読み込んでOCRで読み取ると、確認用の一覧が出る
   ["receipt-accounting-csv", img],
   // 入力なしでも見える/既定値で出るもの
