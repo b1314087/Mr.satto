@@ -175,6 +175,7 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
     const withPins = tools.filter((t) => t.relatedToolIds && t.relatedToolIds.length > 0);
     // 工程11: Office文書系（word-to-pdf / excel-to-pdf / pptx-invert）、工程12: PDF修正への導線（pdf-edit / 記入・注釈 / ページ番号 / 透かし / pdf-fix）
     // 新プロジェクト工程5: 座席表作成（seating-chart）から、近い用途の名簿テンプレート作成（roster-template）を案内
+    // 新プロジェクト工程8: 領収書・レシートから会計CSV作成（receipt-accounting-csv）から、文字認識（ocr）とPDF→Excelを案内
     // 新プロジェクト工程4: PDF黒塗り・墨消し（pdf-redact）と、白消しがあるPDF修正（pdf-fix）を互いに案内
     // 新プロジェクト工程3: Excelファイル結合（excel-merge）と、近い用途のCSV結合（csv-merge）を互いに案内
     expect(withPins.map((t) => t.id).sort()).toEqual([
@@ -188,6 +189,7 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
       "pdf-redact",
       "pdf-watermark",
       "pptx-invert",
+      "receipt-accounting-csv",
       "seating-chart",
       "word-to-pdf",
     ]);

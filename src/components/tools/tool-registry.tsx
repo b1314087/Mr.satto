@@ -129,6 +129,10 @@ const SeatingChartTool = dynamic(() =>
   import("./implementations/seating-chart-tool").then((m) => m.SeatingChartTool),
   { loading: ToolLoading }
 );
+const ReceiptAccountingTool = dynamic(() =>
+  import("./implementations/receipt-accounting-tool").then((m) => m.ReceiptAccountingTool),
+  { loading: ToolLoading }
+);
 const ImageToPdfTool = dynamic(() =>
   import("./implementations/image-to-pdf-tool").then((m) => m.ImageToPdfTool),
   { loading: ToolLoading }
@@ -509,6 +513,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfRedactTool />;
     case "seating-chart":
       return <SeatingChartTool />;
+    case "receipt-accounting-csv":
+      return <ReceiptAccountingTool />;
     case "pdf-merge":
       return <PdfEditTool initialMode="merge" />;
     case "pdf-split":

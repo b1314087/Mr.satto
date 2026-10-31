@@ -12,6 +12,7 @@ import { hasImplementation } from "@/lib/tools/registry";
 import { getRelatedTools } from "@/lib/tools/related-tools";
 import { ToolCard } from "@/components/tools/tool-card";
 import { AdSlot } from "@/components/ads/ad-slot";
+import { isAdFreeToolId } from "@/lib/tools/ad-free-tools";
 import { getServerPlan } from "@/lib/plans/current-plan";
 import { shouldShowAds } from "@/lib/plans/access";
 import { CurrentPlanProvider } from "@/lib/plans/plan-context";
@@ -247,7 +248,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
           下の通常広告枠も出さない。「広告なし」の説明とページ内の実際の表示が
           矛盾しないようにするため（開発指示書2章・10章）。プラン不明（準備中
           ツールなどでgetServerPlan()を呼んでいない場合）は従来どおり表示する。 */}
-      {(serverPlan === null || shouldShowAds(serverPlan.plan)) && (
+      {!isAdFreeToolId(tool.id) && (serverPlan === null || shouldShowAds(serverPlan.plan)) && (
         <div className="mt-6">
           <AdSlot placement="tool-page" />
         </div>

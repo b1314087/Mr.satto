@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { AdSlot } from "@/components/ads/ad-slot";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { shouldShowAds } from "@/lib/plans/access";
 import type { Plan } from "@/lib/plans/types";
 import { featureFlags } from "@/lib/config/features";
+import { isAdFreeToolPath } from "@/lib/tools/ad-free-tools";
 
 /**
  * フッター広告の表示要否を判定してから <AdSlot placement="footer" /> を描画する
@@ -115,5 +117,12 @@ export function FooterAdSlot() {
   // 機能スイッチ（src/lib/config/features.ts）で広告がオフの間は、何も描画せず、
   // 契約状態を調べるためのSupabaseへの問い合わせも行わない。
   if (!featureFlags.ads) return null;
+  return <FooterAdSlotGate />;
+}
+
+function FooterAdSlotGate() {
+  // 領収書・レシートなど、広告を出さないツールのページでは、フッターの広告も出さない（src/lib/tools/ad-free-tools.ts）。
+  const pathname = usePathname();
+  if (isAdFreeToolPath(pathname)) return null;
   return <FooterAdSlotInner />;
 }

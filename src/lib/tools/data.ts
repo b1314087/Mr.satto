@@ -1256,6 +1256,39 @@ const toolDefinitions: Tool[] = [
     relatedToolIds: ["roster-template"],
   },
   {
+    // 工程8：領収書・レシートから会計CSV作成。画像・PDFから日付・取引先・合計金額を読み取り、利用者が確認した行だけを汎用CSVにする。
+    // 特定の会計ソフト専用ではない。ファイルと読み取った内容はブラウザの外へ出さない。
+    id: "receipt-accounting-csv",
+    name: "領収書・レシートから会計CSV作成",
+    category: "csv-excel",
+    description: "領収書・レシートの画像やPDFから、日付・取引先・合計金額を読み取り、元の書類と見比べて確認・修正した行だけをCSVにします。確認済みにした行だけが出力され、読み取りはすべてブラウザ内で行います",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: [
+      "領収書",
+      "レシート",
+      "領収書 CSV",
+      "レシート CSV",
+      "領収書 読み取り",
+      "レシート 読み取り",
+      "領収書 OCR",
+      "レシート OCR",
+      "経費精算",
+      "経費",
+      "会計",
+      "会計CSV",
+      "仕訳",
+      "帳簿",
+      "日付 取引先 金額",
+      "合計金額",
+      "receipt",
+      "receipt csv",
+      "receipt ocr",
+    ],
+    relatedToolIds: ["ocr", "pdf-to-excel"],
+  },
+  {
     // Phase 11: この2ツールは料金・利用制限の仕組みがページ数ベース・
     // 日次回数ベースの専用設計のため、requiredPlanは他ツールと同様に型上の
     // 分類（SEO・カテゴリ表示用）として設定しつつ、実際のアクセス制御は
