@@ -5,6 +5,7 @@ import { extractReceipt, hasAnyCandidate } from "@/lib/accounting/receipt-extrac
 import { isTextLayerUsable, linesFromTextItems } from "@/lib/accounting/receipt-pdf-lines";
 import { RECEIPT_LIMITS, type ReadMethod, type TextLine } from "@/lib/accounting/receipt-types";
 import type { ReceiptFileKind } from "@/lib/accounting/receipt-file-kind";
+import { OCR_MAX_LONG_SIDE, OCR_MAX_PIXELS, planOcr, planStrips } from "@/lib/accounting/receipt-image-plan";
 import { canvasToBlob, loadImage } from "./image";
 
 /**
@@ -59,20 +60,17 @@ export interface ReadOptions {
   remainingSlots: () => number;
 }
 
-/** OCRに渡す画像の画素数の上限（メモリと処理時間の保護。仮の値で、実物の評価（工程9）で見直す） */
-const OCR_MAX_PIXELS = 4_000_000;
-/** OCRに渡す画像の長辺の上限(px) */
-const OCR_MAX_LONG_SIDE = 4000;
 /** 確認用のプレビュー画像の長辺の上限(px) */
 const PREVIEW_MAX_LONG_SIDE = 1600;
 const OCR_LANGUAGE = "ja" as const;
+/** 切り分ける位置を探す範囲（OCRに渡す画像でのpx） */
+const STRIP_SEARCH_RADIUS = 250;
+/** 切り分け位置を探すために、画像を縮小して調べるときの幅(px) */
+const ACTIVITY_PROBE_WIDTH = 240;
 
-/** 縮小の倍率（拡大はしない）。細長いレシートでも文字が潰れにくいよう、長辺だけでなく画素数で上限を決める */
+/** OCRに渡す画像の倍率（小さい画像は最大2倍まで拡大、大きい画像は縮小）。詳細は receipt-image-plan.ts */
 export function ocrScaleFor(width: number, height: number): number {
-  if (width <= 0 || height <= 0) return 1;
-  const byPixels = Math.sqrt(OCR_MAX_PIXELS / (width * height));
-  const byLongSide = OCR_MAX_LONG_SIDE / Math.max(width, height);
-  return Math.min(1, byPixels, byLongSide);
+  return planOcr(width, height).scale;
 }
 
 /** OCRの単語を、行ごとの文字と信頼度（行の中で最も低い単語の値）にまとめる */
@@ -124,18 +122,78 @@ async function readImageFile(file: File, options: ReadOptions): Promise<void> {
     throw new ReceiptReadError("画像の解像度が大きすぎます。画像を縮小してからお試しください。");
   }
 
-  const scale = ocrScaleFor(w, h);
+  const plan = planOcr(w, h);
+  const total = { current: 1, total: 1, method: "ocr" as const };
+  if (plan.stripHeight !== null) {
+    // 細長い画像：縮小すると文字が潰れるため、縦に切り分けて、倍率を保ったまま1本ずつ読む
+    const strips = planStrips(h, Math.round(plan.stripHeight / plan.scale), probeRowActivity(img, w, h), Math.round(STRIP_SEARCH_RADIUS / plan.scale));
+    const lines: TextLine[] = [];
+    for (let i = 0; i < strips.length; i++) {
+      if (options.isCancelled?.()) break;
+      const strip = strips[i];
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(w * plan.scale));
+      canvas.height = Math.max(1, Math.round(strip.height * plan.scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new ReceiptReadError("画像を処理できませんでした。");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, strip.top, w, strip.height, 0, 0, canvas.width, canvas.height);
+      try {
+        lines.push(...(await ocrCanvas(canvas, (fraction) => options.onProgress?.({ ...total, fraction: (i + fraction) / strips.length }))));
+      } finally {
+        releaseCanvas(canvas);
+      }
+    }
+    options.onDocument({ pageNumber: null, pageCount: null, method: "ocr", lines, preview: file });
+    return;
+  }
+
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(w * scale));
-  canvas.height = Math.max(1, Math.round(h * scale));
+  canvas.width = Math.max(1, Math.round(w * plan.scale));
+  canvas.height = Math.max(1, Math.round(h * plan.scale));
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new ReceiptReadError("画像を処理できませんでした。");
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   try {
-    const lines = await ocrCanvas(canvas, (fraction) => options.onProgress?.({ current: 1, total: 1, method: "ocr", fraction }));
+    const lines = await ocrCanvas(canvas, (fraction) => options.onProgress?.({ ...total, fraction }));
     options.onDocument({ pageNumber: null, pageCount: null, method: "ocr", lines, preview: file });
   } finally {
     releaseCanvas(canvas);
+  }
+}
+
+/** 画像を縮小し、行ごとの明るさのばらつき（文字がある行ほど大きい）を調べる。失敗したら null（等間隔で切る） */
+function probeRowActivity(img: HTMLImageElement, w: number, h: number): number[] | null {
+  try {
+    const pw = Math.max(1, Math.min(w, ACTIVITY_PROBE_WIDTH));
+    const ph = Math.max(1, Math.min(h, 6000));
+    const probe = document.createElement("canvas");
+    probe.width = pw;
+    probe.height = ph;
+    const ctx = probe.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pw, ph);
+    ctx.drawImage(img, 0, 0, pw, ph);
+    const data = ctx.getImageData(0, 0, pw, ph).data;
+    const rows: number[] = [];
+    for (let y = 0; y < ph; y++) {
+      let sum = 0;
+      let sumSq = 0;
+      for (let x = 0; x < pw; x++) {
+        const i = (y * pw + x) * 4;
+        const v = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        sum += v;
+        sumSq += v * v;
+      }
+      const mean = sum / pw;
+      rows.push(Math.sqrt(Math.max(0, sumSq / pw - mean * mean)));
+    }
+    releaseCanvas(probe);
+    return rows;
+  } catch {
+    return null;
   }
 }
 

@@ -6,6 +6,7 @@ import type { Plan, RequiredPlan } from "@/lib/plans/types";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { canUseTool } from "@/lib/plans/access";
 import { DownloadGateProvider } from "@/components/ads/download-gate-provider";
+import { isAdFreeToolId } from "@/lib/tools/ad-free-tools";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { TemporaryAccessBanner } from "@/components/tools/temporary-access-banner";
 import { featureFlags } from "@/lib/config/features";
@@ -66,7 +67,8 @@ export function ToolAccessGate({
   // 広告(Rewarded Ad)がまだ使えない間(GAMの広告ユニット未設定＝審査中など)は、
   // 「広告を見ないとダウンロードできない」制限をかけず、Freeでもそのまま使えるようにする。
   // 広告ユニットを設定した時点で、自動的に制限が有効になる（src/lib/ads/gam-config.ts 参照）。
-  const downloadAdRequired = isRewardedAdGateActive() && access.allowed && access.adRequired;
+  // 広告を出さないツール（src/lib/tools/ad-free-tools.ts。領収書・レシートなど）では、ダウンロード時の広告確認も求めない。
+  const downloadAdRequired = !isAdFreeToolId(toolId) && isRewardedAdGateActive() && access.allowed && access.adRequired;
 
   // 利用不可・Premium必要（Free/Standardユーザーの前ではPremiumツールは
   // 常にこの案内になる。FreeのTemporary Accessの有無はここでは一切考慮しない。

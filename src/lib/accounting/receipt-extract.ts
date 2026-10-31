@@ -81,7 +81,7 @@ const MIN_YEAR = 1989;
 const MAX_YEAR = 2099;
 
 /** 取引日ではない日付の行（支払期限・有効期限など）。この行の日付は候補にしない */
-const NOT_TRANSACTION_DATE = /期限|有効|締切|締め切り|納期|支払期日|お支払日|満期|生年月日|賞味|返品|引換|予約/;
+const NOT_TRANSACTION_DATE = /期限|有効|締切|締め切り|納期|支払期日|お支払日|満期|生年月日|賞味|返品|引換|予約|お届け|配送|配達|発送|出荷|到着|予定|期間|開始|終了/;
 /** 取引日・発行日を示す語（候補の理由に使う） */
 const DATE_LABEL = /発行日|取引日|領収日|日付|ご利用日|利用日|お買い?上げ?日|購入日|日時|年月日|請求日|納品日|ご来店日|伝票日/;
 
@@ -145,9 +145,17 @@ export function extractDate(lines: TextLine[]): FieldExtraction {
   return extractDateFromPrepared(prepareLines(lines));
 }
 
+/** 取引日・発行日などの表記がある行（その行の日付が読み取れなかった場合、別の行の日付を取引日として自動で入れない） */
+const STRICT_DATE_LABEL = /(?:注文|発行|取引|領収|購入|利用|請求|納品|来店|伝票|売上|決済|お買い?上げ?)日|日時|年月日|日付/;
+
 function extractDateFromPrepared(prepared: PreparedLine[]): FieldExtraction {
   const all = prepared.flatMap(findDates);
   const usable = all.filter((h) => !h.excluded && !h.twoDigitYear);
+  // 「注文日」などの表記があり、数字も含むのに、日付として読めない行がある（桁が文字に読まれた、など）。
+  // その場合、ほかの日付が1つだけ見つかっても、それが取引日とは限らないため、自動では入れない。
+  const unreadableDateLine = prepared.some(
+    (line) => STRICT_DATE_LABEL.test(compactCjkSpaces(line.text)) && /\d/.test(line.text) && !NOT_TRANSACTION_DATE.test(line.text) && !all.some((h) => h.lineIndex === line.index),
+  );
   const distinct = new Map<string, DateHit>();
   for (const hit of usable) {
     const prev = distinct.get(hit.iso);
@@ -158,6 +166,15 @@ function extractDateFromPrepared(prepared: PreparedLine[]): FieldExtraction {
     reason: hit.labeled ? `日付の表記がある行の日付（${formatDateSlash(hit.iso)}）` : `書類に書かれている日付（${formatDateSlash(hit.iso)}）`,
   });
 
+  if (distinct.size === 1 && unreadableDateLine) {
+    const hit = [...distinct.values()][0];
+    return {
+      value: null,
+      candidates: [toCandidate(hit)],
+      note: "「日付」などの表記がある行を読み取れませんでした。見つかった日付が取引日か確認して、選ぶか入力してください。",
+      lowConfidence: false,
+    };
+  }
   if (distinct.size === 1) {
     const hit = [...distinct.values()][0];
     return {
@@ -211,14 +228,21 @@ const STRONG_LABEL =
 const WEAK_LABEL = /計/;
 
 interface AmountHit {
+  /** 金額（円）。桁の読み取りが不確かな場合（suspect）は、つなげて読んだ場合の金額。つなげられないときは 0 */
   yen: number;
   lineIndex: number;
   kind: "strong" | "weak" | "neutral";
   /** 候補の理由に使う、金額の直前の表記 */
   label: string;
+  /**
+   * 桁の読み取りが不確かな金額（桁区切りが空白に読まれた「1 320」、先頭の文字が欠けた「l,320」、数字が文字に読まれた「1,32O」など）。
+   * 一部だけを金額として読むと、「1」「320」のような誤った値を自動入力してしまうため、自動では入れない。
+   */
+  suspect: boolean;
 }
 
-const UNIT_AFTER = /^\s*(点|個|枚|品|%|倍|回|名|人|本|台|冊|箱|袋|g|kg|ml|l|cm|mm)/i;
+/** 数字のすぐ後ろに付く単位。日付・時刻・番号・個数などの数字を、金額として読まないために使う */
+const UNIT_AFTER = /^\s*(点|個|枚|品|%|倍|回|名|人|本|台|冊|箱|袋|g|kg|ml|l|cm|mm|年|月|日|時|分|秒|号|番|階|室|条|歳|才)/i;
 
 function findAmounts(lines: PreparedLine[]): AmountHit[] {
   const hits: AmountHit[] = [];
@@ -233,22 +257,55 @@ function findAmounts(lines: PreparedLine[]): AmountHit[] {
       const digitStart = start + m[0].indexOf(m[2]);
       const digitEnd = digitStart + m[2].length;
       const label = text.slice(previousEnd, start).slice(-24).trim();
+      const previousEndBefore = previousEnd;
       previousEnd = end;
 
       const hasYenMark = Boolean(m[1]) || Boolean(m[3]);
       const prevChar = digitStart > 0 ? text[digitStart - 1] : "";
       const nextChar = text[digitEnd] ?? "";
       const afterNext = text[digitEnd + 1] ?? "";
+      const rest = text.slice(digitEnd);
 
       // 英数字・記号の一部（No.123、TEL03-…、12:30、2026/10/31 など）は金額としない
       if (!m[1] && /[0-9A-Za-z\-/.:#]/.test(prevChar)) continue;
       if ((nextChar === "." || nextChar === "/" || nextChar === ":" || nextChar === "-") && /\d/.test(afterNext)) continue;
-      if (UNIT_AFTER.test(text.slice(digitEnd))) continue;
+      if (UNIT_AFTER.test(rest)) {
+        // 「合計 5点 ¥2,340」のように、個数などの数字の後ろに金額が続くときは、その前の表記（合計）を、次の金額の表記として引き継ぐ
+        previousEnd = previousEndBefore;
+        continue;
+      }
 
       const digits = m[2].replace(/[,.]/g, "");
       if (digits.length > 1 && digits.startsWith("0")) continue;
-      const yen = Number(digits);
-      if (!Number.isInteger(yen) || yen < 1 || yen > TOTAL_MAX_YEN) continue;
+      const grouped = /[,.]/.test(m[2]);
+      // 円記号も桁区切りもない1〜2桁の数字は、個数・番号などの可能性が高く、金額とはみなさない
+      if (!hasYenMark && !grouped && digits.length <= 2) continue;
+
+      // 桁の読み取りが不確かな金額（一部だけを金額として読むと、誤った値になる）
+      let suspect = false;
+      let yen = Number(digits);
+      // 桁区切りが空白・記号・文字に読まれて、数字が途中で切れている（「1 320」「1, 320」「1 4,720」「6'776」「2,?40」「1,32O」）
+      const cont = !grouped && m[2].length <= 3 ? rest.match(/^(?:\s?[,.]\s?|\s{1,2})(\d{1,3}(?:[,.]\d{3})*|\d+)(?![\d:/])/) : null;
+      if (cont) {
+        suspect = true;
+        yen = Number(m[2] + cont[1].replace(/[,.]/g, ""));
+      } else if (
+        // 数字のすぐ後ろに、金額の後ろには普通付かない文字（記号・英数字）が付いている
+        (rest !== "" && !/^(?:\s|円|[)）\]】」』\-－―ー–—~〜*※＊\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef/%、。:：;；,.])/.test(rest)) ||
+        // 桁区切りの後ろに、日本語以外の文字が続いている
+        /^[,.;:；：]\s?[^\s\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef円]/.test(rest)
+      ) {
+        suspect = true;
+        yen = 0;
+      } else if (((prevChar === "," || prevChar === ".") && !/\d/.test(text[digitStart - 2] ?? "")) || /[|!'`´;_?]/.test(prevChar)) {
+        // 桁区切りの前の数字が読めていない（「l,320」）、または数字の直前に、金額の前には普通付かない記号が付いている（「|4,720」）
+        suspect = true;
+        yen = 0;
+      }
+      if (!Number.isInteger(yen) || yen < 0 || yen > TOTAL_MAX_YEN || (!suspect && yen < 1)) {
+        if (!suspect) continue;
+        yen = 0;
+      }
 
       // 金額の前に表記がなければ、直前の行（金額を含まない短い行）を表記として使う（「合計」と金額が別の行に読まれた場合）
       let effectiveLabel = label;
@@ -256,15 +313,17 @@ function findAmounts(lines: PreparedLine[]): AmountHit[] {
         const prev = lines[lineNo - 1];
         if (prev.text.length <= 20 && !/\d/.test(prev.text)) effectiveLabel = prev.text;
       }
+      // 日本語の文字の間の空白（「合 計」「お 預 り」）は、表記の判定では無視する
+      const labelForTest = compactCjkSpaces(effectiveLabel);
 
-      const grouped = /[,.]/.test(m[2]);
       let kind: AmountHit["kind"];
-      if (EXCLUDE_LABEL.test(effectiveLabel)) continue;
-      if (STRONG_LABEL.test(effectiveLabel)) kind = "strong";
+      if (EXCLUDE_LABEL.test(labelForTest)) continue;
+      if (STRONG_LABEL.test(labelForTest)) kind = "strong";
       else if (!hasYenMark && !grouped) continue; // 円記号も桁区切りもない数字は、合計の表記がなければ金額とみなさない
-      else kind = WEAK_LABEL.test(effectiveLabel) ? "weak" : "neutral";
+      else kind = WEAK_LABEL.test(labelForTest) ? "weak" : "neutral";
+      if (suspect && kind !== "strong") continue; // 合計の表記がない金額は、自動入力の対象にならないため、不確かなものは候補にもしない
 
-      hits.push({ yen, lineIndex: line.index, kind, label: effectiveLabel });
+      hits.push({ yen, lineIndex: line.index, kind, label: labelForTest, suspect });
     }
   });
   return hits;
@@ -281,10 +340,22 @@ export function extractTotal(lines: TextLine[]): FieldExtraction {
 function extractTotalFromPrepared(prepared: PreparedLine[]): FieldExtraction {
   const hits = findAmounts(prepared);
   const strong = new Map<number, AmountHit>();
-  for (const hit of hits.filter((h) => h.kind === "strong")) if (!strong.has(hit.yen)) strong.set(hit.yen, hit);
+  for (const hit of hits.filter((h) => h.kind === "strong" && !h.suspect)) if (!strong.has(hit.yen)) strong.set(hit.yen, hit);
+  const suspects = hits.filter((h) => h.kind === "strong" && h.suspect);
+  // 「合計」などの表記があり、数字も含むのに、金額として読めなかった行（桁が文字に読まれた、など）。
+  // 別の行の金額が1つだけ見つかっても、それが合計とは限らないため、自動では入れない。
+  const unreadableStrongLine = prepared.some((line) => {
+    const t = compactCjkSpaces(line.text);
+    if (!STRONG_LABEL.test(t) || EXCLUDE_LABEL.test(t)) return false;
+    const stripped = t
+      .replace(/\d{4}\s*[年/.\-]\s*\d{1,2}\s*[月/.\-]\s*\d{1,2}\s*日?/g, "")
+      .replace(/\d+\s*(?:年|月|日|時|分|秒|点|個|枚|品|名|人|回|本|台|%)/g, "")
+      .replace(/\d{1,2}:\d{2}/g, "");
+    return /\d/.test(stripped) && !hits.some((h) => h.lineIndex === line.index && h.kind === "strong");
+  });
 
   const others = new Map<number, AmountHit>();
-  for (const hit of hits.filter((h) => h.kind !== "strong")) if (!strong.has(hit.yen) && !others.has(hit.yen)) others.set(hit.yen, hit);
+  for (const hit of hits.filter((h) => h.kind !== "strong" && !h.suspect)) if (!strong.has(hit.yen) && !others.has(hit.yen)) others.set(hit.yen, hit);
   const otherCandidates: FieldCandidate[] = [...others.values()]
     .sort((a, b) => b.yen - a.yen)
     .slice(0, 5)
@@ -293,6 +364,20 @@ function extractTotalFromPrepared(prepared: PreparedLine[]): FieldExtraction {
   const strongCandidates = (list: AmountHit[]): FieldCandidate[] =>
     list.map((h) => ({ value: String(h.yen), reason: `「${strongKeyword(h.label)}」の金額（${h.yen.toLocaleString("ja-JP")}円）` }));
 
+  // 合計の表記がある行の金額の桁が、正しく読み取れていない可能性があるとき：自動では入れず、つなげて読んだ金額を候補にする
+  if (suspects.length > 0 || unreadableStrongLine) {
+    const joined = new Map<number, AmountHit>();
+    for (const hit of suspects) if (hit.yen > 0 && !joined.has(hit.yen)) joined.set(hit.yen, hit);
+    const suspectCandidates: FieldCandidate[] = [...joined.values()]
+      .filter((h) => !strong.has(h.yen))
+      .map((h) => ({ value: String(h.yen), reason: `「${strongKeyword(h.label)}」の金額ですが、桁が正しく読めていない可能性があります（${h.yen.toLocaleString("ja-JP")}円）` }));
+    return {
+      value: null,
+      candidates: [...strongCandidates([...strong.values()]), ...suspectCandidates, ...otherCandidates],
+      note: "合計の金額の桁が正しく読み取れていない可能性があるため、自動では入れていません。元の書類と見比べて、入力してください。",
+      lowConfidence: false,
+    };
+  }
   if (strong.size === 1) {
     const hit = [...strong.values()][0];
     return {
@@ -327,7 +412,7 @@ function extractTotalFromPrepared(prepared: PreparedLine[]): FieldExtraction {
 
 /** 取引先として採用しない行（電話番号・住所・宛名・書類名・日付・金額・定型のあいさつなど） */
 const NOT_VENDOR =
-  /TEL|FAX|電話|℡|〒|領収|レシート|receipt|請求書|納品書|見積|伝票|明細|お買い?上げ?(?:明細|票|ありがとう)|ありがとう|またお越し|毎度|ご来店|レジ|担当|責任者|店番|登録番号|インボイス|適格|消費税|合計|小計|(?:様|御中|殿)$|^T\d{13}|https?:|www\.|@|\d{2,4}-\d{2,4}-\d{3,4}|\d{3}-\d{4}|丁目|番地|[都道府県].*[市区町村郡]|¥|\d,\d{3}|\d+円/i;
+  /TEL|FAX|電話|℡|〒|領収|レシート|receipt|請求書|納品書|見積|伝票|明細|お買い?上げ?(?:明細|票|ありがとう)|ありがとう|またお越し|毎度|ご来店|レジ|担当|責任者|店番|登録番号|インボイス|適格|消費税|合計|小計|(?:様|御中|殿)$|^T\d{13}|https?:|www\.|@|\d{2,4}-\d{2,4}-\d{3,4}|\d{3}-\d{4}|[0-9一二三四五六七八九十]+丁目\s*\d|丁目\s*\d|番地|\d+-\d+-\d+|宛名|宛先|お客様|請求先|ご契約者|お名前|ご氏名|[都道府県].*[市区町村郡]|¥|\d,\d{3}|\d+円/i;
 /** 店名・会社名らしい語 */
 const VENDOR_HINT =
   /株式会社|有限会社|合同会社|\(株\)|\(有\)|\(同\)|商店|商事|薬局|ドラッグ|ストア|スーパー|マート|ショップ|百貨店|書店|文具|クリニック|医院|食堂|珈琲|コーヒー|カフェ|ホテル|旅館|レストラン|酒店|電気|工業|サービス|センター|事務所|支店|本店|店$|屋$|堂$|館$|社$/;
@@ -338,7 +423,10 @@ const VENDOR_FALLBACK_SCAN_LINES = 5;
 function cleanVendor(text: string): string {
   return text
     .replace(/^[\s*★☆※■□◆◇●○▼▲\-=_~〜、。.,:：;；|｜"'`]+/, "")
-    .replace(/[\s*★☆※■□◆◇●○▼▲\-=_~〜、。.,:：;；|｜"'`]+$/, "")
+    .replace(/[\s*★☆※■□◆◇●○▼▲\-=_~〜、。.,:：;；|｜"'`]+$/, (tail, offset: number, whole: string) =>
+      // 「Acme Inc.」「Foo Co., Ltd.」のように、会社の略称の最後のピリオドは残す
+      /\.$/.test(tail) && /(?:Inc|Co|Ltd|Corp|LLC|Jr|Sr)$/i.test(whole.slice(0, offset)) ? "." : "",
+    )
     .replace(/\s+/g, " ")
     .trim();
 }

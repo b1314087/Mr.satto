@@ -6,7 +6,7 @@ import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { test, expect } from "../fixtures/premium-test";
 import { uploadWhenReady } from "../helpers/tool-ready";
-import { assertDownloadedFile, clickAndDownload } from "../helpers/tool-runner";
+import { assertDownloadedFile, clickAndDownload, uploadFixture } from "../helpers/tool-runner";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { buildGenericCsv, buildGenericCsvRows, neutralizeFormula, GENERIC_CSV_HEADER } from "@/lib/accounting/csv-generic";
 import { extractDate, extractReceipt, extractTotal, extractVendor, formatDateSlash, toIsoDate } from "@/lib/accounting/receipt-extract";
@@ -15,6 +15,7 @@ import { isTextLayerUsable, linesFromTextItems } from "@/lib/accounting/receipt-
 import { RECEIPT_LIMITS, type TextLine } from "@/lib/accounting/receipt-types";
 import { duplicateKeys, parseAmountInput, parseDateInput, sanitizeVendor, validateRow } from "@/lib/accounting/receipt-validate";
 import { isAdFreeToolPath } from "@/lib/tools/ad-free-tools";
+import { encryptPdfDocument } from "@/lib/pdf/encrypt";
 
 /**
  * 領収書・レシートから会計CSV作成（receipt-accounting-csv）のテスト（工程8）。
@@ -535,4 +536,173 @@ plainTest("receipt-accounting: このツールのページには広告枠が出�
   // 比較：広告のあるツール（開発・テストでは枠が表示される）
   await page.goto("/tools/char-count");
   await plainExpect(page.getByText("ツール内広告").first()).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// 3. PDFの異常系・上限（工程9）
+// ---------------------------------------------------------------------------
+/** 内容のない（空白の）ページだけのPDF */
+async function buildBlankPdf(pageCount: number): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  for (let i = 0; i < pageCount; i++) pdf.addPage([300, 360]);
+  return pdf.save();
+}
+
+/** 文字情報のあるPDF（ページ数を指定。各ページに、ページごとに違う架空の店名・日付・合計を入れる） */
+async function buildTextPdfPages(pageCount: number, label: string): Promise<Uint8Array> {
+  const pages: string[][] = [];
+  for (let i = 1; i <= pageCount; i++) {
+    pages.push([`${label}${i}号店`, `2026年9月${(i % 27) + 1}日`, `合計 ${(1000 + i * 10).toLocaleString("en-US")}円`]);
+  }
+  return buildTextPdf(pages);
+}
+
+test("receipt-accounting: パスワード付きPDF・壊れたPDF・21ページのPDFは、それぞれ理由つきのエラーになり、ほかのファイルは読み込まれる", async ({ page }) => {
+  const doc = await PDFDocument.create();
+  doc.addPage([300, 360]);
+  const encrypted = await encryptPdfDocument(doc, { userPassword: "pw-test-1234", permissions: { print: true, copy: true, modify: true } });
+  const encryptedPath = path.join(dir, "locked.pdf");
+  fs.writeFileSync(encryptedPath, encrypted);
+  const brokenPath = path.join(dir, "truncated.pdf");
+  fs.writeFileSync(brokenPath, Buffer.from("%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n(途中で切れたPDF)"));
+  const tooManyPath = path.join(dir, "twenty-one-pages.pdf");
+  fs.writeFileSync(tooManyPath, await buildBlankPdf(21));
+
+  await openTool(page);
+  await loadFiles(page, [encryptedPath, brokenPath, tooManyPath, files.textPdf], 2);
+
+  const errors = page.locator('[data-testid="receipt-job"][data-status="error"]');
+  await expect(errors).toHaveCount(3);
+  await expect(errors.filter({ hasText: "locked.pdf" })).toContainText("パスワード保護されたPDFは処理できません");
+  await expect(errors.filter({ hasText: "truncated.pdf" })).toContainText("PDFを開けませんでした");
+  await expect(errors.filter({ hasText: "twenty-one-pages.pdf" })).toContainText("20ページまで");
+  await expect(errors.filter({ hasText: "twenty-one-pages.pdf" })).toContainText("21ページ");
+  // 読み込めたのは、文字情報のあるPDFの2ページだけ
+  await expect(page.getByTestId("receipt-row")).toHaveCount(2);
+  // エラー文に、パスワードやファイルの中身は出ない
+  await expect(page.getByTestId("receipt-jobs")).not.toContainText("pw-test-1234");
+  await expect(page.getByTestId("receipt-jobs")).not.toContainText("途中で切れたPDF");
+});
+
+test("receipt-accounting: ちょうど20ページのPDFは、20行になる（上限の境界）", async ({ page }) => {
+  const p = path.join(dir, "twenty-pages.pdf");
+  fs.writeFileSync(p, await buildTextPdfPages(20, "境界"));
+  await openTool(page);
+  await loadFiles(page, [p], 20);
+  await expect(page.getByTestId("receipt-row")).toHaveCount(20);
+  await expect(page.getByTestId("receipt-summary")).toContainText("書類 20件");
+  await expect(page.getByTestId("receipt-row").nth(19).getByTestId("receipt-label")).toContainText("（20/20ページ）");
+  await expect(page.getByTestId("receipt-row").nth(19).getByTestId("receipt-total")).toHaveValue("1200");
+});
+
+test("receipt-accounting: 空白のページ・文字情報と画像が混在するPDFでも止まらず、空欄のまま確認できる", async ({ page }) => {
+  await openTool(page);
+  const blankPath = path.join(dir, "blank.pdf");
+  fs.writeFileSync(blankPath, await buildBlankPdf(2));
+  const png = await renderReceiptPng(page, RECEIPT_TEXT);
+  const mixed = await PDFDocument.create();
+  mixed.registerFontkit(fontkit);
+  const font = await mixed.embedFont(fs.readFileSync(path.join(process.cwd(), "public/fonts/NotoSansJP-Regular.ttf")), { subset: true });
+  const textPage = mixed.addPage([300, 360]);
+  ["株式会社混在商店", "2026年9月8日", "合計 2,222円"].forEach((t, i) => textPage.drawText(t, { x: 20, y: 320 - i * 28, size: 14, font }));
+  const image = await mixed.embedPng(png);
+  const imagePage = mixed.addPage([image.width / 2, image.height / 2]);
+  imagePage.drawImage(image, { x: 0, y: 0, width: image.width / 2, height: image.height / 2 });
+  const mixedPath = path.join(dir, "mixed.pdf");
+  fs.writeFileSync(mixedPath, await mixed.save());
+
+  await loadFiles(page, [blankPath, mixedPath], 4);
+  const rows = page.getByTestId("receipt-row");
+  await expect(rows).toHaveCount(4);
+  // 空白ページ：値は空で、確認済みにはできない
+  await expect(rows.nth(0).getByTestId("receipt-total")).toHaveValue("");
+  await expect(rows.nth(0).getByTestId("receipt-raw-text")).toContainText("文字を読み取れませんでした");
+  await rows.nth(0).getByTestId("receipt-confirm").click();
+  await expect(rows.nth(0)).toHaveAttribute("data-confirmed", "false");
+  await expect(rows.nth(0).getByTestId("receipt-row-errors")).toBeVisible();
+  // 混在：1ページ目は文字情報、2ページ目（画像）はOCR
+  await expect(rows.nth(2)).toHaveAttribute("data-method", "text-layer");
+  await expect(rows.nth(2).getByTestId("receipt-total")).toHaveValue("2222");
+  await expect(rows.nth(3)).toHaveAttribute("data-method", "ocr");
+});
+
+test("receipt-accounting: 大きすぎる画像・PDFは、中身を読まずにサイズのエラーにする。31ファイル以上は追加を30ファイルまでにする", async ({ page }) => {
+  const bigPdf = path.join(dir, "big.pdf");
+  fs.writeFileSync(bigPdf, Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(RECEIPT_LIMITS.maxPdfMB * 1024 * 1024)]));
+  const bigPng = path.join(dir, "big.png");
+  fs.writeFileSync(bigPng, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(RECEIPT_LIMITS.maxImageMB * 1024 * 1024)]));
+  await openTool(page);
+  await uploadWhenReady(page, [bigPdf, bigPng], page.getByTestId("receipt-job").nth(1), { readyTimeoutMs: 60_000 });
+  const errors = page.locator('[data-testid="receipt-job"][data-status="error"]');
+  await expect(errors).toHaveCount(2);
+  await expect(errors.filter({ hasText: "big.pdf" })).toContainText(`PDFは1つ${RECEIPT_LIMITS.maxPdfMB}MBまで`);
+  await expect(errors.filter({ hasText: "big.png" })).toContainText(`画像は1つ${RECEIPT_LIMITS.maxImageMB}MBまで`);
+  await expect(page.getByTestId("receipt-row")).toHaveCount(0);
+
+  // 31ファイル：先頭の30ファイルだけを受け付け、残りは追加していないと知らせる
+  const many: string[] = [];
+  for (let i = 0; i < RECEIPT_LIMITS.maxFilesPerAdd + 1; i++) {
+    const p = path.join(dir, `junk-${i}.jpg`);
+    fs.writeFileSync(p, Buffer.from(`not an image ${i}`));
+    many.push(p);
+  }
+  await uploadFixture(page, many);
+  await expect(page.getByTestId("receipt-notice")).toContainText(`一度に追加できるのは${RECEIPT_LIMITS.maxFilesPerAdd}ファイルまで`);
+  // 先に並んでいるサイズのエラー2件に、受け付けた30ファイル分のエラーが加わる（31個目は追加されない）
+  await expect(page.locator('[data-testid="receipt-job"][data-status="error"]')).toHaveCount(2 + RECEIPT_LIMITS.maxFilesPerAdd);
+  await expect(page.locator('[data-testid="receipt-job"]').filter({ hasText: `junk-${RECEIPT_LIMITS.maxFilesPerAdd}.jpg` })).toHaveCount(0);
+});
+
+test("receipt-accounting: 画面に並べられる書類が60件に達したら、以降の追加は件数の上限のエラーになり、既存の行は残る", async ({ page }) => {
+  const p20 = path.join(dir, "limit-20.pdf");
+  fs.writeFileSync(p20, await buildTextPdfPages(20, "上限"));
+  await openTool(page);
+  await loadFiles(page, [p20, p20, p20], 60);
+  await expect(page.getByTestId("receipt-summary")).toContainText("書類 60件");
+  const before = await page.getByTestId("receipt-row").count();
+  await uploadFixture(page, [files.textPdf]);
+  const limitError = page.locator('[data-testid="receipt-job"][data-status="error"]').filter({ hasText: "60件まで" });
+  await expect(limitError).toHaveCount(1, { timeout: 30_000 });
+  await expect(page.getByTestId("receipt-row")).toHaveCount(before);
+});
+
+test("receipt-accounting: スマートフォンの幅（390px）でも、横にはみ出さず、確認・出力の操作ができる", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/tools/receipt-accounting-csv");
+  await expect(page.getByTestId("receipt-tool")).toBeVisible();
+  await loadFiles(page, [files.textPdf], 2);
+  const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(await overflow()).toBeLessThanOrEqual(1);
+  const row = page.getByTestId("receipt-row").first();
+  await row.getByTestId("receipt-confirm").scrollIntoViewIfNeeded();
+  const box = await row.getByTestId("receipt-confirm").boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= 390).toBeTruthy();
+  await row.getByTestId("receipt-confirm").click();
+  await expect(row).toHaveAttribute("data-confirmed", "true");
+  const download = await clickAndDownload(page, "CSVをダウンロード");
+  const { path: csvPath } = await assertDownloadedFile(download, { minBytes: 20 });
+  expect(readCsv(csvPath)).toEqual(["日付,取引先,合計金額", "2026/09/15,株式会社テスト商店,1320"]);
+  expect(await overflow()).toBeLessThanOrEqual(1);
+});
+
+// ---------------------------------------------------------------------------
+// 4. 広告（工程9）：このツールでは、ダウンロード時の広告確認も出さない
+// ---------------------------------------------------------------------------
+plainTest("receipt-accounting: 無料プランでも、CSVのダウンロード前に広告の確認画面を出さない", async ({ page, context }) => {
+  plainTest.setTimeout(180_000);
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const pdfPath = path.join(dir, "ad-free-check.pdf");
+  fs.writeFileSync(pdfPath, await buildTextPdf([RECEIPT_TEXT]));
+  await page.goto("/tools/receipt-accounting-csv");
+  await plainExpect(page.getByTestId("receipt-tool")).toBeVisible();
+  await plainExpect(page.getByTestId("download-ad-notice")).toHaveCount(0);
+  await uploadWhenReady(page, pdfPath, page.getByTestId("receipt-row").first(), { readyTimeoutMs: 60_000 });
+  await plainExpect(page.getByTestId("receipt-row")).toHaveCount(1, { timeout: 60_000 });
+  await page.getByTestId("receipt-confirm").click();
+  const downloadPromise = page.waitForEvent("download", { timeout: 15_000 });
+  await page.getByRole("button", { name: "CSVをダウンロード" }).click();
+  const download = await downloadPromise;
+  plainExpect(download.suggestedFilename()).toMatch(/\.csv$/);
+  await plainExpect(page.getByTestId("download-gate-dialog")).toHaveCount(0);
+  void context;
 });
