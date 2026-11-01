@@ -323,7 +323,7 @@ export function PdfCompressTool() {
                     {formatTargetMB(targetResult.compressedSizeBytes)}です。
                   </p>
                   <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                    文字や図形が中心のPDFや、JPEG以外の画像（スクリーンショットなど）のPDFは、これ以上小さくしにくいです。「PDF分割」でページを分けると、1つずつのサイズを小さくできます。
+                    文字や図形が中心のPDFや、小さな画像・図がたくさん入ったPDFは、これ以上小さくしにくいです。「PDF分割」でページを分けると、1つずつのサイズを小さくできます。
                   </p>
                 </div>
               ))}
@@ -356,7 +356,10 @@ export function PdfCompressTool() {
                 {result.imageStats.imageCount === 0
                   ? "このPDFには画像がないため、画像の設定は使われませんでした。"
                   : `画像${result.imageStats.imageCount}個のうち、${result.imageStats.recompressed}個を作り直しました（うち縮小${result.imageStats.resized}個）。` +
-                    (result.imageStats.skipped > 0 ? `JPEG以外などの対象外${result.imageStats.skipped}個は、そのままです。` : "") +
+                    (result.imageStats.convertedToJpeg > 0 ? `JPEG以外で入っていた写真${result.imageStats.convertedToJpeg}個は、JPEGにしました。` : "") +
+                    (result.imageStats.skipped > 0
+                      ? `小さな画像・透明の情報・対象外の形式（CMYKなど）の${result.imageStats.skipped}個は、そのままです。`
+                      : "") +
                     (result.imageStats.keptOriginal > 0 ? `作り直しても小さくならなかった${result.imageStats.keptOriginal}個は、元のままです。` : "")}
               </p>
             )}
@@ -477,7 +480,7 @@ function TargetSizePanel({
         </p>
       )}
       <p id="compress-target-help" className="text-xs text-neutral-500 dark:text-neutral-400">
-        指定したサイズ以下になるまで、PDFの中の画像の画質と大きさを自動で下げます（できるだけ画質を保てる設定を選びます）。文字・図形・リンクは変わりません。届かないときは、いちばん小さくできた結果を表示します。1MB＝1,000,000バイトで計算するため、アップロードの上限にも確実に収まります。
+        指定したサイズ以下になるまで、PDFの中の写真の画質と大きさを自動で下げます（できるだけ画質を保てる設定を選びます。JPEG以外で入っている写真も、JPEGにして小さくします）。文字・図形・リンクは変わりません。届かないときは、いちばん小さくできた結果を表示します。1MB＝1,000,000バイトで計算するため、アップロードの上限にも確実に収まります。
       </p>
     </div>
   );
@@ -635,7 +638,7 @@ function CompressSettingsPanel({
         </button>
       </div>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        文字・図形・リンクは変わりません（文字の検索・選択もそのまま）。どれだけ小さくなるかはPDFの中身しだいです。サイズで決めたいときは「サイズを指定する」を選んでください。JPEG以外の画像はそのまま残ります。
+        文字・図形・リンクは変わりません（文字の検索・選択もそのまま）。どれだけ小さくなるかはPDFの中身しだいです。サイズで決めたいときは「サイズを指定する」を選んでください。JPEG以外で入っている大きな写真もJPEGにします（小さな画像・図・透明の情報はそのまま残ります）。
       </p>
     </fieldset>
   );

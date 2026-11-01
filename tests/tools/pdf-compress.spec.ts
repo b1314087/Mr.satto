@@ -1,9 +1,11 @@
 import fs from "node:fs";
+import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
 import { test as plainTest } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { PDFDocument, PDFName, PDFNumber, PDFRawStream, StandardFonts } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFRef, StandardFonts, drawObject, popGraphicsState, pushGraphicsState, concatTransformationMatrix } from "pdf-lib";
+import { FLATE_PHOTO_MIN_PIXELS, unpredictPng } from "@/lib/processors/browser/pdf-image-recompress";
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload, closeResultPopup, waitForFileInputHydrated } from "../helpers/tool-runner";
 import { extractPdfContent } from "../helpers/pdf-inspect";
@@ -340,9 +342,10 @@ plainTest.describe("目標のサイズ（画面なし）", () => {
 });
 
 /** ブラウザで、写真のような画像をPNG（JPEG以外）で作る */
-async function makePhotoPng(page: Page, width: number, height: number): Promise<Buffer> {
+async function makePhotoPng(page: Page, width: number, height: number, opts: { transparentCorner?: boolean } = {}): Promise<Buffer> {
+  const transparentCorner = opts.transparentCorner ?? false;
   const base64 = await page.evaluate(
-    async ({ width, height }) => {
+    async ({ width, height, transparentCorner }) => {
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
@@ -351,6 +354,10 @@ async function makePhotoPng(page: Page, width: number, height: number): Promise<
       // 縮めにくい（ランダムな）画素にする
       for (let i = 0; i < img.data.length; i += 65536) crypto.getRandomValues(img.data.subarray(i, Math.min(i + 65536, img.data.length)));
       for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+      // 左上の4分の1を半透明にする（PDFでは、透明度が別の画像（SMask）になる）
+      if (transparentCorner) {
+        for (let y = 0; y < height / 2; y++) for (let x = 0; x < width / 2; x++) img.data[(y * width + x) * 4 + 3] = 128;
+      }
       ctx.putImageData(img, 0, 0);
       const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));
       const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -358,7 +365,7 @@ async function makePhotoPng(page: Page, width: number, height: number): Promise<
       for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       return btoa(s);
     },
-    { width, height }
+    { width, height, transparentCorner }
   );
   return Buffer.from(base64, "base64");
 }
@@ -397,12 +404,16 @@ test.describe("PDF圧縮：目標のサイズ（MB）を指定する", () => {
     expect((await imageSizes(one))[0].width).toBeGreaterThanOrEqual(halfImages[0].width);
   });
 
-  test("目標に届かないPDF（JPEG以外の画像）は、そのことと理由・次の手を伝え、いちばん小さくできた結果をダウンロードできる", async ({ page }) => {
+  test("目標に届かないPDF（小さな画像がたくさん）は、そのことと理由・次の手を伝え、いちばん小さくできた結果をダウンロードできる", async ({ page }) => {
     await page.goto("/tools/pdf-compress");
-    const png = await makePhotoPng(page, 600, 400);
+    // JPEGにする対象より小さい画像（150×150）を、たくさん並べる（写真ではないため、作り直さない）
     const doc = await PDFDocument.create();
-    const image = await doc.embedPng(png);
-    doc.addPage([595, 842]).drawImage(image, { x: 50, y: 300, width: 495, height: 330 });
+    const pdfPage = doc.addPage([595, 842]);
+    for (let i = 0; i < 15; i++) {
+      const image = await doc.embedPng(await makePhotoPng(page, 150, 150));
+      pdfPage.drawImage(image, { x: 20 + (i % 5) * 110, y: 600 - Math.floor(i / 5) * 110, width: 100, height: 100 });
+    }
+    expect(150 * 150).toBeLessThan(FLATE_PHOTO_MIN_PIXELS);
     const src = workPath("png.pdf");
     fs.writeFileSync(src, await doc.save());
     expect(fs.statSync(src).size).toBeGreaterThan(200_000);
@@ -448,5 +459,197 @@ test.describe("PDF圧縮：目標のサイズ（MB）を指定する", () => {
     await expect(page.getByRole("button", { name: "圧縮する" })).toBeDisabled();
     await page.getByTestId("compress-mode-quality").check();
     await expect(page.getByRole("button", { name: "圧縮する" })).toBeEnabled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. JPEG以外（Flate）で入っている写真をJPEGにする
+// ---------------------------------------------------------------------------
+
+/** テスト用：PNGの予測（行ごとのフィルター）をかける（unpredictPng の逆） */
+function predictPng(pixels: Uint8Array, width: number, height: number, components: number, filterOf: (y: number) => number): Uint8Array {
+  const rowBytes = width * components;
+  const out = new Uint8Array(height * (rowBytes + 1));
+  for (let y = 0; y < height; y++) {
+    const f = filterOf(y);
+    out[y * (rowBytes + 1)] = f;
+    for (let x = 0; x < rowBytes; x++) {
+      const cur = pixels[y * rowBytes + x];
+      const left = x >= components ? pixels[y * rowBytes + x - components] : 0;
+      const up = y > 0 ? pixels[(y - 1) * rowBytes + x] : 0;
+      const upLeft = y > 0 && x >= components ? pixels[(y - 1) * rowBytes + x - components] : 0;
+      let pred = 0;
+      if (f === 1) pred = left;
+      else if (f === 2) pred = up;
+      else if (f === 3) pred = (left + up) >> 1;
+      else if (f === 4) {
+        const p = left + up - upLeft;
+        const pa = Math.abs(p - left);
+        const pb = Math.abs(p - up);
+        const pc = Math.abs(p - upLeft);
+        pred = pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
+      }
+      out[y * (rowBytes + 1) + 1 + x] = (cur - pred) & 0xff;
+    }
+  }
+  return out;
+}
+
+plainTest.describe("PNGの予測を戻す（画面なし）", () => {
+  plainTest("5種類のフィルター（なし・左・上・平均・Paeth）を、行ごとに混ぜても元の画素に戻る。長さが足りない・知らない種類は扱わない", () => {
+    const width = 7;
+    const height = 10;
+    for (const components of [1, 3]) {
+      const pixels = new Uint8Array(width * height * components);
+      for (let i = 0; i < pixels.length; i++) pixels[i] = (i * 37 + 11) % 256;
+      const encoded = predictPng(pixels, width, height, components, (y) => y % 5);
+      expect(Array.from(unpredictPng(encoded, width, height, components)!)).toEqual(Array.from(pixels));
+    }
+    expect(unpredictPng(new Uint8Array(5), width, height, 3)).toBeNull();
+    const bad = predictPng(new Uint8Array(width * height * 3), width, height, 3, () => 0);
+    bad[0] = 9;
+    expect(unpredictPng(bad, width, height, 3)).toBeNull();
+  });
+});
+
+/** PDFの画像を調べる（フィルター・色空間・透明度の画像） */
+async function imageInfos(file: string) {
+  const doc = await PDFDocument.load(fs.readFileSync(file));
+  const infos: { width: number; filter: string; colorSpace: string; smask: { filter: string; colorSpace: string } | null; bytes: Uint8Array }[] = [];
+  const smaskRefs = new Set<string>();
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (obj instanceof PDFRawStream && obj.dict.get(PDFName.of("SMask")) instanceof PDFRef) smaskRefs.add(String(obj.dict.get(PDFName.of("SMask"))));
+  }
+  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream) || obj.dict.get(PDFName.of("Subtype")) !== PDFName.of("Image") || smaskRefs.has(String(ref))) continue;
+    const smaskRef = obj.dict.get(PDFName.of("SMask"));
+    const smask = smaskRef instanceof PDFRef ? (doc.context.lookup(smaskRef) as PDFRawStream) : null;
+    infos.push({
+      width: (obj.dict.get(PDFName.of("Width")) as PDFNumber).asNumber(),
+      filter: String(obj.dict.get(PDFName.of("Filter"))),
+      colorSpace: String(obj.dict.get(PDFName.of("ColorSpace"))),
+      smask: smask ? { filter: String(smask.dict.get(PDFName.of("Filter"))), colorSpace: String(smask.dict.get(PDFName.of("ColorSpace"))) } : null,
+      bytes: obj.contents,
+    });
+  }
+  return infos;
+}
+
+/** JPEGのバイト列を、ブラウザで読んで、指定した位置の色を返す */
+async function jpegPixel(page: Page, bytes: Uint8Array, fx: number, fy: number): Promise<number[]> {
+  return page.evaluate(
+    async ({ b64, fx, fy }) => {
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const bmp = await createImageBitmap(new Blob([arr], { type: "image/jpeg" }));
+      const c = document.createElement("canvas");
+      c.width = bmp.width;
+      c.height = bmp.height;
+      const ctx = c.getContext("2d")!;
+      ctx.drawImage(bmp, 0, 0);
+      return Array.from(ctx.getImageData(Math.floor(bmp.width * fx), Math.floor(bmp.height * fy), 1, 1).data).slice(0, 3);
+    },
+    { b64: Buffer.from(bytes).toString("base64"), fx, fy }
+  );
+}
+
+test.describe("PDF圧縮：JPEG以外で入っている写真をJPEGにする", () => {
+  test("PNGの写真（透明度つき）はJPEGになって目標以下になり、透明度の画像はそのまま残る。文字もそのまま", async ({ page }) => {
+    await page.goto("/tools/pdf-compress");
+    const png = await makePhotoPng(page, 1200, 900, { transparentCorner: true });
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const image = await doc.embedPng(png); // pdf-lib は、PNGを Flate の画像＋透明度（SMask）として入れる
+    const p = doc.addPage([595, 842]);
+    p.drawText("Flate photo page", { x: 50, y: 790, size: 14, font });
+    p.drawImage(image, { x: 50, y: 300, width: 495, height: 371 });
+    const src = workPath("flate-photo.pdf");
+    fs.writeFileSync(src, await doc.save());
+    const before = await imageInfos(src);
+    expect(before).toHaveLength(1);
+    expect(before[0].filter).toBe("/FlateDecode");
+    expect(before[0].smask).not.toBeNull();
+
+    await openWithPdf(page, src, "target");
+    const original = fs.statSync(src).size;
+    const target = Math.floor((original / 4) / 10_000) / 100; // 元の4分の1程度（MB）
+    await page.getByTestId("compress-target-mb").fill(String(target));
+    const out = await compressAndSave(page, "flate-out.pdf");
+    expect(fs.statSync(out).size).toBeLessThanOrEqual(target * 1_000_000);
+    await expect(page.getByTestId("compress-target-result")).toContainText("以下になりました");
+    await expect(page.getByTestId("compress-image-stats")).toContainText("JPEG以外で入っていた写真1個は、JPEGにしました");
+
+    const after = await imageInfos(out);
+    expect(after).toHaveLength(1);
+    expect(after[0].filter).toBe("/DCTDecode");
+    expect(after[0].colorSpace).toBe("/DeviceRGB");
+    // 透明度の画像は、JPEGにしない（グレーのFlateのまま）
+    expect(after[0].smask).toEqual({ filter: "/FlateDecode", colorSpace: "/DeviceGray" });
+    const content = await extractPdfContent(out);
+    expect(content.text).toContain("Flate photo page");
+  });
+
+  test("PNGの予測（Predictor 15）つきで入っている写真も、正しい色のままJPEGになる。「画像はそのまま」では変えない", async ({ page }) => {
+    await page.goto("/tools/pdf-compress");
+    // 左上が赤、右下が青になる、なめらかなグラデーション（800×600、RGB）。行ごとに違うフィルターで保存する
+    const width = 800;
+    const height = 600;
+    const pixels = new Uint8Array(width * height * 3);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const t = (x / width + y / height) / 2;
+        const o = (y * width + x) * 3;
+        pixels[o] = Math.round(220 * (1 - t));
+        pixels[o + 1] = Math.round(60 + 80 * Math.sin(x / 40) * Math.cos(y / 50) + 60);
+        pixels[o + 2] = Math.round(220 * t);
+      }
+    }
+    const data = zlib.deflateSync(Buffer.from(predictPng(pixels, width, height, 3, (y) => y % 5)), { level: 1 });
+    const doc = await PDFDocument.create();
+    const dict = doc.context.obj({
+      Type: "XObject",
+      Subtype: "Image",
+      Width: width,
+      Height: height,
+      ColorSpace: "DeviceRGB",
+      BitsPerComponent: 8,
+      Filter: "FlateDecode",
+      DecodeParms: doc.context.obj({ Predictor: 15, Colors: 3, BitsPerComponent: 8, Columns: width }),
+    }) as PDFDict;
+    const imageRef = doc.context.register(PDFRawStream.of(dict, new Uint8Array(data)));
+    const pdfPage = doc.addPage([595, 842]);
+    const name = pdfPage.node.newXObject("ImPred", imageRef);
+    pdfPage.pushOperators(pushGraphicsState(), concatTransformationMatrix(495, 0, 0, 371, 50, 300), drawObject(name), popGraphicsState());
+    const src = workPath("predictor.pdf");
+    fs.writeFileSync(src, await doc.save());
+    expect(fs.statSync(src).size).toBeGreaterThan(30_000);
+
+    // 「画像はそのまま」では、変えない
+    await openWithPdf(page, src, "quality");
+    await page.getByTestId("compress-preset-structure").click();
+    const kept = await compressAndSave(page, "predictor-kept.pdf");
+    expect((await imageInfos(kept))[0].filter).toBe("/FlateDecode");
+
+    // 標準の設定では、JPEGになり、色は元とほぼ同じ（左上は赤、右下は青、中央はその間）
+    await closeResultPopup(page);
+    await page.getByTestId("compress-preset-standard").click();
+    const out = await compressAndSave(page, "predictor-out.pdf");
+    const info = (await imageInfos(out))[0];
+    expect(info.filter).toBe("/DCTDecode");
+    expect(info.width).toBe(width);
+    for (const [fx, fy] of [
+      [0.02, 0.02],
+      [0.5, 0.5],
+      [0.98, 0.98],
+    ]) {
+      const [r, g, b] = await jpegPixel(page, info.bytes, fx, fy);
+      const ox = Math.floor(width * fx);
+      const oy = Math.floor(height * fy);
+      const o = (oy * width + ox) * 3;
+      expect(Math.abs(r - pixels[o])).toBeLessThan(25);
+      expect(Math.abs(g - pixels[o + 1])).toBeLessThan(25);
+      expect(Math.abs(b - pixels[o + 2])).toBeLessThan(25);
+    }
   });
 });
