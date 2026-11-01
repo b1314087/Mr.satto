@@ -6,6 +6,8 @@ import { computeImagePageLayout } from "./image-to-pdf-layout";
 import { stripExtension } from "@/lib/utils/format";
 import { assertValidPageRange, parsePageSelection, rangeToIndices } from "@/lib/pdf/page-selection";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
+import { type PdfCompressSettings } from "@/lib/pdf/compress-settings";
+import { hasDigitalSignature, recompressPdfImages, type RecompressStats } from "./pdf-image-recompress";
 import {
   PAGE_NUMBER_COLOR,
   WATERMARK_COLOR,
@@ -121,8 +123,13 @@ export async function getPdfPageCount(file: File): Promise<number> {
 // ---------------------------------------------------------------------------
 // PDF圧縮（Phase 2-B）
 // ---------------------------------------------------------------------------
+/** 画像を変えず、構造の最適化だけを行う設定（設定を渡さない呼び出しは、これまでどおりの動作になる） */
+const STRUCTURE_ONLY_SETTINGS: PdfCompressSettings = { recompressImages: false, imageQuality: 75, maxImageEdge: 2000 };
+
 export interface PdfCompressInput {
   file: File;
+  /** 画像の再圧縮の設定。省略時は、これまでどおり構造の最適化だけを行う */
+  settings?: PdfCompressSettings;
 }
 
 export interface PdfCompressOutput {
@@ -131,10 +138,21 @@ export interface PdfCompressOutput {
   originalSizeBytes: number;
   compressedSizeBytes: number;
   pageCount: number;
+  /** 実際に使った設定（画面の表示・テストの確認用） */
+  settings: PdfCompressSettings;
+  /** 画像の再圧縮の結果（画像を再圧縮しない設定では null） */
+  imageStats: RecompressStats | null;
+  /** 電子署名を含むPDFだったか（保存し直すと署名は無効になる） */
+  hadSignature: boolean;
 }
 
 /**
  * PDF圧縮。
+ *
+ * 工程18：数値設定（画像の品質・長辺の上限）を追加した。settings.recompressImages が true のときは、
+ * PDFに埋め込まれたJPEG画像を、指定した品質・長辺の上限で作り直す（src/lib/processors/browser/pdf-image-recompress.ts）。
+ * 文字・図形・フォントは変えない。JPEG以外の画像（Flateなど）は対象外で、そのまま残す。
+ * 以下は、構造の最適化（どの設定でも行う）についての、これまでの注意。
  *
  * 重要な注意（開発指示書■9・■24）: pdf-lib には埋め込み画像の
  * 再圧縮・ダウンサンプリング・不要フォントのサブセット化といった
@@ -150,9 +168,19 @@ export interface PdfCompressOutput {
  * 「必ず圧縮できる」「大幅に削減できる」という体裁を作らない。
  */
 export class PdfCompressProcessor extends BrowserProcessor<PdfCompressInput, PdfCompressOutput> {
-  async process({ file }: PdfCompressInput): Promise<PdfCompressOutput> {
+  async process({ file, settings = STRUCTURE_ONLY_SETTINGS }: PdfCompressInput): Promise<PdfCompressOutput> {
     const doc = await loadPdfDoc(file);
     const originalSizeBytes = file.size;
+    const hadSignature = hasDigitalSignature(doc);
+
+    let imageStats: RecompressStats | null = null;
+    if (settings.recompressImages) {
+      try {
+        imageStats = await recompressPdfImages(doc, settings);
+      } catch {
+        throw new Error("PDFの画像の圧縮に失敗しました。「画像はそのまま」を選ぶと、画像を変えずに圧縮できます。");
+      }
+    }
 
     let bytes: Uint8Array;
     try {
@@ -168,6 +196,9 @@ export class PdfCompressProcessor extends BrowserProcessor<PdfCompressInput, Pdf
       originalSizeBytes,
       compressedSizeBytes: blob.size,
       pageCount: doc.getPageCount(),
+      settings,
+      imageStats,
+      hadSignature,
     };
   }
 }
