@@ -1,198 +1,270 @@
-import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
+import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
-import { csvRowsToBlob } from "@/lib/utils/csv";
+import { SEAT_H, SEAT_W, type LayoutGeometry } from "@/lib/seating/layouts";
 import type { Participant } from "@/lib/seating/participants";
-import type { SeatingPlan } from "@/lib/seating/arrange";
 
 /**
- * 座席表の出力（PDF・Excel・CSV）。ブラウザ内だけで作る（名前は外部に送らない）。
- * - PDF: A4横。テーブルごとの枠に、席番号と名前を並べる。名前が長いときは文字を縮めて枠に収める。
- * - Excel: 「座席表」シート（テーブルを並べた表）と「一覧」シート（氏名・テーブル・席番号）。値だけで書式は付けない。
- * - CSV: 氏名・テーブル・席番号の一覧（UTF-8・BOM付き）。
+ * 座席表の書き出し（画像 PNG・JPEG、PDF、Excel）。ブラウザ内だけで作る（名前は外部に送らない）。
+ * 画像とPDFは、同じ描き方（paintChart）で描く。PDFは文字のまま（拡大しても粗くならず、文字を選べる）。
  */
 
-export interface SeatingExportInput {
+export interface SeatingChartModel {
   title: string;
-  participants: Participant[];
-  plan: SeatingPlan;
+  geometry: LayoutGeometry;
+  /** 席ごとの人（geometry.seats と同じ並び。空席は null） */
+  assignment: (Participant | null)[];
+  /** 席に入らなかった人 */
+  unseated: Participant[];
+  /** 席ごとの札（「来賓」「司会」など。geometry.seats と同じ並び。無ければ空文字）。札は人ではなく席に付く */
+  tags?: string[];
 }
 
-export interface SeatingListRow {
-  name: string;
-  table: number;
-  seat: number;
+export type PaperSize = "A4" | "B4" | "A3";
+/** 用紙の長い辺・短い辺（pt） */
+export const PAPER_PT: Record<PaperSize, [number, number]> = {
+  A4: [841.89, 595.28],
+  B4: [1031.81, 728.5],
+  A3: [1190.55, 841.89],
+};
+
+export type ExportFormat = "png" | "jpeg" | "pdf" | "xlsx";
+
+export const TITLE_H = 64;
+const FONT = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","YuGothic","Meiryo","Noto Sans JP",sans-serif';
+
+type Color = [number, number, number];
+const INK: Color = [0.12, 0.14, 0.18];
+const MUTED: Color = [0.42, 0.45, 0.5];
+const SEAT_BORDER: Color = [0.62, 0.66, 0.72];
+const TABLE_FILL: Color = [0.92, 0.94, 0.97];
+const TABLE_BORDER: Color = [0.6, 0.66, 0.74];
+const MARK_FILL: Color = [0.2, 0.25, 0.33];
+const WHITE: Color = [1, 1, 1];
+const EMPTY_FILL: Color = [0.97, 0.97, 0.98];
+const TAG_FILL: Color = [0.98, 0.82, 0.35];
+const TAG_INK: Color = [0.35, 0.2, 0.0];
+
+interface TextOpts {
+  size: number;
+  color: Color;
+  bold?: boolean;
+  /** 横位置の基準：中央（既定）か左 */
+  align?: "center" | "left";
 }
 
-/** 席に座っている人の一覧（テーブル・席の順） */
-export function seatingList({ participants, plan }: Pick<SeatingExportInput, "participants" | "plan">): SeatingListRow[] {
-  const nameById = new Map(participants.map((p) => [p.id, p.name]));
-  const rows: SeatingListRow[] = [];
-  plan.tables.forEach((row, t) =>
-    row.forEach((id, s) => {
-      if (id !== null) rows.push({ name: nameById.get(id) ?? "", table: t + 1, seat: s + 1 });
-    })
-  );
-  return rows;
+/** 描く道具（画像は canvas、PDFは pdf-lib）。座標は、上が0の点（px） */
+export interface Painter {
+  rect(x: number, y: number, w: number, h: number, fill: Color | null, stroke: Color | null, lineWidth?: number): void;
+  circle(cx: number, cy: number, r: number, fill: Color, stroke: Color): void;
+  /** y は文字の縦の中心 */
+  text(text: string, x: number, y: number, opts: TextOpts): void;
+  measure(text: string, size: number, bold?: boolean): number;
 }
 
-/** CSVをExcelで開いたときに、数式として実行されないようにする（=, +, -, @ で始まる文字の前に ' を付ける） */
-function csvSafe(text: string): string {
-  return /^[=+\-@]/.test(text) ? `'${text}` : text;
+/** 幅に収まる文字の大きさ（最小 minSize） */
+function fitSize(p: Painter, text: string, size: number, maxWidth: number, bold: boolean, minSize: number): number {
+  const w = p.measure(text, size, bold);
+  if (w <= maxWidth) return size;
+  return Math.max(minSize, (size * maxWidth) / w);
 }
 
-export function seatingToCsvBlob(input: SeatingExportInput): Blob {
-  const rows = [["氏名", "テーブル", "席番号"], ...seatingList(input).map((r) => [csvSafe(r.name), String(r.table), String(r.seat)])];
-  return csvRowsToBlob(rows);
-}
+export function paintChart(p: Painter, model: SeatingChartModel) {
+  const { geometry: g } = model;
+  const title = model.title.trim() || "座席表";
+  p.text(title, 28, 32, { size: fitSize(p, title, 26, g.width - 56, true, 12), color: INK, bold: true, align: "left" });
+  const oy = TITLE_H;
 
-/** Excelの「座席表」シートの行（テーブルを横に最大 perBand 個ずつ並べる） */
-export function seatingGridRows(input: SeatingExportInput, perBand = 4): (string | number | null)[][] {
-  const nameById = new Map(input.participants.map((p) => [p.id, p.name]));
-  const rows: (string | number | null)[][] = [];
-  for (let start = 0; start < input.plan.tables.length; start += perBand) {
-    const band = input.plan.tables.slice(start, start + perBand);
-    const height = Math.max(...band.map((t) => t.length));
-    const header: (string | number | null)[] = [];
-    band.forEach((_, i) => header.push(`テーブル${start + i + 1}`, null, null));
-    rows.push(header);
-    for (let s = 0; s < height; s++) {
-      const line: (string | number | null)[] = [];
-      band.forEach((table) => {
-        if (s < table.length) {
-          const id = table[s];
-          line.push(s + 1, id === null ? "（空席）" : (nameById.get(id) ?? ""), null);
-        } else {
-          line.push(null, null, null);
-        }
-      });
-      rows.push(line);
+  for (const sh of g.shapes) {
+    if (sh.kind === "rect") {
+      p.rect(sh.x, sh.y + oy, sh.w, sh.h, TABLE_FILL, TABLE_BORDER, 1.2);
+      if (sh.label) p.text(sh.label, sh.x + sh.w / 2, sh.y + oy + sh.h / 2, { size: 13, color: MUTED });
+    } else {
+      p.circle(sh.cx, sh.cy + oy, sh.r, TABLE_FILL, TABLE_BORDER);
+      if (sh.label) p.text(sh.label, sh.cx, sh.cy + oy, { size: 14, color: MUTED });
     }
-    rows.push([]);
   }
-  return rows;
+  for (const m of g.marks) {
+    p.rect(m.x, m.y + oy, m.w, 30, MARK_FILL, null);
+    p.text(m.text, m.x + m.w / 2, m.y + oy + 15, { size: 14, color: WHITE, bold: true });
+  }
+  g.seats.forEach((seat, i) => {
+    const person = model.assignment[i];
+    const x = seat.x;
+    const y = seat.y + oy;
+    p.rect(x, y, SEAT_W, SEAT_H, person ? WHITE : EMPTY_FILL, SEAT_BORDER, 1);
+    p.text(String(i + 1), x + 6, y + 10, { size: 10, color: MUTED, align: "left" });
+    const tag = (model.tags?.[i] ?? "").trim();
+    if (tag) {
+      const size = fitSize(p, tag, 10, SEAT_W - 40, true, 6);
+      const w = p.measure(tag, size, true) + 10;
+      p.rect(x + SEAT_W - w - 4, y + 3, w, 15, TAG_FILL, null);
+      p.text(tag, x + SEAT_W - w / 2 - 4, y + 10.5, { size, color: TAG_INK, bold: true });
+    }
+    if (!person) return;
+    const maxW = SEAT_W - 14;
+    if (person.role) {
+      p.text(person.name, x + SEAT_W / 2, y + 27, { size: fitSize(p, person.name, 17, maxW, true, 7), color: INK, bold: true });
+      p.text(person.role, x + SEAT_W / 2, y + 46, { size: fitSize(p, person.role, 11, maxW, false, 6), color: MUTED });
+    } else {
+      p.text(person.name, x + SEAT_W / 2, y + SEAT_H / 2 + 3, { size: fitSize(p, person.name, 18, maxW, true, 7), color: INK, bold: true });
+    }
+  });
 }
 
-export async function seatingToXlsxBlob(input: SeatingExportInput, perBand = 4): Promise<Blob> {
-  const perTableColumns: { width: number }[] = [];
-  for (let i = 0; i < perBand; i++) perTableColumns.push({ width: 6 }, { width: 22 }, { width: 3 });
-  const list = seatingList(input);
-  return writeXlsxSheets([
-    { name: "座席表", rows: seatingGridRows(input, perBand), columns: perTableColumns },
-    {
-      name: "一覧",
-      rows: [["氏名", "テーブル", "席番号"], ...list.map((r) => [r.name, r.table, r.seat])],
-      columns: [{ width: 24 }, { width: 10 }, { width: 10 }],
+// ---------------------------------------------------------------------------
+// 画像（canvas）
+// ---------------------------------------------------------------------------
+
+function css([r, g, b]: Color): string {
+  return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+}
+
+export function canvasPainter(ctx: CanvasRenderingContext2D): Painter {
+  const font = (size: number, bold?: boolean) => `${bold ? "bold " : ""}${size}px ${FONT}`;
+  return {
+    rect(x, y, w, h, fill, stroke, lineWidth = 1) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 8);
+      if (fill) {
+        ctx.fillStyle = css(fill);
+        ctx.fill();
+      }
+      if (stroke) {
+        ctx.strokeStyle = css(stroke);
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+      }
     },
-  ]);
+    circle(cx, cy, r, fill, stroke) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = css(fill);
+      ctx.fill();
+      ctx.strokeStyle = css(stroke);
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    },
+    text(text, x, y, opts) {
+      ctx.font = font(opts.size, opts.bold);
+      ctx.fillStyle = css(opts.color);
+      ctx.textAlign = opts.align === "left" ? "left" : "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x, y);
+    },
+    measure(text, size, bold) {
+      ctx.font = font(size, bold);
+      return ctx.measureText(text).width;
+    },
+  };
+}
+
+export function chartSize(model: SeatingChartModel): { width: number; height: number } {
+  return { width: Math.ceil(model.geometry.width), height: Math.ceil(model.geometry.height + TITLE_H) };
+}
+
+export async function chartToImageBlob(model: SeatingChartModel, format: "png" | "jpeg", scale = 2): Promise<Blob> {
+  const { width, height } = chartSize(model);
+  // 大きすぎる画像は作れないブラウザがあるため、辺の長さを抑える
+  const s = Math.min(scale, 8000 / width, 8000 / height);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width * s);
+  canvas.height = Math.round(height * s);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("この環境では画像を作れませんでした");
+  ctx.scale(s, s);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  paintChart(canvasPainter(ctx), model);
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("画像を作れませんでした"))), format === "png" ? "image/png" : "image/jpeg", 0.92);
+  });
 }
 
 // ---------------------------------------------------------------------------
-// PDF
+// PDF（pdf-lib・文字のまま）
 // ---------------------------------------------------------------------------
-const PAGE_W = 841.89; // A4横
-const PAGE_H = 595.28;
-const MARGIN = 36;
-const TITLE_SIZE = 18;
-const HEADER_H = 24;
-const GAP = 14;
-const MAX_ROW_H = 17;
-const MIN_ROW_H = 10;
 
-const INK: [number, number, number] = [0.13, 0.13, 0.15];
-const MUTED: [number, number, number] = [0.55, 0.55, 0.58];
-const LINE: [number, number, number] = [0.55, 0.55, 0.6];
-const HEADER_BG: [number, number, number] = [0.9, 0.93, 0.98];
+const PDF_MARGIN = 28;
 
-/** 1ページに並べるテーブルの列数 */
-export function seatingPdfColumns(tableCount: number): number {
-  if (tableCount <= 2) return Math.max(1, tableCount);
-  if (tableCount <= 6) return 3;
-  return 4;
+function pdfPainter(page: PDFPage, font: PDFFont, scale: number, ox: number, pageH: number, oy: number): Painter {
+  const X = (x: number) => ox + x * scale;
+  const Y = (y: number) => pageH - (oy + y * scale);
+  return {
+    rect(x, y, w, h, fill, stroke, lineWidth = 1) {
+      page.drawRectangle({
+        x: X(x),
+        y: Y(y + h),
+        width: w * scale,
+        height: h * scale,
+        color: fill ? rgb(...fill) : undefined,
+        borderColor: stroke ? rgb(...stroke) : undefined,
+        borderWidth: stroke ? lineWidth * scale : 0,
+      });
+    },
+    circle(cx, cy, r, fill, stroke) {
+      page.drawCircle({ x: X(cx), y: Y(cy), size: r * scale, color: rgb(...fill), borderColor: rgb(...stroke), borderWidth: 1.2 * scale });
+    },
+    text(text, x, y, opts) {
+      const size = opts.size * scale;
+      const w = font.widthOfTextAtSize(text, size);
+      const left = opts.align === "left" ? X(x) : X(x) - w / 2;
+      page.drawText(text, { x: left, y: Y(y) - size * 0.36, size, font, color: rgb(...opts.color) });
+    },
+    measure(text, size) {
+      return font.widthOfTextAtSize(text, size);
+    },
+  };
 }
 
-function fitText(text: string, font: PDFFont, size: number, maxWidth: number): number {
-  const width = font.widthOfTextAtSize(text, size);
-  if (width <= maxWidth) return size;
-  return Math.max(5, (size * maxWidth) / width);
-}
-
-export async function seatingToPdfBlob(input: SeatingExportInput): Promise<{ blob: Blob; pageCount: number }> {
+export async function chartToPdfBlob(model: SeatingChartModel, paper: PaperSize = "A4"): Promise<Blob> {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   // 日本語フォントは、一部の文字が欠けないよう、サブセットにしない（帳票のPDFと同じ方針）
   const font = await doc.embedFont(await loadJapaneseFontBytes(), { subset: false });
-  const nameById = new Map(input.participants.map((p) => [p.id, p.name]));
-  const tables = input.plan.tables;
-  const cols = seatingPdfColumns(tables.length);
-  const boxW = (PAGE_W - MARGIN * 2 - GAP * (cols - 1)) / cols;
-  const maxSeats = Math.max(...tables.map((t) => t.length));
-  const bodyTop = PAGE_H - MARGIN - TITLE_SIZE - 14;
-  const bodyHeight = bodyTop - MARGIN - 10;
-
-  // 席の行の高さ。席数が多いテーブルがあっても、1ページに収まるよう、縮める
-  const rowH = Math.min(MAX_ROW_H, Math.max(MIN_ROW_H, (bodyHeight - HEADER_H) / maxSeats));
-  const fontSize = Math.min(11, rowH * 0.68);
-
-  // テーブルを列ごとの行（band）にして、ページに収まる分ずつ並べる
-  const bands: number[][] = [];
-  for (let i = 0; i < tables.length; i += cols) bands.push(Array.from({ length: Math.min(cols, tables.length - i) }, (_, k) => i + k));
-  const bandHeight = (band: number[]) => HEADER_H + Math.max(...band.map((t) => tables[t].length)) * rowH;
-
-  const pages: number[][][] = [];
-  let current: number[][] = [];
-  let used = 0;
-  for (const band of bands) {
-    const h = bandHeight(band);
-    if (current.length > 0 && used + h > bodyHeight) {
-      pages.push(current);
-      current = [];
-      used = 0;
-    }
-    current.push(band);
-    used += h + GAP;
-  }
-  if (current.length > 0) pages.push(current);
-
-  pages.forEach((pageBands, pageIndex) => {
-    const page = doc.addPage([PAGE_W, PAGE_H]);
-    const title = input.title.trim() === "" ? "座席表" : input.title.trim();
-    const titleSize = fitText(title, font, TITLE_SIZE, PAGE_W - MARGIN * 2 - 60);
-    page.drawText(title, { x: MARGIN, y: PAGE_H - MARGIN - TITLE_SIZE + 4, size: titleSize, font, color: rgb(...INK) });
-    page.drawText(`${pageIndex + 1} / ${pages.length}`, { x: PAGE_W - MARGIN - 40, y: MARGIN - 18, size: 9, font, color: rgb(...MUTED) });
-
-    let top = bodyTop;
-    for (const band of pageBands) {
-      const h = bandHeight(band);
-      band.forEach((tableIndex, k) => {
-        const x = MARGIN + k * (boxW + GAP);
-        const row = tables[tableIndex];
-        const boxH = HEADER_H + row.length * rowH;
-        page.drawRectangle({ x, y: top - boxH, width: boxW, height: boxH, borderColor: rgb(...LINE), borderWidth: 0.8 });
-        page.drawRectangle({ x, y: top - HEADER_H, width: boxW, height: HEADER_H, color: rgb(...HEADER_BG), borderColor: rgb(...LINE), borderWidth: 0.8 });
-        const label = `テーブル ${tableIndex + 1}`;
-        page.drawText(label, { x: x + 8, y: top - HEADER_H + 7, size: 12, font, color: rgb(...INK) });
-        const filled = row.filter((id) => id !== null).length;
-        const count = `${filled}/${row.length}人`;
-        page.drawText(count, { x: x + boxW - 8 - font.widthOfTextAtSize(count, 9), y: top - HEADER_H + 8, size: 9, font, color: rgb(...MUTED) });
-        row.forEach((id, s) => {
-          const rowTop = top - HEADER_H - s * rowH;
-          const baseline = rowTop - rowH + (rowH - fontSize) / 2 + fontSize * 0.18;
-          page.drawText(String(s + 1), { x: x + 8, y: baseline, size: fontSize, font, color: rgb(...MUTED) });
-          const text = id === null ? "（空席）" : (nameById.get(id) ?? "");
-          const maxW = boxW - 36;
-          const size = fitText(text, font, fontSize, maxW);
-          page.drawText(text, { x: x + 28, y: baseline, size, font, color: rgb(...(id === null ? MUTED : INK)) });
-          if (s > 0) {
-            page.drawLine({ start: { x, y: rowTop }, end: { x: x + boxW, y: rowTop }, thickness: 0.3, color: rgb(0.85, 0.85, 0.87) });
-          }
-        });
-      });
-      top -= h + GAP;
-    }
-  });
-
+  const { width, height } = chartSize(model);
+  const landscape = width >= height;
+  const [long, short] = PAPER_PT[paper];
+  const pageW = landscape ? long : short;
+  const pageH = landscape ? short : long;
+  const scale = Math.min((pageW - PDF_MARGIN * 2) / width, (pageH - PDF_MARGIN * 2) / height);
+  const page = doc.addPage([pageW, pageH]);
+  const ox = (pageW - width * scale) / 2;
+  const oy = PDF_MARGIN;
+  paintChart(pdfPainter(page, font, scale, ox, pageH, oy), model);
+  doc.setTitle(model.title.trim() || "座席表");
   const bytes = await doc.save();
-  return { blob: new Blob([bytes as BlobPart], { type: "application/pdf" }), pageCount: pages.length };
+  return new Blob([bytes as BlobPart], { type: "application/pdf" });
+}
+
+// ---------------------------------------------------------------------------
+// Excel（席の一覧）
+// ---------------------------------------------------------------------------
+
+export function seatingListRows(model: SeatingChartModel): (string | number)[][] {
+  const rows: (string | number)[][] = [["席番号", "名前", "役職", "場所", "札"]];
+  model.geometry.seats.forEach((seat, i) => {
+    const p = model.assignment[i];
+    rows.push([i + 1, p ? p.name : "（空席）", p ? p.role : "", seat.group, (model.tags?.[i] ?? "").trim()]);
+  });
+  for (const p of model.unseated) rows.push(["（席なし）", p.name, p.role, "", ""]);
+  return rows;
+}
+
+export async function chartToXlsxBlob(model: SeatingChartModel): Promise<Blob> {
+  const rows = seatingListRows(model);
+  return writeXlsxSheets([
+    {
+      name: "座席表",
+      rows: [[model.title.trim() || "座席表"], [], ...rows],
+      columns: [{ width: 10 }, { width: 24 }, { width: 18 }, { width: 28 }, { width: 12 }],
+    },
+  ]);
+}
+
+export async function exportChart(model: SeatingChartModel, format: ExportFormat, paper: PaperSize = "A4"): Promise<Blob> {
+  if (format === "png" || format === "jpeg") return chartToImageBlob(model, format);
+  if (format === "pdf") return chartToPdfBlob(model, paper);
+  return chartToXlsxBlob(model);
 }

@@ -1,92 +1,81 @@
 /**
  * 座席表作成（参加者の名簿）。ブラウザ内の処理だけ（名前は外部に送らない・保存しない）。
  *
- * 決まり（画面の説明・テストと同じ）:
- * - 改行・タブ・「、」「,」で区切って1人ずつにする。名前の中の空白（姓と名の間など）では区切らない。
- * - 前後の空白は取り除き、途中の連続した空白は1つにまとめる。空の行は数えて除く。
- * - 同じ名前（全角・半角・大文字小文字・空白の違いを無視）は、既定では2人目以降を除く。
- *   「同じ名前も別の人として扱う」を選ぶと、残して「山田太郎(2)」のように番号を付ける。
+ * 決まり（画面・テストと同じ）:
+ * - 1行に1人。行の中の最初のタブ・「,」「、」「，」より後ろを役職（肩書き）にする。名前の中の空白では区切らない。
+ * - 前後の空白は取り除き、途中の連続した空白は1つにまとめる。空の行は除く。
+ * - 入力した順番が、席に入る順番になる。
+ * - 同じ名前（全角・半角・大文字小文字・空白の違いを無視）が2人以上いるときは、2人目以降に「(2)」のように番号を付けて残す
+ *   （席の入れ替えで、人を取り違えないため）。
  */
 import type { XlsxCellValue } from "@/lib/excel/xlsx-simple-io";
 
 export interface Participant {
   id: number;
   name: string;
+  role: string;
 }
 
 export interface ParsedParticipants {
   participants: Participant[];
-  /** 取り除いた空の項目の数 */
-  blankCount: number;
-  /** 同じ名前として取り除いた名前（取り除いた回数ぶん） */
-  removedDuplicates: string[];
-  /** 同じ名前を残して、番号を付けた名前（変更後の名前） */
+  /** 同じ名前のため、番号を付けた名前（変更後の名前） */
   renamedDuplicates: string[];
   /** 上限を超えたために読み込まなかった人数 */
   overLimit: number;
 }
 
 /** 1回に扱える参加者の上限 */
-export const SEATING_MAX_PARTICIPANTS = 500;
-/** テーブル数の上限・1テーブルの席数の上限 */
-export const SEATING_MAX_TABLES = 60;
-export const SEATING_MAX_SEATS_PER_TABLE = 40;
+export const SEATING_MAX_PARTICIPANTS = 400;
 
 /** 名前の照合に使う形（全角・半角、大文字小文字、空白の違いを無視する） */
 export function nameKey(name: string): string {
   return name.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 }
 
-/** 名前の表示に使う形（前後の空白を除き、途中の連続した空白は1つにまとめる） */
-export function cleanName(name: string): string {
-  return name.replace(/\s+/g, " ").trim();
+/** 表示に使う形（前後の空白を除き、途中の連続した空白は1つにまとめる） */
+export function cleanText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
-/** 名簿の文字列を、1人ずつの名前に分ける（空の項目も含めて返す） */
-export function splitNames(text: string): string[] {
-  return text.split(/[\r\n\t,、，]/);
+/** 1行を、名前と役職に分ける */
+export function splitLine(line: string): { name: string; role: string } {
+  const m = /^([^\t,、，]*)[\t,、，](.*)$/.exec(line);
+  if (!m) return { name: cleanText(line), role: "" };
+  return { name: cleanText(m[1]), role: cleanText(m[2].replace(/[\t,、，]+/g, " ")) };
 }
 
-export function parseParticipants(text: string, options: { keepDuplicates?: boolean } = {}): ParsedParticipants {
+export function parseParticipants(text: string): ParsedParticipants {
   const participants: Participant[] = [];
-  const removedDuplicates: string[] = [];
   const renamedDuplicates: string[] = [];
   const used = new Set<string>();
   const counts = new Map<string, number>();
-  let blankCount = 0;
   let overLimit = 0;
-
-  for (const raw of splitNames(text)) {
-    const name = cleanName(raw);
-    if (name === "") {
-      blankCount++;
+  for (const raw of text.split(/\r?\n/)) {
+    const { name, role } = splitLine(raw);
+    if (name === "") continue;
+    if (participants.length >= SEATING_MAX_PARTICIPANTS) {
+      overLimit++;
       continue;
     }
     const key = nameKey(name);
     let finalName = name;
     if (used.has(key)) {
-      if (!options.keepDuplicates) {
-        removedDuplicates.push(name);
-        continue;
-      }
       let n = (counts.get(key) ?? 1) + 1;
       while (used.has(nameKey(`${name}(${n})`))) n++;
       counts.set(key, n);
       finalName = `${name}(${n})`;
       renamedDuplicates.push(finalName);
-    }
-    if (participants.length >= SEATING_MAX_PARTICIPANTS) {
-      overLimit++;
-      continue;
+    } else {
+      counts.set(key, 1);
     }
     used.add(nameKey(finalName));
-    if (!counts.has(key)) counts.set(key, 1);
-    participants.push({ id: participants.length, name: finalName });
+    participants.push({ id: participants.length, name: finalName, role });
   }
-  return { participants, blankCount, removedDuplicates, renamedDuplicates, overLimit };
+  return { participants, renamedDuplicates, overLimit };
 }
 
-const NAME_HEADERS = /^(氏名|名前|お名前|参加者|参加者名|名簿|name|names)$/i;
+const NAME_HEADERS = /^(氏名|名前|お名前|参加者|参加者名|生徒名|児童名|社員名|name|names|full ?name)$/i;
+const ROLE_HEADERS = /^(役職|肩書き?|職位|職名|所属|部署|部門|会社名?|学年|クラス|担当|role|title|position|department)$/i;
 
 function cellText(value: XlsxCellValue | undefined): string {
   if (value === null || value === undefined) return "";
@@ -95,16 +84,26 @@ function cellText(value: XlsxCellValue | undefined): string {
 }
 
 /**
- * 表（CSV・Excelのシート）から、名前の列を取り出す。
- * 最初の空でない行に「氏名」「名前」などの見出しがあれば、その列（見出しの行は除く）。無ければ、1列目の全部。
+ * 表（CSV・Excelのシート）から、名前と役職を取り出して、入力欄の文字（1行に「名前<タブ>役職」）にする。
+ * 最初の空でない行に「氏名」「名前」などの見出しがあれば、その列（見出しの行は除く）。役職は「役職」「所属」などの見出しの列。
+ * 見出しが無ければ、1列目を名前、2列目を役職とする。
  */
-export function namesFromRows(rows: XlsxCellValue[][]): { names: string[]; column: number; hadHeader: boolean } {
+export function namesFromRows(rows: XlsxCellValue[][]): { text: string; count: number; hadHeader: boolean; roleColumn: boolean } {
   const first = rows.findIndex((r) => r.some((c) => cellText(c).trim() !== ""));
-  if (first < 0) return { names: [], column: 0, hadHeader: false };
-  const headerCol = rows[first].findIndex((c) => NAME_HEADERS.test(cellText(c).trim()));
-  const column = headerCol >= 0 ? headerCol : 0;
-  const start = headerCol >= 0 ? first + 1 : first;
-  const names: string[] = [];
-  for (let i = start; i < rows.length; i++) names.push(cellText(rows[i][column]));
-  return { names, column, hadHeader: headerCol >= 0 };
+  if (first < 0) return { text: "", count: 0, hadHeader: false, roleColumn: false };
+  const header = rows[first].map((c) => cellText(c).trim());
+  const nameCol = header.findIndex((h) => NAME_HEADERS.test(h));
+  const roleHeaderCol = header.findIndex((h) => ROLE_HEADERS.test(h));
+  const hadHeader = nameCol >= 0;
+  const column = hadHeader ? nameCol : 0;
+  const roleCol = hadHeader ? roleHeaderCol : 1;
+  const start = hadHeader ? first + 1 : first;
+  const lines: string[] = [];
+  for (let i = start; i < rows.length; i++) {
+    const name = cleanText(cellText(rows[i][column]).replace(/[\t,、，]/g, " "));
+    if (name === "") continue;
+    const role = roleCol >= 0 ? cleanText(cellText(rows[i][roleCol])) : "";
+    lines.push(role ? `${name}\t${role}` : name);
+  }
+  return { text: lines.join("\n"), count: lines.length, hadHeader, roleColumn: roleCol >= 0 && lines.some((l) => l.includes("\t")) };
 }

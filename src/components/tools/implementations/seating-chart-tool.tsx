@@ -1,588 +1,709 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { FileDropzone } from "@/components/common/file-dropzone";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
-  arrangeSeating,
-  evaluateConstraints,
-  parseRuleNames,
-  swapSeats,
-  totalSeats,
-  validatePlan,
-  shortageMessage,
-  type BalanceMode,
-  type SeatingConstraints,
-  type SeatingPlan,
-  type SeatRef,
-} from "@/lib/seating/arrange";
-import {
-  namesFromRows,
-  parseParticipants,
-  SEATING_MAX_PARTICIPANTS,
-  SEATING_MAX_SEATS_PER_TABLE,
-  SEATING_MAX_TABLES,
-  type Participant,
-} from "@/lib/seating/participants";
-import { seatingToCsvBlob, seatingToPdfBlob, seatingToXlsxBlob } from "@/lib/processors/browser/seating-export";
-import { classifyMergeFile, loadMergeFile, MERGE_FILE_ACCEPT, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
+  autoParams,
+  buildLayout,
+  DEFAULT_PARAMS,
+  LIMITS,
+  MAX_SEATS,
+  normalizeParams,
+  PURPOSES,
+  SEAT_H,
+  SEAT_W,
+  type LayoutParams,
+  type Purpose,
+} from "@/lib/seating/layouts";
+import { namesFromRows, parseParticipants, SEATING_MAX_PARTICIPANTS, type Participant } from "@/lib/seating/participants";
+import { exportChart, type ExportFormat, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
+import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 
-interface FixedRow {
-  name: string;
-  table: string;
-  seat: string;
-}
+/** 人数に合わせて自動で変わる項目（手で変えると「人数に合わせる」を外す） */
+const AUTO_FIELDS: Record<Purpose, (keyof LayoutParams)[]> = {
+  meeting: ["perSide", "head"],
+  "meeting-u": ["front", "sides"],
+  group: ["tables"],
+  round: ["tables"],
+  classroom: ["rows"],
+  custom: ["rows"],
+};
 
-interface Generated {
-  plan: SeatingPlan;
-  participants: Participant[];
-  tableSizes: number[];
-  constraints: SeatingConstraints;
-  inputsKey: string;
-  edited: boolean;
-}
+const DEFAULTS_BY_PURPOSE: Record<Purpose, Partial<LayoutParams>> = {
+  meeting: {},
+  "meeting-u": {},
+  group: { perTable: 6 },
+  round: { perTable: 8 },
+  classroom: { cols: 6 },
+  custom: { cols: 6, rows: 4 },
+};
 
-const DEFAULT_TITLE = "座席表";
+const TITLE_BY_PURPOSE: Record<Purpose, string> = {
+  meeting: "会議 座席表",
+  "meeting-u": "会議 座席表",
+  group: "グループワーク 座席表",
+  classroom: "座席表",
+  round: "懇親会 座席表",
+  custom: "座席表",
+};
 
-function clampInt(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, Math.floor(value)));
-}
+const FORMATS: { value: ExportFormat; label: string; ext: string }[] = [
+  { value: "png", label: "画像（PNG）", ext: "png" },
+  { value: "jpeg", label: "画像（JPEG）", ext: "jpg" },
+  { value: "pdf", label: "PDF", ext: "pdf" },
+  { value: "xlsx", label: "Excel（一覧）", ext: "xlsx" },
+];
 
-const inputClass =
-  "rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
+/** 札の候補（自由に書くこともできる） */
+const TAG_PRESETS = ["来賓", "主賓", "司会", "議長", "書記", "講師", "受付", "幹事", "予備"];
+
+const PURPOSE_ICON: Record<Purpose, string> = {
+  meeting: "M3 10h18v4H3z M5 6h3v3H5z M10.5 6h3v3h-3z M16 6h3v3h-3z M5 15h3v3H5z M10.5 15h3v3h-3z M16 15h3v3h-3z",
+  "meeting-u": "M5 5h14v3H5z M5 8h3v11H5z M16 8h3v11h-3z",
+  group: "M3 4h7v5H3z M14 4h7v5h-7z M3 14h7v5H3z M14 14h7v5h-7z",
+  classroom: "M8 3h8v2H8z M3 8h4v3H3z M10 8h4v3h-4z M17 8h4v3h-4z M3 14h4v3H3z M10 14h4v3h-4z M17 14h4v3h-4z",
+  round: "M12 6a6 6 0 1 0 0.01 0z",
+  custom: "M4 4h4v4H4z M10 4h4v4h-4z M4 10h4v4H4z M16 10h4v4h-4z M10 16h4v4h-4z M16 16h4v4h-4z",
+};
+
+const inputClass = "w-20 rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
 const smallButton =
-  "rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700";
+  "ms-focus-ring rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700";
 const sectionClass = "flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800";
 
-/** 座席表作成。参加者の名簿から、条件（同席・別席・固定）に沿った席順を作り、手で調整して、PDF・Excel・CSVで保存する */
+/** 席ごとの人（参加者の番号）を、入力順に前から入れる */
+function fillInOrder(people: number, seats: number): (number | null)[] {
+  return Array.from({ length: seats }, (_, i) => (i < people ? i : null));
+}
+
+/**
+ * 手で入れ替えたあとに、名簿や席の数が変わったとき：同じ名前の人は同じ席に残し、
+ * 席が無くなった人・新しく入った人は、入力順に空いている席へ入れる
+ */
+function reconcile(prevSlots: (number | null)[], prevNames: string[], participants: Participant[], seats: number): (number | null)[] {
+  const byName = new Map(participants.map((p) => [p.name, p.id]));
+  const slots: (number | null)[] = Array(seats).fill(null);
+  const placed = new Set<number>();
+  prevSlots.forEach((pid, i) => {
+    if (pid === null || i >= seats) return;
+    const id = byName.get(prevNames[pid]);
+    if (id !== undefined && !placed.has(id)) {
+      slots[i] = id;
+      placed.add(id);
+    }
+  });
+  let next = 0;
+  for (const p of participants) {
+    if (placed.has(p.id)) continue;
+    while (next < seats && slots[next] !== null) next++;
+    if (next >= seats) break;
+    slots[next] = p.id;
+    placed.add(p.id);
+  }
+  return slots;
+}
+
+interface Manual {
+  slots: (number | null)[];
+  names: string[];
+}
+
 export function SeatingChartTool() {
+  const [purpose, setPurpose] = useState<Purpose | null>(null);
+  const [baseParams, setBaseParams] = useState<Record<Purpose, LayoutParams>>(() => {
+    const out = {} as Record<Purpose, LayoutParams>;
+    for (const p of PURPOSES) out[p.id] = { ...DEFAULT_PARAMS, ...DEFAULTS_BY_PURPOSE[p.id] };
+    return out;
+  });
+  const [autoFit, setAutoFit] = useState<Record<Purpose, boolean>>({ meeting: true, "meeting-u": true, group: true, round: true, classroom: true, custom: true });
   const [namesText, setNamesText] = useState("");
-  const [keepDuplicates, setKeepDuplicates] = useState(false);
-  const [uploadNote, setUploadNote] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
-  const [tableCount, setTableCount] = useState(4);
-  const [seatsPerTable, setSeatsPerTable] = useState(8);
-  const [customSizes, setCustomSizes] = useState(false);
-  const [sizeOverrides, setSizeOverrides] = useState<Record<number, number>>({});
-  const [balance, setBalance] = useState<BalanceMode>("even");
-
-  const [together, setTogether] = useState<string[]>([]);
-  const [apart, setApart] = useState<string[]>([]);
-  const [fixed, setFixed] = useState<FixedRow[]>([]);
-
-  const [title, setTitle] = useState(DEFAULT_TITLE);
-  const [generated, setGenerated] = useState<Generated | null>(null);
-  const [selected, setSelected] = useState<SeatRef | null>(null);
-  const [arrangeErrors, setArrangeErrors] = useState<string[]>([]);
-  const [confirmRedraw, setConfirmRedraw] = useState(false);
+  const [title, setTitle] = useState("");
+  const [manual, setManual] = useState<Manual | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [tags, setTags] = useState<Record<number, string>>({});
+  const [paper, setPaper] = useState<PaperSize>("A4");
+  const [format, setFormat] = useState<ExportFormat>("png");
   const [exportError, setExportError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [importNote, setImportNote] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const parsed = useMemo(() => parseParticipants(namesText, { keepDuplicates }), [namesText, keepDuplicates]);
-  const tableSizes = useMemo(
-    () => Array.from({ length: tableCount }, (_, i) => (customSizes ? (sizeOverrides[i] ?? seatsPerTable) : seatsPerTable)),
-    [tableCount, seatsPerTable, customSizes, sizeOverrides]
-  );
-  const seats = totalSeats(tableSizes);
-  const people = parsed.participants.length;
-  const shortBy = people - seats;
+  const parsed = useMemo(() => parseParticipants(namesText), [namesText]);
+  const participants = parsed.participants;
+  const names = participants.map((p) => p.name);
 
-  const constraints: SeatingConstraints = useMemo(
-    () => ({
-      together: together.map(parseRuleNames),
-      apart: apart.map(parseRuleNames),
-      fixed: fixed
-        .filter((f) => f.name.trim() !== "")
-        .map((f) => ({
-          name: f.name.trim(),
-          table: Number(f.table),
-          seat: f.seat.trim() === "" ? undefined : Number(f.seat),
-        })),
-    }),
-    [together, apart, fixed]
-  );
+  const params = useMemo(() => {
+    if (!purpose) return null;
+    const base = baseParams[purpose];
+    return normalizeParams(autoFit[purpose] ? autoParams(purpose, participants.length, base) : base);
+  }, [purpose, baseParams, autoFit, participants.length]);
 
-  const inputsKey = JSON.stringify([parsed.participants.map((p) => p.name), tableSizes, balance, constraints]);
-  const stale = generated !== null && generated.inputsKey !== inputsKey;
+  const geometry = useMemo(() => (purpose && params ? buildLayout(purpose, params) : null), [purpose, params]);
+  const seatCount = geometry ? Math.min(geometry.seats.length, MAX_SEATS) : 0;
 
-  const violations = useMemo(
-    () => (generated ? evaluateConstraints(generated.plan, generated.participants, generated.constraints) : []),
-    [generated]
-  );
-  const planErrors = useMemo(
-    () => (generated ? validatePlan(generated.plan, generated.participants, generated.tableSizes) : []),
-    [generated]
-  );
+  const slots = useMemo(() => {
+    if (!manual) return fillInOrder(participants.length, seatCount);
+    const sameNames = manual.names.length === names.length && manual.names.every((n, i) => n === names[i]);
+    if (sameNames && manual.slots.length === seatCount) return manual.slots;
+    return reconcile(manual.slots, manual.names, participants, seatCount);
+  }, [manual, participants, names, seatCount]);
 
-  async function handleFile(files: File[]) {
-    const file = files[0];
-    setUploadNote(null);
-    setUploadError(null);
+  const seatedIds = new Set(slots.filter((s): s is number => s !== null));
+  const unseated = participants.filter((p) => !seatedIds.has(p.id));
+
+  const model: SeatingChartModel | null = geometry
+    ? {
+        title: title.trim() || (purpose ? TITLE_BY_PURPOSE[purpose] : "座席表"),
+        geometry: { ...geometry, seats: geometry.seats.slice(0, seatCount) },
+        assignment: slots.map((id) => (id === null ? null : participants[id])),
+        unseated,
+        tags: Array.from({ length: seatCount }, (_, i) => tags[i] ?? ""),
+      }
+    : null;
+
+  function choosePurpose(p: Purpose) {
+    setPurpose(p);
+    setManual(null);
+    setSelected([]);
+    setTags({});
+  }
+
+  function updateParam<K extends keyof LayoutParams>(key: K, value: LayoutParams[K]) {
+    if (!purpose || !params) return;
+    setBaseParams((prev) => ({ ...prev, [purpose]: { ...params, [key]: value } }));
+    if (AUTO_FIELDS[purpose].includes(key)) setAutoFit((prev) => ({ ...prev, [purpose]: false }));
+    setSelected([]);
+  }
+
+  function swap(a: number, b: number) {
+    if (a === b) return;
+    const next = slots.slice();
+    [next[a], next[b]] = [next[b], next[a]];
+    setManual({ slots: next, names });
+    setSelected([]);
+  }
+
+  function toggleSelect(i: number) {
+    setSelected((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : prev.length >= 2 ? [prev[1], i] : [...prev, i]));
+  }
+
+  async function importFile(file: File) {
+    setImportError(null);
+    setImportNote(null);
     const kind = classifyMergeFile(file);
-    if (kind === "legacy-excel") return setUploadError(MERGE_LEGACY_EXCEL_MESSAGE);
-    if (kind === "unsupported") return setUploadError(MERGE_UNSUPPORTED_MESSAGE);
+    if (kind === "legacy-excel") return setImportError(MERGE_LEGACY_EXCEL_MESSAGE);
+    if (kind === "unsupported") return setImportError(MERGE_UNSUPPORTED_MESSAGE);
     try {
       const loaded = await loadMergeFile(file);
-      const sheet = loaded.sheets[0];
-      const { names, column, hadHeader } = namesFromRows(sheet.rows);
-      const added = names.filter((n) => n.trim() !== "");
-      if (added.length === 0) return setUploadError("名前が見つかりませんでした。名前が1列に並んだファイルを選んでください（1行目に「氏名」などの見出しがあると、その列を読み込みます）。");
-      setNamesText((prev) => (prev.trim() === "" ? added.join("\n") : `${prev.replace(/\s+$/, "")}\n${added.join("\n")}`));
-      const where = hadHeader ? `「${String(sheet.rows.find((r) => r.length > 0)?.[column] ?? "")}」の列` : "1列目";
-      setUploadNote(`${file.name}から、${where}の${added.length}件を名簿に追加しました。${loaded.sheets.length > 1 ? "シートが複数あるため、先頭のシートを読み込みました。" : ""}`);
+      const sheet = loaded.sheets.find((s) => s.rows.some((r) => r.some((c) => c !== null && String(c).trim() !== ""))) ?? loaded.sheets[0];
+      const result = namesFromRows(sheet?.rows ?? []);
+      if (result.count === 0) return setImportError("名前を読み取れませんでした。1列目か「氏名」「名前」の列に、名前を入れてください。");
+      setNamesText(result.text);
+      setManual(null);
+      setImportNote(`${result.count}人を読み込みました`);
     } catch (e) {
-      setUploadError(e instanceof Error ? e.message : "ファイルを読み込めませんでした");
+      setImportError(e instanceof Error ? e.message : "読み込めませんでした");
     }
   }
 
-  function runArrange() {
-    setConfirmRedraw(false);
-    setSelected(null);
-    const seed = Math.floor(Math.random() * 2 ** 31);
-    const result = arrangeSeating(parsed.participants, { tableSizes, balance }, constraints, seed);
-    if (!result.ok) {
-      setArrangeErrors(result.reason === "shortage" ? [result.message] : result.messages);
-      return;
-    }
-    setArrangeErrors([]);
-    setGenerated({
-      plan: result.plan,
-      participants: parsed.participants,
-      tableSizes,
-      constraints,
-      inputsKey,
-      edited: false,
-    });
-  }
-
-  function handleArrangeClick() {
-    if (generated?.edited && !confirmRedraw) {
-      setConfirmRedraw(true);
-      return;
-    }
-    runArrange();
-  }
-
-  function handleSeatClick(ref: SeatRef) {
-    if (!generated) return;
-    const occupant = generated.plan.tables[ref.table][ref.seat];
-    if (!selected) {
-      if (occupant !== null) setSelected(ref);
-      return;
-    }
-    if (selected.table === ref.table && selected.seat === ref.seat) {
-      setSelected(null);
-      return;
-    }
-    const plan = swapSeats(generated.plan, selected, ref);
-    setGenerated({ ...generated, plan, edited: true });
-    setSelected(null);
-  }
-
-  async function exportAs(kind: "pdf" | "xlsx" | "csv") {
-    if (!generated) return;
+  async function download() {
+    if (!model) return;
     setExportError(null);
-    setExporting(true);
     try {
-      const input = { title, participants: generated.participants, plan: generated.plan };
-      const base = sanitizeFileName(title.trim() === "" ? DEFAULT_TITLE : title.trim());
-      if (kind === "pdf") downloadBlob((await seatingToPdfBlob(input)).blob, `${base}.pdf`);
-      else if (kind === "xlsx") downloadBlob(await seatingToXlsxBlob(input), `${base}.xlsx`);
-      else downloadBlob(seatingToCsvBlob(input), `${base}.csv`);
+      const blob = await exportChart(model, format, paper);
+      const ext = FORMATS.find((f) => f.value === format)!.ext;
+      downloadBlob(blob, `${sanitizeFileName(model.title)}.${ext}`);
     } catch (e) {
-      setExportError(e instanceof Error ? e.message : "ファイルを作成できませんでした");
-    } finally {
-      setExporting(false);
+      setExportError(e instanceof Error ? e.message : "書き出せませんでした");
     }
   }
 
-  const nameById = new Map((generated?.participants ?? []).map((p) => [p.id, p.name]));
+  const numberField = (label: string, key: "perSide" | "front" | "sides" | "tables" | "perTable" | "rows" | "cols", testId: string) =>
+    params && (
+      <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+        {label}
+        <input
+          type="number"
+          inputMode="numeric"
+          min={LIMITS[key][0]}
+          max={LIMITS[key][1]}
+          value={params[key]}
+          onChange={(e) => updateParam(key, Number(e.target.value))}
+          className={inputClass}
+          data-testid={testId}
+        />
+      </label>
+    );
 
   return (
-    <div className="flex flex-col gap-6">
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        入力した名前や名簿は、このブラウザの中だけで処理します。サーバーへの送信や保存はしません。
-      </p>
-
-      {/* 1. 参加者 */}
-      <section className={sectionClass} aria-labelledby="seating-step1">
-        <h2 id="seating-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          1. 参加者を入力する
+    // 画面の下に固定したプレビューの裏に、入力欄が隠れないよう、移動するときは下に余白をとる
+    <div className="flex flex-col gap-5 [&_:is(button,input,select,textarea,a)]:scroll-mb-[45vh]">
+      <section className={sectionClass} aria-labelledby="seat-step1">
+        <h2 id="seat-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+          1. 用途を選ぶ
         </h2>
-        <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-          名前を1行に1人ずつ入力します（Excelの列をそのまま貼り付けられます。「、」「,」で区切っても構いません）
-          <textarea
-            data-testid="seating-names"
-            aria-label="参加者の名前"
-            value={namesText}
-            onChange={(e) => setNamesText(e.target.value)}
-            rows={8}
-            placeholder={"山田 太郎\n佐藤 花子\n鈴木 一郎"}
-            className={`${inputClass} font-normal`}
-          />
-        </label>
-        <label className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
-          <input type="checkbox" checked={keepDuplicates} onChange={(e) => setKeepDuplicates(e.target.checked)} />
-          同じ名前も別の人として扱う（「山田太郎(2)」のように番号を付けます）
-        </label>
-        <p data-testid="seating-participant-summary" className="text-sm text-neutral-700 dark:text-neutral-200">
-          参加者：{people}人
-          {parsed.blankCount > 0 && people > 0 && `（空の行 ${parsed.blankCount} 件を除きました）`}
-          {parsed.removedDuplicates.length > 0 && `（同じ名前 ${parsed.removedDuplicates.length} 件を除きました：${parsed.removedDuplicates.slice(0, 5).join("、")}${parsed.removedDuplicates.length > 5 ? "など" : ""}）`}
-          {parsed.renamedDuplicates.length > 0 && `（同じ名前に番号を付けました：${parsed.renamedDuplicates.slice(0, 5).join("、")}${parsed.renamedDuplicates.length > 5 ? "など" : ""}）`}
-        </p>
-        {parsed.overLimit > 0 && (
-          <ErrorMessage message={`参加者は${SEATING_MAX_PARTICIPANTS}人までです。超えた${parsed.overLimit}人は読み込んでいません。`} />
-        )}
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">ファイルから追加する（CSV・Excel。名前が1列に並んだもの。1行目に「氏名」などの見出しがあれば、その列を使います）</p>
-          <FileDropzone
-            accept={MERGE_FILE_ACCEPT}
-            maxSizeMB={10}
-            label="名簿のCSV・Excelをドラッグ&ドロップ"
-            hint="またはタップして選択"
-            onFilesSelected={handleFile}
-            onError={setUploadError}
-          />
-          {uploadNote && (
-            <p data-testid="seating-upload-note" className="text-xs text-green-700 dark:text-green-400">
-              {uploadNote}
-            </p>
-          )}
-          {uploadError && <ErrorMessage message={uploadError} />}
-        </div>
-      </section>
-
-      {/* 2. 会場 */}
-      <section className={sectionClass} aria-labelledby="seating-step2">
-        <h2 id="seating-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          2. テーブルと席数を決める
-        </h2>
-        <div className="flex flex-wrap gap-4">
-          <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-            テーブル数
-            <input
-              type="number"
-              min={1}
-              max={SEATING_MAX_TABLES}
-              value={tableCount}
-              onChange={(e) => setTableCount(clampInt(Number(e.target.value), 1, SEATING_MAX_TABLES))}
-              className={`${inputClass} w-24`}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-            1テーブルの席数
-            <input
-              type="number"
-              min={1}
-              max={SEATING_MAX_SEATS_PER_TABLE}
-              value={seatsPerTable}
-              onChange={(e) => setSeatsPerTable(clampInt(Number(e.target.value), 1, SEATING_MAX_SEATS_PER_TABLE))}
-              className={`${inputClass} w-24`}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-            空席の分け方
-            <select
-              value={balance}
-              onChange={(e) => setBalance(e.target.value as BalanceMode)}
-              className={inputClass}
+        <div role="radiogroup" aria-label="用途" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {PURPOSES.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={purpose === p.id}
+              onClick={() => choosePurpose(p.id)}
+              data-testid={`seat-purpose-${p.id}`}
+              className={`ms-focus-ring flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+                purpose === p.id ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500 dark:bg-blue-950/40" : "border-neutral-200 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+              }`}
             >
-              <option value="even">各テーブルに均等に（空席も均等に）</option>
-              <option value="fill">1番のテーブルから順に詰める</option>
-            </select>
-          </label>
-        </div>
-        <label className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
-          <input type="checkbox" checked={customSizes} onChange={(e) => setCustomSizes(e.target.checked)} />
-          テーブルごとに席数を変える
-        </label>
-        {customSizes && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {tableSizes.map((size, i) => (
-              <label key={i} className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                テーブル{i + 1}の席数
-                <input
-                  type="number"
-                  min={1}
-                  max={SEATING_MAX_SEATS_PER_TABLE}
-                  value={size}
-                  onChange={(e) =>
-                    setSizeOverrides((prev) => ({ ...prev, [i]: clampInt(Number(e.target.value), 1, SEATING_MAX_SEATS_PER_TABLE) }))
-                  }
-                  className={`${inputClass} w-full`}
-                />
-              </label>
-            ))}
-          </div>
-        )}
-        <p data-testid="seating-capacity" className="text-sm text-neutral-700 dark:text-neutral-200">
-          席は全部で{seats}席、参加者は{people}人です{people > 0 && shortBy <= 0 && `（空席 ${-shortBy} 席）`}。
-        </p>
-        {shortBy > 0 && (
-          <div data-testid="seating-shortage">
-            <ErrorMessage message={shortageMessage(people, seats, tableCount, Math.max(...tableSizes))} />
-          </div>
-        )}
-      </section>
-
-      {/* 3. 条件 */}
-      <section className={sectionClass} aria-labelledby="seating-step3">
-        <h2 id="seating-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          3. 席の条件を指定する（なくても作れます）
-        </h2>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          名前は、名簿に入力したとおりに書きます（姓と名の間の空白の有無、全角・半角の違いは問いません）。複数の名前は「、」か「,」で区切ります。
-        </p>
-
-        <RuleList
-          title="同じテーブルにしたい人"
-          hint="例：山田太郎、佐藤花子"
-          testId="seating-together"
-          items={together}
-          onChange={setTogether}
-          addLabel="同じテーブルにしたい人を追加"
-        />
-        <RuleList
-          title="別々のテーブルにしたい人（全員が、互いに別のテーブルになります）"
-          hint="例：鈴木一郎、高橋次郎、田中三郎"
-          testId="seating-apart"
-          items={apart}
-          onChange={setApart}
-          addLabel="別々にしたい人を追加"
-        />
-
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">席を固定する人（テーブル、または席まで）</p>
-          <datalist id="seating-name-options">
-            {parsed.participants.slice(0, 200).map((p) => (
-              <option key={p.id} value={p.name} />
-            ))}
-          </datalist>
-          {fixed.map((row, i) => (
-            <div key={i} data-testid="seating-fixed-row" className="flex flex-wrap items-end gap-2">
-              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                名前
-                <input
-                  list="seating-name-options"
-                  aria-label={`固定する人${i + 1}の名前`}
-                  value={row.name}
-                  onChange={(e) => setFixed((prev) => prev.map((r, k) => (k === i ? { ...r, name: e.target.value } : r)))}
-                  className={`${inputClass} w-44`}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                テーブル番号
-                <input
-                  type="number"
-                  min={1}
-                  max={tableCount}
-                  aria-label={`固定する人${i + 1}のテーブル番号`}
-                  value={row.table}
-                  onChange={(e) => setFixed((prev) => prev.map((r, k) => (k === i ? { ...r, table: e.target.value } : r)))}
-                  className={`${inputClass} w-24`}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                席番号（任意）
-                <input
-                  type="number"
-                  min={1}
-                  aria-label={`固定する人${i + 1}の席番号`}
-                  value={row.seat}
-                  onChange={(e) => setFixed((prev) => prev.map((r, k) => (k === i ? { ...r, seat: e.target.value } : r)))}
-                  className={`${inputClass} w-24`}
-                />
-              </label>
-              <button type="button" onClick={() => setFixed((prev) => prev.filter((_, k) => k !== i))} className={smallButton}>
-                固定を削除
-              </button>
-            </div>
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-8 w-8 shrink-0 text-blue-600 dark:text-blue-400">
+                <path d={PURPOSE_ICON[p.id]} fill="currentColor" fillRule="evenodd" />
+              </svg>
+              <span className="flex flex-col">
+                <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{p.name}</span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">{p.short}</span>
+              </span>
+            </button>
           ))}
-          <button
-            type="button"
-            onClick={() => setFixed((prev) => [...prev, { name: "", table: "1", seat: "" }])}
-            className={`${smallButton} w-fit`}
-          >
-            席を固定する人を追加
-          </button>
         </div>
-      </section>
 
-      {/* 4. 席順 */}
-      <section className={sectionClass} aria-labelledby="seating-step4">
-        <h2 id="seating-step4" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          4. 席順を作る
-        </h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            data-testid="seating-arrange"
-            onClick={handleArrangeClick}
-            disabled={people === 0}
-            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            {generated ? "席順を再抽選する" : "席順を作る"}
-          </button>
-          {generated && <span className="text-xs text-neutral-500 dark:text-neutral-400">押すたびに、別の席順になります（同じ条件のまま、何度でも作り直せます）。</span>}
-        </div>
-        {confirmRedraw && (
-          <div
-            data-testid="seating-confirm-redraw"
-            className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200"
-          >
-            <p>手で入れ替えた内容は、再抽選すると消えます。再抽選しますか？</p>
-            <div className="flex gap-2">
-              <button type="button" onClick={runArrange} className="rounded-md bg-amber-700 px-3 py-1.5 font-medium text-white hover:bg-amber-800">
-                再抽選する
-              </button>
-              <button type="button" onClick={() => setConfirmRedraw(false)} className={smallButton}>
-                やめる
-              </button>
-            </div>
-          </div>
-        )}
-        {arrangeErrors.length > 0 && (
-          <div data-testid="seating-errors" className="flex flex-col gap-2">
-            {arrangeErrors.map((m) => (
-              <ErrorMessage key={m} message={m} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* 5. 結果・調整・保存 */}
-      {generated && (
-        <section className={sectionClass} aria-labelledby="seating-step5" data-testid="tool-preview">
-          <h2 id="seating-step5" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-            5. 席を確かめて、必要なら入れ替える
-          </h2>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            入れ替えたい人の席を押し、次に、入れ替え先の席（空席なら移動）を押します。もう一度同じ席を押すと、選択をやめます。
-          </p>
-          {stale && (
-            <p data-testid="seating-stale" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
-              名簿・席数・条件を変更しました。この席順は、変更前の内容で作ったものです。反映するには「席順を再抽選する」を押してください（手で入れ替えた内容は消えます）。
-            </p>
-          )}
-          {generated.edited && !stale && (
-            <p data-testid="seating-edited" className="text-xs text-neutral-500 dark:text-neutral-400">
-              手で入れ替えた内容があります。「席順を再抽選する」を押すと消えます。
-            </p>
-          )}
-          {violations.length > 0 && (
-            <div data-testid="seating-violations" className="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
-              <p className="font-semibold">守られていない条件があります</p>
-              <ul className="list-disc pl-4">
-                {violations.map((v) => (
-                  <li key={v}>{v}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {planErrors.length > 0 && <ErrorMessage message={`席順に問題があります：${planErrors.join(" ")}`} />}
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {generated.plan.tables.map((row, t) => (
-              <div key={t} data-testid="seating-table" className="flex flex-col rounded-lg border border-neutral-300 dark:border-neutral-700">
-                <div className="flex items-center justify-between rounded-t-lg bg-blue-50 px-3 py-1.5 text-sm font-medium text-neutral-800 dark:bg-blue-950/30 dark:text-neutral-100">
-                  <span>テーブル {t + 1}</span>
-                  <span className="text-xs font-normal text-neutral-500 dark:text-neutral-400">
-                    {row.filter((id) => id !== null).length}/{row.length}人
-                  </span>
-                </div>
-                <ul className="flex flex-col">
-                  {row.map((id, s) => {
-                    const isSelected = selected?.table === t && selected.seat === s;
+        {purpose && params && (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-neutral-100 pt-3 dark:border-neutral-800" data-testid="seat-settings">
+            {purpose === "meeting" && (
+              <>
+                {numberField("片側の席", "perSide", "seat-per-side")}
+                <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                  <input type="checkbox" checked={params.head} onChange={(e) => updateParam("head", e.target.checked)} data-testid="seat-head" />
+                  議長席
+                </label>
+              </>
+            )}
+            {purpose === "meeting-u" && (
+              <>
+                {numberField("正面の席", "front", "seat-front")}
+                {numberField("左右の席", "sides", "seat-sides")}
+              </>
+            )}
+            {(purpose === "group" || purpose === "round") && (
+              <>
+                {numberField(purpose === "group" ? "島の数" : "テーブルの数", "tables", "seat-tables")}
+                {numberField(purpose === "group" ? "1島の席" : "1卓の席", "perTable", "seat-per-table")}
+              </>
+            )}
+            {purpose === "group" && (
+              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                入れ方
+                <select value={params.deal ? "deal" : "fill"} onChange={(e) => updateParam("deal", e.target.value === "deal")} className={`${inputClass} w-auto`} data-testid="seat-deal">
+                  <option value="fill">島ごとに詰める</option>
+                  <option value="deal">1人ずつ順に配る</option>
+                </select>
+              </label>
+            )}
+            {(purpose === "classroom" || purpose === "custom") && (
+              <>
+                {numberField("横の席", "cols", "seat-cols")}
+                {numberField("前からの列", "rows", "seat-rows")}
+              </>
+            )}
+            {purpose === "classroom" && (
+              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                入れ方
+                <select value={params.byColumn ? "col" : "row"} onChange={(e) => updateParam("byColumn", e.target.value === "col")} className={`${inputClass} w-auto`} data-testid="seat-by-column">
+                  <option value="row">前から横に</option>
+                  <option value="col">前から縦に</option>
+                </select>
+              </label>
+            )}
+            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+              <input
+                type="checkbox"
+                checked={autoFit[purpose]}
+                onChange={(e) => setAutoFit((prev) => ({ ...prev, [purpose]: e.target.checked }))}
+                data-testid="seat-autofit"
+              />
+              人数に合わせる
+            </label>
+            {purpose === "custom" && (
+              <div className="w-full">
+                <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">マスを押すと、席と通路が切り替わります</p>
+                <div className="inline-grid gap-1" style={{ gridTemplateColumns: `repeat(${params.cols}, 1.5rem)` }} data-testid="seat-custom-grid">
+                  {Array.from({ length: params.rows * params.cols }, (_, k) => {
+                    const r = Math.floor(k / params.cols);
+                    const c = k % params.cols;
+                    const key = `${r}-${c}`;
+                    const hole = params.holes.includes(key);
                     return (
-                      <li key={s} className="border-t border-neutral-200 first:border-t-0 dark:border-neutral-800">
-                        <button
-                          type="button"
-                          data-testid="seating-seat"
-                          data-table={t + 1}
-                          data-seat={s + 1}
-                          aria-pressed={isSelected}
-                          aria-label={`テーブル${t + 1} 席${s + 1} ${id === null ? "空席" : (nameById.get(id) ?? "")}`}
-                          onClick={() => handleSeatClick({ table: t, seat: s })}
-                          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
-                            isSelected
-                              ? "bg-amber-100 dark:bg-amber-900/40"
-                              : "hover:bg-neutral-50 dark:hover:bg-neutral-900"
-                          } ${id === null ? "text-neutral-400" : "text-neutral-800 dark:text-neutral-100"}`}
-                        >
-                          <span className="w-5 text-xs text-neutral-400">{s + 1}</span>
-                          <span className="truncate">{id === null ? "（空席）" : (nameById.get(id) ?? "")}</span>
-                        </button>
-                      </li>
+                      <button
+                        key={key}
+                        type="button"
+                        aria-pressed={!hole}
+                        aria-label={`前から${r + 1}列目・左から${c + 1}番目を${hole ? "席にする" : "通路にする"}`}
+                        onClick={() => updateParam("holes", hole ? params.holes.filter((h) => h !== key) : [...params.holes, key])}
+                        className={`ms-focus-ring h-6 w-6 rounded ${hole ? "border border-dashed border-neutral-300 dark:border-neutral-700" : "bg-blue-500"}`}
+                        data-testid="seat-custom-cell"
+                      />
                     );
                   })}
-                </ul>
+                </div>
               </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {purpose && (
+        <section className={sectionClass} aria-labelledby="seat-step2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="seat-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+              2. 名前を入れる
+            </h2>
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xlsm,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+                data-testid="seat-import-input"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void importFile(f);
+                }}
+              />
+              <button type="button" className={smallButton} onClick={() => fileRef.current?.click()} data-testid="seat-import">
+                Excel・CSVから読み込む
+              </button>
+            </div>
+          </div>
+          <textarea
+            value={namesText}
+            onChange={(e) => setNamesText(e.target.value)}
+            rows={6}
+            aria-label="名前と役職（1行に1人。役職は「,」のあと）"
+            placeholder={"山田 太郎, 部長\n佐藤 花子, 課長\n鈴木 一郎"}
+            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+            data-testid="seat-names"
+          />
+          <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="seat-count">
+            {participants.length}人 ／ {seatCount}席
+            {parsed.overLimit > 0 && `（${SEATING_MAX_PARTICIPANTS}人まで。${parsed.overLimit}人は読み込んでいません）`}
+          </p>
+          {importNote && <p className="text-xs text-emerald-700 dark:text-emerald-300">{importNote}</p>}
+          {importError && <ErrorMessage message={importError} />}
+          {unseated.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100" data-testid="seat-shortage">
+              席が{unseated.length}席足りません（{unseated.slice(0, 5).map((p) => p.name).join("、")}
+              {unseated.length > 5 ? " など" : ""}）
+              <button type="button" className={smallButton} onClick={() => setAutoFit((prev) => ({ ...prev, [purpose]: true }))}>
+                人数に合わせる
+              </button>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            タイトル
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={TITLE_BY_PURPOSE[purpose]}
+              className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+              data-testid="seat-title"
+            />
+          </label>
+        </section>
+      )}
+
+      {purpose && model && (
+        <section className={sectionClass} aria-labelledby="seat-step3">
+          <h2 id="seat-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+            3. 書き出す
+          </h2>
+          <div role="radiogroup" aria-label="書き出す形式" className="flex flex-wrap gap-2">
+            {FORMATS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                role="radio"
+                aria-checked={format === f.value}
+                onClick={() => setFormat(f.value)}
+                data-testid={`seat-format-${f.value}`}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  format === f.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                }`}
+              >
+                {f.label}
+              </button>
             ))}
           </div>
-
-          <div className="flex flex-col gap-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-            <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">6. ファイルに保存する</h3>
-            <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-              タイトル（PDF・ファイル名に使います）
-              <input value={title} onChange={(e) => setTitle(e.target.value)} className={`${inputClass} w-full max-w-sm`} />
+          {format === "pdf" && (
+            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+              用紙
+              <select value={paper} onChange={(e) => setPaper(e.target.value as PaperSize)} className={`${inputClass} w-auto`} data-testid="seat-paper">
+                <option value="A4">A4</option>
+                <option value="B4">B4</option>
+                <option value="A3">A3</option>
+              </select>
             </label>
-            <div className="flex flex-wrap items-center gap-3">
-              <RewardedDownloadGate onDownload={() => exportAs("pdf")} label="PDFでダウンロード" disabled={exporting || planErrors.length > 0} />
-              <RewardedDownloadGate onDownload={() => exportAs("xlsx")} label="Excelでダウンロード" disabled={exporting || planErrors.length > 0} />
-              <RewardedDownloadGate onDownload={() => exportAs("csv")} label="CSVでダウンロード" disabled={exporting || planErrors.length > 0} />
-            </div>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              PDFはA4横で、印刷しやすいようにテーブルごとの枠にまとめます。ExcelとCSVには、氏名・テーブル・席番号の一覧も入ります。
-            </p>
-            {exportError && <ErrorMessage message={exportError} />}
-          </div>
+          )}
+          <RewardedDownloadGate onDownload={download} label={`${FORMATS.find((f) => f.value === format)!.label}でダウンロード`} disabled={participants.length === 0} />
+          {exportError && <ErrorMessage message={exportError} />}
         </section>
+      )}
+
+      {purpose && model && (
+        <SeatPreview
+          model={model}
+          selected={selected}
+          onToggle={toggleSelect}
+          onSwap={swap}
+          onReset={() => { setManual(null); setSelected([]); }}
+          canReset={manual !== null}
+          onTag={(text) => {
+            setTags((prev) => {
+              const next = { ...prev };
+              for (const i of selected) {
+                if (text.trim()) next[i] = text.trim().slice(0, 10);
+                else delete next[i];
+              }
+              return next;
+            });
+            setSelected([]);
+          }}
+        />
       )}
     </div>
   );
 }
 
-function RuleList({
-  title,
-  hint,
-  testId,
-  items,
-  onChange,
-  addLabel,
+function SeatPreview({
+  model,
+  selected,
+  onToggle,
+  onSwap,
+  onReset,
+  canReset,
+  onTag,
 }: {
-  title: string;
-  hint: string;
-  testId: string;
-  items: string[];
-  onChange: (next: string[]) => void;
-  addLabel: string;
+  model: SeatingChartModel;
+  selected: number[];
+  onTag: (text: string) => void;
+  onToggle: (i: number) => void;
+  onSwap: (a: number, b: number) => void;
+  onReset: () => void;
+  canReset: boolean;
 }) {
+  const [tagText, setTagText] = useState("");
+  const g = model.geometry;
+  const [open, setOpen] = useState(true);
+  const [boxW, setBoxW] = useState(800);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ index: number; x: number; y: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const [drag, setDrag] = useState<{ index: number; dx: number; dy: number } | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => setBoxW(entry.contentRect.width));
+    ro.observe(el);
+    setBoxW(el.clientWidth);
+    return () => ro.disconnect();
+  }, [open]);
+
+  const [maxH, setMaxH] = useState(440);
+  useEffect(() => {
+    const update = () => setMaxH(Math.max(180, Math.min(window.innerHeight * 0.38, 480)));
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  const scale = Math.max(0.3, Math.min(1, (boxW - 4) / g.width, maxH / g.height));
+
+  function seatAt(clientX: number, clientY: number, except: number): number | null {
+    for (const el of document.elementsFromPoint(clientX, clientY)) {
+      const v = (el as HTMLElement).dataset?.seatIndex;
+      if (v !== undefined && Number(v) !== except) return Number(v);
+    }
+    return null;
+  }
+
+  const seatStyle = (x: number, y: number, i: number): CSSProperties => ({
+    left: x,
+    top: y,
+    width: SEAT_W,
+    height: SEAT_H,
+    transform: drag?.index === i ? `translate(${drag.dx / scale}px, ${drag.dy / scale}px)` : undefined,
+    zIndex: drag?.index === i ? 10 : undefined,
+    pointerEvents: drag?.index === i ? "none" : undefined,
+    touchAction: "none",
+  });
+
   return (
-    <div className="flex flex-col gap-2">
-      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{title}</p>
-      {items.map((text, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2">
-          <input
-            data-testid={testId}
-            aria-label={`${title}の${i + 1}つ目`}
-            value={text}
-            placeholder={hint}
-            onChange={(e) => onChange(items.map((t, k) => (k === i ? e.target.value : t)))}
-            className={`${inputClass} min-w-0 flex-1`}
-          />
-          <button type="button" onClick={() => onChange(items.filter((_, k) => k !== i))} className={smallButton}>
-            削除
+    <section
+      className="sticky bottom-0 z-20 -mx-4 flex flex-col gap-2 rounded-t-xl border border-neutral-200 bg-white p-3 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.35)] sm:-mx-6 dark:border-neutral-800 dark:bg-neutral-950"
+      aria-label="座席表のプレビュー"
+      data-testid="tool-preview"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={smallButton} data-testid="seat-preview-toggle">
+          {open ? "▼ たたむ" : "▲ プレビュー"}
+        </button>
+        <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="seat-swap-help">
+          入れ替え：席をドラッグ、または2人を選んで［入れ替え］
+        </p>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            disabled={selected.length !== 2}
+            onClick={() => onSwap(selected[0], selected[1])}
+            className="ms-focus-ring rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+            data-testid="seat-swap"
+          >
+            入れ替え{selected.length > 0 ? `（${selected.length}/2）` : ""}
+          </button>
+          <button type="button" disabled={!canReset} onClick={onReset} className={smallButton} data-testid="seat-reset">
+            入力順に戻す
           </button>
         </div>
-      ))}
-      <button type="button" onClick={() => onChange([...items, ""])} className={`${smallButton} w-fit`}>
-        {addLabel}
-      </button>
-    </div>
+      </div>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="seat-tag-bar">
+          <label className="flex items-center gap-1.5 text-neutral-700 dark:text-neutral-200">
+            札
+            <input
+              type="text"
+              list="seat-tag-presets"
+              value={tagText}
+              onChange={(e) => setTagText(e.target.value)}
+              placeholder="来賓・司会など"
+              maxLength={10}
+              className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+              data-testid="seat-tag-input"
+            />
+          </label>
+          <datalist id="seat-tag-presets">
+            {TAG_PRESETS.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+          {TAG_PRESETS.slice(0, 4).map((t) => (
+            <button key={t} type="button" className={smallButton} onClick={() => setTagText(t)}>
+              {t}
+            </button>
+          ))}
+          <button type="button" disabled={tagText.trim() === ""} onClick={() => { onTag(tagText); setTagText(""); }} className="ms-focus-ring rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-950 disabled:opacity-40" data-testid="seat-tag-apply">
+            札を付ける
+          </button>
+          <button type="button" onClick={() => onTag("")} className={smallButton} data-testid="seat-tag-clear">
+            札を外す
+          </button>
+        </div>
+      )}
+      {open && (
+        <div ref={boxRef} className="overflow-auto" style={{ maxHeight: maxH + 8 }}>
+          <div style={{ width: g.width * scale, height: g.height * scale }} className="relative mx-auto">
+            <div className="absolute left-0 top-0 origin-top-left" style={{ width: g.width, height: g.height, transform: `scale(${scale})` }}>
+              {g.shapes.map((sh, k) =>
+                sh.kind === "rect" ? (
+                  <div key={k} className="absolute flex items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-[13px] text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" style={{ left: sh.x, top: sh.y, width: sh.w, height: sh.h }}>
+                    {sh.label}
+                  </div>
+                ) : (
+                  <div key={k} className="absolute flex items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-[14px] text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" style={{ left: sh.cx - sh.r, top: sh.cy - sh.r, width: sh.r * 2, height: sh.r * 2 }}>
+                    {sh.label}
+                  </div>
+                )
+              )}
+              {g.marks.map((m, k) => (
+                <div key={k} className="absolute flex items-center justify-center rounded-md bg-slate-700 text-[14px] font-bold text-white" style={{ left: m.x, top: m.y, width: m.w, height: 30 }}>
+                  {m.text}
+                </div>
+              ))}
+              {g.seats.map((seat, i) => {
+                const person = model.assignment[i];
+                const isSel = selected.includes(i);
+                const isHover = hover === i;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    data-seat-index={i}
+                    data-testid="seat"
+                    data-name={person?.name ?? ""}
+                    aria-pressed={isSel}
+                    aria-label={`席${i + 1}${model.tags?.[i] ? `［${model.tags[i]}］` : ""}：${person ? `${person.name}${person.role ? `（${person.role}）` : ""}` : "空席"}`}
+                    className={`ms-focus-ring absolute flex cursor-grab select-none flex-col items-center justify-center rounded-lg border px-1.5 text-center shadow-sm active:cursor-grabbing ${
+                      isSel
+                        ? "border-blue-600 bg-blue-50 ring-4 ring-blue-500/60 dark:bg-blue-950"
+                        : isHover
+                          ? "border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/60 dark:bg-emerald-950"
+                          : person
+                            ? "border-slate-400 bg-white dark:border-slate-500 dark:bg-slate-900"
+                            : "border-dashed border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-900/60"
+                    }`}
+                    style={seatStyle(seat.x, seat.y, i)}
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
+                      dragRef.current = { index: i, x: e.clientX, y: e.clientY, moved: false };
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    }}
+                    onPointerMove={(e) => {
+                      const d = dragRef.current;
+                      if (!d) return;
+                      const dx = e.clientX - d.x;
+                      const dy = e.clientY - d.y;
+                      if (!d.moved && Math.hypot(dx, dy) < 6) return;
+                      d.moved = true;
+                      setDrag({ index: d.index, dx, dy });
+                      setHover(seatAt(e.clientX, e.clientY, d.index));
+                    }}
+                    onPointerUp={(e) => {
+                      const d = dragRef.current;
+                      dragRef.current = null;
+                      if (d?.moved) {
+                        suppressClick.current = true;
+                        const target = seatAt(e.clientX, e.clientY, d.index);
+                        if (target !== null) onSwap(d.index, target);
+                      }
+                      setDrag(null);
+                      setHover(null);
+                    }}
+                    onPointerCancel={() => {
+                      dragRef.current = null;
+                      setDrag(null);
+                      setHover(null);
+                    }}
+                    onClick={() => {
+                      if (suppressClick.current) {
+                        suppressClick.current = false;
+                        return;
+                      }
+                      onToggle(i);
+                    }}
+                  >
+                    <span className="absolute left-1.5 top-0.5 text-[10px] text-slate-400">{i + 1}</span>
+                    {model.tags?.[i] && (
+                      <span className="absolute right-1 top-0.5 max-w-[70%] truncate rounded bg-amber-300 px-1.5 text-[10px] font-bold leading-4 text-amber-950" data-testid="seat-tag">
+                        {model.tags[i]}
+                      </span>
+                    )}
+                    {person && (
+                      <>
+                        <span className="max-w-full truncate text-[16px] font-bold leading-tight text-slate-900 dark:text-slate-100">{person.name}</span>
+                        {person.role && <span className="max-w-full truncate text-[11px] leading-tight text-slate-500 dark:text-slate-400">{person.role}</span>}
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

@@ -10,7 +10,7 @@ import { uploadFixture } from "../helpers/tool-runner";
 
 type Input =
   | { kind: "file"; files: string[] }
-  | { kind: "text"; text: string; thenClick?: string }
+  | { kind: "text"; text: string; thenClick?: string; firstClick?: string }
   | { kind: "none" };
 
 const pdf: Input = { kind: "file", files: [fixtures.multiPagePdf] };
@@ -62,8 +62,8 @@ const CASES: [string, Input][] = [
   ["json-formatter", { kind: "text", text: '{"a":1,"b":[1,2,3]}' }],
   ["json-to-csv", { kind: "text", text: '[{"a":1,"b":"x"},{"a":2,"b":"y"}]' }],
   ["qr-generator", { kind: "text", text: "https://example.com" }],
-  // 座席表は、名簿を入れて「席順を作る」を押すと結果が出る
-  ["seating-chart", { kind: "text", text: "山田太郎\n佐藤花子\n鈴木一郎\n高橋次郎", thenClick: "席順を作る" }],
+  // 座席表は、用途を選ぶと名前の欄と、画面の下のプレビューが出る
+  ["seating-chart", { kind: "text", text: "山田太郎\n佐藤花子\n鈴木一郎\n高橋次郎", firstClick: "会議（対面）" }],
   // 外字・特殊文字チェックは、文字を入れて「貼り付けた文字を調べる」を押すと結果が出る
   ["gaiji-checker", { kind: "text", text: "髙橋\u200b花子", thenClick: "貼り付けた文字を調べる" }],
   // シフト表作成は、入力なしでも、既定の勤務区分とスタッフで表が出る
@@ -107,6 +107,7 @@ for (const [id, input] of CASES) {
       if (input.kind === "file") {
         await uploadFixture(page, input.files);
       } else if (input.kind === "text") {
+        if (input.firstClick) await page.getByRole("radio", { name: new RegExp(input.firstClick.replace(/[()（）]/g, ".")) }).click();
         const field = page.locator("textarea, input[type='text']").first();
         await field.waitFor({ state: "visible", timeout: 20_000 });
         await field.fill(input.text + (attempt ? " " : ""));
