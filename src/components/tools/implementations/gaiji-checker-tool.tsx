@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileDropzone } from "@/components/common/file-dropzone";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
@@ -28,7 +27,6 @@ import { findVariantChars, fontLabel, loadMjVariantIndex, shortSjisLabel, sjisNo
 /** 戸籍・住民基本台帳などの字を、本来の形で出す書体（利用者のパソコンに入っているときだけ効く） */
 const IPAMJ_FONT_FAMILY = '"IPAmj明朝", "IPAmjMincho", serif';
 const IPAMJ_FONT_URL = "https://moji.or.jp/mojikiban/font/";
-import { GAIJI_FILE_ACCEPT, GAIJI_FILE_MAX_MB, loadGaijiFile } from "@/lib/processors/browser/gaiji-files";
 import { downloadBlob } from "@/lib/utils/format";
 
 const inputClass =
@@ -68,7 +66,7 @@ interface Scanned {
   result: GaijiScanResult;
   /** 調べた中身（設定を変えたときに、同じ中身をもう一度調べるため） */
   units: ScanUnit[];
-  /** 調べた対象の名前（貼り付けたテキスト／ファイル名） */
+  /** 調べた対象の名前（貼り付けたテキスト） */
   sourceLabel: string;
   /** 貼り付けたテキストを調べたとき、その内容（整えたテキストの元） */
   text: string | null;
@@ -82,7 +80,6 @@ export function GaijiCheckerTool() {
   const [checkShiftJis, setCheckShiftJis] = useState(true);
   const [scanned, setScanned] = useState<Scanned | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   /** 前の結果を消した・調べ直した、などのお知らせ */
   const [notice, setNotice] = useState<string | null>(null);
@@ -95,15 +92,15 @@ export function GaijiCheckerTool() {
   const [mjIndex, setMjIndex] = useState<MjVariantIndex | null>(null);
   const [mjFailed, setMjFailed] = useState(false);
 
-  /** 調べるたびに増やす番号。途中で入力が変わった・別のファイルを選んだときに、古い処理の結果を出さないために使う */
+  /** 調べるたびに増やす番号。途中で入力が変わったときに、古い処理の結果を出さないために使う */
   const runIdRef = useRef(0);
-  /** 次に結果が出たとき、結果の見出しへ移動する（調べるボタン・ファイルの選択のときだけ。設定の変更では移動しない） */
+  /** 次に結果が出たとき、結果の見出しへ移動する（調べるボタンのときだけ。設定の変更では移動しない） */
   const focusResultRef = useRef(false);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sjisAvailable = useMemo(() => getSjisTable() !== null, []);
-  const busy = scanning || loading !== null;
+  const busy = scanning;
 
   useEffect(() => {
     if (scanned && focusResultRef.current) {
@@ -137,8 +134,6 @@ export function GaijiCheckerTool() {
   /** 結果を消す（入力が変わったなど、表示中の結果が今の入力と合わなくなったとき） */
   function discardResult(message: string | null) {
     runIdRef.current++;
-    // 読み込み中のファイルがあれば、その結果は使わない（「読み込んでいます」の表示も消す）
-    setLoading(null);
     if (scanned) {
       setScanned(null);
       setNotice(message);
@@ -156,7 +151,6 @@ export function GaijiCheckerTool() {
     setError(null);
     setNotice(null);
     runIdRef.current++;
-    setLoading(null);
     setScanned(null);
   }
 
@@ -164,7 +158,7 @@ export function GaijiCheckerTool() {
     setError(null);
     setNotice(null);
     if (text === "") {
-      setError("調べる文字が入っていません。文字を貼り付けるか、ファイルを選んでください。");
+      setError("調べる文字が入っていません。文字を貼り付けてください。");
       return;
     }
     if (text.length > SCAN_MAX_CHARS) {
@@ -191,36 +185,6 @@ export function GaijiCheckerTool() {
         setScanning(false);
       }
     }, 16);
-  }
-
-  async function handleFile(files: File[]) {
-    const file = files[0];
-    if (!file) return;
-    const runId = ++runIdRef.current;
-    setError(null);
-    setNotice(null);
-    setScanned(null);
-    setLoading(`${file.name} を読み込んでいます…`);
-    try {
-      const loaded = await loadGaijiFile(file, (done, total) => {
-        if (runId === runIdRef.current) setLoading(`${file.name} を読み込んでいます…（${done}/${total}ページ）`);
-      });
-      if (runId !== runIdRef.current) return;
-      const units: ScanUnit[] = loaded.units;
-      if (loaded.kind === "text" && loaded.text !== undefined) setText(loaded.text.length > SCAN_MAX_CHARS ? "" : loaded.text);
-      showResult({
-        result: scanUnits(units, { checkShiftJis }),
-        units,
-        sourceLabel: file.name,
-        text: loaded.kind === "text" ? (loaded.text ?? null) : null,
-        notes: loaded.notes,
-        checkShiftJis,
-      });
-    } catch (e) {
-      if (runId === runIdRef.current) setError(e instanceof Error ? e.message : "ファイルを読み込めませんでした");
-    } finally {
-      if (runId === runIdRef.current) setLoading(null);
-    }
   }
 
   function handleShiftJisChange(checked: boolean) {
@@ -295,15 +259,13 @@ export function GaijiCheckerTool() {
 
   const statusMessage = scanning
     ? "調べています…"
-    : loading
-      ? null
-      : notice
-        ? notice
-        : !scanned && text === ""
-          ? "文字を貼り付けるか、ファイルを選んでください。ファイルは、選ぶとすぐ調べます。"
-          : !scanned
-            ? "「貼り付けた文字を調べる」を押すと、下に結果が出ます。"
-            : null;
+    : notice
+      ? notice
+      : !scanned && text === ""
+        ? "調べたい文字を貼り付けてください。"
+        : !scanned
+          ? "「貼り付けた文字を調べる」を押すと、下に結果が出ます。"
+          : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -331,7 +293,7 @@ export function GaijiCheckerTool() {
 
         <div className="flex flex-col gap-2">
           <label htmlFor="gaiji-text-input" className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-            方法1：文字を貼り付ける
+            調べる文字を貼り付ける
             <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">名簿・文章・Excelのセルなど</span>
           </label>
           <textarea
@@ -364,33 +326,7 @@ export function GaijiCheckerTool() {
           </div>
         </div>
 
-        <p className="flex items-center gap-3 text-xs text-neutral-500 dark:text-neutral-400" aria-hidden="true">
-          <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
-          または
-          <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
-        </p>
-
-        <div className="flex flex-col gap-2">
-          <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-            方法2：ファイルを選ぶ
-            <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">選ぶとすぐ調べます</span>
-          </p>
-          <FileDropzone
-            accept={GAIJI_FILE_ACCEPT}
-            maxSizeMB={GAIJI_FILE_MAX_MB}
-            label="調べるファイルをドラッグ&ドロップ"
-            hint={`またはタップして選択（テキスト・CSV・Word・Excel・PDF／${GAIJI_FILE_MAX_MB}MBまで）`}
-            onFilesSelected={handleFile}
-            onError={setError}
-          />
-        </div>
-
         <div id="gaiji-status" role="status" aria-live="polite" data-testid="gaiji-status" className="flex flex-col gap-1">
-          {loading && (
-            <p data-testid="gaiji-loading" className="text-xs text-neutral-600 dark:text-neutral-300">
-              {loading}
-            </p>
-          )}
           {statusMessage && <p className="text-xs text-neutral-600 dark:text-neutral-300">{statusMessage}</p>}
         </div>
         {error && <ErrorMessage message={error} />}
@@ -578,8 +514,7 @@ export function GaijiCheckerTool() {
           <li>文字コード（Unicodeの番号）の範囲で判定しています。検出漏れ・誤検出がありうるため、「見つからなかった」ことは、問題がないことの保証ではありません。</li>
           <li>受け取る側のフォントで実際に表示できるかどうかは、判定できません（文字コードが標準でも、フォントに字形がなければ表示されません）。</li>
           <li>外字（私用領域の文字）は、見つけることはできますが、「何の字か」は分かりません。外字の字形は、登録したパソコンの中にしか無いためです。</li>
-          <li>PDFは、文字の情報を持つPDFだけを調べます。スキャンした画像の中の文字は、調べられません。</li>
-          <li>Wordの箇条書きの記号（Symbol・Wingdingsフォントの●など）は、外字ではなくても、私用領域の文字として出ることがあります。</li>
+          <li>Wordなどからコピーした箇条書きの記号（Symbol・Wingdingsフォントの●など）は、外字ではなくても、私用領域の文字として出ることがあります。</li>
           <li>Shift_JISの判定は、Windows系（CP932）の変換表に基づいています。使う業務ソフトによっては、受け付ける文字の範囲が違うことがあります。</li>
         </ul>
       </section>
@@ -661,39 +596,27 @@ function VariantSection({ findings, mjLoading, mjFailed }: { findings: VariantFi
         </p>
       )}
       {needsFont && (
-        <div data-testid="gaiji-font-guide" className="flex flex-col gap-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
-          <p className="text-sm font-semibold">□や？になる字、形が同じに見える字を、正しい形で出すには</p>
-          <p>
-            戸籍・住民票で使う珍しい字は、Mac・Windowsにはじめから入っている書体には、ないことがあります。無料の書体「IPAmj明朝」を入れると出ます（戸籍統一文字・住基ネット統一文字の約5万8千字を収録）。
+        <div
+          data-testid="gaiji-font-guide"
+          className="flex flex-col gap-2 rounded-lg border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          <p className="text-base font-semibold leading-relaxed">
+            <span aria-hidden="true">⚠ </span>□になる字は、無料の書体「IPAmj明朝」を
+            <a href={IPAMJ_FONT_URL} target="_blank" rel="noopener noreferrer" className="mx-0.5 underline underline-offset-2">
+              ここから入れる
+            </a>
+            と正しく出ます。
           </p>
-          <ol className="flex list-decimal flex-col gap-1 pl-5">
-            <li>
-              配布元（文字情報技術促進協議会）のページを開き、IPAmj明朝をダウンロードする：{" "}
-              <a href={IPAMJ_FONT_URL} target="_blank" rel="noopener noreferrer" className="break-all font-medium underline underline-offset-2">
-                {IPAMJ_FONT_URL}
-              </a>
-            </li>
-            <li>ダウンロードしたZIPファイルを開き、中の「ipamjm.ttf」を、Macならダブルクリックして「インストール」、Windowsなら右クリックして「インストール」を押す</li>
-            <li>下の「IPAmj明朝で表示する」にチェックを入れると、この画面でもその書体で表示する（書体を入れたあとは、ブラウザを開き直す）</li>
-            <li>Word・Excelなどに貼るときは、その字の書体を「IPAmj明朝」にする</li>
-          </ol>
-          <ul className="flex flex-col gap-0.5">
-            <li>「書体によっては□」：ふつうの書体にないことがある字。IPAmj明朝なら出る</li>
-            <li>「IPAmj明朝で正しい形」：異体字セレクタ付きの字。IPAmj明朝でないと、元の字と同じ形に見える。異体字セレクタに対応していないアプリ・システムでは、元の字として扱われる</li>
-          </ul>
-          <label className="flex items-center gap-2 font-medium">
+          <label className="flex items-center gap-2 text-sm font-medium">
             <input
               type="checkbox"
-              className="ms-focus-ring"
+              className="ms-focus-ring h-4 w-4"
               checked={useIpamj}
               onChange={(e) => setUseIpamj(e.target.checked)}
               data-testid="gaiji-use-ipamj"
             />
-            IPAmj明朝で表示する（このパソコンに入れてある場合）
+            入れたあとは、ここにチェックするとIPAmj明朝で表示します
           </label>
-          <p className="text-amber-900/80 dark:text-amber-200/80">
-            ブラウザによっては、自分で入れた書体を使えないことがあります。その場合は、コピーしてWordなどに貼り、書体をIPAmj明朝にして確かめてください。
-          </p>
         </div>
       )}
       <ul className="flex flex-col" aria-label="形の違う字の一覧">

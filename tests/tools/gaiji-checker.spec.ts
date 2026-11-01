@@ -1,19 +1,12 @@
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { PDFDocument, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
 import { test, expect } from "../fixtures/premium-test";
 import type { Page } from "@playwright/test";
-import { buildMinimalDocx } from "../fixtures/docx-writer";
-import { buildMinimalXlsx } from "../fixtures/xlsx-writer";
 import { assertDownloadedFile, clickAndDownload } from "../helpers/tool-runner";
-import { uploadWhenReady } from "../helpers/tool-ready";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 
 /**
  * 外字・特殊文字チェック（gaiji-checker）の画面テスト。判定の規則そのものは gaiji-detect.spec.ts（単体）で確認する。
- * ここでは、実際に文字を貼り付け・ファイルを選び、結果・整えたテキスト・CSV・通信を確認する。値はすべて架空。
+ * ここでは、実際に文字を貼り付け、結果・整えたテキスト・CSV・通信を確認する。値はすべて架空。
  */
 
 const MARKER = "架空の名前ゲンカイ検証用";
@@ -38,10 +31,6 @@ async function pasteAndRun(page: Page, text: string) {
     if (shown) return;
   }
   await expect(page.getByTestId("gaiji-summary")).toBeVisible();
-}
-
-function tmpDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "gaiji-"));
 }
 
 function groupCategories(page: Page): Promise<string[]> {
@@ -115,101 +104,11 @@ test("gaiji-checker: 整えたテキストは、置き換えられる文字だ�
   expect(clip).toBe("ab が バナナ 1(株) 髙");
 });
 
-test("gaiji-checker: UTF-8のテキスト・CSVを選ぶと、先頭のBOMは問題にせず、本文の文字を調べる", async ({ page }) => {
+test("gaiji-checker: ファイルを選ぶ欄（ドラッグ＆ドロップ）は無く、貼り付けた文字だけを調べる", async ({ page }) => {
   await openTool(page);
-  const dir = tmpDir();
-  const file = path.join(dir, "名簿.csv");
-  fs.writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("氏名,所属\n山田,営業\n﨑田,総務​\n", "utf8")]));
-  await uploadWhenReady(page, file, page.getByTestId("gaiji-summary"), { readyTimeoutMs: 30_000 });
-  await expect(page.getByTestId("gaiji-summary")).toContainText("名簿.csv");
-  const cats = await groupCategories(page);
-  expect(cats).toEqual(expect.arrayContaining(["compat-ideograph", "invisible"]));
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+FEFF"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+FA11"]')).toContainText("3行目（1文字目）");
-  // テキスト欄にも、読み込んだ内容が入る（整えたテキストが使える）
-  await expect(page.getByTestId("gaiji-text")).toHaveValue(/氏名,所属/);
-});
-
-test("gaiji-checker: Shift_JISのテキストは、そのことを知らせて読み、機種依存文字を見つける", async ({ page }) => {
-  await openTool(page);
-  const dir = tmpDir();
-  const file = path.join(dir, "sjis.txt");
-  // 「あ」「髙」「①」をShift_JIS（Windows系）で保存したバイト列
-  fs.writeFileSync(file, Buffer.from([0x82, 0xa0, 0xfb, 0xfc, 0x87, 0x40, 0x0a]));
-  await uploadWhenReady(page, file, page.getByTestId("gaiji-summary"), { readyTimeoutMs: 30_000 });
-  await expect(page.getByTestId("tool-preview")).toContainText("Shift_JISとして読み込みました");
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+9AD9"]')).toBeVisible();
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+2460"]')).toBeVisible();
-});
-
-test("gaiji-checker: Wordを選ぶと、本文・表の中の文字を、段落ごとの場所つきで調べる", async ({ page }) => {
-  await openTool(page);
-  const dir = tmpDir();
-  const file = path.join(dir, "文書.docx");
-  fs.writeFileSync(
-    file,
-    buildMinimalDocx({
-      blocks: [
-        { kind: "paragraph", runs: [{ text: "通常の段落です。" }] },
-        { kind: "paragraph", runs: [{ text: "外字を含む段落" }] },
-        { kind: "table", rows: [["氏名", "髙橋"]] },
-      ],
-    })
-  );
-  await uploadWhenReady(page, file, page.getByTestId("gaiji-summary"), { readyTimeoutMs: 30_000 });
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+E010"]')).toContainText("本文の段落2（3文字目）");
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+9AD9"]')).toBeVisible();
-  // 整えたテキスト欄は、ファイルが文字だけでないときは出さない
-  await expect(page.getByTestId("gaiji-clean")).toHaveCount(0);
-  await expect(page.getByTestId("tool-preview")).toContainText("箇条書きの記号");
-});
-
-test("gaiji-checker: Excelを選ぶと、文字のセルを、シート名・セル番地つきで調べる", async ({ page }) => {
-  await openTool(page);
-  const dir = tmpDir();
-  const file = path.join(dir, "名簿.xlsx");
-  fs.writeFileSync(
-    file,
-    buildMinimalXlsx([
-      { name: "社員", rows: [[{ value: "氏名" }, { value: "備考" }], [{ value: "山田" }, { value: "㈱サンプル" }], [{ value: 123 }, { value: "ｱｲｳ" }]] },
-      { name: "メモ", rows: [[{ value: "特記 事項" }]] },
-    ])
-  );
-  await uploadWhenReady(page, file, page.getByTestId("gaiji-summary"), { readyTimeoutMs: 30_000 });
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+3231"]')).toContainText("「社員」のB2");
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+FF71"]')).toContainText("「社員」のB3");
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+00A0"]')).toContainText("「メモ」のA1");
-});
-
-test("gaiji-checker: PDFを選ぶと、ページごとの場所つきで調べる。文字情報のないPDFは、その旨を知らせる", async ({ page }) => {
-  await openTool(page);
-  const dir = tmpDir();
-  const doc = await PDFDocument.create();
-  doc.registerFontkit(fontkit);
-  const font = await doc.embedFont(fs.readFileSync(path.join(process.cwd(), "public/fonts/NotoSansJP-Regular.ttf")), { subset: true });
-  doc.addPage([300, 200]).drawText("山田 太郎", { x: 20, y: 150, size: 14, font, color: rgb(0, 0, 0) });
-  doc.addPage([300, 200]).drawText("髙橋 ①", { x: 20, y: 150, size: 14, font, color: rgb(0, 0, 0) });
-  const file = path.join(dir, "書類.pdf");
-  fs.writeFileSync(file, await doc.save());
-  await uploadWhenReady(page, file, page.getByTestId("gaiji-summary"), { readyTimeoutMs: 30_000 });
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+9AD9"]')).toContainText("2ページ（1文字目）");
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+2460"]')).toContainText("2ページ");
-  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+5C71"]')).toHaveCount(0); // 「山」は問題なし
-
-  // 文字のないPDF（白紙）
-  const blank = await PDFDocument.create();
-  blank.addPage([200, 200]);
-  const blankFile = path.join(dir, "白紙.pdf");
-  fs.writeFileSync(blankFile, await blank.save());
-  await uploadWhenReady(page, blankFile, page.getByTestId("tool-preview").getByText("文字の情報がありません"), { readyTimeoutMs: 30_000 });
-});
-
-test("gaiji-checker: 古い形式（.doc）と対応外の形式は、理由を知らせる", async ({ page }) => {
-  await openTool(page);
-  const dir = tmpDir();
-  const doc = path.join(dir, "古い.doc");
-  fs.writeFileSync(doc, "dummy");
-  await uploadWhenReady(page, doc, page.getByText("古い形式（.doc・.xls）は、読み込めません"), { readyTimeoutMs: 30_000 });
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await expect(page.getByText("ドラッグ")).toHaveCount(0);
+  await expect(page.getByText("ファイルを選ぶ")).toHaveCount(0);
 });
 
 test("gaiji-checker: 結果をCSVでダウンロードでき、元の文章は含まれない。文字は外部に送信されない", async ({ page, baseURL }) => {
@@ -238,13 +137,12 @@ test("gaiji-checker: 空のままでは「貼り付けた文字を調べる」�
   await openTool(page);
   await expect(page.getByTestId("gaiji-run")).toBeDisabled();
   await expect(page.getByTestId("gaiji-run")).toHaveText("貼り付けた文字を調べる");
-  await expect(page.getByTestId("gaiji-status")).toContainText("文字を貼り付けるか、ファイルを選んでください");
+  await expect(page.getByTestId("gaiji-status")).toContainText("調べたい文字を貼り付けてください");
   // 検査前は、結果の欄を出さない
   await expect(page.getByTestId("tool-preview")).toHaveCount(0);
   // 使い方の枠は出さない（利用者の依頼で削除）。入力欄にはラベルが付いている
   await expect(page.getByTestId("gaiji-intro")).toHaveCount(0);
-  await expect(page.getByLabel("方法1：文字を貼り付ける")).toBeVisible();
-  await expect(page.getByText("方法2：ファイルを選ぶ")).toBeVisible();
+  await expect(page.getByLabel("調べる文字を貼り付ける")).toBeVisible();
   // 文字を入れると押せるようになり、押す前の案内に変わる
   await page.getByTestId("gaiji-text").fill("山田");
   await expect(page.getByTestId("gaiji-run")).toBeEnabled();
@@ -440,13 +338,14 @@ test("gaiji-checker: 辺と入力すると、戸籍などの字（邊・邉と�
   await expect(page.getByTestId("gaiji-variants")).toContainText("CC BY-SA 2.1 JP");
 });
 
-test("gaiji-checker: 戸籍の珍しい字が出たときは、IPAmj明朝の入れ方と配布元を案内し、その書体で表示できる", async ({ page }) => {
+test("gaiji-checker: 戸籍の珍しい字が出たときは、IPAmj明朝を入れれば出ることを一文で目立つように案内し、その書体で表示できる", async ({ page }) => {
   await openTool(page);
   await pasteAndRun(page, "高橋\n渡辺");
   const guide = page.getByTestId("gaiji-font-guide");
-  await expect(guide).toContainText("IPAmj明朝");
-  await expect(guide.getByRole("link", { name: "https://moji.or.jp/mojikiban/font/" })).toHaveAttribute("href", "https://moji.or.jp/mojikiban/font/");
-  await expect(guide).toContainText("ipamjm.ttf");
+  await expect(guide).toContainText("□になる字は、無料の書体「IPAmj明朝」をここから入れると正しく出ます。");
+  await expect(guide.getByRole("link", { name: "ここから入れる" })).toHaveAttribute("href", "https://moji.or.jp/mojikiban/font/");
+  // 文字は大きめ（16px）で、読みやすい
+  expect(await guide.locator("p").first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(16);
   // 補助面の字（𠆪）は「書体によっては□」、異体字セレクタ付きの字は「IPAmj明朝で正しい形」、ふつうの字（髙）は書体の注意なし
   const taka = page.locator('[data-testid="gaiji-variant-row"][data-char="高"]');
   await expect(taka.locator('[data-testid="gaiji-variant"][data-char="𠆪"]')).toContainText("書体によっては□");

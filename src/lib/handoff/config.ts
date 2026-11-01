@@ -78,10 +78,6 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "pptx-invert": { role: "edit", receive: { kinds: ["pptx"], maxFiles: 1, maxFileSizeMB: 150 }, send: { kinds: ["pptx"] } },
 
   // ---------------- 調べる・まとめる ----------------
-  "gaiji-checker": {
-    role: "inspect",
-    receive: { kinds: ["txt", "csv", "tsv", "md", "docx", "xlsx", "pdf"], maxFiles: 1, maxFileSizeMB: 20 },
-  },
   "file-hash": { role: "inspect", receive: { kinds: "any", maxFiles: 1, maxFileSizeMB: 200 } },
   "file-zip": { role: "convert", receive: { kinds: "any", maxFiles: MULTI, maxFileSizeMB: 200 }, send: { kinds: ["zip"] } },
   "file-unzip": { role: "convert", receive: { kinds: ["zip"], maxFiles: 1, maxFileSizeMB: 200 } },
