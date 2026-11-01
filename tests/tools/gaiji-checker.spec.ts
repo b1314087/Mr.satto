@@ -391,9 +391,8 @@ test("gaiji-checker: 高橋と入力すると、髙・槗が形の違う字と�
   await pasteAndRun(page, "高橋 太郎\n山田 花子\n高木");
   // 注意が必要な文字は無いが、形の違う字は出る
   await expect(page.getByTestId("gaiji-none")).toBeVisible();
-  const section = page.getByTestId("gaiji-variants");
-  // 高・橋・郎（郞）・花（芲）の4文字
-  await expect(section).toContainText("4文字");
+  // 戸籍などの字の一覧の読み込みが終わる
+  await expect(page.getByTestId("gaiji-variants-loading")).toHaveCount(0);
   const taka = page.locator('[data-testid="gaiji-variant-row"][data-char="高"]');
   await expect(taka).toContainText("U+9AD8");
   await expect(taka).toContainText("件数：2か所");
@@ -402,8 +401,10 @@ test("gaiji-checker: 高橋と入力すると、髙・槗が形の違う字と�
   await expect(hashigo).toContainText("U+9AD9");
   await expect(hashigo).toContainText("機種依存文字");
   await expect(page.locator('[data-testid="gaiji-variant-row"][data-char="橋"] [data-testid="gaiji-variant"][data-char="槗"]')).toContainText("Shift_JISにない");
-  // 形違いの字が無い文字（山・田など）は出ない
-  await expect(page.locator('[data-testid="gaiji-variant-row"][data-char="山"]')).toHaveCount(0);
+  // 高の形違いとして、戸籍統一文字の𠆪も出る（MJ縮退マップ）
+  await expect(taka.locator('[data-testid="gaiji-variant"][data-char="𠆪"]')).toBeVisible();
+  // 空白・改行は出ない
+  await expect(page.locator('[data-testid="gaiji-variant-row"][data-char=" "]')).toHaveCount(0);
   // コピー
   await hashigo.getByTestId("gaiji-variant-copy").click();
   await expect(hashigo.getByTestId("gaiji-variant-copy")).toHaveText("コピーしました");
@@ -416,7 +417,7 @@ test("gaiji-checker: 髙橋と入力すると、髙は機種依存文字とし�
   await expect(page.locator('[data-testid="gaiji-row"][data-code="U+9AD9"]')).toBeVisible();
   await expect(page.locator('[data-testid="gaiji-variant-row"][data-char="髙"] [data-testid="gaiji-variant"][data-char="高"]')).toContainText("Shift_JISで使える");
   const be = page.locator('[data-testid="gaiji-variant-row"][data-char="辺"]');
-  await expect(be.locator('[data-testid="gaiji-variant"]')).toHaveCount(2);
+  expect(await be.locator('[data-testid="gaiji-variant"]').count()).toBeGreaterThanOrEqual(2);
   await expect(be).toContainText("邊");
   await expect(be).toContainText("邉");
 });
@@ -427,9 +428,41 @@ test("gaiji-checker: 寝と入力すると、旧字体の寢が出る（新字�
   await expect(page.locator('[data-testid="gaiji-variant-row"][data-char="寝"] [data-testid="gaiji-variant"][data-char="寢"]')).toContainText("U+5BE2");
 });
 
+test("gaiji-checker: 辺と入力すると、戸籍などの字（邊・邉と、その異体字セレクタ付きの字）がMJ番号つきで出る", async ({ page }) => {
+  await openTool(page);
+  await pasteAndRun(page, "渡辺");
+  const be = page.locator('[data-testid="gaiji-variant-row"][data-char="辺"]');
+  await expect(be.locator('[data-testid="gaiji-variant"]').first()).toBeVisible();
+  // 辺の異体字セレクタ付きの字（MJ025759）と、2段目の邉の異体字セレクタ付きの字（MJ026191 など）
+  await expect(be.locator('[data-testid="gaiji-variant"][data-ivs]').filter({ hasText: "MJ025759" })).toContainText("U+8FBA U+E0102");
+  await expect(be.locator('[data-testid="gaiji-variant"][data-ivs]').filter({ hasText: "異体字セレクタ付き" }).first()).toBeVisible();
+  expect(await be.locator('[data-testid="gaiji-variant"]').count()).toBeGreaterThanOrEqual(30);
+  await expect(page.getByTestId("gaiji-variants")).toContainText("CC BY-SA 2.1 JP");
+});
+
+test("gaiji-checker: 戸籍の珍しい字が出たときは、IPAmj明朝の入れ方と配布元を案内し、その書体で表示できる", async ({ page }) => {
+  await openTool(page);
+  await pasteAndRun(page, "高橋\n渡辺");
+  const guide = page.getByTestId("gaiji-font-guide");
+  await expect(guide).toContainText("IPAmj明朝");
+  await expect(guide.getByRole("link", { name: "https://moji.or.jp/mojikiban/font/" })).toHaveAttribute("href", "https://moji.or.jp/mojikiban/font/");
+  await expect(guide).toContainText("ipamjm.ttf");
+  // 補助面の字（𠆪）は「書体によっては□」、異体字セレクタ付きの字は「IPAmj明朝で正しい形」、ふつうの字（髙）は書体の注意なし
+  const taka = page.locator('[data-testid="gaiji-variant-row"][data-char="高"]');
+  await expect(taka.locator('[data-testid="gaiji-variant"][data-char="𠆪"]')).toContainText("書体によっては□");
+  await expect(taka.locator('[data-testid="gaiji-variant"][data-char="髙"]')).not.toContainText("書体によっては");
+  const be = page.locator('[data-testid="gaiji-variant-row"][data-char="辺"]');
+  await expect(be.locator('[data-testid="gaiji-variant"][data-ivs]').first()).toContainText("IPAmj明朝で正しい形");
+  // 「IPAmj明朝で表示する」で、字の書体が IPAmj明朝 になる
+  const glyph = taka.locator('[data-testid="gaiji-variant"][data-char="𠆪"] [data-testid="gaiji-variant-glyph"]');
+  expect(await glyph.evaluate((e) => getComputedStyle(e).fontFamily)).not.toContain("IPAmj");
+  await page.getByTestId("gaiji-use-ipamj").check();
+  expect(await glyph.evaluate((e) => getComputedStyle(e).fontFamily)).toContain("IPAmj明朝");
+});
+
 test("gaiji-checker: 形違いの字が無い文字だけなら、形の違う字の欄は出ない", async ({ page }) => {
   await openTool(page);
-  await pasteAndRun(page, "山田 木子");
+  await pasteAndRun(page, "やまだ はなこ");
   await expect(page.getByTestId("gaiji-none")).toBeVisible();
   await expect(page.getByTestId("gaiji-variants")).toHaveCount(0);
 });

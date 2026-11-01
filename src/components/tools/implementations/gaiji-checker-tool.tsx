@@ -23,7 +23,11 @@ import {
   type ScanUnit,
 } from "@/lib/gaiji/detect";
 import { displayOfFinding, findingsToCsvBlob } from "@/lib/gaiji/report";
-import { findVariantChars, sjisNoteOf, type VariantFinding } from "@/lib/gaiji/variants";
+import { findVariantChars, fontLabel, loadMjVariantIndex, shortSjisLabel, sjisNoteOf, type MjVariantIndex, type VariantFinding } from "@/lib/gaiji/variants";
+
+/** 戸籍・住民基本台帳などの字を、本来の形で出す書体（利用者のパソコンに入っているときだけ効く） */
+const IPAMJ_FONT_FAMILY = '"IPAmj明朝", "IPAmjMincho", serif';
+const IPAMJ_FONT_URL = "https://moji.or.jp/mojikiban/font/";
 import { GAIJI_FILE_ACCEPT, GAIJI_FILE_MAX_MB, loadGaijiFile } from "@/lib/processors/browser/gaiji-files";
 import { downloadBlob } from "@/lib/utils/format";
 
@@ -87,6 +91,9 @@ export function GaijiCheckerTool() {
   const [copyError, setCopyError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<GaijiCategory>>(new Set());
+  // 戸籍・住民基本台帳などの字の一覧（大きいため、最初に結果を出すときに読み込む）
+  const [mjIndex, setMjIndex] = useState<MjVariantIndex | null>(null);
+  const [mjFailed, setMjFailed] = useState(false);
 
   /** 調べるたびに増やす番号。途中で入力が変わった・別のファイルを選んだときに、古い処理の結果を出さないために使う */
   const runIdRef = useRef(0);
@@ -121,6 +128,10 @@ export function GaijiCheckerTool() {
     setCopied(false);
     setCopyError(null);
     setExportError(null);
+    if (!mjIndex) {
+      setMjFailed(false);
+      loadMjVariantIndex().then(setMjIndex, () => setMjFailed(true));
+    }
   }
 
   /** 結果を消す（入力が変わったなど、表示中の結果が今の入力と合わなくなったとき） */
@@ -238,7 +249,8 @@ export function GaijiCheckerTool() {
     return CATEGORY_ORDER.filter((c) => map.has(c)).map((c) => ({ category: c, findings: map.get(c)! }));
   }, [scanned]);
 
-  const variantFindings = useMemo(() => (scanned ? findVariantChars(scanned.units) : []), [scanned]);
+  const variantFindings = useMemo(() => (scanned ? findVariantChars(scanned.units, mjIndex) : []), [scanned, mjIndex]);
+  const mjLoading = scanned !== null && mjIndex === null && !mjFailed;
 
   const cleaned = useMemo(
     () => (scanned && scanned.text !== null ? cleanText(scanned.text, cleanOptions, { checkShiftJis: scanned.checkShiftJis }) : null),
@@ -432,7 +444,7 @@ export function GaijiCheckerTool() {
             </p>
           ))}
 
-          {variantFindings.length > 0 && <VariantSection findings={variantFindings} />}
+          {(variantFindings.length > 0 || mjLoading || mjFailed) && <VariantSection findings={variantFindings} mjLoading={mjLoading} mjFailed={mjFailed} />}
 
           <div className="flex flex-col gap-4">
             {grouped.map(({ category, findings: groupFindings }) => {
@@ -611,9 +623,12 @@ function FindingRow({ finding: f }: { finding: GaijiFinding }) {
 }
 
 /** 形の違う字（異体字）。入力した文字に、名前でよく使われる形違いの字があれば出す（検索・照合で一致しない原因の確認用） */
-function VariantSection({ findings }: { findings: VariantFinding[] }) {
+function VariantSection({ findings, mjLoading, mjFailed }: { findings: VariantFinding[]; mjLoading: boolean; mjFailed: boolean }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [useIpamj, setUseIpamj] = useState(false);
+  const needsFont = findings.some((f) => f.variants.some((v) => v.font !== "standard"));
+  const glyphStyle = useIpamj ? { fontFamily: IPAMJ_FONT_FAMILY } : undefined;
 
   async function copy(char: string) {
     setCopyError(null);
@@ -630,11 +645,57 @@ function VariantSection({ findings }: { findings: VariantFinding[] }) {
     <div data-testid="gaiji-variants" className="flex min-w-0 flex-col gap-2 rounded-lg border border-blue-200 p-3 dark:border-blue-900">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">形の違う字（異体字）</h3>
-        <span className={mutedText}>{findings.length.toLocaleString("ja-JP")}文字</span>
+        {findings.length > 0 && <span className={mutedText}>{findings.length.toLocaleString("ja-JP")}文字</span>}
       </div>
       <p className="text-xs text-neutral-600 dark:text-neutral-300">
-        入力した文字には、名前でよく使われる形違いの字があります（例：高→髙）。名簿・戸籍・システムでは別の文字として扱われるため、検索や照合で一致しないことがあります。
+        入力した文字の形違いの字です（例：高→髙、辺→邊・邉）。戸籍・住民票・名簿・システムでは別の文字として扱われるため、検索や照合で一致しないことがあります。
       </p>
+      {mjLoading && (
+        <p data-testid="gaiji-variants-loading" className={mutedText}>
+          戸籍・住民基本台帳などで使われる字の一覧を読み込んでいます…
+        </p>
+      )}
+      {mjFailed && (
+        <p data-testid="gaiji-variants-mj-failed" className="text-xs text-amber-800 dark:text-amber-300">
+          戸籍・住民基本台帳などで使われる字の一覧を読み込めませんでした。基本の一覧だけで出しています。調べ直すと、もう一度読み込みます。
+        </p>
+      )}
+      {needsFont && (
+        <div data-testid="gaiji-font-guide" className="flex flex-col gap-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+          <p className="text-sm font-semibold">□や？になる字、形が同じに見える字を、正しい形で出すには</p>
+          <p>
+            戸籍・住民票で使う珍しい字は、Mac・Windowsにはじめから入っている書体には、ないことがあります。無料の書体「IPAmj明朝」を入れると出ます（戸籍統一文字・住基ネット統一文字の約5万8千字を収録）。
+          </p>
+          <ol className="flex list-decimal flex-col gap-1 pl-5">
+            <li>
+              配布元（文字情報技術促進協議会）のページを開き、IPAmj明朝をダウンロードする：{" "}
+              <a href={IPAMJ_FONT_URL} target="_blank" rel="noopener noreferrer" className="break-all font-medium underline underline-offset-2">
+                {IPAMJ_FONT_URL}
+              </a>
+            </li>
+            <li>ダウンロードしたZIPファイルを開き、中の「ipamjm.ttf」を、Macならダブルクリックして「インストール」、Windowsなら右クリックして「インストール」を押す</li>
+            <li>下の「IPAmj明朝で表示する」にチェックを入れると、この画面でもその書体で表示する（書体を入れたあとは、ブラウザを開き直す）</li>
+            <li>Word・Excelなどに貼るときは、その字の書体を「IPAmj明朝」にする</li>
+          </ol>
+          <ul className="flex flex-col gap-0.5">
+            <li>「書体によっては□」：ふつうの書体にないことがある字。IPAmj明朝なら出る</li>
+            <li>「IPAmj明朝で正しい形」：異体字セレクタ付きの字。IPAmj明朝でないと、元の字と同じ形に見える。異体字セレクタに対応していないアプリ・システムでは、元の字として扱われる</li>
+          </ul>
+          <label className="flex items-center gap-2 font-medium">
+            <input
+              type="checkbox"
+              className="ms-focus-ring"
+              checked={useIpamj}
+              onChange={(e) => setUseIpamj(e.target.checked)}
+              data-testid="gaiji-use-ipamj"
+            />
+            IPAmj明朝で表示する（このパソコンに入れてある場合）
+          </label>
+          <p className="text-amber-900/80 dark:text-amber-200/80">
+            ブラウザによっては、自分で入れた書体を使えないことがあります。その場合は、コピーしてWordなどに貼り、書体をIPAmj明朝にして確かめてください。
+          </p>
+        </div>
+      )}
       <ul className="flex flex-col" aria-label="形の違う字の一覧">
         {findings.map((f) => (
           <li
@@ -651,20 +712,39 @@ function VariantSection({ findings }: { findings: VariantFinding[] }) {
               <span>件数：{f.count.toLocaleString("ja-JP")}か所</span>
               <span className="text-neutral-500 dark:text-neutral-400">場所：{f.locations.join("、")}</span>
             </p>
-            <ul className="flex flex-col gap-1.5 pl-2" aria-label={`${f.char}の形違いの字`}>
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-2" aria-label={`${f.char}の形違いの字`}>
               {f.variants.map((v) => (
-                <li key={v.char} data-testid="gaiji-variant" data-char={v.char} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                  <span aria-hidden="true" className="text-neutral-400">
-                    →
-                  </span>
-                  <span className="flex min-h-9 min-w-9 items-center justify-center rounded-md border border-neutral-300 bg-white text-xl text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100">
+                <li
+                  key={v.char}
+                  data-testid="gaiji-variant"
+                  data-char={v.char}
+                  data-ivs={v.ivs || undefined}
+                  className="flex min-w-0 items-start gap-2 rounded-md border border-neutral-200 p-2 text-[11px] leading-tight dark:border-neutral-800"
+                >
+                  <span
+                    data-testid="gaiji-variant-glyph"
+                    style={glyphStyle}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-neutral-300 bg-white text-2xl text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                  >
                     {v.char}
                   </span>
-                  <span className="font-mono text-neutral-700 dark:text-neutral-300">{v.hex}</span>
-                  <span className="text-neutral-600 dark:text-neutral-400">{sjisNoteOf(v.sjis)}</span>
-                  <button type="button" className={smallButton} onClick={() => copy(v.char)} data-testid="gaiji-variant-copy">
-                    {copied === v.char ? "コピーしました" : `「${v.char}」をコピー`}
-                  </button>
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="font-mono text-neutral-700 [overflow-wrap:anywhere] dark:text-neutral-300">{v.hex}</span>
+                    {v.mj && <span className="font-mono text-neutral-700 dark:text-neutral-300">{v.mj}</span>}
+                    <span className="text-neutral-600 dark:text-neutral-400" title={sjisNoteOf(v.sjis, v.ivs)}>
+                      {shortSjisLabel(v.sjis, v.ivs)}
+                    </span>
+                    {fontLabel(v.font) && <span className="text-amber-800 dark:text-amber-300">{fontLabel(v.font)}</span>}
+                    <button
+                      type="button"
+                      className="ms-focus-ring self-start rounded bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                      onClick={() => copy(v.char)}
+                      aria-label={`「${v.char}」をコピー`}
+                      data-testid="gaiji-variant-copy"
+                    >
+                      {copied === v.char ? "コピーしました" : "コピー"}
+                    </button>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -672,8 +752,17 @@ function VariantSection({ findings }: { findings: VariantFinding[] }) {
         ))}
       </ul>
       {copyError && <ErrorMessage message={copyError} />}
+      <ul className="flex flex-col gap-0.5 text-xs text-neutral-600 dark:text-neutral-300" aria-label="表示の意味">
+        <li>Shift_JISで使える：古い業務ソフト・CSV（Shift_JIS）でもそのまま使える</li>
+        <li>機種依存文字：Windowsの拡張の字。Mac・古いシステムで文字化けしやすい</li>
+        <li>Shift_JISにない：古い業務ソフト・CSVでは外字扱い・文字化けになりやすい</li>
+        <li>異体字セレクタ付き：Shift_JISで保存すると、セレクタが消えて元の字になる</li>
+      </ul>
       <p className={mutedText}>
-        新字体・旧字体の対応と、公開されている異体字の対応（約2,400字）に、名前でよく使われる字を足した一覧から出しています。すべての異体字を出せるわけではありません。会社や自治体が独自に作った外字や、異体字セレクタ（同じ文字コードで形だけ変える仕組み）による字形は、ここには出ません。
+        「異体字セレクタ付き」の字は、同じ文字コードのまま形だけを変えた字です。対応した書体（IPAmj明朝など）がないと、元の字と同じ形に見えます。MJ番号（例：MJ025759）を、文字情報基盤の検索（moji.or.jp）に入れると、本来の形を確かめられます。
+      </p>
+      <p className={mutedText}>
+        出どころ：新字体・旧字体と異体字の公開データ（kyujitai・itaiji、MIT）と、文字情報基盤 MJ縮退マップ・MJ文字情報一覧表（© IPA 独立行政法人情報処理推進機構、CC BY-SA 2.1 JP。文字情報技術促進協議会が提供。このサイトで加工）。すべての異体字を出せるわけではありません。会社や自治体が独自に作った外字（私用領域の文字）は出ません。
       </p>
     </div>
   );

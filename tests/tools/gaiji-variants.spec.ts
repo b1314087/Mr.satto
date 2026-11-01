@@ -1,5 +1,6 @@
 import { test, expect } from "../fixtures/premium-test";
-import { findVariantChars, variantsOf } from "@/lib/gaiji/variants";
+import { buildMjVariantIndex, collectVariants, findVariantChars, variantsOf } from "@/lib/gaiji/variants";
+import { MJ_VARIANT_DATA } from "@/lib/gaiji/mj-variant-data";
 import { VARIANT_GROUPS_DATA } from "@/lib/gaiji/variant-data";
 
 /** 形の違う字（異体字）の一覧（単体） */
@@ -44,5 +45,39 @@ test.describe("異体字の一覧", () => {
     expect(r[0].hex).toBe("U+20BB7");
     expect(r[1]).toMatchObject({ count: 2, locations: ["1行目", "2行目"] });
     expect(r[1].variants.map((v) => v.char)).toEqual(["髙"]);
+  });
+
+  test("戸籍などの字（MJ縮退マップ）：高→髙・𠆪、寝→寢と寢の異体字セレクタ付き、辺→邉の異体字セレクタ付き（2段目）", () => {
+    const mj = buildMjVariantIndex(MJ_VARIANT_DATA);
+    expect(mj.lines.size).toBeGreaterThan(8000);
+    const taka = collectVariants("高", mj).map((v) => v.char);
+    expect(taka).toEqual(expect.arrayContaining(["髙", "𠆪"]));
+    // 髙から引いても高が出る（その字を形違いに持つ元の字）
+    expect(collectVariants("髙", mj).map((v) => v.char)).toContain("高");
+    const ne = collectVariants("寝", mj).map((v) => v.char);
+    expect(ne).toEqual(expect.arrayContaining(["寢", "寑", "㝲"]));
+    expect(ne.some((c) => Array.from(c).length === 2 && c.startsWith("寢"))).toBe(true);
+    const be = collectVariants("辺", mj);
+    expect(be.find((v) => v.char === "辺\u{E0102}")?.mj).toBe("MJ025759");
+    expect(be.filter((v) => v.char.startsWith("邉") && v.mj).length).toBeGreaterThan(10);
+    // 入力した字そのもの（異体字セレクタなし）は出さない
+    expect(be.map((v) => v.char)).not.toContain("辺");
+    // データの字は、異体字セレクタ以外、正規化（NFC）で変わらない
+    const changed: string[] = [];
+    for (const [base, tokens] of mj.lines) {
+      if (base.normalize("NFC") !== base) changed.push(base);
+      for (const t of tokens) {
+        const g = t.split("#")[0];
+        if (g.normalize("NFC") !== g) changed.push(g);
+      }
+    }
+    expect(changed).toEqual([]);
+  });
+
+  test("戸籍などの字を使うと、異体字セレクタ付きの字は ivs・MJ番号つきで出る", () => {
+    const mj = buildMjVariantIndex(MJ_VARIANT_DATA);
+    const r = findVariantChars([{ label: "1行目", text: "辺" }], mj);
+    const v = r[0].variants.find((x) => x.mj === "MJ025759")!;
+    expect(v).toMatchObject({ ivs: true, hex: "U+8FBA U+E0102", sjis: "basic" });
   });
 });
