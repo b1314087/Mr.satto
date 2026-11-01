@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { DocumentBasicForm } from "./shared/document-basic-form";
+import { DocumentMemoImport } from "./shared/document-memo-import";
 import { PartyInfoForm } from "./shared/party-info-form";
 import { LineItemsEditor } from "./shared/line-items-editor";
 import { TaxSettings } from "./shared/tax-settings";
@@ -55,6 +56,8 @@ export function DocumentGeneratorTool({ type }: { type: DocumentType }) {
       }
     >
       <p className="text-sm text-neutral-500 dark:text-neutral-400">入力内容は画面を閉じると消えます。</p>
+
+      <DocumentMemoImport form={form} onApply={patch} />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">① 基本情報</h2>

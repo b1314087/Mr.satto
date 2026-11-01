@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { DocumentBasicForm } from "./shared/document-basic-form";
+import { DocumentMemoImport } from "./shared/document-memo-import";
 import { PartyInfoForm } from "./shared/party-info-form";
 import { LineItemsEditor } from "./shared/line-items-editor";
 import { TaxSettings } from "./shared/tax-settings";
@@ -150,6 +151,8 @@ export function QuoteOrderGeneratorTool() {
       }
     >
       <p className="text-sm text-neutral-500 dark:text-neutral-400">A4の1枚に「上=見積書」「下=注文書」を作ります。</p>
+
+      <DocumentMemoImport form={form} onApply={patch} deliveryTextField onDeliveryText={setDeliveryDate} />
 
       <section className="flex flex-col gap-3">
         <Heading>① 基本情報（見積書・注文書に共通）</Heading>
