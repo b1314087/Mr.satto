@@ -348,13 +348,23 @@ export function FiscalCalendarEventsImport({
           >
             {value || pending ? "別のファイルを選ぶ" : "ファイルを選ぶ"}
           </FilePickButton>
-          {(value || pending || busy) && (
+          {(value || pending) && !busy && (
             <Button variant="secondary" data-testid="events-clear" onClick={resetAll}>
-              {busy ? "読み込みを中止する" : "予定の読み込みを取り消す"}
+              予定の読み込みを取り消す
             </Button>
           )}
         </div>
-        {busy && <ProcessingStatus state="processing" processingLabel={busy} testId="events-busy" />}
+        {/* 読み込み中は、画面全体を薄暗くした処理中のパネルに、中止のボタンを出す */}
+        {busy && (
+          <ProcessingStatus
+            state="processing"
+            processingLabel={busy}
+            testId="events-busy"
+            onCancel={resetAll}
+            cancelLabel="読み込みを中止する"
+            cancelTestId="events-clear"
+          />
+        )}
       </div>
       <ul data-testid="events-privacy-notes" className="flex flex-col gap-1 text-xs text-neutral-600 dark:text-neutral-300">
         <li className="flex items-start gap-1.5">

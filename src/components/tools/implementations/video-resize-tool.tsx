@@ -228,18 +228,6 @@ export function VideoResizeTool() {
           >
             解像度を変更する
           </button>
-          {status === "processing" && !canceling && (
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="w-fit rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-600 transition-colors hover:border-red-400 hover:text-red-600 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-red-500 dark:hover:text-red-400"
-            >
-              キャンセル
-            </button>
-          )}
-          {canceling && (
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">キャンセル処理中...</span>
-          )}
         </div>
       )}
 
@@ -247,6 +235,8 @@ export function VideoResizeTool() {
         state={status}
         processingLabel={`処理中... ${Math.round(progress * 100)}%`}
         successLabel="解像度の変更が完了しました"
+        onCancel={handleCancel}
+        canceling={canceling}
       />
       {wasCanceled && (
         <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">処理をキャンセルしました。</div>

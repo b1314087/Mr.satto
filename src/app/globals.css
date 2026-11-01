@@ -1143,6 +1143,99 @@ button[aria-busy="true"]:not(.ms-btn)::before {
 }
 
 /* ==========================================================================
+ * 処理中の画面（src/components/common/processing-status.tsx）。全ツールに共通。
+ * 処理している間、画面全体を薄暗くし、中央のパネル（スピナーと「処理中」の文字）の周りを、光が周回する。
+ * 光は、実行ボタンと同じ色・同じ仕組み（--ms-busy-angle の円すい状のグラデーション）で、パネルの縁に沿って回す。
+ * 動きを減らす設定の人には、光を回さず、縁に固定の光を出す。
+ * ========================================================================== */
+.ms-busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background-color: rgb(6 12 26 / 0.55);
+  cursor: progress;
+}
+.ms-busy-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+  max-width: 20rem;
+  padding: 1.5rem 1.5rem 1.25rem;
+  text-align: center;
+  color: var(--ms-text);
+  background-color: var(--ms-surface-strong);
+  background-image: var(--ms-glass-sheen);
+  border: 1px solid var(--ms-border);
+  border-radius: var(--ms-radius-card);
+  box-shadow:
+    var(--ms-glass-highlight),
+    0 0 36px 4px rgba(56, 189, 248, 0.35),
+    0 0 72px 10px rgba(167, 139, 250, 0.22);
+  cursor: default;
+}
+.ms-busy-panel::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  padding: 3px;
+  border-radius: calc(var(--ms-radius-card) + 5px);
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--ms-busy-angle),
+    transparent 0 45%,
+    rgba(56, 189, 248, 0.55) 62%,
+    #22d3ee 78%,
+    #a78bfa 92%,
+    #ffffff 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.95));
+  animation: ms-busy-orbit 1.6s linear infinite;
+}
+/* 共通のスピナー（.ms-spinner）を、パネル用に大きく・光と同じ色にする */
+.ms-busy-spinner {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  border: 3px solid rgba(56, 189, 248, 0.25);
+  border-top-color: #22d3ee;
+  border-right-color: #a78bfa;
+  animation: ms-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ms-busy-overlay {
+    animation: ms-fade-in 160ms var(--ms-ease);
+  }
+  .ms-busy-panel {
+    animation: ms-modal-in 200ms var(--ms-ease);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-busy-panel::after {
+    animation: none;
+    background: #22d3ee;
+    opacity: 0.75;
+  }
+  .ms-busy-spinner {
+    animation: none;
+    border-color: #22d3ee;
+  }
+}
+
+/* ==========================================================================
  * ページ移動の「読み込み中」（src/components/ui/navigation-feedback.tsx）。
  * リンクを押してから次のページが開くまで、画面の上端に細いバーが流れ、押したリンクが少し薄くなる。
  * 「動きを減らす」設定の人には、バーを動かさず、固定の長さで出す。

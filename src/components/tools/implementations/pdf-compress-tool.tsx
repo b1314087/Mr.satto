@@ -300,12 +300,15 @@ export function PdfCompressTool() {
         </button>
       )}
 
-      {status === "processing" && mode === "target" && attempt > 0 && (
-        <p data-testid="compress-progress" role="status" className="text-xs text-neutral-600 dark:text-neutral-300">
-          目標のサイズに合わせて調整しています…（{attempt}回目／最大{MAX_TARGET_ATTEMPTS}回）
-        </p>
-      )}
-      <ProcessingStatus state={status} successLabel="処理が完了しました" />
+      {/* 処理中の表示（画面全体を薄暗くした中央のパネル）。目標のサイズに合わせているときは、何回目かも出す */}
+      <ProcessingStatus
+        state={status}
+        processingLabel={
+          mode === "target" && attempt > 0 ? `目標のサイズに合わせて調整しています…（${attempt}回目／最大${MAX_TARGET_ATTEMPTS}回）` : "処理中..."
+        }
+        successLabel="処理が完了しました"
+        testId="compress-progress"
+      />
       {error && <ErrorMessage message={error} />}
 
       {result && (
