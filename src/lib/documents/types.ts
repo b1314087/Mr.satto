@@ -178,19 +178,9 @@ export function nextLineItemId(): string {
 }
 
 /**
- * 書類番号の自動採番（開発指示書■13）。
+ * 書類番号の自動採番は document-number.ts（記号-発行日-通し番号 または 時刻）。
  * あくまで初期値の提案であり、ユーザーは自由に変更できる。
- * DBへの保存や重複防止などは行わない（今回実装しない機能）。
  */
-export function generateDocumentNumber(type: DocumentType): string {
-  const prefix = { estimate: "EST", invoice: "INV", order: "ORD" }[type];
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const rand = String(Math.floor(Math.random() * 900) + 100);
-  return `${prefix}-${y}${m}${d}-${rand}`;
-}
 
 export function createEmptyDocumentForm(type: DocumentType): DocumentFormState {
   return {
