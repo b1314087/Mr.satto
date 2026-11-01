@@ -133,6 +133,10 @@ const GaijiCheckerTool = dynamic(() =>
   import("./implementations/gaiji-checker-tool").then((m) => m.GaijiCheckerTool),
   { loading: ToolLoading }
 );
+const OfficeCompareTool = dynamic(() =>
+  import("./implementations/office-compare-tool").then((m) => m.OfficeCompareTool),
+  { loading: ToolLoading }
+);
 const ShiftScheduleTool = dynamic(() =>
   import("./implementations/shift-schedule-tool").then((m) => m.ShiftScheduleTool),
 );
@@ -522,6 +526,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <SeatingChartTool />;
     case "gaiji-checker":
       return <GaijiCheckerTool />;
+    case "office-compare":
+      return <OfficeCompareTool />;
     case "shift-schedule":
       return <ShiftScheduleTool />;
     case "receipt-accounting-csv":

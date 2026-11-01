@@ -39,6 +39,8 @@ const CASES: [string, Input][] = [
   ...(["excel-to-csv", "excel-csv-convert", "excel-transpose", "excel-blank-remove", "excel-replace", "excel-merge-center", "excel-date-shift", "excel-to-pdf"] as const).map((id) => [id, xlsx] as [string, Input]),
   // 文書
   ...(["word-paragraph-cleanup", "word-renumber", "word-to-pdf"] as const).map((id) => [id, docx] as [string, Input]),
+  // Excel・Word比較は、ファイルAを選ぶと「選んだファイル」の確認が出る
+  ["office-compare", docx],
   // ファイル
   ["roster-template", csv],
   ["file-unzip", zip],
