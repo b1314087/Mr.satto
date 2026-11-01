@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { matchesAccept } from "@/lib/utils/file-accept";
 import { useHandoffReceiver } from "@/components/handoff/handoff-provider";
+import { usePageFileDrop } from "@/components/common/page-file-drop";
+import { containsDirectory, FOLDER_DROP_MESSAGE } from "@/lib/drop/page-file-drop";
 
 interface FileDropzoneProps {
   accept?: string;
@@ -17,6 +19,11 @@ interface FileDropzoneProps {
    * 受け取るのは、ページで最初に表示された1つの欄だけ。補助的な欄（ロゴ画像など）は false にする。
    */
   acceptHandoff?: boolean;
+  /**
+   * この欄を、ページ全体へのドロップの受け取り先にするか（既定は acceptHandoff と同じ）。
+   * 受け取り先がページに1つだけのとき、ページのどこへ落としても、この欄で選んだときと同じ処理に渡す。
+   */
+  pageDrop?: boolean;
 }
 
 /**
@@ -31,6 +38,9 @@ interface FileDropzoneProps {
  *
  * ほかのツールから受け渡されたファイル（工程16、src/components/handoff/handoff-provider.tsx）も、
  * 利用者が選んだときと同じ確認（形式・サイズ・数）を通してから onFilesSelected に渡す。
+ *
+ * ページ全体へのドロップ（src/lib/drop/page-file-drop.ts）：この欄がページで唯一の受け取り先のとき、
+ * 欄の外へ落としたファイルも、この欄へのドロップと同じ確認・処理に渡す。フォルダのドロップは受け付けない。
  */
 export function FileDropzone({
   accept,
@@ -41,6 +51,7 @@ export function FileDropzone({
   onFilesSelected,
   onError,
   acceptHandoff = true,
+  pageDrop,
 }: FileDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -81,6 +92,14 @@ export function FileDropzone({
     },
     [findProblem, multiple, onFilesSelected, onError]
   );
+
+  // ページ全体へのドロップ（欄の外に落としたファイルも、この欄へのドロップと同じ処理へ渡す）
+  const pageDropOverlay = usePageFileDrop({
+    enabled: pageDrop ?? acceptHandoff,
+    onFiles: validateAndEmit,
+    onReject: (message) => onError?.(message),
+    hint: label.replace(/を?ドラッグ\s*&\s*ドロップ/g, "").trim() || undefined,
+  });
 
   // ほかのツールから受け渡されたファイルがあれば、最初に表示された欄で1回だけ受け取る（工程16）
   const handoff = useHandoffReceiver();
@@ -130,6 +149,10 @@ export function FileDropzone({
       onDrop={(e) => {
         e.preventDefault();
         setIsDragging(false);
+        if (containsDirectory(e.dataTransfer)) {
+          onError?.(FOLDER_DROP_MESSAGE);
+          return;
+        }
         validateAndEmit(e.dataTransfer.files);
       }}
       className="ms-dropzone"
@@ -172,6 +195,7 @@ export function FileDropzone({
           validateAndEmit(files);
         }}
       />
+      {pageDropOverlay}
     </div>
   );
 }

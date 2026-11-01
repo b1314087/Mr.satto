@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { ErrorMessage } from "@/components/common/error-message";
 import { FilePickButton } from "@/components/common/file-pick-button";
+import { usePageFileDrop } from "@/components/common/page-file-drop";
+import { containsDirectory, FOLDER_DROP_MESSAGE } from "@/lib/drop/page-file-drop";
 import { ProcessingStatus } from "@/components/common/processing-status";
 import { Button } from "@/components/ui/button";
 import { placeEvents, calendarDateRange } from "@/lib/calendar/events";
@@ -111,6 +113,14 @@ export function FiscalCalendarEventsImport({
   /** 取り消した・別のファイルに替えた読み込みの結果を捨てるための番号 */
   const loadSeq = useRef(0);
   const dragDepth = useRef(0);
+
+  // ページ全体へのドロップ：この欄の外に落とした予定データも、この欄へのドロップと同じ処理へ渡す（読み込み中は受け付けない）
+  const pageDropOverlay = usePageFileDrop({
+    enabled: !busy,
+    onFiles: (files) => void handleFiles(files),
+    onReject: setFileError,
+    hint: "予定データ（Excel・CSV・PDFなど）",
+  });
 
   function resetAll() {
     loadSeq.current++;
@@ -295,6 +305,7 @@ export function FiscalCalendarEventsImport({
 
   return (
     <fieldset data-testid="events-import" className="flex flex-col gap-2 text-sm">
+      {pageDropOverlay}
       <legend className="mb-1 text-neutral-600 dark:text-neutral-300">予定データ</legend>
       <div
         data-testid="events-dropzone"
@@ -317,6 +328,7 @@ export function FiscalCalendarEventsImport({
           e.preventDefault();
           dragDepth.current = 0;
           setDragging(false);
+          if (containsDirectory(e.dataTransfer)) return setFileError(FOLDER_DROP_MESSAGE);
           void handleFiles(Array.from(e.dataTransfer.files));
         }}
         className="ms-dropzone ms-dropzone-static"

@@ -590,7 +590,8 @@ export function ShiftScheduleTool() {
           <div>
             <button type="button" className={smallButton} data-testid="shift-save-json" onClick={saveJson}>保存ファイル（JSON）を作る</button>
           </div>
-          <FileDropzone accept=".json" maxSizeMB={5} label="保存ファイル（JSON）を読み込む" hint="このツールで作った保存ファイルを選んでください" onFilesSelected={loadJson} onError={setLoadError} />
+          {/* 保存ファイルの読み込みは補助の機能で、読み込むと入力中の表が置き換わるため、ページ全体へのドロップは受けない */}
+          <FileDropzone accept=".json" maxSizeMB={5} label="保存ファイル（JSON）を読み込む" hint="このツールで作った保存ファイルを選んでください" onFilesSelected={loadJson} onError={setLoadError} pageDrop={false} />
           {loadError && <ErrorMessage message={loadError} testId="shift-load-error" />}
         </div>
         {message && <p data-testid="shift-message" className="text-xs text-neutral-600 dark:text-neutral-300">{message}</p>}
