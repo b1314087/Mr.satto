@@ -6,7 +6,7 @@ import { computeImagePageLayout } from "./image-to-pdf-layout";
 import { stripExtension } from "@/lib/utils/format";
 import { assertValidPageRange, parsePageSelection, rangeToIndices } from "@/lib/pdf/page-selection";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
-import { type PdfCompressSettings } from "@/lib/pdf/compress-settings";
+import { TARGET_LADDER, type PdfCompressSettings } from "@/lib/pdf/compress-settings";
 import { hasDigitalSignature, recompressPdfImages, type RecompressStats } from "./pdf-image-recompress";
 import {
   PAGE_NUMBER_COLOR,
@@ -201,6 +201,82 @@ export class PdfCompressProcessor extends BrowserProcessor<PdfCompressInput, Pdf
       hadSignature,
     };
   }
+}
+
+export interface PdfCompressToTargetInput {
+  file: File;
+  /** 目標のサイズ（バイト）。これ以下になる設定を探す */
+  targetBytes: number;
+  /** 途中経過（何回目の試行か）。画面の「調整しています」の表示に使う */
+  onProgress?: (attempt: number) => void;
+}
+
+export interface PdfCompressToTargetOutput extends PdfCompressOutput {
+  targetBytes: number;
+  /** 目標のサイズ以下になったか（届かなかったときは、いちばん小さくできた結果を返す） */
+  achieved: boolean;
+  /** 圧縮を試した回数 */
+  attempts: number;
+}
+
+/**
+ * 目標のサイズ（MB）を指定するPDF圧縮（工程4：PDF圧縮の目標サイズ指定）。
+ *
+ * 1. まず画像を変えずに構造だけを整理する。これで目標以下なら、画像の画質は下げない。
+ * 2. 次に、いちばん小さくなる段階（TARGET_LADDER の最後）で試す。それでも目標を超えるなら、
+ *    これ以上は小さくできないため、いちばん小さい結果を「届かなかった」として返す。
+ * 3. 目標以下になる段階の中で、いちばん画質が良い段階を、二分探索で探す（試行は合計でおよそ6回まで）。
+ *
+ * 画像を作り直すのはJPEG画像だけ（pdf-image-recompress.ts）。文字・図形・フォントは変えない。
+ * 使わなかった試行の結果（Object URL）は、その場で解放する。
+ */
+export async function compressPdfToTarget({ file, targetBytes, onProgress }: PdfCompressToTargetInput): Promise<PdfCompressToTargetOutput> {
+  const processor = new PdfCompressProcessor();
+  let attempts = 0;
+  const run = async (settings: PdfCompressSettings | undefined) => {
+    attempts++;
+    onProgress?.(attempts);
+    return processor.process({ file, settings });
+  };
+  const discard = (out: PdfCompressOutput | null) => {
+    if (out) URL.revokeObjectURL(out.url);
+  };
+  const finish = (out: PdfCompressOutput, achieved: boolean): PdfCompressToTargetOutput => ({ ...out, targetBytes, achieved, attempts });
+
+  // 1. 画像を変えずに目標以下になれば、それがいちばん画質が良い
+  const structureOnly = await run(undefined);
+  if (structureOnly.compressedSizeBytes <= targetBytes) return finish(structureOnly, true);
+
+  // 2. いちばん小さくなる段階で試す
+  let hi = TARGET_LADDER.length - 1;
+  const smallest = await run(TARGET_LADDER[hi]);
+  if (smallest.compressedSizeBytes > targetBytes) {
+    // 届かない。2つのうち小さいほうを返す（画像を作り直せないPDFでは、構造の整理だけのほうが小さいことがある）
+    if (structureOnly.compressedSizeBytes <= smallest.compressedSizeBytes) {
+      discard(smallest);
+      return finish(structureOnly, false);
+    }
+    discard(structureOnly);
+    return finish(smallest, false);
+  }
+  discard(structureOnly);
+
+  // 3. 目標以下になる段階の中で、いちばん画質が良い段階を探す
+  let best: PdfCompressOutput = smallest;
+  let lo = 0;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const out = await run(TARGET_LADDER[mid]);
+    if (out.compressedSizeBytes <= targetBytes) {
+      discard(best);
+      best = out;
+      hi = mid;
+    } else {
+      discard(out);
+      lo = mid + 1;
+    }
+  }
+  return finish(best, true);
 }
 
 // ---------------------------------------------------------------------------

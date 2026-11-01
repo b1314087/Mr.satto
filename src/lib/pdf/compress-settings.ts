@@ -120,3 +120,89 @@ export function sizeReduction(originalBytes: number, compressedBytes: number): {
   const percent = originalBytes > 0 ? (savedBytes / originalBytes) * 100 : 0;
   return { savedBytes, percent };
 }
+
+// ---------------------------------------------------------------------------
+// 目標のサイズ（MB）を指定する圧縮
+// ---------------------------------------------------------------------------
+
+/**
+ * 目標のサイズの1MB。アップロードの上限（1MB＝1,000,000バイトの場合と、1,048,576バイトの場合がある）の
+ * どちらにも確実に収まるよう、小さいほうの 1,000,000バイトで計算する。
+ */
+export const TARGET_MB_BYTES = 1_000_000;
+export const TARGET_MB_MIN = 0.05;
+export const TARGET_MB_MAX = 1000;
+
+/** 目標のサイズの候補（ワンタップで入れられる値。元のPDFより小さいものだけを出す） */
+export const TARGET_MB_CHOICES = [1, 2, 3, 5, 10] as const;
+
+/**
+ * 目標のサイズに近づけるときに試す設定の段階（上ほど画質を保ち、下ほど小さくなる）。
+ * 画質（JPEGの品質）と画像の大きさ（長辺の上限）を、少しずつ同時に下げる。
+ * 目標以下になる中で、いちばん上（画質がいちばん良い）段階を探す。
+ */
+export const TARGET_LADDER: readonly PdfCompressSettings[] = [
+  { recompressImages: true, imageQuality: 85, maxImageEdge: 3000 },
+  { recompressImages: true, imageQuality: 80, maxImageEdge: 2500 },
+  { recompressImages: true, imageQuality: 75, maxImageEdge: 2000 },
+  { recompressImages: true, imageQuality: 70, maxImageEdge: 1800 },
+  { recompressImages: true, imageQuality: 65, maxImageEdge: 1600 },
+  { recompressImages: true, imageQuality: 60, maxImageEdge: 1400 },
+  { recompressImages: true, imageQuality: 55, maxImageEdge: 1200 },
+  { recompressImages: true, imageQuality: 50, maxImageEdge: 1000 },
+  { recompressImages: true, imageQuality: 45, maxImageEdge: 900 },
+  { recompressImages: true, imageQuality: 40, maxImageEdge: 800 },
+  { recompressImages: true, imageQuality: 35, maxImageEdge: 700 },
+  { recompressImages: true, imageQuality: 30, maxImageEdge: 600 },
+  { recompressImages: true, imageQuality: 25, maxImageEdge: 500 },
+  { recompressImages: true, imageQuality: 20, maxImageEdge: 400 },
+];
+
+/** バイト数を、目標のサイズと同じ単位（1MB＝1,000,000バイト）のMBで表す */
+export function bytesToTargetMB(bytes: number): number {
+  return bytes / TARGET_MB_BYTES;
+}
+
+/** MBの表示（目標のサイズとの比較用。小数2けた） */
+export function formatTargetMB(bytes: number): string {
+  return `${bytesToTargetMB(bytes).toFixed(2)}MB`;
+}
+
+/**
+ * 目標のサイズ（MB）の入力を確かめる。全角の数字・小数点も受け付ける。
+ * 元のPDFがすでに目標以下のときは、圧縮しなくてよいことを伝える。
+ */
+export function parseTargetMB(raw: string, originalBytes: number | null): { ok: true; bytes: number; mb: number } | { ok: false; message: string } {
+  const text = raw
+    .trim()
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[．。]/g, ".")
+    .replace(/\s*(mb|ＭＢ|MB|Mb)$/i, "");
+  if (text === "") return { ok: false, message: "目標のサイズを、MBの数字で入力してください（例：2 や 1.5）。" };
+  if (!/^\d+(\.\d+)?$/.test(text)) return { ok: false, message: "目標のサイズは、数字で入力してください（例：2 や 1.5）。" };
+  const mb = Number(text);
+  if (mb < TARGET_MB_MIN || mb > TARGET_MB_MAX) {
+    return { ok: false, message: `目標のサイズは、${TARGET_MB_MIN}〜${TARGET_MB_MAX}MBの範囲で入力してください。` };
+  }
+  const bytes = Math.floor(mb * TARGET_MB_BYTES);
+  if (originalBytes !== null && originalBytes <= 2 * TARGET_MB_MIN * TARGET_MB_BYTES && originalBytes <= bytes) {
+    return {
+      ok: false,
+      message: `このPDF（${formatTargetMB(originalBytes)}）は、すでに十分小さいため、サイズの指定では圧縮できません。さらに小さくしたい場合は「画質を指定する（詳しい設定）」を選んでください。`,
+    };
+  }
+  if (originalBytes !== null && originalBytes <= bytes) {
+    return {
+      ok: false,
+      message: `元のPDF（${formatTargetMB(originalBytes)}）は、すでに${mb}MB以下です。圧縮しなくても、この条件を満たしています。もっと小さい値を入力してください。`,
+    };
+  }
+  return { ok: true, bytes, mb };
+}
+
+/** 目標のサイズの初期値（元のサイズの半分。0.1MB以上なら0.1MB単位、それ未満は0.01MB単位で切り捨て。最小0.05MB） */
+export function suggestTargetMB(originalBytes: number): string {
+  const half = bytesToTargetMB(originalBytes) / 2;
+  const rounded = half >= 0.1 ? Math.floor(half * 10) / 10 : Math.floor(half * 100) / 100;
+  return String(Math.max(TARGET_MB_MIN, rounded));
+}

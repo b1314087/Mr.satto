@@ -9,8 +9,8 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { usePdfThumbnails } from "@/components/common/pdf-thumbnails";
-import { PdfCompressProcessor } from "@/lib/processors/browser/pdf";
-import type { PdfCompressOutput } from "@/lib/processors/browser/pdf";
+import { PdfCompressProcessor, compressPdfToTarget } from "@/lib/processors/browser/pdf";
+import type { PdfCompressOutput, PdfCompressToTargetOutput } from "@/lib/processors/browser/pdf";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import {
   DEFAULT_PRESET_ID,
@@ -19,16 +19,32 @@ import {
   MAX_EDGE_MAX,
   MAX_EDGE_MIN,
   PDF_COMPRESS_PRESETS,
+  TARGET_LADDER,
+  TARGET_MB_BYTES,
+  TARGET_MB_CHOICES,
+  formatTargetMB,
   getPreset,
   matchPreset,
   parseIntegerSetting,
+  parseTargetMB,
   sizeReduction,
+  suggestTargetMB,
   type PdfCompressPresetId,
   type PdfCompressSettings,
 } from "@/lib/pdf/compress-settings";
 
 /** 1つのPDFの先頭ページの縮小表示(圧縮前・圧縮後で同じ形式) */
-function FirstPageThumb({ file, label, sizeBytes }: { file: File; label: string; sizeBytes: number }) {
+function FirstPageThumb({
+  file,
+  label,
+  sizeBytes,
+  format,
+}: {
+  file: File;
+  label: string;
+  sizeBytes: number;
+  format: (bytes: number) => string;
+}) {
   const { urls, loading, error } = usePdfThumbnails(file, 1, 200);
   return (
     <figure className="flex flex-col items-center gap-1.5">
@@ -43,7 +59,7 @@ function FirstPageThumb({ file, label, sizeBytes }: { file: File; label: string;
         )}
       </div>
       <figcaption className="text-xs text-neutral-600 dark:text-neutral-300">
-        {label}: {formatBytes(sizeBytes)}
+        {label}: {format(sizeBytes)}
       </figcaption>
     </figure>
   );
@@ -86,6 +102,18 @@ function validateInput(input: SettingsInput): { settings: PdfCompressSettings | 
   };
 }
 
+/** 圧縮のしかた。target＝目標のサイズ（MB）を指定する（おすすめ・初期値）、quality＝画質の設定を自分で選ぶ */
+type CompressMode = "target" | "quality";
+
+type CompressResult = PdfCompressOutput | PdfCompressToTargetOutput;
+
+function isTargetResult(result: CompressResult): result is PdfCompressToTargetOutput {
+  return "achieved" in result;
+}
+
+/** 目標のサイズを探すときの、試行の最大回数（構造の整理1回＋いちばん小さい段階1回＋二分探索） */
+const MAX_TARGET_ATTEMPTS = 2 + Math.ceil(Math.log2(TARGET_LADDER.length));
+
 function settingsLabel(settings: PdfCompressSettings): string {
   if (!settings.recompressImages) return "画像はそのまま（構造の整理のみ）";
   const preset = matchPreset(settings);
@@ -96,25 +124,49 @@ function settingsLabel(settings: PdfCompressSettings): string {
 /**
  * PDF圧縮。
  * 構造の最適化（pdf-lib）に加えて、PDFに埋め込まれたJPEG画像を、指定した品質・長辺の上限で作り直す（工程18）。
- * 初めての人は、そのまま「圧縮する」を押せば「標準」の設定で圧縮できる。プリセットを選ぶと、数値の欄にも値が入る。
+ * 初期の「サイズを指定する」では、目標のサイズ（MB）以下になるまで、画質と画像の大きさを自動で下げる
+ * （compressPdfToTarget。PDFを選ぶと、元のサイズの半分が初期値として入る）。
+ * 「画質を指定する（詳しい設定）」では、プリセットを選ぶと、数値の欄にも値が入る。
  * 数値を変えただけでは処理しない（「圧縮する」を押したときに、その時点の設定で圧縮する）。
  * 結果は常に実測した元サイズ・圧縮後サイズをそのまま表示し、削減できなかった場合もその事実をそのまま伝える
- * （開発指示書■9・■24: 圧縮できたふりをする実装は禁止）。圧縮率そのものは指定できない。
+ * （開発指示書■9・■24: 圧縮できたふりをする実装は禁止）。目標のサイズに届かないときも、そのまま伝える。
  */
 export function PdfCompressTool() {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PdfCompressOutput | null>(null);
+  const [result, setResult] = useState<CompressResult | null>(null);
+  const [mode, setMode] = useState<CompressMode>("target");
+  const [targetText, setTargetText] = useState("");
+  /** 目標のサイズを自分で入力したか（入力していなければ、PDFを選んだときに初期値を入れる） */
+  const [targetTouched, setTargetTouched] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [input, setInput] = useState<SettingsInput>(() => inputFromSettings(getPreset(DEFAULT_PRESET_ID).settings));
   const checked = validateInput(input);
   const presetId: PdfCompressPresetId | null = checked.settings ? matchPreset(checked.settings) : null;
+  const targetCheck = parseTargetMB(targetText, file?.size ?? null);
+  const canRun = mode === "target" ? targetCheck.ok : checked.settings !== null;
 
   // 設定を変えたら、前の設定で作った結果は捨てる（違う設定の結果をダウンロードさせない）
-  function changeInput(next: SettingsInput) {
-    setInput(next);
+  function clearResult() {
     setResult(null);
     if (status === "success") setStatus("idle");
+  }
+
+  function changeInput(next: SettingsInput) {
+    setInput(next);
+    clearResult();
+  }
+
+  function changeTarget(text: string) {
+    setTargetText(text);
+    setTargetTouched(true);
+    clearResult();
+  }
+
+  function changeMode(next: CompressMode) {
+    setMode(next);
+    clearResult();
   }
 
   // Phase 7: 生成結果のObject URL(result.url)は画面上で使っていないが、
@@ -130,16 +182,21 @@ export function PdfCompressTool() {
     setResult(null);
     setStatus("idle");
     setError(null);
+    // 目標のサイズをまだ入力していなければ、元のサイズの半分を入れておく（そのまま「圧縮する」を押せる）
+    if (files[0] && !targetTouched) setTargetText(suggestTargetMB(files[0].size));
   }
 
   async function handleRun() {
-    if (!file || !checked.settings) return;
-    const settings = checked.settings;
+    if (!file || !canRun) return;
     setStatus("processing");
     setError(null);
     setResult(null);
+    setAttempt(0);
     try {
-      const output = await new PdfCompressProcessor().process({ file, settings });
+      const output =
+        mode === "target" && targetCheck.ok
+          ? await compressPdfToTarget({ file, targetBytes: targetCheck.bytes, onProgress: setAttempt })
+          : await new PdfCompressProcessor().process({ file, settings: checked.settings! });
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -155,6 +212,9 @@ export function PdfCompressTool() {
   );
 
   const reduction = result ? sizeReduction(result.originalSizeBytes, result.compressedSizeBytes) : null;
+  // 目標のサイズで圧縮したときは、目標と同じ単位（1MB＝1,000,000バイト）で表示する
+  const targetResult = result && isTargetResult(result) ? result : null;
+  const fmt = targetResult ? formatTargetMB : formatBytes;
 
   return (
     <PreviewSplitLayout
@@ -168,9 +228,9 @@ export function PdfCompressTool() {
         >
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">圧縮前後の比較</p>
           <div className="flex flex-wrap items-start gap-6">
-            <FirstPageThumb file={file} label="圧縮前" sizeBytes={file.size} />
+            <FirstPageThumb file={file} label="圧縮前" sizeBytes={file.size} format={fmt} />
             {result && compressedFile ? (
-              <FirstPageThumb file={compressedFile} label="圧縮後" sizeBytes={result.compressedSizeBytes} />
+              <FirstPageThumb file={compressedFile} label="圧縮後" sizeBytes={result.compressedSizeBytes} format={fmt} />
             ) : (
               <div className="flex min-h-40 w-[200px] max-w-full items-center justify-center rounded-md border border-dashed border-neutral-300 px-3 text-center text-xs text-neutral-400 dark:border-neutral-700">結果がここに表示されます</div>
             )}
@@ -215,32 +275,64 @@ export function PdfCompressTool() {
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
-      <CompressSettingsPanel input={input} presetId={presetId} checked={checked} onChange={changeInput} />
+      <CompressModeSelector mode={mode} onChange={changeMode} />
+
+      {mode === "target" ? (
+        <TargetSizePanel
+          file={file}
+          targetText={targetText}
+          error={targetCheck.ok ? null : targetCheck.message}
+          onChange={changeTarget}
+        />
+      ) : (
+        <CompressSettingsPanel input={input} presetId={presetId} checked={checked} onChange={changeInput} />
+      )}
 
       {file && (
         <button
           type="button"
+          data-testid="compress-run"
           onClick={handleRun}
-          disabled={status === "processing" || !checked.settings} aria-busy={status === "processing" || undefined}
+          disabled={status === "processing" || !canRun} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           圧縮する
         </button>
       )}
 
+      {status === "processing" && mode === "target" && attempt > 0 && (
+        <p data-testid="compress-progress" role="status" className="text-xs text-neutral-600 dark:text-neutral-300">
+          目標のサイズに合わせて調整しています…（{attempt}回目／最大{MAX_TARGET_ATTEMPTS}回）
+        </p>
+      )}
       <ProcessingStatus state={status} successLabel="処理が完了しました" />
       {error && <ErrorMessage message={error} />}
 
       {result && (
         <ResultPopup>
           <div data-testid="compress-result" className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
+            {targetResult &&
+              (targetResult.achieved ? (
+                <p data-testid="compress-target-result" className="font-semibold text-green-700 dark:text-green-400">
+                  <span aria-hidden="true">✓ </span>目標の{formatTargetMB(targetResult.targetBytes)}以下になりました（{formatTargetMB(targetResult.compressedSizeBytes)}）。
+                </p>
+              ) : (
+                <div data-testid="compress-target-result" className="flex flex-col gap-1">
+                  <p className="font-semibold text-amber-800 dark:text-amber-300">
+                    <span aria-hidden="true">! </span>目標の{formatTargetMB(targetResult.targetBytes)}以下には届きませんでした。いちばん小さくできたのは
+                    {formatTargetMB(targetResult.compressedSizeBytes)}です。
+                  </p>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-300">
+                    文字や図形が中心のPDFや、JPEG以外の画像（スクリーンショットなど）のPDFは、これ以上小さくしにくいです。「PDF分割」でページを分けると、1つずつのサイズを小さくできます。
+                  </p>
+                </div>
+              ))}
             <p data-testid="compress-sizes">
-              元のサイズ: {formatBytes(result.originalSizeBytes)} → 圧縮後:{" "}
-              {formatBytes(result.compressedSizeBytes)}
+              元のサイズ: {fmt(result.originalSizeBytes)} → 圧縮後: {fmt(result.compressedSizeBytes)}
             </p>
             {reduction && reduction.savedBytes > 0 ? (
               <p data-testid="compress-reduction" className="font-medium text-green-700 dark:text-green-400">
-                {formatBytes(reduction.savedBytes)} 削減（{reduction.percent.toFixed(1)}%）
+                {fmt(reduction.savedBytes)} 削減（{reduction.percent.toFixed(1)}%）
               </p>
             ) : reduction && reduction.savedBytes === 0 ? (
               <p data-testid="compress-reduction" className="text-neutral-500 dark:text-neutral-400">
@@ -248,11 +340,16 @@ export function PdfCompressTool() {
               </p>
             ) : reduction ? (
               <p data-testid="compress-reduction" className="text-neutral-500 dark:text-neutral-400">
-                サイズが {formatBytes(-reduction.savedBytes)} 増えました（{reduction.percent.toFixed(1)}%）。結果のPDFは正常に作成されていますが、元のPDFを使うほうが小さく済みます。
+                サイズが {fmt(-reduction.savedBytes)} 増えました（{reduction.percent.toFixed(1)}%）。結果のPDFは正常に作成されていますが、元のPDFを使うほうが小さく済みます。
               </p>
             ) : null}
             <p data-testid="compress-used-settings" className="text-xs text-neutral-500 dark:text-neutral-400">
-              使った設定：{settingsLabel(result.settings)}
+              使った設定：
+              {targetResult
+                ? targetResult.settings.recompressImages
+                  ? `目標のサイズに合わせて自動で調整（画像の品質 ${targetResult.settings.imageQuality}・長辺の上限 ${targetResult.settings.maxImageEdge}px）`
+                  : "画像はそのまま（構造の整理だけで、この大きさになりました）"
+                : settingsLabel(result.settings)}
             </p>
             {result.imageStats && (
               <p data-testid="compress-image-stats" className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -277,6 +374,112 @@ export function PdfCompressTool() {
         </ResultPopup>
       )}
     </PreviewSplitLayout>
+  );
+}
+
+/** 圧縮のしかたを選ぶ（目標のサイズ／画質の設定） */
+function CompressModeSelector({ mode, onChange }: { mode: CompressMode; onChange: (mode: CompressMode) => void }) {
+  const option = (value: CompressMode, title: string, description: string) => (
+    <label
+      className={`flex flex-1 cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm ${
+        mode === value
+          ? "border-blue-600 bg-blue-50 dark:border-blue-500 dark:bg-blue-950/30"
+          : "border-neutral-200 dark:border-neutral-800"
+      }`}
+    >
+      <input
+        type="radio"
+        name="compress-mode"
+        value={value}
+        data-testid={`compress-mode-${value}`}
+        checked={mode === value}
+        onChange={() => onChange(value)}
+        className="ms-focus-ring mt-1"
+      />
+      <span className="flex flex-col gap-0.5">
+        <span className="font-medium text-neutral-800 dark:text-neutral-100">{title}</span>
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">{description}</span>
+      </span>
+    </label>
+  );
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">圧縮のしかた</legend>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {option("target", "サイズを指定する（おすすめ）", "「何MB以下にしたいか」を入れるだけ。画質は自動で調整します。")}
+        {option("quality", "画質を指定する（詳しい設定）", "画像の品質と大きさを、自分で数値で決めます。")}
+      </div>
+    </fieldset>
+  );
+}
+
+/** 目標のサイズ（MB）の入力 */
+function TargetSizePanel({
+  file,
+  targetText,
+  error,
+  onChange,
+}: {
+  file: File | null;
+  targetText: string;
+  error: string | null;
+  onChange: (text: string) => void;
+}) {
+  const choices = TARGET_MB_CHOICES.filter((mb) => !file || mb * TARGET_MB_BYTES < file.size);
+  return (
+    <div data-testid="compress-target" className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-3 text-sm dark:border-neutral-800">
+      <label htmlFor="compress-target-mb" className="font-medium text-neutral-800 dark:text-neutral-100">
+        何MB以下にしますか？
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id="compress-target-mb"
+          type="text"
+          inputMode="decimal"
+          data-testid="compress-target-mb"
+          value={targetText}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="例）2"
+          aria-invalid={file && error ? true : undefined}
+          aria-describedby="compress-target-help"
+          className="ms-focus-ring w-28 rounded-md border border-neutral-300 px-2 py-1.5 text-base dark:border-neutral-700 dark:bg-neutral-900"
+        />
+        <span className="text-sm text-neutral-700 dark:text-neutral-200">MB 以下</span>
+        {file && (
+          <span data-testid="compress-original-size" className="text-xs text-neutral-500 dark:text-neutral-400">
+            （元のサイズ：{formatTargetMB(file.size)}）
+          </span>
+        )}
+      </div>
+      {choices.length > 0 && (
+        <div role="group" aria-label="よく使うサイズ" className="flex flex-wrap gap-2">
+          {choices.map((mb) => (
+            <button
+              key={mb}
+              type="button"
+              data-testid={`compress-target-choice-${mb}`}
+              aria-pressed={targetText === String(mb)}
+              onClick={() => onChange(String(mb))}
+              className={`ms-focus-ring rounded-lg px-3 py-1 text-xs font-medium ${
+                targetText === String(mb)
+                  ? "bg-blue-600 text-white"
+                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+              }`}
+            >
+              {mb}MB
+            </button>
+          ))}
+        </div>
+      )}
+      {file && error && (
+        <p role="alert" data-testid="compress-target-error" className="text-xs text-red-700 dark:text-red-400">
+          {error}
+        </p>
+      )}
+      <p id="compress-target-help" className="text-xs text-neutral-500 dark:text-neutral-400">
+        指定したサイズ以下になるまで、PDFの中の画像の画質と大きさを自動で下げます（できるだけ画質を保てる設定を選びます）。文字・図形・リンクは変わりません。届かないときは、いちばん小さくできた結果を表示します。1MB＝1,000,000バイトで計算するため、アップロードの上限にも確実に収まります。
+      </p>
+    </div>
   );
 }
 
@@ -432,7 +635,7 @@ function CompressSettingsPanel({
         </button>
       </div>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        文字・図形・リンクは変わりません（文字の検索・選択もそのまま）。どれだけ小さくなるかはPDFの中身しだいで、圧縮率は指定できません。JPEG以外の画像はそのまま残ります。
+        文字・図形・リンクは変わりません（文字の検索・選択もそのまま）。どれだけ小さくなるかはPDFの中身しだいです。サイズで決めたいときは「サイズを指定する」を選んでください。JPEG以外の画像はそのまま残ります。
       </p>
     </fieldset>
   );

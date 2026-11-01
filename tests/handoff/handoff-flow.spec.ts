@@ -76,6 +76,8 @@ test.describe("ツール間の受け渡し：代表的な経路", () => {
     expect(new URL(page.url()).search).toBe("");
 
     // 受け取ったPDFで、そのまま処理できる（回転済みの結果であることを、出力で確かめる）
+    // テストのPDFはとても小さく、「サイズを指定する」では圧縮の必要がないため、「画質を指定する」で圧縮する
+    await page.getByTestId("compress-mode-quality").check();
     await clickWhenReady(page.getByRole("button", { name: "圧縮する" }), { expectAfter: page.getByText("処理が完了しました") });
     const download = await clickAndDownload(page, /^ダウンロード$/);
     const saved = workPath("compressed.pdf");

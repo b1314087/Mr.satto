@@ -10,11 +10,15 @@ import { extractPdfContent } from "../helpers/pdf-inspect";
 import {
   DEFAULT_PRESET_ID,
   PDF_COMPRESS_PRESETS,
+  TARGET_LADDER,
   fitWithinEdge,
+  formatTargetMB,
   getPreset,
   matchPreset,
   parseIntegerSetting,
+  parseTargetMB,
   sizeReduction,
+  suggestTargetMB,
 } from "@/lib/pdf/compress-settings";
 
 /**
@@ -143,10 +147,12 @@ async function imageSizes(file: string): Promise<{ width: number; height: number
   return sizes;
 }
 
-async function openWithPdf(page: Page, file: string) {
+/** PDFを選ぶ。mode：quality＝「画質を指定する（詳しい設定）」に切り替える、target＝初期の「サイズを指定する」のまま */
+async function openWithPdf(page: Page, file: string, mode: "quality" | "target" = "quality") {
   await page.goto("/tools/pdf-compress");
   await waitForFileInputHydrated(page);
   await page.locator('input[type="file"]').first().setInputFiles(file);
+  if (mode === "quality") await page.getByTestId("compress-mode-quality").check();
   await expect(page.getByRole("button", { name: "圧縮する" })).toBeEnabled({ timeout: 20_000 });
 }
 
@@ -162,7 +168,7 @@ async function compressAndSave(page: Page, name: string): Promise<string> {
 test.use({ viewport: { width: 1280, height: 1400 } });
 
 test.describe("PDF圧縮：数値の設定と結果", () => {
-  test("設定に触れずに「圧縮する」だけで、標準の設定で圧縮できる。結果の表示（削減サイズ・割合）が正しく、PDFは正常に開け、文字はそのまま", async ({ page }) => {
+  test("「画質を指定する」では、設定に触れずに「圧縮する」だけで、標準の設定で圧縮できる。結果の表示（削減サイズ・割合）が正しく、PDFは正常に開け、文字はそのまま", async ({ page }) => {
     await page.goto("/tools/pdf-compress");
     const src = await writePhotoPdf(page, "photo.pdf");
     await openWithPdf(page, src);
@@ -191,6 +197,7 @@ test.describe("PDF圧縮：数値の設定と結果", () => {
   test("プリセットを選ぶと数値の欄に値が入り、自分で数値を変えると「自分で指定」になる。スライダーと数値の欄は同じ値になる", async ({ page }) => {
     await page.goto("/tools/pdf-compress");
     await waitForFileInputHydrated(page);
+    await page.getByTestId("compress-mode-quality").check();
     await page.getByTestId("compress-preset-quality").click();
     await expect(page.getByTestId("compress-quality")).toHaveValue("85");
     await expect(page.getByTestId("compress-edge")).toHaveValue("3000");
@@ -290,5 +297,156 @@ test.describe("PDF圧縮：数値の設定と結果", () => {
     await page.getByRole("button", { name: "圧縮する" }).click();
     await expect(page.getByText(/broken\.pdf の読み込みに失敗しました/)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("compress-result")).toHaveCount(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. 目標のサイズ（MB）を指定する圧縮
+// ---------------------------------------------------------------------------
+plainTest.describe("目標のサイズ（画面なし）", () => {
+  plainTest("MBの入力を確かめる（小数・全角・単位つき）。元のPDFがすでに目標以下なら、そのことを伝える", () => {
+    expect(parseTargetMB("2", 5_000_000)).toEqual({ ok: true, bytes: 2_000_000, mb: 2 });
+    expect(parseTargetMB(" １．５ ", 5_000_000)).toEqual({ ok: true, bytes: 1_500_000, mb: 1.5 });
+    expect(parseTargetMB("0.5MB", 5_000_000)).toEqual({ ok: true, bytes: 500_000, mb: 0.5 });
+    const msg = (raw: string, original: number | null = 5_000_000) => {
+      const r = parseTargetMB(raw, original);
+      return r.ok ? "" : r.message;
+    };
+    expect(msg("")).toContain("MBの数字で入力してください");
+    expect(msg("abc")).toContain("数字で入力してください");
+    expect(msg("-1")).toContain("数字で入力してください");
+    expect(msg("0.01")).toContain("0.05〜1000MBの範囲");
+    expect(msg("5")).toContain("すでに5MB以下です");
+    expect(msg("0.5", 30_000)).toContain("すでに十分小さい");
+    // PDFを選ぶ前は、元のサイズとの比較はしない
+    expect(parseTargetMB("1", null).ok).toBe(true);
+  });
+
+  plainTest("初期値は元のサイズの半分（切り捨て）。目標の表示は1MB＝1,000,000バイト", () => {
+    expect(suggestTargetMB(1_184_332)).toBe("0.5");
+    expect(suggestTargetMB(10_000_000)).toBe("5");
+    expect(suggestTargetMB(150_000)).toBe("0.07");
+    expect(suggestTargetMB(20_000)).toBe("0.05");
+    expect(formatTargetMB(1_500_000)).toBe("1.50MB");
+  });
+
+  plainTest("試す段階は、上から下へ画質も画像の大きさも下がっていく（二分探索の前提）", () => {
+    for (let i = 1; i < TARGET_LADDER.length; i++) {
+      expect(TARGET_LADDER[i].imageQuality).toBeLessThan(TARGET_LADDER[i - 1].imageQuality);
+      expect(TARGET_LADDER[i].maxImageEdge!).toBeLessThan(TARGET_LADDER[i - 1].maxImageEdge!);
+      expect(TARGET_LADDER[i].recompressImages).toBe(true);
+    }
+  });
+});
+
+/** ブラウザで、写真のような画像をPNG（JPEG以外）で作る */
+async function makePhotoPng(page: Page, width: number, height: number): Promise<Buffer> {
+  const base64 = await page.evaluate(
+    async ({ width, height }) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      const img = ctx.createImageData(width, height);
+      // 縮めにくい（ランダムな）画素にする
+      for (let i = 0; i < img.data.length; i += 65536) crypto.getRandomValues(img.data.subarray(i, Math.min(i + 65536, img.data.length)));
+      for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+      ctx.putImageData(img, 0, 0);
+      const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let s = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(s);
+    },
+    { width, height }
+  );
+  return Buffer.from(base64, "base64");
+}
+
+test.describe("PDF圧縮：目標のサイズ（MB）を指定する", () => {
+  test("初期は「サイズを指定する」で、PDFを選ぶと元のサイズの半分が入る。そのまま押すと目標以下になり、文字・ページはそのまま。目標を大きくすると画質を保った結果になる", async ({ page }) => {
+    await page.goto("/tools/pdf-compress");
+    const src = await writePhotoPdf(page, "photo.pdf");
+    const original = fs.statSync(src).size;
+    await openWithPdf(page, src, "target");
+    await expect(page.getByTestId("compress-mode-target")).toBeChecked();
+    await expect(page.getByTestId("compress-target-mb")).toHaveValue(suggestTargetMB(original));
+    await expect(page.getByTestId("compress-original-size")).toContainText(formatTargetMB(original));
+    // 元のサイズより小さい候補だけを出す（元は約1.2MB）
+    await expect(page.getByTestId("compress-target-choice-1")).toBeVisible();
+    await expect(page.getByTestId("compress-target-choice-2")).toHaveCount(0);
+
+    const half = await compressAndSave(page, "half.pdf");
+    const halfTarget = Number(suggestTargetMB(original)) * 1_000_000;
+    expect(fs.statSync(half).size).toBeLessThanOrEqual(halfTarget);
+    await expect(page.getByTestId("compress-target-result")).toContainText(`目標の${formatTargetMB(halfTarget)}以下になりました`);
+    await expect(page.getByTestId("compress-used-settings")).toContainText("目標のサイズに合わせて自動で調整");
+    const content = await extractPdfContent(half);
+    expect(content.pageCount).toBe(2);
+    expect(content.text).toContain("Searchable text page one");
+    const halfImages = await imageSizes(half);
+
+    // 目標を変えると、前の結果は消える。1MBを選ぶと、0.5MBのときより画像を大きく残せる
+    await closeResultPopup(page);
+    await page.getByTestId("compress-target-choice-1").click();
+    await expect(page.getByTestId("compress-target-mb")).toHaveValue("1");
+    await expect(page.getByTestId("compress-result")).toHaveCount(0);
+    const one = await compressAndSave(page, "one.pdf");
+    expect(fs.statSync(one).size).toBeLessThanOrEqual(1_000_000);
+    expect(fs.statSync(one).size).toBeGreaterThan(fs.statSync(half).size);
+    expect((await imageSizes(one))[0].width).toBeGreaterThanOrEqual(halfImages[0].width);
+  });
+
+  test("目標に届かないPDF（JPEG以外の画像）は、そのことと理由・次の手を伝え、いちばん小さくできた結果をダウンロードできる", async ({ page }) => {
+    await page.goto("/tools/pdf-compress");
+    const png = await makePhotoPng(page, 600, 400);
+    const doc = await PDFDocument.create();
+    const image = await doc.embedPng(png);
+    doc.addPage([595, 842]).drawImage(image, { x: 50, y: 300, width: 495, height: 330 });
+    const src = workPath("png.pdf");
+    fs.writeFileSync(src, await doc.save());
+    expect(fs.statSync(src).size).toBeGreaterThan(200_000);
+
+    await openWithPdf(page, src, "target");
+    await page.getByTestId("compress-target-mb").fill("0.05");
+    const out = await compressAndSave(page, "png-out.pdf");
+    await expect(page.getByTestId("compress-target-result")).toContainText("届きませんでした");
+    await expect(page.getByTestId("compress-target-result")).toContainText("PDF分割");
+    expect(fs.statSync(out).size).toBeGreaterThan(50_000);
+    expect((await extractPdfContent(out)).pageCount).toBe(1);
+  });
+
+  test("目標のサイズの入力を確かめ、直し方を案内する。直すと押せるようになる", async ({ page }) => {
+    await page.goto("/tools/pdf-compress");
+    const src = await writePhotoPdf(page, "photo.pdf");
+    await openWithPdf(page, src, "target");
+    const input = page.getByTestId("compress-target-mb");
+    const run = page.getByRole("button", { name: "圧縮する" });
+
+    await input.fill("");
+    await expect(page.getByTestId("compress-target-error")).toContainText("MBの数字で入力してください");
+    await expect(run).toBeDisabled();
+    await input.fill("abc");
+    await expect(page.getByTestId("compress-target-error")).toContainText("数字で入力してください");
+    await input.fill("５０");
+    await expect(page.getByTestId("compress-target-error")).toContainText("すでに50MB以下です");
+    await expect(run).toBeDisabled();
+    await input.fill("０．８");
+    await expect(page.getByTestId("compress-target-error")).toHaveCount(0);
+    await expect(run).toBeEnabled();
+  });
+
+  test("とても小さいPDFは、サイズの指定では圧縮できないことと、「画質を指定する」を案内する", async ({ page }) => {
+    await page.goto("/tools/pdf-compress");
+    const doc = await PDFDocument.create();
+    doc.addPage([200, 200]);
+    const src = workPath("tiny.pdf");
+    fs.writeFileSync(src, await doc.save());
+    await waitForFileInputHydrated(page);
+    await page.locator('input[type="file"]').first().setInputFiles(src);
+    await expect(page.getByTestId("compress-target-error")).toContainText("すでに十分小さい", { timeout: 20_000 });
+    await expect(page.getByRole("button", { name: "圧縮する" })).toBeDisabled();
+    await page.getByTestId("compress-mode-quality").check();
+    await expect(page.getByRole("button", { name: "圧縮する" })).toBeEnabled();
   });
 });
