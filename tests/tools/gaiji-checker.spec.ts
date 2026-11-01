@@ -365,3 +365,38 @@ test("gaiji-checker: 形違いの字が無い文字だけなら、形の違う�
   await expect(page.getByTestId("gaiji-none")).toBeVisible();
   await expect(page.getByTestId("gaiji-variants")).toHaveCount(0);
 });
+
+test("gaiji-checker: 形違いの字にチェックを入れて「選んだ字をコピー」を押すと、チェックした順にまとめてコピーできる", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openTool(page);
+  await pasteAndRun(page, "高橋\n渡辺");
+  await expect(page.getByTestId("gaiji-variants-loading")).toHaveCount(0);
+  // 何も選んでいないときは、まとめてコピーの欄は出ない
+  await expect(page.getByTestId("gaiji-selection-bar")).toHaveCount(0);
+  const taka = page.locator('[data-testid="gaiji-variant-row"][data-char="高"]');
+  const be = page.locator('[data-testid="gaiji-variant-row"][data-char="辺"]');
+  await taka.locator('[data-testid="gaiji-variant"][data-char="𠆪"] [data-testid="gaiji-variant-select"]').check();
+  await taka.locator('[data-testid="gaiji-variant"][data-char="髙"] [data-testid="gaiji-variant-select"]').check();
+  // 字（枠の中の字）を押しても、チェックが入る
+  await be.locator('[data-testid="gaiji-variant"][data-char="邊"] [data-testid="gaiji-variant-glyph"]').click();
+  await expect(be.locator('[data-testid="gaiji-variant"][data-char="邊"]')).toHaveAttribute("data-selected", "true");
+  const bar = page.getByTestId("gaiji-selection-bar");
+  await expect(bar).toContainText("（3字）");
+  await expect(page.getByTestId("gaiji-selection-chars")).toHaveText("𠆪髙邊");
+  await page.getByTestId("gaiji-selection-copy").click();
+  await expect(page.getByTestId("gaiji-selection-copy")).toHaveText("コピーしました");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("𠆪髙邊");
+  // チェックを外すと、選んだ字から消える
+  await taka.locator('[data-testid="gaiji-variant"][data-char="髙"] [data-testid="gaiji-variant-select"]').uncheck();
+  await expect(page.getByTestId("gaiji-selection-chars")).toHaveText("𠆪邊");
+  await expect(page.getByTestId("gaiji-selection-copy")).toHaveText("選んだ字をコピー");
+  // 異体字セレクタ付きの字も選べ、コピーするとセレクタごと入る
+  const ivs = be.locator('[data-testid="gaiji-variant"][data-ivs]').filter({ hasText: "MJ025759" });
+  await ivs.locator('[data-testid="gaiji-variant-select"]').check();
+  await page.getByTestId("gaiji-selection-copy").click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("𠆪邊辺\u{E0102}");
+  // 選択を解除すると、欄が消える
+  await page.getByTestId("gaiji-selection-clear").click();
+  await expect(page.getByTestId("gaiji-selection-bar")).toHaveCount(0);
+  await expect(page.locator('[data-testid="gaiji-variant"][data-selected]')).toHaveCount(0);
+});

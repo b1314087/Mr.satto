@@ -380,7 +380,7 @@ export function GaijiCheckerTool() {
             </p>
           ))}
 
-          {(variantFindings.length > 0 || mjLoading || mjFailed) && <VariantSection findings={variantFindings} mjLoading={mjLoading} mjFailed={mjFailed} />}
+          {(variantFindings.length > 0 || mjLoading || mjFailed) && <VariantSection key={variantFindings.map((f) => f.char).join("")} findings={variantFindings} mjLoading={mjLoading} mjFailed={mjFailed} />}
 
           <div className="flex flex-col gap-4">
             {grouped.map(({ category, findings: groupFindings }) => {
@@ -562,6 +562,9 @@ function VariantSection({ findings, mjLoading, mjFailed }: { findings: VariantFi
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [useIpamj, setUseIpamj] = useState(false);
+  // チェックを入れた字（チェックした順）。「選んだ字をコピー」で、この順につなげてコピーする
+  const [selected, setSelected] = useState<string[]>([]);
+  const [selectionCopied, setSelectionCopied] = useState(false);
   const needsFont = findings.some((f) => f.variants.some((v) => v.font !== "standard"));
   const glyphStyle = useIpamj ? { fontFamily: IPAMJ_FONT_FAMILY } : undefined;
 
@@ -572,6 +575,22 @@ function VariantSection({ findings, mjLoading, mjFailed }: { findings: VariantFi
       setCopied(char);
     } catch {
       setCopied(null);
+      setCopyError("コピーできませんでした。文字を選んで、手でコピーしてください。");
+    }
+  }
+
+  function toggleSelected(char: string, checked: boolean) {
+    setSelectionCopied(false);
+    setSelected((prev) => (checked ? (prev.includes(char) ? prev : [...prev, char]) : prev.filter((c) => c !== char)));
+  }
+
+  async function copySelected() {
+    setCopyError(null);
+    try {
+      await navigator.clipboard.writeText(selected.join(""));
+      setSelectionCopied(true);
+    } catch {
+      setSelectionCopied(false);
       setCopyError("コピーできませんでした。文字を選んで、手でコピーしてください。");
     }
   }
@@ -619,6 +638,11 @@ function VariantSection({ findings, mjLoading, mjFailed }: { findings: VariantFi
           </label>
         </div>
       )}
+      {findings.length > 0 && (
+        <p className="text-sm text-neutral-700 dark:text-neutral-200">
+          コピーしたい字にチェックを入れて「選んだ字をコピー」を押すと、まとめてコピーできます。
+        </p>
+      )}
       <ul className="flex flex-col" aria-label="形の違う字の一覧">
         {findings.map((f) => (
           <li
@@ -642,15 +666,30 @@ function VariantSection({ findings, mjLoading, mjFailed }: { findings: VariantFi
                   data-testid="gaiji-variant"
                   data-char={v.char}
                   data-ivs={v.ivs || undefined}
-                  className="flex min-w-0 items-start gap-2 rounded-md border border-neutral-200 p-2 text-[11px] leading-tight dark:border-neutral-800"
+                  data-selected={selected.includes(v.char) || undefined}
+                  className={`flex min-w-0 items-start gap-2 rounded-md border p-2 text-[11px] leading-tight ${
+                    selected.includes(v.char)
+                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500 dark:bg-blue-950/40"
+                      : "border-neutral-200 dark:border-neutral-800"
+                  }`}
                 >
-                  <span
-                    data-testid="gaiji-variant-glyph"
-                    style={glyphStyle}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-neutral-300 bg-white text-2xl text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
-                  >
-                    {v.char}
-                  </span>
+                  <label className="flex shrink-0 cursor-pointer flex-col items-center gap-1">
+                    <span
+                      data-testid="gaiji-variant-glyph"
+                      style={glyphStyle}
+                      className="flex h-10 w-10 items-center justify-center rounded-md border border-neutral-300 bg-white text-2xl text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                    >
+                      {v.char}
+                    </span>
+                    <input
+                      type="checkbox"
+                      className="ms-focus-ring h-4 w-4"
+                      checked={selected.includes(v.char)}
+                      onChange={(e) => toggleSelected(v.char, e.target.checked)}
+                      aria-label={`「${v.char}」を選ぶ`}
+                      data-testid="gaiji-variant-select"
+                    />
+                  </label>
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="font-mono text-neutral-700 [overflow-wrap:anywhere] dark:text-neutral-300">{v.hex}</span>
                     {v.mj && <span className="font-mono text-neutral-700 dark:text-neutral-300">{v.mj}</span>}
@@ -674,6 +713,31 @@ function VariantSection({ findings, mjLoading, mjFailed }: { findings: VariantFi
           </li>
         ))}
       </ul>
+      {selected.length > 0 && (
+        <div
+          data-testid="gaiji-selection-bar"
+          className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-blue-300 bg-white/95 p-3 shadow-lg dark:border-blue-800 dark:bg-neutral-900/95"
+        >
+          <span className="text-sm text-neutral-800 dark:text-neutral-100">
+            選んだ字：
+            <span data-testid="gaiji-selection-chars" style={glyphStyle} className="mx-1 text-xl [overflow-wrap:anywhere]">
+              {selected.join("")}
+            </span>
+            （{selected.length.toLocaleString("ja-JP")}字）
+          </span>
+          <button
+            type="button"
+            onClick={copySelected}
+            data-testid="gaiji-selection-copy"
+            className="ms-focus-ring rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            {selectionCopied ? "コピーしました" : "選んだ字をコピー"}
+          </button>
+          <button type="button" onClick={() => { setSelected([]); setSelectionCopied(false); }} data-testid="gaiji-selection-clear" className={smallButton}>
+            選択を解除
+          </button>
+        </div>
+      )}
       {copyError && <ErrorMessage message={copyError} />}
       <ul className="flex flex-col gap-0.5 text-xs text-neutral-600 dark:text-neutral-300" aria-label="表示の意味">
         <li>Shift_JISで使える：古い業務ソフト・CSV（Shift_JIS）でもそのまま使える</li>
