@@ -1,12 +1,10 @@
-import fs from "node:fs";
 import { test, expect } from "../fixtures/premium-test";
 import type { Page } from "@playwright/test";
-import { assertDownloadedFile, clickAndDownload } from "../helpers/tool-runner";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 
 /**
  * 外字・特殊文字チェック（gaiji-checker）の画面テスト。判定の規則そのものは gaiji-detect.spec.ts（単体）で確認する。
- * ここでは、実際に文字を貼り付け、結果・整えたテキスト・CSV・通信を確認する。値はすべて架空。
+ * ここでは、実際に文字を貼り付け、結果・整えたテキスト・通信を確認する。値はすべて架空。
  */
 
 const MARKER = "架空の名前ゲンカイ検証用";
@@ -59,8 +57,8 @@ test("gaiji-checker: 貼り付けた文字を調べ、種類ごとに、コー�
   await expect(page.getByTestId("gaiji-row").filter({ hasText: "山" })).toHaveCount(0);
   // 対処の説明が出る
   await expect(page.locator('[data-category="private-use"]')).toContainText("対処：");
-  // できないことの説明が、いつも出ている
-  await expect(page.getByText("このチェックでできること・できないこと")).toBeVisible();
+  // 「できること・できないこと」の欄は出さない
+  await expect(page.getByText("このチェックでできること・できないこと")).toHaveCount(0);
 });
 
 test("gaiji-checker: 問題のない文字は「見つかりませんでした」と出し、保証ではないことも示す", async ({ page }) => {
@@ -68,9 +66,8 @@ test("gaiji-checker: 問題のない文字は「見つかりませんでした�
   await pasteAndRun(page, "山田太郎\n東京都千代田区1-1\nABC abc 123");
   await expect(page.getByTestId("gaiji-none")).toContainText("見つかりませんでした");
   await expect(page.getByTestId("gaiji-group")).toHaveCount(0);
-  // 結果の欄と「できること・できないこと」の両方で、保証ではないことを示す
+  // 結果の欄で、保証ではないことを示す
   await expect(page.getByTestId("gaiji-summary").getByText(/保証ではありません/)).toBeVisible();
-  await expect(page.getByRole("listitem").filter({ hasText: "問題がないことの保証ではありません" })).toBeVisible();
 });
 
 test("gaiji-checker: Shift_JISのチェックをオフにすると、機種依存文字などは出さず、外字と見えない文字は出す", async ({ page }) => {
@@ -94,6 +91,8 @@ test("gaiji-checker: 整えたテキストは、置き換えられる文字だ�
   await expect(page.getByTestId("gaiji-clean-summary")).toContainText("置き換えられず残った問題の文字：2種類");
 
   // 操作をオフにすると、その文字は直さない
+  // 直す内容は「詳しい設定」に畳んである
+  await page.getByTestId("gaiji-clean-settings").locator("summary").click();
   await page.getByTestId("gaiji-clean-removeInvisible").uncheck();
   await expect(out).toHaveValue("a​b が バナナ 1(株) 髙");
   await page.getByTestId("gaiji-clean-removeInvisible").check();
@@ -111,21 +110,12 @@ test("gaiji-checker: ファイルを選ぶ欄（ドラッグ＆ドロップ）�
   await expect(page.getByText("ファイルを選ぶ")).toHaveCount(0);
 });
 
-test("gaiji-checker: 結果をCSVでダウンロードでき、元の文章は含まれない。文字は外部に送信されない", async ({ page, baseURL }) => {
+test("gaiji-checker: 結果のCSV書き出しは無い。文字は外部に送信されない", async ({ page, baseURL }) => {
   const recorder = new NetworkRecorder(page);
   await openTool(page);
   await pasteAndRun(page, `${MARKER}\n髙橋​\n外字`);
-  const download = await clickAndDownload(page, "結果をCSVでダウンロード");
-  expect(download.suggestedFilename()).toBe("外字・特殊文字チェック結果.csv");
-  const { path: p } = await assertDownloadedFile(download, { minBytes: 50 });
-  const buf = fs.readFileSync(p);
-  expect(buf.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf])); // BOM付きUTF-8
-  const csv = buf.toString("utf8");
-  expect(csv).toContain("重要度,分類,文字,コード,名前,件数,場所の例,対処");
-  expect(csv).toContain("U+E002");
-  expect(csv).toContain("U+9AD9");
-  expect(csv).toContain("U+200B");
-  expect(csv).not.toContain(MARKER);
+  await expect(page.locator('[data-category="private-use"]')).toBeVisible();
+  await expect(page.getByText("結果をCSVでダウンロード")).toHaveCount(0);
 
   expect(findLeakedRequests(recorder, MARKER)).toEqual([]);
   expect(findLeakedRequests(recorder, encodeURIComponent(MARKER))).toEqual([]);
@@ -200,7 +190,7 @@ test("gaiji-checker: 結果が出ているときにShift_JISの設定を変え�
   await expect(page.getByTestId("gaiji-summary")).toContainText("Shift_JISの問題も調べました");
 });
 
-test("gaiji-checker: 大量の文字・多くの種類でも表示が崩れない。種類が多い分類は50種類まで出し、すべて表示に広げられる。CSVにはすべて入る", async ({ page }) => {
+test("gaiji-checker: 大量の文字・多くの種類でも表示が崩れない。種類が多い分類は50種類まで出し、すべて表示に広げられる", async ({ page }) => {
   await openTool(page);
   // 外字300種類（それぞれ2か所）＋ 通常の文字約20万文字
   let pua = "";
@@ -222,11 +212,6 @@ test("gaiji-checker: 大量の文字・多くの種類でも表示が崩れな�
   await expect(page.getByTestId("gaiji-group-toggle")).toHaveAttribute("aria-expanded", "true");
   // 横にはみ出さない
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-
-  const download = await clickAndDownload(page, "結果をCSVでダウンロード");
-  const { path: p } = await assertDownloadedFile(download, { minBytes: 50 });
-  const lines = fs.readFileSync(p, "utf8").trim().split(/\r?\n/);
-  expect(lines.length).toBe(301); // 見出し＋300種類
 });
 
 test("gaiji-checker: 整えたテキストのコピーに失敗したときは、その場で手作業の方法を案内する。直せる文字がないときは、そのことを示す", async ({ page }) => {
@@ -247,6 +232,7 @@ test("gaiji-checker: コピーしたあとに直す内容を変えると、「�
   await pasteAndRun(page, "a\u200bb ①");
   await page.getByTestId("gaiji-copy").click();
   await expect(page.getByTestId("gaiji-copied")).toBeVisible();
+  await page.getByTestId("gaiji-clean-settings").locator("summary").click();
   await page.getByTestId("gaiji-clean-replaceCompat").uncheck();
   await expect(page.getByTestId("gaiji-copied")).toHaveCount(0);
   await expect(page.getByTestId("gaiji-clean-output")).toHaveValue("ab ①");

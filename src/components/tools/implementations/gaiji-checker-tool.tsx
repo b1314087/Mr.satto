@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/common/error-message";
-import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   CATEGORY_INFO,
   CATEGORY_ORDER,
@@ -21,13 +20,12 @@ import {
   type GaijiSeverity,
   type ScanUnit,
 } from "@/lib/gaiji/detect";
-import { displayOfFinding, findingsToCsvBlob } from "@/lib/gaiji/report";
+import { displayOfFinding } from "@/lib/gaiji/report";
 import { findVariantChars, fontLabel, loadMjVariantIndex, shortSjisLabel, sjisNoteOf, type MjVariantIndex, type VariantFinding } from "@/lib/gaiji/variants";
 
 /** 戸籍・住民基本台帳などの字を、本来の形で出す書体（利用者のパソコンに入っているときだけ効く） */
 const IPAMJ_FONT_FAMILY = '"IPAmj明朝", "IPAmjMincho", serif';
 const IPAMJ_FONT_URL = "https://moji.or.jp/mojikiban/font/";
-import { downloadBlob } from "@/lib/utils/format";
 
 const inputClass =
   "ms-focus-ring rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
@@ -51,7 +49,7 @@ const SEVERITY_MEANING: Record<GaijiSeverity, string> = {
 
 const SEVERITY_ORDER: GaijiSeverity[] = ["high", "mid", "low"];
 
-/** 1つの分類の中で、最初に表示する文字の種類の数（多いときは「すべて表示」で広げる。CSVにはすべて入る） */
+/** 1つの分類の中で、最初に表示する文字の種類の数（多いときは「すべて表示」で広げる） */
 const GROUP_PREVIEW_LIMIT = 50;
 
 const CLEAN_OPTION_LABELS: [keyof CleanOptions, string][] = [
@@ -86,7 +84,6 @@ export function GaijiCheckerTool() {
   const [cleanOptions, setCleanOptions] = useState<CleanOptions>(DEFAULT_CLEAN_OPTIONS);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<GaijiCategory>>(new Set());
   // 戸籍・住民基本台帳などの字の一覧（大きいため、最初に結果を出すときに読み込む）
   const [mjIndex, setMjIndex] = useState<MjVariantIndex | null>(null);
@@ -124,7 +121,6 @@ export function GaijiCheckerTool() {
     setExpanded(new Set());
     setCopied(false);
     setCopyError(null);
-    setExportError(null);
     if (!mjIndex) {
       setMjFailed(false);
       loadMjVariantIndex().then(setMjIndex, () => setMjFailed(true));
@@ -239,16 +235,6 @@ export function GaijiCheckerTool() {
     } catch {
       setCopied(false);
       setCopyError("コピーできませんでした。上の欄の文字をすべて選んで（Ctrl＋A、Macは⌘＋A）、コピーしてください。");
-    }
-  }
-
-  function exportCsv() {
-    if (!scanned) return;
-    setExportError(null);
-    try {
-      downloadBlob(findingsToCsvBlob(scanned.result.findings), "外字・特殊文字チェック結果.csv");
-    } catch (e) {
-      setExportError(e instanceof Error ? e.message : "ファイルを作成できませんでした");
     }
   }
 
@@ -433,22 +419,13 @@ export function GaijiCheckerTool() {
             })}
           </div>
 
-          {totalKinds > 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-3">
-                <RewardedDownloadGate onDownload={exportCsv} label="結果をCSVでダウンロード" />
-              </div>
-              <p className={mutedText}>CSVには、問題のある文字の一覧と場所の例だけが入ります（元の文章は入りません）。表示を省いた文字も、すべて入ります。</p>
-              {exportError && <ErrorMessage message={exportError} />}
-            </div>
-          )}
-
           {cleaned && scanned.text !== null && scanned.text !== "" && (
             <div data-testid="gaiji-clean" className="flex flex-col gap-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">3. 整えたテキスト（置き換えられる文字だけ直します）</h3>
-              <p className={mutedText}>
-                外字・互換漢字・補助面の文字・絵文字は、別の文字にすると意味が変わるため、勝手には置き換えません（そのまま残します）。元のテキストは変わりません。
-              </p>
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">3. 整えたテキスト</h3>
+              <p className="text-xs text-neutral-600 dark:text-neutral-300">見えない文字の削除や、①→1・ｱ→ア などの直せる文字だけを直した文章です。外字などはそのまま残します。</p>
+              <details data-testid="gaiji-clean-settings" className="text-xs text-neutral-700 dark:text-neutral-200">
+                <summary className="cursor-pointer font-medium text-neutral-600 dark:text-neutral-300">詳しい設定（直す内容・直した数）</summary>
+                <div className="mt-2 flex flex-col gap-3">
               <fieldset className="flex flex-col gap-1.5 text-xs text-neutral-700 dark:text-neutral-200">
                 <legend className="mb-1 font-medium">直す内容（チェックを外すと、その文字は直しません）</legend>
                 {CLEAN_OPTION_LABELS.map(([key, label]) => (
@@ -472,6 +449,8 @@ export function GaijiCheckerTool() {
                 <li>Shift_JIS変換で変わる文字を置き換えた数：{cleaned.mismatchReplaced}</li>
                 <li>置き換えられず残った問題の文字：{cleaned.remainingProblemChars}種類</li>
               </ul>
+                </div>
+              </details>
               {cleaned.text === scanned.text && (
                 <p data-testid="gaiji-clean-unchanged" className={mutedText}>
                   直せる文字はありませんでした（元のテキストと同じです）。
@@ -506,18 +485,6 @@ export function GaijiCheckerTool() {
         </section>
       )}
 
-      <section className={sectionClass} aria-labelledby="gaiji-limits">
-        <h2 id="gaiji-limits" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          このチェックでできること・できないこと
-        </h2>
-        <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-neutral-600 dark:text-neutral-300">
-          <li>文字コード（Unicodeの番号）の範囲で判定しています。検出漏れ・誤検出がありうるため、「見つからなかった」ことは、問題がないことの保証ではありません。</li>
-          <li>受け取る側のフォントで実際に表示できるかどうかは、判定できません（文字コードが標準でも、フォントに字形がなければ表示されません）。</li>
-          <li>外字（私用領域の文字）は、見つけることはできますが、「何の字か」は分かりません。外字の字形は、登録したパソコンの中にしか無いためです。</li>
-          <li>Wordなどからコピーした箇条書きの記号（Symbol・Wingdingsフォントの●など）は、外字ではなくても、私用領域の文字として出ることがあります。</li>
-          <li>Shift_JISの判定は、Windows系（CP932）の変換表に基づいています。使う業務ソフトによっては、受け付ける文字の範囲が違うことがあります。</li>
-        </ul>
-      </section>
     </div>
   );
 }
