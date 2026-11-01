@@ -241,8 +241,8 @@ test("gaiji-checker: 空のままでは「貼り付けた文字を調べる」�
   await expect(page.getByTestId("gaiji-status")).toContainText("文字を貼り付けるか、ファイルを選んでください");
   // 検査前は、結果の欄を出さない
   await expect(page.getByTestId("tool-preview")).toHaveCount(0);
-  // 使い方と、見つける文字の例が最初から見える。入力欄にはラベルが付いている
-  await expect(page.getByTestId("gaiji-intro")).toContainText("見つける文字の例");
+  // 使い方の枠は出さない（利用者の依頼で削除）。入力欄にはラベルが付いている
+  await expect(page.getByTestId("gaiji-intro")).toHaveCount(0);
   await expect(page.getByLabel("方法1：文字を貼り付ける")).toBeVisible();
   await expect(page.getByText("方法2：ファイルを選ぶ")).toBeVisible();
   // 文字を入れると押せるようになり、押す前の案内に変わる
@@ -379,4 +379,50 @@ test.describe("スマートフォンの幅", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expect(page.getByTestId("gaiji-run")).toBeVisible();
   });
+});
+
+// ---------------------------------------------------------------------------
+// 形の違う字（異体字）：「高橋」と打っても「髙橋」の字が出てくる
+// ---------------------------------------------------------------------------
+
+test("gaiji-checker: 高橋と入力すると、髙・槗が形の違う字として出る。Shift_JISでの扱いとコピー", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openTool(page);
+  await pasteAndRun(page, "高橋 太郎\n山田 花子\n高木");
+  // 注意が必要な文字は無いが、形の違う字は出る
+  await expect(page.getByTestId("gaiji-none")).toBeVisible();
+  const section = page.getByTestId("gaiji-variants");
+  await expect(section).toContainText("2文字");
+  const taka = page.locator('[data-testid="gaiji-variant-row"][data-char="高"]');
+  await expect(taka).toContainText("U+9AD8");
+  await expect(taka).toContainText("件数：2か所");
+  await expect(taka).toContainText("1行目、3行目");
+  const hashigo = taka.locator('[data-testid="gaiji-variant"][data-char="髙"]');
+  await expect(hashigo).toContainText("U+9AD9");
+  await expect(hashigo).toContainText("機種依存文字");
+  await expect(page.locator('[data-testid="gaiji-variant-row"][data-char="橋"] [data-testid="gaiji-variant"][data-char="槗"]')).toContainText("Shift_JISにない");
+  // 形違いの字が無い文字（山・田など）は出ない
+  await expect(page.locator('[data-testid="gaiji-variant-row"][data-char="山"]')).toHaveCount(0);
+  // コピー
+  await hashigo.getByTestId("gaiji-variant-copy").click();
+  await expect(hashigo.getByTestId("gaiji-variant-copy")).toHaveText("コピーしました");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("髙");
+});
+
+test("gaiji-checker: 髙橋と入力すると、髙は機種依存文字として見つかり、形違いの高も出る。辺は邊・邉が出る", async ({ page }) => {
+  await openTool(page);
+  await pasteAndRun(page, "髙橋\n渡辺");
+  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+9AD9"]')).toBeVisible();
+  await expect(page.locator('[data-testid="gaiji-variant-row"][data-char="髙"] [data-testid="gaiji-variant"][data-char="高"]')).toContainText("Shift_JISで使える");
+  const be = page.locator('[data-testid="gaiji-variant-row"][data-char="辺"]');
+  await expect(be.locator('[data-testid="gaiji-variant"]')).toHaveCount(2);
+  await expect(be).toContainText("邊");
+  await expect(be).toContainText("邉");
+});
+
+test("gaiji-checker: 形違いの字が無い文字だけなら、形の違う字の欄は出ない", async ({ page }) => {
+  await openTool(page);
+  await pasteAndRun(page, "山田 花子");
+  await expect(page.getByTestId("gaiji-none")).toBeVisible();
+  await expect(page.getByTestId("gaiji-variants")).toHaveCount(0);
 });

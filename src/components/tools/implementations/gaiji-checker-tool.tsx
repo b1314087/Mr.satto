@@ -23,6 +23,7 @@ import {
   type ScanUnit,
 } from "@/lib/gaiji/detect";
 import { displayOfFinding, findingsToCsvBlob } from "@/lib/gaiji/report";
+import { findVariantChars, sjisNoteOf, type VariantFinding } from "@/lib/gaiji/variants";
 import { GAIJI_FILE_ACCEPT, GAIJI_FILE_MAX_MB, loadGaijiFile } from "@/lib/processors/browser/gaiji-files";
 import { downloadBlob } from "@/lib/utils/format";
 
@@ -237,6 +238,8 @@ export function GaijiCheckerTool() {
     return CATEGORY_ORDER.filter((c) => map.has(c)).map((c) => ({ category: c, findings: map.get(c)! }));
   }, [scanned]);
 
+  const variantFindings = useMemo(() => (scanned ? findVariantChars(scanned.units) : []), [scanned]);
+
   const cleaned = useMemo(
     () => (scanned && scanned.text !== null ? cleanText(scanned.text, cleanOptions, { checkShiftJis: scanned.checkShiftJis }) : null),
     [scanned, cleanOptions]
@@ -292,19 +295,6 @@ export function GaijiCheckerTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div data-testid="gaiji-intro" className="flex flex-col gap-2 rounded-xl bg-neutral-50 p-4 text-xs text-neutral-700 dark:bg-neutral-900/60 dark:text-neutral-300">
-        <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">使い方</p>
-        <ol className="flex list-decimal flex-col gap-1 pl-5">
-          <li>文字を貼り付けて「貼り付けた文字を調べる」を押します（ファイルなら、選ぶだけで調べます）。</li>
-          <li>見つかった文字と、その場所・対処の方法を確認します。</li>
-          <li>必要なら、置き換えられる文字を直した「整えたテキスト」をコピーします。</li>
-        </ol>
-        <p>
-          見つける文字の例：外字（私用領域の文字）、①・㈱などの機種依存文字、ゼロ幅スペースなどの見えない文字、半角カナ、異体字セレクタ、絵文字。
-        </p>
-        <p className={mutedText}>入力した文字・読み込んだファイルは、このブラウザの中だけで調べます。サーバーへの送信や保存はしません。</p>
-      </div>
-
       <section className={sectionClass} aria-labelledby="gaiji-step1">
         <h2 id="gaiji-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
           1. 調べる文字を入れる
@@ -441,6 +431,8 @@ export function GaijiCheckerTool() {
               {n}
             </p>
           ))}
+
+          {variantFindings.length > 0 && <VariantSection findings={variantFindings} />}
 
           <div className="flex flex-col gap-4">
             {grouped.map(({ category, findings: groupFindings }) => {
@@ -615,5 +607,74 @@ function FindingRow({ finding: f }: { finding: GaijiFinding }) {
         </p>
       </div>
     </li>
+  );
+}
+
+/** 形の違う字（異体字）。入力した文字に、名前でよく使われる形違いの字があれば出す（検索・照合で一致しない原因の確認用） */
+function VariantSection({ findings }: { findings: VariantFinding[] }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+
+  async function copy(char: string) {
+    setCopyError(null);
+    try {
+      await navigator.clipboard.writeText(char);
+      setCopied(char);
+    } catch {
+      setCopied(null);
+      setCopyError("コピーできませんでした。文字を選んで、手でコピーしてください。");
+    }
+  }
+
+  return (
+    <div data-testid="gaiji-variants" className="flex min-w-0 flex-col gap-2 rounded-lg border border-blue-200 p-3 dark:border-blue-900">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">形の違う字（異体字）</h3>
+        <span className={mutedText}>{findings.length.toLocaleString("ja-JP")}文字</span>
+      </div>
+      <p className="text-xs text-neutral-600 dark:text-neutral-300">
+        入力した文字には、名前でよく使われる形違いの字があります（例：高→髙）。名簿・戸籍・システムでは別の文字として扱われるため、検索や照合で一致しないことがあります。
+      </p>
+      <ul className="flex flex-col" aria-label="形の違う字の一覧">
+        {findings.map((f) => (
+          <li
+            key={f.char}
+            data-testid="gaiji-variant-row"
+            data-char={f.char}
+            className="flex flex-col gap-2 border-b border-neutral-100 py-2 last:border-b-0 dark:border-neutral-900"
+          >
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-neutral-700 dark:text-neutral-300">
+              <span className="text-lg text-neutral-900 dark:text-neutral-100">{f.char}</span>
+              <span>
+                コード：<span className="font-mono">{f.hex}</span>
+              </span>
+              <span>件数：{f.count.toLocaleString("ja-JP")}か所</span>
+              <span className="text-neutral-500 dark:text-neutral-400">場所：{f.locations.join("、")}</span>
+            </p>
+            <ul className="flex flex-col gap-1.5 pl-2" aria-label={`${f.char}の形違いの字`}>
+              {f.variants.map((v) => (
+                <li key={v.char} data-testid="gaiji-variant" data-char={v.char} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span aria-hidden="true" className="text-neutral-400">
+                    →
+                  </span>
+                  <span className="flex min-h-9 min-w-9 items-center justify-center rounded-md border border-neutral-300 bg-white text-xl text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100">
+                    {v.char}
+                  </span>
+                  <span className="font-mono text-neutral-700 dark:text-neutral-300">{v.hex}</span>
+                  <span className="text-neutral-600 dark:text-neutral-400">{sjisNoteOf(v.sjis)}</span>
+                  <button type="button" className={smallButton} onClick={() => copy(v.char)} data-testid="gaiji-variant-copy">
+                    {copied === v.char ? "コピーしました" : `「${v.char}」をコピー`}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      {copyError && <ErrorMessage message={copyError} />}
+      <p className={mutedText}>
+        名前・地名でよく使われる形違いの字を集めた、このサイトの一覧から出しています。すべての異体字を出せるわけではありません。会社や自治体が独自に作った外字や、異体字セレクタ（同じ文字コードで形だけ変える仕組み）による字形は、ここには出ません。
+      </p>
+    </div>
   );
 }
