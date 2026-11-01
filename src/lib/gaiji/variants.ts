@@ -1,4 +1,5 @@
 import { formatCodePoint, sjisClassOf, type SjisClass } from "./detect";
+import { VARIANT_GROUPS_DATA } from "./variant-data";
 
 /**
  * 異体字（形の違う同じ字）の一覧。
@@ -7,12 +8,13 @@ import { formatCodePoint, sjisClassOf, type SjisClass } from "./detect";
  * 入力した文字に、名前でよく使われる形違いの字があれば、それも一覧に出す
  * （検索・照合で一致しない原因の確認や、正しい字のコピーに使う）。
  *
- * - 名前・地名でよく使われるものを集めた、このサイトの組み込みの一覧（すべての異体字を網羅するものではない）
+ * - 新字体・旧字体の対応と、異体字の対応の公開データ（variant-data.ts、約2,400字）に、
+ *   下の名前でよく使われる形違いの字を足したもの（すべての異体字を網羅するものではない）
  * - 会社や自治体が独自に作った外字（私用領域の文字）は、作った所ごとに違うため、一覧にはない
  * - 同じ文字コードのまま形だけを変える「異体字セレクタ（IVS）」の字形は、一覧に含めない
- * - 1行が1つのまとまり（どの文字を入力しても、同じ行の他の文字を出す）
+ * - 1行（データの方は空白で区切った1語）が1つのまとまり。つながるまとまりは1つにまとめる
  */
-const VARIANT_GROUPS_SOURCE = `
+const EXTRA_VARIANT_GROUPS = `
 高髙
 橋槗
 崎﨑嵜碕
@@ -96,18 +98,44 @@ const VARIANT_GROUPS_SOURCE = `
 児兒
 `;
 
-/** 文字 → 同じまとまりの文字（自分を含む、一覧の順） */
+/** 文字 → 同じまとまりの文字（自分を含む、文字コードの順） */
 const VARIANT_INDEX: ReadonlyMap<string, readonly string[]> = (() => {
-  const map = new Map<string, string[]>();
-  for (const line of VARIANT_GROUPS_SOURCE.split("\n")) {
-    const chars = Array.from(new Set(Array.from(line.trim())));
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    let c = x;
+    while (parent.get(c) !== r) {
+      const next = parent.get(c)!;
+      parent.set(c, r);
+      c = next;
+    }
+    return r;
+  };
+  const groups = [...VARIANT_GROUPS_DATA.split(/\s+/), ...EXTRA_VARIANT_GROUPS.split(/\s+/)];
+  for (const g of groups) {
+    const chars = Array.from(g);
     if (chars.length < 2) continue;
-    for (const c of chars) {
-      const prev = map.get(c) ?? [];
-      map.set(c, Array.from(new Set([...prev, ...chars])));
+    for (const c of chars) if (!parent.has(c)) parent.set(c, c);
+    for (const c of chars.slice(1)) {
+      const a = find(chars[0]);
+      const b = find(c);
+      if (a !== b) parent.set(b, a);
     }
   }
-  return map;
+  const members = new Map<string, string[]>();
+  for (const c of parent.keys()) {
+    const r = find(c);
+    const list = members.get(r) ?? [];
+    list.push(c);
+    members.set(r, list);
+  }
+  const index = new Map<string, string[]>();
+  for (const list of members.values()) {
+    list.sort((x, y) => x.codePointAt(0)! - y.codePointAt(0)!);
+    for (const c of list) index.set(c, list);
+  }
+  return index;
 })();
 
 export interface VariantChar {

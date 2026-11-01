@@ -392,7 +392,8 @@ test("gaiji-checker: 高橋と入力すると、髙・槗が形の違う字と�
   // 注意が必要な文字は無いが、形の違う字は出る
   await expect(page.getByTestId("gaiji-none")).toBeVisible();
   const section = page.getByTestId("gaiji-variants");
-  await expect(section).toContainText("2文字");
+  // 高・橋・郎（郞）・花（芲）の4文字
+  await expect(section).toContainText("4文字");
   const taka = page.locator('[data-testid="gaiji-variant-row"][data-char="高"]');
   await expect(taka).toContainText("U+9AD8");
   await expect(taka).toContainText("件数：2か所");
@@ -420,9 +421,15 @@ test("gaiji-checker: 髙橋と入力すると、髙は機種依存文字とし�
   await expect(be).toContainText("邉");
 });
 
+test("gaiji-checker: 寝と入力すると、旧字体の寢が出る（新字体・旧字体の一覧から）", async ({ page }) => {
+  await openTool(page);
+  await pasteAndRun(page, "寝屋川");
+  await expect(page.locator('[data-testid="gaiji-variant-row"][data-char="寝"] [data-testid="gaiji-variant"][data-char="寢"]')).toContainText("U+5BE2");
+});
+
 test("gaiji-checker: 形違いの字が無い文字だけなら、形の違う字の欄は出ない", async ({ page }) => {
   await openTool(page);
-  await pasteAndRun(page, "山田 花子");
+  await pasteAndRun(page, "山田 木子");
   await expect(page.getByTestId("gaiji-none")).toBeVisible();
   await expect(page.getByTestId("gaiji-variants")).toHaveCount(0);
 });
