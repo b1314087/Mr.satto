@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getPdfjs } from "@/lib/pdf/pdfjs-client";
+import { getPdfjs, PDFJS_ASSET_OPTIONS } from "@/lib/pdf/pdfjs-client";
 
 /**
  * PDFの各ページの縦横比(高さ/幅。ページの回転込み)を先頭 maxPages ページ分だけ返すフック。
@@ -18,7 +18,7 @@ export function usePdfPageAspects(file: File | null, maxPages = 40): Record<numb
     (async () => {
       try {
         const pdfjs = await getPdfjs();
-        const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+        const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), ...PDFJS_ASSET_OPTIONS });
         destroy = () => task.destroy();
         const pdf = await task.promise;
         const ratios: Record<number, number> = {};

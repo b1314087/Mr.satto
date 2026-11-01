@@ -2,7 +2,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFStream, type PDFObj
 import { BrowserProcessor, type PdfProcessorOutput } from "../types";
 import { canvasToBlob } from "./image";
 import { loadPdfDoc } from "./pdf";
-import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
+import { loadPdfDocument, PDFJS_ASSET_OPTIONS } from "@/lib/pdf/pdfjs-client";
 import {
   REDACT_COLOR,
   RedactError,
@@ -130,7 +130,7 @@ async function verifyRedactedOutput(bytes: Uint8Array, pageCount: number, redact
   const pdfjs = await (await import("@/lib/pdf/pdfjs-client")).getPdfjs();
   let doc;
   try {
-    doc = await pdfjs.getDocument({ data: bytes.slice() }).promise;
+    doc = await pdfjs.getDocument({ data: bytes.slice(), ...PDFJS_ASSET_OPTIONS }).promise;
   } catch {
     throw fail();
   }

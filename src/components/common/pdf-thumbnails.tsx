@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { getPdfjs } from "@/lib/pdf/pdfjs-client";
+import { getPdfjs, PDFJS_ASSET_OPTIONS } from "@/lib/pdf/pdfjs-client";
 
 export interface PdfThumbnailState {
   pageCount: number | null;
@@ -26,7 +26,7 @@ export function usePdfThumbnails(file: File | null, maxPages = 24, width = 140):
     (async () => {
       try {
         const pdfjs = await getPdfjs();
-        const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+        const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), ...PDFJS_ASSET_OPTIONS });
         destroy = () => task.destroy();
         const pdf = await task.promise;
         if (cancelled) return;

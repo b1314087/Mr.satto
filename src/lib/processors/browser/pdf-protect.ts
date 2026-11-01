@@ -1,7 +1,7 @@
 import { BrowserProcessor, type PdfProcessorOutput } from "../types";
 import { loadPdfDoc } from "./pdf";
 import { encryptPdfDocument, type PdfPermissions } from "@/lib/pdf/encrypt";
-import { getPdfjs } from "@/lib/pdf/pdfjs-client";
+import { getPdfjs, PDFJS_ASSET_OPTIONS } from "@/lib/pdf/pdfjs-client";
 
 export interface PdfProtectInput {
   file: File;
@@ -30,7 +30,7 @@ export class PdfPasswordProtectProcessor extends BrowserProcessor<PdfProtectInpu
     const pdfjs = await getPdfjs();
     let rejectsWithoutPassword = false;
     try {
-      const task = pdfjs.getDocument({ data: bytes.slice() });
+      const task = pdfjs.getDocument({ data: bytes.slice(), ...PDFJS_ASSET_OPTIONS });
       await task.promise;
       await task.destroy();
     } catch (e) {
@@ -38,7 +38,7 @@ export class PdfPasswordProtectProcessor extends BrowserProcessor<PdfProtectInpu
     }
     let verifiedWithPassword = false;
     try {
-      const task = pdfjs.getDocument({ data: bytes.slice(), password: userPassword });
+      const task = pdfjs.getDocument({ data: bytes.slice(), password: userPassword, ...PDFJS_ASSET_OPTIONS });
       const pdf = await task.promise;
       verifiedWithPassword = pdf.numPages === pageCount;
       await task.destroy();

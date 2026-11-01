@@ -27,6 +27,21 @@ async function importPdfjs() {
   return pdfjsLib;
 }
 
+/**
+ * PDFを開くときに、必ず渡す設定（文字を正しく描くための補助データの置き場所）。
+ * - cMapUrl / cMapPacked：日本語などの文字の対応表（CMap）。PDFにフォントが入っていない日本語の文字
+ *   （「MS明朝」「ヒラギノ」などを名前だけで指定した文字）は、これが無いと描けず、画像にすると文字が消える
+ * - standardFontDataUrl：Helvetica・Times などの、PDFに入っていない欧文の標準フォントの代わりのデータ
+ * どちらも public/pdfjs/ に置いた、pdfjs-dist（4.10.38）付属のファイル（node_modules/pdfjs-dist/cmaps・standard_fonts の写し）。
+ * pdfjs-dist の版を上げるときは、このフォルダも同じ版のものに置き換える。
+ * 同じサイトの中のファイルを読むだけで、PDFの中身をどこかへ送ることはない。
+ */
+export const PDFJS_ASSET_OPTIONS = {
+  cMapUrl: "/pdfjs/cmaps/",
+  cMapPacked: true,
+  standardFontDataUrl: "/pdfjs/standard_fonts/",
+} as const;
+
 export function getPdfjs() {
   if (!pdfjsLibPromise) {
     pdfjsLibPromise = importPdfjs();
@@ -43,7 +58,7 @@ export async function loadPdfDocument(file: File) {
   const pdfjsLib = await getPdfjs();
   const bytes = await file.arrayBuffer();
   try {
-    return await pdfjsLib.getDocument({ data: bytes }).promise;
+    return await pdfjsLib.getDocument({ data: bytes, ...PDFJS_ASSET_OPTIONS }).promise;
   } catch (e) {
     const message = e instanceof Error ? e.message : "";
     if (/password/i.test(message)) {

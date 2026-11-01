@@ -7,7 +7,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { getPdfjs } from "@/lib/pdf/pdfjs-client";
+import { getPdfjs, PDFJS_ASSET_OPTIONS } from "@/lib/pdf/pdfjs-client";
 import { detectGrid, type GrayImage } from "@/lib/roster/scan-grid";
 import {
   buildScanGridExcel,
@@ -32,7 +32,7 @@ const round1 = (v: number) => Math.round(v * 10) / 10;
 
 async function analyzePdf(file: File, pageNumber: number): Promise<ScanResult> {
   const pdfjs = await getPdfjs();
-  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), ...PDFJS_ASSET_OPTIONS });
   try {
     const pdf = await task.promise;
     const n = Math.min(Math.max(1, pageNumber), pdf.numPages);

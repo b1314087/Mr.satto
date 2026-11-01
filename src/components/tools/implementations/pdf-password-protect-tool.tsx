@@ -8,7 +8,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { PdfPasswordProtectProcessor, type PdfProtectOutput } from "@/lib/processors/browser/pdf-protect";
-import { getPdfjs, loadPdfDocument, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
+import { getPdfjs, loadPdfDocument, PDFJS_ASSET_OPTIONS, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 const inputClass =
@@ -110,7 +110,7 @@ export function PdfPasswordProtectTool() {
       try {
         const pdfjs = await getPdfjs();
         const bytes = new Uint8Array(await result.blob.arrayBuffer());
-        const task = pdfjs.getDocument({ data: bytes, password: userPassword });
+        const task = pdfjs.getDocument({ data: bytes, password: userPassword, ...PDFJS_ASSET_OPTIONS });
         const pdf = await task.promise;
         const page = await pdf.getPage(1);
         const { canvas } = await renderPageToCanvas(page, 1, 520);
