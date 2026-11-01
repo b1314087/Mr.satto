@@ -21,6 +21,12 @@ const MARKER = "架空の名前ゲンカイ検証用";
 async function openTool(page: Page) {
   await page.goto("/tools/gaiji-checker");
   await expect(page.getByTestId("gaiji-text")).toBeVisible({ timeout: 30_000 });
+  // 入力の準備（hydration）が終わる前に入れた文字は、画面の状態に入らない。文字数の表示に反映されるまで待つ
+  await expect(async () => {
+    await page.getByTestId("gaiji-text").fill("x");
+    await expect(page.locator("#gaiji-text-count")).toHaveText(/^1文字/, { timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+  await page.getByTestId("gaiji-text").fill("");
 }
 
 async function pasteAndRun(page: Page, text: string) {
@@ -73,7 +79,9 @@ test("gaiji-checker: 問題のない文字は「見つかりませんでした�
   await pasteAndRun(page, "山田太郎\n東京都千代田区1-1\nABC abc 123");
   await expect(page.getByTestId("gaiji-none")).toContainText("見つかりませんでした");
   await expect(page.getByTestId("gaiji-group")).toHaveCount(0);
-  await expect(page.getByText(/保証ではありません/)).toBeVisible();
+  // 結果の欄と「できること・できないこと」の両方で、保証ではないことを示す
+  await expect(page.getByTestId("gaiji-summary").getByText(/保証ではありません/)).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "問題がないことの保証ではありません" })).toBeVisible();
 });
 
 test("gaiji-checker: Shift_JISのチェックをオフにすると、機種依存文字などは出さず、外字と見えない文字は出す", async ({ page }) => {
@@ -226,7 +234,149 @@ test("gaiji-checker: 結果をCSVでダウンロードでき、元の文章は�
   expect(findSuspiciousExternalUploads(recorder, baseURL ?? "")).toEqual([]);
 });
 
-test("gaiji-checker: 空のままでは「調べる」を押せない", async ({ page }) => {
+test("gaiji-checker: 空のままでは「貼り付けた文字を調べる」を押せず、何をすればよいかを案内する", async ({ page }) => {
   await openTool(page);
   await expect(page.getByTestId("gaiji-run")).toBeDisabled();
+  await expect(page.getByTestId("gaiji-run")).toHaveText("貼り付けた文字を調べる");
+  await expect(page.getByTestId("gaiji-status")).toContainText("文字を貼り付けるか、ファイルを選んでください");
+  // 検査前は、結果の欄を出さない
+  await expect(page.getByTestId("tool-preview")).toHaveCount(0);
+  // 使い方と、見つける文字の例が最初から見える。入力欄にはラベルが付いている
+  await expect(page.getByTestId("gaiji-intro")).toContainText("見つける文字の例");
+  await expect(page.getByLabel("方法1：文字を貼り付ける")).toBeVisible();
+  await expect(page.getByText("方法2：ファイルを選ぶ")).toBeVisible();
+  // 文字を入れると押せるようになり、押す前の案内に変わる
+  await page.getByTestId("gaiji-text").fill("山田");
+  await expect(page.getByTestId("gaiji-run")).toBeEnabled();
+  await expect(page.getByTestId("gaiji-status")).toContainText("押すと、下に結果が出ます");
+  await expect(page.getByTestId("gaiji-clear")).toBeEnabled();
+});
+
+// ---------------------------------------------------------------------------
+// 工程19（使いやすさの改善）
+// ---------------------------------------------------------------------------
+
+test("gaiji-checker: 結果の数（種類・か所）と重要度ごとの内訳が、見つかった文字と一致する。結果の見出しへ移動する", async ({ page }) => {
+  await openTool(page);
+  // 外字1種類×2か所、ゼロ幅スペース1種類×1か所、①1種類×3か所
+  await pasteAndRun(page, "\ue001あ\ue001\n\u200bい\n①①①");
+  await expect(page.getByTestId("gaiji-found")).toContainText("3種類（合計6か所）");
+  const counts = page.getByTestId("gaiji-severity-counts");
+  await expect(counts.locator("li").nth(0)).toContainText("要確認");
+  await expect(counts.locator("li").nth(0)).toContainText("1種類");
+  await expect(counts.locator("li").nth(1)).toContainText("2種類");
+  await expect(counts.locator("li").nth(2)).toContainText("0種類");
+  await expect(page.locator('[data-category="private-use"]')).toContainText("1種類・2か所");
+  await expect(page.locator('[data-testid="gaiji-row"][data-code="U+2460"]')).toContainText("件数：3か所");
+  // 結果が出たら、結果の見出しにフォーカスが移る（キーボード・読み上げの利用者にも結果が出たことが分かる）
+  await expect(page.locator("#gaiji-step2")).toBeFocused();
+});
+
+test("gaiji-checker: 入力を変えると前の結果を消し、理由を知らせる。もう一度調べると新しい結果が出る", async ({ page }) => {
+  await openTool(page);
+  await pasteAndRun(page, "髙橋");
+  await expect(page.getByTestId("gaiji-found")).toBeVisible();
+  await page.getByTestId("gaiji-text").fill("山田");
+  await expect(page.getByTestId("tool-preview")).toHaveCount(0);
+  await expect(page.getByTestId("gaiji-status")).toContainText("前の結果を消しました");
+  await page.getByTestId("gaiji-run").click();
+  await expect(page.getByTestId("gaiji-none")).toContainText("調べ終わりました");
+  await expect(page.getByTestId("gaiji-summary")).toContainText("貼り付けたテキスト（2文字）");
+  // 「入力を消す」で、入力と結果の両方が消える
+  await page.getByTestId("gaiji-clear").click();
+  await expect(page.getByTestId("gaiji-text")).toHaveValue("");
+  await expect(page.getByTestId("tool-preview")).toHaveCount(0);
+  await expect(page.getByTestId("gaiji-run")).toBeDisabled();
+});
+
+test("gaiji-checker: 結果が出ているときにShift_JISの設定を変えると、ボタンを押さなくても同じ内容を調べ直す", async ({ page }) => {
+  await openTool(page);
+  await pasteAndRun(page, "髙橋①\u200b");
+  expect(await groupCategories(page)).toEqual(expect.arrayContaining(["ext-dep", "invisible"]));
+  await page.getByTestId("gaiji-sjis").uncheck();
+  await expect.poll(() => groupCategories(page)).toEqual(["invisible"]);
+  await expect(page.getByTestId("gaiji-status")).toContainText("調べ直しました");
+  await expect(page.getByTestId("gaiji-summary")).toContainText("Shift_JISの問題は調べていません");
+  await page.getByTestId("gaiji-sjis").check();
+  await expect.poll(() => groupCategories(page)).toEqual(expect.arrayContaining(["ext-dep", "invisible"]));
+  await expect(page.getByTestId("gaiji-summary")).toContainText("Shift_JISの問題も調べました");
+});
+
+test("gaiji-checker: 大量の文字・多くの種類でも表示が崩れない。種類が多い分類は50種類まで出し、すべて表示に広げられる。CSVにはすべて入る", async ({ page }) => {
+  await openTool(page);
+  // 外字300種類（それぞれ2か所）＋ 通常の文字約20万文字
+  let pua = "";
+  for (let i = 0; i < 300; i++) pua += String.fromCodePoint(0xe000 + i);
+  const text = "山田太郎の名簿です。".repeat(20_000) + "\n" + pua + "\n" + pua;
+  await page.evaluate((t) => {
+    const el = document.querySelector('[data-testid="gaiji-text"]') as HTMLTextAreaElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    setter.call(el, t);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }, text);
+  await page.getByTestId("gaiji-run").click();
+  await expect(page.getByTestId("gaiji-found")).toContainText("300種類（合計600か所）", { timeout: 30_000 });
+  const group = page.locator('[data-category="private-use"]');
+  await expect(group.getByTestId("gaiji-row")).toHaveCount(50);
+  await expect(page.getByTestId("gaiji-group-toggle")).toHaveText("すべて表示する（残り250種類）");
+  await page.getByTestId("gaiji-group-toggle").click();
+  await expect(group.getByTestId("gaiji-row")).toHaveCount(300);
+  await expect(page.getByTestId("gaiji-group-toggle")).toHaveAttribute("aria-expanded", "true");
+  // 横にはみ出さない
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  const download = await clickAndDownload(page, "結果をCSVでダウンロード");
+  const { path: p } = await assertDownloadedFile(download, { minBytes: 50 });
+  const lines = fs.readFileSync(p, "utf8").trim().split(/\r?\n/);
+  expect(lines.length).toBe(301); // 見出し＋300種類
+});
+
+test("gaiji-checker: 整えたテキストのコピーに失敗したときは、その場で手作業の方法を案内する。直せる文字がないときは、そのことを示す", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("denied")) }, configurable: true });
+  });
+  await openTool(page);
+  await pasteAndRun(page, "髙橋");
+  await expect(page.getByTestId("gaiji-clean-unchanged")).toContainText("直せる文字はありませんでした");
+  await page.getByTestId("gaiji-copy").click();
+  await expect(page.getByTestId("gaiji-clean")).toContainText("コピーできませんでした");
+  await expect(page.getByTestId("gaiji-copied")).toHaveCount(0);
+});
+
+test("gaiji-checker: コピーしたあとに直す内容を変えると、「コピーしました」の表示を消す", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openTool(page);
+  await pasteAndRun(page, "a\u200bb ①");
+  await page.getByTestId("gaiji-copy").click();
+  await expect(page.getByTestId("gaiji-copied")).toBeVisible();
+  await page.getByTestId("gaiji-clean-replaceCompat").uncheck();
+  await expect(page.getByTestId("gaiji-copied")).toHaveCount(0);
+  await expect(page.getByTestId("gaiji-clean-output")).toHaveValue("ab ①");
+});
+
+test("gaiji-checker: キーボードだけで調べられ、ボタンにはフォーカスの枠が出る", async ({ page }) => {
+  await openTool(page);
+  await page.getByTestId("gaiji-text").focus();
+  await page.keyboard.type("髙橋");
+  await page.keyboard.press("Tab");
+  await expect(page.getByTestId("gaiji-run")).toBeFocused();
+  const outline = await page.getByTestId("gaiji-run").evaluate((el) => getComputedStyle(el).outlineStyle);
+  expect(outline).not.toBe("none");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("gaiji-found")).toBeVisible();
+  await expect(page.locator("#gaiji-step2")).toBeFocused();
+});
+
+test.describe("スマートフォンの幅", () => {
+  test.use({ viewport: { width: 375, height: 740 } });
+  test("gaiji-checker: 入力・調べる・結果の確認ができ、場所の例まで横にはみ出さずに読める", async ({ page }) => {
+    await openTool(page);
+    await pasteAndRun(page, "山田 太郎\n髙橋 花子\u200b\n佐藤\ue001次郎（㈱サンプル）");
+    const row = page.locator('[data-testid="gaiji-row"][data-code="U+200B"]');
+    await expect(row).toContainText("場所：2行目（6文字目）");
+    const box = await row.boundingBox();
+    expect(box && box.x + box.width).toBeLessThanOrEqual(375);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(page.getByTestId("gaiji-run")).toBeVisible();
+  });
 });
