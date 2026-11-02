@@ -336,6 +336,10 @@ const VideoThumbnailTool = dynamic(() =>
   import("./implementations/video-thumbnail-tool").then((m) => m.VideoThumbnailTool),
   { loading: ToolLoading }
 );
+const VideoMosaicTool = dynamic(() =>
+  import("./implementations/video-mosaic-tool").then((m) => m.VideoMosaicTool),
+  { loading: ToolLoading }
+);
 const VideoMetadataRemoveTool = dynamic(() =>
   import("./implementations/video-metadata-remove-tool").then((m) => m.VideoMetadataRemoveTool),
   { loading: ToolLoading }
@@ -652,6 +656,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <VideoThumbnailTool />;
     case "video-metadata-remove":
       return <VideoMetadataRemoveTool />;
+    case "video-mosaic":
+      return <VideoMosaicTool />;
     case "audio-convert":
       return <AudioConvertTool />;
     case "audio-extract":
