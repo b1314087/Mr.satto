@@ -127,6 +127,12 @@ export default async function PricingPage({
                   <span aria-hidden="true">・</span>
                   {getToolAccessLabel(plan.toolAccess)}
                 </li>
+                <li className="flex items-start gap-2" data-testid={`pricing-batch-${id}`}>
+                  <span aria-hidden="true">・</span>
+                  {id === "premium"
+                    ? "複数ファイルの一括処理（画像圧縮・画像リサイズ・PDF圧縮・画像形式変換・背景透過など。対応ツールで最大10〜30ファイル）"
+                    : "ファイルは1つずつ処理（複数ファイルの一括処理はプレミアムのみ）"}
+                </li>
                 {getAdsLabel(plan.adsRequired, adGateActive) && (
                   <li className="flex items-start gap-2">
                     <span aria-hidden="true">・</span>

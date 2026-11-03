@@ -14,8 +14,12 @@ import {
   ImageCompressToSizeProcessor,
 } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
+import { dedupeFileNames, downloadBlob, formatBytes, replaceExtension, stripExtension } from "@/lib/utils/format";
 import { useObjectUrl } from "@/lib/utils/use-object-url";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchResultList, type BatchResultRow } from "@/components/common/batch-result-list";
+import { runBatchSequentially, type BatchItem } from "@/lib/batch/run-batch";
 
 type ImageMode = "resize" | "compress" | "compress-to-size";
 
@@ -74,6 +78,23 @@ async function runImageProcessor(
   }
 }
 
+/** 画像の縦横のピクセル数を調べる（一括リサイズで、画像ごとに縦横比を保つために使う） */
+async function readImageSize(file: File): Promise<{ width: number; height: number }> {
+  const bitmap = await createImageBitmap(file).catch(() => {
+    throw new Error("画像を読み込めませんでした。対応している画像ファイルか確認してください。");
+  });
+  const size = { width: bitmap.width, height: bitmap.height };
+  bitmap.close();
+  return size;
+}
+
+/** 一括処理で、1枚ごとに保存しておく結果（プレビュー用のURLは持たない） */
+interface BatchImageResult {
+  blob: Blob;
+  outputName: string;
+  detail?: string;
+}
+
 /** プレビューで処理する最大ピクセル数(これを超えるリサイズ指定はプレビューを省略する) */
 const PREVIEW_MAX_PIXELS = 40_000_000;
 /** 設定変更後、プレビューを再計算するまでの待ち時間(ms) */
@@ -83,7 +104,13 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
   const [compressKind, setCompressKind] = useState<CompressKind>("quality");
   const isCompress = toolId === "image-compress";
   const spec = isCompress && compressKind === "size" ? SPEC_COMPRESS_TO_SIZE : IMAGE_TOOL_CONFIG[toolId];
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだ画像。2枚以上のとき（プレミアムプランの一括処理）は、設定を全部の画像にまとめて適用する。
+  // プレビュー・縦横の初期値は1枚目の画像で表示する。
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection(toolId === "image-resize" ? "image-resize" : "image-compress");
+  const [batchItems, setBatchItems] = useState<BatchItem<BatchImageResult>[]>([]);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [width, setWidth] = useState(800);
   const [height, setHeight] = useState(600);
@@ -219,8 +246,51 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     }
   }
 
+  /** 一括処理：同じ設定を、選んだ全部の画像に1枚ずつ順番に適用する */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const runSpec = spec;
+    const settings = { width, height, quality, targetKB };
+    const keepAspect = lockAspect;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await runBatchSequentially<BatchImageResult>(
+      files,
+      async (target) => {
+        let size = { width: settings.width, height: settings.height };
+        if (runSpec.mode === "resize" && keepAspect) {
+          // 縦横比を固定しているときは、指定した幅に合わせて、画像ごとに高さを決める
+          const natural = await readImageSize(target);
+          size = {
+            width: Math.round(settings.width),
+            height: Math.max(1, Math.round((settings.width * natural.height) / natural.width)),
+          };
+        }
+        const output = await runImageProcessor(runSpec, target, { ...settings, ...size });
+        // 一覧ではプレビュー画像を出さないため、URLはすぐに解放する（メモリを使い続けない）
+        URL.revokeObjectURL(output.url);
+        const missed = runSpec.mode === "compress-to-size" ? missedTargetMessage(output, settings.targetKB) : null;
+        return {
+          blob: output.blob,
+          outputName: replaceExtension(target.name, EXT_BY_MIME[output.mimeType] ?? "png"),
+          detail: missed
+            ? `目標の${settings.targetKB}KBに届きませんでした`
+            : `${output.width}×${output.height}px${target.size > 0 ? `・元の${Math.round((output.sizeBytes / target.size) * 100)}%` : ""}`,
+        };
+      },
+      setBatchItems
+    );
+    setStatus(items.some((item) => item.status === "done") ? "success" : "error");
+    if (items.every((item) => item.status === "error")) setError("すべての画像で処理に失敗しました");
+  }
+
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -256,6 +326,11 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
           {spec.mode === "compress-to-size" && shownPreview && !previewStale && missedTargetMessage(shownPreview.output, targetKB) && (
             <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="compress-target-missed">
               {missedTargetMessage(shownPreview.output, targetKB)}
+            </p>
+          )}
+          {isBatch && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              1枚目の画像のプレビューです。ほかの{files.length - 1}枚にも同じ設定で処理します。
             </p>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -318,6 +393,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
                 setCompressKind(o.id);
                 // やり方を変えたら、前のやり方の結果は消す
                 setResult(null);
+                setBatchItems([]);
                 setStatus("idle");
                 setError(null);
               }}
@@ -336,13 +412,27 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
 
       <FileDropzone
         accept="image/*"
+        multiple
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
-        onFilesSelected={(files) => setFile(files[0])}
+        onFilesSelected={(selected) => {
+          setFiles(batch.pick(files, selected, "replace"));
+          setBatchItems([]);
+        }}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && (
+        <FileList
+          files={files}
+          onRemove={(index) => {
+            setFiles((prev) => prev.filter((_, i) => i !== index));
+            setBatchItems([]);
+          }}
+        />
+      )}
 
       {file && spec.mode === "resize" && (
         <div className="flex flex-wrap items-end gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -374,6 +464,13 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
             />
             縦横比を固定
           </label>
+          {isBatch && (
+            <p className="basis-full text-xs text-neutral-500 dark:text-neutral-400" data-testid="batch-resize-note">
+              {lockAspect
+                ? "縦横比を固定しているため、指定した幅に合わせて、画像ごとに高さを自動で決めます（初期値は1枚目の画像の大きさです）。"
+                : "すべての画像を、指定した幅・高さにそろえます。"}
+            </p>
+          )}
         </div>
       )}
 
@@ -414,14 +511,29 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
           disabled={status === "processing"} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
-          {spec.actionLabel}
+          {isBatch ? `${files.length}枚をまとめて${spec.actionLabel}` : spec.actionLabel}
         </button>
       )}
 
-      <ProcessingStatus state={status} successLabel="変換が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={
+          isBatch
+            ? `処理しています…（${Math.min(batchItems.filter((i) => i.status === "done" || i.status === "error").length + 1, files.length)} / ${files.length}）`
+            : undefined
+        }
+        successLabel="変換が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      {batchItems.length > 0 && (
+        <BatchResultList
+          rows={toBatchRows(batchItems)}
+          zipName={`${stripExtension(batchItems[0].file.name) || "images"}-${spec.mode === "resize" ? "resized" : "compressed"}.zip`}
+        />
+      )}
+
+      {result && !isBatch && (
         <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px ・ {formatBytes(result.sizeBytes)}
@@ -436,4 +548,17 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
       )}
     </PreviewSplitLayout>
   );
+}
+
+/** 一括処理の状態を、結果一覧の行に変換する（書き出すファイル名が重ならないよう番号を付ける） */
+function toBatchRows(items: BatchItem<BatchImageResult>[]): BatchResultRow[] {
+  const names = dedupeFileNames(items.map((item) => item.result?.outputName ?? item.file.name));
+  return items.map((item, i) => ({
+    sourceName: item.file.name,
+    status: item.status,
+    outputName: item.result ? names[i] : undefined,
+    blob: item.result?.blob,
+    detail: item.result?.detail,
+    error: item.error,
+  }));
 }

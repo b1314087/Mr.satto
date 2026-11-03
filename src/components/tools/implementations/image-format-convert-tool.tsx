@@ -1,5 +1,7 @@
 "use client";
 
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
 import { useEffect, useState } from "react";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -46,6 +48,8 @@ function ensureFormat(output: ImageProcessorOutput, target: ConvertFormat): Imag
 
 export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initialFormat?: ConvertFormat }) {
   const [files, setFiles] = useState<File[]>([]);
+  // 複数の画像をまとめて処理する一括処理は、プレミアムプランの機能（無料・旧スタンダードは1枚ずつ）
+  const batch = useBatchSelection("image-format-convert");
   const [targetFormat, setTargetFormat] = useState<ConvertFormat>(initialFormat);
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +112,7 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
   }
 
   function addFiles(newFiles: File[]) {
-    setFiles((prev) => [...prev, ...newFiles]);
+    setFiles(batch.pick(files, newFiles, "append"));
     clearResults();
   }
 
@@ -126,6 +130,7 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
 
   async function handleRun() {
     if (convertible.length === 0) return;
+    if (!(await batch.confirmBatch(convertible.length))) return;
     setStatus("processing");
     setError(null);
     setResultBlob(null);
@@ -261,11 +266,13 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
         accept="image/*"
         multiple
         maxSizeMB={50}
-        label="画像をドラッグ&ドロップ（複数可）"
+        label={batch.batchAllowed ? "画像をドラッグ&ドロップ（複数可）" : "画像をドラッグ&ドロップ"}
         hint="またはタップして選択（JPG・PNG・WebPなど。1ファイル50MBまで）"
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
       {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 

@@ -109,7 +109,8 @@ test.describe("全画面のドロップ：共通のファイル選択欄（1つ�
   });
 
   test("1ファイルのツールに複数を落としたときは、これまでどおり先頭の1つだけを使う", async ({ page }) => {
-    await openTool(page, "pdf-compress");
+    // PDF圧縮はプレミアムの一括処理に対応したため（複数を受け取る）、1ファイルだけを扱うPDFメタデータ削除で確かめる
+    await openTool(page, "pdf-metadata-remove");
     await dragOn(page, ["dragenter", "dragover", "drop"], [file(fixtures.singlePagePdf, "first.pdf", "application/pdf"), file(fixtures.multiPagePdf, "second.pdf", "application/pdf")]);
     await expect(page.getByText("first.pdf").first()).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("second.pdf")).toHaveCount(0);

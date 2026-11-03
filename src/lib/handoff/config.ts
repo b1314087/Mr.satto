@@ -1,4 +1,6 @@
 import type { HandoffFileKind, ToolHandoffSpec } from "./types";
+// 一括処理に対応したツールは、一括処理の上限まで受け取る（無料・旧スタンダードでは、受け取った先頭の1つだけを使う）
+import { BATCH_LIMITS } from "@/lib/batch/batch-config";
 
 /**
  * ツール間のファイル受け渡し（工程16）の、ツールごとの設定。全ツール分の唯一の定義箇所。
@@ -26,8 +28,8 @@ const MULTI = 20;
 
 export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   // ---------------- 画像 ----------------
-  "image-resize": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
-  "image-compress": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
+  "image-resize": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-resize"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
+  "image-compress": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-compress"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
   "image-format-convert": {
     role: "convert",
     receive: { kinds: [...IMAGES, "gif"], maxFiles: MULTI, maxFileSizeMB: 50 },
@@ -46,7 +48,7 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "pdf-edit": { role: "edit", send: { kinds: ["pdf", "zip"] } },
   "pdf-fix": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
   "pdf-redact": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
-  "pdf-compress": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 100 }, send: { kinds: ["pdf"] } },
+  "pdf-compress": { role: "edit", receive: { kinds: ["pdf"], maxFiles: BATCH_LIMITS["pdf-compress"], maxFileSizeMB: 100 }, send: { kinds: ["pdf"] } },
   "pdf-metadata-remove": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
   "pdf-resize-pages": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
   "pdf-crop-pages": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },

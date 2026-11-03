@@ -11,7 +11,11 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { usePdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { PdfCompressProcessor, compressPdfToTarget } from "@/lib/processors/browser/pdf";
 import type { PdfCompressOutput, PdfCompressToTargetOutput } from "@/lib/processors/browser/pdf";
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { dedupeFileNames, downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchResultList, type BatchResultRow } from "@/components/common/batch-result-list";
+import { runBatchSequentially, type BatchItem } from "@/lib/batch/run-batch";
 import {
   DEFAULT_PRESET_ID,
   IMAGE_QUALITY_MAX,
@@ -121,6 +125,26 @@ function settingsLabel(settings: PdfCompressSettings): string {
   return `${name}（画像の品質 ${settings.imageQuality}・長辺の上限 ${settings.maxImageEdge === null ? "なし" : `${settings.maxImageEdge}px`}）`;
 }
 
+/** 一括処理で、PDFごとに保存しておく結果 */
+interface BatchPdfResult {
+  blob: Blob;
+  outputName: string;
+  detail: string;
+}
+
+/** 一括処理の状態を、結果一覧の行に変換する（書き出すファイル名が重ならないよう番号を付ける） */
+function toBatchRows(items: BatchItem<BatchPdfResult>[]): BatchResultRow[] {
+  const names = dedupeFileNames(items.map((item) => item.result?.outputName ?? item.file.name));
+  return items.map((item, i) => ({
+    sourceName: item.file.name,
+    status: item.status,
+    outputName: item.result ? names[i] : undefined,
+    blob: item.result?.blob,
+    detail: item.result?.detail,
+    error: item.error,
+  }));
+}
+
 /**
  * PDF圧縮。
  * 構造の最適化（pdf-lib）に加えて、PDFに埋め込まれたJPEG画像を、指定した品質・長辺の上限で作り直す（工程18）。
@@ -132,7 +156,12 @@ function settingsLabel(settings: PdfCompressSettings): string {
  * （開発指示書■9・■24: 圧縮できたふりをする実装は禁止）。目標のサイズに届かないときも、そのまま伝える。
  */
 export function PdfCompressTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだPDF。2つ以上のとき（プレミアムプランの一括処理）は、同じ設定で1つずつ順番に圧縮する
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("pdf-compress");
+  const [batchItems, setBatchItems] = useState<BatchItem<BatchPdfResult>[]>([]);
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CompressResult | null>(null);
@@ -144,12 +173,14 @@ export function PdfCompressTool() {
   const [input, setInput] = useState<SettingsInput>(() => inputFromSettings(getPreset(DEFAULT_PRESET_ID).settings));
   const checked = validateInput(input);
   const presetId: PdfCompressPresetId | null = checked.settings ? matchPreset(checked.settings) : null;
-  const targetCheck = parseTargetMB(targetText, file?.size ?? null);
+  // 一括処理では、目標のサイズを全部のPDFに共通で使う（元のサイズとの比べ方はPDFごとに違うため、ここでは比べない）
+  const targetCheck = parseTargetMB(targetText, isBatch ? null : file?.size ?? null);
   const canRun = mode === "target" ? targetCheck.ok : checked.settings !== null;
 
   // 設定を変えたら、前の設定で作った結果は捨てる（違う設定の結果をダウンロードさせない）
   function clearResult() {
     setResult(null);
+    setBatchItems([]);
     if (status === "success") setStatus("idle");
   }
 
@@ -177,17 +208,60 @@ export function PdfCompressTool() {
     };
   }, [result]);
 
-  function handleSelect(files: File[]) {
-    setFile(files[0]);
+  function handleSelect(selected: File[]) {
+    const picked = batch.pick(files, selected, "replace");
+    setFiles(picked);
     setResult(null);
+    setBatchItems([]);
     setStatus("idle");
     setError(null);
     // 目標のサイズをまだ入力していなければ、元のサイズの半分を入れておく（そのまま「圧縮する」を押せる）
-    if (files[0] && !targetTouched) setTargetText(suggestTargetMB(files[0].size));
+    // 一括処理のときは、1つ目のPDFのサイズをもとにする
+    if (picked[0] && !targetTouched) setTargetText(suggestTargetMB(picked[0].size));
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setResult(null);
+    setBatchItems([]);
+    setStatus("idle");
+  }
+
+  /** 一括処理：同じ設定で、選んだ全部のPDFを1つずつ順番に圧縮する */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const useTarget = mode === "target" && targetCheck.ok;
+    const targetBytes = targetCheck.ok ? targetCheck.bytes : 0;
+    const settings = checked.settings;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await runBatchSequentially<BatchPdfResult>(
+      files,
+      async (target) => {
+        const output: CompressResult = useTarget
+          ? await compressPdfToTarget({ file: target, targetBytes })
+          : await new PdfCompressProcessor().process({ file: target, settings: settings! });
+        // 一覧ではプレビューを出さないため、URLはすぐに解放する
+        URL.revokeObjectURL(output.url);
+        const f = useTarget ? formatTargetMB : formatBytes;
+        const notes = [`${f(output.originalSizeBytes)} → ${f(output.compressedSizeBytes)}`];
+        if (isTargetResult(output) && !output.achieved) notes.push(`目標の${formatTargetMB(output.targetBytes)}には届きませんでした`);
+        if (output.hadSignature) notes.push("電子署名は無効になりました");
+        return { blob: output.blob, outputName: `${stripExtension(target.name)}-compressed.pdf`, detail: notes.join("・") };
+      },
+      setBatchItems
+    );
+    setStatus(items.some((item) => item.status === "done") ? "success" : "error");
+    if (items.every((item) => item.status === "error")) setError("すべてのPDFで圧縮に失敗しました");
   }
 
   async function handleRun() {
     if (!file || !canRun) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     setResult(null);
@@ -227,9 +301,14 @@ export function PdfCompressTool() {
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">圧縮前後の比較</p>
+          {isBatch && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              1つ目のPDFの先頭ページです。ほかの{files.length - 1}つも同じ設定で圧縮します。
+            </p>
+          )}
           <div className="flex flex-wrap items-start gap-6">
             <FirstPageThumb file={file} label="圧縮前" sizeBytes={file.size} format={fmt} />
-            {result && compressedFile ? (
+            {result && compressedFile && !isBatch ? (
               <FirstPageThumb file={compressedFile} label="圧縮後" sizeBytes={result.compressedSizeBytes} format={fmt} />
             ) : (
               <div className="flex min-h-40 w-[200px] max-w-full items-center justify-center rounded-md border border-dashed border-neutral-300 px-3 text-center text-xs text-neutral-400 dark:border-neutral-700">結果がここに表示されます</div>
@@ -269,11 +348,14 @@ export function PdfCompressTool() {
         maxSizeMB={100}
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
+        multiple
         onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 
       <CompressModeSelector mode={mode} onChange={changeMode} />
 
@@ -296,7 +378,7 @@ export function PdfCompressTool() {
           disabled={status === "processing" || !canRun} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
-          圧縮する
+          {isBatch ? `${files.length}つのPDFをまとめて圧縮する` : "圧縮する"}
         </button>
       )}
 
@@ -304,14 +386,20 @@ export function PdfCompressTool() {
       <ProcessingStatus
         state={status}
         processingLabel={
-          mode === "target" && attempt > 0 ? `目標のサイズに合わせて調整しています…（${attempt}回目／最大${MAX_TARGET_ATTEMPTS}回）` : "処理中..."
+          isBatch
+            ? `圧縮しています…（${Math.min(batchItems.filter((i) => i.status === "done" || i.status === "error").length + 1, files.length)} / ${files.length}）`
+            : mode === "target" && attempt > 0 ? `目標のサイズに合わせて調整しています…（${attempt}回目／最大${MAX_TARGET_ATTEMPTS}回）` : "処理中..."
         }
         successLabel="処理が完了しました"
         testId="compress-progress"
       />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      {batchItems.length > 0 && (
+        <BatchResultList rows={toBatchRows(batchItems)} zipName={`${stripExtension(batchItems[0].file.name) || "pdf"}-compressed.zip`} />
+      )}
+
+      {result && !isBatch && (
         <ResultPopup>
           <div data-testid="compress-result" className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
             {targetResult &&

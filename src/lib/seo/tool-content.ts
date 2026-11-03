@@ -23,6 +23,23 @@ import {
   FISCAL_CALENDAR_META_DESCRIPTION,
   FISCAL_CALENDAR_NO_UPLOAD_ANSWER,
 } from "@/lib/seo/fiscal-calendar-copy";
+import {
+  BACKGROUND_REMOVER_HOWTO_SELECT,
+  BACKGROUND_REMOVER_META_BATCH,
+  BATCH_CONVERT_LIMIT_ANSWER,
+  BATCH_CONVERT_META_NOTE,
+  FORMAT_CONVERT_BATCH_ANSWER,
+  FORMAT_CONVERT_HOWTO_SELECT,
+  FORMAT_CONVERT_LEAD_BATCH,
+  FORMAT_CONVERT_META_BATCH,
+  IMAGE_COMPRESS_BATCH_ANSWER,
+  IMAGE_RESIZE_BATCH_ANSWER,
+  PADDING_TEXT_BATCH_ANSWER,
+  PADDING_TEXT_HOWTO_SELECT,
+  PADDING_TEXT_LEAD_NOTE,
+  PADDING_TEXT_META_BATCH,
+  PDF_COMPRESS_BATCH_ANSWER,
+} from "@/lib/seo/batch-copy";
 
 export interface ToolFaqItem {
   question: string;
@@ -68,6 +85,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
         question: "対応している画像形式は？",
         answer: "JPG・PNG・WebPなど、ブラウザが読み込める一般的な画像形式に対応しています。",
       },
+      { question: "複数の画像をまとめてリサイズできますか？", answer: IMAGE_RESIZE_BATCH_ANSWER.on },
     ],
   },
   "image-compress": {
@@ -88,6 +106,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
         answer: "はい。「目標サイズ(KB)を指定して圧縮」を選び、目標KBを入力すると、その範囲に収まるよう自動で調整します。画像の内容によっては目標値ちょうどにならない場合や、画質を下げても届かない場合があります。届かないときは、先に画像リサイズで縦横のサイズを小さくしてください。",
       },
       { question: "PNG画像を目標サイズ(KB)で圧縮するとどうなりますか？", answer: "サイズを小さくしやすいJPG形式に変わります。透明な部分は白くなります。" },
+      { question: "複数の画像をまとめて圧縮できますか？", answer: IMAGE_COMPRESS_BATCH_ANSWER.on },
       { question: "アップロードした画像はサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
       { question: "ファイルサイズの上限はありますか？", answer: "1ファイルあたり50MBまでです。" },
     ],
@@ -95,10 +114,10 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
   "image-format-convert": {
     metaTitle: "画像形式変換｜JPG・PNG・WebPを相互に変換",
     metaDescription:
-      "JPG・PNG・WebPの画像形式を相互に変換できる無料ツール。複数の画像をまとめて変換してZIPで保存でき、ブラウザ内処理でファイルはサーバーに送信されません。",
-    lead: "JPG・PNG・WebPの画像を、好きな形式に変換します。複数の画像をまとめて変換することもできます。",
+      `JPG・PNG・WebPの画像形式を相互に変換できる無料ツール。${FORMAT_CONVERT_META_BATCH.on}ブラウザ内処理でファイルはサーバーに送信されません。`,
+    lead: `JPG・PNG・WebPの画像を、好きな形式に変換します。${FORMAT_CONVERT_LEAD_BATCH.on}`,
     howTo: [
-      "変換したい画像をドラッグ&ドロップ、またはタップして選択します（複数枚まとめて選べます・1ファイルあたり上限50MB）。",
+      FORMAT_CONVERT_HOWTO_SELECT.on,
       "変換先の形式（JPG・PNG・WebP）を選びます。すでにその形式の画像は、変換せずに除かれます。",
       "「〇件を〜に変換する」を押します。変換前後のプレビューと容量は、プレビューする画像を選んで確認できます。",
       "ダウンロードボタンから保存します（変換した画像が1枚ならその画像ファイル、複数枚ならZIPにまとめて保存されます）。",
@@ -110,7 +129,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       {
         question: "複数の画像をまとめて変換できますか？",
-        answer: "はい。画像を複数枚まとめて選べます。変換した画像が2枚以上のときは、ZIPファイルにまとめてダウンロードできます。1ファイルあたりの上限は50MBです。",
+        answer: FORMAT_CONVERT_BATCH_ANSWER.on,
       },
       {
         question: "透過PNGをJPGに変換するとどうなりますか？",
@@ -129,7 +148,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PNGやWebPなど各種画像をJPG(JPEG)形式に変換する無料ツール。ブラウザ内で処理するのでアップロードは不要です。",
     lead: "PNGやWebPなどの画像をJPG（JPEG）形式に変換します。",
     howTo: [
-      "変換したい画像をドラッグ&ドロップ、またはタップして選択します（複数枚まとめて選べます・1ファイルあたり上限50MB）。",
+      FORMAT_CONVERT_HOWTO_SELECT.on,
       "変換先の形式が「JPG」になっていることを確認します（画面でJPG・PNG・WebPに切り替えることもできます）。",
       "「〇件をJPGに変換する」を押します。変換前後のプレビューと容量は、プレビューする画像を選んで確認できます。",
       "ダウンロードボタンから保存します（変換した画像が1枚ならJPGファイル、複数枚ならZIPにまとめて保存されます）。",
@@ -137,7 +156,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     faq: [
       {
         question: "複数の画像をまとめてJPGに変換できますか？",
-        answer: "はい。画像を複数枚まとめて選べます。変換した画像が2枚以上のときは、ZIPファイルにまとめてダウンロードできます。1ファイルあたりの上限は50MBです。",
+        answer: FORMAT_CONVERT_BATCH_ANSWER.on,
       },
       {
         question: "すでにJPG形式の画像を選ぶとどうなりますか？",
@@ -156,7 +175,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "JPGやWebPなど各種画像をPNG形式に変換する無料ツール。透過を保ったまま変換したい場合にも使えます。",
     lead: "JPGやWebPなどの画像をPNG形式に変換します。",
     howTo: [
-      "変換したい画像をドラッグ&ドロップ、またはタップして選択します（複数枚まとめて選べます・1ファイルあたり上限50MB）。",
+      FORMAT_CONVERT_HOWTO_SELECT.on,
       "変換先の形式が「PNG」になっていることを確認します（画面でJPG・PNG・WebPに切り替えることもできます）。",
       "「〇件をPNGに変換する」を押します。変換前後のプレビューと容量は、プレビューする画像を選んで確認できます。",
       "ダウンロードボタンから保存します（変換した画像が1枚ならPNGファイル、複数枚ならZIPにまとめて保存されます）。",
@@ -164,7 +183,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     faq: [
       {
         question: "複数の画像をまとめてPNGに変換できますか？",
-        answer: "はい。画像を複数枚まとめて選べます。変換した画像が2枚以上のときは、ZIPファイルにまとめてダウンロードできます。1ファイルあたりの上限は50MBです。",
+        answer: FORMAT_CONVERT_BATCH_ANSWER.on,
       },
       {
         question: "すでにPNG形式の画像を選ぶとどうなりますか？",
@@ -183,7 +202,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "JPGやPNG画像を、Webサイト表示の軽量化に向くWebP形式に変換する無料ツール。ブラウザ内で完結します。",
     lead: "JPGやPNGの画像を、ファイルサイズが小さくなりやすいWebP形式に変換します。",
     howTo: [
-      "変換したい画像をドラッグ&ドロップ、またはタップして選択します（複数枚まとめて選べます・1ファイルあたり上限50MB）。",
+      FORMAT_CONVERT_HOWTO_SELECT.on,
       "変換先の形式が「WebP」になっていることを確認します（画面でJPG・PNG・WebPに切り替えることもできます）。",
       "「〇件をWebPに変換する」を押します。変換前後のプレビューと容量は、プレビューする画像を選んで確認できます。",
       "ダウンロードボタンから保存します（変換した画像が1枚ならWebPファイル、複数枚ならZIPにまとめて保存されます）。",
@@ -191,7 +210,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     faq: [
       {
         question: "複数の画像をまとめてWebPに変換できますか？",
-        answer: "はい。画像を複数枚まとめて選べます。変換した画像が2枚以上のときは、ZIPファイルにまとめてダウンロードできます。1ファイルあたりの上限は50MBです。",
+        answer: FORMAT_CONVERT_BATCH_ANSWER.on,
       },
       {
         question: "すでにWebP形式の画像を選ぶとどうなりますか？",
@@ -245,7 +264,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
   "image-batch-convert": {
     metaTitle: "画像一括変換｜複数の画像をまとめてJPG・PNG・WebPに変換",
     metaDescription:
-      "複数の画像ファイルをまとめてJPG・PNG・WebPに変換し、ZIPファイルとしてダウンロードできるツール。1枚ずつ変換する手間を省けます。",
+      `複数の画像ファイルをまとめてJPG・PNG・WebPに変換し、ZIPファイルとしてダウンロードできるツール。1枚ずつ変換する手間を省けます。${BATCH_CONVERT_META_NOTE.on}`,
     lead: "複数の画像を一度にJPG・PNG・WebPへ変換し、ZIPにまとめてダウンロードできます。",
     howTo: [
       "変換したい画像を複数、まとめてドラッグ&ドロップまたは選択します（1ファイルあたり上限50MB）。",
@@ -260,7 +279,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       {
         question: "何枚まで一度に変換できますか？",
-        answer: "枚数自体に固定の上限は設けていませんが、1ファイルあたり50MBまでという制限があります。あまりに多くの画像を一度に処理すると、お使いの端末の性能によって時間がかかる場合があります。",
+        answer: BATCH_CONVERT_LIMIT_ANSWER.on,
       },
       { question: "アップロードした画像はサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
     ],
@@ -522,6 +541,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
         question: "何MB以下にするか、サイズを指定できますか？",
         answer: "できます。「サイズを指定する」で目標のサイズ（MB）を入れると、そのサイズ以下になるまで、PDFの中の画像の画質と大きさを自動で下げます（できるだけ画質を保てる設定を選びます）。文字や図が中心のPDFや、小さな画像がたくさん入ったPDFは、目標に届かないことがあり、その場合はいちばん小さくできた結果を表示します。",
       },
+      { question: "複数のPDFをまとめて圧縮できますか？", answer: PDF_COMPRESS_BATCH_ANSWER.on },
       { question: "アップロードしたPDFはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
     ],
   },
@@ -1832,10 +1852,10 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
   "background-remover": {
     metaTitle: "背景透過（背景除去）｜AIで自動・画像は端末から出ません（無料）",
     metaDescription:
-      "画像の背景をAIで自動的に透明にする無料ツール。画像はアップロードされず、ブラウザ内だけで処理されます。単色背景は色指定でも消せ、複数枚をまとめて処理できます。",
+      `画像の背景をAIで自動的に透明にする無料ツール。画像はアップロードされず、ブラウザ内だけで処理されます。単色背景は色指定でも消せます。${BACKGROUND_REMOVER_META_BATCH.on}`,
     lead: "AI（軽量モデルをブラウザ内で実行）または色指定で背景を透明にします。結果はプレビューで確認でき、PNGで保存できます。",
     howTo: [
-      "画像を選びます（複数枚も可）。",
+      BACKGROUND_REMOVER_HOWTO_SELECT.on,
       "「AIで自動」または「色を指定して消す」を選びます。",
       "プレビューを見ながら、切り抜きの強さや境界のぼかしを調整します。",
       "「背景を透明にする」を押し、PNG（複数枚はZIP）を保存します。",
@@ -2173,13 +2193,13 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     ],
   },
   "image-padding-text": {
-    metaTitle: "画像一括余白・文字入れ｜複数画像にまとめてキャプションを追加（無料）",
+    metaTitle: "画像一括余白・文字入れ｜画像の周りに余白とキャプションを追加",
     metaDescription:
-      "複数の画像の周囲に余白を追加し、余白部分に文字（キャプション等）を入れて一括で書き出せる無料ツール。元画像自体はリサイズ・トリミングせず、上下左右の余白と文字設定を画像ごとに個別調整することもできます。PNG・JPEG、複数枚はZIPで書き出せます。",
+      `画像の周囲に余白を追加し、余白部分に文字（キャプション等）を入れて書き出せる無料ツール。元画像自体はリサイズ・トリミングせず、上下左右の余白と文字設定を画像ごとに個別調整することもできます。PNG・JPEGで書き出せ、${PADDING_TEXT_META_BATCH.on}`,
     lead:
-      "複数の画像に、元画像を変えずに周囲へ余白を追加し、その余白に文字（キャプション等）を入れて一括で書き出せます。共通設定を全画像へ適用しつつ、必要な画像だけ個別に調整することもできます。",
+      `画像に、元画像を変えずに周囲へ余白を追加し、その余白に文字（キャプション等）を入れて書き出せます。共通設定を全画像へ適用しつつ、必要な画像だけ個別に調整することもできます。${PADDING_TEXT_LEAD_NOTE.on}`,
     howTo: [
-      "画像をドラッグ&ドロップ、またはタップして選択します（複数可）。",
+      PADDING_TEXT_HOWTO_SELECT.on,
       "上下左右の余白（px・mm）と背景色を設定します。",
       "余白に入れる文字・フォントサイズ・色・配置を設定します（共通設定として全画像に適用されます）。",
       "画像を1枚ずつプレビューで確認し、必要な画像だけ個別設定や「文字なし」に切り替えます。",
@@ -2198,8 +2218,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       {
         question: "複数画像をまとめてダウンロードできますか？",
-        answer:
-          "はい。「一括出力」を押すと、1枚の場合はそのまま、複数枚の場合はZIPファイルとしてまとめてダウンロードできます。",
+        answer: PADDING_TEXT_BATCH_ANSWER.on,
       },
       { question: "アップロードした画像はサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
     ],

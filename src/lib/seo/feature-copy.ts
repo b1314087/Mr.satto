@@ -2,6 +2,7 @@ import { featureFlags } from "@/lib/config/features";
 import { OFFERED_PLAN_IDS } from "@/lib/plans/types";
 import { tools } from "@/lib/tools/data";
 import { FISCAL_CALENDAR_COPY_PAIRS } from "@/lib/seo/fiscal-calendar-copy";
+import { BATCH_COPY_PAIRS } from "@/lib/seo/batch-copy";
 import type { ToolSeoContent } from "@/lib/seo/tool-content";
 import type { CategorySeoContent } from "@/lib/seo/category-content";
 
@@ -218,6 +219,8 @@ const TEXT_RULES: TextRule[] = [
   // ---- 年度カレンダー作成（AIで読み取る機能は課金オンのときだけ提供。文言は fiscal-calendar-copy.ts）----
   // 課金オンの文言が元の文章。課金オフのときだけ、AI・画像に触れない文言へ差し替える。
   ...FISCAL_CALENDAR_COPY_PAIRS.map((pair): TextRule => ({ from: pair.on, resolve: (ctx) => (ctx.billing ? undefined : pair.off) })),
+  // 複数ファイルの一括処理（課金オフの間は、プランがなく、だれでも使える）
+  ...BATCH_COPY_PAIRS.map((pair): TextRule => ({ from: pair.on, resolve: (ctx) => (ctx.billing ? undefined : pair.off) })),
 ];
 
 /** 課金オフのとき、まるごと取り除くFAQの質問 */

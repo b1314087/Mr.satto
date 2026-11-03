@@ -236,7 +236,8 @@ premiumTest.describe("画像形式変換: 既存URL・SEO・ツール登録の�
   premiumTest("手順の説明が、実際の操作（複数枚・形式の切り替え・ZIP）と合っている", async ({ page }) => {
     await page.goto("/tools/image-jpg-convert");
     const body = await page.locator("main").innerText();
-    expect(body).toContain("複数枚まとめて選べます");
+    // 複数枚をまとめて選べるのはプレミアムプランの一括処理（Premium 一括処理の工程で説明を変更）
+    expect(body).toContain("最大30枚まとめて選べます");
     expect(body).toContain("ZIPにまとめて保存されます");
     expect(body).not.toContain("1ファイル・上限50MB");
   });

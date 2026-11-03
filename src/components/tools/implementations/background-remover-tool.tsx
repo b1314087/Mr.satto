@@ -1,5 +1,7 @@
 "use client";
 
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -59,6 +61,8 @@ interface Prepared {
  */
 export function BackgroundRemoverTool() {
   const [files, setFiles] = useState<File[]>([]);
+  // 複数の画像をまとめて処理する一括処理は、プレミアムプランの機能（無料・旧スタンダードは1枚ずつ）
+  const batch = useBatchSelection("background-remover");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mode, setMode] = useState<Mode>("ai");
   const [threshold, setThreshold] = useState(50);
@@ -163,7 +167,7 @@ export function BackgroundRemoverTool() {
   }, [ready, prepared, mode, threshold, softness, tolerance, colorSoftness, keyHex]);
 
   function addFiles(newFiles: File[]) {
-    setFiles((prev) => [...prev, ...newFiles]);
+    setFiles(batch.pick(files, newFiles, "append"));
     setResult(null);
     setStatus("idle");
     setError(null);
@@ -194,6 +198,7 @@ export function BackgroundRemoverTool() {
 
   async function handleRun() {
     if (files.length === 0) return;
+    if (!(await batch.confirmBatch(files.length))) return;
     setStatus("processing");
     setError(null);
     setResult(null);
@@ -259,11 +264,13 @@ export function BackgroundRemoverTool() {
         accept="image/*"
         multiple
         maxSizeMB={30}
-        label="画像をドラッグ&ドロップ（複数可）"
+        label={batch.batchAllowed ? "画像をドラッグ&ドロップ（複数可）" : "画像をドラッグ&ドロップ"}
         hint="またはタップして選択（JPG・PNG・WebP）。画像は外部に送信されず、お使いの端末の中だけで処理されます"
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
       {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 
       {files.length > 1 && (

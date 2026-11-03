@@ -1,5 +1,7 @@
 "use client";
 
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -33,6 +35,8 @@ const PREVIEW_MAX_SIDE = 640;
  */
 export function ImageAdjustTool() {
   const [files, setFiles] = useState<File[]>([]);
+  // 複数の画像をまとめて処理する一括処理は、プレミアムプランの機能（無料・旧スタンダードは1枚ずつ）
+  const batch = useBatchSelection("image-adjust");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [brightness, setBrightness] = useState(0);
   const [contrast, setContrast] = useState(0);
@@ -99,7 +103,7 @@ export function ImageAdjustTool() {
   }, [previewReady, brightness, contrast]);
 
   function addFiles(newFiles: File[]) {
-    setFiles((prev) => [...prev, ...newFiles]);
+    setFiles(batch.pick(files, newFiles, "append"));
     setResult(null);
     setStatus("idle");
     setError(null);
@@ -113,6 +117,7 @@ export function ImageAdjustTool() {
 
   async function handleRun() {
     if (files.length === 0) return;
+    if (!(await batch.confirmBatch(files.length))) return;
     setStatus("processing");
     setError(null);
     setResult(null);
@@ -156,11 +161,13 @@ export function ImageAdjustTool() {
         accept="image/*"
         multiple
         maxSizeMB={50}
-        label="画像をドラッグ&ドロップ（複数可）"
-        hint="またはタップして選択（JPG・PNG・WebPなど）。複数枚は同じ設定でまとめて調整できます"
+        label={batch.batchAllowed ? "画像をドラッグ&ドロップ（複数可）" : "画像をドラッグ&ドロップ"}
+        hint={batch.batchAllowed ? "またはタップして選択（JPG・PNG・WebPなど）。複数枚は同じ設定でまとめて調整できます" : "またはタップして選択（JPG・PNG・WebPなど）"}
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
       {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 

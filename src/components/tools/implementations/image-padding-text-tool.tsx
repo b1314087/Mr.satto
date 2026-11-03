@@ -1,5 +1,7 @@
 "use client";
 
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -318,6 +320,8 @@ function SettingsFields({
 
 export function ImagePaddingTextTool() {
   const [files, setFiles] = useState<File[]>([]);
+  // 複数の画像をまとめて処理する一括処理は、プレミアムプランの機能（無料・旧スタンダードは1枚ずつ）
+  const batch = useBatchSelection("image-padding-text");
   const [common, setCommon] = useState<EditableSettings>(DEFAULT_SETTINGS);
   const [perImage, setPerImage] = useState<Map<File, PerImageState>>(new Map());
   // 画像削除等でfiles.lengthが縮んだ場合に範囲外を指さないよう、
@@ -344,7 +348,7 @@ export function ImagePaddingTextTool() {
   }, [previewResult]);
 
   function addFiles(newFiles: File[]) {
-    setFiles((prev) => [...prev, ...newFiles]);
+    setFiles(batch.pick(files, newFiles, "append"));
     setBatchResult(null);
     setCurrentResult(null);
     setStatus("idle");
@@ -492,6 +496,7 @@ export function ImagePaddingTextTool() {
 
   async function handleExportAll() {
     if (files.length === 0) return;
+    if (!(await batch.confirmBatch(files.length))) return;
     setStatus("processing");
     setError(null);
     try {
@@ -563,11 +568,13 @@ export function ImagePaddingTextTool() {
         accept="image/*"
         multiple
         maxSizeMB={50}
-        label="画像をドラッグ&ドロップ（複数可）"
+        label={batch.batchAllowed ? "画像をドラッグ&ドロップ（複数可）" : "画像をドラッグ&ドロップ"}
         hint="またはタップして選択"
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
       {files.length > 0 && (
         <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />
