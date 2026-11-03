@@ -102,16 +102,16 @@ test.describe("time-calculator", () => {
 test.describe("number-format", () => {
   test("郵便番号: 7桁の数字にハイフンが入る", async ({ page }) => {
     await page.goto("/tools/number-format");
-    await page.locator("textarea").first().fill("6530824");
+    await page.locator("textarea").first().fill("1234567");
     await page.getByRole("button", { name: "郵便番号" }).click();
-    await expect(page.locator("textarea").nth(1)).toHaveValue("653-0824");
+    await expect(page.locator("textarea").nth(1)).toHaveValue("123-4567");
   });
 
   test("電話番号: 10桁の数字にハイフンが入る", async ({ page }) => {
     await page.goto("/tools/number-format");
-    await page.locator("textarea").first().fill("0786910561");
+    await page.locator("textarea").first().fill("0001234567");
     await page.getByRole("button", { name: "電話番号" }).click();
-    await expect(page.locator("textarea").nth(1)).toHaveValue("078-691-0561");
+    await expect(page.locator("textarea").nth(1)).toHaveValue("000-123-4567");
   });
 
   test("カスタム区切り: 指定したパターンで区切られる", async ({ page }) => {

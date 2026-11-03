@@ -7,8 +7,8 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob } from "@/lib/utils/format";
 
 const MODE_OPTIONS: { value: NumberFormatMode; label: string; hint: string }[] = [
-  { value: "zip", label: "郵便番号", hint: "6530824 → 653-0824" },
-  { value: "phone", label: "電話番号", hint: "0786910561 → 078-691-0561" },
+  { value: "zip", label: "郵便番号", hint: "1234567 → 123-4567" },
+  { value: "phone", label: "電話番号", hint: "0001234567 → 000-123-4567" },
   { value: "custom", label: "カスタム区切り", hint: "任意の位置にハイフン等を挿入" },
   { value: "comma-add", label: "カンマを追加", hint: "1234567 → 1,234,567" },
   { value: "comma-remove", label: "カンマを削除", hint: "1,234,567 → 1234567" },
@@ -98,7 +98,7 @@ export function NumberFormatTool() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           rows={8}
-          placeholder={"6530824\n0786910561"}
+          placeholder={"1234567\n0001234567"}
           className="rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>
