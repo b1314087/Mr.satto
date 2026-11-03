@@ -85,15 +85,21 @@ export function ToolCard({ tool, compact = false }: { tool: Tool; compact?: bool
     "aria-label": isComingSoon ? `${tool.name}（準備中・まだ利用できません）` : tool.name,
   };
 
-  // コンパクト表示（カテゴリ別一覧）: アイコン・名前・バッジを1行に並べ、説明文は出さない。
-  // 1画面に並べられるツールの数を増やすための、低いカード。
+  // コンパクト表示（カテゴリ別一覧）: アイコン・名前・バッジを並べ、名前の下に説明を1行だけ出す。
+  // 1画面に並べられるツールの数を保ちつつ、用途が分かるようにするための、低いカード。
+  // 説明は1行に収まらない分を「…」で省略する（カードの高さをそろえるため）。全文は title で確認できる。
   if (compact) {
     // 「通常」は出さない（ほとんどのツールが通常のため、情報にならない）。出すのは、準備中・プレミアム限定・AI実装だけ。
     const showPlan = !isComingSoon && featureFlags.billing && tool.requiredPlan === "premium";
     return (
       <Link {...linkProps} className={cn("group relative flex h-full items-center gap-3 px-3 py-2.5", surface)}>
         <CategoryIcon id={category?.id ?? "other"} size="sm" />
-        <h3 className={cn("min-w-0 flex-1 text-sm font-semibold leading-snug", titleColor)}>{tool.name}</h3>
+        <div className="min-w-0 flex-1">
+          <h3 className={cn("text-sm font-semibold leading-snug", titleColor)}>{tool.name}</h3>
+          <p className="mt-0.5 truncate text-xs text-ms-muted" title={tool.description}>
+            {tool.description}
+          </p>
+        </div>
         {isComingSoon && badge}
         {showPlan && <PlanBadge requiredPlan={tool.requiredPlan} />}
         {!isComingSoon && showsAiBadge(tool) && <AiBadge />}

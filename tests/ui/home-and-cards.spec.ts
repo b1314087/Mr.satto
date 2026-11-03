@@ -65,7 +65,8 @@ test.describe("「おすすめツール」の削除", () => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "おすすめツール" })).toHaveCount(0);
     await expect(page.getByText("おすすめツール")).toHaveCount(0);
-    // トップに並ぶのは「カテゴリ」のカードだけ。個別ツールのカード（aria-label付きのリンク）は出ない
+    // トップに並ぶカードは「カテゴリ」のカードだけ。個別ツールのカード（aria-label付きのリンク）は出ない
+    // （内部リンク改善の工程で追加した「よく使われるツール」は、カードではなく文字のリンク。tests/seo/internal-links.spec.ts）
     await expect(main(page).locator('a[href^="/tools/"][aria-label]')).toHaveCount(0);
   });
 
@@ -225,16 +226,24 @@ test.describe("ツールカード", () => {
     expect(read("src/components/tools/tool-card.tsx")).not.toMatch(/onClick|router\.push/);
   });
 
-  test("カテゴリ別一覧: カードにツールの説明文を出さない（名前・バッジ・リンクは変わらない）。全ツール一覧では説明が残る", async ({ page }) => {
+  test("カテゴリ別一覧: カードの名前の下に説明を1行だけ出す（1行に収まらない分は省略。名前・バッジ・リンクは変わらない）。全ツール一覧でも説明が残る", async ({ page }) => {
+    // 内部リンク・検索導線改善の工程で、利用者の判断により「説明なし」から「1行だけ説明」に変更した
     const imageTools = getListedTools().filter((t) => t.category === "image" && t.status === "available");
     await page.goto("/tools/image");
     const cards = main(page).locator('a[href^="/tools/"][aria-label]');
     await expect(cards).toHaveCount(imageTools.length);
-    // どのカードにも説明文（<p>）がなく、名前（<h3>）とリンク先はそのまま
-    expect(await cards.evaluateAll((els) => els.map((e) => e.querySelectorAll("p").length))).toEqual(imageTools.map(() => 0));
+    // どのカードにも説明文（<p>）が1つずつあり、中身はそのツールの説明。全文は title でも確認できる
+    expect(await cards.evaluateAll((els) => els.map((e) => e.querySelectorAll("p").length))).toEqual(imageTools.map(() => 1));
     await expect(cards.first().locator("h3")).toHaveCount(1);
     await expect(cards.first()).toHaveAttribute("href", `/tools/${imageTools[0].id}`);
-    await expect(main(page).getByText(imageTools[0].description, { exact: false })).toHaveCount(0);
+    await expect(cards.first().locator("p")).toHaveText(imageTools[0].description);
+    await expect(cards.first().locator("p")).toHaveAttribute("title", imageTools[0].description);
+    // 1行に収める（折り返さず、はみ出た分は「…」で省略）
+    const style = await cards.first().locator("p").evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { whiteSpace: cs.whiteSpace, overflow: cs.overflow, textOverflow: cs.textOverflow };
+    });
+    expect(style).toEqual({ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" });
 
     // 全ツール一覧（共通のカード）には、これまでどおり説明が出る
     await page.goto("/tools");

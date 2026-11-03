@@ -150,7 +150,8 @@ plainTest.describe("Excel・CSV変換の統合: 登録と一覧・検索・SEO",
 // ---------------------------------------------------------------------------
 // 2. 画面: 一覧・カテゴリ・旧URL・内部リンク・切り替え
 // ---------------------------------------------------------------------------
-const card = (page: import("@playwright/test").Page, id: string) => page.locator("main").locator(`a[href="/tools/${id}"]`);
+// // 内部リンク改善の工程で、カテゴリページに「機能ごとのページ」（旧ツールの個別URLへの文字リンク）を追加したため、カード（aria-label付きのリンク）だけを数える
+const card = (page: import("@playwright/test").Page, id: string) => page.locator("main").locator(`a[href="/tools/${id}"][aria-label]`);
 const modeBtn = (page: import("@playwright/test").Page, mode: string) => page.getByTestId(`excel-csv-mode-${mode}`);
 
 test.describe("Excel・CSV変換の統合: 一覧・カテゴリ・旧URL", () => {

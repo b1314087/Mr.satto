@@ -178,15 +178,19 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
     // 新プロジェクト工程8: 領収書・レシートから会計CSV作成（receipt-accounting-csv）から、文字認識（ocr）とPDF→Excelを案内
     // 新プロジェクト工程4: PDF黒塗り・墨消し（pdf-redact）と、白消しがあるPDF修正（pdf-fix）を互いに案内
     // 新プロジェクト工程3: Excelファイル結合（excel-merge）と、近い用途のCSV結合（csv-merge）を互いに案内
+    // 内部リンク改善の工程: Google未登録だった重要ページ（PDF→Excel・PDF→Word・PDF編集・画像圧縮）に、使う場面が近いツールを案内
     expect(withPins.map((t) => t.id).sort()).toEqual([
       "csv-merge",
       "excel-merge",
       "excel-to-pdf",
+      "image-compress",
       "pdf-add-page-numbers",
       "pdf-edit",
       "pdf-fill-annotate",
       "pdf-fix",
       "pdf-redact",
+      "pdf-to-excel",
+      "pdf-to-word",
       "pdf-watermark",
       "pptx-invert",
       "receipt-accounting-csv",
@@ -194,7 +198,9 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
       "word-to-pdf",
     ]);
     for (const t of withPins) {
-      expect(t.relatedToolIds!.length, t.id).toBeLessThanOrEqual(2);
+      // 原則2件まで。内部リンク改善の工程で関連を整えた重要ページだけ、関連ツールの枠（4件）まで指定できる
+      const maxPins = ["pdf-to-excel", "pdf-to-word", "pdf-edit", "image-compress"].includes(t.id) ? 4 : 2;
+      expect(t.relatedToolIds!.length, t.id).toBeLessThanOrEqual(maxPins);
       for (const id of t.relatedToolIds!) {
         const target = tools.find((x) => x.id === id);
         expect(target, `${t.id} -> ${id}`).toBeTruthy();

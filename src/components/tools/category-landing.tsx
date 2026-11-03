@@ -4,6 +4,9 @@ import type { Tool } from "@/lib/tools/types";
 import { ToolCard } from "@/components/tools/tool-card";
 import { categories, getCategoryToolsLabel } from "@/lib/tools/categories";
 import { CategoryIcon } from "@/components/ui/category-icon";
+import { getToolById, tools } from "@/lib/tools/data";
+import { hasImplementation } from "@/lib/tools/registry";
+import { CATEGORY_CROSS_LINKS } from "@/lib/tools/internal-links";
 
 export function CategoryLanding({
   category,
@@ -17,6 +20,13 @@ export function CategoryLanding({
   comingSoonTools: Tool[];
 }) {
   const otherCategories = categories.filter((c) => c.id !== category.id);
+  const isUsable = (t: Tool) => t.status === "available" && hasImplementation(t.id);
+  // 総合ツール（例：PDF編集）にまとめた機能の、個別のページ（例：PDF結合）。一覧のカードには出さないため、ここでリンクする
+  const featurePages = tools.filter((t) => t.category === category.id && t.mergedInto && isUsable(t));
+  // ほかのカテゴリに所属しているが、このカテゴリでも探されやすいツール（設定は src/lib/tools/internal-links.ts）
+  const crossLinked = (CATEGORY_CROSS_LINKS[category.id] ?? [])
+    .map((id) => getToolById(id))
+    .filter((t): t is Tool => t !== undefined && t.category !== category.id && isUsable(t) && !t.mergedInto);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
@@ -35,6 +45,37 @@ export function CategoryLanding({
             <ToolCard key={tool.id} tool={tool} compact />
           ))}
         </div>
+      )}
+
+      {featurePages.length > 0 && (
+        <section className="mt-8" aria-labelledby="feature-pages-heading">
+          <h2 id="feature-pages-heading" className="mb-1 text-base font-semibold text-ms-text">
+            機能ごとのページ
+          </h2>
+          <p className="mb-3 text-sm text-ms-muted">上のツールの中にある機能を、機能ごとのページから直接開けます。</p>
+          <div className="flex flex-wrap gap-2">
+            {featurePages.map((t) => (
+              <Link key={t.id} href={`/tools/${t.id}`} className="ms-chip">
+                {t.name}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {crossLinked.length > 0 && (
+        <section className="mt-8" aria-labelledby="cross-links-heading">
+          <h2 id="cross-links-heading" className="mb-1 text-base font-semibold text-ms-text">
+            ほかのカテゴリにある{category.name}関連のツール
+          </h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {crossLinked.map((t) => (
+              <Link key={t.id} href={`/tools/${t.id}`} className="ms-chip">
+                {t.name}
+              </Link>
+            ))}
+          </div>
+        </section>
       )}
 
       {comingSoonTools.length > 0 && (

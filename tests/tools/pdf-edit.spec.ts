@@ -166,7 +166,8 @@ test.describe("PDF編集: 一覧・カテゴリ・旧URL", () => {
     await page.goto("/tools?category=pdf");
     const main = page.locator("main");
     await expect(main.locator('a[href="/tools/pdf-edit"]')).toHaveCount(1);
-    for (const id of OLD_IDS) await expect(main.locator(`a[href="/tools/${id}"]`), `${id}のカード`).toHaveCount(0);
+    // // 内部リンク改善の工程で、カテゴリページに「機能ごとのページ」（旧ツールの個別URLへの文字リンク）を追加したため、カード（aria-label付きのリンク）だけを数える
+    for (const id of OLD_IDS) await expect(main.locator(`a[href="/tools/${id}"][aria-label]`), `${id}のカード`).toHaveCount(0);
     // 同じカテゴリの他のツールは今までどおり並ぶ
     await expect(main.locator('a[href="/tools/pdf-compress"]')).toHaveCount(1);
   });
@@ -182,7 +183,8 @@ test.describe("PDF編集: 一覧・カテゴリ・旧URL", () => {
     await page.goto("/tools/pdf");
     const main = page.locator("main");
     await expect(main.locator('a[href="/tools/pdf-edit"]')).toHaveCount(1);
-    for (const id of OLD_IDS) await expect(main.locator(`a[href="/tools/${id}"]`), `${id}のカード`).toHaveCount(0);
+    // // 内部リンク改善の工程で、カテゴリページに「機能ごとのページ」（旧ツールの個別URLへの文字リンク）を追加したため、カード（aria-label付きのリンク）だけを数える
+    for (const id of OLD_IDS) await expect(main.locator(`a[href="/tools/${id}"][aria-label]`), `${id}のカード`).toHaveCount(0);
   });
 
   for (const m of PDF_EDIT_MODES) {

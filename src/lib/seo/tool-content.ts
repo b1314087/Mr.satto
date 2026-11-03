@@ -578,7 +578,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
   "pdf-to-excel": {
     metaTitle: "PDF→Excel変換｜PDF内の表をExcelファイルに変換",
     metaDescription:
-      "PDFに含まれる表をExcelファイル(.xlsx)に変換できるツール。プレミアムプランで利用できます。",
+      "PDFに含まれる表をExcelファイル(.xlsx)に変換できるツール。スキャンしたPDFも文字認識(OCR)で読み取れます。通常の変換はブラウザ内で行い、ファイルはサーバーに送信されません。プレミアムプランで利用できます。",
     lead: "PDFの中にある表を認識して、Excelファイルとして書き出します。",
     howTo: [
       `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB・${PDF_TO_EXCEL_MAX_PAGES}ページまで）。`,
@@ -604,6 +604,11 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
         question: "PDFのページ数に制限はありますか？",
         answer: `1回に変換できるのは${PDF_TO_EXCEL_MAX_PAGES}ページまでです。そのうち、文字情報のないページ（スキャンした画像）は文字認識(OCR)で読み取るため、${PDF_TO_EXCEL_MAX_OCR_PAGES}ページまでです。上限を超えるとメッセージが表示され、変換は行われません。`,
       },
+      {
+        question: "「記入済みPDF→Excel」とはどう違いますか？",
+        answer:
+          "PDF→Excelは、PDFの中の表を、表の形のままExcelに書き出します。記入済みPDF→Excelは、申請書や帳票など同じ様式の書類から、記入欄の内容を項目ごとに読み取り、一覧のExcelにまとめます。表を取り出したいときはPDF→Excel、たくさんの申請書を一覧にしたいときは記入済みPDF→Excelが向いています。",
+      },
       { question: "アップロードしたPDFはサーバーに保存されますか？", answer: "いいえ。通常の変換は、すべてお使いのブラウザの中で行われ、ファイルの内容がMr.Sattoのサーバーへ送信されることはありません。「AIで表を読み取る」（プレミアム・任意）を使う場合だけ、画面で確認して同意したPDFの文字と、スキャンしたページの縮小した画像が、AIの処理のためにMr.Sattoのサーバーを経由して外部のAIサービスへ送られます（保存はしません。PDFファイルそのものは送りません）。処理が終わっても、ページを閉じればデータはブラウザ上から消えます。" },
       { question: "無料プランでも使えますか？", answer: "このツールはプレミアムプラン専用の機能です。スタンダードプランや広告視聴による無料利用の対象には含まれません。" },
     ],
@@ -611,7 +616,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
   "pdf-to-word": {
     metaTitle: "PDF→Word変換｜PDFをWord文書(.docx)に変換",
     metaDescription:
-      "PDFをWord文書(.docx)に変換できるツール。プレミアムプランで利用できます。",
+      "PDFをWord文書(.docx)に変換できるツール。見出し・表・画像・文字の色などの書式をできるだけ保って書き出します。プレミアムプランで利用できます。",
     lead: "PDFの内容を、見出し・箇条書き・表・画像・太字や文字色などの書式を保ってWord文書（.docx）として書き出します。",
     howTo: [
       `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB・${PDF_TO_WORD_MAX_PAGES}ページまで）。`,

@@ -41,6 +41,8 @@ const toolDefinitions: Tool[] = [
     processor: "browser",
     keywords: ["compress", "軽量化", "容量", "kb", "容量指定", "指定KB", "指定KBまで圧縮", "サイズ指定", "目標サイズ"],
     featured: true,
+    // 内部リンク改善：画像を軽くしたい人が続けて使いやすいツール
+    relatedToolIds: ["image-resize", "image-format-convert", "image-metadata-remove", "image-crop"],
   },
   {
     id: "image-format-convert",
@@ -381,7 +383,8 @@ const toolDefinitions: Tool[] = [
       "reorder pages",
       "rotate",
     ],
-    relatedToolIds: ["pdf-fix"],
+    // 内部リンク改善：PDFを整えたあとに使うことが多い、圧縮・変換を加える
+    relatedToolIds: ["pdf-fix", "pdf-compress", "pdf-to-word", "pdf-to-excel"],
   },
   {
     // 工程12：PDFの修正（記入・注釈・白消し・ページ番号・透かし）を1つの画面にまとめた入口。
@@ -535,6 +538,8 @@ const toolDefinitions: Tool[] = [
     processor: "browser",
     hasAi: "cloud",
     keywords: ["excel", "表"],
+    // 内部リンク改善：所属は「Excel・CSV」だが、PDFの変換・読み取りのツールと使い分けることが多い
+    relatedToolIds: ["pdf-to-word", "filled-pdf-to-excel", "ocr", "pdf-edit"],
   },
   {
     id: "pdf-to-word",
@@ -545,6 +550,8 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["word", "文書"],
+    // 内部リンク改善：所属は「Word」だが、PDFの変換・読み取りのツールと使い分けることが多い
+    relatedToolIds: ["pdf-to-excel", "word-to-pdf", "pdf-to-text", "ocr"],
   },
   {
     id: "word-to-pdf",

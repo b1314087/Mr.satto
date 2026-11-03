@@ -60,7 +60,8 @@ async function switchMode(page: Page, mode: string) {
 }
 
 const modeBtn = (page: Page, mode: string) => page.getByTestId(`csv-json-mode-${mode}`);
-const card = (page: Page, id: string) => page.locator("main").locator(`a[href="/tools/${id}"]`);
+// // 内部リンク改善の工程で、カテゴリページに「機能ごとのページ」（旧ツールの個別URLへの文字リンク）を追加したため、カード（aria-label付きのリンク）だけを数える
+const card = (page: Page, id: string) => page.locator("main").locator(`a[href="/tools/${id}"][aria-label]`);
 const resultBox = (page: Page) => page.getByRole("textbox", { name: /変換結果/ });
 /** JSON→CSVの入力欄（画面にはテキストエリアが1つだけ出る） */
 const jsonInput = (page: Page) => page.getByRole("textbox", { name: /入力/ });

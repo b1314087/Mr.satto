@@ -4,6 +4,7 @@ import { SearchBar } from "@/components/tools/search-bar";
 import { CategoryCard } from "@/components/tools/category-card";
 import { categories } from "@/lib/tools/categories";
 import { getListedTools } from "@/lib/tools/data";
+import { POPULAR_TOOL_IDS } from "@/lib/tools/internal-links";
 import { siteConfig } from "@/lib/config/site";
 import { JsonLd } from "@/components/seo/json-ld";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -14,6 +15,10 @@ export default function Home() {
   // 一覧・検索に出るツール（総合ツールに統合済みの旧ツールは含まない）のうち、使えるもの
   const availableTools = getListedTools().filter((t) => t.status === "available");
   const countByCategory = (id: string) => availableTools.filter((t) => t.category === id).length;
+  // よく使われるツール（設定は src/lib/tools/internal-links.ts）。使えないツールは出さない
+  const popularTools = POPULAR_TOOL_IDS.map((id) => availableTools.find((t) => t.id === id)).filter(
+    (t): t is (typeof availableTools)[number] => t !== undefined
+  );
 
   return (
     <div className="flex flex-col">
@@ -70,6 +75,22 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {/* よく使われるツールへの文字のリンク（カードにはしない。カテゴリから探す導線を主役のまま残す） */}
+      {popularTools.length > 0 && (
+        <section className="mx-auto w-full max-w-6xl px-4 pb-4 sm:px-6" aria-labelledby="popular-tools-heading">
+          <h2 id="popular-tools-heading" className="mb-3 text-base font-semibold text-ms-text">
+            よく使われるツール
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {popularTools.map((t) => (
+              <Link key={t.id} href={`/tools/${t.id}`} className="ms-chip">
+                {t.name}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mx-auto w-full max-w-6xl px-4 pb-14 pt-4 sm:px-6">
         <div className="grid gap-4 sm:grid-cols-2">
