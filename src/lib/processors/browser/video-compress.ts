@@ -14,6 +14,8 @@ export interface VideoCompressInput {
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
   cancelSignal?: AbortSignal;
+  /** 音声を書き出せない形式で、利用者が「音声なしで書き出す」を選んだとき true（動画編集 工程1） */
+  dropAudio?: boolean;
 }
 
 export interface VideoCompressOutput {
@@ -48,6 +50,7 @@ export class VideoCompressProcessor extends BrowserProcessor<VideoCompressInput,
     outputContainer,
     onProgress,
     cancelSignal,
+    dropAudio,
   }: VideoCompressInput): Promise<VideoCompressOutput> {
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
@@ -68,6 +71,7 @@ export class VideoCompressProcessor extends BrowserProcessor<VideoCompressInput,
         },
         onProgress,
         cancelSignal,
+        dropAudio,
       });
 
       return {

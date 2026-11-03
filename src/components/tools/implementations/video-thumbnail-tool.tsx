@@ -54,6 +54,8 @@ export function VideoThumbnailTool() {
   const [canceling, setCanceling] = useState(false);
   const [wasCanceled, setWasCanceled] = useState(false);
   const cancelControllerRef = useRef<AbortController | null>(null);
+  // 実行ごとの番号。動画を消した・選び直したあとに、前の処理の結果が遅れて届いても表示しないために使う
+  const runIdRef = useRef(0);
 
   const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -97,6 +99,10 @@ export function VideoThumbnailTool() {
   }, []);
 
   function handleSelect(files: File[]) {
+    // 前の動画の処理が残っていれば止め、その結果を新しい動画に表示しない
+    runIdRef.current++;
+    cancelControllerRef.current?.abort();
+    cancelControllerRef.current = null;
     setFile(files[0]);
     setResult(null);
     setStatus("idle");
@@ -109,6 +115,7 @@ export function VideoThumbnailTool() {
     if (!file) return;
     const controller = new AbortController();
     cancelControllerRef.current = controller;
+    const runId = ++runIdRef.current;
     setStatus("processing");
     setError(null);
     setResult(null);
@@ -123,9 +130,11 @@ export function VideoThumbnailTool() {
         jpegQuality,
         cancelSignal: controller.signal,
       });
+      if (runIdRef.current !== runId) return;
       setResult(output);
       setStatus("success");
     } catch (e) {
+      if (runIdRef.current !== runId) return;
       if (e instanceof VideoCanceledByUserError) {
         setWasCanceled(true);
         setStatus("idle");
@@ -134,9 +143,24 @@ export function VideoThumbnailTool() {
         setStatus("error");
       }
     } finally {
-      setCanceling(false);
-      cancelControllerRef.current = null;
+      if (runIdRef.current === runId) {
+        setCanceling(false);
+        cancelControllerRef.current = null;
+      }
     }
+  }
+
+  // 選んだ動画を消したときは、前の動画の結果・進み具合・エラー・案内をすべて消し、処理中なら止める
+  function handleRemove() {
+    runIdRef.current++;
+    cancelControllerRef.current?.abort();
+    cancelControllerRef.current = null;
+    setFile(null);
+    setResult(null);
+    setStatus("idle");
+    setError(null);
+    setWasCanceled(false);
+    setCanceling(false);
   }
 
   function handleCancel() {
@@ -162,7 +186,7 @@ export function VideoThumbnailTool() {
         onError={setError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <FileList files={[file]} onRemove={handleRemove} />}
       {file && <VideoSizeWarning sizeBytes={file.size} />}
 
       {file && previewUrl && (

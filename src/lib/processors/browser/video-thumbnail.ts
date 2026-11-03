@@ -1,6 +1,7 @@
 import { BrowserProcessor } from "../types";
 import {
   VideoCanceledByUserError,
+  toFriendlyVideoError,
   createThumbnailCanvasSink,
   inspectVideoFile,
 } from "@/lib/video/shared";
@@ -82,7 +83,8 @@ export class VideoThumbnailProcessor extends BrowserProcessor<VideoThumbnailInpu
         if (canceledByUser) {
           throw new VideoCanceledByUserError();
         }
-        throw e;
+        // 内部のエラー（英語）をそのまま見せず、原因に合った日本語の案内にする（動画編集 工程1）
+        throw toFriendlyVideoError(e);
       }
       if (canceledByUser) {
         throw new VideoCanceledByUserError();

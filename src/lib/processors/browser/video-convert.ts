@@ -11,6 +11,8 @@ export interface VideoConvertInput {
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
   cancelSignal?: AbortSignal;
+  /** 音声を書き出せない形式で、利用者が「音声なしで書き出す」を選んだとき true（動画編集 工程1） */
+  dropAudio?: boolean;
 }
 
 export interface VideoConvertOutput {
@@ -40,6 +42,7 @@ export class VideoConvertProcessor extends BrowserProcessor<VideoConvertInput, V
     outputContainer,
     onProgress,
     cancelSignal,
+    dropAudio,
   }: VideoConvertInput): Promise<VideoConvertOutput> {
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
@@ -56,6 +59,7 @@ export class VideoConvertProcessor extends BrowserProcessor<VideoConvertInput, V
         container: outputContainer,
         onProgress,
         cancelSignal,
+        dropAudio,
       });
 
       return {

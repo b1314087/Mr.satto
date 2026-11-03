@@ -11,6 +11,8 @@ export interface VideoMetadataRemoveInput {
   file: File;
   onProgress?: (progress: number) => void;
   cancelSignal?: AbortSignal;
+  /** 音声を書き出せない形式で、利用者が「音声なしで書き出す」を選んだとき true（動画編集 工程1） */
+  dropAudio?: boolean;
 }
 
 export interface VideoMetadataRemoveOutput {
@@ -61,6 +63,7 @@ export class VideoMetadataRemoveProcessor extends BrowserProcessor<
     file,
     onProgress,
     cancelSignal,
+    dropAudio,
   }: VideoMetadataRemoveInput): Promise<VideoMetadataRemoveOutput> {
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
@@ -81,6 +84,7 @@ export class VideoMetadataRemoveProcessor extends BrowserProcessor<
         tags: {},
         onProgress,
         cancelSignal,
+        dropAudio,
       });
 
       return {

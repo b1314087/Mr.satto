@@ -17,6 +17,8 @@ export interface VideoH264Input {
   quality?: VideoQualityName;
   onProgress?: (progress: number) => void;
   cancelSignal?: AbortSignal;
+  /** 音声を書き出せない形式で、利用者が「音声なしで書き出す」を選んだとき true（動画編集 工程1） */
+  dropAudio?: boolean;
 }
 
 export interface VideoH264Output {
@@ -53,7 +55,7 @@ export interface VideoH264Output {
  * （出力は最終的に必ずH.264/MP4になっている。開発指示書 67章9項）。
  */
 export class VideoH264Processor extends BrowserProcessor<VideoH264Input, VideoH264Output> {
-  async process({ file, quality = "high", onProgress, cancelSignal }: VideoH264Input): Promise<VideoH264Output> {
+  async process({ file, quality = "high", onProgress, cancelSignal, dropAudio }: VideoH264Input): Promise<VideoH264Output> {
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
     }
@@ -80,6 +82,7 @@ export class VideoH264Processor extends BrowserProcessor<VideoH264Input, VideoH2
         video: info.codec === "avc" ? { codec: "avc" } : { codec: "avc", quality: qualityFromName(quality) },
         onProgress,
         cancelSignal,
+        dropAudio,
       });
 
       return {

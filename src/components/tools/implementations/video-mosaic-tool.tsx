@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { VideoSizeWarning } from "@/components/tools/implementations/shared/video-size-warning";
+import { VideoAudioLossNotice } from "@/components/tools/implementations/shared/video-audio-loss-notice";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -15,6 +16,7 @@ import {
   OUTPUT_CONTAINER_OPTIONS,
   VIDEO_DROPZONE_MAX_MB,
   VIDEO_INPUT_ACCEPT,
+  VideoAudioWouldBeLostError,
   VideoCanceledByUserError,
   type OutputContainer,
   type VideoInputInfo,
@@ -84,6 +86,8 @@ export function VideoMosaicTool() {
   const [result, setResult] = useState<VideoMosaicOutput | null>(null);
   const [canceling, setCanceling] = useState(false);
   const exportCtrl = useRef<AbortController | null>(null);
+  // 音声を書き出せないときの案内（音声なしで書き出すかを選んでもらう）
+  const [audioLoss, setAudioLoss] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -179,6 +183,15 @@ export function VideoMosaicTool() {
   }, [playing, draw, time]);
 
   function handleSelectFile(files: File[]) {
+    // 前の動画の追跡・書き出しが残っていれば止め、その結果を新しい動画（または、動画を消した画面）に出さない
+    trackCtrl.current?.abort();
+    trackCtrl.current = null;
+    exportCtrl.current?.abort();
+    exportCtrl.current = null;
+    setTracking(null);
+    setProgress(0);
+    setCanceling(false);
+    setAudioLoss(null);
     setFile(files[0]);
     setInfo(null);
     setLoadError(null);
@@ -308,6 +321,7 @@ export function VideoMosaicTool() {
         onProgress: (p) => setTracking({ id: r.id, progress: p }),
         signal: ctrl.signal,
       });
+      if (trackCtrl.current !== ctrl) return;
       updateRegion(r.id, (cur) => ({
         ...cur,
         mode: "track",
@@ -321,11 +335,14 @@ export function VideoMosaicTool() {
           : "追跡しました。再生して、範囲が対象に付いていくか確かめてください。"
       );
     } catch (e) {
+      if (trackCtrl.current !== ctrl) return;
       if (e instanceof VideoCanceledByUserError) setTrackNote("追跡を止めました。途中までの結果は使いません。");
       else setTrackNote(e instanceof Error ? e.message : "追跡できませんでした。");
     } finally {
-      setTracking(null);
-      trackCtrl.current = null;
+      if (trackCtrl.current === ctrl) {
+        setTracking(null);
+        trackCtrl.current = null;
+      }
     }
   }
 
@@ -335,7 +352,7 @@ export function VideoMosaicTool() {
     if (target) seek(target.t);
   }
 
-  async function handleExport() {
+  async function handleExport(options: { dropAudio?: boolean } = {}) {
     if (!file || regions.length === 0) return;
     videoRef.current?.pause();
     const ctrl = new AbortController();
@@ -345,6 +362,7 @@ export function VideoMosaicTool() {
     setError(null);
     setResult(null);
     setCanceling(false);
+    setAudioLoss(null);
     try {
       const out = await new VideoMosaicProcessor().process({
         file,
@@ -354,18 +372,26 @@ export function VideoMosaicTool() {
         outputContainer: container,
         onProgress: setProgress,
         cancelSignal: ctrl.signal,
+        dropAudio: options.dropAudio,
       });
+      if (exportCtrl.current !== ctrl) return;
       setResult(out);
       setStatus("success");
     } catch (e) {
-      if (e instanceof VideoCanceledByUserError) setStatus("idle");
+      if (exportCtrl.current !== ctrl) return;
+      if (e instanceof VideoAudioWouldBeLostError) {
+        setAudioLoss(e.message);
+        setStatus("idle");
+      } else if (e instanceof VideoCanceledByUserError) setStatus("idle");
       else {
         setError(e instanceof Error ? e.message : "書き出せませんでした");
         setStatus("error");
       }
     } finally {
-      setCanceling(false);
-      exportCtrl.current = null;
+      if (exportCtrl.current === ctrl) {
+        setCanceling(false);
+        exportCtrl.current = null;
+      }
     }
   }
 
@@ -572,7 +598,7 @@ export function VideoMosaicTool() {
           </fieldset>
           <button
             type="button"
-            onClick={handleExport}
+            onClick={() => handleExport()}
             disabled={status === "processing" || tracking !== null || !info}
             aria-busy={status === "processing" || undefined}
             data-testid="vm-export"
@@ -594,6 +620,9 @@ export function VideoMosaicTool() {
         canceling={canceling}
       />
       {error && <ErrorMessage message={error} />}
+      {audioLoss && (
+        <VideoAudioLossNotice message={audioLoss} onProceed={() => handleExport({ dropAudio: true })} onDismiss={() => setAudioLoss(null)} />
+      )}
       {result && file && (
         <ResultPopup>
           <VideoOutputPlayer url={result.url} />

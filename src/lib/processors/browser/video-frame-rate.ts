@@ -13,6 +13,8 @@ export interface VideoFrameRateInput {
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
   cancelSignal?: AbortSignal;
+  /** 音声を書き出せない形式で、利用者が「音声なしで書き出す」を選んだとき true（動画編集 工程1） */
+  dropAudio?: boolean;
 }
 
 export interface VideoFrameRateOutput {
@@ -43,6 +45,7 @@ export class VideoFrameRateProcessor extends BrowserProcessor<VideoFrameRateInpu
     outputContainer,
     onProgress,
     cancelSignal,
+    dropAudio,
   }: VideoFrameRateInput): Promise<VideoFrameRateOutput> {
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
@@ -67,6 +70,7 @@ export class VideoFrameRateProcessor extends BrowserProcessor<VideoFrameRateInpu
         video: { frameRate: targetFps },
         onProgress,
         cancelSignal,
+        dropAudio,
       });
 
       return {

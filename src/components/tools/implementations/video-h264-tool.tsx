@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { VideoSizeWarning } from "@/components/tools/implementations/shared/video-size-warning";
+import { VideoAudioLossNotice } from "@/components/tools/implementations/shared/video-audio-loss-notice";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -12,6 +13,7 @@ import { VideoH264Processor, type VideoH264Output } from "@/lib/processors/brows
 import {
   VIDEO_INPUT_ACCEPT,
   VIDEO_DROPZONE_MAX_MB,
+  VideoAudioWouldBeLostError,
   VideoCanceledByUserError,
   checkH264EncodeSupport,
   HEVC_UNSUPPORTED_MESSAGE,
@@ -45,6 +47,10 @@ export function VideoH264Tool() {
   const [canceling, setCanceling] = useState(false);
   const [wasCanceled, setWasCanceled] = useState(false);
   const cancelControllerRef = useRef<AbortController | null>(null);
+  // 実行ごとの番号。動画を消した・選び直したあとに、前の処理の結果が遅れて届いても表示しないために使う
+  const runIdRef = useRef(0);
+  // 音声を書き出せないときの案内（音声なしで書き出すかを選んでもらう）
+  const [audioLoss, setAudioLoss] = useState<string | null>(null);
   const [quality, setQuality] = useState<VideoQualityName>("high");
   // 選んだファイルの映像コーデックと、このブラウザで読み込めるか(ファイルごとに保持し、調べ終わるまでは undefined)
   const [probe, setProbe] = useState<{ file: File; result: VideoCodecProbe | null } | null>(null);
@@ -90,6 +96,11 @@ export function VideoH264Tool() {
   }, []);
 
   function handleSelect(files: File[]) {
+    // 前の動画の処理が残っていれば止め、その結果を新しい動画に表示しない
+    runIdRef.current++;
+    cancelControllerRef.current?.abort();
+    cancelControllerRef.current = null;
+    setAudioLoss(null);
     setFile(files[0]);
     setResult(null);
     setStatus("idle");
@@ -98,16 +109,18 @@ export function VideoH264Tool() {
     setWasCanceled(false);
   }
 
-  async function handleRun() {
+  async function handleRun(options: { dropAudio?: boolean } = {}) {
     if (!file) return;
     const controller = new AbortController();
     cancelControllerRef.current = controller;
+    const runId = ++runIdRef.current;
     setStatus("processing");
     setError(null);
     setResult(null);
     setProgress(0);
     setWasCanceled(false);
     setCanceling(false);
+    setAudioLoss(null);
 
     try {
       const output = await new VideoH264Processor().process({
@@ -115,11 +128,17 @@ export function VideoH264Tool() {
         quality,
         onProgress: setProgress,
         cancelSignal: controller.signal,
+        dropAudio: options.dropAudio,
       });
+      if (runIdRef.current !== runId) return;
       setResult(output);
       setStatus("success");
     } catch (e) {
-      if (e instanceof VideoCanceledByUserError) {
+      if (runIdRef.current !== runId) return;
+      if (e instanceof VideoAudioWouldBeLostError) {
+        setAudioLoss(e.message);
+        setStatus("idle");
+      } else if (e instanceof VideoCanceledByUserError) {
         setWasCanceled(true);
         setStatus("idle");
       } else {
@@ -127,9 +146,26 @@ export function VideoH264Tool() {
         setStatus("error");
       }
     } finally {
-      setCanceling(false);
-      cancelControllerRef.current = null;
+      if (runIdRef.current === runId) {
+        setCanceling(false);
+        cancelControllerRef.current = null;
+      }
     }
+  }
+
+  // 選んだ動画を消したときは、前の動画の結果・進み具合・エラー・案内をすべて消し、処理中なら止める
+  function handleRemove() {
+    runIdRef.current++;
+    cancelControllerRef.current?.abort();
+    cancelControllerRef.current = null;
+    setFile(null);
+    setResult(null);
+    setStatus("idle");
+    setError(null);
+    setProgress(0);
+    setWasCanceled(false);
+    setCanceling(false);
+    setAudioLoss(null);
   }
 
   function handleCancel() {
@@ -164,7 +200,7 @@ export function VideoH264Tool() {
         onError={setError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <FileList files={[file]} onRemove={handleRemove} />}
       {file && <VideoSizeWarning sizeBytes={file.size} />}
 
       {file && probeResult && (
@@ -231,7 +267,7 @@ export function VideoH264Tool() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={handleRun}
+            onClick={() => handleRun()}
             disabled={status === "processing" || probeResult?.canDecode === false} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
@@ -251,6 +287,9 @@ export function VideoH264Tool() {
         <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">処理をキャンセルしました。</div>
       )}
       {error && <ErrorMessage message={error} />}
+      {audioLoss && (
+        <VideoAudioLossNotice message={audioLoss} onProceed={() => handleRun({ dropAudio: true })} onDismiss={() => setAudioLoss(null)} />
+      )}
 
       {result && (
         <ResultPopup>

@@ -40,7 +40,6 @@
 
 import {
   BlobSource,
-  BufferTarget,
   CanvasSink,
   Conversion,
   Input,
@@ -57,6 +56,7 @@ import {
   type InputVideoTrack,
   type MetadataTags,
 } from "mediabunny";
+import { createBlobStreamTarget, moveMoovToFront } from "./stream-output";
 
 /** このアプリが「対応形式」として明示的にサポートする入力コンテナ */
 export const SUPPORTED_INPUT_FORMATS = [MP4, QTFF, WEBM];
@@ -103,22 +103,100 @@ export function videoSizeWarning(sizeBytes: number): string | null {
   return null;
 }
 
-/** メモリ不足など、大きいファイルで起きやすい失敗を、分かりやすい日本語のエラーにする */
+/**
+ * 利用者向けに日本語の案内へ置き換えた動画のエラー。
+ * 原因の調査に必要な元のエラーは cause に残す（画面には出さない。ファイル名や動画の内容は含めない）。
+ */
+export class VideoUserFacingError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "VideoUserFacingError";
+  }
+}
+
+const MEMORY_ERROR_MESSAGE =
+  "動画の処理に必要なメモリが不足しました。他のタブやアプリを閉じてから再度お試しいただくか、動画のサイズや解像度を下げて（短く分割して）お試しください。";
+
+/** 日本語の案内として、そのまま画面に出してよいメッセージか（このアプリが作ったメッセージ） */
+function isJapaneseMessage(message: string): boolean {
+  return /[\u3040-\u30ff\u4e00-\u9fff]/.test(message);
+}
+
+/**
+ * 動画処理で起きたエラーを、原因に合った日本語の案内にする。
+ * - メモリ不足・読み込み（デコード）の失敗・書き出し（エンコード）の失敗を見分ける。
+ * - 原因が分からないときは断定せず、試せることを案内する。
+ * - すでに日本語の案内（このアプリが作ったもの）はそのまま使う。
+ */
 export function toFriendlyVideoError(e: unknown): Error {
+  if (e instanceof VideoUserFacingError || e instanceof VideoCanceledByUserError || e instanceof VideoAudioWouldBeLostError) return e;
   const message = e instanceof Error ? e.message : String(e);
+  const name = e instanceof Error ? e.name : "";
   if (
     (e instanceof RangeError && /allocation|array buffer|invalid (typed )?array length/i.test(message)) ||
-    /out of memory|allocation failed|QuotaExceeded/i.test(message)
+    /out of memory|allocation failed|QuotaExceeded/i.test(message) ||
+    name === "QuotaExceededError"
   ) {
-    return new Error(
-      "メモリが足りず、処理を完了できませんでした。ファイルが大きすぎる可能性があります。他のタブやアプリを閉じて再度お試しいただくか、動画を短く分割してからお試しください。"
+    return new VideoUserFacingError(MEMORY_ERROR_MESSAGE, { cause: e });
+  }
+  if (e instanceof Error && isJapaneseMessage(message)) return e;
+  // 開発者向けの手がかり（エラーの種類と英語のメッセージだけ。ファイル名・動画の内容は出さない）
+  if (typeof console !== "undefined") console.warn("[video] 処理に失敗しました:", name || "Error", message);
+  if (/decod/i.test(message) || name === "DataError") {
+    return new VideoUserFacingError(
+      "動画を読み込めませんでした。ファイルが壊れていないか、対応形式（MP4・MOV・WebM）の動画か確認してください。別のブラウザで開くと読み込める場合もあります。",
+      { cause: e }
     );
   }
-  return e instanceof Error ? e : new Error(message);
+  if (/encod/i.test(message) || name === "EncodingError" || name === "OperationError") {
+    return new VideoUserFacingError(
+      "動画を書き出せませんでした。出力形式や設定を変えて、もう一度お試しください。",
+      { cause: e }
+    );
+  }
+  if (name === "NotSupportedError") {
+    return new VideoUserFacingError(
+      "お使いのブラウザでは、この動画をこの設定で処理できません。出力形式や設定を変えるか、別のブラウザでお試しください。",
+      { cause: e }
+    );
+  }
+  return new VideoUserFacingError(
+    "動画の処理中に問題が発生しました。もう一度お試しいただくか、出力形式や設定を変えてお試しください。",
+    { cause: e }
+  );
+}
+
+/** 変換できずに外されたトラックの理由（mediabunny の DiscardedTrack.reason）を、日本語の案内にする */
+export function discardReasonMessage(kind: "video" | "audio", reason: string, container: OutputContainer): string {
+  const format = container === "mp4" ? "MP4" : "WebM";
+  if (kind === "audio") {
+    switch (reason) {
+      case "no_encodable_target_codec":
+        return `お使いのブラウザでは、この形式（${format}）で音声を書き出せません。`;
+      case "undecodable_source_codec":
+        return "お使いのブラウザでは、この動画の音声を読み込めません。";
+      case "unknown_source_codec":
+        return "この動画の音声の形式を判別できません。";
+      default:
+        return "この設定では、音声を残せません。";
+    }
+  }
+  switch (reason) {
+    case "no_encodable_target_codec":
+      return `このブラウザでは、指定した形式（${format}）で動画を書き出せません。別の形式をお試しください。`;
+    case "undecodable_source_codec":
+      return "お使いのブラウザでは、この動画の映像を読み込めません。別のブラウザか、別の形式の動画でお試しください。";
+    case "unknown_source_codec":
+      return "この動画の映像の形式を判別できませんでした。対応形式（MP4・MOV・WebM）の動画か確認してください。";
+    default:
+      return "この動画は、指定した条件では書き出せませんでした。設定を変えてお試しください。";
+  }
 }
 
 export function outputFormatFor(container: OutputContainer) {
-  return container === "mp4" ? new Mp4OutputFormat() : new WebMOutputFormat();
+  // MP4は、書き出しの途中でデータをメモリにためないよう、再生情報（moov）を最後に書く（fastStart: false）。
+  // 書き出し後に moov を先頭へ移す（stream-output.ts の moveMoovToFront）ため、できあがるファイルは従来と同じ並び。
+  return container === "mp4" ? new Mp4OutputFormat({ fastStart: false }) : new WebMOutputFormat();
 }
 
 export function mimeTypeFor(container: OutputContainer): string {
@@ -425,6 +503,18 @@ export class VideoCanceledByUserError extends Error {
   }
 }
 
+/**
+ * 元の動画には音声があるのに、選んだ形式ではこのブラウザで音声を書き出せないことを示すエラー
+ * （動画編集 工程1）。何も知らせずに無音の動画を作らないため、書き出しを始める前に止める。
+ * 画面では理由を伝え、「音声なしで書き出す」を選べるようにする（選んだときは dropAudio: true で再実行）。
+ */
+export class VideoAudioWouldBeLostError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VideoAudioWouldBeLostError";
+  }
+}
+
 export interface RunConversionParams {
   input: Input;
   container: OutputContainer;
@@ -439,6 +529,11 @@ export interface RunConversionParams {
    */
   tags?: MetadataTags;
   onProgress?: (progress: number) => void;
+  /**
+   * 音声を書き出さない（映像だけにする）。音声を書き出せない形式で、利用者が「音声なしで書き出す」を
+   * 選んだときだけ true にする（動画編集 工程1）。
+   */
+  dropAudio?: boolean;
   /**
    * ユーザーによるキャンセル要求を伝えるシグナル（Phase 27・第4段階）。
    * abort された時点で、保持している Conversion を実際に cancel() し、
@@ -456,13 +551,20 @@ export interface RunConversionResult {
 
 /**
  * mediabunnyのConversion APIを使った共通の変換実行処理。
- * 6ツールのうちサムネイル抽出以外の5ツールが、この関数の薄いラッパーとして
- * 実装される（形式変換・圧縮・解像度変更・フレームレート変更・H.264変換の
- * 違いは、渡す `video` / `audio` オプションの違いだけに集約される）。
+ * 動画ツールのうちサムネイル抽出以外が、この関数の薄いラッパーとして実装される
+ * （形式変換・圧縮・解像度変更・フレームレート変更・H.264変換・メタデータ削除・モザイクの
+ * 違いは、渡す `video` / `audio` / `tags` オプションの違いだけに集約される）。
  *
- * 出力はBufferTarget（メモリ上のArrayBuffer）。完了後はBlobだけを残し、
- * Input側は呼び出し元でdispose()する（このモジュールでは責務を分けるため
- * disposeしない）。
+ * 動画編集 工程1での変更：
+ * - 書き出し先を StreamTarget（少しずつBlobの小片にする）に変え、出力全体を1つの配列に持たない
+ *   （stream-output.ts）。MP4は書き出し後に moov を先頭へ移す。
+ * - 元の動画に音声があるのに、音声を書き出せない場合は、書き出す前に VideoAudioWouldBeLostError で止める
+ *   （dropAudio: true のときだけ、音声なしで書き出す）。映像を書き出せない場合も止める。
+ * - 書き出したファイルを読み直し、映像（と、残すはずの音声）のトラックがあることを確かめる。
+ *   確かめられないファイルは、完成した結果として返さない。
+ * - キャンセル・失敗のときは、受け取った途中のデータをすぐに手放す。
+ *
+ * Input側は呼び出し元でdispose()する（このモジュールでは責務を分けるためdisposeしない）。
  */
 export async function runConversion({
   input,
@@ -471,77 +573,116 @@ export async function runConversion({
   audio,
   tags,
   onProgress,
+  dropAudio = false,
   cancelSignal,
 }: RunConversionParams): Promise<RunConversionResult> {
   if (cancelSignal?.aborted) {
     throw new VideoCanceledByUserError();
   }
 
-  const target = new BufferTarget();
+  const sourceAudio = await input.getPrimaryAudioTrack().catch(() => null);
+  const { target, assembler } = createBlobStreamTarget();
   const output = new Output({
     format: outputFormatFor(container),
     target,
   });
 
-  const conversion = await Conversion.init({
-    input,
-    output,
-    video,
-    audio,
-    tags,
-  });
-
-  if (!conversion.isValid) {
-    const reasons = conversion.discardedTracks.map((t) => t.reason).join(" / ");
-    throw new Error(
-      reasons
-        ? `この動画は変換できませんでした（${reasons}）。`
-        : "この動画は指定した条件では変換できませんでした。"
-    );
-  }
-
-  if (onProgress) {
-    conversion.onProgress = (progress) => onProgress(progress);
-  }
-
-  // キャンセル要求が来たら実際に conversion.cancel() を呼ぶ。mediabunnyの
-  // 実装（dist/modules/src/conversion.js）では、cancel() 呼び出し後は
-  // 内部状態が 'canceled' になり、実行中の execute() は必ず
-  // ConversionCanceledError を throw して終了することをソース確認済み
-  // （古い結果が成功としてUIに届くレースは発生しない）。
-  // ここでは「ユーザー操作によるキャンセルかどうか」をこのフラグで
-  // 自前管理する（mediabunny内部が本当のエラーを検知して自動的に
-  // cancel() するケースでは、投げ直されるのは元のエラーであって
-  // ConversionCanceledError ではないため、instanceof 判定だけでは
-  // 両者を正しく区別できない）。
-  let canceledByUser = false;
-  const onAbort = () => {
-    canceledByUser = true;
-    void conversion.cancel();
-  };
-  cancelSignal?.addEventListener("abort", onAbort);
-
+  let succeeded = false;
   try {
-    await conversion.execute();
-  } catch (e) {
-    if (canceledByUser) {
+    const conversion = await Conversion.init({
+      input,
+      output,
+      video,
+      audio: dropAudio ? { ...audio, discard: true } : audio,
+      tags,
+      showWarnings: false,
+    });
+
+    // 映像を書き出せない（外された）場合は、音声だけのファイルにせず止める
+    const droppedVideo = conversion.discardedTracks.find((t) => t.track.type === "video");
+    if (droppedVideo || !conversion.isValid) {
+      throw new VideoUserFacingError(discardReasonMessage("video", droppedVideo?.reason ?? "", container));
+    }
+    // 元の動画に音声があるのに書き出せない場合は、何も知らせずに無音の動画を作らない
+    const droppedAudio = conversion.discardedTracks.find(
+      (t) => t.track.type === "audio" && t.reason !== "discarded_by_user"
+    );
+    if (droppedAudio && !dropAudio) {
+      throw new VideoAudioWouldBeLostError(discardReasonMessage("audio", droppedAudio.reason, container));
+    }
+
+    if (onProgress) {
+      conversion.onProgress = (progress) => onProgress(progress);
+    }
+
+    // キャンセル要求が来たら実際に conversion.cancel() を呼ぶ。mediabunnyの
+    // 実装（dist/modules/src/conversion.js）では、cancel() 呼び出し後は
+    // 内部状態が 'canceled' になり、実行中の execute() は必ず
+    // ConversionCanceledError を throw して終了することをソース確認済み
+    // （古い結果が成功としてUIに届くレースは発生しない）。
+    // ここでは「ユーザー操作によるキャンセルかどうか」をこのフラグで
+    // 自前管理する（mediabunny内部が本当のエラーを検知して自動的に
+    // cancel() するケースでは、投げ直されるのは元のエラーであって
+    // ConversionCanceledError ではないため、instanceof 判定だけでは
+    // 両者を正しく区別できない）。
+    let canceledByUser = false;
+    const onAbort = () => {
+      canceledByUser = true;
+      void conversion.cancel();
+    };
+    cancelSignal?.addEventListener("abort", onAbort);
+
+    try {
+      await conversion.execute();
+    } catch (e) {
+      if (canceledByUser) {
+        throw new VideoCanceledByUserError();
+      }
+      throw toFriendlyVideoError(e);
+    } finally {
+      cancelSignal?.removeEventListener("abort", onAbort);
+    }
+
+    if (canceledByUser || cancelSignal?.aborted) {
+      // execute() が例外を投げずに終わる経路は実装上ないはずだが、念のため
+      // キャンセル済みの場合は結果を使わずキャンセル扱いにする。
       throw new VideoCanceledByUserError();
     }
-    throw toFriendlyVideoError(e);
+
+    if (assembler.size === 0) {
+      throw new VideoUserFacingError("動画の生成に失敗しました。設定を変えて、もう一度お試しください。");
+    }
+
+    let blob = assembler.toBlob(mimeTypeFor(container));
+    if (container === "mp4") blob = await moveMoovToFront(blob);
+    await verifyOutput(blob, container, sourceAudio !== null && !dropAudio);
+    succeeded = true;
+    return { blob, sizeBytes: blob.size };
   } finally {
-    cancelSignal?.removeEventListener("abort", onAbort);
+    // 失敗・キャンセルのときは、途中まで受け取ったデータをすぐに手放す
+    if (!succeeded) assembler.clear();
   }
+}
 
-  if (canceledByUser) {
-    // execute() が例外を投げずに終わる経路は実装上ないはずだが、念のため
-    // キャンセル済みの場合は結果を使わずキャンセル扱いにする。
-    throw new VideoCanceledByUserError();
+/**
+ * 書き出したファイルを読み直して、映像（と、残すはずの音声）のトラックがあることを確かめる。
+ * トラックがあることは中身が正常であることの保証ではないが、壊れたファイル・音声が抜けたファイルを
+ * 完成した結果として渡さないための最低限の確認。
+ */
+async function verifyOutput(blob: Blob, container: OutputContainer, expectAudio: boolean): Promise<void> {
+  const check = new Input({ source: new BlobSource(blob), formats: container === "mp4" ? [MP4] : [WEBM] });
+  try {
+    const videoTrack = await check.getPrimaryVideoTrack().catch(() => null);
+    if (!videoTrack) {
+      throw new VideoUserFacingError("書き出した動画を確認できませんでした。もう一度お試しいただくか、設定を変えてお試しください。");
+    }
+    if (expectAudio) {
+      const audioTrack = await check.getPrimaryAudioTrack().catch(() => null);
+      if (!audioTrack) {
+        throw new VideoAudioWouldBeLostError(`書き出した動画に音声が入りませんでした。${discardReasonMessage("audio", "no_encodable_target_codec", container)}`);
+      }
+    }
+  } finally {
+    check.dispose();
   }
-
-  if (!target.buffer) {
-    throw new Error("動画の生成に失敗しました。");
-  }
-
-  const blob = new Blob([target.buffer], { type: mimeTypeFor(container) });
-  return { blob, sizeBytes: blob.size };
 }

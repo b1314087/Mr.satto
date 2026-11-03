@@ -27,6 +27,8 @@ export interface VideoMosaicInput {
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
   cancelSignal?: AbortSignal;
+  /** 音声を書き出せない形式で、利用者が「音声なしで書き出す」を選んだとき true（動画編集 工程1） */
+  dropAudio?: boolean;
 }
 
 export interface VideoMosaicOutput {
@@ -41,7 +43,7 @@ export interface VideoMosaicOutput {
 }
 
 export class VideoMosaicProcessor extends BrowserProcessor<VideoMosaicInput, VideoMosaicOutput> {
-  async process({ file, regions, sourceWidth, sourceHeight, outputContainer, onProgress, cancelSignal }: VideoMosaicInput): Promise<VideoMosaicOutput> {
+  async process({ file, regions, sourceWidth, sourceHeight, outputContainer, onProgress, cancelSignal, dropAudio }: VideoMosaicInput): Promise<VideoMosaicOutput> {
     if (cancelSignal?.aborted) throw new VideoCanceledByUserError();
     if (regions.length === 0) throw new Error("モザイクをかける範囲がありません。動画の上をドラッグして、範囲を指定してください。");
     const info = await inspectVideoFile(file);
@@ -83,6 +85,7 @@ export class VideoMosaicProcessor extends BrowserProcessor<VideoMosaicInput, Vid
         video: { process, processedWidth: W, processedHeight: H, forceTranscode: true },
         onProgress,
         cancelSignal,
+        dropAudio,
       });
       return {
         blob,

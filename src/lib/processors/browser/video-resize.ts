@@ -16,6 +16,8 @@ export interface VideoResizeInput {
   outputContainer: OutputContainer;
   onProgress?: (progress: number) => void;
   cancelSignal?: AbortSignal;
+  /** 音声を書き出せない形式で、利用者が「音声なしで書き出す」を選んだとき true（動画編集 工程1） */
+  dropAudio?: boolean;
 }
 
 export interface VideoResizeOutput {
@@ -49,6 +51,7 @@ export class VideoResizeProcessor extends BrowserProcessor<VideoResizeInput, Vid
     outputContainer,
     onProgress,
     cancelSignal,
+    dropAudio,
   }: VideoResizeInput): Promise<VideoResizeOutput> {
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
@@ -73,6 +76,7 @@ export class VideoResizeProcessor extends BrowserProcessor<VideoResizeInput, Vid
         video: resolutionOptionsFor(info.displayWidth, info.displayHeight, shortSideTarget),
         onProgress,
         cancelSignal,
+        dropAudio,
       });
 
       const outputDims = await inspectOutputDimensions(blob, outputContainer);
