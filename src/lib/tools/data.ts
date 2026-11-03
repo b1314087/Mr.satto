@@ -1098,7 +1098,7 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
-    keywords: ["h264", "avc", "h265", "hevc", "コーデック変換", "iPhone", "動画変換"],
+    keywords: ["h264", "avc", "h265", "hevc", "コーデック変換", "iPhone", "動画変換", "mp4"],
   },
   {
     id: "video-thumbnail",
@@ -1625,7 +1625,7 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["word", "番号振り直し", "採番", "リスト"],
+    keywords: ["word", "番号振り直し", "採番", "リスト", "丸数字", "番号変換"],
   },
   {
     // 次工程・印刷帳票4ツール追加フェーズ
