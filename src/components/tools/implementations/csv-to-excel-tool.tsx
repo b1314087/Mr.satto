@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/components/tools/implementations/shared/before-after-table";
 import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
+import { WorkerCanceledError } from "@/lib/workers/worker-channel";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
@@ -22,6 +23,11 @@ export function CsvToExcelTool() {
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  const [wasCanceled, setWasCanceled] = useState(false);
+  const runCtrlRef = useRef<AbortController | null>(null);
+  // 画面を離れるとき・別のファイルを選んだときは、処理を止める（大きなファイルの Worker も終了する）
+  useEffect(() => () => runCtrlRef.current?.abort(), []);
   const [result, setResult] = useState<{ blob: Blob; rowCount: number } | null>(null);
 
   // プレビュー: 変換処理(CsvToExcelProcessor)と同じ読み方(parseCsv + 空行除外)でシートの中身を表示する
@@ -29,6 +35,9 @@ export function CsvToExcelTool() {
   const columnCount = rows ? rows.reduce((max, r) => Math.max(max, r.length), 0) : 0;
 
   function handleSelect(files: File[]) {
+    runCtrlRef.current?.abort();
+    runCtrlRef.current = null;
+    setWasCanceled(false);
     setFile(files[0]);
     setResult(null);
     setStatus("idle");
@@ -37,16 +46,33 @@ export function CsvToExcelTool() {
 
   async function handleRun() {
     if (!file) return;
+    const ctrl = new AbortController();
+    runCtrlRef.current = ctrl;
     setStatus("processing");
     setError(null);
     setResult(null);
+    setCanceling(false);
+    setWasCanceled(false);
     try {
-      const output = await new CsvToExcelProcessor().process({ file });
+      // 大きなファイルは、画面とは別の処理（Worker）で変換する（ロードマップC 工程3）
+      const output = await new CsvToExcelProcessor().process({ file, cancelSignal: ctrl.signal });
+      if (runCtrlRef.current !== ctrl) return;
       setResult({ blob: output.blob, rowCount: output.rowCount });
       setStatus("success");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
+      if (runCtrlRef.current !== ctrl) return;
+      if (e instanceof WorkerCanceledError) {
+        setWasCanceled(true);
+        setStatus("idle");
+      } else {
+        setError(e instanceof Error ? e.message : "処理に失敗しました");
+        setStatus("error");
+      }
+    } finally {
+      if (runCtrlRef.current === ctrl) {
+        runCtrlRef.current = null;
+        setCanceling(false);
+      }
     }
   }
 
@@ -89,7 +115,20 @@ export function CsvToExcelTool() {
         </button>
       )}
 
-      <ProcessingStatus state={status} successLabel="Excelへの変換が完了しました" />
+      <ProcessingStatus
+        state={status}
+        successLabel="Excelへの変換が完了しました"
+        onCancel={() => {
+          setCanceling(true);
+          runCtrlRef.current?.abort();
+        }}
+        canceling={canceling}
+      />
+      {wasCanceled && (
+        <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300" data-testid="convert-canceled">
+          処理をキャンセルしました。
+        </p>
+      )}
       {error && <ErrorMessage message={error} />}
 
       {result && (

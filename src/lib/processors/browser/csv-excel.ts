@@ -1,5 +1,10 @@
 import { BrowserProcessor } from "../types";
-import { parseCsv, serializeCsv, isBlankRow } from "@/lib/utils/csv";
+import { serializeCsv } from "@/lib/utils/csv";
+import { WorkerCanceledError, WorkerChannel, WorkerUnavailableError } from "@/lib/workers/worker-channel";
+import type { ExcelWorkerRequest } from "./csv-excel.worker";
+import { csvFileToXlsx, xlsxFileToSheets, type CsvToExcelOutput, type ExcelSheet, type ExcelToCsvOutput } from "./csv-excel-core";
+
+export type { CsvToExcelOutput, ExcelSheet, ExcelToCsvOutput };
 
 /**
  * CSV⇄Excel変換Processor（Phase 2-B）。
@@ -29,97 +34,80 @@ import { parseCsv, serializeCsv, isBlankRow } from "@/lib/utils/csv";
 // ---------------------------------------------------------------------------
 export interface CsvToExcelInput {
   file: File;
+  /** 止めたいときに abort する（大きなファイルを Worker で処理しているときは、Worker ごと終了させる） */
+  cancelSignal?: AbortSignal;
 }
 
-export interface CsvToExcelOutput {
-  blob: Blob;
-  rowCount: number;
-  sizeBytes: number;
+/**
+ * これより大きいファイルは、画面とは別の処理（Worker）で変換する（ロードマップC 工程3）。
+ * 小さいファイルは、Worker を作る手間（約0.1秒）のほうが大きいため、従来どおり画面側で変換する。
+ * 目安：CSVは1MBで約1.5万行（10万行の約6.6MBでは、画面側だと最大約2秒画面が止まっていた）。
+ */
+export const CSV_WORKER_MIN_BYTES = 1024 * 1024;
+export const XLSX_WORKER_MIN_BYTES = 512 * 1024;
+
+/** 最後の変換を、どちらで行ったか（テスト・調査用） */
+export let lastExcelEngine: "worker" | "main" | null = null;
+
+function workerAvailable(): boolean {
+  return typeof Worker !== "undefined" && (globalThis as { __mrsattoNoWorker?: boolean }).__mrsattoNoWorker !== true;
+}
+
+/**
+ * 大きなファイルを Worker で変換する。ファイルそのもの（File）を渡し、結果だけを受け取る（大量の行のデータを画面との間で受け渡さない）。
+ * 終わったら（成功・失敗・停止のどれでも）Worker を終了させ、メモリを解放する。Worker が使えなければ null を返す（画面側で変換する）。
+ */
+async function runInExcelWorker<T>(req: ExcelWorkerRequest, signal?: AbortSignal): Promise<T | null> {
+  if (!workerAvailable()) return null;
+  const channel = new WorkerChannel<ExcelWorkerRequest>(
+    () => new Worker(new URL("./csv-excel.worker.ts", import.meta.url), { type: "module", name: "mrsatto-csv-excel" })
+  );
+  try {
+    const value = await channel.request<T>(req, { signal });
+    lastExcelEngine = "worker";
+    return value;
+  } catch (e) {
+    if (e instanceof WorkerUnavailableError) return null;
+    if (e instanceof WorkerCanceledError) throw e;
+    throw e;
+  } finally {
+    channel.dispose();
+  }
 }
 
 export class CsvToExcelProcessor extends BrowserProcessor<CsvToExcelInput, CsvToExcelOutput> {
-  async process({ file }: CsvToExcelInput): Promise<CsvToExcelOutput> {
-    let text: string;
-    try {
-      text = await file.text();
-    } catch {
-      throw new Error("ファイルの読み込みに失敗しました");
+  async process({ file, cancelSignal }: CsvToExcelInput): Promise<CsvToExcelOutput> {
+    if (cancelSignal?.aborted) throw new WorkerCanceledError();
+    if (file.size >= CSV_WORKER_MIN_BYTES) {
+      const out = await runInExcelWorker<CsvToExcelOutput>({ type: "csv-to-xlsx", file }, cancelSignal);
+      if (out) return out;
     }
-    const rows = parseCsv(text).filter((row) => !isBlankRow(row));
-    if (rows.length === 0) {
-      throw new Error("CSVの内容が空です。ファイルを確認してください。");
-    }
-
-    const { default: writeXlsxFile } = await import("write-excel-file/universal");
-    let blob: Blob;
-    try {
-      blob = await writeXlsxFile(rows).toBlob();
-    } catch {
-      throw new Error("Excelファイルの生成に失敗しました");
-    }
-    return { blob, rowCount: rows.length, sizeBytes: blob.size };
+    const out = await csvFileToXlsx(file);
+    if (cancelSignal?.aborted) throw new WorkerCanceledError();
+    lastExcelEngine = "main";
+    return out;
   }
 }
 
 // ---------------------------------------------------------------------------
 // Excel → CSV
 // ---------------------------------------------------------------------------
-export interface ExcelSheet {
-  name: string;
-  rows: string[][];
-}
-
 export interface ExcelToCsvInput {
   file: File;
-}
-
-export interface ExcelToCsvOutput {
-  sheets: ExcelSheet[];
-}
-
-/**
- * Excelのセル値（string/number/boolean/Date/null）をCSV向けの文字列へ変換する。
- * 「見た目を完全にExcelと同じにする」ことは目的とせず、セルデータを
- * CSVとして失わずに表現することを優先する。
- */
-function cellToString(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (value instanceof Date) {
-    const y = value.getFullYear();
-    const m = String(value.getMonth() + 1).padStart(2, "0");
-    const d = String(value.getDate()).padStart(2, "0");
-    const hh = value.getHours();
-    const mm = value.getMinutes();
-    const ss = value.getSeconds();
-    const datePart = `${y}-${m}-${d}`;
-    if (hh === 0 && mm === 0 && ss === 0) return datePart;
-    return `${datePart} ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
-  }
-  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  return String(value);
+  cancelSignal?: AbortSignal;
 }
 
 export class ExcelToCsvProcessor extends BrowserProcessor<ExcelToCsvInput, ExcelToCsvOutput> {
-  async process({ file }: ExcelToCsvInput): Promise<ExcelToCsvOutput> {
-    const { default: readXlsxFile } = await import("read-excel-file/universal");
-
-    let sheetsData: { sheet: string; data: unknown[][] }[];
-    try {
-      sheetsData = await readXlsxFile(file);
-    } catch {
-      throw new Error(
-        `${file.name} の読み込みに失敗しました。Excelファイルが破損しているか、対応していない形式の可能性があります。`
-      );
+  async process({ file, cancelSignal }: ExcelToCsvInput): Promise<ExcelToCsvOutput> {
+    if (cancelSignal?.aborted) throw new WorkerCanceledError();
+    if (file.size >= XLSX_WORKER_MIN_BYTES) {
+      const out = await runInExcelWorker<ExcelToCsvOutput>({ type: "xlsx-to-csv", file }, cancelSignal);
+      if (out) return out;
     }
-    if (!sheetsData || sheetsData.length === 0) {
-      throw new Error("このExcelファイルには読み取れるシートがありません");
-    }
-
-    const sheets: ExcelSheet[] = sheetsData.map((s) => ({
-      name: s.sheet,
-      rows: s.data.map((row) => row.map(cellToString)),
-    }));
-    return { sheets };
+    const out = await xlsxFileToSheets(file);
+    if (cancelSignal?.aborted) throw new WorkerCanceledError();
+    lastExcelEngine = "main";
+    return out;
   }
 }
 

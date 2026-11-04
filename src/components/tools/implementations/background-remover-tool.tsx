@@ -10,18 +10,19 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { canvasToBlob, loadImage } from "@/lib/processors/browser/image";
+import { loadImage } from "@/lib/processors/browser/image";
 import {
   MAX_REMOVE_PIXELS,
   applyColorKey,
   applyMaskToImage,
   estimateBackgroundColor,
   hexToRgb,
-  predictMask,
   rgbToHex,
   upscaleMask,
   type RGB,
 } from "@/lib/processors/browser/background-remove";
+import { BgRemoveEngine } from "@/lib/processors/browser/background-remove-client";
+import { WorkerCanceledError } from "@/lib/workers/worker-channel";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useObjectUrl } from "@/lib/utils/use-object-url";
@@ -83,6 +84,22 @@ export function BackgroundRemoverTool() {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   // 解析済みのAIマスク(元の画像サイズではなく320×320)をファイルごとに覚えて、再推論を避ける
   const maskCache = useRef(new WeakMap<File, Uint8ClampedArray>());
+  // AIの推論・元の解像度での書き出しは、画面とは別の処理（Worker）で行う（ロードマップC 工程3。使えない環境では画面側）
+  const engineRef = useRef<BgRemoveEngine | null>(null);
+  const engine = () => (engineRef.current ??= new BgRemoveEngine());
+  const runCtrlRef = useRef<AbortController | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  const [wasCanceled, setWasCanceled] = useState(false);
+  const [engineUsed, setEngineUsed] = useState<string | null>(null);
+
+  // 画面を離れるときは、処理を止め、Worker とAIのモデルを解放する
+  useEffect(() => {
+    return () => {
+      runCtrlRef.current?.abort();
+      engineRef.current?.dispose();
+      engineRef.current = null;
+    };
+  }, []);
 
   const selectedFile = files[Math.min(selectedIndex, files.length - 1)] ?? null;
   const ready = prepared !== null && prepared.file === selectedFile;
@@ -129,7 +146,7 @@ export function BackgroundRemoverTool() {
     (async () => {
       try {
         const img = await loadImage(file);
-        const small = await predictMask(img);
+        const small = await engine().predict(img);
         if (cancelled) return;
         maskCache.current.set(file, small);
         setPrepared({ file, base, mask: upscaleMask(small, base.width, base.height), autoColor });
@@ -199,9 +216,13 @@ export function BackgroundRemoverTool() {
   async function handleRun() {
     if (files.length === 0) return;
     if (!(await batch.confirmBatch(files.length))) return;
+    const ctrl = new AbortController();
+    runCtrlRef.current = ctrl;
     setStatus("processing");
     setError(null);
     setResult(null);
+    setCanceling(false);
+    setWasCanceled(false);
     try {
       const usedNames = new Map<string, number>();
       const outputs: { name: string; blob: Blob }[] = [];
@@ -212,28 +233,19 @@ export function BackgroundRemoverTool() {
         const w = img.naturalWidth;
         const h = img.naturalHeight;
         if (w * h > MAX_REMOVE_PIXELS) throw new Error(`${file.name}: 画像が大きすぎます(${w}×${h})。縮小してからお試しください`);
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
-        if (!ctx) throw new Error("Canvasの初期化に失敗しました");
-        ctx.drawImage(img, 0, 0);
-        const full = ctx.getImageData(0, 0, w, h);
-        let out: ImageData;
+        let blob: Blob;
         if (mode === "ai") {
           let small = maskCache.current.get(file);
           if (!small) {
-            small = await predictMask(img);
+            small = await engine().predict(img, ctrl.signal);
             maskCache.current.set(file, small);
           }
-          out = applyMaskToImage(full, upscaleMask(small, w, h), threshold / 100, softness / 100);
+          blob = await engine().render(img, { mode: "ai", mask: small, threshold: threshold / 100, softness: softness / 100 }, ctrl.signal);
         } else {
           // 色指定は、画像ごとに四隅の色を推定する(色を手動で選んでいればその色を全画像に使う)
-          const key = keyHex ? hexToRgb(keyHex) : estimateBackgroundColor(full);
-          out = applyColorKey(full, key, tolerance, colorSoftness);
+          blob = await engine().render(img, { mode: "color", key: keyHex ? hexToRgb(keyHex) : null, tolerance, softness: colorSoftness }, ctrl.signal);
         }
-        ctx.putImageData(out, 0, 0);
-        const blob = await canvasToBlob(canvas, "image/png");
+        if (ctrl.signal.aborted) throw new WorkerCanceledError();
         const base = `${stripExtension(file.name)}-nobg`;
         const count = usedNames.get(base) ?? 0;
         usedNames.set(base, count + 1);
@@ -249,12 +261,21 @@ export function BackgroundRemoverTool() {
           label: `${outputs.length}枚の背景を透明にし、ZIPにまとめました`,
         });
       }
+      setEngineUsed(engineRef.current?.lastEngine ?? null);
       setStatus("success");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
+      if (e instanceof WorkerCanceledError || ctrl.signal.aborted) {
+        // 止めたときは、途中までの結果を出さない
+        setWasCanceled(true);
+        setStatus("idle");
+      } else {
+        setError(e instanceof Error ? e.message : "処理に失敗しました");
+        setStatus("error");
+      }
     } finally {
       setProgressLabel("");
+      setCanceling(false);
+      if (runCtrlRef.current === ctrl) runCtrlRef.current = null;
     }
   }
 
@@ -419,7 +440,22 @@ export function BackgroundRemoverTool() {
         </button>
       )}
 
-      <ProcessingStatus state={status} processingLabel={progressLabel || "処理中..."} successLabel="背景を透明にしました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={progressLabel || "処理中..."}
+        successLabel="背景を透明にしました"
+        onCancel={() => {
+          setCanceling(true);
+          runCtrlRef.current?.abort();
+        }}
+        canceling={canceling}
+      />
+      {wasCanceled && (
+        <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300" data-testid="bg-canceled">
+          処理をキャンセルしました。
+        </p>
+      )}
+      {engineUsed && <span hidden data-testid="bg-engine" data-engine={engineUsed} />}
       {error && <ErrorMessage message={error} />}
 
       {result && (

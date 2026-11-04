@@ -44,15 +44,24 @@ export function applyMaskToImage(
 ): ImageData {
   if (mask.length !== image.width * image.height) throw new Error("マスクのサイズが画像と一致しません");
   const out = new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
+  applyMaskInPlace(out.data, mask, threshold, softness);
+  return out;
+}
+
+/**
+ * applyMaskToImage と同じ計算を、画像データ（RGBA）に直接書き込む（複製しない。ロードマップC 工程3）。
+ * 大きな画像の書き出しで、元の画像の複製（2400万画素で約96MB）を作らないために使う。
+ */
+export function applyMaskInPlace(data: Uint8ClampedArray, mask: Uint8ClampedArray, threshold: number, softness: number): void {
+  if (mask.length * 4 !== data.length) throw new Error("マスクのサイズが画像と一致しません");
   const half = Math.max(0, Math.min(1, softness)) / 2;
   const lo = threshold - half;
   const hi = threshold + half;
   for (let i = 0; i < mask.length; i++) {
     const m = mask[i] / 255;
     const a = softness <= 0 ? (m >= threshold ? 1 : 0) : smoothstep(lo, hi, m);
-    out.data[i * 4 + 3] = Math.round(out.data[i * 4 + 3] * a);
+    data[i * 4 + 3] = Math.round(data[i * 4 + 3] * a);
   }
-  return out;
 }
 
 /** 2色のRGB距離(0〜約441) */
@@ -69,16 +78,25 @@ export function colorDistance(r: number, g: number, b: number, key: RGB): number
  */
 export function applyColorKey(image: ImageData, key: RGB, tolerance: number, softness: number): ImageData {
   const out = new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
+  applyColorKeyInPlace(out.data, key, tolerance, softness);
+  return out;
+}
+
+/** applyColorKey と同じ計算を、画像データ（RGBA）に直接書き込む（複製しない。ロードマップC 工程3） */
+export function applyColorKeyInPlace(d: Uint8ClampedArray, key: RGB, tolerance: number, softness: number): void {
   const maxDist = Math.sqrt(3 * 255 * 255);
   const cut = (tolerance / 100) * maxDist;
   const feather = (softness / 100) * maxDist * 0.5;
-  const d = out.data;
   for (let i = 0; i < d.length; i += 4) {
     const dist = colorDistance(d[i], d[i + 1], d[i + 2], key);
     const a = feather <= 0 ? (dist <= cut ? 0 : 1) : smoothstep(cut, cut + feather, dist);
     d[i + 3] = Math.round(d[i + 3] * a);
   }
-  return out;
+}
+
+/** estimateBackgroundColor と同じ計算を、RGBAの配列と大きさから行う（Worker の中で使う） */
+export function estimateBackgroundColorOf(data: Uint8ClampedArray, width: number, height: number): RGB {
+  return estimateBackgroundColor({ data, width, height } as ImageData);
 }
 
 /** 画像の四隅の平均色(単色背景の色を自動で推定するのに使う) */
@@ -183,17 +201,31 @@ function getSession() {
   return sessionPromise;
 }
 
-/** 画像からAIマスク(320×320・0〜255)を推論する */
-export async function predictMask(source: CanvasImageSource): Promise<Uint8ClampedArray> {
+type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
+type AnyCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+/** キャンバスを作る（画面では <canvas>、Worker の中では OffscreenCanvas。描き方・結果は同じ） */
+function makeCanvas(width: number, height: number): AnyCanvas {
+  if (typeof document === "undefined") return new OffscreenCanvas(width, height);
+  const c = document.createElement("canvas");
+  c.width = width;
+  c.height = height;
+  return c;
+}
+
+/** 画像を、AIの入力（320×320・正規化済み）にする。画面側で行う（軽い処理） */
+export function modelInputFrom(source: CanvasImageSource): Float32Array {
   const size = MODEL_INPUT_SIZE;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const canvas = makeCanvas(size, size);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true }) as AnyCtx | null;
   if (!ctx) throw new Error("Canvasの初期化に失敗しました");
   ctx.drawImage(source, 0, 0, size, size);
-  const input = preprocessForModel(ctx.getImageData(0, 0, size, size).data, size);
+  return preprocessForModel(ctx.getImageData(0, 0, size, size).data, size);
+}
 
+/** AIの入力から、マスク（320×320・0〜255）を推論する（画面側・Worker の中のどちらでも使う） */
+export async function runMaskModel(input: Float32Array): Promise<Uint8ClampedArray> {
+  const size = MODEL_INPUT_SIZE;
   const { ort, session } = await getSession();
   const tensor = new ort.Tensor("float32", input, [1, 3, size, size]);
   const results = await session.run({ [session.inputNames[0]]: tensor });
@@ -201,17 +233,18 @@ export async function predictMask(source: CanvasImageSource): Promise<Uint8Clamp
   return normalizeMaskOutput(output.data as Float32Array);
 }
 
+/** 画像からAIマスク(320×320・0〜255)を推論する */
+export async function predictMask(source: CanvasImageSource): Promise<Uint8ClampedArray> {
+  return runMaskModel(modelInputFrom(source));
+}
+
 /** 320×320のマスクを、指定サイズへなめらかに拡大する(1ピクセル1値) */
 export function upscaleMask(mask: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
   const size = MODEL_INPUT_SIZE;
-  const small = document.createElement("canvas");
-  small.width = size;
-  small.height = size;
-  const sctx = small.getContext("2d");
-  const big = document.createElement("canvas");
-  big.width = width;
-  big.height = height;
-  const bctx = big.getContext("2d", { willReadFrequently: true });
+  const small = makeCanvas(size, size);
+  const sctx = small.getContext("2d") as AnyCtx | null;
+  const big = makeCanvas(width, height);
+  const bctx = big.getContext("2d", { willReadFrequently: true }) as AnyCtx | null;
   if (!sctx || !bctx) throw new Error("Canvasの初期化に失敗しました");
   const img = sctx.createImageData(size, size);
   for (let i = 0; i < mask.length; i++) {
@@ -225,7 +258,46 @@ export function upscaleMask(mask: Uint8ClampedArray, width: number, height: numb
   const data = bctx.getImageData(0, 0, width, height).data;
   const out = new Uint8ClampedArray(width * height);
   for (let i = 0; i < out.length; i++) out[i] = data[i * 4];
+  // 拡大に使った大きなキャンバスのメモリを、すぐ手放す
+  big.width = 0;
+  big.height = 0;
   return out;
+}
+
+/** 書き出しの設定（AI：マスクとしきい値・ぼかし、色指定：色と許容差・ぼかし） */
+export type RemoveRenderOptions =
+  | { mode: "ai"; mask: Uint8ClampedArray; threshold: number; softness: number }
+  | { mode: "color"; key: RGB | null; tolerance: number; softness: number };
+
+/**
+ * 元の解像度で背景を透明にして、PNGにする（画面側・Worker の中のどちらでも同じ計算）。
+ * 画像の複製を作らず、読み出した画像データに直接書き込む。使ったキャンバスは最後に手放す。
+ * 色指定で key が null のときは、画像の四隅から背景色を推定する（従来と同じ）。
+ */
+export async function renderRemovedPng(source: CanvasImageSource, width: number, height: number, opts: RemoveRenderOptions): Promise<Blob> {
+  const canvas = makeCanvas(width, height);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true }) as AnyCtx | null;
+  if (!ctx) throw new Error("Canvasの初期化に失敗しました");
+  try {
+    ctx.drawImage(source, 0, 0);
+    const full = ctx.getImageData(0, 0, width, height);
+    if (opts.mode === "ai") {
+      applyMaskInPlace(full.data, upscaleMask(opts.mask, width, height), opts.threshold, opts.softness);
+    } else {
+      const key = opts.key ?? estimateBackgroundColorOf(full.data, width, height);
+      applyColorKeyInPlace(full.data, key, opts.tolerance, opts.softness);
+    }
+    ctx.putImageData(full, 0, 0);
+    if (typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas) {
+      return await canvas.convertToBlob({ type: "image/png" });
+    }
+    return await new Promise<Blob>((resolve, reject) =>
+      (canvas as HTMLCanvasElement).toBlob((b) => (b ? resolve(b) : reject(new Error("画像の書き出しに失敗しました"))), "image/png")
+    );
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
 }
 
 /** 書き出し可能な最大ピクセル数(これを超える画像はCanvasで扱えない端末があるため止める) */

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { CsvPreviewTable } from "@/components/tools/implementations/shared/csv-preview-table";
 import { SheetFilePreview } from "@/components/common/sheet-preview";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
+import { WorkerCanceledError } from "@/lib/workers/worker-channel";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ExcelToCsvProcessor, sheetRowsToCsvBlob, type ExcelSheet } from "@/lib/processors/browser/csv-excel";
@@ -18,8 +19,16 @@ export function ExcelToCsvTool() {
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  const [wasCanceled, setWasCanceled] = useState(false);
+  const runCtrlRef = useRef<AbortController | null>(null);
+  // 画面を離れるとき・別のファイルを選んだときは、処理を止める（大きなファイルの Worker も終了する）
+  useEffect(() => () => runCtrlRef.current?.abort(), []);
 
   function handleSelect(files: File[]) {
+    runCtrlRef.current?.abort();
+    runCtrlRef.current = null;
+    setWasCanceled(false);
     setFile(files[0]);
     setSheets(null);
     setSelectedSheetIndex(0);
@@ -29,17 +38,34 @@ export function ExcelToCsvTool() {
 
   async function handleRun() {
     if (!file) return;
+    const ctrl = new AbortController();
+    runCtrlRef.current = ctrl;
     setStatus("processing");
     setError(null);
     setSheets(null);
+    setCanceling(false);
+    setWasCanceled(false);
     try {
-      const output = await new ExcelToCsvProcessor().process({ file });
+      // 大きなファイルは、画面とは別の処理（Worker）で読み取る（ロードマップC 工程3）
+      const output = await new ExcelToCsvProcessor().process({ file, cancelSignal: ctrl.signal });
+      if (runCtrlRef.current !== ctrl) return;
       setSheets(output.sheets);
       setSelectedSheetIndex(0);
       setStatus("success");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStatus("error");
+      if (runCtrlRef.current !== ctrl) return;
+      if (e instanceof WorkerCanceledError) {
+        setWasCanceled(true);
+        setStatus("idle");
+      } else {
+        setError(e instanceof Error ? e.message : "処理に失敗しました");
+        setStatus("error");
+      }
+    } finally {
+      if (runCtrlRef.current === ctrl) {
+        runCtrlRef.current = null;
+        setCanceling(false);
+      }
     }
   }
 
@@ -91,7 +117,20 @@ export function ExcelToCsvTool() {
         </button>
       )}
 
-      <ProcessingStatus state={status} successLabel="変換が完了しました" />
+      <ProcessingStatus
+        state={status}
+        successLabel="変換が完了しました"
+        onCancel={() => {
+          setCanceling(true);
+          runCtrlRef.current?.abort();
+        }}
+        canceling={canceling}
+      />
+      {wasCanceled && (
+        <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300" data-testid="convert-canceled">
+          処理をキャンセルしました。
+        </p>
+      )}
       {error && <ErrorMessage message={error} />}
 
       {sheets && sheets.length > 0 && (
