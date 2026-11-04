@@ -8,7 +8,7 @@ import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload } from "../helpers/tool-runner";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
 import { honorificLineFromHeader, looksLikeHeader, restorePostalZeros, rowsToLabelListText } from "@/lib/label/import-file";
-import { applyHonorific, applyPostalCode, planLabelPages, DEFAULT_CONTENT, DEFAULT_GEOMETRY, DEFAULT_STYLE } from "@/lib/label/layout";
+import { applyHonorific, applyPostalCode, labelTextOffset, planLabelPages, DEFAULT_CONTENT, DEFAULT_GEOMETRY, DEFAULT_STYLE } from "@/lib/label/layout";
 import { LabelWordProcessor } from "@/lib/processors/browser/label-word";
 
 /**
@@ -129,14 +129,16 @@ baseTest.describe("郵便番号（ブラウザを使わない確認）", () => {
   });
 });
 
+/** Wordを作って、本文とヘッダー・フッターのXMLを返す */
+async function wordXml(geometry: typeof DEFAULT_GEOMETRY, style = DEFAULT_STYLE) {
+  const out = await new LabelWordProcessor().process({ geometry, style, content: DEFAULT_CONTENT });
+  const files = unzipSync(new Uint8Array(await out.blob.arrayBuffer()));
+  const text = (name: string) => strFromU8(files[name]);
+  const headers = Object.keys(files).filter((n) => /^word\/(header|footer)\d+\.xml$/.test(n)).map(text);
+  return { doc: text("word/document.xml"), headers };
+}
+
 baseTest.describe("Wordの1ページの行数とずれ（ブラウザを使わない確認）", () => {
-  async function wordXml(geometry: typeof DEFAULT_GEOMETRY) {
-    const out = await new LabelWordProcessor().process({ geometry, style: DEFAULT_STYLE, content: DEFAULT_CONTENT });
-    const files = unzipSync(new Uint8Array(await out.blob.arrayBuffer()));
-    const text = (name: string) => strFromU8(files[name]);
-    const headers = Object.keys(files).filter((n) => /^word\/(header|footer)\d+\.xml$/.test(n)).map(text);
-    return { doc: text("word/document.xml"), headers };
-  }
 
   baseTest("ヘッダー・フッターは1ptの空の段落だけ（Wordが空のヘッダー・フッターに約5mmを確保して、行が次のページへ送られたり、開始位置がずれたりしないように）", async () => {
     const { doc, headers } = await wordXml(DEFAULT_GEOMETRY);
@@ -161,6 +163,27 @@ baseTest.describe("Wordの1ページの行数とずれ（ブラウザを使わ�
     expect(16838 - top - heights.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(60);
     expect(heights[5]).toBeLessThan(heights[0]);
     expect(heights[0] - heights[5]).toBeLessThan(60);
+  });
+});
+
+baseTest.describe("文字の位置の調整（ブラウザを使わない確認）", () => {
+  baseTest("揃え方ごとに動かせる方向が決まり、中央揃えはインデント・間隔を2倍にして中央のまま動かす", () => {
+    const base = { hAlign: "center", vAlign: "middle", offsetXMm: 5, offsetYMm: -3 } as const;
+    expect(labelTextOffset(base)).toEqual({ dxMm: 5, dyMm: -3, indentLeftMm: 10, indentRightMm: 0, spaceBeforeMm: 0, spaceAfterMm: 6 });
+    // 左揃えは右へだけ・上揃えは下へだけ
+    expect(labelTextOffset({ ...base, hAlign: "left", vAlign: "top", offsetXMm: -4, offsetYMm: 2 })).toMatchObject({ dxMm: 0, dyMm: 2, indentLeftMm: 0, spaceBeforeMm: 2 });
+    // 右揃えは左へだけ・下揃えは上へだけ
+    expect(labelTextOffset({ ...base, hAlign: "right", vAlign: "bottom", offsetXMm: -4, offsetYMm: 2 })).toMatchObject({ dxMm: -4, dyMm: 0, indentRightMm: 4, spaceAfterMm: 0 });
+  });
+
+  baseTest("Wordでは、セルの余白を使わず（行の高さが変わらない）、段落のインデント・間隔で文字を動かす", async () => {
+    const { doc } = await wordXml(DEFAULT_GEOMETRY, { ...DEFAULT_STYLE, offsetXMm: 5, offsetYMm: 3 });
+    // セルの余白はすべて0
+    for (const m of doc.matchAll(/<w:tcMar>(.*?)<\/w:tcMar>/g)) expect(m[1]).not.toMatch(/w:w="[1-9]/);
+    // 中央揃え：右へ5mm → 左インデント10mm（567twips）、下へ3mm → 最初の段落の前に6mm（340twips）
+    expect(doc).toMatch(/<w:ind w:left="567" w:right="0"\/>/);
+    expect(doc).toMatch(/w:before="340"/);
+    expect(doc.match(/<w:trHeight w:val="2398" w:hRule="exact"\/>/g)?.length).toBe(6);
   });
 });
 
@@ -289,6 +312,19 @@ test.describe("Excel・CSVの読み込み", () => {
 
     await page.getByRole("button", { name: "入力のまま" }).click();
     await expect(cells.nth(0)).toContainText("0600001");
+  });
+
+  test("「ラベル内の余白」はなく、文字の位置（横・縦）のバーで、プレビューの文字が動く", async ({ page }) => {
+    await openTool(page);
+    await expect(page.getByText("ラベル内の余白")).toHaveCount(0);
+    const firstText = page.getByTestId("label-cell").first().locator("span");
+    const before = await firstText.boundingBox();
+    await page.getByRole("spinbutton", { name: "文字の位置（横）" }).fill("10");
+    await page.getByRole("spinbutton", { name: "文字の位置（横）" }).blur();
+    await page.getByRole("spinbutton", { name: "文字の位置（縦）" }).fill("-5");
+    await page.getByRole("spinbutton", { name: "文字の位置（縦）" }).blur();
+    await expect.poll(async () => (await firstText.boundingBox())!.x).toBeGreaterThan(before!.x + 2);
+    expect((await firstText.boundingBox())!.y).toBeLessThan(before!.y - 1);
   });
 
   test("古いExcel（.xls）は、保存し直す方法を案内する", async ({ page }) => {

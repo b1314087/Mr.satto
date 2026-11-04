@@ -54,8 +54,13 @@ export interface LabelStyle {
   vAlign: LabelVAlign;
   /** 行の間隔(%)。100=標準 */
   lineSpacingPct: number;
-  /** ラベルの縁から文字までの余白(mm) */
-  paddingMm: number;
+  /**
+   * 文字の位置の調整(mm)。横(X)は右がプラス、縦(Y)は下がプラス。
+   * 「ラベル内の余白」は廃止した（Wordでは表のセルの上下の余白が行の高さに足されることがあり、
+   * 1ページの行数が減ってラベルがずれる原因になったため）。代わりに、余白を使わずに文字だけを動かす。
+   */
+  offsetXMm: number;
+  offsetYMm: number;
   /** ラベルの枠線を印刷するか */
   border: boolean;
 }
@@ -161,7 +166,8 @@ export const DEFAULT_STYLE: LabelStyle = {
   hAlign: "center",
   vAlign: "middle",
   lineSpacingPct: 100,
-  paddingMm: 2,
+  offsetXMm: 0,
+  offsetYMm: 0,
   border: true,
 };
 
@@ -264,10 +270,48 @@ export function validateGeometry(g: LabelGeometry): string | null {
   return null;
 }
 
+/** 文字の位置の調整の最大幅(mm) */
+export const LABEL_OFFSET_MAX_MM = 30;
+
+export interface LabelTextOffset {
+  /** 実際に動く量(mm)。揃え方の向きによっては動かせない方向があるため、指定値を丸めたもの（プレビューに使う） */
+  dxMm: number;
+  dyMm: number;
+  /** Wordの段落に付ける左右のインデント(mm) */
+  indentLeftMm: number;
+  indentRightMm: number;
+  /** Wordの最初の段落の前・最後の段落の後に付ける間隔(mm) */
+  spaceBeforeMm: number;
+  spaceAfterMm: number;
+}
+
+/**
+ * 文字の位置の調整を、Wordで使える形（段落のインデント・前後の間隔）にする。セルの余白は使わない。
+ * - 横：左揃えは右へだけ、右揃えは左へだけ動かせる。中央揃えは両方向（中央に寄せたまま動かすため、インデントは2倍にする）
+ * - 縦：上揃えは下へだけ、下揃えは上へだけ動かせる。中央揃えは両方向（同じく2倍）
+ */
+export function labelTextOffset(s: Pick<LabelStyle, "hAlign" | "vAlign" | "offsetXMm" | "offsetYMm">): LabelTextOffset {
+  const x = Number.isFinite(s.offsetXMm) ? s.offsetXMm : 0;
+  const y = Number.isFinite(s.offsetYMm) ? s.offsetYMm : 0;
+  const dxMm = s.hAlign === "left" ? Math.max(0, x) : s.hAlign === "right" ? Math.min(0, x) : x;
+  const dyMm = s.vAlign === "top" ? Math.max(0, y) : s.vAlign === "bottom" ? Math.min(0, y) : y;
+  const hk = s.hAlign === "center" ? 2 : 1;
+  const vk = s.vAlign === "middle" ? 2 : 1;
+  return {
+    dxMm,
+    dyMm,
+    indentLeftMm: dxMm > 0 ? dxMm * hk : 0,
+    indentRightMm: dxMm < 0 ? -dxMm * hk : 0,
+    spaceBeforeMm: dyMm > 0 ? dyMm * vk : 0,
+    spaceAfterMm: dyMm < 0 ? -dyMm * vk : 0,
+  };
+}
+
 export function validateStyle(s: LabelStyle): string | null {
   if (!Number.isFinite(s.fontSizePt) || s.fontSizePt < 1 || s.fontSizePt > 500) return "文字の大きさは1〜500ptの範囲で指定してください";
   if (!Number.isFinite(s.lineSpacingPct) || s.lineSpacingPct < 50 || s.lineSpacingPct > 400) return "行の間隔は50〜400%の範囲で指定してください";
-  if (!Number.isFinite(s.paddingMm) || s.paddingMm < 0) return "ラベル内の余白は0以上で指定してください";
+  if (!Number.isFinite(s.offsetXMm) || Math.abs(s.offsetXMm) > LABEL_OFFSET_MAX_MM) return `文字の位置（横）は-${LABEL_OFFSET_MAX_MM}〜${LABEL_OFFSET_MAX_MM}mmの範囲で指定してください`;
+  if (!Number.isFinite(s.offsetYMm) || Math.abs(s.offsetYMm) > LABEL_OFFSET_MAX_MM) return `文字の位置（縦）は-${LABEL_OFFSET_MAX_MM}〜${LABEL_OFFSET_MAX_MM}mmの範囲で指定してください`;
   return null;
 }
 

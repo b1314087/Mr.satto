@@ -11,6 +11,7 @@
 import {
   LABEL_FONTS,
   buildAxisPlan,
+  labelTextOffset,
   mmToTwips,
   paperSizeMm,
   planLabelPages,
@@ -59,7 +60,12 @@ export class LabelWordProcessor extends BrowserProcessor<LabelSettings, LabelOut
       s.hAlign === "left" ? AlignmentType.LEFT : s.hAlign === "right" ? AlignmentType.RIGHT : AlignmentType.CENTER;
     const vAlign =
       s.vAlign === "top" ? VerticalAlign.TOP : s.vAlign === "bottom" ? VerticalAlign.BOTTOM : VerticalAlign.CENTER;
-    const pad = mmToTwips(s.paddingMm);
+    // 文字の位置の調整は、段落のインデントと前後の間隔で行う（セルの余白は使わない。行の高さが変わらないように）
+    const offset = labelTextOffset(s);
+    const indentLeft = mmToTwips(offset.indentLeftMm);
+    const indentRight = mmToTwips(offset.indentRightMm);
+    const spaceBefore = mmToTwips(offset.spaceBeforeMm);
+    const spaceAfter = mmToTwips(offset.spaceAfterMm);
 
     const rowPlan = buildAxisPlan(g.rows, g.labelHeightMm, g.gapVMm, 0);
     const colPlan = buildAxisPlan(g.columns, g.labelWidthMm, g.gapHMm, 0);
@@ -101,10 +107,16 @@ export class LabelWordProcessor extends BrowserProcessor<LabelSettings, LabelOut
     const makeParagraphs = (text: string) => {
       const lines = text === "" ? [""] : text.split("\n");
       return lines.map(
-        (line) =>
+        (line, i) =>
           new Paragraph({
             alignment: align,
-            spacing: { before: 0, after: 0, line: lineSpacing, lineRule: LineRuleType.AUTO },
+            indent: { left: indentLeft, right: indentRight },
+            spacing: {
+              before: i === 0 ? spaceBefore : 0,
+              after: i === lines.length - 1 ? spaceAfter : 0,
+              line: lineSpacing,
+              lineRule: LineRuleType.AUTO,
+            },
             run: { size: halfPt, font: fontAttrs },
             children: line === "" ? [] : [new TextRun({ text: line, size: halfPt, bold: s.bold, font: fontAttrs })],
           })
@@ -129,7 +141,7 @@ export class LabelWordProcessor extends BrowserProcessor<LabelSettings, LabelOut
             width: { size: colWidths[ci], type: WidthType.DXA },
             verticalAlign: vAlign,
             borders: s.border ? lineBorders : noBorders,
-            margins: { top: pad, bottom: pad, left: pad, right: pad },
+            margins: { top: 0, bottom: 0, left: 0, right: 0 },
             children: makeParagraphs(text),
           });
         });

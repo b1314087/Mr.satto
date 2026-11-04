@@ -14,7 +14,9 @@ import {
   LABEL_FONTS,
   LABEL_PAPERS,
   LABEL_PRESETS,
+  LABEL_OFFSET_MAX_MM,
   buildAxisPlan,
+  labelTextOffset,
   labelsPerPage,
   paperSizeMm,
   parseLabelEntries,
@@ -114,8 +116,10 @@ const PT_TO_MM = 25.4 / 72;
 function labelMayOverflow(text: string, g: LabelGeometry, s: LabelStyle): boolean {
   if (text === "") return false;
   const sizeMm = s.fontSizePt * PT_TO_MM;
-  const innerW = g.labelWidthMm - 2 * s.paddingMm;
-  const innerH = g.labelHeightMm - 2 * s.paddingMm;
+  // 文字の位置を動かした分だけ、文字を置ける幅・高さが減る
+  const offset = labelTextOffset(s);
+  const innerW = g.labelWidthMm - Math.abs(offset.dxMm) * (s.hAlign === "center" ? 2 : 1);
+  const innerH = g.labelHeightMm - Math.abs(offset.dyMm) * (s.vAlign === "middle" ? 2 : 1);
   if (innerW <= 0 || innerH <= 0) return true;
   const lines = approxWrap(text, sizeMm * (s.bold ? 1.05 : 1), innerW);
   return lines.length * sizeMm * 1.3 * (s.lineSpacingPct / 100) > innerH;
@@ -253,6 +257,7 @@ export function ExcelLabelTool() {
   }
 
   const font = LABEL_FONTS.find((f) => f.key === style.fontKey) ?? LABEL_FONTS[0];
+  const textOffset = labelTextOffset(style);
   const fontCqw = (style.fontSizePt * PT_TO_MM * 100) / paper.widthMm;
   const justify = style.vAlign === "top" ? "flex-start" : style.vAlign === "bottom" ? "flex-end" : "center";
 
@@ -315,7 +320,7 @@ export function ExcelLabelTool() {
                           width: `${(c.size / paper.widthMm) * 100}%`,
                           height: `${(r.size / paper.heightMm) * 100}%`,
                           justifyContent: justify,
-                          padding: `${(style.paddingMm / paper.widthMm) * 100}cqw`,
+                          padding: 0,
                           border: overflow ? "1px solid #dc2626" : style.border ? "1px solid #9ca3af" : "1px dashed #e5e7eb",
                           background: overflow ? "#fef2f2" : undefined,
                           textAlign: style.hAlign,
@@ -325,7 +330,12 @@ export function ExcelLabelTool() {
                           lineHeight: 1.3 * (style.lineSpacingPct / 100),
                         }}
                       >
-                        <span className="whitespace-pre-wrap break-all">{text}</span>
+                        <span
+                          className="whitespace-pre-wrap break-all"
+                          style={{ transform: `translate(${(textOffset.dxMm / paper.widthMm) * 100}cqw, ${(textOffset.dyMm / paper.widthMm) * 100}cqw)` }}
+                        >
+                          {text}
+                        </span>
                       </div>
                     );
                   })
@@ -334,7 +344,7 @@ export function ExcelLabelTool() {
             </div>
             {overflowCount > 0 && (
               <p role="status" className="text-xs text-amber-700 dark:text-amber-400">
-                赤い枠のラベルは、文字が枠に収まらない可能性があります（約{overflowCount}枚）。文字の大きさを小さくするか、ラベル内の余白を減らしてください。
+                赤い枠のラベルは、文字が枠に収まらない可能性があります（約{overflowCount}枚）。文字の大きさを小さくするか、文字の位置の調整を0に近づけてください。
               </p>
             )}
             {!plan && contentError && (
@@ -602,16 +612,46 @@ export function ExcelLabelTool() {
             unit="%"
             onChange={(v) => updateStyle({ lineSpacingPct: v })}
           />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
           <SliderField
-            label="ラベル内の余白"
-            value={style.paddingMm}
-            min={0}
-            max={15}
+            label="文字の位置（横）"
+            value={style.offsetXMm}
+            min={-LABEL_OFFSET_MAX_MM}
+            max={LABEL_OFFSET_MAX_MM}
             step={0.5}
             unit="mm"
-            onChange={(v) => updateStyle({ paddingMm: v })}
+            onChange={(v) => updateStyle({ offsetXMm: v })}
+            onReset={() => updateStyle({ offsetXMm: 0 })}
+            hint={
+              style.hAlign === "left"
+                ? "左揃えのときは右（プラス）へだけ動かせます。"
+                : style.hAlign === "right"
+                  ? "右揃えのときは左（マイナス）へだけ動かせます。"
+                  : "プラスで右へ、マイナスで左へ動きます。"
+            }
+          />
+          <SliderField
+            label="文字の位置（縦）"
+            value={style.offsetYMm}
+            min={-LABEL_OFFSET_MAX_MM}
+            max={LABEL_OFFSET_MAX_MM}
+            step={0.5}
+            unit="mm"
+            onChange={(v) => updateStyle({ offsetYMm: v })}
+            onReset={() => updateStyle({ offsetYMm: 0 })}
+            hint={
+              style.vAlign === "top"
+                ? "上揃えのときは下（プラス）へだけ動かせます。"
+                : style.vAlign === "bottom"
+                  ? "下揃えのときは上（マイナス）へだけ動かせます。"
+                  : "プラスで下へ、マイナスで上へ動きます。"
+            }
           />
         </div>
+        {format === "excel" && (style.offsetXMm !== 0 || style.offsetYMm !== 0) && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">文字の位置の調整は、Wordで作成したときだけ反映されます（Excelには反映されません）。</p>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-neutral-600 dark:text-neutral-300">書体</span>
