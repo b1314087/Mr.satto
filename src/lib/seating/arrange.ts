@@ -59,3 +59,29 @@ export function canShuffle(slots: Slots, locked: ReadonlySet<number>): boolean {
   const free = slots.filter((_, i) => !locked.has(i));
   return free.length >= 2 && free.some((v) => v !== null);
 }
+
+/**
+ * 「空席にした席」（だれも座らせない席）にいる人を、ほかの空いている席（空席にした席を除く）へ前から移す。
+ * 移せる席がなければ、その人は席なしになる（画面で「席が足りません」と出る）。
+ */
+export function evictBlocked(slots: Slots, blocked: ReadonlySet<number>): Slots {
+  if (blocked.size === 0) return slots;
+  const next = slots.slice();
+  const movers: number[] = [];
+  blocked.forEach((i) => {
+    const v = next[i];
+    if (i < next.length && v !== null && v !== undefined) {
+      movers.push(v);
+      next[i] = null;
+    }
+  });
+  if (movers.length === 0) return slots;
+  movers.sort((a, b) => a - b);
+  let seat = 0;
+  for (const id of movers) {
+    while (seat < next.length && (blocked.has(seat) || next[seat] !== null)) seat++;
+    if (seat >= next.length) break;
+    next[seat] = id;
+  }
+  return next;
+}

@@ -10,7 +10,7 @@ import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { autoParams, buildLayout, DEFAULT_PARAMS, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
 import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
-import { canShuffle, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
+import { canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
 
 /**
  * 座席表作成（seating-chart）のテスト（2026-11 作り直し）。
@@ -67,6 +67,9 @@ plainTest("鍵とシャッフル：鍵の席は動かず、ほかの席だけが
   plainExpect(fillAroundLocked([3, 4, 0, 1, 2, null], new Set([1]), 5)).toEqual([0, 4, 1, 2, 3, null]);
   plainExpect(canShuffle([0, 1], new Set([0]))).toBe(false);
   plainExpect(canShuffle([0, null], new Set())).toBe(true);
+  // 空席にした席の人は、次の空いている席へ移る
+  plainExpect(evictBlocked([0, 1, 2, null, null], new Set([1]))).toEqual([0, null, 2, 1, null]);
+  plainExpect(evictBlocked([0, 1], new Set([0]))).toEqual([null, 1]);
 });
 
 function overlaps(purpose: Purpose, params = DEFAULT_PARAMS): boolean {
@@ -484,4 +487,45 @@ test("seating-chart: Excelの「ふりがな」の列も読み込み、ふりが
   await expect(page.getByLabel("山田太郎のふりがな")).toHaveValue("ヤマダタロウ");
   await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 1人");
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("seating-chart: 席を選んで「空席にする」と、だれも座らない席になり、人は次の席へずれる。シャッフルでも人が入らない", async ({ page }) => {
+  test.setTimeout(90_000);
+  await openTool(page);
+  await start(page, "classroom", ["C1", "C2", "C3", "C4", "C5", "C6"]);
+  await expect(page.getByTestId("seat-count")).toContainText("6人 ／ 6席");
+  await seat(page, 1).click();
+  await page.getByTestId("seat-block").click();
+  await expect(seat(page, 1)).toHaveAttribute("data-blocked", "true");
+  await expect(seat(page, 1).getByTestId("seat-blocked-label")).toHaveText("空席");
+  // 人数に合わせて席が1つ増え、全員が座れる
+  await expect(page.getByTestId("seat-count")).toContainText("（うち空席にした席 1）");
+  await expect(page.getByTestId("seat-shortage")).toHaveCount(0);
+  plainExpect((await seatNames(page)).slice(0, 7)).toEqual(["C1", "", "C2", "C3", "C4", "C5", "C6"]);
+
+  for (let k = 0; k < 3; k++) {
+    await page.getByTestId("seat-shuffle").click();
+    const now = await seatNames(page);
+    plainExpect(now[1]).toBe("");
+    plainExpect(now.filter(Boolean).sort()).toEqual(["C1", "C2", "C3", "C4", "C5", "C6"]);
+  }
+  // 空席にした席とは入れ替えできない
+  await seat(page, 1).click();
+  await seat(page, 0).click();
+  await expect(page.getByTestId("seat-swap")).toBeDisabled();
+  await seat(page, 0).click();
+
+  await page.getByTestId("seat-format-xlsx").click();
+  const xl = await clickAndDownload(page, "Excel（一覧）でダウンロード");
+  const sheet = await readXlsxSheet((await assertDownloadedFile(xl, { format: "zip" })).path);
+  const rows = sheet.rows.map((r) => r.map((c) => (c == null ? "" : String(c))));
+  const header = rows.findIndex((r) => r[0] === "席番号");
+  plainExpect(rows[header + 2].slice(0, 2)).toEqual(["2", "（空席）"]);
+
+  // 戻すと、入力順に詰まる
+  await expect(page.getByTestId("seat-block")).toHaveText("空席を戻す");
+  await page.getByTestId("seat-block").click();
+  await page.getByTestId("seat-reset").click();
+  plainExpect((await seatNames(page)).slice(0, 6)).toEqual(["C1", "C2", "C3", "C4", "C5", "C6"]);
+  await expect(seat(page, 1)).not.toHaveAttribute("data-blocked", "true");
 });

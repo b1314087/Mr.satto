@@ -21,6 +21,8 @@ export interface SeatingChartModel {
   tags?: string[];
   /** ふりがなを付けるか（付けるときは、名前の上に小さく描き、Excelに「ふりがな」の列を足す） */
   furigana?: boolean;
+  /** 空席にした席（だれも座らせない席。「空席」と描く。geometry.seats と同じ並び） */
+  blocked?: boolean[];
 }
 
 export type PaperSize = "A4" | "B4" | "A3";
@@ -104,7 +106,10 @@ export function paintChart(p: Painter, model: SeatingChartModel) {
       p.rect(x + SEAT_W - w - 4, y + 3, w, 15, TAG_FILL, null);
       p.text(tag, x + SEAT_W - w / 2 - 4, y + 10.5, { size, color: TAG_INK, bold: true });
     }
-    if (!person) return;
+    if (!person) {
+      if (model.blocked?.[i]) p.text("空席", x + SEAT_W / 2, y + SEAT_H / 2 + 3, { size: 14, color: MUTED, bold: true });
+      return;
+    }
     const maxW = SEAT_W - 14;
     const reading = model.furigana ? (person.reading ?? "").trim() : "";
     const cx = x + SEAT_W / 2;

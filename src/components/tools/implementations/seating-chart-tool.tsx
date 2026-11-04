@@ -17,7 +17,7 @@ import {
   type Purpose,
 } from "@/lib/seating/layouts";
 import { cleanReading, namesFromRows, parseParticipants, readingsFromPaste, SEATING_MAX_PARTICIPANTS, type Participant } from "@/lib/seating/participants";
-import { canShuffle, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
+import { canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
 import { exportChart, type ExportFormat, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
@@ -74,10 +74,6 @@ const smallButton =
   "ms-focus-ring rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700";
 const sectionClass = "flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800";
 
-/** 席ごとの人（参加者の番号）を、入力順に前から入れる */
-function fillInOrder(people: number, seats: number): (number | null)[] {
-  return Array.from({ length: seats }, (_, i) => (i < people ? i : null));
-}
 
 /**
  * 手で入れ替えたあとに、名簿や席の数が変わったとき：同じ名前の人は同じ席に残し、
@@ -134,6 +130,8 @@ export function SeatingChartTool() {
   const [furigana, setFurigana] = useState(false);
   /** 鍵をかけた席の番号 */
   const [locked, setLocked] = useState<number[]>([]);
+  /** 空席にした席の番号（だれも座らせない席。入力順・シャッフルでも人が入らない） */
+  const [blocked, setBlocked] = useState<number[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed = useMemo(() => parseParticipants(namesText), [namesText]);
@@ -144,20 +142,30 @@ export function SeatingChartTool() {
   const params = useMemo(() => {
     if (!purpose) return null;
     const base = baseParams[purpose];
-    return normalizeParams(autoFit[purpose] ? autoParams(purpose, participants.length, base) : base);
-  }, [purpose, baseParams, autoFit, participants.length]);
+    return normalizeParams(autoFit[purpose] ? autoParams(purpose, participants.length + blocked.length, base) : base);
+  }, [purpose, baseParams, autoFit, participants.length, blocked.length]);
 
   const geometry = useMemo(() => (purpose && params ? buildLayout(purpose, params) : null), [purpose, params]);
   const seatCount = geometry ? Math.min(geometry.seats.length, MAX_SEATS) : 0;
 
+  const blockedKey = blocked.join(",");
+  const blockedSet = useMemo(() => new Set(blockedKey === "" ? [] : blockedKey.split(",").map(Number).filter((i) => i < seatCount)), [blockedKey, seatCount]);
+
   const slots = useMemo(() => {
-    if (!manual) return fillInOrder(participants.length, seatCount);
-    const sameNames = manual.names.length === names.length && manual.names.every((n, i) => n === names[i]);
-    if (sameNames && manual.slots.length === seatCount) return manual.slots;
-    return reconcile(manual.slots, manual.names, participants, seatCount);
-  }, [manual, participants, names, seatCount]);
+    let raw: (number | null)[];
+    if (!manual) {
+      // 入力順に前から入れる（空席にした席は飛ばす）
+      raw = fillAroundLocked(Array<number | null>(seatCount).fill(null), blockedSet, participants.length);
+    } else {
+      const sameNames = manual.names.length === names.length && manual.names.every((n, i) => n === names[i]);
+      raw = sameNames && manual.slots.length === seatCount ? manual.slots : reconcile(manual.slots, manual.names, participants, seatCount);
+    }
+    return evictBlocked(raw, blockedSet);
+  }, [manual, participants, names, seatCount, blockedSet]);
 
   const lockedSet = new Set(locked.filter((i) => i < seatCount));
+  /** シャッフル・入力順に戻すで動かさない席（鍵の席と、空席にした席） */
+  const fixedSet = new Set([...lockedSet, ...blockedSet]);
   const withReading = (p: Participant): Participant => ({ ...p, reading: furigana ? (readings[p.name] ?? "").trim() : "" });
 
   const seatedIds = new Set(slots.filter((s): s is number => s !== null));
@@ -171,6 +179,7 @@ export function SeatingChartTool() {
         unseated: unseated.map(withReading),
         tags: Array.from({ length: seatCount }, (_, i) => tags[i] ?? ""),
         furigana,
+        blocked: Array.from({ length: seatCount }, (_, i) => blockedSet.has(i)),
       }
     : null;
 
@@ -180,6 +189,7 @@ export function SeatingChartTool() {
     setSelected([]);
     setTags({});
     setLocked([]);
+    setBlocked([]);
   }
 
   function updateParam<K extends keyof LayoutParams>(key: K, value: LayoutParams[K]) {
@@ -190,7 +200,7 @@ export function SeatingChartTool() {
   }
 
   function swap(a: number, b: number) {
-    if (a === b || lockedSet.has(a) || lockedSet.has(b)) return;
+    if (a === b || fixedSet.has(a) || fixedSet.has(b)) return;
     const next = slots.slice();
     [next[a], next[b]] = [next[b], next[a]];
     setManual({ slots: next, names });
@@ -198,13 +208,13 @@ export function SeatingChartTool() {
   }
 
   function shuffle() {
-    setManual({ slots: shuffleUnlocked(slots, lockedSet), names });
+    setManual({ slots: shuffleUnlocked(slots, fixedSet), names });
     setSelected([]);
   }
 
   /** 入力順に戻す（鍵をかけた席はそのまま） */
   function resetOrder() {
-    setManual(lockedSet.size > 0 ? { slots: fillAroundLocked(slots, lockedSet, participants.length), names } : null);
+    setManual(lockedSet.size > 0 ? { slots: fillAroundLocked(slots, fixedSet, participants.length), names } : null);
     setSelected([]);
   }
 
@@ -221,6 +231,23 @@ export function SeatingChartTool() {
     });
     // 鍵をかけた時点の席を、そのまま残す
     if (!allLocked && !manual) setManual({ slots, names });
+    setSelected([]);
+  }
+
+  /** 選んだ席を空席にする（座っていた人は次の空いている席へ移る）。すべて空席なら元に戻す */
+  function toggleBlocked() {
+    const allBlocked = selected.length > 0 && selected.every((i) => blockedSet.has(i));
+    const nextSet = new Set(blockedSet);
+    for (const i of selected) {
+      if (allBlocked) nextSet.delete(i);
+      else nextSet.add(i);
+    }
+    setBlocked([...nextSet].sort((a, b) => a - b));
+    if (!allBlocked) {
+      // 空席にした席の鍵は外す。今の並びを残したまま、空席にした席の人だけを移す
+      setLocked((prev) => prev.filter((i) => !nextSet.has(i)));
+      if (manual || lockedSet.size > 0) setManual({ slots: evictBlocked(slots, nextSet), names });
+    }
     setSelected([]);
   }
 
@@ -449,6 +476,7 @@ export function SeatingChartTool() {
           />
           <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="seat-count">
             {participants.length}人 ／ {seatCount}席
+            {blockedSet.size > 0 && `（うち空席にした席 ${blockedSet.size}）`}
             {parsed.overLimit > 0 && `（${SEATING_MAX_PARTICIPANTS}人まで。${parsed.overLimit}人は読み込んでいません）`}
           </p>
           {importNote && <p className="text-xs text-emerald-700 dark:text-emerald-300">{importNote}</p>}
@@ -539,9 +567,11 @@ export function SeatingChartTool() {
           onReset={resetOrder}
           canReset={manual !== null}
           locked={lockedSet}
+          blocked={blockedSet}
           onToggleLock={toggleLock}
+          onToggleBlocked={toggleBlocked}
           onShuffle={shuffle}
-          canShuffle={canShuffle(slots, lockedSet) && participants.length > 0}
+          canShuffle={canShuffle(slots, fixedSet) && participants.length > 0}
           onTag={(text) => {
             setTags((prev) => {
               const next = { ...prev };
@@ -568,7 +598,9 @@ function SeatPreview({
   canReset,
   onTag,
   locked,
+  blocked,
   onToggleLock,
+  onToggleBlocked,
   onShuffle,
   canShuffle: shuffleEnabled,
 }: {
@@ -576,7 +608,9 @@ function SeatPreview({
   selected: number[];
   onTag: (text: string) => void;
   locked: ReadonlySet<number>;
+  blocked: ReadonlySet<number>;
   onToggleLock: () => void;
+  onToggleBlocked: () => void;
   onShuffle: () => void;
   canShuffle: boolean;
   onToggle: (i: number) => void;
@@ -650,7 +684,7 @@ function SeatPreview({
           </button>
           <button
             type="button"
-            disabled={selected.length !== 2 || selected.some((i) => locked.has(i))}
+            disabled={selected.length !== 2 || selected.some((i) => locked.has(i) || blocked.has(i))}
             onClick={() => onSwap(selected[0], selected[1])}
             className="ms-focus-ring rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
             data-testid="seat-swap"
@@ -696,6 +730,9 @@ function SeatPreview({
           <button type="button" onClick={onToggleLock} className={smallButton} data-testid="seat-lock">
             {selected.every((i) => locked.has(i)) ? "🔓 鍵を外す" : "🔒 鍵をかける"}
           </button>
+          <button type="button" onClick={onToggleBlocked} className={smallButton} data-testid="seat-block">
+            {selected.every((i) => blocked.has(i)) ? "空席を戻す" : "空席にする"}
+          </button>
           {selected.some((i) => locked.has(i)) && (
             <span className="text-neutral-500 dark:text-neutral-400">鍵をかけた席は、入れ替え・シャッフルで動きません</span>
           )}
@@ -726,6 +763,7 @@ function SeatPreview({
                 const isSel = selected.includes(i);
                 const isHover = hover === i;
                 const isLocked = locked.has(i);
+                const isBlocked = blocked.has(i);
                 const reading = model.furigana ? (person?.reading ?? "") : "";
                 return (
                   <button
@@ -735,9 +773,10 @@ function SeatPreview({
                     data-testid="seat"
                     data-name={person?.name ?? ""}
                     data-locked={isLocked ? "true" : undefined}
+                    data-blocked={isBlocked ? "true" : undefined}
                     aria-pressed={isSel}
-                    aria-label={`席${i + 1}${model.tags?.[i] ? `［${model.tags[i]}］` : ""}：${person ? `${person.name}${person.role ? `（${person.role}）` : ""}` : "空席"}${isLocked ? "・鍵" : ""}`}
-                    className={`ms-focus-ring absolute flex ${isLocked ? "cursor-pointer" : "cursor-grab"} select-none flex-col items-center justify-center rounded-lg border px-1.5 text-center shadow-sm active:cursor-grabbing ${
+                    aria-label={`席${i + 1}${model.tags?.[i] ? `［${model.tags[i]}］` : ""}：${person ? `${person.name}${person.role ? `（${person.role}）` : ""}` : isBlocked ? "空席（空席にした席）" : "空席"}${isLocked ? "・鍵" : ""}`}
+                    className={`ms-focus-ring absolute flex ${isLocked || isBlocked ? "cursor-pointer" : "cursor-grab"} select-none flex-col items-center justify-center rounded-lg border px-1.5 text-center shadow-sm active:cursor-grabbing ${
                       isSel
                         ? "border-blue-600 bg-blue-50 ring-4 ring-blue-500/60 dark:bg-blue-950"
                         : isHover
@@ -746,11 +785,13 @@ function SeatPreview({
                             ? isLocked
                               ? "border-slate-500 bg-slate-100 dark:border-slate-400 dark:bg-slate-800"
                               : "border-slate-400 bg-white dark:border-slate-500 dark:bg-slate-900"
-                            : "border-dashed border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-900/60"
+                            : isBlocked
+                              ? "border-slate-300 bg-[repeating-linear-gradient(45deg,#f1f5f9_0,#f1f5f9_6px,#e2e8f0_6px,#e2e8f0_12px)] dark:border-slate-600 dark:bg-[repeating-linear-gradient(45deg,#1e293b_0,#1e293b_6px,#0f172a_6px,#0f172a_12px)]"
+                              : "border-dashed border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-900/60"
                     }`}
                     style={seatStyle(seat.x, seat.y, i)}
                     onPointerDown={(e) => {
-                      if (e.button !== 0 || isLocked) return;
+                      if (e.button !== 0 || isLocked || isBlocked) return;
                       dragRef.current = { index: i, x: e.clientX, y: e.clientY, moved: false };
                       e.currentTarget.setPointerCapture(e.pointerId);
                     }}
@@ -792,6 +833,11 @@ function SeatPreview({
                     {model.tags?.[i] && (
                       <span className="absolute right-1 top-0.5 max-w-[70%] truncate rounded bg-amber-300 px-1.5 text-[10px] font-bold leading-4 text-amber-950" data-testid="seat-tag">
                         {model.tags[i]}
+                      </span>
+                    )}
+                    {isBlocked && !person && (
+                      <span className="text-[14px] font-bold text-slate-400 dark:text-slate-500" data-testid="seat-blocked-label">
+                        空席
                       </span>
                     )}
                     {isLocked && (
