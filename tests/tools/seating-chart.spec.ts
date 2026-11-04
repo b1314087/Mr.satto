@@ -9,7 +9,8 @@ import { extractPdfContent, isValidPdfFile } from "../helpers/pdf-inspect";
 import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { autoParams, buildLayout, DEFAULT_PARAMS, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
-import { namesFromRows, parseParticipants, splitLine } from "@/lib/seating/participants";
+import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
+import { canShuffle, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
 
 /**
  * 座席表作成（seating-chart）のテスト（2026-11 作り直し）。
@@ -40,6 +41,32 @@ plainTest("表の読み込み：「氏名」「役職」の見出しがあれば
   plainExpect(withHeader).toMatchObject({ count: 2, hadHeader: true, text: "山田\t営業部\n佐藤" });
   const noHeader = namesFromRows([["田中", "部長"], ["小林", "課長"]]);
   plainExpect(noHeader.text).toBe("田中\t部長\n小林\t課長");
+});
+
+plainTest("ふりがな：表の「ふりがな」「よみ」の列を読む。まとめて貼り付けは上から順で、途中の空行は順番を保つ", () => {
+  const r = namesFromRows([["氏名", "ふりがな", "役職"], ["山田太郎", "やまだ たろう", "部長"], ["佐藤花子", null, ""], ["鈴木一郎", "すずき いちろう", ""]]);
+  plainExpect(r.text).toBe("山田太郎\t部長\n佐藤花子\n鈴木一郎");
+  plainExpect(r.readings).toEqual(["やまだ たろう", "", "すずき いちろう"]);
+  plainExpect(namesFromRows([["氏名", "よみ"], ["田中", "たなか"]]).readings).toEqual(["たなか"]);
+  plainExpect(namesFromRows([["氏名"], ["田中"]]).readings).toBeNull();
+  const pasted = readingsFromPaste("やまだ\n\nすずき\nあまり\n\n", ["山田", "佐藤", "鈴木"]);
+  plainExpect(pasted.readings).toEqual({ 山田: "やまだ", 佐藤: "", 鈴木: "すずき" });
+  plainExpect(pasted.extra).toBe(1);
+});
+
+plainTest("鍵とシャッフル：鍵の席は動かず、ほかの席だけが並び替わる。入力順に戻すも鍵の席はそのまま", () => {
+  const slots = [0, 1, 2, 3, 4, null];
+  const locked = new Set([1, 4]);
+  for (let k = 0; k < 30; k++) {
+    const next = shuffleUnlocked(slots, locked);
+    plainExpect(next[1]).toBe(1);
+    plainExpect(next[4]).toBe(4);
+    plainExpect([...next].sort()).toEqual([...slots].sort());
+    plainExpect(next).not.toEqual(slots);
+  }
+  plainExpect(fillAroundLocked([3, 4, 0, 1, 2, null], new Set([1]), 5)).toEqual([0, 4, 1, 2, 3, null]);
+  plainExpect(canShuffle([0, 1], new Set([0]))).toBe(false);
+  plainExpect(canShuffle([0, null], new Set())).toBe(true);
 });
 
 function overlaps(purpose: Purpose, params = DEFAULT_PARAMS): boolean {
@@ -354,4 +381,107 @@ test("seating-chart: ツール一覧のURLで開け、関連ツールの案内�
   await page.goto("/tools/seating-chart");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("座席表作成");
   await expect(page.getByRole("link", { name: /名簿テンプレート作成/ }).first()).toBeVisible();
+});
+
+test("seating-chart: 席に鍵をかけると、シャッフル・入れ替え・入力順に戻すで動かない", async ({ page }) => {
+  await openTool(page);
+  await start(page, "classroom", ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"]);
+  await seat(page, 2).click();
+  await page.getByTestId("seat-lock").click();
+  await expect(seat(page, 2)).toHaveAttribute("data-locked", "true");
+  await expect(seat(page, 2)).toHaveAttribute("aria-label", "席3：B3・鍵");
+  const before = await seatNames(page);
+  let changed = false;
+  for (let k = 0; k < 3; k++) {
+    await page.getByTestId("seat-shuffle").click();
+    const now = await seatNames(page);
+    plainExpect(now[2]).toBe("B3");
+    plainExpect(now.filter(Boolean).sort()).toEqual(before.filter(Boolean).sort());
+    if (now.join() !== before.join()) changed = true;
+  }
+  plainExpect(changed).toBe(true);
+
+  // 鍵の席とは入れ替えできない
+  await seat(page, 2).click();
+  await seat(page, 0).click();
+  await expect(page.getByTestId("seat-swap")).toBeDisabled();
+  await seat(page, 0).click();
+  await seat(page, 2).click();
+
+  await page.getByTestId("seat-reset").click();
+  plainExpect((await seatNames(page)).slice(0, 8)).toEqual(["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"]);
+  await page.getByTestId("seat-shuffle").click();
+  await seat(page, 2).click();
+  await expect(page.getByTestId("seat-lock")).toHaveText("🔓 鍵を外す");
+  await page.getByTestId("seat-lock").click();
+  await expect(seat(page, 2)).not.toHaveAttribute("data-locked", "true");
+});
+
+test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力・まとめて貼り付けでき、未入力は目立つ。画面・Excelに出る", async ({ page }) => {
+  test.setTimeout(90_000);
+  await openTool(page);
+  await start(page, "meeting", ["山田太郎, 部長", "佐藤花子", "鈴木一郎"]);
+  await page.getByTestId("seat-furigana").check();
+  await expect(page.getByTestId("seat-reading")).toHaveCount(3);
+  await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 3人");
+
+  // 1人ずつ入力（Enterで次の人へ）
+  const first = page.getByLabel("山田太郎のふりがな");
+  await first.fill("やまだ たろう");
+  await first.press("Enter");
+  await expect(page.getByLabel("佐藤花子のふりがな")).toBeFocused();
+  await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 2人");
+  await expect(page.getByLabel("佐藤花子のふりがな")).toHaveAttribute("data-empty", "true");
+
+  // まとめて貼り付け（2行目の空行は「その人は入れない」= 山田は上書き、佐藤は空、鈴木は入る）
+  await page.getByTestId("seat-reading-paste-toggle").click();
+  await page.getByTestId("seat-reading-paste").fill("ヤマダ タロウ\n\nすずき いちろう");
+  await page.getByTestId("seat-reading-paste-apply").click();
+  await expect(page.getByText("3人分のふりがなを入れました")).toBeVisible();
+  await expect(page.getByLabel("鈴木一郎のふりがな")).toHaveValue("すずき いちろう");
+  await page.getByLabel("佐藤花子のふりがな").fill("さとう はなこ");
+  await expect(page.getByTestId("seat-reading-missing")).toHaveText("全員入力済み");
+  await expect(seat(page, 0).getByTestId("seat-reading-text")).toHaveText("ヤマダ タロウ");
+
+  // 名簿を書き直しても、同じ名前のふりがなは残る
+  await page.getByTestId("seat-names").fill(["山田太郎, 部長", "佐藤花子", "鈴木一郎", "高橋次郎"].join("\n"));
+  await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 1人");
+
+  await page.getByTestId("seat-format-xlsx").click();
+  const xl = await clickAndDownload(page, "Excel（一覧）でダウンロード");
+  const sheet = await readXlsxSheet((await assertDownloadedFile(xl, { format: "zip" })).path);
+  const rows = sheet.rows.map((r) => r.map((c) => (c == null ? "" : String(c))));
+  const header = rows.findIndex((r) => r[0] === "席番号");
+  plainExpect(rows[header]).toEqual(["席番号", "名前", "ふりがな", "役職", "場所", "札"]);
+  plainExpect(rows[header + 1].slice(0, 4)).toEqual(["1", "山田太郎", "ヤマダ タロウ", "部長"]);
+
+  await page.getByTestId("seat-format-pdf").click();
+  const pdf = await clickAndDownload(page, "PDFでダウンロード");
+  const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
+  plainExpect(content.text).toContain("さとう はなこ");
+
+  // 外すと、画面から消える
+  await page.getByTestId("seat-furigana").uncheck();
+  await expect(seat(page, 0).getByTestId("seat-reading-text")).toHaveCount(0);
+});
+
+test("seating-chart: Excelの「ふりがな」の列も読み込み、ふりがなが自動でオンになる", async ({ page }) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seating-kana-"));
+  const xlsx = path.join(dir, "kana.xlsx");
+  fs.writeFileSync(
+    xlsx,
+    Buffer.from(
+      buildMinimalXlsx([
+        { name: "名簿", rows: [[{ value: "氏名" }, { value: "フリガナ" }], [{ value: "山田太郎" }, { value: "ヤマダタロウ" }], [{ value: "佐藤花子" }, { value: "" }]] },
+      ])
+    )
+  );
+  await openTool(page);
+  await page.getByTestId("seat-purpose-meeting").click();
+  await page.getByTestId("seat-import-input").setInputFiles(xlsx);
+  await expect(page.getByText("2人を読み込みました（ふりがなも1人分を読み込みました）")).toBeVisible();
+  await expect(page.getByTestId("seat-furigana")).toBeChecked();
+  await expect(page.getByLabel("山田太郎のふりがな")).toHaveValue("ヤマダタロウ");
+  await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 1人");
+  fs.rmSync(dir, { recursive: true, force: true });
 });

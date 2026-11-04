@@ -16,7 +16,8 @@ import {
   type LayoutParams,
   type Purpose,
 } from "@/lib/seating/layouts";
-import { namesFromRows, parseParticipants, SEATING_MAX_PARTICIPANTS, type Participant } from "@/lib/seating/participants";
+import { cleanReading, namesFromRows, parseParticipants, readingsFromPaste, SEATING_MAX_PARTICIPANTS, type Participant } from "@/lib/seating/participants";
+import { canShuffle, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
 import { exportChart, type ExportFormat, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
@@ -128,11 +129,17 @@ export function SeatingChartTool() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [importNote, setImportNote] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  /** ふりがな（名前ごと。名簿を書き直しても、同じ名前ならそのまま残る） */
+  const [readings, setReadings] = useState<Record<string, string>>({});
+  const [furigana, setFurigana] = useState(false);
+  /** 鍵をかけた席の番号 */
+  const [locked, setLocked] = useState<number[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed = useMemo(() => parseParticipants(namesText), [namesText]);
   const participants = parsed.participants;
   const names = participants.map((p) => p.name);
+  const missingReadings = furigana ? participants.filter((p) => !(readings[p.name] ?? "").trim()).length : 0;
 
   const params = useMemo(() => {
     if (!purpose) return null;
@@ -150,6 +157,9 @@ export function SeatingChartTool() {
     return reconcile(manual.slots, manual.names, participants, seatCount);
   }, [manual, participants, names, seatCount]);
 
+  const lockedSet = new Set(locked.filter((i) => i < seatCount));
+  const withReading = (p: Participant): Participant => ({ ...p, reading: furigana ? (readings[p.name] ?? "").trim() : "" });
+
   const seatedIds = new Set(slots.filter((s): s is number => s !== null));
   const unseated = participants.filter((p) => !seatedIds.has(p.id));
 
@@ -157,9 +167,10 @@ export function SeatingChartTool() {
     ? {
         title: title.trim() || (purpose ? TITLE_BY_PURPOSE[purpose] : "座席表"),
         geometry: { ...geometry, seats: geometry.seats.slice(0, seatCount) },
-        assignment: slots.map((id) => (id === null ? null : participants[id])),
-        unseated,
+        assignment: slots.map((id) => (id === null ? null : withReading(participants[id]))),
+        unseated: unseated.map(withReading),
         tags: Array.from({ length: seatCount }, (_, i) => tags[i] ?? ""),
+        furigana,
       }
     : null;
 
@@ -168,6 +179,7 @@ export function SeatingChartTool() {
     setManual(null);
     setSelected([]);
     setTags({});
+    setLocked([]);
   }
 
   function updateParam<K extends keyof LayoutParams>(key: K, value: LayoutParams[K]) {
@@ -178,11 +190,42 @@ export function SeatingChartTool() {
   }
 
   function swap(a: number, b: number) {
-    if (a === b) return;
+    if (a === b || lockedSet.has(a) || lockedSet.has(b)) return;
     const next = slots.slice();
     [next[a], next[b]] = [next[b], next[a]];
     setManual({ slots: next, names });
     setSelected([]);
+  }
+
+  function shuffle() {
+    setManual({ slots: shuffleUnlocked(slots, lockedSet), names });
+    setSelected([]);
+  }
+
+  /** 入力順に戻す（鍵をかけた席はそのまま） */
+  function resetOrder() {
+    setManual(lockedSet.size > 0 ? { slots: fillAroundLocked(slots, lockedSet, participants.length), names } : null);
+    setSelected([]);
+  }
+
+  /** 選んだ席の鍵：すべてかかっていれば外し、そうでなければかける */
+  function toggleLock() {
+    const allLocked = selected.length > 0 && selected.every((i) => lockedSet.has(i));
+    setLocked((prev) => {
+      const set = new Set(prev.filter((i) => i < seatCount));
+      for (const i of selected) {
+        if (allLocked) set.delete(i);
+        else set.add(i);
+      }
+      return [...set].sort((a, b) => a - b);
+    });
+    // 鍵をかけた時点の席を、そのまま残す
+    if (!allLocked && !manual) setManual({ slots, names });
+    setSelected([]);
+  }
+
+  function setReading(name: string, value: string) {
+    setReadings((prev) => ({ ...prev, [name]: value }));
   }
 
   function toggleSelect(i: number) {
@@ -202,7 +245,24 @@ export function SeatingChartTool() {
       if (result.count === 0) return setImportError("名前を読み取れませんでした。1列目か「氏名」「名前」の列に、名前を入れてください。");
       setNamesText(result.text);
       setManual(null);
-      setImportNote(`${result.count}人を読み込みました`);
+      setLocked([]);
+      let note = `${result.count}人を読み込みました`;
+      if (result.readings) {
+        // ふりがなの列：名簿と同じ順番で割り当てる（同じ名前に番号を付けた後の名前で覚える）
+        const list = parseParticipants(result.text).participants;
+        const found: Record<string, string> = {};
+        list.forEach((p, i) => {
+          const r = result.readings![i] ?? "";
+          if (r) found[p.name] = r;
+        });
+        const filled = Object.keys(found).length;
+        setReadings((prev) => ({ ...prev, ...found }));
+        if (filled > 0) {
+          setFurigana(true);
+          note += `（ふりがなも${filled}人分を読み込みました）`;
+        }
+      }
+      setImportNote(note);
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "読み込めませんでした");
     }
@@ -403,6 +463,23 @@ export function SeatingChartTool() {
             </div>
           )}
           <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            <input type="checkbox" checked={furigana} onChange={(e) => setFurigana(e.target.checked)} data-testid="seat-furigana" />
+            ふりがなを付ける
+          </label>
+          {furigana && (
+            <ReadingEditor
+              participants={participants}
+              readings={readings}
+              missing={missingReadings}
+              onChange={setReading}
+              onPaste={(text) => {
+                const r = readingsFromPaste(text, names);
+                setReadings((prev) => ({ ...prev, ...r.readings }));
+                return r;
+              }}
+            />
+          )}
+          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
             タイトル
             <input
               type="text"
@@ -459,8 +536,12 @@ export function SeatingChartTool() {
           selected={selected}
           onToggle={toggleSelect}
           onSwap={swap}
-          onReset={() => { setManual(null); setSelected([]); }}
+          onReset={resetOrder}
           canReset={manual !== null}
+          locked={lockedSet}
+          onToggleLock={toggleLock}
+          onShuffle={shuffle}
+          canShuffle={canShuffle(slots, lockedSet) && participants.length > 0}
           onTag={(text) => {
             setTags((prev) => {
               const next = { ...prev };
@@ -486,10 +567,18 @@ function SeatPreview({
   onReset,
   canReset,
   onTag,
+  locked,
+  onToggleLock,
+  onShuffle,
+  canShuffle: shuffleEnabled,
 }: {
   model: SeatingChartModel;
   selected: number[];
   onTag: (text: string) => void;
+  locked: ReadonlySet<number>;
+  onToggleLock: () => void;
+  onShuffle: () => void;
+  canShuffle: boolean;
   onToggle: (i: number) => void;
   onSwap: (a: number, b: number) => void;
   onReset: () => void;
@@ -556,9 +645,12 @@ function SeatPreview({
           入れ替え：席をドラッグ、または2人を選んで［入れ替え］
         </p>
         <div className="ml-auto flex items-center gap-2">
+          <button type="button" disabled={!shuffleEnabled} onClick={onShuffle} className={smallButton} data-testid="seat-shuffle" title="鍵をかけた席はそのままにして、ほかの席をランダムに並べ替えます">
+            シャッフル
+          </button>
           <button
             type="button"
-            disabled={selected.length !== 2}
+            disabled={selected.length !== 2 || selected.some((i) => locked.has(i))}
             onClick={() => onSwap(selected[0], selected[1])}
             className="ms-focus-ring rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
             data-testid="seat-swap"
@@ -601,6 +693,12 @@ function SeatPreview({
           <button type="button" onClick={() => onTag("")} className={smallButton} data-testid="seat-tag-clear">
             札を外す
           </button>
+          <button type="button" onClick={onToggleLock} className={smallButton} data-testid="seat-lock">
+            {selected.every((i) => locked.has(i)) ? "🔓 鍵を外す" : "🔒 鍵をかける"}
+          </button>
+          {selected.some((i) => locked.has(i)) && (
+            <span className="text-neutral-500 dark:text-neutral-400">鍵をかけた席は、入れ替え・シャッフルで動きません</span>
+          )}
         </div>
       )}
       {open && (
@@ -627,6 +725,8 @@ function SeatPreview({
                 const person = model.assignment[i];
                 const isSel = selected.includes(i);
                 const isHover = hover === i;
+                const isLocked = locked.has(i);
+                const reading = model.furigana ? (person?.reading ?? "") : "";
                 return (
                   <button
                     key={i}
@@ -634,20 +734,23 @@ function SeatPreview({
                     data-seat-index={i}
                     data-testid="seat"
                     data-name={person?.name ?? ""}
+                    data-locked={isLocked ? "true" : undefined}
                     aria-pressed={isSel}
-                    aria-label={`席${i + 1}${model.tags?.[i] ? `［${model.tags[i]}］` : ""}：${person ? `${person.name}${person.role ? `（${person.role}）` : ""}` : "空席"}`}
-                    className={`ms-focus-ring absolute flex cursor-grab select-none flex-col items-center justify-center rounded-lg border px-1.5 text-center shadow-sm active:cursor-grabbing ${
+                    aria-label={`席${i + 1}${model.tags?.[i] ? `［${model.tags[i]}］` : ""}：${person ? `${person.name}${person.role ? `（${person.role}）` : ""}` : "空席"}${isLocked ? "・鍵" : ""}`}
+                    className={`ms-focus-ring absolute flex ${isLocked ? "cursor-pointer" : "cursor-grab"} select-none flex-col items-center justify-center rounded-lg border px-1.5 text-center shadow-sm active:cursor-grabbing ${
                       isSel
                         ? "border-blue-600 bg-blue-50 ring-4 ring-blue-500/60 dark:bg-blue-950"
                         : isHover
                           ? "border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/60 dark:bg-emerald-950"
                           : person
-                            ? "border-slate-400 bg-white dark:border-slate-500 dark:bg-slate-900"
+                            ? isLocked
+                              ? "border-slate-500 bg-slate-100 dark:border-slate-400 dark:bg-slate-800"
+                              : "border-slate-400 bg-white dark:border-slate-500 dark:bg-slate-900"
                             : "border-dashed border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-900/60"
                     }`}
                     style={seatStyle(seat.x, seat.y, i)}
                     onPointerDown={(e) => {
-                      if (e.button !== 0) return;
+                      if (e.button !== 0 || isLocked) return;
                       dragRef.current = { index: i, x: e.clientX, y: e.clientY, moved: false };
                       e.currentTarget.setPointerCapture(e.pointerId);
                     }}
@@ -691,8 +794,18 @@ function SeatPreview({
                         {model.tags[i]}
                       </span>
                     )}
+                    {isLocked && (
+                      <span className="absolute bottom-0.5 right-1 text-[11px] leading-none" aria-hidden="true" data-testid="seat-lock-icon">
+                        🔒
+                      </span>
+                    )}
                     {person && (
                       <>
+                        {reading && (
+                          <span className="max-w-full truncate text-[10px] leading-tight text-slate-500 dark:text-slate-400" data-testid="seat-reading-text">
+                            {reading}
+                          </span>
+                        )}
                         <span className="max-w-full truncate text-[16px] font-bold leading-tight text-slate-900 dark:text-slate-100">{person.name}</span>
                         {person.role && <span className="max-w-full truncate text-[11px] leading-tight text-slate-500 dark:text-slate-400">{person.role}</span>}
                       </>
@@ -705,5 +818,121 @@ function SeatPreview({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * ふりがなの入力欄（名前ごと）。名前をコピーして貼り付けたあとに、ふりがなだけを入れられる。
+ * - Enterで次の人の欄へ移る（漢字変換の確定のEnterでは移らない）
+ * - 「まとめて貼り付け」：Excelのふりがなの列をコピーして貼ると、上から順に入る
+ * - 未入力の人は目立たせ、人数を出す（印刷する前に気づけるように）
+ */
+function ReadingEditor({
+  participants,
+  readings,
+  missing,
+  onChange,
+  onPaste,
+}: {
+  participants: Participant[];
+  readings: Record<string, string>;
+  missing: number;
+  onChange: (name: string, value: string) => void;
+  onPaste: (text: string) => { used: number; extra: number };
+}) {
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  if (participants.length === 0) {
+    return <p className="text-xs text-neutral-500 dark:text-neutral-400">名前を入れると、ここでふりがなを入力できます。</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="seat-reading-editor">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100">ふりがな</span>
+        {missing > 0 ? (
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-100" data-testid="seat-reading-missing">
+            未入力 {missing}人
+          </span>
+        ) : (
+          <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200" data-testid="seat-reading-missing">
+            全員入力済み
+          </span>
+        )}
+        <button type="button" className={`${smallButton} ml-auto`} onClick={() => setPasteOpen((v) => !v)} aria-expanded={pasteOpen} data-testid="seat-reading-paste-toggle">
+          まとめて貼り付け
+        </button>
+      </div>
+      {pasteOpen && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">ふりがなを1行に1人ずつ貼り付けると、名前の上から順に入ります（Excelのふりがなの列をそのままコピーできます）。</p>
+          <textarea
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            rows={4}
+            aria-label="ふりがなをまとめて貼り付け（1行に1人）"
+            placeholder={"やまだ たろう\nさとう はなこ"}
+            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+            data-testid="seat-reading-paste"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pasteText.trim() === ""}
+              onClick={() => {
+                const r = onPaste(pasteText);
+                setNote(`${r.used}人分のふりがなを入れました${r.extra > 0 ? `（名前より${r.extra}行多いため、余りは使っていません）` : ""}`);
+                setPasteText("");
+                setPasteOpen(false);
+              }}
+              className="ms-focus-ring rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+              data-testid="seat-reading-paste-apply"
+            >
+              上から順に入れる
+            </button>
+          </div>
+        </div>
+      )}
+      {note && <p className="text-xs text-emerald-700 dark:text-emerald-300">{note}</p>}
+      <div ref={listRef} className="grid max-h-72 grid-cols-1 gap-x-4 gap-y-1.5 overflow-auto pr-1 sm:grid-cols-2" data-testid="seat-reading-list">
+        {participants.map((p, i) => {
+          const value = readings[p.name] ?? "";
+          const empty = value.trim() === "";
+          return (
+            <label key={p.id} className="flex min-w-0 items-center gap-2 text-sm">
+              <span className="w-28 shrink-0 truncate text-neutral-800 dark:text-neutral-100" title={p.name}>
+                {p.name}
+              </span>
+              <input
+                type="text"
+                value={value}
+                maxLength={40}
+                onChange={(e) => onChange(p.name, e.target.value)}
+                onBlur={(e) => {
+                  const cleaned = cleanReading(e.target.value);
+                  if (cleaned !== e.target.value) onChange(p.name, cleaned);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  e.preventDefault();
+                  const inputs = listRef.current?.querySelectorAll<HTMLInputElement>('input[data-testid="seat-reading"]');
+                  inputs?.[i + 1]?.focus();
+                }}
+                aria-label={`${p.name}のふりがな`}
+                placeholder="ふりがな"
+                className={`min-w-0 flex-1 rounded-md border px-2 py-1 text-sm dark:bg-neutral-900 dark:text-neutral-100 ${
+                  empty ? "border-amber-400 bg-amber-50 dark:border-amber-600 dark:bg-amber-950/30" : "border-neutral-300 dark:border-neutral-700"
+                }`}
+                data-testid="seat-reading"
+                data-empty={empty ? "true" : undefined}
+              />
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }

@@ -14,6 +14,8 @@ export interface Participant {
   id: number;
   name: string;
   role: string;
+  /** ふりがな（付けるときだけ。空なら付けない） */
+  reading?: string;
 }
 
 export interface ParsedParticipants {
@@ -75,6 +77,7 @@ export function parseParticipants(text: string): ParsedParticipants {
 }
 
 const NAME_HEADERS = /^(氏名|名前|お名前|参加者|参加者名|生徒名|児童名|社員名|name|names|full ?name)$/i;
+const READING_HEADERS = /^(ふりがな|フリガナ|ﾌﾘｶﾞﾅ|よみ|ヨミ|よみがな|ヨミガナ|読み|読み仮名|読みがな|読み方|かな|カナ|氏名かな|氏名カナ|kana|reading|furigana)$/i;
 const ROLE_HEADERS = /^(役職|肩書き?|職位|職名|所属|部署|部門|会社名?|学年|クラス|担当|role|title|position|department)$/i;
 
 function cellText(value: XlsxCellValue | undefined): string {
@@ -87,23 +90,60 @@ function cellText(value: XlsxCellValue | undefined): string {
  * 表（CSV・Excelのシート）から、名前と役職を取り出して、入力欄の文字（1行に「名前<タブ>役職」）にする。
  * 最初の空でない行に「氏名」「名前」などの見出しがあれば、その列（見出しの行は除く）。役職は「役職」「所属」などの見出しの列。
  * 見出しが無ければ、1列目を名前、2列目を役職とする。
+ * 「ふりがな」「よみ」「フリガナ」などの見出しの列があれば、ふりがなも読み込む（readings は、文字の行と同じ順番）。
  */
-export function namesFromRows(rows: XlsxCellValue[][]): { text: string; count: number; hadHeader: boolean; roleColumn: boolean } {
+export function namesFromRows(rows: XlsxCellValue[][]): {
+  text: string;
+  count: number;
+  hadHeader: boolean;
+  roleColumn: boolean;
+  /** ふりがなの列があったときだけ。文字の行（1人ずつ）と同じ順番。空のこともある */
+  readings: string[] | null;
+} {
   const first = rows.findIndex((r) => r.some((c) => cellText(c).trim() !== ""));
-  if (first < 0) return { text: "", count: 0, hadHeader: false, roleColumn: false };
+  if (first < 0) return { text: "", count: 0, hadHeader: false, roleColumn: false, readings: null };
   const header = rows[first].map((c) => cellText(c).trim());
   const nameCol = header.findIndex((h) => NAME_HEADERS.test(h));
   const roleHeaderCol = header.findIndex((h) => ROLE_HEADERS.test(h));
+  const readingCol = header.findIndex((h) => READING_HEADERS.test(h));
   const hadHeader = nameCol >= 0;
   const column = hadHeader ? nameCol : 0;
-  const roleCol = hadHeader ? roleHeaderCol : 1;
-  const start = hadHeader ? first + 1 : first;
+  const roleCol = hadHeader ? roleHeaderCol : readingCol === 1 ? -1 : 1;
+  const start = hadHeader || readingCol >= 0 ? first + 1 : first;
   const lines: string[] = [];
+  const readings: string[] = [];
   for (let i = start; i < rows.length; i++) {
     const name = cleanText(cellText(rows[i][column]).replace(/[\t,、，]/g, " "));
     if (name === "") continue;
     const role = roleCol >= 0 ? cleanText(cellText(rows[i][roleCol])) : "";
     lines.push(role ? `${name}\t${role}` : name);
+    readings.push(readingCol >= 0 ? cleanReading(cellText(rows[i][readingCol])) : "");
   }
-  return { text: lines.join("\n"), count: lines.length, hadHeader, roleColumn: roleCol >= 0 && lines.some((l) => l.includes("\t")) };
+  return {
+    text: lines.join("\n"),
+    count: lines.length,
+    hadHeader,
+    roleColumn: roleCol >= 0 && lines.some((l) => l.includes("\t")),
+    readings: readingCol >= 0 ? readings : null,
+  };
+}
+
+/** ふりがなを整える（前後の空白を除き、途中の空白は1つにまとめる。長すぎるものは切る） */
+export function cleanReading(text: string): string {
+  return cleanText(text).slice(0, 40);
+}
+
+/**
+ * まとめて貼り付けたふりがな（1行に1人。Excelの列をそのままコピーしたもの）を、名簿の上から順に割り当てる。
+ * 途中の空の行は「その人はふりがな無し」として順番を保つ（Excelの空のセルをコピーすると空の行になるため）。
+ * 最後の空の行は無視する。名簿より多い行は使わない。
+ */
+export function readingsFromPaste(text: string, names: string[]): { readings: Record<string, string>; used: number; extra: number } {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") lines.pop();
+  const readings: Record<string, string> = {};
+  names.forEach((name, i) => {
+    if (i < lines.length) readings[name] = cleanReading(lines[i].split("\t")[0]);
+  });
+  return { readings, used: Math.min(lines.length, names.length), extra: Math.max(0, lines.length - names.length) };
 }
