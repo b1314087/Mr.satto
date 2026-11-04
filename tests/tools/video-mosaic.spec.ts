@@ -297,3 +297,144 @@ test("video-mosaic: 動画として読み込めないファイルは、理由を
   await page.locator("main input[type=file]").first().setInputFiles(bad);
   await expect(page.getByRole("alert").filter({ hasText: /対応して|読み込みに失敗/ })).toBeVisible({ timeout: 30_000 });
 });
+
+// ---------------------------------------------------------------------------
+// 工程4：追跡の Web Worker 化
+// ---------------------------------------------------------------------------
+
+async function drawAndTrack(page: Page, t = 1) {
+  await seekTo(page, t);
+  const o = objAt(t);
+  await dragVideo(page, { x: o.x, y: o.y }, { x: o.x + o.w, y: o.y + o.h });
+  await page.getByTestId("vm-track").click();
+}
+
+async function boxesAt(page: Page, times: number[]) {
+  const out: { x: number; y: number; w: number; h: number }[] = [];
+  for (const t of times) {
+    await seekTo(page, t);
+    out.push(await boxOf(page));
+  }
+  return out;
+}
+
+const SAMPLE_TIMES = [0.2, 0.6, 1.4, 1.9, 2.4, 2.9];
+
+test("video-mosaic（工程4）: 追跡は Web Worker で行い、画面側で追跡したときと同じ結果になる", async ({ page, browser }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openWithVideo(page);
+  await drawAndTrack(page);
+  await expect(page.getByTestId("vm-track-note")).toContainText("追跡しました", { timeout: 120_000 });
+  await expect(page.getByTestId("vm-stage")).toHaveAttribute("data-track-engine", "worker");
+  const viaWorker = await boxesAt(page, SAMPLE_TIMES);
+  for (const [i, t] of SAMPLE_TIMES.entries()) {
+    near(viaWorker[i].x, objAt(t).x, 6);
+    near(viaWorker[i].y, objAt(t).y, 6);
+  }
+
+  // 同じ操作を、Worker を使わない設定（画面側）で行い、結果を比べる
+  const ctx2 = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  const { setDevPlanOverride } = await import("../helpers/dev-plan");
+  await setDevPlanOverride(ctx2, "premium", test.info().project.use.baseURL!);
+  await ctx2.addInitScript(() => {
+    (globalThis as unknown as { __mrsattoTrackOnMainThread: boolean }).__mrsattoTrackOnMainThread = true;
+  });
+  const page2 = await ctx2.newPage();
+  await page2.setViewportSize({ width: 1280, height: 900 });
+  await openWithVideo(page2);
+  await drawAndTrack(page2);
+  await expect(page2.getByTestId("vm-track-note")).toContainText("追跡しました", { timeout: 120_000 });
+  await expect(page2.getByTestId("vm-stage")).toHaveAttribute("data-track-engine", "main");
+  const viaMain = await boxesAt(page2, SAMPLE_TIMES);
+  plainExpect(viaMain).toEqual(viaWorker);
+  await ctx2.close();
+});
+
+/** Worker を、決まった返事をする偽物に入れ替える（失敗・非対応・止まらない場合の確認用） */
+async function fakeWorker(page: Page, behavior: "error" | "unsupported" | "hang" | "throw") {
+  await page.addInitScript((b) => {
+    const w = window as unknown as { __terminated: number; Worker: unknown };
+    w.__terminated = 0;
+    class FakeWorker {
+      onmessage: ((e: { data: unknown }) => void) | null = null;
+      onerror: ((e: { preventDefault: () => void }) => void) | null = null;
+      constructor() {
+        if (b === "throw") throw new Error("no worker");
+      }
+      postMessage(msg: { type: string }) {
+        if (msg.type !== "track") return;
+        setTimeout(() => {
+          if (b === "unsupported") this.onmessage?.({ data: { type: "unsupported", reason: "test" } });
+          else {
+            this.onmessage?.({ data: { type: "ready" } });
+            if (b === "error") setTimeout(() => this.onmessage?.({ data: { type: "error", message: "テスト用の追跡エラーです。" } }), 50);
+            // hang：停止を頼まれても返事をしない
+          }
+        }, 20);
+      }
+      terminate() {
+        w.__terminated++;
+      }
+    }
+    w.Worker = FakeWorker;
+  }, behavior);
+}
+
+test("video-mosaic（工程4）: Worker が失敗したときは、日本語のエラーを出す", async ({ page }) => {
+  test.setTimeout(120_000);
+  await fakeWorker(page, "error");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openWithVideo(page);
+  await drawAndTrack(page);
+  await expect(page.getByTestId("vm-track-note")).toContainText("テスト用の追跡エラーです。", { timeout: 30_000 });
+  plainExpect(await page.evaluate(() => (window as unknown as { __terminated: number }).__terminated)).toBe(1);
+});
+
+for (const b of ["unsupported", "throw"] as const) {
+  test(`video-mosaic（工程4）: Worker が使えない環境（${b}）では、画面側で追跡して同じように付いていく`, async ({ page }) => {
+    test.setTimeout(180_000);
+    await fakeWorker(page, b);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openWithVideo(page);
+    await drawAndTrack(page);
+    await expect(page.getByTestId("vm-track-note")).toContainText("追跡しました", { timeout: 120_000 });
+    await expect(page.getByTestId("vm-stage")).toHaveAttribute("data-track-engine", "main");
+    await seekTo(page, 2.4);
+    const bx = await boxOf(page);
+    near(bx.x, objAt(2.4).x, 6);
+  });
+}
+
+test("video-mosaic（工程4）: 追跡を止めると、停止の返事がなくても Worker を終了させ、途中の結果は使わない", async ({ page }) => {
+  test.setTimeout(120_000);
+  await fakeWorker(page, "hang");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openWithVideo(page);
+  await drawAndTrack(page);
+  await expect(page.getByTestId("vm-tracking")).toBeVisible();
+  await page.getByRole("button", { name: "追跡を止める" }).click();
+  await expect(page.getByTestId("vm-track-note")).toContainText("追跡を止めました。途中までの結果は使いません。", { timeout: 10_000 });
+  plainExpect(await page.evaluate(() => (window as unknown as { __terminated: number }).__terminated)).toBe(1);
+  await expect(page.getByTestId("vm-timeline")).toHaveCount(0);
+});
+
+test("video-mosaic（工程4）: 本物の Worker でも、追跡を途中で止められ、途中の結果は使わない", async ({ page }) => {
+  test.setTimeout(180_000);
+  const long = path.join(dir, "long.webm");
+  execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0x336699:s=${W}x${H}:r=30:d=40`, "-f", "lavfi", "-i", "testsrc=s=40x40:r=30:d=40", "-filter_complex", "[0][1]overlay=x='20+mod(t*20,240)':y=60[v]", "-map", "[v]", "-c:v", "libvpx", "-b:v", "1M", long]);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/tools/video-mosaic");
+  await page.locator("main input[type=file]").first().setInputFiles(long);
+  await expect(page.getByTestId("vm-stage")).toHaveAttribute("data-video-width", String(W), { timeout: 30_000 });
+  await page.getByTestId("vm-stage").evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await dragVideo(page, { x: 20, y: 60 }, { x: 60, y: 100 });
+  await page.getByTestId("vm-track").click();
+  await expect(page.getByTestId("vm-tracking")).toContainText(/追跡中|解析中/);
+  await page.getByRole("button", { name: "追跡を止める" }).click();
+  await expect(page.getByTestId("vm-track-note")).toContainText("追跡を止めました", { timeout: 10_000 });
+
+  // 途中までの追跡の結果は使わない（追跡の結果の帯が出ない）。止めたあとも、もう一度追跡できる
+  await expect(page.getByTestId("vm-timeline")).toHaveCount(0);
+  await expect(page.getByTestId("vm-track")).toBeEnabled();
+});

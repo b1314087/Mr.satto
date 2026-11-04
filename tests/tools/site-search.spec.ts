@@ -83,6 +83,15 @@ test.describe("検索の仕組み: 作業目的からの検索", () => {
     ["Excelの日付をまとめて変更したい", "excel-date-shift"],
     ["Wordで丸数字を入力したい", "word-renumber"],
     ["写真を切り抜きたい", "image-crop"],
+    // 動画編集 工程4
+    ["動画 サムネイル 複数", "video-thumbnail"],
+    ["動画 画像 抽出", "video-thumbnail"],
+    ["動画 フレーム 抽出", "video-thumbnail"],
+    ["動画 連続 キャプチャ", "video-thumbnail"],
+    ["動画 モザイク 高速化", "video-mosaic"],
+    // 動画編集 工程3
+    ["動画 トリミング", "video-convert"],
+    ["動画 回転", "video-convert"],
   ];
   for (const [q, expected] of cases) {
     test(`「${q}」→ 最上位は ${expected}`, () => {

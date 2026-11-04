@@ -56,16 +56,74 @@ class LumReader {
   }
 }
 
-/** frame の (x, y, bw, bh) の範囲を、tw×th に縮めて取り出す（最近傍） */
+/**
+ * 範囲の中で、縮めて取り出す画素の位置（左上からのずれ。floor((i + 0.5) × 縮める比)）を、大きさごとに覚えておく（工程4：高速化）。
+ * 探す位置（x, y）は整数なので、位置ごとに掛け算・切り捨てをし直す必要がない。
+ */
+const offsetCache = new Map<string, Int32Array>();
+function offsets(size: number, count: number): Int32Array {
+  const key = `${size}/${count}`;
+  let a = offsetCache.get(key);
+  if (!a) {
+    const s = size / count;
+    a = new Int32Array(count);
+    for (let i = 0; i < count; i++) a[i] = Math.floor((i + 0.5) * s);
+    if (offsetCache.size > 256) offsetCache.clear();
+    offsetCache.set(key, a);
+  }
+  return a;
+}
+
+/** frame の (x, y, bw, bh) の範囲を、tw×th に縮めて取り出す（最近傍）。x, y は整数 */
 function samplePatch(f: Lum, x: number, y: number, bw: number, bh: number, tw: number, th: number, out: Float32Array): boolean {
   if (x < 0 || y < 0 || x + bw > f.w || y + bh > f.h) return false;
-  const sx = bw / tw;
-  const sy = bh / th;
+  const ox = offsets(bw, tw);
+  const oy = offsets(bh, th);
+  const data = f.data;
+  const fw = f.w;
   for (let j = 0; j < th; j++) {
-    const row = (Math.floor(y + (j + 0.5) * sy)) * f.w;
-    for (let i = 0; i < tw; i++) out[j * tw + i] = f.data[row + Math.floor(x + (i + 0.5) * sx)];
+    const row = (y + oy[j]) * fw + x;
+    const base = j * tw;
+    for (let i = 0; i < tw; i++) out[base + i] = data[row + ox[i]];
   }
   return true;
+}
+
+/**
+ * 取り出しと、テンプレートとの正規化相互相関（-1〜1）を、1回の読み取りでまとめて計算する（工程4：高速化）。
+ * 従来の「取り出して配列に書く → 平均を求める → 平均を引いて掛け合わせる」と、数式として同じ値になる
+ * （Σ(p−平均)t = Σpt − 平均×Σt、Σ(p−平均)² = Σp² − 合計×平均）。範囲が画面の外にかかるときは -1。
+ */
+function nccAt(f: Lum, x: number, y: number, bw: number, bh: number, tw: number, th: number, t: Float32Array, tNorm: number, tSum: number): number {
+  if (x < 0 || y < 0 || x + bw > f.w || y + bh > f.h) return -1;
+  const ox = offsets(bw, tw);
+  const oy = offsets(bh, th);
+  const data = f.data;
+  const fw = f.w;
+  let sum = 0;
+  let sq = 0;
+  let dot = 0;
+  let k = 0;
+  for (let j = 0; j < th; j++) {
+    const row = (y + oy[j]) * fw + x;
+    for (let i = 0; i < tw; i++) {
+      const v = data[row + ox[i]];
+      sum += v;
+      sq += v * v;
+      dot += v * t[k++];
+    }
+  }
+  const n = tw * th;
+  const mean = sum / n;
+  const ss = sq - sum * mean;
+  if (ss < 1e-6 || tNorm < 1e-6) return 0;
+  return (dot - mean * tSum) / (Math.sqrt(ss) * tNorm);
+}
+
+function sumOf(a: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i];
+  return s;
 }
 
 function normalize(a: Float32Array): number {
@@ -80,27 +138,14 @@ function normalize(a: Float32Array): number {
   return Math.sqrt(ss);
 }
 
-/** 正規化相互相関（-1〜1）。テンプレートは平均を引いたもの（tNorm はその大きさ） */
-function ncc(t: Float32Array, tNorm: number, p: Float32Array): number {
-  let mean = 0;
-  for (let i = 0; i < p.length; i++) mean += p[i];
-  mean /= p.length;
-  let dot = 0;
-  let ss = 0;
-  for (let i = 0; i < p.length; i++) {
-    const v = p[i] - mean;
-    dot += v * t[i];
-    ss += v * v;
-  }
-  if (ss < 1e-6 || tNorm < 1e-6) return 0;
-  return dot / (Math.sqrt(ss) * tNorm);
-}
 
 export class TemplateTracker {
   private tw: number;
   private th: number;
   private template: Float32Array;
   private tNorm = 0;
+  /** テンプレートの値の合計（平均を引いてあるので、ほぼ0） */
+  private tSum = 0;
   private patch: Float32Array;
   /** 範囲（縮小したフレームの座標） */
   box: Box;
@@ -123,6 +168,7 @@ export class TemplateTracker {
     this.box = b;
     samplePatch(frame, Math.round(b.x), Math.round(b.y), Math.max(1, Math.round(b.w)), Math.max(1, Math.round(b.h)), this.tw, this.th, this.template);
     this.tNorm = normalize(this.template);
+    this.tSum = sumOf(this.template);
     this.vx = 0;
     this.vy = 0;
   }
@@ -134,8 +180,7 @@ export class TemplateTracker {
   }
 
   private scoreAt(f: Lum, x: number, y: number, w: number, h: number): number {
-    if (!samplePatch(f, Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)), this.tw, this.th, this.patch)) return -1;
-    return ncc(this.template, this.tNorm, this.patch);
+    return nccAt(f, Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)), this.tw, this.th, this.template, this.tNorm, this.tSum);
   }
 
   /** 次のフレームで、範囲を探す。戻り値は一致の度合い */
@@ -211,6 +256,7 @@ export class TemplateTracker {
         let ss = 0;
         for (let i = 0; i < this.template.length; i++) ss += this.template[i] * this.template[i];
         this.tNorm = Math.sqrt(ss);
+        this.tSum = sumOf(this.template);
       }
     }
     return best;
@@ -244,7 +290,15 @@ export function analysisScale(width: number, box: Box): number {
   return s;
 }
 
+/**
+ * 画面を固まらせないため、ときどき処理を譲る。Web Worker の中（画面とは別の処理）では譲る必要がないので待たない
+ * （setTimeout は何度も続けると最低4ミリ秒待たされ、そのぶん遅くなるため）。
+ */
+const inWorker =
+  typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !== "undefined" &&
+  typeof (globalThis as { document?: unknown }).document === "undefined";
 function yieldToUi(): Promise<void> {
+  if (inWorker) return Promise.resolve();
   return new Promise((r) => setTimeout(r, 0));
 }
 

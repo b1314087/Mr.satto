@@ -1104,11 +1104,11 @@ const toolDefinitions: Tool[] = [
     id: "video-thumbnail",
     name: "動画サムネイル抽出",
     category: "video",
-    description: "動画の指定した時点の静止画をPNG・JPEGで書き出します",
+    description: "動画の指定した時点の静止画をPNG・JPEGで書き出します。複数の時刻・一定の間隔・均等な枚数でまとめて取り出し、ZIPで保存することもできます",
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
-    keywords: ["サムネイル", "静止画抽出", "フレーム抽出", "png", "jpeg"],
+    keywords: ["サムネイル", "静止画抽出", "フレーム抽出", "png", "jpeg", "動画 サムネイル 複数", "動画 画像 抽出", "動画 フレーム 抽出", "動画 連続 キャプチャ", "連続キャプチャ", "コマ切り出し", "一括抽出", "zip"],
   },
   {
     id: "video-metadata-remove",
@@ -1130,7 +1130,7 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
-    keywords: ["モザイク", "動画 モザイク", "ぼかし", "黒塗り", "追跡", "トラッキング", "顔隠し", "ナンバープレート", "個人情報", "プライバシー", "mosaic", "blur"],
+    keywords: ["モザイク", "動画 モザイク", "ぼかし", "黒塗り", "追跡", "トラッキング", "顔隠し", "ナンバープレート", "個人情報", "プライバシー", "mosaic", "blur", "動画 モザイク 高速化", "高速"],
   },
 
   // ------------------------------------------------------------------

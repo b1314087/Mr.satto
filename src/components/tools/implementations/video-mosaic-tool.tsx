@@ -35,7 +35,8 @@ import {
   type EffectKind,
   type MosaicRegion,
 } from "@/lib/video/mosaic-regions";
-import { mergeTrackFrom, trackRegion } from "@/lib/video/track";
+import { mergeTrackFrom } from "@/lib/video/track";
+import { trackRegionInBackground, type TrackEngine } from "@/lib/video/track-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 
 const MAX_REGIONS = 20;
@@ -75,9 +76,11 @@ export function VideoMosaicTool() {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [stageW, setStageW] = useState(640);
 
-  const [tracking, setTracking] = useState<{ id: string; progress: number } | null>(null);
+  const [tracking, setTracking] = useState<{ id: string; progress: number; engine: TrackEngine | null } | null>(null);
   const [trackNote, setTrackNote] = useState<string | null>(null);
   const trackCtrl = useRef<AbortController | null>(null);
+  // 最後の追跡を、どちらで行ったか（Worker・画面側）。テストと不具合の調査用
+  const [trackEngine, setTrackEngine] = useState<TrackEngine | null>(null);
 
   const [container, setContainer] = useState<OutputContainer>("mp4");
   const [status, setStatus] = useState<ProcessingState>("idle");
@@ -202,6 +205,7 @@ export function VideoMosaicTool() {
     setStatus("idle");
     setError(null);
     setTrackNote(null);
+    setTrackEngine(null);
   }
 
   function seek(t: number) {
@@ -304,10 +308,13 @@ export function VideoMosaicTool() {
     updateRegion(r.id, () => withAnchor);
     const ctrl = new AbortController();
     trackCtrl.current = ctrl;
-    setTracking({ id: r.id, progress: 0 });
+    setTracking({ id: r.id, progress: 0, engine: null });
     setTrackNote(null);
     try {
-      const points = await trackRegion({
+      if (!file) return;
+      // 工程4：追跡は、できれば画面とは別の処理（Web Worker）で行う（追跡中も画面が固まらない）。使えない環境では従来どおり画面側で行う
+      const points = await trackRegionInBackground({
+        file,
         videoTrack: info.videoTrack,
         width: W,
         height: H,
@@ -318,7 +325,14 @@ export function VideoMosaicTool() {
         direction,
         from: r.from,
         to: r.to,
-        onProgress: (p) => setTracking({ id: r.id, progress: p }),
+        onProgress: (p) => {
+          if (trackCtrl.current === ctrl) setTracking((cur) => (cur ? { ...cur, progress: p } : cur));
+        },
+        onEngine: (engine) => {
+          if (trackCtrl.current !== ctrl) return;
+          setTrackEngine(engine);
+          setTracking((cur) => (cur ? { ...cur, engine } : cur));
+        },
         signal: ctrl.signal,
       });
       if (trackCtrl.current !== ctrl) return;
@@ -439,6 +453,7 @@ export function VideoMosaicTool() {
               onPointerUp={onStageUp}
               onPointerCancel={() => setDrag(null)}
               data-testid="vm-stage"
+              data-track-engine={trackEngine ?? undefined}
               data-video-width={W}
               data-video-height={H}
             >
@@ -572,7 +587,11 @@ export function VideoMosaicTool() {
 
       <ProcessingStatus
         state={tracking ? "processing" : "idle"}
-        processingLabel={`追跡中… ${Math.round((tracking?.progress ?? 0) * 100)}%`}
+        processingLabel={
+          !tracking || (tracking.engine === null && tracking.progress === 0)
+            ? "動画を解析中…"
+            : `追跡中… ${Math.round(tracking.progress * 100)}%`
+        }
         onCancel={() => trackCtrl.current?.abort()}
         cancelLabel="追跡を止める"
         testId="vm-tracking"
@@ -611,7 +630,7 @@ export function VideoMosaicTool() {
 
       <ProcessingStatus
         state={status}
-        processingLabel={`書き出し中… ${Math.round(progress * 100)}%`}
+        processingLabel={progress <= 0 ? "書き出しの準備中…" : progress >= 0.999 ? "仕上げ中…" : `書き出し中… ${Math.round(progress * 100)}%`}
         successLabel="モザイクをかけました"
         onCancel={() => {
           setCanceling(true);
