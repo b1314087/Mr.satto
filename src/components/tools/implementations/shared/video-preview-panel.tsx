@@ -22,6 +22,7 @@ export function VideoPreviewPanel({
   meta,
   onLoadedMetadata,
   fps,
+  hasAudio,
   outputTitle = "変換後の予定",
   outputRows,
   outputNote,
@@ -33,6 +34,8 @@ export function VideoPreviewPanel({
   onLoadedMetadata: (e: SyntheticEvent<HTMLVideoElement>) => void;
   /** 元動画のフレームレート（分かっている場合） */
   fps?: number | null;
+  /** 元動画の音声トラックの有無（分かっている場合） */
+  hasAudio?: boolean | null;
   outputTitle?: string;
   outputRows?: VideoOutputRow[];
   outputNote?: string;
@@ -42,6 +45,8 @@ export function VideoPreviewPanel({
   if (meta && meta.width > 0) sourceParts.push(`${meta.width}×${meta.height}`);
   if (meta && meta.durationSec > 0) sourceParts.push(formatDuration(meta.durationSec));
   if (fps) sourceParts.push(`${Math.round(fps * 100) / 100}fps`);
+  if (hasAudio === true) sourceParts.push("音声あり");
+  if (hasAudio === false) sourceParts.push("音声なし");
   sourceParts.push(formatBytes(file.size));
 
   return (

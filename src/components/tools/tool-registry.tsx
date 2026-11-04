@@ -312,20 +312,9 @@ const CsvColumnEditorTool = dynamic(() =>
   import("./implementations/csv-column-editor-tool").then((m) => m.CsvColumnEditorTool),
   { loading: ToolLoading }
 );
-const VideoConvertTool = dynamic(() =>
-  import("./implementations/video-convert-tool").then((m) => m.VideoConvertTool),
-  { loading: ToolLoading }
-);
-const VideoCompressTool = dynamic(() =>
-  import("./implementations/video-compress-tool").then((m) => m.VideoCompressTool),
-  { loading: ToolLoading }
-);
-const VideoResizeTool = dynamic(() =>
-  import("./implementations/video-resize-tool").then((m) => m.VideoResizeTool),
-  { loading: ToolLoading }
-);
-const VideoFrameRateTool = dynamic(() =>
-  import("./implementations/video-frame-rate-tool").then((m) => m.VideoFrameRateTool),
+// 形式変換・圧縮・解像度変更・フレームレート変更の4ページは、同じ1つの画面を使う（動画編集 工程2）
+const VideoEditTool = dynamic(() =>
+  import("./implementations/video-edit-tool").then((m) => m.VideoEditTool),
   { loading: ToolLoading }
 );
 const VideoH264Tool = dynamic(() =>
@@ -643,13 +632,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
     case "csv-column-editor":
       return <CsvColumnEditorTool />;
     case "video-convert":
-      return <VideoConvertTool />;
     case "video-compress":
-      return <VideoCompressTool />;
     case "video-resize":
-      return <VideoResizeTool />;
     case "video-frame-rate":
-      return <VideoFrameRateTool />;
+      return <VideoEditTool toolId={toolId} />;
     case "video-h264":
       return <VideoH264Tool />;
     case "video-thumbnail":

@@ -51,6 +51,7 @@ import {
   WEBM,
   WebMOutputFormat,
   canEncodeVideo,
+  getFirstEncodableVideoCodec,
   type ConversionAudioOptions,
   type ConversionVideoOptions,
   type InputVideoTrack,
@@ -357,6 +358,25 @@ export async function checkH264EncodeSupport(width: number, height: number): Pro
   }
 }
 
+/**
+ * この出力形式（MP4・WebM）で、このブラウザが映像を書き出せる（作り直せる）か（動画編集 工程2）。
+ * 形式に入れられるコーデックのうち、どれか1つでも実際にエンコードできれば true。
+ */
+export async function canEncodeVideoInto(container: OutputContainer, width: number, height: number): Promise<boolean> {
+  try {
+    const codecs = outputFormatFor(container).getSupportedVideoCodecs();
+    return (await getFirstEncodableVideoCodec(codecs, { width, height })) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** 元の映像のコーデックを、作り直さずにそのままこの出力形式へ入れられるか */
+export function canCopyVideoInto(container: OutputContainer, codec: string | null): boolean {
+  if (!codec) return false;
+  return (outputFormatFor(container).getSupportedVideoCodecs() as string[]).includes(codec);
+}
+
 /** 圧縮レベルのUI選択肢。ユーザーが「何が変わるか」わかるよう明示する（開発指示書 19章） */
 export type CompressionLevel = "low" | "medium" | "high";
 
@@ -467,24 +487,40 @@ export function createThumbnailCanvasSink(
   return new CanvasSink(videoTrack, thumbnailCanvasOptionsFor(displayWidth, displayHeight));
 }
 
+export interface VideoOutputSummary {
+  width: number;
+  height: number;
+  /** 実際のフレームの間隔から推定したフレームレート（分からないときは null） */
+  fps: number | null;
+  durationSec: number;
+  hasAudio: boolean;
+}
+
 /**
- * 変換後のBlobを実際にmediabunnyで読み直し、本当の出力解像度を取得する。
- * 「生成できたはず」の値を計算で仮定するのではなく、実際に生成された
- * ファイルを検証する（Phase 8/9で確立した方針を踏襲）。
+ * 書き出した動画を読み直して、実際の解像度・フレームレート・長さ・音声の有無を調べる（動画編集 工程2）。
+ * 設定から「なったはず」の値を計算するのではなく、できあがったファイルそのものを確かめて結果に表示する。
  */
-export async function inspectOutputDimensions(
-  blob: Blob,
-  container: OutputContainer
-): Promise<{ width: number; height: number }> {
+export async function inspectOutputSummary(blob: Blob, container: OutputContainer): Promise<VideoOutputSummary> {
   const input = new Input({
     source: new BlobSource(blob),
     formats: container === "mp4" ? [MP4] : [WEBM],
   });
   try {
     const track = await input.getPrimaryVideoTrack();
-    if (!track) return { width: 0, height: 0 };
-    const [width, height] = await Promise.all([track.getDisplayWidth(), track.getDisplayHeight()]);
-    return { width, height };
+    const [width, height, metrics, durationSec, audio] = await Promise.all([
+      track ? track.getDisplayWidth() : 0,
+      track ? track.getDisplayHeight() : 0,
+      track ? track.computeFrameRateMetrics().catch(() => null) : null,
+      input.computeDuration().catch(() => 0),
+      input.getPrimaryAudioTrack().catch(() => null),
+    ]);
+    return {
+      width,
+      height,
+      fps: metrics?.bestGuessFrameRate ?? null,
+      durationSec,
+      hasAudio: audio !== null,
+    };
   } finally {
     input.dispose();
   }

@@ -51,11 +51,6 @@ export const COMPRESSION_RATIO_RANGE: Record<CompressionLevel, [number, number]>
   high: [0.2, 0.45],
 };
 
-export function estimateCompressedRange(inputBytes: number, level: CompressionLevel): [number, number] {
-  const [lo, hi] = COMPRESSION_RATIO_RANGE[level];
-  return [Math.round(inputBytes * lo), Math.round(inputBytes * hi)];
-}
-
 /** 秒数を m:ss（1時間以上は h:mm:ss）に整形する */
 export function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "-";
@@ -66,10 +61,4 @@ export function formatDuration(sec: number): string {
   return h > 0
     ? `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
     : `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-/** ファイル名の拡張子から入力形式の表示名を作る（例: movie.mov → MOV） */
-export function inputFormatLabel(file: File): string {
-  const dot = file.name.lastIndexOf(".");
-  return dot === -1 ? "動画" : file.name.slice(dot + 1).toUpperCase();
 }

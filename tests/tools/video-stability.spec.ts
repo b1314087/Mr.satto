@@ -257,7 +257,7 @@ test.describe("音声を書き出せない環境", () => {
     await expect(page.getByTestId("video-audio-loss")).toHaveCount(0);
   });
 
-  test("映像を書き出せないときは、内部のコードではなく日本語の案内を出す", async ({ page }) => {
+  test("映像を書き出せないときは、処理の前に日本語で知らせ、内部のコードを出さない", async ({ page }) => {
     await page.addInitScript(() => {
       if (typeof VideoEncoder !== "undefined") {
         VideoEncoder.isConfigSupported = async (config: VideoEncoderConfig) => ({ supported: false, config });
@@ -265,12 +265,15 @@ test.describe("音声を書き出せない環境", () => {
     });
     await page.goto("/tools/video-compress");
     await uploadFixture(page, fixtures.videoWithMetadataMp4);
-    await page.getByRole("button", { name: "圧縮する" }).click();
-    const alert = page.locator("main [role=alert].border");
-    await expect(alert).toBeVisible({ timeout: 60_000 });
-    await expect(alert).toContainText("書き出せません");
-    await expect(alert).not.toContainText("no_encodable");
-    await expect(alert).not.toContainText("_");
+    // 工程2から：処理を始める前に、書き出せない形式を選べないようにし、日本語で理由を伝える
+    // （処理中に書き出せなかった場合の日本語の案内は、上の「エラーの日本語化」のテストで確かめている）
+    const settings = page.getByTestId("video-edit-settings");
+    await expect(settings.getByText("選べない形式は、お使いのブラウザでは、この設定で書き出せません。")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("radio", { name: "MP4" })).toBeDisabled();
+    await expect(page.getByRole("radio", { name: "WebM" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "圧縮する" })).toBeDisabled();
+    await expect(page.getByText("選んだ出力形式は、この設定では書き出せません。別の形式を選んでください。")).toBeVisible();
+    await expect(page.locator("main")).not.toContainText("no_encodable");
   });
 });
 
