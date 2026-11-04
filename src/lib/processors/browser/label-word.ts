@@ -34,6 +34,8 @@ export class LabelWordProcessor extends BrowserProcessor<LabelSettings, LabelOut
 
     const {
       Document,
+      Footer,
+      Header,
       Packer,
       Paragraph,
       Table,
@@ -70,12 +72,25 @@ export class LabelWordProcessor extends BrowserProcessor<LabelSettings, LabelOut
     const marginTop = mmToTwips(g.marginTopMm);
     const marginLeft = mmToTwips(g.marginLeftMm);
 
-    // 表のあとに必ず必要な空段落(1pt)が次のページへはみ出さないよう、余りが20twips(1pt)未満なら最終行を詰める
+    // 表のあとに必ず必要な空段落(1pt)と、ごく小さいフッター(1pt)が、ページの下に収まるよう、
+    // 余りが足りないときは最終行を少しだけ詰める（足りないと、Wordでは最後の行が次のページへ送られ、ラベルがずれる）
     const tableHeight = rowHeights.reduce((a, b) => a + b, 0);
     const slack = pageH - marginTop - tableHeight;
-    if (slack < 24 && rowHeights.length > 0) {
-      rowHeights[rowHeights.length - 1] = Math.max(20, rowHeights[rowHeights.length - 1] - (24 - slack));
+    const NEEDED_SLACK = 60;
+    if (slack < NEEDED_SLACK && rowHeights.length > 0) {
+      rowHeights[rowHeights.length - 1] = Math.max(20, rowHeights[rowHeights.length - 1] - (NEEDED_SLACK - slack));
     }
+
+    // ヘッダー・フッターは、ごく小さい（1pt）空の段落だけにする。
+    // 何も指定しないと、Wordは空のヘッダー・フッターにも標準の文字の高さ（約5〜6mm）を確保するため、
+    // 上の余白が小さいラベル用紙では表の開始位置が下へずれ、下に余裕のないラベル用紙では最後の行が次のページへ送られる
+    // （「縦6行にしたのに、Wordでは1ページ5行になり、ずれる」の原因）。
+    const tinyParagraph = () =>
+      new Paragraph({
+        spacing: { before: 0, after: 0, line: 20, lineRule: LineRuleType.EXACT },
+        run: { size: 2 },
+        children: [],
+      });
 
     const noBorder = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" } as const;
     const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
@@ -151,6 +166,8 @@ export class LabelWordProcessor extends BrowserProcessor<LabelSettings, LabelOut
             margin: { top: marginTop, left: marginLeft, right: 0, bottom: 0, header: 0, footer: 0, gutter: 0 },
           },
         },
+        headers: { default: new Header({ children: [tinyParagraph()] }) },
+        footers: { default: new Footer({ children: [tinyParagraph()] }) },
         children: [
           table,
           new Paragraph({

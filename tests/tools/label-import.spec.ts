@@ -7,8 +7,9 @@ import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload } from "../helpers/tool-runner";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
-import { honorificLineFromHeader, looksLikeHeader, rowsToLabelListText } from "@/lib/label/import-file";
-import { applyHonorific } from "@/lib/label/layout";
+import { honorificLineFromHeader, looksLikeHeader, restorePostalZeros, rowsToLabelListText } from "@/lib/label/import-file";
+import { applyHonorific, applyPostalCode, planLabelPages, DEFAULT_CONTENT, DEFAULT_GEOMETRY, DEFAULT_STYLE } from "@/lib/label/layout";
+import { LabelWordProcessor } from "@/lib/processors/browser/label-word";
 
 /**
  * ラベル作成の修正（緊急対応）のテスト。
@@ -88,6 +89,78 @@ baseTest.describe("敬称（ブラウザを使わない確認）", () => {
     expect(honorificLineFromHeader(["郵便番号", "住所", "氏名"])).toBe("last");
     expect(honorificLineFromHeader(["郵便番号", "氏名", "住所"])).toBeNull();
     expect(honorificLineFromHeader(["住所"])).toBeNull();
+  });
+});
+
+baseTest.describe("郵便番号（ブラウザを使わない確認）", () => {
+  const addr = "1000001\n東京都千代田区1-1\n山田 太郎";
+  baseTest("〒マークを付ける：郵便番号の行を「〒123-4567」にそろえる（全角・ハイフンなし・〒付きにも対応）", () => {
+    expect(applyPostalCode(addr, "mark")).toBe("〒100-0001\n東京都千代田区1-1\n山田 太郎");
+    expect(applyPostalCode("〒１００－０００１\n住所", "mark")).toBe("〒100-0001\n住所");
+    expect(applyPostalCode("100-0001", "mark")).toBe("〒100-0001");
+    expect(applyPostalCode("〒1000001 東京都千代田区1-1", "mark")).toBe("〒100-0001 東京都千代田区1-1");
+  });
+
+  baseTest("入れない：郵便番号の行を除く。住所と同じ行にあるときは郵便番号の部分だけ除く。入力のままなら変えない", () => {
+    expect(applyPostalCode(addr, "remove")).toBe("東京都千代田区1-1\n山田 太郎");
+    expect(applyPostalCode("〒100-0001 東京都千代田区1-1\n山田 太郎", "remove")).toBe("東京都千代田区1-1\n山田 太郎");
+    expect(applyPostalCode(addr, "keep")).toBe(addr);
+    // 住所の中の番地（1-1）や、郵便番号でない数字の行は変えない
+    expect(applyPostalCode("東京都千代田区1-1\n電話 03-1234-5678", "remove")).toBe("東京都千代田区1-1\n電話 03-1234-5678");
+  });
+
+  baseTest("郵便番号を除いたあとの最後の行に敬称が付く", () => {
+    const plan = planLabelPages(DEFAULT_GEOMETRY, {
+      ...DEFAULT_CONTENT,
+      mode: "different",
+      splitMode: "line",
+      listText: "山田 太郎\t東京都千代田区1-1\t1000001",
+      postalCode: "remove",
+      honorific: "sama",
+      honorificLine: "last",
+    });
+    expect(plan.pages[0][0]).toBe("山田 太郎\n東京都千代田区1-1 様");
+  });
+
+  baseTest("Excelで先頭の0が消えた郵便番号（数値）を、見出しが「郵便番号」の列なら7けたに戻す", () => {
+    const rows = [["郵便番号", "住所"], ["600001", "北海道札幌市"], ["1000001", "東京都"], ["", "不明"]];
+    restorePostalZeros(rows);
+    expect(rows.map((r) => r[0])).toEqual(["郵便番号", "0600001", "1000001", ""]);
+  });
+});
+
+baseTest.describe("Wordの1ページの行数とずれ（ブラウザを使わない確認）", () => {
+  async function wordXml(geometry: typeof DEFAULT_GEOMETRY) {
+    const out = await new LabelWordProcessor().process({ geometry, style: DEFAULT_STYLE, content: DEFAULT_CONTENT });
+    const files = unzipSync(new Uint8Array(await out.blob.arrayBuffer()));
+    const text = (name: string) => strFromU8(files[name]);
+    const headers = Object.keys(files).filter((n) => /^word\/(header|footer)\d+\.xml$/.test(n)).map(text);
+    return { doc: text("word/document.xml"), headers };
+  }
+
+  baseTest("ヘッダー・フッターは1ptの空の段落だけ（Wordが空のヘッダー・フッターに約5mmを確保して、行が次のページへ送られたり、開始位置がずれたりしないように）", async () => {
+    const { doc, headers } = await wordXml(DEFAULT_GEOMETRY);
+    expect(doc).toContain("<w:headerReference");
+    expect(doc).toContain("<w:footerReference");
+    expect(headers.length).toBeGreaterThanOrEqual(2);
+    for (const xml of headers) {
+      expect(xml).toMatch(/w:line="20"/);
+      expect(xml).toMatch(/w:lineRule="exact"/);
+      expect(xml).not.toContain("<w:t");
+    }
+    // 1ページに6行（行の高さは固定）
+    expect(doc.match(/<w:trHeight w:val="2398" w:hRule="exact"\/>/g)?.length).toBe(6);
+  });
+
+  baseTest("下にほとんど余りがない用紙でも、6行目が次のページへ送られないよう、最後の行だけをわずかに詰める", async () => {
+    // A4縦 297mm に、上の余白 6.1mm ＋ 48.4mm×6行 = 296.5mm（余り 0.5mm）
+    const { doc } = await wordXml({ ...DEFAULT_GEOMETRY, marginTopMm: 6.1, labelHeightMm: 48.4 });
+    const heights = [...doc.matchAll(/<w:trHeight w:val="(\d+)" w:hRule="exact"\/>/g)].map((m) => Number(m[1]));
+    expect(heights).toHaveLength(6);
+    const top = Math.round((6.1 / 25.4) * 1440);
+    expect(16838 - top - heights.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(60);
+    expect(heights[5]).toBeLessThan(heights[0]);
+    expect(heights[0] - heights[5]).toBeLessThan(60);
   });
 });
 
@@ -188,6 +261,34 @@ test.describe("Excel・CSVの読み込み", () => {
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "なし", exact: true }).click();
     await expect(cells.nth(0)).not.toContainText("様");
+  });
+
+  test("郵便番号：〒マークを付ける・入れないを選べ、プレビューに反映される（先頭の0が消えた番号も直る）", async ({ page }) => {
+    const data = await makeXlsx([
+      ["郵便番号", "住所", "氏名"],
+      [600001, "北海道札幌市中央区北1条西2丁目", "山田 太郎"],
+      ["100-0001", "東京都千代田区千代田1-1", "佐藤 花子"],
+    ]);
+    await openTool(page);
+    await dropOnPage(page, { name: "宛名.xlsx", mime: XLSX_MIME, data });
+    const cells = page.getByTestId("label-cell");
+    await expect(cells.nth(0)).toContainText("0600001");
+
+    await page.getByRole("button", { name: "〒マークを付ける" }).click();
+    await expect(cells.nth(0)).toContainText("〒060-0001");
+    await expect(cells.nth(1)).toContainText("〒100-0001");
+
+    await page.getByRole("button", { name: "入れない", exact: true }).click();
+    await expect(cells.nth(0)).not.toContainText("060");
+    await expect(cells.nth(0)).toContainText("北海道札幌市中央区北1条西2丁目");
+
+    // 敬称は、郵便番号を除いたあとの最後の行（氏名）に付く
+    await page.getByRole("button", { name: "様", exact: true }).click();
+    await expect(page.getByRole("button", { name: "最後の行（〒・住所・名前の順）" })).toHaveAttribute("aria-pressed", "true");
+    await expect(cells.nth(1)).toContainText("佐藤 花子 様");
+
+    await page.getByRole("button", { name: "入力のまま" }).click();
+    await expect(cells.nth(0)).toContainText("0600001");
   });
 
   test("古いExcel（.xls）は、保存し直す方法を案内する", async ({ page }) => {

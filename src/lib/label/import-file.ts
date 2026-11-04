@@ -84,7 +84,9 @@ export async function readLabelImportFile(file: File): Promise<LabelImportData> 
 
   const nonEmpty = rows.filter((r) => r.some((c) => c.trim() !== ""));
   if (nonEmpty.length === 0) throw new Error(`${file.name} には、読み込める文字がありませんでした。`);
-  return { fileName: file.name, sheetName, rows: nonEmpty, headerLikely: looksLikeHeader(nonEmpty[0]) };
+  const headerLikely = looksLikeHeader(nonEmpty[0]);
+  if (headerLikely) restorePostalZeros(nonEmpty);
+  return { fileName: file.name, sheetName, rows: nonEmpty, headerLikely };
 }
 
 const NAME_HEADER = /^(氏名|名前|お名前|なまえ|宛名|宛先|会社|会社名|団体名|name|company)$/i;
@@ -100,4 +102,19 @@ export function honorificLineFromHeader(row: string[]): LabelHonorificLine | nul
   if (index === 0) return "first";
   if (index === cells.length - 1) return "last";
   return null;
+}
+
+const POSTAL_HEADER = /^(郵便番号|〒|zip|zipcode|postal ?code)$/i;
+
+/**
+ * 見出しが「郵便番号」の列で、数値として入力されて先頭の0が消えた番号（例: 0600001 → 600001）を、7けたに戻す。
+ * Excelで郵便番号を数値のまま入力すると、先頭の0が消えるため。
+ */
+export function restorePostalZeros(rows: string[][]): void {
+  const col = rows[0].findIndex((c) => POSTAL_HEADER.test(c.trim()));
+  if (col < 0) return;
+  for (const row of rows.slice(1)) {
+    const v = (row[col] ?? "").trim();
+    if (/^\d{5,6}$/.test(v)) row[col] = v.padStart(7, "0");
+  }
 }

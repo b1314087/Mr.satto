@@ -77,6 +77,39 @@ export interface LabelContent {
   honorific?: LabelHonorific;
   /** 敬称を付ける行。"last": ラベルの最後の行（〒・住所・氏名の順など） / "first": 1行目（氏名・住所の順など） */
   honorificLine?: LabelHonorificLine;
+  /** 郵便番号。"keep": 入力のまま / "mark": 〒マークを付けて「〒123-4567」の形にそろえる / "remove": 入れない（省略時は入力のまま） */
+  postalCode?: LabelPostalCode;
+}
+
+export type LabelPostalCode = "keep" | "mark" | "remove";
+
+/** 郵便番号だけの行（「〒100-0001」「100-0001」「1000001」）、または「〒100-0001 東京都…」のように〒で始まる行 */
+const POSTAL_LINE = /^\s*(〒\s*)?(\d{3})[-‐－ー−]?(\d{4})\s*$/;
+const POSTAL_PREFIX = /^\s*〒\s*(\d{3})[-‐－ー−]?(\d{4})[\s　]+(.+)$/;
+
+/**
+ * ラベルの郵便番号を、選んだ形にする（行ごとに判定する。全角の数字にも対応）。
+ * - "mark": 〒マークを付けて「〒123-4567」にそろえる
+ * - "remove": 郵便番号の行を除く（〒で始まり住所が続く行は、郵便番号の部分だけ除く）
+ */
+export function applyPostalCode(text: string, mode: LabelPostalCode = "keep"): string {
+  if (mode === "keep" || text.trim() === "") return text;
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    const n = line.normalize("NFKC");
+    const whole = POSTAL_LINE.exec(n);
+    const prefix = whole ? null : POSTAL_PREFIX.exec(n);
+    if (whole) {
+      if (mode === "mark") out.push(`〒${whole[2]}-${whole[3]}`);
+      continue;
+    }
+    if (prefix) {
+      out.push(mode === "mark" ? `〒${prefix[1]}-${prefix[2]} ${prefix[3]}` : prefix[3]);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
 }
 
 export type LabelHonorific = "none" | "sama" | "onchu";
@@ -140,6 +173,7 @@ export const DEFAULT_CONTENT: LabelContent = {
   startPosition: 1,
   honorific: "none",
   honorificLine: "last",
+  postalCode: "keep",
 };
 
 /** 市販ラベル用紙でよくある寸法の目安。お手持ちの用紙の寸法に合わせて数値を直して使う */
@@ -281,10 +315,13 @@ export function planLabelPages(g: LabelGeometry, c: LabelContent): LabelPlan {
   if (contentError) throw new Error(contentError);
   const perPage = labelsPerPage(g);
   if (c.mode === "same") {
-    const text = applyHonorific(c.sameText, c.honorific, c.honorificLine);
+    const text = applyHonorific(applyPostalCode(c.sameText, c.postalCode), c.honorific, c.honorificLine);
     return { pages: [Array.from({ length: perPage }, () => text)], filledCount: perPage };
   }
-  const entries = parseLabelEntries(c.listText, c.splitMode).map((t) => applyHonorific(t, c.honorific, c.honorificLine));
+  // 郵便番号を先に整えてから、敬称を付ける（郵便番号を除いたあとの「最後の行」に付けるため）
+  const entries = parseLabelEntries(c.listText, c.splitMode).map((t) =>
+    applyHonorific(applyPostalCode(t, c.postalCode), c.honorific, c.honorificLine)
+  );
   const slots: string[] = [...Array.from({ length: c.startPosition - 1 }, () => ""), ...entries];
   const pages: string[][] = [];
   for (let i = 0; i < slots.length; i += perPage) {

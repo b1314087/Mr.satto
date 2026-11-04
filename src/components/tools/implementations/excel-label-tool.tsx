@@ -28,6 +28,7 @@ import {
   type LabelHAlign,
   type LabelHonorific,
   type LabelHonorificLine,
+  type LabelPostalCode,
   type LabelPlan,
   type LabelStyle,
   type LabelVAlign,
@@ -505,6 +506,23 @@ export function ExcelLabelTool() {
         {(content.honorific ?? "none") !== "none" && (
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             個人あては「様」、会社・部署あては「御中」です。すでに「様」「御中」「殿」が付いている行には、重ねて付けません。
+          </p>
+        )}
+        <ChoiceButtons<LabelPostalCode>
+          label="郵便番号"
+          value={content.postalCode ?? "keep"}
+          options={[
+            { value: "keep", label: "入力のまま" },
+            { value: "mark", label: "〒マークを付ける" },
+            { value: "remove", label: "入れない" },
+          ]}
+          onChange={(v) => updateContent({ postalCode: v })}
+        />
+        {(content.postalCode ?? "keep") !== "keep" && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {content.postalCode === "mark"
+              ? "郵便番号の行（1000001・100-0001 など）を「〒100-0001」の形にそろえます。"
+              : "郵便番号の行（〒100-0001・1000001 など）をラベルに入れません。「〒100-0001 東京都…」のように住所と同じ行にあるときは、郵便番号の部分だけを除きます。"}
           </p>
         )}
         {content.mode === "same" ? (
