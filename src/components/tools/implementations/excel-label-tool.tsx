@@ -26,6 +26,8 @@ import {
   type LabelContent,
   type LabelGeometry,
   type LabelHAlign,
+  type LabelHonorific,
+  type LabelHonorificLine,
   type LabelPlan,
   type LabelStyle,
   type LabelVAlign,
@@ -35,7 +37,7 @@ import { ExcelLabelProcessor } from "@/lib/processors/browser/excel-label";
 import { downloadBlob } from "@/lib/utils/format";
 import { approxWrap } from "./shared/approx-text";
 import { FileDropzone } from "@/components/common/file-dropzone";
-import { LABEL_IMPORT_ACCEPT, readLabelImportFile, rowsToLabelListText, type LabelImportData } from "@/lib/label/import-file";
+import { LABEL_IMPORT_ACCEPT, honorificLineFromHeader, readLabelImportFile, rowsToLabelListText, type LabelImportData } from "@/lib/label/import-file";
 
 type OutputFormat = "word" | "excel";
 
@@ -170,6 +172,9 @@ export function ExcelLabelTool() {
       setImported(data);
       setSkipHeader(data.headerLikely);
       applyImport(data, data.headerLikely);
+      // 見出しに「氏名」「会社名」などがあれば、その列の位置に合わせて、敬称を付ける行を選んでおく
+      const line = data.headerLikely ? honorificLineFromHeader(data.rows[0]) : null;
+      if (line) updateContent({ honorificLine: line });
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "ファイルを読み込めませんでした");
     }
@@ -474,6 +479,34 @@ export function ExcelLabelTool() {
             setPageIndex(0);
           }}
         />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <ChoiceButtons<LabelHonorific>
+            label="敬称"
+            value={content.honorific ?? "none"}
+            options={[
+              { value: "none", label: "なし" },
+              { value: "sama", label: "様" },
+              { value: "onchu", label: "御中" },
+            ]}
+            onChange={(v) => updateContent({ honorific: v })}
+          />
+          {(content.honorific ?? "none") !== "none" && (
+            <ChoiceButtons<LabelHonorificLine>
+              label="敬称を付ける行"
+              value={content.honorificLine ?? "last"}
+              options={[
+                { value: "last", label: "最後の行（〒・住所・名前の順）" },
+                { value: "first", label: "1行目（名前・住所の順）" },
+              ]}
+              onChange={(v) => updateContent({ honorificLine: v })}
+            />
+          )}
+        </div>
+        {(content.honorific ?? "none") !== "none" && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            個人あては「様」、会社・部署あては「御中」です。すでに「様」「御中」「殿」が付いている行には、重ねて付けません。
+          </p>
+        )}
         {content.mode === "same" ? (
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-neutral-600 dark:text-neutral-300">ラベル内の文字（全ラベル共通）</span>

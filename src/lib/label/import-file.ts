@@ -1,6 +1,7 @@
 import { readXlsxSheets, type XlsxCellValue } from "@/lib/excel/xlsx-simple-io";
 import { decodeCsvBytes, LEGACY_EXCEL_MESSAGE } from "@/lib/calendar/event-file";
 import { parseCsv } from "@/lib/utils/csv";
+import type { LabelHonorificLine } from "@/lib/label/layout";
 
 /**
  * ラベル作成：Excel・CSVのファイルから、ラベルごとの文字を読み込む。
@@ -84,4 +85,19 @@ export async function readLabelImportFile(file: File): Promise<LabelImportData> 
   const nonEmpty = rows.filter((r) => r.some((c) => c.trim() !== ""));
   if (nonEmpty.length === 0) throw new Error(`${file.name} には、読み込める文字がありませんでした。`);
   return { fileName: file.name, sheetName, rows: nonEmpty, headerLikely: looksLikeHeader(nonEmpty[0]) };
+}
+
+const NAME_HEADER = /^(氏名|名前|お名前|なまえ|宛名|宛先|会社|会社名|団体名|name|company)$/i;
+
+/**
+ * 見出しの行から、敬称（様・御中）を付ける行を決める。
+ * 名前の列が最初なら1行目、最後なら最後の行。分からないときは null（今の設定のまま）。
+ */
+export function honorificLineFromHeader(row: string[]): LabelHonorificLine | null {
+  const cells = row.map((c) => c.trim()).filter((c) => c !== "");
+  const index = cells.findIndex((c) => NAME_HEADER.test(c));
+  if (index < 0) return null;
+  if (index === 0) return "first";
+  if (index === cells.length - 1) return "last";
+  return null;
 }

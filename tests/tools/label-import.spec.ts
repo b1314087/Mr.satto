@@ -7,7 +7,8 @@ import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload } from "../helpers/tool-runner";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
-import { looksLikeHeader, rowsToLabelListText } from "@/lib/label/import-file";
+import { honorificLineFromHeader, looksLikeHeader, rowsToLabelListText } from "@/lib/label/import-file";
+import { applyHonorific } from "@/lib/label/layout";
 
 /**
  * ラベル作成の修正（緊急対応）のテスト。
@@ -66,6 +67,27 @@ baseTest.describe("読み込みの仕組み（ブラウザを使わない確認�
     expect(count).toBe(3);
     expect(text).toBe("山田 太郎\t東京都千代田区1-1\n佐藤 花子\n鈴木 一郎\t大阪府\t大阪市北区1-1");
     expect(rowsToLabelListText(rows, false).count).toBe(4);
+  });
+});
+
+baseTest.describe("敬称（ブラウザを使わない確認）", () => {
+  baseTest("様・御中を、選んだ行（最後の行／1行目）に付ける。なしなら付けない。空のラベル・すでに付いている行には付けない", () => {
+    const addr = "〒100-0001\n東京都千代田区1-1\n山田 太郎";
+    expect(applyHonorific(addr, "sama", "last")).toBe("〒100-0001\n東京都千代田区1-1\n山田 太郎 様");
+    expect(applyHonorific("株式会社見本\n東京都千代田区1-1", "onchu", "first")).toBe("株式会社見本 御中\n東京都千代田区1-1");
+    expect(applyHonorific(addr, "none", "last")).toBe(addr);
+    expect(applyHonorific("", "sama", "last")).toBe("");
+    expect(applyHonorific("山田 太郎 様", "sama", "last")).toBe("山田 太郎 様");
+    expect(applyHonorific("総務部 御中", "sama", "last")).toBe("総務部 御中");
+    // 最後の行が空行のときは、文字のある最後の行に付ける
+    expect(applyHonorific("山田 太郎\n", "sama", "last")).toBe("山田 太郎 様\n");
+  });
+
+  baseTest("見出しの「氏名」の列の位置から、敬称を付ける行を決める", () => {
+    expect(honorificLineFromHeader(["氏名", "住所"])).toBe("first");
+    expect(honorificLineFromHeader(["郵便番号", "住所", "氏名"])).toBe("last");
+    expect(honorificLineFromHeader(["郵便番号", "氏名", "住所"])).toBeNull();
+    expect(honorificLineFromHeader(["住所"])).toBeNull();
   });
 });
 
@@ -131,6 +153,41 @@ test.describe("Excel・CSVの読み込み", () => {
     await expect(page.getByTestId("label-import-info")).toContainText("から2件を読み込みました");
     await expect(page.getByTestId("label-import-info").getByRole("checkbox")).not.toBeChecked();
     await expect(page.getByTestId("label-cell").nth(1)).toContainText("佐藤 花子");
+  });
+
+  test("敬称：なし・様・御中を選べ、プレビューとWordに反映される（読み込んだ見出しから付ける行も選ばれる）", async ({ page }) => {
+    const data = await makeXlsx([
+      ["氏名", "住所"],
+      ["山田 太郎", "東京都千代田区千代田1-1"],
+      ["株式会社見本", "大阪府大阪市北区梅田1-1"],
+    ]);
+    await openTool(page);
+    await dropOnPage(page, { name: "宛名.xlsx", mime: XLSX_MIME, data });
+    const cells = page.getByTestId("label-cell");
+    await expect(cells.nth(0)).toContainText("山田 太郎");
+    await expect(page.getByRole("button", { name: "なし", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(cells.nth(0)).not.toContainText("様");
+
+    await page.getByRole("button", { name: "様", exact: true }).click();
+    // 見出しの「氏名」が最初の列なので、1行目（名前の行）に付く
+    await expect(page.getByRole("button", { name: "1行目（名前・住所の順）" })).toHaveAttribute("aria-pressed", "true");
+    await expect(cells.nth(0)).toContainText("山田 太郎 様");
+    await expect(cells.nth(0)).not.toContainText("千代田1-1 様");
+
+    await page.getByRole("button", { name: "御中", exact: true }).click();
+    await expect(cells.nth(1)).toContainText("株式会社見本 御中");
+
+    await page.getByRole("button", { name: "様", exact: true }).click();
+    await page.getByRole("button", { name: "Wordを作成" }).click();
+    await expect(page.getByText("ラベルシートを作成しました")).toBeVisible({ timeout: 15_000 });
+    const download = await clickAndDownload(page, /Wordファイルをダウンロード/);
+    const doc = strFromU8(unzipSync(new Uint8Array(fs.readFileSync((await download.path())!)))["word/document.xml"]);
+    expect(doc).toContain("山田 太郎 様");
+    expect(doc).toContain("株式会社見本 様");
+
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "なし", exact: true }).click();
+    await expect(cells.nth(0)).not.toContainText("様");
   });
 
   test("古いExcel（.xls）は、保存し直す方法を案内する", async ({ page }) => {

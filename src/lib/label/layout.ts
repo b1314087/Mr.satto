@@ -73,6 +73,30 @@ export interface LabelContent {
   splitMode: LabelSplitMode;
   /** mode="different": 1ページ目の何枚目から使い始めるか(使いかけのシート用) */
   startPosition: number;
+  /** 宛名の敬称。"none": 付けない / "sama": 様 / "onchu": 御中（省略時は付けない） */
+  honorific?: LabelHonorific;
+  /** 敬称を付ける行。"last": ラベルの最後の行（〒・住所・氏名の順など） / "first": 1行目（氏名・住所の順など） */
+  honorificLine?: LabelHonorificLine;
+}
+
+export type LabelHonorific = "none" | "sama" | "onchu";
+export type LabelHonorificLine = "first" | "last";
+
+const HONORIFIC_TEXT: Record<Exclude<LabelHonorific, "none">, string> = { sama: "様", onchu: "御中" };
+
+/**
+ * ラベルの文字に敬称（様・御中）を付ける。空のラベルには付けない。
+ * 付ける行（1行目／最後の行）の末尾に、半角スペースを空けて付ける。すでに「様」「御中」「殿」などで終わっている行には付けない。
+ */
+export function applyHonorific(text: string, honorific: LabelHonorific = "none", line: LabelHonorificLine = "last"): string {
+  if (honorific === "none" || text.trim() === "") return text;
+  const lines = text.split("\n");
+  const indexes = lines.map((l, i) => (l.trim() !== "" ? i : -1)).filter((i) => i >= 0);
+  const target = line === "first" ? indexes[0] : indexes[indexes.length - 1];
+  const current = lines[target].replace(/\s+$/, "");
+  if (/(様|御中|殿|先生|各位)$/.test(current)) return text;
+  lines[target] = `${current} ${HONORIFIC_TEXT[honorific]}`;
+  return lines.join("\n");
 }
 
 export interface LabelSettings {
@@ -114,6 +138,8 @@ export const DEFAULT_CONTENT: LabelContent = {
   listText: "",
   splitMode: "blank",
   startPosition: 1,
+  honorific: "none",
+  honorificLine: "last",
 };
 
 /** 市販ラベル用紙でよくある寸法の目安。お手持ちの用紙の寸法に合わせて数値を直して使う */
@@ -255,9 +281,10 @@ export function planLabelPages(g: LabelGeometry, c: LabelContent): LabelPlan {
   if (contentError) throw new Error(contentError);
   const perPage = labelsPerPage(g);
   if (c.mode === "same") {
-    return { pages: [Array.from({ length: perPage }, () => c.sameText)], filledCount: perPage };
+    const text = applyHonorific(c.sameText, c.honorific, c.honorificLine);
+    return { pages: [Array.from({ length: perPage }, () => text)], filledCount: perPage };
   }
-  const entries = parseLabelEntries(c.listText, c.splitMode);
+  const entries = parseLabelEntries(c.listText, c.splitMode).map((t) => applyHonorific(t, c.honorific, c.honorificLine));
   const slots: string[] = [...Array.from({ length: c.startPosition - 1 }, () => ""), ...entries];
   const pages: string[][] = [];
   for (let i = 0; i < slots.length; i += perPage) {
