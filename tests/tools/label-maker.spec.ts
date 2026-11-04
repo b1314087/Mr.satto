@@ -121,7 +121,9 @@ test.describe("ラベル作成(Word)", () => {
   test("用紙に収まらない設定ではエラーが出て作成できない", async ({ page }) => {
     await openTool(page);
     await page.getByRole("spinbutton", { name: "ラベル幅 (mm)" }).fill("120");
-    await expect(page.getByText(/ラベルが用紙の横幅に収まりません/)).toBeVisible();
+    // エラー欄（作成ボタンの上）と、プレビュー欄の案内の両方に、原因が表示される
+    await expect(page.locator("main [role=alert]").getByText(/ラベルが用紙の横幅に収まりません/)).toBeVisible();
+    await expect(page.getByTestId("label-preview-hint")).toContainText("ラベルが用紙の横幅に収まりません");
     await expect(page.getByRole("button", { name: "Wordを作成" })).toBeDisabled();
   });
 

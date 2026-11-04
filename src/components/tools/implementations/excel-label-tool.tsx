@@ -34,6 +34,8 @@ import { LabelWordProcessor } from "@/lib/processors/browser/label-word";
 import { ExcelLabelProcessor } from "@/lib/processors/browser/excel-label";
 import { downloadBlob } from "@/lib/utils/format";
 import { approxWrap } from "./shared/approx-text";
+import { FileDropzone } from "@/components/common/file-dropzone";
+import { LABEL_IMPORT_ACCEPT, readLabelImportFile, rowsToLabelListText, type LabelImportData } from "@/lib/label/import-file";
 
 type OutputFormat = "word" | "excel";
 
@@ -129,6 +131,10 @@ export function ExcelLabelTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ blob: Blob; format: OutputFormat; pageCount: number } | null>(null);
+  // Excel・CSVのファイルから読み込んだ内容（1行目を見出しとして除くかを、あとから切り替えられるように残す）
+  const [imported, setImported] = useState<LabelImportData | null>(null);
+  const [skipHeader, setSkipHeader] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   function resetResult() {
     setResult(null);
@@ -148,7 +154,30 @@ export function ExcelLabelTool() {
     resetResult();
   }
 
-  const validationError = validateGeometry(geometry) ?? validateStyle(style) ?? validateContent(content, geometry);
+  /** 読み込んだ行を、ラベルごとの文字（1行を1枚・セルはラベルの中で改行）として入力欄へ入れる */
+  function applyImport(data: LabelImportData, skip: boolean) {
+    const { text } = rowsToLabelListText(data.rows, skip);
+    updateContent({ mode: "different", splitMode: "line", listText: text });
+    setPageIndex(0);
+  }
+
+  async function handleImportFile(files: File[]) {
+    const file = files[0];
+    if (!file) return;
+    setImportError(null);
+    try {
+      const data = await readLabelImportFile(file);
+      setImported(data);
+      setSkipHeader(data.headerLikely);
+      applyImport(data, data.headerLikely);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "ファイルを読み込めませんでした");
+    }
+  }
+
+  const geometryError = validateGeometry(geometry);
+  const contentError = geometryError ? null : validateContent(content, geometry);
+  const validationError = geometryError ?? validateStyle(style) ?? contentError;
   const perPage = labelsPerPage(geometry);
   const entryCount = useMemo(
     () => (content.mode === "different" ? parseLabelEntries(content.listText, content.splitMode).length : 0),
@@ -156,18 +185,21 @@ export function ExcelLabelTool() {
   );
 
   const plan: LabelPlan | null = useMemo(() => {
-    if (validationError) return null;
+    // 文字の設定（大きさなど）の誤りでは、ラベルの並びは変わらないため、プレビューは隠さない
+    if (geometryError || contentError) return null;
     try {
       return planLabelPages(geometry, content);
     } catch {
       return null;
     }
-  }, [geometry, content, validationError]);
+  }, [geometry, content, geometryError, contentError]);
 
   const paper = paperSizeMm(geometry.paper, geometry.landscape);
   const used = validateGeometry(geometry) ? null : usedSizeMm(geometry);
   const safePage = plan ? Math.min(pageIndex, plan.pages.length - 1) : 0;
-  const pageLabels = plan?.pages[safePage] ?? null;
+  // 用紙・ラベルの大きさが正しければ、内容がまだ入っていなくても、空のラベルでシートを表示する
+  // （以前は内容のエラーでもプレビュー全体を隠していたため、「ラベルごとに違う内容」で文字が空のとき何も表示されなかった）
+  const pageLabels = plan?.pages[safePage] ?? (geometryError ? null : Array.from({ length: perPage }, () => ""));
 
   const placed = useMemo(() => {
     if (validateGeometry(geometry)) return null;
@@ -299,10 +331,19 @@ export function ExcelLabelTool() {
                 赤い枠のラベルは、文字が枠に収まらない可能性があります（約{overflowCount}枚）。文字の大きさを小さくするか、ラベル内の余白を減らしてください。
               </p>
             )}
+            {!plan && contentError && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="label-preview-hint">
+                {content.mode === "different" && entryCount === 0
+                  ? "ラベルに入れる文字を入力するか、Excel・CSVのファイルを読み込むと、ここに表示されます。"
+                  : `${contentError}。`}
+              </p>
+            )}
             <p className="text-xs text-neutral-400 dark:text-neutral-500">文字の収まり具合は目安です。実際の折り返しはWord・Excel側で決まります。</p>
           </>
         ) : (
-          <p className="text-xs text-neutral-400">設定が正しくないため、プレビューを表示できません。</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="label-preview-hint">
+            {geometryError ? `${geometryError}。直すとプレビューが表示されます。` : "プレビューを表示できません。"}
+          </p>
         )}
       </section>
       }
@@ -394,6 +435,33 @@ export function ExcelLabelTool() {
 
       <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">ラベルの内容</p>
+        <FileDropzone
+          accept={LABEL_IMPORT_ACCEPT}
+          label="Excel・CSVのファイルをドラッグ&ドロップ"
+          hint="またはタップして選択（.xlsx・.csv）。1行が1枚のラベルになり、横に並んだセルはラベルの中で改行されます"
+          onFilesSelected={handleImportFile}
+          onError={setImportError}
+        />
+        {importError && <ErrorMessage message={importError} />}
+        {imported && (
+          <div className="flex flex-col gap-1.5 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300" data-testid="label-import-info">
+            <p>
+              「{imported.fileName}」{imported.sheetName ? `（シート: ${imported.sheetName}）` : ""}から
+              {rowsToLabelListText(imported.rows, skipHeader).count}件を読み込みました。読み込んだ内容は、下の欄で直せます。
+            </p>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={skipHeader}
+                onChange={(e) => {
+                  setSkipHeader(e.target.checked);
+                  applyImport(imported, e.target.checked);
+                }}
+              />
+              1行目は見出し（「氏名」「住所」など）なので、ラベルにしない
+            </label>
+          </div>
+        )}
         <ChoiceButtons
           label="ラベルに入れる内容"
           value={content.mode}

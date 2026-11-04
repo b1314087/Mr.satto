@@ -1,0 +1,142 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { strFromU8, unzipSync } from "fflate";
+import { test as baseTest } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { test, expect } from "../fixtures/premium-test";
+import { clickAndDownload } from "../helpers/tool-runner";
+import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
+import { looksLikeHeader, rowsToLabelListText } from "@/lib/label/import-file";
+
+/**
+ * ラベル作成の修正（緊急対応）のテスト。
+ * - プレビュー：「ラベルごとに違う内容」で文字がまだ空でも、ラベルの並びを表示する（以前は何も表示されなかった）
+ * - Excel・CSVのファイルをドラッグ&ドロップ（または選択）すると、ラベルごとの文字として読み込む
+ */
+
+const tmpFile = (name: string, data: Buffer | string) => {
+  const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "label-import-")), name);
+  fs.writeFileSync(p, data);
+  return p;
+};
+
+async function makeXlsx(rows: unknown[][]): Promise<Buffer> {
+  const blob = await writeXlsxSheets([{ name: "宛名", rows }]);
+  return Buffer.from(await blob.arrayBuffer());
+}
+
+async function openTool(page: Page) {
+  await page.goto("/tools/excel-label");
+  await page.waitForFunction(() => {
+    const el = Array.from(document.querySelectorAll("button")).find((b) => /Wordを作成/.test(b.textContent ?? ""));
+    return !!el && Object.keys(el).some((k) => k.startsWith("__reactProps"));
+  });
+}
+
+/** ページの見出し（ファイル選択欄の外）に、ファイルをドロップする（ブラウザの実際のドロップと同じイベント） */
+async function dropOnPage(page: Page, file: { name: string; mime: string; data: Buffer }) {
+  await page.evaluate(
+    ({ name, mime, base64 }) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], name, { type: mime }));
+      const el = document.querySelector("h1")!;
+      for (const type of ["dragenter", "dragover", "drop"]) {
+        el.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 200, clientY: 200 }));
+      }
+    },
+    { name: file.name, mime: file.mime, base64: file.data.toString("base64") }
+  );
+}
+
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+baseTest.describe("読み込みの仕組み（ブラウザを使わない確認）", () => {
+  baseTest("1行が1枚のラベルになり、横のセルはラベルの中で改行される。空のセル・空の行は飛ばす", () => {
+    const rows = [
+      ["氏名", "住所"],
+      ["山田 太郎", "東京都千代田区1-1"],
+      ["", ""],
+      ["佐藤 花子", ""],
+      ["鈴木 一郎", "大阪府\n大阪市北区1-1"],
+    ];
+    expect(looksLikeHeader(rows[0])).toBe(true);
+    expect(looksLikeHeader(rows[1])).toBe(false);
+    const { text, count } = rowsToLabelListText(rows, true);
+    expect(count).toBe(3);
+    expect(text).toBe("山田 太郎\t東京都千代田区1-1\n佐藤 花子\n鈴木 一郎\t大阪府\t大阪市北区1-1");
+    expect(rowsToLabelListText(rows, false).count).toBe(4);
+  });
+});
+
+test.describe("プレビュー", () => {
+  test("「ラベルごとに違う内容」で文字がまだ空でも、12枚のラベルの並びが表示され、何をすればよいか案内する", async ({ page }) => {
+    await openTool(page);
+    await page.getByRole("button", { name: "ラベルごとに違う内容" }).click();
+    await expect(page.getByTestId("label-cell")).toHaveCount(12);
+    await expect(page.getByTestId("label-preview-hint")).toContainText("Excel・CSVのファイルを読み込むと、ここに表示されます");
+    await expect(page.getByText("設定が正しくないため、プレビューを表示できません。")).toHaveCount(0);
+  });
+
+  test("用紙に収まらない寸法のときは、原因をそのまま伝える", async ({ page }) => {
+    await openTool(page);
+    await page.getByRole("spinbutton", { name: "ラベル幅 (mm)" }).fill("200");
+    await expect(page.getByTestId("label-cell")).toHaveCount(0);
+    const hint = page.getByTestId("label-preview-hint");
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText("直すとプレビューが表示されます");
+    await expect(hint).not.toContainText("設定が正しくないため");
+  });
+});
+
+test.describe("Excel・CSVの読み込み", () => {
+  test("Excelのファイルをページにドラッグ&ドロップすると、ラベルごとの文字として読み込まれ、プレビューとWordに入る（見出しの行は除く）", async ({ page }) => {
+    const data = await makeXlsx([
+      ["氏名", "住所"],
+      ["山田 太郎", "東京都千代田区千代田1-1"],
+      ["佐藤 花子", "大阪府大阪市北区梅田1-1"],
+      ["鈴木 一郎", "愛知県名古屋市中区1-1"],
+    ]);
+    await openTool(page);
+    await dropOnPage(page, { name: "宛名リスト.xlsx", mime: XLSX_MIME, data });
+    const info = page.getByTestId("label-import-info");
+    await expect(info).toContainText("「宛名リスト.xlsx」（シート: 宛名）から3件を読み込みました");
+    await expect(page.getByRole("button", { name: "ラベルごとに違う内容" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByLabel("ラベルの区切り方")).toHaveValue("line");
+    const cells = page.getByTestId("label-cell");
+    await expect(cells.nth(0)).toContainText("山田 太郎");
+    await expect(cells.nth(0)).toContainText("東京都千代田区千代田1-1");
+    await expect(cells.nth(2)).toContainText("鈴木 一郎");
+    await expect(cells.nth(3)).toHaveText("");
+    await expect(page.getByText("3件のラベルを読み取りました")).toBeVisible();
+
+    // 見出しの行もラベルにしたいときは、チェックを外す
+    await info.getByRole("checkbox").uncheck();
+    await expect(cells.nth(0)).toContainText("氏名");
+    await expect(page.getByText("4件のラベルを読み取りました")).toBeVisible();
+    await info.getByRole("checkbox").check();
+
+    await page.getByRole("button", { name: "Wordを作成" }).click();
+    await expect(page.getByText("ラベルシートを作成しました")).toBeVisible({ timeout: 15_000 });
+    const download = await clickAndDownload(page, /Wordファイルをダウンロード/);
+    const doc = strFromU8(unzipSync(new Uint8Array(fs.readFileSync((await download.path())!)))["word/document.xml"]);
+    for (const t of ["山田 太郎", "東京都千代田区千代田1-1", "佐藤 花子", "鈴木 一郎"]) expect(doc).toContain(t);
+    expect(doc).not.toContain("氏名");
+  });
+
+  test("ファイル選択欄からCSVを選んでも読み込める（見出しがないときは、すべての行をラベルにする）", async ({ page }) => {
+    await openTool(page);
+    const csv = tmpFile("list.csv", "﻿山田 太郎,東京都千代田区1-1\n佐藤 花子,大阪府大阪市北区1-1\n");
+    await page.locator('input[type="file"]').first().setInputFiles(csv);
+    await expect(page.getByTestId("label-import-info")).toContainText("から2件を読み込みました");
+    await expect(page.getByTestId("label-import-info").getByRole("checkbox")).not.toBeChecked();
+    await expect(page.getByTestId("label-cell").nth(1)).toContainText("佐藤 花子");
+  });
+
+  test("古いExcel（.xls）は、保存し直す方法を案内する", async ({ page }) => {
+    await openTool(page);
+    const xls = tmpFile("old.xls", Buffer.from([0xd0, 0xcf, 0x11, 0xe0]));
+    await page.locator('input[type="file"]').first().setInputFiles(xls);
+    await expect(page.getByText("古い形式（.xls）は読み込めません")).toBeVisible();
+  });
+});
