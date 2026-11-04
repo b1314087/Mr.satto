@@ -1,4 +1,5 @@
-import { PDFDocument, PDFPage, PDFString } from "pdf-lib";
+import type * as PdfLibTypes from "pdf-lib";
+import { pdfLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * PDFへ「クリックできるリンク」を追加する小さな共通ヘルパー（Phase 9）。
@@ -14,8 +15,8 @@ import { PDFDocument, PDFPage, PDFString } from "pdf-lib";
  * URIの値は必ず PDFString.of() で明示的に包む。
  */
 export function addLinkAnnotation(
-  doc: PDFDocument,
-  page: PDFPage,
+  doc: PdfLibTypes.PDFDocument,
+  page: PdfLibTypes.PDFPage,
   url: string,
   rect: { x: number; y: number; width: number; height: number }
 ): void {
@@ -28,7 +29,7 @@ export function addLinkAnnotation(
       A: {
         Type: "Action",
         S: "URI",
-        URI: PDFString.of(url),
+        URI: pdfLib().PDFString.of(url),
       },
     })
   );

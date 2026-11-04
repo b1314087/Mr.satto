@@ -1,5 +1,4 @@
-import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont } from "pdf-lib";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
 import { csvRowsToBlob } from "@/lib/utils/csv";
@@ -14,6 +13,7 @@ import {
   type ShiftSchedule,
   type ShiftType,
 } from "@/lib/shift/model";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * シフト表（勤務表）の出力（Excel・PDF・CSV）。ブラウザ内だけで作る（名前は外部に送らない）。
@@ -160,8 +160,9 @@ function fit(text: string, font: PDFFont, size: number, maxWidth: number): numbe
 export const SHIFT_PDF_ROWS_PER_PAGE = 30;
 
 export async function shiftToPdfBlob(schedule: ShiftSchedule): Promise<{ blob: Blob; pageCount: number }> {
-  const doc = await PDFDocument.create();
-  doc.registerFontkit(fontkit);
+  await ensurePdfLib({ fontkit: true });
+  const doc = await pdfLib().PDFDocument.create();
+  doc.registerFontkit(fontkitLib());
   const font = await doc.embedFont(await loadJapaneseFontBytes(), { subset: false });
   const days = monthDays(schedule.year, schedule.month);
   const typeByCode = new Map(schedule.types.map((t) => [t.code.trim(), t]));
@@ -179,8 +180,8 @@ export async function shiftToPdfBlob(schedule: ShiftSchedule): Promise<{ blob: B
   chunks.forEach((chunk, pageIndex) => {
     const page = doc.addPage([PAGE_W, PAGE_H]);
     const title = shiftTitle(schedule);
-    page.drawText(title, { x: MARGIN, y: PAGE_H - MARGIN - 14, size: fit(title, font, 16, PAGE_W - MARGIN * 2 - 70), font, color: rgb(...INK) });
-    page.drawText(`${pageIndex + 1} / ${chunks.length}`, { x: PAGE_W - MARGIN - 36, y: PAGE_H - MARGIN - 12, size: 9, font, color: rgb(...MUTED) });
+    page.drawText(title, { x: MARGIN, y: PAGE_H - MARGIN - 14, size: fit(title, font, 16, PAGE_W - MARGIN * 2 - 70), font, color: pdfLib().rgb(...INK) });
+    page.drawText(`${pageIndex + 1} / ${chunks.length}`, { x: PAGE_W - MARGIN - 36, y: PAGE_H - MARGIN - 12, size: 9, font, color: pdfLib().rgb(...MUTED) });
 
     const top = PAGE_H - MARGIN - 30;
     const isLast = pageIndex === chunks.length - 1;
@@ -190,10 +191,10 @@ export async function shiftToPdfBlob(schedule: ShiftSchedule): Promise<{ blob: B
     const fs = Math.min(9, rowH * 0.62);
 
     const cellBox = (x: number, y: number, w: number, h: number, bg?: [number, number, number]) =>
-      page.drawRectangle({ x, y, width: w, height: h, color: bg ? rgb(...bg) : undefined, borderColor: rgb(...LINE), borderWidth: 0.4 });
+      page.drawRectangle({ x, y, width: w, height: h, color: bg ? pdfLib().rgb(...bg) : undefined, borderColor: pdfLib().rgb(...LINE), borderWidth: 0.4 });
     const center = (text: string, x: number, y: number, w: number, h: number, size: number) => {
       const s = fit(text, font, size, w - 2);
-      page.drawText(text, { x: x + (w - font.widthOfTextAtSize(text, s)) / 2, y: y + (h - s) / 2 + s * 0.12, size: s, font, color: rgb(...INK) });
+      page.drawText(text, { x: x + (w - font.widthOfTextAtSize(text, s)) / 2, y: y + (h - s) / 2 + s * 0.12, size: s, font, color: pdfLib().rgb(...INK) });
     };
 
     // 見出し
@@ -220,7 +221,7 @@ export async function shiftToPdfBlob(schedule: ShiftSchedule): Promise<{ blob: B
       let cx = MARGIN;
       cellBox(cx, y, nameW, rowH);
       const ns = fit(r.name, font, fs, nameW - 6);
-      page.drawText(r.name, { x: cx + 3, y: y + (rowH - ns) / 2 + ns * 0.12, size: ns, font, color: rgb(...INK) });
+      page.drawText(r.name, { x: cx + 3, y: y + (rowH - ns) / 2 + ns * 0.12, size: ns, font, color: pdfLib().rgb(...INK) });
       cx += nameW;
       r.codes.forEach((code) => {
         const type = typeByCode.get(code);
@@ -259,8 +260,8 @@ export async function shiftToPdfBlob(schedule: ShiftSchedule): Promise<{ blob: B
       const s = 7.5;
       const w = font.widthOfTextAtSize(label, s) + 18;
       if (lx + w > PAGE_W - MARGIN) break;
-      page.drawRectangle({ x: lx, y: ly + 3, width: 10, height: 10, color: rgb(...hexToRgb(colorHex(t.color))), borderColor: rgb(...LINE), borderWidth: 0.4 });
-      page.drawText(label, { x: lx + 14, y: ly + 5, size: s, font, color: rgb(...INK) });
+      page.drawRectangle({ x: lx, y: ly + 3, width: 10, height: 10, color: pdfLib().rgb(...hexToRgb(colorHex(t.color))), borderColor: pdfLib().rgb(...LINE), borderWidth: 0.4 });
+      page.drawText(label, { x: lx + 14, y: ly + 5, size: s, font, color: pdfLib().rgb(...INK) });
       lx += w + 6;
     }
   });

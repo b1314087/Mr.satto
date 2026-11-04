@@ -3,17 +3,19 @@
  * 実際の出力(lib/processors/browser/pdf.ts)と同じpdf-libのフォントで文字の幅を測り、
  * 画面表示用に同じフォントファイルをブラウザへ登録する(ブラウザ内で完結)。
  */
-import { PDFDocument, StandardFonts, type PDFFont } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont } from "pdf-lib";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 let helveticaPromise: Promise<PDFFont> | null = null;
 
 /** ページ番号と同じ標準フォント(Helvetica)。文字幅の測定用 */
 export function getHelveticaFont(): Promise<PDFFont> {
   if (!helveticaPromise) {
-    helveticaPromise = PDFDocument.create()
-      .then((doc) => doc.embedFont(StandardFonts.Helvetica))
+    // PDFを作る部品は、ここで初めて読み込む（ロードマップC 工程2）
+    helveticaPromise = ensurePdfLib()
+      .then(() => pdfLib().PDFDocument.create())
+      .then((doc) => doc.embedFont(pdfLib().StandardFonts.Helvetica))
       .catch((e) => {
         helveticaPromise = null;
         throw e;
@@ -31,12 +33,13 @@ let watermarkFontPromise: Promise<PDFFont> | null = null;
 export function getWatermarkFont(): Promise<PDFFont> {
   if (!watermarkFontPromise) {
     watermarkFontPromise = (async () => {
+      await ensurePdfLib({ fontkit: true });
       const bytes = await loadJapaneseFontBytes();
       const face = new FontFace(WATERMARK_PREVIEW_FONT_FAMILY, new Uint8Array(bytes));
       await face.load();
       document.fonts.add(face);
-      const doc = await PDFDocument.create();
-      doc.registerFontkit(fontkit);
+      const doc = await pdfLib().PDFDocument.create();
+      doc.registerFontkit(fontkitLib());
       return doc.embedFont(new Uint8Array(bytes), { subset: false });
     })().catch((e) => {
       watermarkFontPromise = null;

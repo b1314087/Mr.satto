@@ -28,25 +28,31 @@ export function usePdfThumbnails(file: File | null, maxPages = 24, width = 140):
         const pdfjs = await getPdfjs();
         const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), ...PDFJS_ASSET_OPTIONS });
         destroy = () => task.destroy();
-        const pdf = await task.promise;
-        if (cancelled) return;
-        setState({ file, pageCount: pdf.numPages, urls: {}, done: false, error: null });
-        const limit = Math.min(pdf.numPages, maxPages);
-        for (let n = 1; n <= limit; n++) {
-          const page = await pdf.getPage(n);
-          const base = page.getViewport({ scale: 1 });
-          const viewport = page.getViewport({ scale: width / base.width });
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.ceil(viewport.width);
-          canvas.height = Math.ceil(viewport.height);
-          const ctx = canvas.getContext("2d");
-          if (!ctx) throw new Error("Canvasの初期化に失敗しました");
-          await page.render({ canvasContext: ctx, viewport }).promise;
+        try {
+          const pdf = await task.promise;
           if (cancelled) return;
-          const url = canvas.toDataURL("image/jpeg", 0.8);
-          setState((cur) => (cur && cur.file === file ? { ...cur, urls: { ...cur.urls, [n]: url } } : cur));
+          setState({ file, pageCount: pdf.numPages, urls: {}, done: false, error: null });
+          const limit = Math.min(pdf.numPages, maxPages);
+          for (let n = 1; n <= limit; n++) {
+            const page = await pdf.getPage(n);
+            const base = page.getViewport({ scale: 1 });
+            const viewport = page.getViewport({ scale: width / base.width });
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+            const ctx = canvas.getContext("2d");
+            if (!ctx) throw new Error("Canvasの初期化に失敗しました");
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            if (cancelled) return;
+            const url = canvas.toDataURL("image/jpeg", 0.8);
+            setState((cur) => (cur && cur.file === file ? { ...cur, urls: { ...cur.urls, [n]: url } } : cur));
+          }
+          if (!cancelled) setState((cur) => (cur && cur.file === file ? { ...cur, done: true } : cur));
+        } finally {
+          // サムネイルを描き終えたら（失敗・中止でも）、すぐPDFを閉じる。画像にしたあとは使わないため（ロードマップC 工程2）
+          destroy = null;
+          void task.destroy().catch(() => {});
         }
-        if (!cancelled) setState((cur) => (cur && cur.file === file ? { ...cur, done: true } : cur));
       } catch (e) {
         if (cancelled) return;
         const message = e instanceof Error ? e.message : "";

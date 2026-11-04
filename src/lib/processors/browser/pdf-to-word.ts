@@ -5,6 +5,7 @@ import {
   pageHasText,
   renderPageToCanvas,
   type PositionedTextItem,
+  closePdfDocument,
 } from "@/lib/pdf/pdfjs-client";
 import {
   reconstructParagraphs,
@@ -159,167 +160,171 @@ export class PdfToWordProcessor extends BrowserProcessor<PdfToWordInput, PdfToWo
     }
 
     const pdf = await loadPdfDocument(file);
-    if (pdf.numPages === 0) {
-      throw new Error("このPDFにはページがありません");
-    }
-    if (pdf.numPages > MAX_PDF_TO_WORD_PAGES) {
-      throw new Error(
-        `変換できるページ数の上限は${MAX_PDF_TO_WORD_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
-      );
-    }
-
-    const pages: PageData[] = [];
-    let anyTextFound = false;
-    let usedOcr = false;
-    let totalImages = 0;
-    const ocrConfidences: number[] = [];
-    const language = ocrLanguage ?? "ja+en";
-
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-      let page;
-      try {
-        page = await pdf.getPage(pageNumber);
-      } catch {
-        throw new Error(`${pageNumber}ページ目の読み込みに失敗しました`);
-      }
-
-      const textItems = await getPositionedTextItems(page);
-      const view = page.view as number[];
-
-      if (pageHasText(textItems)) {
-        onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "text-layer" });
-        anyTextFound = true;
-        // 書式（太字・斜体・色・リンク）と画像を取り出す。失敗しても文字の変換は続ける
-        let images: ExtractedImage[] = [];
-        try {
-          images = await applyPageStyles(page, textItems, { withRender: true, withImages: totalImages < MAX_TOTAL_IMAGES });
-        } catch {
-          images = [];
-        }
-        totalImages += images.length;
-        let rules: VerticalRule[] | null = null;
-        let fills: FilledRect[] | null = null;
-        try {
-          rules = await extractVerticalRules(page);
-          fills = await extractFilledRects(page);
-        } catch {
-          rules = null;
-          fills = null;
-        }
-        markHighlights(textItems, fills);
-        pages.push({ pageNumber, items: textItems, fromTextLayer: true, images, view, rules, fills });
-      } else {
-        // 文字レイヤーの無いページ（紙をスキャンした画像PDF等）は、
-        // filled-pdf-to-excel.tsと同じ方式でページを画像化してOCRする(§27-28)。
-        usedOcr = true;
-        onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "ocr", ocrProgress: 0 });
-        let canvas: HTMLCanvasElement;
-        try {
-          const rendered = await renderPageToCanvas(page, PDF_RENDER_SCALE, MAX_OCR_DIMENSION);
-          canvas = rendered.canvas;
-        } catch {
-          throw new Error(`${pageNumber}ページ目の画像化に失敗しました`);
-        }
-        const result = await recognizeImageWithWords(canvas, language, (p) => {
-          onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "ocr", ocrProgress: p.progress });
-        });
-        ocrConfidences.push(result.confidence);
-        if (result.words.some((w) => w.text.trim() !== "")) anyTextFound = true;
-        pages.push({
-          pageNumber,
-          items: ocrWordsToPositionedTextItems(result.words),
-          fromTextLayer: false,
-          images: [],
-          view,
-        });
-      }
-    }
-
-    if (!anyTextFound) {
-      throw new Error(
-        usedOcr
-          ? "このPDFから文字を読み取れませんでした。スキャン画像の解像度が低いか、手書き文字の可能性があります。"
-          : "このPDFから文字情報を抽出できませんでした。"
-      );
-    }
-
-    // 毎ページ繰り返されるヘッダー・フッター・ページ番号は、本文に混ぜずWordのヘッダー/フッターへ移す
-    const textPages = pages.filter((p) => p.fromTextLayer);
-    const furniture = removePageFurniture(
-      textPages.map((p) => ({ items: p.items, pageHeight: p.view[3] - p.view[1], pageBottom: p.view[1] }))
-    );
-    const filteredByPage: PositionedTextItem[][] = pages.map((p) => p.items);
-    textPages.forEach((p, i) => {
-      filteredByPage[pages.indexOf(p)] = furniture[i].items;
-    });
-    const { headerText, footerText, pageNumber } = summarizeFurniture(pages, filteredByPage);
-
-    // 本文領域の左右の端（中央/右揃え・字下げの判定の基準）と、余白
-    const extents = textPages
-      .map((p) => textExtent(filteredByPage[pages.indexOf(p)]))
-      .filter((e): e is { left: number; right: number } => e !== null);
-    const contentLeft = extents.length > 0 ? Math.min(...extents.map((e) => e.left)) : undefined;
-    const contentRight = extents.length > 0 ? Math.max(...extents.map((e) => e.right)) : undefined;
-
-    const allBlocks: DocumentBlock[] = [];
-    for (let i = 0; i < pages.length; i++) {
-      const p = pages[i];
-      const blocks = reconstructParagraphs(
-        filteredByPage[i],
-        p.fromTextLayer ? { contentLeft, contentRight, verticalRules: p.rules, fillRects: p.fills } : {}
-      );
-      const withImages = insertImages(blocks, p.images, p.view, contentLeft, contentRight);
-      if (i > 0 && withImages.length > 0 && allBlocks.length > 0) {
-        // ページの区切りが分かるよう、空段落を1つはさむ。ページが続けて文章で埋まっている文書は、
-        // 編集しやすさを優先して改ページを入れない。ただし、前のページが途中（下が大きく空いている）で
-        // 終わっているとき（表紙・章の終わり・署名ページなど）は、改ページとして残す。
-        const prev = pages[i - 1];
-        const prevBody = filteredByPage[i - 1].filter((it) => it.str.trim() !== "");
-        const prevPageHeight = prev.view[3] - prev.view[1];
-        const lowest = prevBody.length > 0 ? Math.min(...prevBody.map((it) => it.y)) - prev.view[1] : Infinity;
-        const sparse = prev.fromTextLayer && prevPageHeight > 0 && lowest / prevPageHeight > SPARSE_PAGE_BLANK_RATIO;
-        allBlocks.push(sparse ? { type: "paragraph", text: "", pageBreak: true } : { type: "paragraph", text: "" });
-      }
-      allBlocks.push(...withImages);
-    }
-
-    if (allBlocks.length === 0) {
-      throw new Error("変換できる文章が見つかりませんでした。");
-    }
-
-    const headingCount = allBlocks.filter(
-      (b) => b.type === "heading1" || b.type === "heading2"
-    ).length;
-    const tableCount = allBlocks.filter((b) => b.type === "table").length;
-    const imageCount = allBlocks.filter((b) => b.type === "image").length;
-    const listItemCount = allBlocks.filter((b) => b.type === "list").length;
-    const paragraphCount = allBlocks.filter(
-      (b) => b.type === "paragraph" && b.text !== ""
-    ).length;
-
-    // 用紙サイズ・余白は、最初のページに合わせる
-    const first = pages[0];
-    const pageSetup = buildPageSetup(first, filteredByPage[0], contentLeft, contentRight);
-
-    let blob: Blob;
     try {
-      blob = await buildDocxBlob({ blocks: allBlocks, page: pageSetup, headerText, footerText, pageNumber });
-    } catch {
-      throw new Error("Word文書の生成に失敗しました");
-    }
+      if (pdf.numPages === 0) {
+        throw new Error("このPDFにはページがありません");
+      }
+      if (pdf.numPages > MAX_PDF_TO_WORD_PAGES) {
+        throw new Error(
+          `変換できるページ数の上限は${MAX_PDF_TO_WORD_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
+        );
+      }
 
-    return {
-      blob,
-      sizeBytes: blob.size,
-      pageCount: pdf.numPages,
-      paragraphCount,
-      headingCount,
-      usedOcr,
-      ocrConfidence: ocrConfidences.length > 0 ? ocrConfidences.reduce((a, b) => a + b, 0) / ocrConfidences.length : null,
-      tableCount,
-      imageCount,
-      listItemCount,
-    };
+      const pages: PageData[] = [];
+      let anyTextFound = false;
+      let usedOcr = false;
+      let totalImages = 0;
+      const ocrConfidences: number[] = [];
+      const language = ocrLanguage ?? "ja+en";
+
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        let page;
+        try {
+          page = await pdf.getPage(pageNumber);
+        } catch {
+          throw new Error(`${pageNumber}ページ目の読み込みに失敗しました`);
+        }
+
+        const textItems = await getPositionedTextItems(page);
+        const view = page.view as number[];
+
+        if (pageHasText(textItems)) {
+          onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "text-layer" });
+          anyTextFound = true;
+          // 書式（太字・斜体・色・リンク）と画像を取り出す。失敗しても文字の変換は続ける
+          let images: ExtractedImage[] = [];
+          try {
+            images = await applyPageStyles(page, textItems, { withRender: true, withImages: totalImages < MAX_TOTAL_IMAGES });
+          } catch {
+            images = [];
+          }
+          totalImages += images.length;
+          let rules: VerticalRule[] | null = null;
+          let fills: FilledRect[] | null = null;
+          try {
+            rules = await extractVerticalRules(page);
+            fills = await extractFilledRects(page);
+          } catch {
+            rules = null;
+            fills = null;
+          }
+          markHighlights(textItems, fills);
+          pages.push({ pageNumber, items: textItems, fromTextLayer: true, images, view, rules, fills });
+        } else {
+          // 文字レイヤーの無いページ（紙をスキャンした画像PDF等）は、
+          // filled-pdf-to-excel.tsと同じ方式でページを画像化してOCRする(§27-28)。
+          usedOcr = true;
+          onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "ocr", ocrProgress: 0 });
+          let canvas: HTMLCanvasElement;
+          try {
+            const rendered = await renderPageToCanvas(page, PDF_RENDER_SCALE, MAX_OCR_DIMENSION);
+            canvas = rendered.canvas;
+          } catch {
+            throw new Error(`${pageNumber}ページ目の画像化に失敗しました`);
+          }
+          const result = await recognizeImageWithWords(canvas, language, (p) => {
+            onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "ocr", ocrProgress: p.progress });
+          });
+          ocrConfidences.push(result.confidence);
+          if (result.words.some((w) => w.text.trim() !== "")) anyTextFound = true;
+          pages.push({
+            pageNumber,
+            items: ocrWordsToPositionedTextItems(result.words),
+            fromTextLayer: false,
+            images: [],
+            view,
+          });
+        }
+      }
+
+      if (!anyTextFound) {
+        throw new Error(
+          usedOcr
+            ? "このPDFから文字を読み取れませんでした。スキャン画像の解像度が低いか、手書き文字の可能性があります。"
+            : "このPDFから文字情報を抽出できませんでした。"
+        );
+      }
+
+      // 毎ページ繰り返されるヘッダー・フッター・ページ番号は、本文に混ぜずWordのヘッダー/フッターへ移す
+      const textPages = pages.filter((p) => p.fromTextLayer);
+      const furniture = removePageFurniture(
+        textPages.map((p) => ({ items: p.items, pageHeight: p.view[3] - p.view[1], pageBottom: p.view[1] }))
+      );
+      const filteredByPage: PositionedTextItem[][] = pages.map((p) => p.items);
+      textPages.forEach((p, i) => {
+        filteredByPage[pages.indexOf(p)] = furniture[i].items;
+      });
+      const { headerText, footerText, pageNumber } = summarizeFurniture(pages, filteredByPage);
+
+      // 本文領域の左右の端（中央/右揃え・字下げの判定の基準）と、余白
+      const extents = textPages
+        .map((p) => textExtent(filteredByPage[pages.indexOf(p)]))
+        .filter((e): e is { left: number; right: number } => e !== null);
+      const contentLeft = extents.length > 0 ? Math.min(...extents.map((e) => e.left)) : undefined;
+      const contentRight = extents.length > 0 ? Math.max(...extents.map((e) => e.right)) : undefined;
+
+      const allBlocks: DocumentBlock[] = [];
+      for (let i = 0; i < pages.length; i++) {
+        const p = pages[i];
+        const blocks = reconstructParagraphs(
+          filteredByPage[i],
+          p.fromTextLayer ? { contentLeft, contentRight, verticalRules: p.rules, fillRects: p.fills } : {}
+        );
+        const withImages = insertImages(blocks, p.images, p.view, contentLeft, contentRight);
+        if (i > 0 && withImages.length > 0 && allBlocks.length > 0) {
+          // ページの区切りが分かるよう、空段落を1つはさむ。ページが続けて文章で埋まっている文書は、
+          // 編集しやすさを優先して改ページを入れない。ただし、前のページが途中（下が大きく空いている）で
+          // 終わっているとき（表紙・章の終わり・署名ページなど）は、改ページとして残す。
+          const prev = pages[i - 1];
+          const prevBody = filteredByPage[i - 1].filter((it) => it.str.trim() !== "");
+          const prevPageHeight = prev.view[3] - prev.view[1];
+          const lowest = prevBody.length > 0 ? Math.min(...prevBody.map((it) => it.y)) - prev.view[1] : Infinity;
+          const sparse = prev.fromTextLayer && prevPageHeight > 0 && lowest / prevPageHeight > SPARSE_PAGE_BLANK_RATIO;
+          allBlocks.push(sparse ? { type: "paragraph", text: "", pageBreak: true } : { type: "paragraph", text: "" });
+        }
+        allBlocks.push(...withImages);
+      }
+
+      if (allBlocks.length === 0) {
+        throw new Error("変換できる文章が見つかりませんでした。");
+      }
+
+      const headingCount = allBlocks.filter(
+        (b) => b.type === "heading1" || b.type === "heading2"
+      ).length;
+      const tableCount = allBlocks.filter((b) => b.type === "table").length;
+      const imageCount = allBlocks.filter((b) => b.type === "image").length;
+      const listItemCount = allBlocks.filter((b) => b.type === "list").length;
+      const paragraphCount = allBlocks.filter(
+        (b) => b.type === "paragraph" && b.text !== ""
+      ).length;
+
+      // 用紙サイズ・余白は、最初のページに合わせる
+      const first = pages[0];
+      const pageSetup = buildPageSetup(first, filteredByPage[0], contentLeft, contentRight);
+
+      let blob: Blob;
+      try {
+        blob = await buildDocxBlob({ blocks: allBlocks, page: pageSetup, headerText, footerText, pageNumber });
+      } catch {
+        throw new Error("Word文書の生成に失敗しました");
+      }
+
+      return {
+        blob,
+        sizeBytes: blob.size,
+        pageCount: pdf.numPages,
+        paragraphCount,
+        headingCount,
+        usedOcr,
+        ocrConfidence: ocrConfidences.length > 0 ? ocrConfidences.reduce((a, b) => a + b, 0) / ocrConfidences.length : null,
+        tableCount,
+        imageCount,
+        listItemCount,
+      };
+    } finally {
+      await closePdfDocument(pdf);
+    }
   }
 }
 
@@ -397,14 +402,18 @@ export async function previewPdfToWordBlocks(
   file: File
 ): Promise<{ pageCount: number; hasTextLayer: boolean; blocks: DocumentBlock[] }> {
   const pdf = await loadPdfDocument(file);
-  if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
-  const page = await pdf.getPage(1);
-  const textItems = await getPositionedTextItems(page);
-  if (!pageHasText(textItems)) return { pageCount: pdf.numPages, hasTextLayer: false, blocks: [] };
   try {
-    await applyPageStyles(page, textItems, { withRender: false, withImages: false });
-  } catch {
-    // 書式が取れなくても、文字のプレビューは出す
+    if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+    const page = await pdf.getPage(1);
+    const textItems = await getPositionedTextItems(page);
+    if (!pageHasText(textItems)) return { pageCount: pdf.numPages, hasTextLayer: false, blocks: [] };
+    try {
+      await applyPageStyles(page, textItems, { withRender: false, withImages: false });
+    } catch {
+      // 書式が取れなくても、文字のプレビューは出す
+    }
+    return { pageCount: pdf.numPages, hasTextLayer: true, blocks: reconstructParagraphs(textItems) };
+  } finally {
+    await closePdfDocument(pdf);
   }
-  return { pageCount: pdf.numPages, hasTextLayer: true, blocks: reconstructParagraphs(textItems) };
 }

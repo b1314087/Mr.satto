@@ -1,7 +1,7 @@
 import { BrowserProcessor, type NamedFileOutput } from "../types";
 import { canvasToBlob } from "./image";
 import { stripExtension } from "@/lib/utils/format";
-import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
+import { loadPdfDocument, closePdfDocument } from "@/lib/pdf/pdfjs-client";
 
 /**
  * PDF→画像 Processor（Phase 2-A）。
@@ -39,43 +39,47 @@ export class PdfToImageProcessor extends BrowserProcessor<
 > {
   async process({ file, mimeType, scale = 2 }: PdfToImageInput): Promise<PdfToImageOutputItem[]> {
     const pdf = await loadPdfDocument(file);
-
-    if (pdf.numPages === 0) {
-      throw new Error("このPDFにはページがありません");
-    }
-
-    const base = stripExtension(file.name);
-    const pad = String(pdf.numPages).length;
-    const ext = mimeType === "image/png" ? "png" : "jpg";
-    const outputs: PdfToImageOutputItem[] = [];
-
     try {
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-        const page = await pdf.getPage(pageNumber);
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        const canvasContext = canvas.getContext("2d");
-        if (!canvasContext) throw new Error("Canvasの初期化に失敗しました");
 
-        await page.render({ canvasContext, viewport }).promise;
-        const blob = await canvasToBlob(canvas, mimeType, 0.92);
-
-        outputs.push({
-          blob,
-          suggestedName: `${base}-${String(pageNumber).padStart(pad, "0")}.${ext}`,
-          sizeBytes: blob.size,
-          pageNumber,
-          width: canvas.width,
-          height: canvas.height,
-        });
+      if (pdf.numPages === 0) {
+        throw new Error("このPDFにはページがありません");
       }
-    } catch {
-      throw new Error("PDFのページ画像化に失敗しました");
-    }
 
-    return outputs;
+      const base = stripExtension(file.name);
+      const pad = String(pdf.numPages).length;
+      const ext = mimeType === "image/png" ? "png" : "jpg";
+      const outputs: PdfToImageOutputItem[] = [];
+
+      try {
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const canvasContext = canvas.getContext("2d");
+          if (!canvasContext) throw new Error("Canvasの初期化に失敗しました");
+
+          await page.render({ canvasContext, viewport }).promise;
+          const blob = await canvasToBlob(canvas, mimeType, 0.92);
+
+          outputs.push({
+            blob,
+            suggestedName: `${base}-${String(pageNumber).padStart(pad, "0")}.${ext}`,
+            sizeBytes: blob.size,
+            pageNumber,
+            width: canvas.width,
+            height: canvas.height,
+          });
+        }
+      } catch {
+        throw new Error("PDFのページ画像化に失敗しました");
+      }
+
+      return outputs;
+    } finally {
+      await closePdfDocument(pdf);
+    }
   }
 }
 
@@ -114,42 +118,46 @@ export interface PdfToTextOutput {
 export class PdfToTextProcessor extends BrowserProcessor<PdfToTextInput, PdfToTextOutput> {
   async process({ file, maxPages }: PdfToTextInput): Promise<PdfToTextOutput> {
     const pdf = await loadPdfDocument(file);
-
-    if (pdf.numPages === 0) {
-      throw new Error("このPDFにはページがありません");
-    }
-
-    const pages: PdfToTextPage[] = [];
     try {
-      for (let pageNumber = 1; pageNumber <= Math.min(pdf.numPages, maxPages ?? pdf.numPages); pageNumber++) {
-        const page = await pdf.getPage(pageNumber);
-        const textContent = await page.getTextContent();
 
-        let raw = "";
-        for (const item of textContent.items) {
-          if ("str" in item) {
-            raw += item.str;
-            raw += item.hasEOL ? "\n" : " ";
-          }
-        }
-        // 連続する空白・過剰な空行を整理して読みやすくする
-        const text = raw
-          .replace(/[ \t]+/g, " ")
-          .replace(/ *\n */g, "\n")
-          .replace(/\n{3,}/g, "\n\n")
-          .trim();
-
-        pages.push({ pageNumber, text });
+      if (pdf.numPages === 0) {
+        throw new Error("このPDFにはページがありません");
       }
-    } catch {
-      throw new Error("PDFからのテキスト抽出に失敗しました");
+
+      const pages: PdfToTextPage[] = [];
+      try {
+        for (let pageNumber = 1; pageNumber <= Math.min(pdf.numPages, maxPages ?? pdf.numPages); pageNumber++) {
+          const page = await pdf.getPage(pageNumber);
+          const textContent = await page.getTextContent();
+
+          let raw = "";
+          for (const item of textContent.items) {
+            if ("str" in item) {
+              raw += item.str;
+              raw += item.hasEOL ? "\n" : " ";
+            }
+          }
+          // 連続する空白・過剰な空行を整理して読みやすくする
+          const text = raw
+            .replace(/[ \t]+/g, " ")
+            .replace(/ *\n */g, "\n")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
+
+          pages.push({ pageNumber, text });
+        }
+      } catch {
+        throw new Error("PDFからのテキスト抽出に失敗しました");
+      }
+
+      const hasExtractableText = pages.some((p) => p.text.length > 0);
+      const combinedText = pages
+        .map((p) => `--- Page ${p.pageNumber} ---\n${p.text}`)
+        .join("\n\n");
+
+      return { pageCount: pdf.numPages, pages, combinedText, hasExtractableText };
+    } finally {
+      await closePdfDocument(pdf);
     }
-
-    const hasExtractableText = pages.some((p) => p.text.length > 0);
-    const combinedText = pages
-      .map((p) => `--- Page ${p.pageNumber} ---\n${p.text}`)
-      .join("\n\n");
-
-    return { pageCount: pdf.numPages, pages, combinedText, hasExtractableText };
   }
 }

@@ -1,6 +1,5 @@
 import type { PDFFont, PDFPage } from "pdf-lib";
-import { rgb, degrees } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+
 import { BrowserProcessor, type PdfProcessorOutput } from "../types";
 import { loadPdfDoc, finalizePdf } from "./pdf";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
@@ -11,6 +10,7 @@ import {
   type ShapeAnnotationObject,
 } from "@/lib/pdf-annotate/types";
 import { rectPivotForCenterRotation } from "@/lib/pdf-annotate/geometry";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * PDF記入・注釈（Phase 15）の書き出しProcessor。
@@ -31,7 +31,7 @@ export interface PdfFillAnnotateInput {
 }
 
 function toRgb(color: AnnotationColor) {
-  return rgb(color.r, color.g, color.b);
+  return pdfLib().rgb(color.r, color.g, color.b);
 }
 
 /**
@@ -109,13 +109,13 @@ function drawCheckbox(
     y,
     width: size,
     height: size,
-    borderColor: rgb(0.25, 0.25, 0.28),
+    borderColor: pdfLib().rgb(0.25, 0.25, 0.28),
     borderWidth,
   });
   if (!checked) return;
   const pad = size * 0.2;
   const thickness = Math.max(1.5, size * 0.12);
-  const color = rgb(0.1, 0.4, 0.85);
+  const color = pdfLib().rgb(0.1, 0.4, 0.85);
   if (markStyle === "circle") {
     // ○（丸）：フォント非依存、円で表現する
     page.drawEllipse({
@@ -195,7 +195,7 @@ function drawShape(page: PDFPage, obj: ShapeAnnotationObject) {
       y: pivot.y,
       width: obj.width,
       height: obj.height,
-      rotate: degrees(obj.rotation),
+      rotate: pdfLib().degrees(obj.rotation),
       borderColor: color,
       borderWidth: obj.strokeWidth,
       color: obj.fill ? color : undefined,
@@ -210,7 +210,7 @@ function drawShape(page: PDFPage, obj: ShapeAnnotationObject) {
     y: centerY,
     xScale: obj.width / 2,
     yScale: obj.height / 2,
-    rotate: degrees(obj.rotation),
+    rotate: pdfLib().degrees(obj.rotation),
     borderColor: color,
     borderWidth: obj.strokeWidth,
     color: obj.fill ? color : undefined,
@@ -219,6 +219,7 @@ function drawShape(page: PDFPage, obj: ShapeAnnotationObject) {
 
 export class PdfFillAnnotateProcessor extends BrowserProcessor<PdfFillAnnotateInput, PdfProcessorOutput> {
   async process({ file, objects }: PdfFillAnnotateInput): Promise<PdfProcessorOutput> {
+    await ensurePdfLib({ fontkit: true });
     if (objects.length > PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerDocument) {
       throw new Error(
         `配置できる注釈の数は${PDF_FILL_ANNOTATE_LIMITS.maxObjectsPerDocument}個までです。数を減らしてから再度お試しください。`
@@ -243,7 +244,7 @@ export class PdfFillAnnotateProcessor extends BrowserProcessor<PdfFillAnnotateIn
         );
       }
       try {
-        doc.registerFontkit(fontkit);
+        doc.registerFontkit(fontkitLib());
         font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
       } catch {
         throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
@@ -288,7 +289,7 @@ export class PdfFillAnnotateProcessor extends BrowserProcessor<PdfFillAnnotateIn
             y: pivot.y,
             width: obj.width,
             height: obj.height,
-            rotate: degrees(rotation),
+            rotate: pdfLib().degrees(rotation),
           });
         } catch {
           // 1枚の画像埋め込み失敗で全体を止めない（他人の写真云々ではなく単純に破損データ対策）

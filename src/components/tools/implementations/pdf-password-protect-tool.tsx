@@ -8,7 +8,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { PdfPasswordProtectProcessor, type PdfProtectOutput } from "@/lib/processors/browser/pdf-protect";
-import { getPdfjs, loadPdfDocument, PDFJS_ASSET_OPTIONS, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
+import { getPdfjs, withPdfDocument, PDFJS_ASSET_OPTIONS, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 const inputClass =
@@ -51,9 +51,11 @@ export function PdfPasswordProtectTool() {
     let cancelled = false;
     (async () => {
       try {
-        const pdf = await loadPdfDocument(file);
-        const page = await pdf.getPage(1);
-        const { canvas } = await renderPageToCanvas(page, 1, 520);
+        // 描き終わったら、すぐ閉じる（作業用スレッドを残さない。ロードマップC 工程2）
+        const { canvas, pages } = await withPdfDocument(file, async (pdf) => {
+          const page = await pdf.getPage(1);
+          return { ...(await renderPageToCanvas(page, 1, 520)), pages: pdf.numPages };
+        });
         if (cancelled) return;
         const target = previewRef.current;
         if (target) {
@@ -61,7 +63,7 @@ export function PdfPasswordProtectTool() {
           target.height = canvas.height;
           target.getContext("2d")?.drawImage(canvas, 0, 0);
         }
-        setPageInfo({ file, pages: pdf.numPages });
+        setPageInfo({ file, pages });
       } catch (e) {
         if (!cancelled) setPreviewError({ file, message: e instanceof Error ? e.message : "プレビューを作成できませんでした" });
       }
@@ -111,16 +113,20 @@ export function PdfPasswordProtectTool() {
         const pdfjs = await getPdfjs();
         const bytes = new Uint8Array(await result.blob.arrayBuffer());
         const task = pdfjs.getDocument({ data: bytes, password: userPassword, ...PDFJS_ASSET_OPTIONS });
-        const pdf = await task.promise;
-        const page = await pdf.getPage(1);
-        const { canvas } = await renderPageToCanvas(page, 1, 520);
-        if (!cancelled && protectedPreviewRef.current) {
-          const t = protectedPreviewRef.current;
-          t.width = canvas.width;
-          t.height = canvas.height;
-          t.getContext("2d")?.drawImage(canvas, 0, 0);
+        try {
+          const pdf = await task.promise;
+          const page = await pdf.getPage(1);
+          const { canvas } = await renderPageToCanvas(page, 1, 520);
+          if (!cancelled && protectedPreviewRef.current) {
+            const t = protectedPreviewRef.current;
+            t.width = canvas.width;
+            t.height = canvas.height;
+            t.getContext("2d")?.drawImage(canvas, 0, 0);
+          }
+        } finally {
+          // 開けなかったときも閉じる（作業用スレッドを残さない）
+          await task.destroy().catch(() => {});
         }
-        await task.destroy();
       } catch {
         /* 確認済みのため表示できなくても処理結果には影響しない */
       }

@@ -6,7 +6,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
+import { withPdfDocument, type PdfDocument } from "@/lib/pdf/pdfjs-client";
 import { autoMapColumns } from "@/lib/forms/column-mapping";
 import { buildPhotoLookup, type PhotoLookupEntry } from "@/lib/forms/photo-matching";
 import { renderPersonPdf } from "@/lib/forms/template-renderer";
@@ -124,16 +124,18 @@ export function FormToIndividualPdfsTool() {
     try {
       const bytes = await file.arrayBuffer();
       setTemplateBytes(bytes);
-      const pdf = await loadPdfDocument(new File([bytes], file.name, { type: "application/pdf" }));
-      const pageInfos: TemplatePageInfo[] = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 1 });
-        pageInfos.push({ pageNumber: i, width: viewport.width, height: viewport.height });
-      }
-      setPages(pageInfos);
-      setSelectedPage(1);
-      await renderPagePreview(pdf, 1, pageInfos[0]);
+      // 読み終わったら必ず閉じる（作業用スレッドを残さない。ロードマップC 工程2）
+      await withPdfDocument(new File([bytes], file.name, { type: "application/pdf" }), async (pdf) => {
+        const pageInfos: TemplatePageInfo[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1 });
+          pageInfos.push({ pageNumber: i, width: viewport.width, height: viewport.height });
+        }
+        setPages(pageInfos);
+        setSelectedPage(1);
+        await renderPagePreview(pdf, 1, pageInfos[0]);
+      });
       setStep("fields");
     } catch (e) {
       setError(e instanceof Error ? e.message : "テンプレートPDFの読み込みに失敗しました");
@@ -145,7 +147,7 @@ export function FormToIndividualPdfsTool() {
   }
 
   async function renderPagePreview(
-    pdf: Awaited<ReturnType<typeof loadPdfDocument>>,
+    pdf: PdfDocument,
     pageNumber: number,
     pageInfo: TemplatePageInfo
   ) {
@@ -167,9 +169,11 @@ export function FormToIndividualPdfsTool() {
   async function handlePageChange(pageNumber: number) {
     if (!templateFile || !templateBytes) return;
     setSelectedPage(pageNumber);
-    const pdf = await loadPdfDocument(new File([templateBytes.slice(0)], templateFile.name, { type: "application/pdf" }));
     const pageInfo = pages.find((p) => p.pageNumber === pageNumber);
-    if (pageInfo) await renderPagePreview(pdf, pageNumber, pageInfo);
+    if (!pageInfo) return;
+    await withPdfDocument(new File([templateBytes.slice(0)], templateFile.name, { type: "application/pdf" }), (pdf) =>
+      renderPagePreview(pdf, pageNumber, pageInfo)
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -302,21 +306,23 @@ export function FormToIndividualPdfsTool() {
 
       const bytes = await renderPersonPdf({ templateBytes, fields, textValues, photoValues });
       const blob = new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
-      const pdf = await loadPdfDocument(new File([blob], "preview.pdf", { type: "application/pdf" }));
-      const urls: string[] = [];
       const pagesWithFields = new Set(fields.map((f) => f.page));
-      for (let i = 1; i <= pdf.numPages; i++) {
-        if (!pagesWithFields.has(i)) continue;
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: Math.min(PREVIEW_MAX_WIDTH / page.getViewport({ scale: 1 }).width, 2) });
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        const ctx = canvas.getContext("2d");
-        if (!ctx) continue;
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        urls.push(canvas.toDataURL("image/png"));
-      }
+      const urls = await withPdfDocument(new File([blob], "preview.pdf", { type: "application/pdf" }), async (pdf) => {
+        const list: string[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          if (!pagesWithFields.has(i)) continue;
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: Math.min(PREVIEW_MAX_WIDTH / page.getViewport({ scale: 1 }).width, 2) });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) continue;
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          list.push(canvas.toDataURL("image/png"));
+        }
+        return list;
+      });
       setPreviewImageUrls(urls);
       setStep("preview");
     } catch (e) {

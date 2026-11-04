@@ -6,6 +6,7 @@ import {
   type PdfjsPage,
   type PositionedTextItem,
   type RenderedPageCanvas,
+  closePdfDocument,
 } from "@/lib/pdf/pdfjs-client";
 import type { OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { extractFieldValue, cropFieldCanvas, type FieldExtractionMethod } from "./field-extraction";
@@ -111,91 +112,95 @@ export interface ExtractPersonsFromFileResult {
 export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions): Promise<ExtractPersonsFromFileResult> {
   const { file, template, language, fileIndex = 0, onPageProgress } = opts;
   const pdf = await loadPdfDocument(file);
-  const templatePageCount = Math.max(1, template.pages.length);
-  const records: PersonRecord[] = [];
-  let usedOcr = false;
-  let idCounter = 0;
+  try {
+    const templatePageCount = Math.max(1, template.pages.length);
+    const records: PersonRecord[] = [];
+    let usedOcr = false;
+    let idCounter = 0;
 
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-    const templatePageIndex = (pageNumber - 1) % templatePageCount;
-    const fieldsOnPage = template.fields.filter((f) => f.pageIndex === templatePageIndex);
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+      const templatePageIndex = (pageNumber - 1) % templatePageCount;
+      const fieldsOnPage = template.fields.filter((f) => f.pageIndex === templatePageIndex);
 
-    if (fieldsOnPage.length === 0) {
-      onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "text-layer" });
-      continue;
-    }
+      if (fieldsOnPage.length === 0) {
+        onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "text-layer" });
+        continue;
+      }
 
-    let page;
-    try {
-      page = await pdf.getPage(pageNumber);
-    } catch {
-      throw new Error(`${file.name} の${pageNumber}ページ目の読み込みに失敗しました`);
-    }
+      let page;
+      try {
+        page = await pdf.getPage(pageNumber);
+      } catch {
+        throw new Error(`${file.name} の${pageNumber}ページ目の読み込みに失敗しました`);
+      }
 
-    const pageHeightPt = page.getViewport({ scale: 1 }).height;
-    const textItems: PositionedTextItem[] = await getPositionedTextItems(page);
-    const hasText = pageHasText(textItems);
-    const getOcrPage = makeLazyOcrPage(page, () => {
-      usedOcr = true;
-    });
+      const pageHeightPt = page.getViewport({ scale: 1 }).height;
+      const textItems: PositionedTextItem[] = await getPositionedTextItems(page);
+      const hasText = pageHasText(textItems);
+      const getOcrPage = makeLazyOcrPage(page, () => {
+        usedOcr = true;
+      });
 
-    onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: hasText ? "text-layer" : "ocr" });
+      onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: hasText ? "text-layer" : "ocr" });
 
-    const byPerson = groupFieldsByPerson(fieldsOnPage);
-    const personIndexes = Array.from(byPerson.keys()).sort((a, b) => a - b);
+      const byPerson = groupFieldsByPerson(fieldsOnPage);
+      const personIndexes = Array.from(byPerson.keys()).sort((a, b) => a - b);
 
-    for (const personIndex of personIndexes) {
-      const sortedFields = [...(byPerson.get(personIndex) ?? [])].sort((a, b) => a.fieldIndex - b.fieldIndex);
-      const values: PersonFieldValue[] = [];
-      for (const field of sortedFields) {
-        if (field.type === "checkbox") {
-          // checkboxはOCR文字認識に頼らず、黒画素割合ベースのルールベース判定を使う
-          // （開発指示書A-19）。テキストレイヤーの有無に関わらず必ずページ描画→
-          // 枠だけのcropを経由する（extractFieldValueのtext-layer優先パスは通らない）。
-          const checkboxResult = await extractCheckboxValue({ field, getPage: getOcrPage, pageHeightPt });
+      for (const personIndex of personIndexes) {
+        const sortedFields = [...(byPerson.get(personIndex) ?? [])].sort((a, b) => a.fieldIndex - b.fieldIndex);
+        const values: PersonFieldValue[] = [];
+        for (const field of sortedFields) {
+          if (field.type === "checkbox") {
+            // checkboxはOCR文字認識に頼らず、黒画素割合ベースのルールベース判定を使う
+            // （開発指示書A-19）。テキストレイヤーの有無に関わらず必ずページ描画→
+            // 枠だけのcropを経由する（extractFieldValueのtext-layer優先パスは通らない）。
+            const checkboxResult = await extractCheckboxValue({ field, getPage: getOcrPage, pageHeightPt });
+            values.push({
+              fieldIndex: field.fieldIndex,
+              label: field.label.trim() || `項目${field.fieldIndex}`,
+              value: checkboxResult.checked ? CHECKBOX_CHECKED_VALUE : CHECKBOX_UNCHECKED_VALUE,
+              method: "checkbox",
+              confidence: null,
+            });
+            continue;
+          }
+          const result = await extractFieldValue({
+            field,
+            textItems: hasText ? textItems : [],
+            getOcrPage,
+            pageHeightPt,
+            language,
+          });
           values.push({
             fieldIndex: field.fieldIndex,
             label: field.label.trim() || `項目${field.fieldIndex}`,
-            value: checkboxResult.checked ? CHECKBOX_CHECKED_VALUE : CHECKBOX_UNCHECKED_VALUE,
-            method: "checkbox",
-            confidence: null,
+            value: result.value,
+            method: result.method,
+            confidence: result.confidence,
           });
-          continue;
         }
-        const result = await extractFieldValue({
-          field,
-          textItems: hasText ? textItems : [],
-          getOcrPage,
-          pageHeightPt,
-          language,
-        });
-        values.push({
-          fieldIndex: field.fieldIndex,
-          label: field.label.trim() || `項目${field.fieldIndex}`,
-          value: result.value,
-          method: result.method,
-          confidence: result.confidence,
+        const valid = isPersonValid(values);
+        const excluded = !valid && template.excludeEmptyPersons;
+        idCounter += 1;
+        records.push({
+          // 複数PDFをまとめて処理する場合(A-22)、ファイルをまたいでpageNumber・
+          // personIndexが一致しうるため、fileIndexを含めてidを一意にする
+          // (Reactのkeyの重複を防ぐ。個人情報は含まない)。
+          id: `p${fileIndex}-${idCounter}-${pageNumber}-${personIndex}`,
+          sourceFileName: file.name,
+          sourcePageNumber: pageNumber,
+          personIndex,
+          fields: values,
+          valid,
+          excluded,
         });
       }
-      const valid = isPersonValid(values);
-      const excluded = !valid && template.excludeEmptyPersons;
-      idCounter += 1;
-      records.push({
-        // 複数PDFをまとめて処理する場合(A-22)、ファイルをまたいでpageNumber・
-        // personIndexが一致しうるため、fileIndexを含めてidを一意にする
-        // (Reactのkeyの重複を防ぐ。個人情報は含まない)。
-        id: `p${fileIndex}-${idCounter}-${pageNumber}-${personIndex}`,
-        sourceFileName: file.name,
-        sourcePageNumber: pageNumber,
-        personIndex,
-        fields: values,
-        valid,
-        excluded,
-      });
     }
-  }
 
-  return { records, pageCount: pdf.numPages, usedOcr };
+    return { records, pageCount: pdf.numPages, usedOcr };
+  } finally {
+    await closePdfDocument(pdf);
+  }
 }
 
 /**
@@ -213,51 +218,55 @@ export async function captureFixedTextForTemplate(
   language: OcrLanguageOption
 ): Promise<Template> {
   const pdf = await loadPdfDocument(templateFile);
-  const pageCache = new Map<
-    number,
-    { textItems: PositionedTextItem[]; hasText: boolean; pageHeightPt: number; getOcrPage: () => Promise<RenderedPageCanvas | null> }
-  >();
+  try {
+    const pageCache = new Map<
+      number,
+      { textItems: PositionedTextItem[]; hasText: boolean; pageHeightPt: number; getOcrPage: () => Promise<RenderedPageCanvas | null> }
+    >();
 
-  const updatedFields: TemplateField[] = [];
-  for (const field of template.fields) {
-    const pageNumber = field.pageIndex + 1;
-    if (pageNumber < 1 || pageNumber > pdf.numPages) {
-      updatedFields.push({ ...field, fixedText: undefined, blankFillRatio: undefined });
-      continue;
-    }
-
-    let ctx = pageCache.get(pageNumber);
-    if (!ctx) {
-      const page = await pdf.getPage(pageNumber);
-      const textItems = await getPositionedTextItems(page);
-      const hasText = pageHasText(textItems);
-      const pageHeightPt = page.getViewport({ scale: 1 }).height;
-      const getOcrPage = makeLazyOcrPage(page, () => {});
-      ctx = { textItems, hasText, pageHeightPt, getOcrPage };
-      pageCache.set(pageNumber, ctx);
-    }
-
-    if (field.type === "checkbox") {
-      try {
-        const rendered = await ctx.getOcrPage();
-        const crop = rendered ? cropFieldCanvas(rendered.canvas, field, ctx.pageHeightPt, rendered.scale) : null;
-        const blankFillRatio = crop ? computeDarkPixelRatio(crop) : undefined;
-        updatedFields.push({ ...field, fixedText: undefined, blankFillRatio });
-      } catch {
+    const updatedFields: TemplateField[] = [];
+    for (const field of template.fields) {
+      const pageNumber = field.pageIndex + 1;
+      if (pageNumber < 1 || pageNumber > pdf.numPages) {
         updatedFields.push({ ...field, fixedText: undefined, blankFillRatio: undefined });
+        continue;
       }
-      continue;
+
+      let ctx = pageCache.get(pageNumber);
+      if (!ctx) {
+        const page = await pdf.getPage(pageNumber);
+        const textItems = await getPositionedTextItems(page);
+        const hasText = pageHasText(textItems);
+        const pageHeightPt = page.getViewport({ scale: 1 }).height;
+        const getOcrPage = makeLazyOcrPage(page, () => {});
+        ctx = { textItems, hasText, pageHeightPt, getOcrPage };
+        pageCache.set(pageNumber, ctx);
+      }
+
+      if (field.type === "checkbox") {
+        try {
+          const rendered = await ctx.getOcrPage();
+          const crop = rendered ? cropFieldCanvas(rendered.canvas, field, ctx.pageHeightPt, rendered.scale) : null;
+          const blankFillRatio = crop ? computeDarkPixelRatio(crop) : undefined;
+          updatedFields.push({ ...field, fixedText: undefined, blankFillRatio });
+        } catch {
+          updatedFields.push({ ...field, fixedText: undefined, blankFillRatio: undefined });
+        }
+        continue;
+      }
+
+      const result = await extractFieldValue({
+        field: { ...field, fixedText: undefined },
+        textItems: ctx.hasText ? ctx.textItems : [],
+        getOcrPage: ctx.getOcrPage,
+        pageHeightPt: ctx.pageHeightPt,
+        language,
+      });
+      updatedFields.push({ ...field, fixedText: result.value || undefined, blankFillRatio: undefined });
     }
 
-    const result = await extractFieldValue({
-      field: { ...field, fixedText: undefined },
-      textItems: ctx.hasText ? ctx.textItems : [],
-      getOcrPage: ctx.getOcrPage,
-      pageHeightPt: ctx.pageHeightPt,
-      language,
-    });
-    updatedFields.push({ ...field, fixedText: result.value || undefined, blankFillRatio: undefined });
+    return { ...template, fields: updatedFields };
+  } finally {
+    await closePdfDocument(pdf);
   }
-
-  return { ...template, fields: updatedFields };
 }

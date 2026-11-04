@@ -1,15 +1,4 @@
-import {
-  PDFDocument,
-  type PDFFont,
-  type PDFPage,
-  rgb,
-  degrees,
-  setTextRenderingMode,
-  TextRenderingMode,
-  setLineWidth,
-  setStrokingRgbColor,
-} from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont, PDFPage } from "pdf-lib";
 import { BrowserProcessor } from "../types";
 import type { PdfProcessorOutput } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
@@ -27,6 +16,8 @@ import {
   type TableFmt,
 } from "@/lib/word/docx-format";
 import { layoutParagraph, type LayoutLine, type TabStopSpec } from "@/lib/word/word-layout";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * Word（DOCX）→ PDF Processor（Phase 9、Phase 18.2 C節で用紙設定・改ページ対応を強化）。
@@ -761,9 +752,9 @@ function fmtParagraphChars(para: ParaFmt, defaults: { size: number; bold: boolea
   return out;
 }
 
-function hexToRgb(hexColor: string | null, fallback = rgb(0.12, 0.12, 0.14)) {
+function hexToRgb(hexColor: string | null, fallback = pdfLib().rgb(0.12, 0.12, 0.14)) {
   if (!hexColor || !/^[0-9a-fA-F]{6}$/.test(hexColor)) return fallback;
-  return rgb(parseInt(hexColor.slice(0, 2), 16) / 255, parseInt(hexColor.slice(2, 4), 16) / 255, parseInt(hexColor.slice(4, 6), 16) / 255);
+  return pdfLib().rgb(parseInt(hexColor.slice(0, 2), 16) / 255, parseInt(hexColor.slice(2, 4), 16) / 255, parseInt(hexColor.slice(4, 6), 16) / 255);
 }
 
 function charStyleKey(c: FlatChar): string {
@@ -783,6 +774,7 @@ export interface WordToPdfOutput extends Omit<PdfProcessorOutput, "url"> {
 
 export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToPdfOutput> {
   async process({ file }: WordToPdfInput): Promise<WordToPdfOutput> {
+    await ensurePdfLib({ fontkit: true });
     if (file.size === 0) {
       throw new Error("空のファイルは処理できません。別のファイルを選択してください。");
     }
@@ -862,11 +854,11 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       throw new Error("日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。");
     }
 
-    let doc: PDFDocument;
+    let doc: PdfLibTypes.PDFDocument;
     let font: PDFFont;
     try {
-      doc = await PDFDocument.create();
-      doc.registerFontkit(fontkit);
+      doc = await pdfLib().PDFDocument.create();
+      doc.registerFontkit(fontkitLib());
       font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
     } catch {
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
@@ -899,7 +891,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       if (cursorY - height < bottomLimit) newPage();
     }
 
-    const INK = rgb(0.12, 0.12, 0.14);
+    const INK = pdfLib().rgb(0.12, 0.12, 0.14);
     const defaultTabPt = formatting.defaultTabPt;
     const gridPitch = section?.docGridLinePitchPt ?? null;
 
@@ -970,21 +962,21 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         k = j;
         const ds = drawSize(first);
         const y = baseY + (first.script === "super" ? first.size * 0.35 : first.script === "sub" ? -first.size * 0.12 : 0);
-        const color = first.link ? rgb(0.1, 0.32, 0.75) : hexToRgb(first.color, INK);
+        const color = first.link ? pdfLib().rgb(0.1, 0.32, 0.75) : hexToRgb(first.color, INK);
         const x0 = originX + group[0].x;
         const x1 = originX + group[group.length - 1].x + group[group.length - 1].width;
         if (first.highlight) {
           page.drawRectangle({ x: x0, y: y - ds * 0.22, width: x1 - x0, height: ds * 1.2, color: hexToRgb(first.highlight) });
         }
         if (first.bold) {
-          page.pushOperators(setLineWidth(ds * 0.028), setStrokingRgbColor(color.red, color.green, color.blue), setTextRenderingMode(TextRenderingMode.FillAndOutline));
+          page.pushOperators(pdfLib().setLineWidth(ds * 0.028), pdfLib().setStrokingRgbColor(color.red, color.green, color.blue), pdfLib().setTextRenderingMode(pdfLib().TextRenderingMode.FillAndOutline));
         }
         // 1文字ずつdrawTextを呼ぶ理由: 英字に数字が続く文字列を1回で描くと、PDFの
         // テキスト情報（コピー・検索用）だけが化けることがあるため（従来からの回避策）。
         for (const it of group) {
-          page.drawText(chars[it.index].ch, { x: originX + it.x, y, size: ds, font, color, ...(first.italic ? { xSkew: degrees(12) } : {}) });
+          page.drawText(chars[it.index].ch, { x: originX + it.x, y, size: ds, font, color, ...(first.italic ? { xSkew: pdfLib().degrees(12) } : {}) });
         }
-        if (first.bold) page.pushOperators(setTextRenderingMode(TextRenderingMode.Fill));
+        if (first.bold) page.pushOperators(pdfLib().setTextRenderingMode(pdfLib().TextRenderingMode.Fill));
         if (first.underline || first.link) {
           page.drawLine({ start: { x: x0, y: y - 1.5 }, end: { x: x1, y: y - 1.5 }, thickness: 0.6, color });
         }
@@ -996,7 +988,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     }
 
     function drawBorderLine(x1: number, y1: number, x2: number, y2: number, b: BorderFmt) {
-      page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: Math.max(0.3, b.widthPt), color: hexToRgb(b.color, rgb(0, 0, 0)) });
+      page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: Math.max(0.3, b.widthPt), color: hexToRgb(b.color, pdfLib().rgb(0, 0, 0)) });
     }
 
     function tabSpecs(fmt: ParaFmt | null): TabStopSpec[] {

@@ -20,16 +20,22 @@ export function usePdfPageAspects(file: File | null, maxPages = 40): Record<numb
         const pdfjs = await getPdfjs();
         const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), ...PDFJS_ASSET_OPTIONS });
         destroy = () => task.destroy();
-        const pdf = await task.promise;
-        const ratios: Record<number, number> = {};
-        const limit = Math.min(pdf.numPages, maxPages);
-        for (let n = 1; n <= limit; n++) {
-          const page = await pdf.getPage(n);
-          if (cancelled) return;
-          const viewport = page.getViewport({ scale: 1 });
-          ratios[n] = viewport.height / viewport.width;
+        try {
+          const pdf = await task.promise;
+          const ratios: Record<number, number> = {};
+          const limit = Math.min(pdf.numPages, maxPages);
+          for (let n = 1; n <= limit; n++) {
+            const page = await pdf.getPage(n);
+            if (cancelled) return;
+            const viewport = page.getViewport({ scale: 1 });
+            ratios[n] = viewport.height / viewport.width;
+          }
+          if (!cancelled) setState({ file, ratios });
+        } finally {
+          // 縦横の比を読み終えたら（失敗・中止でも）、すぐPDFを閉じる（ロードマップC 工程2）
+          destroy = null;
+          void task.destroy().catch(() => {});
         }
-        if (!cancelled) setState({ file, ratios });
       } catch {
         // プレビュー専用。失敗しても本処理には影響しない
       }

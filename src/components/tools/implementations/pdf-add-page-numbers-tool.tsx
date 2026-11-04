@@ -31,7 +31,7 @@ export function PdfAddPageNumbersTool({ initialFile = null, onFileChange }: Shar
   const [position, setPosition] = useState<PageNumberPosition>("bottom-center");
   const [fontSize, setFontSize] = useState(10);
   // プレビュー用: 実際の出力と同じフォント(Helvetica)で文字幅を測る
-  const { font: previewFont } = usePdfFont(getHelveticaFont);
+  const { font: previewFont } = usePdfFont(getHelveticaFont, file !== null);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);

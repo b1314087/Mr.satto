@@ -57,9 +57,13 @@ export function getPdfjs() {
 export async function loadPdfDocument(file: File) {
   const pdfjsLib = await getPdfjs();
   const bytes = await file.arrayBuffer();
+  // getDocument() は、PDFを読むための作業用スレッド（Worker）を1つずつ作る。
+  // 読み込みに失敗したときも、その作業用スレッドを残さないよう、読み込みを止めて片付ける（ロードマップC 工程2）
+  const task = pdfjsLib.getDocument({ data: bytes, ...PDFJS_ASSET_OPTIONS });
   try {
-    return await pdfjsLib.getDocument({ data: bytes, ...PDFJS_ASSET_OPTIONS }).promise;
+    return await task.promise;
   } catch (e) {
+    await task.destroy().catch(() => {});
     const message = e instanceof Error ? e.message : "";
     if (/password/i.test(message)) {
       throw new Error(
@@ -72,8 +76,41 @@ export async function loadPdfDocument(file: File) {
   }
 }
 
+/** pdf.js で開いたPDF（loadPdfDocument の戻り値） */
+export type PdfDocument = Awaited<ReturnType<typeof loadPdfDocument>>;
+
+/**
+ * 読み終わったPDFを閉じる（ロードマップC 工程2）。
+ * pdf.js は、PDFを開くたびに作業用スレッド（Worker）を作り、PDFの中身をそこに持つ。閉じないと、
+ * 処理が終わっても作業用スレッドとメモリが残り、PDFを処理するたびに増えていく。
+ * destroy() は、描画中の処理を止め、このPDFのために作った作業用スレッドだけを終了させる
+ * （ほかのPDFが使っている作業用スレッドには触れない）。何度呼んでもよく、失敗しても処理は止めない。
+ * 描画の途中で閉じないよう、呼び出し側は、描画（render().promise）を待ち終えてから呼ぶこと。
+ */
+export async function closePdfDocument(pdf: PdfDocument | null | undefined): Promise<void> {
+  if (!pdf) return;
+  try {
+    await pdf.destroy();
+  } catch {
+    // すでに閉じている・閉じる途中で失敗した場合も、処理の結果には影響させない
+  }
+}
+
+/**
+ * PDFを開いて fn を実行し、成功しても失敗しても（キャンセルの例外でも）、最後に必ず閉じる。
+ * fn の中で取り出した文字・画像（Blob など）は、閉じたあとも使える。ページなど pdf.js の物は、fn の外へ持ち出さないこと。
+ */
+export async function withPdfDocument<T>(file: File, fn: (pdf: PdfDocument) => Promise<T>): Promise<T> {
+  const pdf = await loadPdfDocument(file);
+  try {
+    return await fn(pdf);
+  } finally {
+    await closePdfDocument(pdf);
+  }
+}
+
 /** pdfjsの1ページの型（動的importのため具体型を直接importせずダック typing で扱う） */
-export type PdfjsPage = Awaited<ReturnType<Awaited<ReturnType<typeof loadPdfDocument>>["getPage"]>>;
+export type PdfjsPage = Awaited<ReturnType<PdfDocument["getPage"]>>;
 
 /**
  * 座標付きのテキスト断片（PDF→Excel / PDF→Word / OCRのテキストPDF判定が共通で使う）。

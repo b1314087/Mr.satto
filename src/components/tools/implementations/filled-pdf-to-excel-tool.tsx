@@ -9,7 +9,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { FilledPdfToExcelProcessor, type FilledPdfToExcelOutput } from "@/lib/processors/browser/filled-pdf-to-excel";
-import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
+import { withPdfDocument } from "@/lib/pdf/pdfjs-client";
 import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { useFilledPdfToExcelUsage, UsageGatePanel, describeConsumeFailure } from "./filled-pdf-to-excel/usage-gate";
@@ -129,8 +129,8 @@ function AutoExtractSection() {
       let sum = 0;
       try {
         for (const file of selected) {
-          const pdf = await loadPdfDocument(file);
-          sum += pdf.numPages;
+          // ページ数を数えたら、すぐ閉じる（作業用スレッドを残さない。ロードマップC 工程2）
+          sum += await withPdfDocument(file, async (pdf) => pdf.numPages);
         }
         setTotalPages(sum);
       } catch (e) {

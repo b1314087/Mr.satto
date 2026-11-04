@@ -7,7 +7,7 @@ import { featureFlags } from "@/lib/config/features";
 import { FORM_CONSENT_VERSION, FORM_MAX_CHARS_TOTAL, FORM_MAX_IMAGE_PAGES, FORM_MAX_PAGES, type FormExtractRow, type FormPurpose } from "@/lib/ai/form-extract";
 import type { AiModelTier } from "@/lib/ai/pricing";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
-import { loadPdfDocument, getPositionedTextItems, pageHasText, renderPageToCanvas, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
+import { closePdfDocument, loadPdfDocument, getPositionedTextItems, pageHasText, renderPageToCanvas, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
 import { ocrWordsToPositionedTextItems, recognizeImageWithWords } from "@/lib/ocr/tesseract-client";
 import { removeRuledLinesFromCanvas } from "@/lib/ocr/remove-ruled-lines";
 import { encodeCanvasForAi, type PreparedImage } from "@/lib/calendar/event-image";
@@ -172,59 +172,63 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     (async () => {
       try {
         const pdf = await loadPdfDocument(eligibleFile);
-        if (pdf.numPages > FORM_MAX_PAGES) {
-          if (!cancelled) setText({ status: "problem", message: `AIで読み取れるのは${FORM_MAX_PAGES}ページまでです（このPDFは${pdf.numPages}ページ）。` });
-          return;
-        }
-        const pages: SendPage[] = [];
-        for (let p = 1; p <= pdf.numPages; p++) {
-          const page = await pdf.getPage(p);
-          const items = await getPositionedTextItems(page);
-          if (pageHasText(items)) {
-            pages.push({ page: p, text: itemsToPageText(items) });
-            continue;
-          }
-          // 文字のないページ（スキャンした画像）
-          if (purpose !== "table") {
-            if (!cancelled) setText({ status: "problem", message: `${p}ページ目に文字がありません（スキャンした画像のPDFです）。この機能では送れません。従来の変換（OCR）をお使いください。` });
+        try {
+          if (pdf.numPages > FORM_MAX_PAGES) {
+            if (!cancelled) setText({ status: "problem", message: `AIで読み取れるのは${FORM_MAX_PAGES}ページまでです（このPDFは${pdf.numPages}ページ）。` });
             return;
           }
-          if (pages.filter((pg) => pg.image).length >= FORM_MAX_IMAGE_PAGES) {
-            if (!cancelled) setText({ status: "problem", message: `スキャンしたページ（画像）は、AIで${FORM_MAX_IMAGE_PAGES}ページまで読み取れます。ページを減らしたPDFでお試しください。` });
-            return;
+          const pages: SendPage[] = [];
+          for (let p = 1; p <= pdf.numPages; p++) {
+            const page = await pdf.getPage(p);
+            const items = await getPositionedTextItems(page);
+            if (pageHasText(items)) {
+              pages.push({ page: p, text: itemsToPageText(items) });
+              continue;
+            }
+            // 文字のないページ（スキャンした画像）
+            if (purpose !== "table") {
+              if (!cancelled) setText({ status: "problem", message: `${p}ページ目に文字がありません（スキャンした画像のPDFです）。この機能では送れません。従来の変換（OCR）をお使いください。` });
+              return;
+            }
+            if (pages.filter((pg) => pg.image).length >= FORM_MAX_IMAGE_PAGES) {
+              if (!cancelled) setText({ status: "problem", message: `スキャンしたページ（画像）は、AIで${FORM_MAX_IMAGE_PAGES}ページまで読み取れます。ページを減らしたPDFでお試しください。` });
+              return;
+            }
+            if (!cancelled) setText({ status: "reading", message: `${p}ページ目はスキャンした画像です。画像にして、文字を読み取っています…（この端末の中だけで行います。時間がかかることがあります）` });
+            let canvas: HTMLCanvasElement;
+            try {
+              canvas = (await renderPageToCanvas(page, OCR_RENDER_SCALE, MAX_OCR_DIMENSION)).canvas;
+            } catch {
+              if (!cancelled) setText({ status: "problem", message: `${p}ページ目を画像にできませんでした。` });
+              return;
+            }
+            // 参考にする文字（端末内のOCR）。読めなくても、画像は送れる
+            let ocrText = "";
+            try {
+              const result = await recognizeImageWithWords(removeRuledLinesFromCanvas(canvas), "ja+en", () => {}, { pageSegMode: "6" });
+              ocrText = itemsToPageText(ocrWordsToPositionedTextItems(result.words));
+            } catch {
+              ocrText = "";
+            }
+            if (cancelled) return;
+            const image = await encodeCanvasForAi(canvas, `${p}ページ目`);
+            if (!image) {
+              setText({ status: "problem", message: `${p}ページ目の画像を、送れる大きさに小さくできませんでした。` });
+              return;
+            }
+            pages.push({ page: p, text: ocrText, image });
           }
-          if (!cancelled) setText({ status: "reading", message: `${p}ページ目はスキャンした画像です。画像にして、文字を読み取っています…（この端末の中だけで行います。時間がかかることがあります）` });
-          let canvas: HTMLCanvasElement;
-          try {
-            canvas = (await renderPageToCanvas(page, OCR_RENDER_SCALE, MAX_OCR_DIMENSION)).canvas;
-          } catch {
-            if (!cancelled) setText({ status: "problem", message: `${p}ページ目を画像にできませんでした。` });
-            return;
-          }
-          // 参考にする文字（端末内のOCR）。読めなくても、画像は送れる
-          let ocrText = "";
-          try {
-            const result = await recognizeImageWithWords(removeRuledLinesFromCanvas(canvas), "ja+en", () => {}, { pageSegMode: "6" });
-            ocrText = itemsToPageText(ocrWordsToPositionedTextItems(result.words));
-          } catch {
-            ocrText = "";
-          }
+          const chars = pages.reduce((sum, pg) => sum + pg.text.length, 0);
+          const imageCount = pages.filter((pg) => pg.image).length;
           if (cancelled) return;
-          const image = await encodeCanvasForAi(canvas, `${p}ページ目`);
-          if (!image) {
-            setText({ status: "problem", message: `${p}ページ目の画像を、送れる大きさに小さくできませんでした。` });
+          if (chars > FORM_MAX_CHARS_TOTAL) {
+            setText({ status: "problem", message: `文字が多すぎます（${chars.toLocaleString("ja-JP")}文字。送れるのは${FORM_MAX_CHARS_TOTAL.toLocaleString("ja-JP")}文字まで）。ページを減らしたPDFでお試しください。` });
             return;
           }
-          pages.push({ page: p, text: ocrText, image });
+          setText({ status: "ready", pages, chars, imageCount });
+        } finally {
+          await closePdfDocument(pdf);
         }
-        const chars = pages.reduce((sum, pg) => sum + pg.text.length, 0);
-        const imageCount = pages.filter((pg) => pg.image).length;
-        if (cancelled) return;
-        if (chars > FORM_MAX_CHARS_TOTAL) {
-          setText({ status: "problem", message: `文字が多すぎます（${chars.toLocaleString("ja-JP")}文字。送れるのは${FORM_MAX_CHARS_TOTAL.toLocaleString("ja-JP")}文字まで）。ページを減らしたPDFでお試しください。` });
-          return;
-        }
-        setText({ status: "ready", pages, chars, imageCount });
       } catch {
         if (!cancelled) setText({ status: "problem", message: "PDFの文字を取り出せませんでした。" });
       }

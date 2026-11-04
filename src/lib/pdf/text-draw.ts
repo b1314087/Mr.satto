@@ -9,7 +9,7 @@
  * 3ツールが共通で使う新しいモジュールとして切り出す。
  */
 import type { PDFFont, PDFPage } from "pdf-lib";
-import { rgb } from "pdf-lib";
+import { pdfLib } from "@/lib/pdf/pdf-lib-loader";
 
 /** 日本語は単語区切りが無いため1文字単位で幅計測して折り返す */
 export function wrapTextByWidth(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -50,7 +50,7 @@ export function createTextDrawer(page: PDFPage, font: PDFFont) {
     let drawX = x;
     if (opts.align === "right") drawX = x - width;
     else if (opts.align === "center") drawX = x - width / 2;
-    page.drawText(value, { x: drawX, y, size, font, color: rgb(...color) });
+    page.drawText(value, { x: drawX, y, size, font, color: pdfLib().rgb(...color) });
   }
 
   function drawLine(
@@ -66,7 +66,7 @@ export function createTextDrawer(page: PDFPage, font: PDFFont) {
       start: { x: x1, y: y1 },
       end: { x: x2, y: y2 },
       thickness,
-      color: rgb(...color),
+      color: pdfLib().rgb(...color),
       dashArray,
     });
   }

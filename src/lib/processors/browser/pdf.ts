@@ -1,5 +1,4 @@
-import { PDFDocument, StandardFonts, degrees as pdfDegrees, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+
 import { BrowserProcessor, type PdfProcessorOutput, type NamedFileOutput } from "../types";
 import { loadImage, canvasToBlob } from "./image";
 import { computeImagePageLayout } from "./image-to-pdf-layout";
@@ -23,6 +22,8 @@ import {
   type ResizeContentMode,
   type WatermarkPosition as LayoutWatermarkPosition,
 } from "@/lib/pdf/overlay-layout";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * PDF系Processor（Phase 2-A）。
@@ -55,7 +56,8 @@ function zeroPad(n: number, totalDigits: number): string {
  * それらの呼び出しでは明示的に updateMetadata: false を渡す
  * （他のPDF系Processorの挙動は一切変更しない）。
  */
-export async function loadPdfDoc(file: File, options?: { updateMetadata?: boolean }): Promise<PDFDocument> {
+export async function loadPdfDoc(file: File, options?: { updateMetadata?: boolean }): Promise<PdfLibTypes.PDFDocument> {
+  await ensurePdfLib();
   let bytes: ArrayBuffer;
   try {
     bytes = await file.arrayBuffer();
@@ -63,7 +65,7 @@ export async function loadPdfDoc(file: File, options?: { updateMetadata?: boolea
     throw new Error("ファイルの読み込みに失敗しました");
   }
   try {
-    return await PDFDocument.load(bytes, {
+    return await pdfLib().PDFDocument.load(bytes, {
       ignoreEncryption: false,
       throwOnInvalidObject: false,
       updateMetadata: options?.updateMetadata ?? true,
@@ -83,12 +85,12 @@ export async function loadPdfDoc(file: File, options?: { updateMetadata?: boolea
 }
 
 /** PDFDocument を保存して Blob にする（URLは作らない。複数ファイル出力で使う） */
-async function pdfToBlob(doc: PDFDocument): Promise<Blob> {
+async function pdfToBlob(doc: PdfLibTypes.PDFDocument): Promise<Blob> {
   const bytes = await doc.save();
   return new Blob([new Uint8Array(bytes)], { type: "application/pdf" });
 }
 
-export async function finalizePdf(doc: PDFDocument): Promise<PdfProcessorOutput> {
+export async function finalizePdf(doc: PdfLibTypes.PDFDocument): Promise<PdfProcessorOutput> {
   const blob = await pdfToBlob(doc);
   return {
     blob,
@@ -102,8 +104,9 @@ export async function finalizePdf(doc: PDFDocument): Promise<PdfProcessorOutput>
  * 元PDFの指定ページ（0始まりの位置）を、指定した順序で並べた新しいPDFを作る。
  * ページ削除（残すページ）・抽出・並べ替え・分割が共通で使う。位置の検証は呼び出し側で済ませておく。
  */
-export async function buildPdfFromPageIndices(src: PDFDocument, indices: number[]): Promise<PDFDocument> {
-  const out = await PDFDocument.create();
+export async function buildPdfFromPageIndices(src: PdfLibTypes.PDFDocument, indices: number[]): Promise<PdfLibTypes.PDFDocument> {
+  await ensurePdfLib();
+  const out = await pdfLib().PDFDocument.create();
   const copied = await out.copyPages(src, indices);
   copied.forEach((page) => out.addPage(page));
   return out;
@@ -289,10 +292,11 @@ export interface PdfMergeInput {
 
 export class PdfMergeProcessor extends BrowserProcessor<PdfMergeInput, PdfProcessorOutput> {
   async process({ files }: PdfMergeInput) {
+    await ensurePdfLib();
     if (files.length < 2) {
       throw new Error("結合するには2つ以上のPDFファイルを選択してください");
     }
-    const merged = await PDFDocument.create();
+    const merged = await pdfLib().PDFDocument.create();
     for (const file of files) {
       const src = await loadPdfDoc(file);
       if (src.getPageCount() === 0) {
@@ -439,6 +443,7 @@ export interface PdfRotateInput {
 
 export class PdfRotateProcessor extends BrowserProcessor<PdfRotateInput, PdfProcessorOutput> {
   async process({ file, rotateBy, pageNumbers }: PdfRotateInput) {
+    await ensurePdfLib();
     const doc = await loadPdfDoc(file);
     const totalPages = doc.getPageCount();
     if (totalPages === 0) {
@@ -457,7 +462,7 @@ export class PdfRotateProcessor extends BrowserProcessor<PdfRotateInput, PdfProc
     for (const pageNumber of targets) {
       const page = pages[pageNumber - 1];
       const current = page.getRotation().angle;
-      page.setRotation(pdfDegrees((current + rotateBy) % 360));
+      page.setRotation(pdfLib().degrees((current + rotateBy) % 360));
     }
     return finalizePdf(doc);
   }
@@ -493,10 +498,11 @@ export interface ImageToPdfInput {
 
 export class ImagesToPdfProcessor extends BrowserProcessor<ImageToPdfInput, PdfProcessorOutput> {
   async process({ files, pageSize = "fit" }: ImageToPdfInput) {
+    await ensurePdfLib();
     if (files.length === 0) {
       throw new Error("PDF化する画像を選択してください");
     }
-    const doc = await PDFDocument.create();
+    const doc = await pdfLib().PDFDocument.create();
     for (const file of files) {
       let embeddable: { bytes: Uint8Array; mimeType: "image/png" | "image/jpeg" };
       try {
@@ -566,6 +572,7 @@ export class PdfAddPageNumbersProcessor extends BrowserProcessor<
   PdfProcessorOutput
 > {
   async process({ file, startNumber, position, fontSize }: PdfAddPageNumbersInput) {
+    await ensurePdfLib();
     if (!Number.isInteger(startNumber)) {
       throw new Error("開始番号は整数で指定してください");
     }
@@ -582,7 +589,7 @@ export class PdfAddPageNumbersProcessor extends BrowserProcessor<
     // （既存の帳票PDF生成と違い、追加のフォント取得を発生させない）。
     let font;
     try {
-      font = await doc.embedFont(StandardFonts.Helvetica);
+      font = await doc.embedFont(pdfLib().StandardFonts.Helvetica);
     } catch {
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
     }
@@ -603,10 +610,10 @@ export class PdfAddPageNumbersProcessor extends BrowserProcessor<
       page.drawText(label, {
         x,
         y,
-        rotate: pdfDegrees(angle),
+        rotate: pdfLib().degrees(angle),
         size: fontSize,
         font,
-        color: rgb(PAGE_NUMBER_COLOR.r, PAGE_NUMBER_COLOR.g, PAGE_NUMBER_COLOR.b),
+        color: pdfLib().rgb(PAGE_NUMBER_COLOR.r, PAGE_NUMBER_COLOR.g, PAGE_NUMBER_COLOR.b),
       });
     });
 
@@ -632,6 +639,7 @@ export interface PdfWatermarkInput {
 
 export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, PdfProcessorOutput> {
   async process({ file, text, opacity, fontSize, position, rotation }: PdfWatermarkInput) {
+    await ensurePdfLib({ fontkit: true });
     if (text.trim() === "") {
       throw new Error("透かしの文字を入力してください");
     }
@@ -661,7 +669,7 @@ export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, P
     }
     let font;
     try {
-      doc.registerFontkit(fontkit);
+      doc.registerFontkit(fontkitLib());
       font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
     } catch {
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
@@ -706,9 +714,9 @@ export class PdfWatermarkProcessor extends BrowserProcessor<PdfWatermarkInput, P
           y: layout.y,
           size: layout.fontSize,
           font,
-          color: rgb(WATERMARK_COLOR.r, WATERMARK_COLOR.g, WATERMARK_COLOR.b),
+          color: pdfLib().rgb(WATERMARK_COLOR.r, WATERMARK_COLOR.g, WATERMARK_COLOR.b),
           opacity,
-          rotate: pdfDegrees(layout.angle),
+          rotate: pdfLib().degrees(layout.angle),
         });
       } catch {
         throw new Error(
@@ -860,6 +868,7 @@ export class PdfMetadataRemoveProcessor extends BrowserProcessor<
   PdfMetadataRemoveOutput
 > {
   async process({ file }: PdfMetadataRemoveInput): Promise<PdfMetadataRemoveOutput> {
+    await ensurePdfLib();
     const doc = await loadPdfDoc(file, { updateMetadata: false });
     if (doc.getPageCount() === 0) {
       throw new Error("このPDFにはページがありません");
@@ -885,7 +894,7 @@ export class PdfMetadataRemoveProcessor extends BrowserProcessor<
     // ここでも updateMetadata: false が必須（上記コメント参照）。
     let remainingMetadata: PdfMetadataInfo;
     try {
-      const verifyDoc = await PDFDocument.load(bytes, {
+      const verifyDoc = await pdfLib().PDFDocument.load(bytes, {
         throwOnInvalidObject: false,
         updateMetadata: false,
       });

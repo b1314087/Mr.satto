@@ -1,5 +1,5 @@
 import { BrowserProcessor } from "../types";
-import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
+import { closePdfDocument, loadPdfDocument } from "@/lib/pdf/pdfjs-client";
 import type { OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { extractPersonsFromFile, type PersonRecord } from "@/lib/pdf-template/person-extraction";
 import { TEMPLATE_LIMITS, type Template } from "@/lib/pdf-template/types";
@@ -54,59 +54,64 @@ export class FilledPdfToExcelTemplateProcessor extends BrowserProcessor<
     }
 
     const pdfDocs: { file: File; pdf: Awaited<ReturnType<typeof loadPdfDocument>> }[] = [];
-    for (const file of files) {
-      let pdf;
-      try {
-        pdf = await loadPdfDocument(file);
-      } catch {
-        throw new Error(`${file.name} の読み込みに失敗しました`);
+    try {
+      for (const file of files) {
+        let pdf;
+        try {
+          pdf = await loadPdfDocument(file);
+        } catch {
+          throw new Error(`${file.name} の読み込みに失敗しました`);
+        }
+        // 先に一覧へ入れてから確かめる（途中で止まっても、開いたPDFを全部閉じられるように）
+        pdfDocs.push({ file, pdf });
+        if (pdf.numPages === 0) {
+          throw new Error(`${file.name} にはページがありません`);
+        }
       }
-      if (pdf.numPages === 0) {
-        throw new Error(`${file.name} にはページがありません`);
+
+      const totalPages = pdfDocs.reduce((sum, d) => sum + d.pdf.numPages, 0);
+      const effectiveLimit = Math.min(maxTotalPages ?? TEMPLATE_LIMITS.maxFilledPagesHard, TEMPLATE_LIMITS.maxFilledPagesHard);
+      if (totalPages > effectiveLimit) {
+        throw new Error(
+          `処理できるページ数の上限は合計${effectiveLimit}ページです（選択したファイルの合計は${totalPages}ページです）。`
+        );
       }
-      pdfDocs.push({ file, pdf });
+
+      const allRecords: PersonRecord[] = [];
+      let usedOcr = false;
+
+      for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+        const file = files[fileIndex];
+        const { records, usedOcr: fileUsedOcr } = await extractPersonsFromFile({
+          file,
+          template,
+          language,
+          fileIndex,
+          onPageProgress: (info) => {
+            onPageProgress?.({
+              fileName: file.name,
+              currentPage: info.currentPage,
+              totalPagesInFile: info.totalPages,
+              fileIndex,
+              fileCount: files.length,
+              method: info.method,
+            });
+          },
+        });
+        if (fileUsedOcr) usedOcr = true;
+        allRecords.push(...records);
+      }
+
+      const excludedPersonCount = allRecords.filter((r) => r.excluded).length;
+
+      return {
+        records: allRecords,
+        pageCount: totalPages,
+        usedOcr,
+        excludedPersonCount,
+      };
+    } finally {
+      await Promise.all(pdfDocs.map((d) => closePdfDocument(d.pdf)));
     }
-
-    const totalPages = pdfDocs.reduce((sum, d) => sum + d.pdf.numPages, 0);
-    const effectiveLimit = Math.min(maxTotalPages ?? TEMPLATE_LIMITS.maxFilledPagesHard, TEMPLATE_LIMITS.maxFilledPagesHard);
-    if (totalPages > effectiveLimit) {
-      throw new Error(
-        `処理できるページ数の上限は合計${effectiveLimit}ページです（選択したファイルの合計は${totalPages}ページです）。`
-      );
-    }
-
-    const allRecords: PersonRecord[] = [];
-    let usedOcr = false;
-
-    for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
-      const file = files[fileIndex];
-      const { records, usedOcr: fileUsedOcr } = await extractPersonsFromFile({
-        file,
-        template,
-        language,
-        fileIndex,
-        onPageProgress: (info) => {
-          onPageProgress?.({
-            fileName: file.name,
-            currentPage: info.currentPage,
-            totalPagesInFile: info.totalPages,
-            fileIndex,
-            fileCount: files.length,
-            method: info.method,
-          });
-        },
-      });
-      if (fileUsedOcr) usedOcr = true;
-      allRecords.push(...records);
-    }
-
-    const excludedPersonCount = allRecords.filter((r) => r.excluded).length;
-
-    return {
-      records: allRecords,
-      pageCount: totalPages,
-      usedOcr,
-      excludedPersonCount,
-    };
   }
 }

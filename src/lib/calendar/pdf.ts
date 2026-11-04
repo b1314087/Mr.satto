@@ -5,8 +5,7 @@
  * 1ページ=1か月（2か月のときは、A4横なら左右、A4縦なら上下に並べる。前の月が左／上）。日付の数字と祝日名は各マスの左上に置き、祝日名がマスに収まらないときは
  * 文字を小さくし、それでも収まらなければ2行に折り返す（マスからはみ出す・隣と重なることがないようにする）。
  */
-import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont, PDFPage } from "pdf-lib";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { createTextDrawer, wrapTextByWidth } from "@/lib/pdf/text-draw";
 import { mmToPt, resolvePaperSizePt } from "@/lib/print/paper-sizes";
@@ -14,6 +13,8 @@ import { formatEventLine, type CalendarEvent, type CalendarEventMap } from "./ev
 import { groupMonths, sheetArrangement, type MonthsPerSheet } from "./layout";
 import { holidayDisplayName, monthNote, type CalendarMonth, type FiscalCalendar } from "./model";
 import { hexToRgb01, type CalendarTheme } from "./themes";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 export type CalendarPdfOrientation = "landscape" | "portrait";
 
@@ -75,7 +76,7 @@ export function pdfMonthLayout(weekCount: number, orientation: CalendarPdfOrient
   };
 }
 
-const rgbOf = (hex: string) => rgb(...hexToRgb01(hex));
+const rgbOf = (hex: string) => pdfLib().rgb(...hexToRgb01(hex));
 
 interface NameLayout {
   lines: string[];
@@ -386,7 +387,7 @@ function drawMonth(
 }
 
 function drawSheetPage(
-  doc: PDFDocument,
+  doc: PdfLibTypes.PDFDocument,
   font: PDFFont,
   months: readonly CalendarMonth[],
   cal: FiscalCalendar,
@@ -421,6 +422,7 @@ function drawSheetPage(
 
 /** 年度カレンダーのPDF（月別12ページ、または2か月ずつ6ページ）を作る */
 export async function buildCalendarPdf(options: CalendarPdfOptions): Promise<{ blob: Blob; pageCount: number }> {
+  await ensurePdfLib({ fontkit: true });
   const { calendar, theme, orientation } = options;
   let fontBytes: ArrayBuffer | Uint8Array;
   try {
@@ -429,11 +431,11 @@ export async function buildCalendarPdf(options: CalendarPdfOptions): Promise<{ b
     throw new Error("日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。");
   }
 
-  let doc: PDFDocument;
+  let doc: PdfLibTypes.PDFDocument;
   let font: PDFFont;
   try {
-    doc = await PDFDocument.create();
-    doc.registerFontkit(fontkit);
+    doc = await pdfLib().PDFDocument.create();
+    doc.registerFontkit(fontkitLib());
     // 部分埋め込み（subset）にすると一部の文字が欠けることがあるため、既存のPDFツールと同じく全体を埋め込む
     font = await doc.embedFont(fontBytes instanceof Uint8Array ? fontBytes : new Uint8Array(fontBytes), { subset: false });
   } catch {

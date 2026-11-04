@@ -1,5 +1,7 @@
-import { PDFArray, PDFDict, PDFName, PDFNumber, PDFRawStream, PDFRef, decodePDFRawStream, type PDFDocument, type PDFObject } from "pdf-lib";
+import type { PDFDocument, PDFObject } from "pdf-lib";
 import { fitWithinEdge, type PdfCompressSettings } from "@/lib/pdf/compress-settings";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * PDFに埋め込まれた画像を、指定した品質・長辺の上限のJPEGに作り直す（PDF圧縮の数値設定・目標のサイズ）。ブラウザ内だけで行う。
@@ -40,45 +42,45 @@ export interface RecompressStats {
 export const FLATE_PHOTO_MIN_PIXELS = 200 * 200;
 export const FLATE_PHOTO_MIN_BYTES = 30_000;
 
-const N = (name: string) => PDFName.of(name);
+const N = (name: string) => pdfLib().PDFName.of(name);
 
 function isName(obj: PDFObject | undefined, name: string): boolean {
-  return obj instanceof PDFName && obj === N(name);
+  return obj instanceof pdfLib().PDFName && obj === N(name);
 }
 
 /** フィルターが指定の1つだけか（名前1つ、または要素1つの配列） */
 function isOnlyFilter(filter: PDFObject | undefined, name: string): boolean {
   if (isName(filter, name)) return true;
-  return filter instanceof PDFArray && filter.size() === 1 && isName(filter.get(0), name);
+  return filter instanceof pdfLib().PDFArray && filter.size() === 1 && isName(filter.get(0), name);
 }
 
 /** 色空間が、ブラウザで作り直しても色の扱いが変わらないものか。成分の数（1か3）を返す */
 function supportedComponents(doc: PDFDocument, colorSpace: PDFObject | undefined): 1 | 3 | null {
-  const cs = colorSpace instanceof PDFRef ? doc.context.lookup(colorSpace) : colorSpace;
+  const cs = colorSpace instanceof pdfLib().PDFRef ? doc.context.lookup(colorSpace) : colorSpace;
   if (isName(cs, "DeviceRGB")) return 3;
   if (isName(cs, "DeviceGray")) return 1;
-  if (cs instanceof PDFArray && cs.size() === 2 && isName(cs.get(0), "ICCBased")) {
+  if (cs instanceof pdfLib().PDFArray && cs.size() === 2 && isName(cs.get(0), "ICCBased")) {
     const profileRef = cs.get(1);
-    const profile = profileRef instanceof PDFRef ? doc.context.lookup(profileRef) : profileRef;
-    const n = profile instanceof PDFRawStream ? profile.dict.get(N("N")) : undefined;
-    if (n instanceof PDFNumber && (n.asNumber() === 3 || n.asNumber() === 1)) return n.asNumber() as 1 | 3;
+    const profile = profileRef instanceof pdfLib().PDFRef ? doc.context.lookup(profileRef) : profileRef;
+    const n = profile instanceof pdfLib().PDFRawStream ? profile.dict.get(N("N")) : undefined;
+    if (n instanceof pdfLib().PDFNumber && (n.asNumber() === 3 || n.asNumber() === 1)) return n.asNumber() as 1 | 3;
   }
   return null;
 }
 
-function numberOf(dict: PDFDict, key: string): number | null {
+function numberOf(dict: PdfLibTypes.PDFDict, key: string): number | null {
   const v = dict.get(N(key));
-  return v instanceof PDFNumber ? v.asNumber() : null;
+  return v instanceof pdfLib().PDFNumber ? v.asNumber() : null;
 }
 
 /** 透明度（SMask）・マスク（Mask）として使われている画像の参照を集める（これらはJPEGにしない） */
-function collectMaskRefs(doc: PDFDocument): Set<PDFRef> {
-  const refs = new Set<PDFRef>();
+function collectMaskRefs(doc: PDFDocument): Set<PdfLibTypes.PDFRef> {
+  const refs = new Set<PdfLibTypes.PDFRef>();
   for (const [, obj] of doc.context.enumerateIndirectObjects()) {
-    if (!(obj instanceof PDFRawStream) || !isName(obj.dict.get(N("Subtype")), "Image")) continue;
+    if (!(obj instanceof pdfLib().PDFRawStream) || !isName(obj.dict.get(N("Subtype")), "Image")) continue;
     for (const key of ["SMask", "Mask"]) {
       const v = obj.dict.get(N(key));
-      if (v instanceof PDFRef) refs.add(v);
+      if (v instanceof pdfLib().PDFRef) refs.add(v);
     }
   }
   return refs;
@@ -88,13 +90,13 @@ function collectMaskRefs(doc: PDFDocument): Set<PDFRef> {
  * Flateの画像の「行ごとの前処理（PNGの予測。Predictor 10〜15）」の設定を確かめる。
  * 前処理なし（Predictor 1）か、PNGの予測で、色数・ビット数・幅が画像と一致するときだけ扱う。扱えないときは null。
  */
-function pngPredictorOf(dict: PDFDict, doc: PDFDocument, width: number, components: number): { png: boolean } | null {
+function pngPredictorOf(dict: PdfLibTypes.PDFDict, doc: PDFDocument, width: number, components: number): { png: boolean } | null {
   let parms: PDFObject | undefined = dict.get(N("DecodeParms"));
-  if (parms instanceof PDFRef) parms = doc.context.lookup(parms);
-  if (parms instanceof PDFArray) parms = parms.size() === 1 ? parms.get(0) : undefined;
-  if (parms instanceof PDFRef) parms = doc.context.lookup(parms);
+  if (parms instanceof pdfLib().PDFRef) parms = doc.context.lookup(parms);
+  if (parms instanceof pdfLib().PDFArray) parms = parms.size() === 1 ? parms.get(0) : undefined;
+  if (parms instanceof pdfLib().PDFRef) parms = doc.context.lookup(parms);
   if (parms === undefined) return { png: false };
-  if (!(parms instanceof PDFDict)) return null;
+  if (!(parms instanceof pdfLib().PDFDict)) return null;
   const predictor = numberOf(parms, "Predictor") ?? 1;
   if (predictor === 1) return { png: false };
   if (predictor < 10 || predictor > 15) return null; // TIFFの予測（2）などは扱わない
@@ -106,7 +108,8 @@ function pngPredictorOf(dict: PDFDict, doc: PDFDocument, width: number, componen
 }
 
 /** Flate（zlib）で縮めたデータを戻す。ブラウザの機能を使い、使えなければ pdf-lib の機能で戻す */
-async function inflate(stream: PDFRawStream): Promise<Uint8Array> {
+async function inflate(stream: PdfLibTypes.PDFRawStream): Promise<Uint8Array> {
+  await ensurePdfLib();
   if (typeof DecompressionStream !== "undefined") {
     try {
       const ds = new DecompressionStream("deflate");
@@ -116,9 +119,9 @@ async function inflate(stream: PDFRawStream): Promise<Uint8Array> {
       // 壊れたデータ・ブラウザの違いなど。pdf-lib の機能で、もう一度試す
     }
   }
-  const plain = PDFRawStream.of(PDFDict.withContext(stream.dict.context), stream.contents);
+  const plain = pdfLib().PDFRawStream.of(pdfLib().PDFDict.withContext(stream.dict.context), stream.contents);
   plain.dict.set(N("Filter"), N("FlateDecode"));
-  return decodePDFRawStream(plain).decode();
+  return pdfLib().decodePDFRawStream(plain).decode();
 }
 
 /**
@@ -233,12 +236,13 @@ async function reencodeJpeg(bytes: Uint8Array, expectedWidth: number, expectedHe
 /** Flateで保存された写真のような画像を、指定した大きさ・品質のJPEGにする。扱えない・読めない場合は null */
 async function convertFlateToJpeg(
   doc: PDFDocument,
-  stream: PDFRawStream,
+  stream: PdfLibTypes.PDFRawStream,
   width: number,
   height: number,
   components: 1 | 3,
   settings: PdfCompressSettings
 ) {
+  await ensurePdfLib();
   const predictor = pngPredictorOf(stream.dict, doc, width, components);
   if (!predictor) return null;
   let data: Uint8Array;
@@ -264,27 +268,28 @@ async function convertFlateToJpeg(
 }
 
 /** 置き換える画像の辞書（大きさ・色空間・フィルターだけを変え、ほかの項目＝透明度のSMaskなどは残す） */
-function replacementDict(doc: PDFDocument, original: PDFDict, width: number, height: number): PDFDict {
+function replacementDict(doc: PDFDocument, original: PdfLibTypes.PDFDict, width: number, height: number): PdfLibTypes.PDFDict {
   const dict = doc.context.obj({});
   const replaced = new Set(["Width", "Height", "ColorSpace", "BitsPerComponent", "Filter", "DecodeParms", "Length"]);
   for (const [key, value] of original.entries()) {
     if (!replaced.has(key.decodeText())) dict.set(key, value);
   }
-  dict.set(N("Width"), PDFNumber.of(width));
-  dict.set(N("Height"), PDFNumber.of(height));
+  dict.set(N("Width"), pdfLib().PDFNumber.of(width));
+  dict.set(N("Height"), pdfLib().PDFNumber.of(height));
   // ブラウザが書き出すJPEGはRGB（3成分）。白黒の画像もRGBとして書き出すため、色空間はRGBにする
   dict.set(N("ColorSpace"), N("DeviceRGB"));
-  dict.set(N("BitsPerComponent"), PDFNumber.of(8));
+  dict.set(N("BitsPerComponent"), pdfLib().PDFNumber.of(8));
   dict.set(N("Filter"), N("DCTDecode"));
   return dict;
 }
 
 /** PDF内の画像を、設定に従ってJPEGに作り直す。PDFDocument をその場で書き換え、件数を返す */
 export async function recompressPdfImages(doc: PDFDocument, settings: PdfCompressSettings): Promise<RecompressStats> {
+  await ensurePdfLib();
   const stats: RecompressStats = { imageCount: 0, recompressed: 0, convertedToJpeg: 0, resized: 0, skipped: 0, keptOriginal: 0 };
   const maskRefs = collectMaskRefs(doc);
   for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
-    if (!(obj instanceof PDFRawStream) || !isName(obj.dict.get(N("Subtype")), "Image")) continue;
+    if (!(obj instanceof pdfLib().PDFRawStream) || !isName(obj.dict.get(N("Subtype")), "Image")) continue;
     stats.imageCount++;
     const dict = obj.dict;
     const width = numberOf(dict, "Width");
@@ -321,7 +326,7 @@ export async function recompressPdfImages(doc: PDFDocument, settings: PdfCompres
       stats.keptOriginal++;
       continue;
     }
-    doc.context.assign(ref, PDFRawStream.of(replacementDict(doc, dict, out.width, out.height), out.bytes));
+    doc.context.assign(ref, pdfLib().PDFRawStream.of(replacementDict(doc, dict, out.width, out.height), out.bytes));
     stats.recompressed++;
     if (!isJpeg) stats.convertedToJpeg++;
     if (out.resized) stats.resized++;
@@ -332,7 +337,7 @@ export async function recompressPdfImages(doc: PDFDocument, settings: PdfCompres
 /** 電子署名を含むPDFか（圧縮して保存し直すと、署名は無効になる） */
 export function hasDigitalSignature(doc: PDFDocument): boolean {
   for (const [, obj] of doc.context.enumerateIndirectObjects()) {
-    const dict = obj instanceof PDFDict ? obj : obj instanceof PDFRawStream ? obj.dict : null;
+    const dict = obj instanceof pdfLib().PDFDict ? obj : obj instanceof pdfLib().PDFRawStream ? obj.dict : null;
     if (!dict) continue;
     if (isName(dict.get(N("FT")), "Sig") || isName(dict.get(N("Type")), "Sig")) return true;
   }

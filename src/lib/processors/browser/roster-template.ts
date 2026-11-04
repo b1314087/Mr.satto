@@ -12,14 +12,15 @@
  * という意味で実装する（保存・再利用可能な永続テンプレート機能ではない。
  * ブラウザのみで完結し外部保存は行わない、という指示書の方針のため）。
  */
-import { PDFDocument, type PDFFont, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont } from "pdf-lib";
 import { BrowserProcessor } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { wrapTextByWidth, createTextDrawer } from "@/lib/pdf/text-draw";
 import { mmToPt, resolvePaperSizePt } from "@/lib/print/paper-sizes";
 import { writeXlsxSheets, mmToExcelColumnWidth } from "@/lib/excel/xlsx-simple-io";
 import { sanitizeFileName } from "@/lib/utils/format";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 export interface RosterColumnSetting {
   sourceHeader: string;
@@ -110,6 +111,7 @@ async function buildExcel(input: RosterTemplateInput): Promise<Blob> {
 }
 
 async function buildPdf(input: RosterTemplateInput): Promise<{ blob: Blob; pageCount: number }> {
+  await ensurePdfLib({ fontkit: true });
   let fontBytes: ArrayBuffer;
   try {
     fontBytes = await loadJapaneseFontBytes();
@@ -117,11 +119,11 @@ async function buildPdf(input: RosterTemplateInput): Promise<{ blob: Blob; pageC
     throw new Error("日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。");
   }
 
-  let doc: PDFDocument;
+  let doc: PdfLibTypes.PDFDocument;
   let font: PDFFont;
   try {
-    doc = await PDFDocument.create();
-    doc.registerFontkit(fontkit);
+    doc = await pdfLib().PDFDocument.create();
+    doc.registerFontkit(fontkitLib());
     font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
   } catch {
     throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
@@ -147,7 +149,7 @@ async function buildPdf(input: RosterTemplateInput): Promise<{ blob: Blob; pageC
       y: topY - headerHeightPt,
       width: xAcc - marginPt,
       height: headerHeightPt,
-      color: rgb(0.93, 0.94, 0.96),
+      color: pdfLib().rgb(0.93, 0.94, 0.96),
     });
     input.columns.forEach((c, i) => {
       const cx = colXs[i];

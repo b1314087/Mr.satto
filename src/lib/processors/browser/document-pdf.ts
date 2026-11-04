@@ -1,5 +1,4 @@
-import { PDFDocument, type PDFFont, type PDFPage, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont, PDFPage } from "pdf-lib";
 import { BrowserProcessor } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import {
@@ -11,6 +10,8 @@ import {
 import { parseLineItem, computeDocumentTotals, formatYen } from "@/lib/documents/calc";
 import { validateDocumentForm } from "@/lib/documents/validation";
 import { sanitizeFileName } from "@/lib/utils/format";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * 帳票共通PDF生成（Phase 2-C）。
@@ -105,6 +106,7 @@ type DrawTextOptions = {
 
 export class DocumentPdfProcessor extends BrowserProcessor<DocumentPdfInput, DocumentPdfOutput> {
   async process({ form }: DocumentPdfInput): Promise<DocumentPdfOutput> {
+    await ensurePdfLib({ fontkit: true });
     const validationError = validateDocumentForm(form);
     if (validationError) {
       throw new Error(validationError);
@@ -128,11 +130,11 @@ export class DocumentPdfProcessor extends BrowserProcessor<DocumentPdfInput, Doc
     }
     const totals = computeDocumentTotals(items, form.taxRatePercent, form.taxRounding);
 
-    let doc: PDFDocument;
+    let doc: PdfLibTypes.PDFDocument;
     let font: PDFFont;
     try {
-      doc = await PDFDocument.create();
-      doc.registerFontkit(fontkit);
+      doc = await pdfLib().PDFDocument.create();
+      doc.registerFontkit(fontkitLib());
       // 注意: subset:false（理由はファイル冒頭のコメントを参照）
       font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
     } catch {
@@ -150,11 +152,11 @@ export class DocumentPdfProcessor extends BrowserProcessor<DocumentPdfInput, Doc
       let drawX = x;
       if (opts.align === "right") drawX = x - width;
       else if (opts.align === "center") drawX = x - width / 2;
-      page.drawText(value, { x: drawX, y, size, font, color: rgb(...color) });
+      page.drawText(value, { x: drawX, y, size, font, color: pdfLib().rgb(...color) });
     }
 
     function drawLine(x1: number, y1: number, x2: number, y2: number, color = COLOR_LINE, thickness = 0.75) {
-      page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness, color: rgb(...color) });
+      page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness, color: pdfLib().rgb(...color) });
     }
 
     function newPage() {
@@ -176,7 +178,7 @@ export class DocumentPdfProcessor extends BrowserProcessor<DocumentPdfInput, Doc
         y: cursorY - headerHeight,
         width: CONTENT_WIDTH,
         height: headerHeight,
-        color: rgb(...COLOR_HEADER_BG),
+        color: pdfLib().rgb(...COLOR_HEADER_BG),
       });
       const textY = cursorY - headerHeight + 7;
       drawText("品名", COL_NAME_X + 6, textY, 9, { color: COLOR_MUTED });
@@ -277,7 +279,7 @@ export class DocumentPdfProcessor extends BrowserProcessor<DocumentPdfInput, Doc
       y: cursorY - 32,
       width: CONTENT_WIDTH,
       height: 32,
-      color: rgb(...COLOR_HEADER_BG),
+      color: pdfLib().rgb(...COLOR_HEADER_BG),
     });
     drawText(
       form.type === "invoice" ? "ご請求金額（税込）" : "合計金額（税込）",
@@ -401,7 +403,7 @@ export class DocumentPdfProcessor extends BrowserProcessor<DocumentPdfInput, Doc
         y: MARGIN - 20,
         size: 8,
         font,
-        color: rgb(...COLOR_MUTED),
+        color: pdfLib().rgb(...COLOR_MUTED),
       });
     });
 

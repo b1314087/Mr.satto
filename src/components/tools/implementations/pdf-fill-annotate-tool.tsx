@@ -7,7 +7,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
+import { withPdfDocument, type PdfDocument } from "@/lib/pdf/pdfjs-client";
 import { PdfFillAnnotateProcessor } from "@/lib/processors/browser/pdf-fill-annotate";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import {
@@ -470,18 +470,20 @@ export function PdfFillAnnotateTool({
     try {
       const bytes = await f.arrayBuffer();
       setPdfBytes(bytes);
-      const pdf = await loadPdfDocument(new File([bytes], f.name, { type: "application/pdf" }));
-      if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
-      const pageInfos: PageInfo[] = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 1 });
-        pageInfos.push({ pageNumber: i, width: viewport.width, height: viewport.height });
-      }
-      setPages(pageInfos);
-      setSelectedPage(1);
-      setZoom(100);
-      await renderPagePreview(pdf, 1, pageInfos[0], 100);
+      // 読み終わったら必ず閉じる（作業用スレッドを残さない。ロードマップC 工程2）
+      await withPdfDocument(new File([bytes], f.name, { type: "application/pdf" }), async (pdf) => {
+        if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+        const pageInfos: PageInfo[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1 });
+          pageInfos.push({ pageNumber: i, width: viewport.width, height: viewport.height });
+        }
+        setPages(pageInfos);
+        setSelectedPage(1);
+        setZoom(100);
+        await renderPagePreview(pdf, 1, pageInfos[0], 100);
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました");
       setFile(null);
@@ -504,7 +506,7 @@ export function PdfFillAnnotateTool({
   }, []);
 
   async function renderPagePreview(
-    pdf: Awaited<ReturnType<typeof loadPdfDocument>>,
+    pdf: PdfDocument,
     pageNumber: number,
     pageInfo: PageInfo,
     zoomPercent: number
@@ -529,8 +531,9 @@ export function PdfFillAnnotateTool({
     if (!file || !pdfBytes) return;
     const pageInfo = pages.find((p) => p.pageNumber === pageNumber);
     if (!pageInfo) return;
-    const pdf = await loadPdfDocument(new File([pdfBytes.slice(0)], file.name, { type: "application/pdf" }));
-    await renderPagePreview(pdf, pageNumber, pageInfo, zoomPercent);
+    await withPdfDocument(new File([pdfBytes.slice(0)], file.name, { type: "application/pdf" }), (pdf) =>
+      renderPagePreview(pdf, pageNumber, pageInfo, zoomPercent)
+    );
   }
 
   function handlePageChange(pageNumber: number) {

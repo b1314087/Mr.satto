@@ -7,7 +7,7 @@
  * 送る画像は、縮小・変換したものだけ。元のファイルそのものは送らない。
  */
 import { MAX_IMAGES, MAX_IMAGE_BYTES } from "@/lib/ai/calendar-assist";
-import { loadPdfDocument, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
+import { loadPdfDocument, renderPageToCanvas, closePdfDocument } from "@/lib/pdf/pdfjs-client";
 
 export interface PreparedImage {
   mediaType: "image/jpeg";
@@ -124,21 +124,25 @@ export interface PreparedPdfPages {
 export async function preparePdfPages(file: File, onProgress?: (message: string) => void): Promise<PreparedPdfPages> {
   onProgress?.("PDFを読み込んでいます…");
   const pdf = await loadPdfDocument(file);
-  if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
-  const used = Math.min(pdf.numPages, MAX_IMAGES);
-  const images: PreparedImage[] = [];
-  for (let n = 1; n <= used; n++) {
-    onProgress?.(`${n}/${used}ページ目を画像にしています…`);
-    let canvas: HTMLCanvasElement;
-    try {
-      const page = await pdf.getPage(n);
-      canvas = (await renderPageToCanvas(page, 2, LONG_SIDE_START)).canvas;
-    } catch {
-      throw new Error(`${n}ページ目を画像にできませんでした。`);
+  try {
+    if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+    const used = Math.min(pdf.numPages, MAX_IMAGES);
+    const images: PreparedImage[] = [];
+    for (let n = 1; n <= used; n++) {
+      onProgress?.(`${n}/${used}ページ目を画像にしています…`);
+      let canvas: HTMLCanvasElement;
+      try {
+        const page = await pdf.getPage(n);
+        canvas = (await renderPageToCanvas(page, 2, LONG_SIDE_START)).canvas;
+      } catch {
+        throw new Error(`${n}ページ目を画像にできませんでした。`);
+      }
+      const prepared = await encodeWithin(canvas, canvas.width, canvas.height, `${n}ページ目`);
+      if (!prepared) throw new Error(TOO_BIG);
+      images.push(prepared);
     }
-    const prepared = await encodeWithin(canvas, canvas.width, canvas.height, `${n}ページ目`);
-    if (!prepared) throw new Error(TOO_BIG);
-    images.push(prepared);
+    return { images, pageCount: pdf.numPages, truncated: pdf.numPages > used };
+  } finally {
+    await closePdfDocument(pdf);
   }
-  return { images, pageCount: pdf.numPages, truncated: pdf.numPages > used };
 }

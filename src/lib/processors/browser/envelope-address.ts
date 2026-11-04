@@ -14,16 +14,7 @@
  * そのまま再利用する（新しいPDFライブラリ・フォント資産は追加しない）。
  * 太字は、太字専用のフォント資産が無いため「塗り＋縁取り」による疑似ボールドで近似する。
  */
-import {
-  PDFDocument,
-  type PDFFont,
-  rgb,
-  setLineWidth,
-  setStrokingRgbColor,
-  setTextRenderingMode,
-  TextRenderingMode,
-} from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont } from "pdf-lib";
 import { BrowserProcessor } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { ENVELOPE_SIZES_MM, resolveEnvelopePageSizePt, type EnvelopeSizeId } from "@/lib/print/envelope-sizes";
@@ -41,6 +32,8 @@ import {
   type EnvelopeWritingMode,
 } from "@/lib/print/envelope-layout";
 import { sanitizeFileName } from "@/lib/utils/format";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 export type { EnvelopeBlocks, EnvelopeFreeText, EnvelopeHonorific, EnvelopeOrientation, EnvelopeWritingMode };
 
@@ -93,6 +86,7 @@ export function validateEnvelopeAddressInput(input: EnvelopeAddressInput): strin
 
 export class EnvelopeAddressProcessor extends BrowserProcessor<EnvelopeAddressInput, EnvelopeAddressOutput> {
   async process(input: EnvelopeAddressInput): Promise<EnvelopeAddressOutput> {
+    await ensurePdfLib({ fontkit: true });
     const validationError = validateEnvelopeAddressInput(input);
     if (validationError) throw new Error(validationError);
 
@@ -103,11 +97,11 @@ export class EnvelopeAddressProcessor extends BrowserProcessor<EnvelopeAddressIn
       throw new Error("日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。");
     }
 
-    let doc: PDFDocument;
+    let doc: PdfLibTypes.PDFDocument;
     let font: PDFFont;
     try {
-      doc = await PDFDocument.create();
-      doc.registerFontkit(fontkit);
+      doc = await pdfLib().PDFDocument.create();
+      doc.registerFontkit(fontkitLib());
       font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
     } catch {
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
@@ -135,17 +129,17 @@ export class EnvelopeAddressProcessor extends BrowserProcessor<EnvelopeAddressIn
       for (const op of ops) {
         const w = font.widthOfTextAtSize(op.text, op.size);
         const x = op.align === "center" ? op.x - w / 2 : op.x;
-        const color = rgb(...op.color);
+        const color = pdfLib().rgb(...op.color);
         if (op.bold) {
           // 太字専用のフォントが無いため、塗り＋縁取りで疑似的に太くする
           page.pushOperators(
-            setLineWidth(op.size * 0.028),
-            setStrokingRgbColor(color.red, color.green, color.blue),
-            setTextRenderingMode(TextRenderingMode.FillAndOutline)
+            pdfLib().setLineWidth(op.size * 0.028),
+            pdfLib().setStrokingRgbColor(color.red, color.green, color.blue),
+            pdfLib().setTextRenderingMode(pdfLib().TextRenderingMode.FillAndOutline)
           );
         }
         page.drawText(op.text, { x, y: height - op.y, size: op.size, font, color });
-        if (op.bold) page.pushOperators(setTextRenderingMode(TextRenderingMode.Fill));
+        if (op.bold) page.pushOperators(pdfLib().setTextRenderingMode(pdfLib().TextRenderingMode.Fill));
       }
     }
 

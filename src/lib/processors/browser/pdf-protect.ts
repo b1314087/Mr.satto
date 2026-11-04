@@ -29,21 +29,24 @@ export class PdfPasswordProtectProcessor extends BrowserProcessor<PdfProtectInpu
 
     const pdfjs = await getPdfjs();
     let rejectsWithoutPassword = false;
+    // 確かめるために開いたPDFは、開けた・開けなかったにかかわらず、必ず閉じる（作業用スレッドを残さない。ロードマップC 工程2）
+    const noPasswordTask = pdfjs.getDocument({ data: bytes.slice(), ...PDFJS_ASSET_OPTIONS });
     try {
-      const task = pdfjs.getDocument({ data: bytes.slice(), ...PDFJS_ASSET_OPTIONS });
-      await task.promise;
-      await task.destroy();
+      await noPasswordTask.promise;
     } catch (e) {
       rejectsWithoutPassword = e instanceof Error && e.name === "PasswordException";
+    } finally {
+      await noPasswordTask.destroy().catch(() => {});
     }
     let verifiedWithPassword = false;
+    const passwordTask = pdfjs.getDocument({ data: bytes.slice(), password: userPassword, ...PDFJS_ASSET_OPTIONS });
     try {
-      const task = pdfjs.getDocument({ data: bytes.slice(), password: userPassword, ...PDFJS_ASSET_OPTIONS });
-      const pdf = await task.promise;
+      const pdf = await passwordTask.promise;
       verifiedWithPassword = pdf.numPages === pageCount;
-      await task.destroy();
     } catch {
       verifiedWithPassword = false;
+    } finally {
+      await passwordTask.destroy().catch(() => {});
     }
     if (!verifiedWithPassword || !rejectsWithoutPassword) {
       throw new Error("暗号化したPDFの確認に失敗しました。別のPDFでお試しください。");

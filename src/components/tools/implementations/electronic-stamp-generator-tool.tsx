@@ -10,6 +10,7 @@ import { FilePickButton } from "@/components/common/file-pick-button";
 import { Button } from "@/components/ui/button";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
+import { closePdfDocument } from "@/lib/pdf/pdfjs-client";
 import {
   STAMP_COLORS,
   STAMP_LIMITS,
@@ -569,6 +570,9 @@ function ImportStampPanel({
   useEffect(() => {
     return () => {
       if (sourceImageUrl) URL.revokeObjectURL(sourceImageUrl);
+      // 画面を離れるときは、開いていたPDFを閉じる（作業用スレッドを残さない。ロードマップC 工程2）
+      void closePdfDocument(pdfDocRef.current);
+      pdfDocRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -579,9 +583,16 @@ function ImportStampPanel({
     try {
       const pdfLike = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
       setIsPdf(pdfLike);
+      // 前に開いていたPDF（ページ切り替えのために開いたまま持っていたもの）は、別のファイルを選んだ時点で閉じる
+      const previous = pdfDocRef.current;
+      pdfDocRef.current = null;
+      void closePdfDocument(previous);
       if (pdfLike) {
         const pdf = await loadStampPdf(f);
-        if (pdf.numPages === 0) throw new Error("このPDFにはページがありません。");
+        if (pdf.numPages === 0) {
+          await closePdfDocument(pdf);
+          throw new Error("このPDFにはページがありません。");
+        }
         pdfDocRef.current = pdf;
         setPageCount(pdf.numPages);
         setSelectedPage(1);

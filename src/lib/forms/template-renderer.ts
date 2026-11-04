@@ -1,7 +1,8 @@
-import { PDFDocument, type PDFFont, type PDFImage, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont, PDFImage } from "pdf-lib";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import type { FieldDefinition } from "./types";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * 帳票共通エンジンのPDF描画部分（開発指示書30章：将来の宛名ラベル・名札・
@@ -39,7 +40,7 @@ function drawTextRobust(
 ) {
   let cx = x;
   for (const ch of Array.from(text)) {
-    page.drawText(ch, { x: cx, y, size, font, color: rgb(0.1, 0.1, 0.12) });
+    page.drawText(ch, { x: cx, y, size, font, color: pdfLib().rgb(0.1, 0.1, 0.12) });
     cx += font.widthOfTextAtSize(ch, size);
   }
 }
@@ -89,11 +90,12 @@ export async function renderPersonPdf({
   textValues,
   photoValues,
 }: RenderPersonInput): Promise<Uint8Array> {
-  let doc: PDFDocument;
+  await ensurePdfLib({ fontkit: true });
+  let doc: PdfLibTypes.PDFDocument;
   let font: PDFFont;
   try {
-    doc = await PDFDocument.load(templateBytes, { updateMetadata: false });
-    doc.registerFontkit(fontkit);
+    doc = await pdfLib().PDFDocument.load(templateBytes, { updateMetadata: false });
+    doc.registerFontkit(fontkitLib());
     const fontBytes = await getFontBytes();
     // 注意: subset:false（document-pdf.ts/excel-to-pdf.tsと同じ理由。
     // サブセット化すると一部の日本語文字が欠落することを実機検証済み）

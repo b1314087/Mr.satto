@@ -8,19 +8,9 @@
  * 文字列とストリームをAES-256-CBCで暗号化してから、暗号化辞書(/Encrypt)を付けて保存する。
  * AES-256(V5)ではオブジェクトごとの鍵を作る必要がなく、すべてのオブジェクトを同じファイル鍵で暗号化する。
  */
-import {
-  PDFArray,
-  PDFDict,
-  PDFHexString,
-  PDFName,
-  PDFNumber,
-  PDFObject,
-  PDFRawStream,
-  PDFRef,
-  PDFStream,
-  PDFString,
-  type PDFDocument,
-} from "pdf-lib";
+import type { PDFDocument } from "pdf-lib";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib } from "@/lib/pdf/pdf-lib-loader";
 
 export interface PdfPermissions {
   /** 印刷を許可 */
@@ -171,27 +161,28 @@ async function encryptBytes(key: CryptoKey, data: Uint8Array): Promise<Uint8Arra
  * 呼び出し後のdocは暗号化済みの状態になるため、再利用しないこと。
  */
 export async function encryptPdfDocument(doc: PDFDocument, options: EncryptOptions): Promise<Uint8Array> {
+  await ensurePdfLib();
   const context = doc.context;
   if (context.trailerInfo.Encrypt) throw new Error("すでにパスワード保護されているPDFです");
   const params = await createEncryptionParams(options);
   const key = await subtle().importKey("raw", buf(params.fileKey), "AES-CBC", false, ["encrypt"]);
 
-  async function encryptObject(obj: PDFObject): Promise<PDFObject> {
-    if (obj instanceof PDFString || obj instanceof PDFHexString) {
-      return PDFHexString.of(bytesToHex(await encryptBytes(key, obj.asBytes())));
+  async function encryptObject(obj: PdfLibTypes.PDFObject): Promise<PdfLibTypes.PDFObject> {
+    if (obj instanceof pdfLib().PDFString || obj instanceof pdfLib().PDFHexString) {
+      return pdfLib().PDFHexString.of(bytesToHex(await encryptBytes(key, obj.asBytes())));
     }
-    if (obj instanceof PDFDict) {
+    if (obj instanceof pdfLib().PDFDict) {
       for (const [name, value] of obj.entries()) {
-        if (value instanceof PDFRef) continue;
+        if (value instanceof pdfLib().PDFRef) continue;
         const next = await encryptObject(value);
         if (next !== value) obj.set(name, next);
       }
       return obj;
     }
-    if (obj instanceof PDFArray) {
+    if (obj instanceof pdfLib().PDFArray) {
       for (let i = 0; i < obj.size(); i++) {
         const value = obj.get(i);
-        if (value instanceof PDFRef) continue;
+        if (value instanceof pdfLib().PDFRef) continue;
         const next = await encryptObject(value);
         if (next !== value) obj.set(i, next);
       }
@@ -203,20 +194,20 @@ export async function encryptPdfDocument(doc: PDFDocument, options: EncryptOptio
   // オブジェクトストリーム・相互参照ストリームは、保存時にpdf-libが作り直す(平文のまま残さない)
   const entries = context.enumerateIndirectObjects();
   for (const [ref, obj] of entries) {
-    if (obj instanceof PDFStream) {
-      const type = obj.dict.get(PDFName.of("Type"));
-      if (type === PDFName.of("ObjStm") || type === PDFName.of("XRef")) {
+    if (obj instanceof pdfLib().PDFStream) {
+      const type = obj.dict.get(pdfLib().PDFName.of("Type"));
+      if (type === pdfLib().PDFName.of("ObjStm") || type === pdfLib().PDFName.of("XRef")) {
         context.delete(ref);
       }
     }
   }
 
   for (const [ref, obj] of context.enumerateIndirectObjects()) {
-    if (obj instanceof PDFStream) {
+    if (obj instanceof pdfLib().PDFStream) {
       await encryptObject(obj.dict);
       const contents = obj.getContents();
       const encrypted = await encryptBytes(key, contents);
-      context.assign(ref, PDFRawStream.of(obj.dict, encrypted));
+      context.assign(ref, pdfLib().PDFRawStream.of(obj.dict, encrypted));
     } else {
       await encryptObject(obj);
     }
@@ -230,16 +221,16 @@ export async function encryptPdfDocument(doc: PDFDocument, options: EncryptOptio
     CF: { StdCF: { AuthEvent: "DocOpen", CFM: "AESV3", Length: 32 } },
     StmF: "StdCF",
     StrF: "StdCF",
-    O: PDFHexString.of(bytesToHex(params.O)),
-    U: PDFHexString.of(bytesToHex(params.U)),
-    OE: PDFHexString.of(bytesToHex(params.OE)),
-    UE: PDFHexString.of(bytesToHex(params.UE)),
-    Perms: PDFHexString.of(bytesToHex(params.Perms)),
-    P: PDFNumber.of(params.P),
+    O: pdfLib().PDFHexString.of(bytesToHex(params.O)),
+    U: pdfLib().PDFHexString.of(bytesToHex(params.U)),
+    OE: pdfLib().PDFHexString.of(bytesToHex(params.OE)),
+    UE: pdfLib().PDFHexString.of(bytesToHex(params.UE)),
+    Perms: pdfLib().PDFHexString.of(bytesToHex(params.Perms)),
+    P: pdfLib().PDFNumber.of(params.P),
   });
   context.trailerInfo.Encrypt = context.register(encryptDict);
   if (!context.trailerInfo.ID) {
-    context.trailerInfo.ID = context.obj([PDFHexString.of(bytesToHex(randomBytes(16))), PDFHexString.of(bytesToHex(randomBytes(16)))]);
+    context.trailerInfo.ID = context.obj([pdfLib().PDFHexString.of(bytesToHex(randomBytes(16))), pdfLib().PDFHexString.of(bytesToHex(randomBytes(16)))]);
   }
 
   return doc.save({ useObjectStreams: false, updateFieldAppearances: false, addDefaultPage: false });

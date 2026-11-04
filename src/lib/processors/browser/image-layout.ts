@@ -1,6 +1,6 @@
-import { PDFDocument } from "pdf-lib";
 import { BrowserProcessor, type ImageProcessorOutput, type PdfProcessorOutput } from "../types";
 import { loadImage, canvasToBlob } from "./image";
+import { ensurePdfLib, pdfLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * 画像レイアウト Processor（Mr.Satto 次工程フェーズ）。
@@ -186,6 +186,7 @@ export class ImageLayoutRenderProcessor extends BrowserProcessor<
   ImageProcessorOutput | PdfProcessorOutput
 > {
   async process(input: ImageLayoutRenderInput): Promise<ImageProcessorOutput | PdfProcessorOutput> {
+    await ensurePdfLib();
     if (input.items.length === 0) {
       throw new Error("配置された画像・文字がありません。画像を追加するか、文字を配置してください。");
     }
@@ -195,7 +196,7 @@ export class ImageLayoutRenderProcessor extends BrowserProcessor<
     if (input.format === "pdf") {
       const pngBlob = await canvasToBlob(canvas, "image/png");
       const bytes = new Uint8Array(await pngBlob.arrayBuffer());
-      const doc = await PDFDocument.create();
+      const doc = await pdfLib().PDFDocument.create();
       const embedded = await doc.embedPng(bytes);
       const pageSize = input.pdfPageSizePt ?? { width: input.canvas.widthPx, height: input.canvas.heightPx };
       const page = doc.addPage([Math.max(1, pageSize.width), Math.max(1, pageSize.height)]);

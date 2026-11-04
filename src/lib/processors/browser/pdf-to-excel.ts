@@ -5,6 +5,7 @@ import {
   pageHasText,
   renderPageToCanvas,
   type PdfjsPage,
+  closePdfDocument,
 } from "@/lib/pdf/pdfjs-client";
 import { removeRuledLinesFromCanvas } from "@/lib/ocr/remove-ruled-lines";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
@@ -603,24 +604,28 @@ export async function previewPdfToExcelRows(
 ): Promise<{ pageCount: number; hasTextLayer: boolean; rows: string[][]; layout: PdfToExcelLayoutNotes | null }> {
   const options = resolveOptions(optionsInput);
   const pdf = await loadPdfDocument(file);
-  if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
-  const pageData: PageData[] = [];
-  for (let n = 1; n <= Math.min(pdf.numPages, 3); n++) {
-    const page = await pdf.getPage(n);
-    pageData.push({ pageNumber: n, page, items: await getPositionedTextItems(page), method: "text-layer", confidence: null });
+  try {
+    if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+    const pageData: PageData[] = [];
+    for (let n = 1; n <= Math.min(pdf.numPages, 3); n++) {
+      const page = await pdf.getPage(n);
+      pageData.push({ pageNumber: n, page, items: await getPositionedTextItems(page), method: "text-layer", confidence: null });
+    }
+    if (!pageHasText(pageData[0].items)) return { pageCount: pdf.numPages, hasTextLayer: false, rows: [], layout: null };
+    const textPages = pageData.filter((p) => pageHasText(p.items));
+    const grids = await buildGrids(textPages, options, false);
+    const sheets = assembleSheets(
+      grids.filter((g): g is typeof g & { grid: PageGrid } => g.grid !== null).map((g) => ({ pageNumber: g.pageNumber, grid: g.grid })),
+      false
+    );
+    const first = sheets[0];
+    const rows = first
+      ? first.rows.slice(0, FILE_PREVIEW_ROW_LIMIT).map((row) => gridRowToStrings(row, first.columnCount))
+      : [];
+    return { pageCount: pdf.numPages, hasTextLayer: true, rows, layout: summarizeLayout(grids) };
+  } finally {
+    await closePdfDocument(pdf);
   }
-  if (!pageHasText(pageData[0].items)) return { pageCount: pdf.numPages, hasTextLayer: false, rows: [], layout: null };
-  const textPages = pageData.filter((p) => pageHasText(p.items));
-  const grids = await buildGrids(textPages, options, false);
-  const sheets = assembleSheets(
-    grids.filter((g): g is typeof g & { grid: PageGrid } => g.grid !== null).map((g) => ({ pageNumber: g.pageNumber, grid: g.grid })),
-    false
-  );
-  const first = sheets[0];
-  const rows = first
-    ? first.rows.slice(0, FILE_PREVIEW_ROW_LIMIT).map((row) => gridRowToStrings(row, first.columnCount))
-    : [];
-  return { pageCount: pdf.numPages, hasTextLayer: true, rows, layout: summarizeLayout(grids) };
 }
 
 /** カレンダーの取り込み用に読むページ数・行数の上限（画面が固まらないための制限） */
@@ -650,33 +655,37 @@ export async function extractPdfTextRows(
 ): Promise<PdfTextRowsResult> {
   const options = resolveOptions();
   const pdf = await loadPdfDocument(file);
-  if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
-  const total = Math.min(pdf.numPages, EVENT_IMPORT_MAX_PAGES);
-  const pageData: PageData[] = [];
-  const emptyPages: number[] = [];
-  for (let n = 1; n <= total; n++) {
-    onPageProgress?.(n, total);
-    let page;
-    try {
-      page = await pdf.getPage(n);
-    } catch {
-      throw new Error(`${n}ページ目の読み込みに失敗しました`);
+  try {
+    if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+    const total = Math.min(pdf.numPages, EVENT_IMPORT_MAX_PAGES);
+    const pageData: PageData[] = [];
+    const emptyPages: number[] = [];
+    for (let n = 1; n <= total; n++) {
+      onPageProgress?.(n, total);
+      let page;
+      try {
+        page = await pdf.getPage(n);
+      } catch {
+        throw new Error(`${n}ページ目の読み込みに失敗しました`);
+      }
+      const items = await getPositionedTextItems(page);
+      if (pageHasText(items)) pageData.push({ pageNumber: n, page, items, method: "text-layer", confidence: null });
+      else emptyPages.push(n);
     }
-    const items = await getPositionedTextItems(page);
-    if (pageHasText(items)) pageData.push({ pageNumber: n, page, items, method: "text-layer", confidence: null });
-    else emptyPages.push(n);
+    if (pageData.length === 0) {
+      return { pageCount: pdf.numPages, pagesRead: total, textPageCount: 0, emptyPages, rows: [] };
+    }
+    const grids = await buildGrids(pageData, options, false);
+    const sheets = assembleSheets(
+      grids.filter((g): g is typeof g & { grid: PageGrid } => g.grid !== null).map((g) => ({ pageNumber: g.pageNumber, grid: g.grid })),
+      false
+    );
+    const first = sheets[0];
+    const rows = first ? first.rows.slice(0, EVENT_IMPORT_MAX_ROWS).map((row) => gridRowToStrings(row, first.columnCount)) : [];
+    return { pageCount: pdf.numPages, pagesRead: total, textPageCount: pageData.length, emptyPages, rows };
+  } finally {
+    await closePdfDocument(pdf);
   }
-  if (pageData.length === 0) {
-    return { pageCount: pdf.numPages, pagesRead: total, textPageCount: 0, emptyPages, rows: [] };
-  }
-  const grids = await buildGrids(pageData, options, false);
-  const sheets = assembleSheets(
-    grids.filter((g): g is typeof g & { grid: PageGrid } => g.grid !== null).map((g) => ({ pageNumber: g.pageNumber, grid: g.grid })),
-    false
-  );
-  const first = sheets[0];
-  const rows = first ? first.rows.slice(0, EVENT_IMPORT_MAX_ROWS).map((row) => gridRowToStrings(row, first.columnCount)) : [];
-  return { pageCount: pdf.numPages, pagesRead: total, textPageCount: pageData.length, emptyPages, rows };
 }
 
 export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfToExcelOutput> {
@@ -687,124 +696,128 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
     const options = resolveOptions(optionsInput);
 
     const pdf = await loadPdfDocument(file);
-    if (pdf.numPages === 0) {
-      throw new Error("このPDFにはページがありません");
-    }
-    if (pdf.numPages > MAX_PDF_TO_EXCEL_PAGES) {
-      throw new Error(
-        `変換できるページ数の上限は${MAX_PDF_TO_EXCEL_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
-      );
-    }
-
-    const pages: PdfToExcelPageInfo[] = [];
-    const ocrConfidences: number[] = [];
-    const language = ocrLanguage ?? "ja+en";
-
-    // Pass 1: 全ページの座標付きテキストを先に集める。複数ページにまたがる
-    // 1つの表で、ページごとに列数・区切り位置がばらつかないようにするには
-    // 列区切りを全ページの行をまとめて1回だけ推定する必要がある
-    // (computeColumnBreaksAcrossPages)ため、ここでは各ページのテキスト取得・
-    // 進捗通知・文字有無の判定のみ行い、表への再構築は Pass 2 (buildGrids) にまわす。
-    const pageData: PageData[] = [];
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-      onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages });
-
-      let page;
-      try {
-        page = await pdf.getPage(pageNumber);
-      } catch {
-        throw new Error(`${pageNumber}ページ目の読み込みに失敗しました`);
-      }
-
-      let items = await getPositionedTextItems(page);
-      let method: "text-layer" | "ocr" = "text-layer";
-      let confidence: number | null = null;
-      if (!pageHasText(items)) {
-        // 文字情報を持たないページ（スキャン画像等）は、ページを画像化してOCRで文字と座標を取得する。
-        // 全ページ分の画像を同時に保持せず、1ページずつ処理する。
-        if (ocrConfidences.length >= MAX_OCR_PAGES) {
-          throw new Error(
-            `スキャン画像(文字情報のないページ)のOCR変換は最大${MAX_OCR_PAGES}ページまでです。ページ数を減らしてから再度お試しください。`
-          );
-        }
-        method = "ocr";
-        onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method, ocrProgress: 0 });
-        let canvas: HTMLCanvasElement;
-        try {
-          canvas = (await renderPageToCanvas(page, OCR_RENDER_SCALE, MAX_OCR_DIMENSION)).canvas;
-        } catch {
-          throw new Error(`${pageNumber}ページ目の画像化に失敗しました`);
-        }
-        // 罫線を消してから読む(罫線を「|」などの文字と誤認して行全体が文字化けするのを防ぐ)。
-        // 罫線の位置は文字の座標から推定するため、OCRに罫線の情報は不要。
-        const result = await recognizeImageWithWords(
-          removeRuledLinesFromCanvas(canvas),
-          language,
-          (p) => {
-            onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method, ocrProgress: p.progress });
-          },
-          { pageSegMode: "6" }
-        );
-        confidence = result.confidence;
-        ocrConfidences.push(result.confidence);
-        items = ocrWordsToPositionedTextItems(result.words);
-      }
-
-      pageData.push({ pageNumber, page, items, method, confidence });
-    }
-
-    const built = await buildGrids(pageData, options, true);
-
-    const gridsForSheet: { pageNumber: number; grid: PageGrid }[] = [];
-    let totalRowCount = 0;
-    for (const { pageNumber, method, confidence, grid } of built) {
-      if (!grid || grid.rows.length === 0) {
-        pages.push({ pageNumber, rowCount: 0, columnCount: 0, method, confidence });
-        continue;
-      }
-      gridsForSheet.push({ pageNumber, grid });
-      pages.push({ pageNumber, rowCount: grid.rows.length, columnCount: grid.columnCount, method, confidence });
-      totalRowCount += grid.rows.length;
-    }
-
-    if (gridsForSheet.length === 0) {
-      throw new Error(
-        ocrConfidences.length > 0
-          ? "スキャン画像から表として認識できる文字を読み取れませんでした。画像が鮮明か、傾きや影が大きくないかをご確認ください。"
-          : "表として認識できる内容が見つかりませんでした。"
-      );
-    }
-
-    const sheets = assembleSheets(gridsForSheet, options.sheetPerPage);
-    const previewRows = sheets[0].rows
-      .slice(0, PREVIEW_ROW_LIMIT)
-      .map((row) => gridRowToStrings(row, sheets[0].columnCount));
-
-    const { default: writeXlsxFile } = await import("write-excel-file/universal");
-    let blob: Blob;
     try {
-      const sheetDefs = sheets.map((sheet) => ({
-        data: sheetToExcelRows(sheet),
-        sheet: sheet.name,
-        columns: computeColumnWidths(sheet),
-        ...(sheet.stickyRows > 0 ? { stickyRowsCount: sheet.stickyRows } : {}),
-      }));
-      blob = await writeXlsxFile(sheetDefs).toBlob();
-    } catch {
-      throw new Error("Excelファイルの生成に失敗しました");
-    }
+      if (pdf.numPages === 0) {
+        throw new Error("このPDFにはページがありません");
+      }
+      if (pdf.numPages > MAX_PDF_TO_EXCEL_PAGES) {
+        throw new Error(
+          `変換できるページ数の上限は${MAX_PDF_TO_EXCEL_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
+        );
+      }
 
-    return {
-      blob,
-      sizeBytes: blob.size,
-      pageCount: pdf.numPages,
-      pages,
-      totalRowCount,
-      previewRows,
-      usedOcr: ocrConfidences.length > 0,
-      ocrAverageConfidence:
-        ocrConfidences.length > 0 ? ocrConfidences.reduce((a, b) => a + b, 0) / ocrConfidences.length : null,
-      layout: summarizeLayout(built),
-    };
+      const pages: PdfToExcelPageInfo[] = [];
+      const ocrConfidences: number[] = [];
+      const language = ocrLanguage ?? "ja+en";
+
+      // Pass 1: 全ページの座標付きテキストを先に集める。複数ページにまたがる
+      // 1つの表で、ページごとに列数・区切り位置がばらつかないようにするには
+      // 列区切りを全ページの行をまとめて1回だけ推定する必要がある
+      // (computeColumnBreaksAcrossPages)ため、ここでは各ページのテキスト取得・
+      // 進捗通知・文字有無の判定のみ行い、表への再構築は Pass 2 (buildGrids) にまわす。
+      const pageData: PageData[] = [];
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages });
+
+        let page;
+        try {
+          page = await pdf.getPage(pageNumber);
+        } catch {
+          throw new Error(`${pageNumber}ページ目の読み込みに失敗しました`);
+        }
+
+        let items = await getPositionedTextItems(page);
+        let method: "text-layer" | "ocr" = "text-layer";
+        let confidence: number | null = null;
+        if (!pageHasText(items)) {
+          // 文字情報を持たないページ（スキャン画像等）は、ページを画像化してOCRで文字と座標を取得する。
+          // 全ページ分の画像を同時に保持せず、1ページずつ処理する。
+          if (ocrConfidences.length >= MAX_OCR_PAGES) {
+            throw new Error(
+              `スキャン画像(文字情報のないページ)のOCR変換は最大${MAX_OCR_PAGES}ページまでです。ページ数を減らしてから再度お試しください。`
+            );
+          }
+          method = "ocr";
+          onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method, ocrProgress: 0 });
+          let canvas: HTMLCanvasElement;
+          try {
+            canvas = (await renderPageToCanvas(page, OCR_RENDER_SCALE, MAX_OCR_DIMENSION)).canvas;
+          } catch {
+            throw new Error(`${pageNumber}ページ目の画像化に失敗しました`);
+          }
+          // 罫線を消してから読む(罫線を「|」などの文字と誤認して行全体が文字化けするのを防ぐ)。
+          // 罫線の位置は文字の座標から推定するため、OCRに罫線の情報は不要。
+          const result = await recognizeImageWithWords(
+            removeRuledLinesFromCanvas(canvas),
+            language,
+            (p) => {
+              onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method, ocrProgress: p.progress });
+            },
+            { pageSegMode: "6" }
+          );
+          confidence = result.confidence;
+          ocrConfidences.push(result.confidence);
+          items = ocrWordsToPositionedTextItems(result.words);
+        }
+
+        pageData.push({ pageNumber, page, items, method, confidence });
+      }
+
+      const built = await buildGrids(pageData, options, true);
+
+      const gridsForSheet: { pageNumber: number; grid: PageGrid }[] = [];
+      let totalRowCount = 0;
+      for (const { pageNumber, method, confidence, grid } of built) {
+        if (!grid || grid.rows.length === 0) {
+          pages.push({ pageNumber, rowCount: 0, columnCount: 0, method, confidence });
+          continue;
+        }
+        gridsForSheet.push({ pageNumber, grid });
+        pages.push({ pageNumber, rowCount: grid.rows.length, columnCount: grid.columnCount, method, confidence });
+        totalRowCount += grid.rows.length;
+      }
+
+      if (gridsForSheet.length === 0) {
+        throw new Error(
+          ocrConfidences.length > 0
+            ? "スキャン画像から表として認識できる文字を読み取れませんでした。画像が鮮明か、傾きや影が大きくないかをご確認ください。"
+            : "表として認識できる内容が見つかりませんでした。"
+        );
+      }
+
+      const sheets = assembleSheets(gridsForSheet, options.sheetPerPage);
+      const previewRows = sheets[0].rows
+        .slice(0, PREVIEW_ROW_LIMIT)
+        .map((row) => gridRowToStrings(row, sheets[0].columnCount));
+
+      const { default: writeXlsxFile } = await import("write-excel-file/universal");
+      let blob: Blob;
+      try {
+        const sheetDefs = sheets.map((sheet) => ({
+          data: sheetToExcelRows(sheet),
+          sheet: sheet.name,
+          columns: computeColumnWidths(sheet),
+          ...(sheet.stickyRows > 0 ? { stickyRowsCount: sheet.stickyRows } : {}),
+        }));
+        blob = await writeXlsxFile(sheetDefs).toBlob();
+      } catch {
+        throw new Error("Excelファイルの生成に失敗しました");
+      }
+
+      return {
+        blob,
+        sizeBytes: blob.size,
+        pageCount: pdf.numPages,
+        pages,
+        totalRowCount,
+        previewRows,
+        usedOcr: ocrConfidences.length > 0,
+        ocrAverageConfidence:
+          ocrConfidences.length > 0 ? ocrConfidences.reduce((a, b) => a + b, 0) / ocrConfidences.length : null,
+        layout: summarizeLayout(built),
+      };
+    } finally {
+      await closePdfDocument(pdf);
+    }
   }
 }

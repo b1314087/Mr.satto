@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ErrorMessage } from "@/components/common/error-message";
-import { loadPdfDocument, type PdfjsPage } from "@/lib/pdf/pdfjs-client";
+import { withPdfDocument, type PdfDocument, type PdfjsPage } from "@/lib/pdf/pdfjs-client";
 import { pdfRectToScreenRect, screenRectToPdfRect, clamp } from "@/lib/pdf/coords";
 import {
   createEmptyTemplate,
@@ -154,7 +154,7 @@ export function FilledPdfToExcelTemplatePanel() {
    * 計算をコンポーネント側で行わない。A-6）。
    */
   async function renderTemplatePage(
-    pdf: Awaited<ReturnType<typeof loadPdfDocument>>,
+    pdf: PdfDocument,
     pageIndex: number,
     pageInfo: TemplatePageMeta,
     zoomPct: number
@@ -178,22 +178,24 @@ export function FilledPdfToExcelTemplatePanel() {
     setError(null);
     try {
       const bytes = await f.arrayBuffer();
-      const pdf = await loadPdfDocument(new File([bytes], f.name, { type: "application/pdf" }));
-      if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
-      const pageInfos: TemplatePageMeta[] = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 1 });
-        pageInfos.push({ pageIndex: i - 1, width: viewport.width, height: viewport.height });
-      }
-      setTemplateFile(f);
-      setTemplatePdfBytes(bytes);
-      setTemplatePages(pageInfos);
-      setCurrentPageIndex(0);
-      setZoomPercent(100);
-      setTemplate({ pages: pageInfos, fields: [], excludeEmptyPersons: true });
-      setPersonIndexes([1]);
-      await renderTemplatePage(pdf, 0, pageInfos[0], 100);
+      // 読み終わったら必ず閉じる（作業用スレッドを残さない。ロードマップC 工程2）
+      await withPdfDocument(new File([bytes], f.name, { type: "application/pdf" }), async (pdf) => {
+        if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+        const pageInfos: TemplatePageMeta[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1 });
+          pageInfos.push({ pageIndex: i - 1, width: viewport.width, height: viewport.height });
+        }
+        setTemplateFile(f);
+        setTemplatePdfBytes(bytes);
+        setTemplatePages(pageInfos);
+        setCurrentPageIndex(0);
+        setZoomPercent(100);
+        setTemplate({ pages: pageInfos, fields: [], excludeEmptyPersons: true });
+        setPersonIndexes([1]);
+        await renderTemplatePage(pdf, 0, pageInfos[0], 100);
+      });
       setStep("editor");
     } catch (e) {
       setError(e instanceof Error ? e.message : "テンプレートPDFの読み込みに失敗しました");
@@ -204,9 +206,10 @@ export function FilledPdfToExcelTemplatePanel() {
     if (!templateFile || !templatePdfBytes) return;
     const info = templatePages.find((p) => p.pageIndex === pageIndex);
     if (!info) return;
-    const pdf = await loadPdfDocument(new File([templatePdfBytes.slice(0)], templateFile.name, { type: "application/pdf" }));
     setCurrentPageIndex(pageIndex);
-    await renderTemplatePage(pdf, pageIndex, info, zoomPercent);
+    await withPdfDocument(new File([templatePdfBytes.slice(0)], templateFile.name, { type: "application/pdf" }), (pdf) =>
+      renderTemplatePage(pdf, pageIndex, info, zoomPercent)
+    );
   }
 
   /** ズーム変更（開発指示書A-3〜A-5のテスト対象操作そのもの）。現在のページを新しい倍率で再描画する */
@@ -215,8 +218,9 @@ export function FilledPdfToExcelTemplatePanel() {
     const info = templatePages[currentPageIndex];
     if (!info) return;
     setZoomPercent(nextZoomPercent);
-    const pdf = await loadPdfDocument(new File([templatePdfBytes.slice(0)], templateFile.name, { type: "application/pdf" }));
-    await renderTemplatePage(pdf, currentPageIndex, info, nextZoomPercent);
+    await withPdfDocument(new File([templatePdfBytes.slice(0)], templateFile.name, { type: "application/pdf" }), (pdf) =>
+      renderTemplatePage(pdf, currentPageIndex, info, nextZoomPercent)
+    );
   }
 
   // -----------------------------------------------------------------------
@@ -417,8 +421,7 @@ export function FilledPdfToExcelTemplatePanel() {
       let sum = 0;
       try {
         for (const file of selected) {
-          const pdf = await loadPdfDocument(file);
-          sum += pdf.numPages;
+          sum += await withPdfDocument(file, async (pdf) => pdf.numPages);
         }
         setTotalPages(sum);
       } catch (e) {

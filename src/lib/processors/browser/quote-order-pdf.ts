@@ -1,11 +1,12 @@
-import { PDFDocument, type PDFFont, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont } from "pdf-lib";
 import { BrowserProcessor } from "../types";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import type { DocumentFormState } from "@/lib/documents/types";
 import { validateDocumentForm } from "@/lib/documents/validation";
 import { layoutQuoteOrder, overflowMessage, PAGE_H, PAGE_W, type QuoteOrderExtra } from "@/lib/documents/quote-order-layout";
 import { sanitizeFileName } from "@/lib/utils/format";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * 見積書・注文書一体型PDF(A4・1枚。上半分が見積書、下半分が注文書)。
@@ -30,6 +31,7 @@ export function buildQuoteOrderFileName(form: DocumentFormState): string {
 
 export class QuoteOrderPdfProcessor extends BrowserProcessor<QuoteOrderPdfInput, QuoteOrderPdfOutput> {
   async process({ form, extra }: QuoteOrderPdfInput): Promise<QuoteOrderPdfOutput> {
+    await ensurePdfLib({ fontkit: true });
     const validationError = validateDocumentForm(form);
     if (validationError) throw new Error(validationError);
 
@@ -40,11 +42,11 @@ export class QuoteOrderPdfProcessor extends BrowserProcessor<QuoteOrderPdfInput,
       throw new Error("日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。");
     }
 
-    let doc: PDFDocument;
+    let doc: PdfLibTypes.PDFDocument;
     let font: PDFFont;
     try {
-      doc = await PDFDocument.create();
-      doc.registerFontkit(fontkit);
+      doc = await pdfLib().PDFDocument.create();
+      doc.registerFontkit(fontkitLib());
       font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
     } catch {
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
@@ -62,8 +64,8 @@ export class QuoteOrderPdfProcessor extends BrowserProcessor<QuoteOrderPdfInput,
           y: PAGE_H - op.y - op.h,
           width: op.w,
           height: op.h,
-          color: op.fill ? rgb(...op.fill) : undefined,
-          borderColor: op.stroke ? rgb(...op.stroke) : undefined,
+          color: op.fill ? pdfLib().rgb(...op.fill) : undefined,
+          borderColor: op.stroke ? pdfLib().rgb(...op.stroke) : undefined,
           borderWidth: op.stroke ? 0.75 : 0,
         });
       } else if (op.kind === "line") {
@@ -71,13 +73,13 @@ export class QuoteOrderPdfProcessor extends BrowserProcessor<QuoteOrderPdfInput,
           start: { x: op.x1, y: PAGE_H - op.y1 },
           end: { x: op.x2, y: PAGE_H - op.y2 },
           thickness: 0.75,
-          color: rgb(...op.color),
+          color: pdfLib().rgb(...op.color),
           dashArray: op.dashed ? [4, 3] : undefined,
         });
       } else {
         const w = font.widthOfTextAtSize(op.text, op.size);
         const x = op.align === "right" ? op.x - w : op.align === "center" ? op.x - w / 2 : op.x;
-        page.drawText(op.text, { x, y: PAGE_H - op.y, size: op.size, font, color: rgb(...op.color) });
+        page.drawText(op.text, { x, y: PAGE_H - op.y, size: op.size, font, color: pdfLib().rgb(...op.color) });
       }
     }
 

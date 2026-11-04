@@ -1,9 +1,9 @@
-import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont, PDFPage } from "pdf-lib";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
 import { SEAT_H, SEAT_W, type LayoutGeometry } from "@/lib/seating/layouts";
 import type { Participant } from "@/lib/seating/participants";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * 座席表の書き出し（画像 PNG・JPEG、PDF、Excel）。ブラウザ内だけで作る（名前は外部に送らない）。
@@ -214,19 +214,19 @@ function pdfPainter(page: PDFPage, font: PDFFont, scale: number, ox: number, pag
         y: Y(y + h),
         width: w * scale,
         height: h * scale,
-        color: fill ? rgb(...fill) : undefined,
-        borderColor: stroke ? rgb(...stroke) : undefined,
+        color: fill ? pdfLib().rgb(...fill) : undefined,
+        borderColor: stroke ? pdfLib().rgb(...stroke) : undefined,
         borderWidth: stroke ? lineWidth * scale : 0,
       });
     },
     circle(cx, cy, r, fill, stroke) {
-      page.drawCircle({ x: X(cx), y: Y(cy), size: r * scale, color: rgb(...fill), borderColor: rgb(...stroke), borderWidth: 1.2 * scale });
+      page.drawCircle({ x: X(cx), y: Y(cy), size: r * scale, color: pdfLib().rgb(...fill), borderColor: pdfLib().rgb(...stroke), borderWidth: 1.2 * scale });
     },
     text(text, x, y, opts) {
       const size = opts.size * scale;
       const w = font.widthOfTextAtSize(text, size);
       const left = opts.align === "left" ? X(x) : X(x) - w / 2;
-      page.drawText(text, { x: left, y: Y(y) - size * 0.36, size, font, color: rgb(...opts.color) });
+      page.drawText(text, { x: left, y: Y(y) - size * 0.36, size, font, color: pdfLib().rgb(...opts.color) });
     },
     measure(text, size) {
       return font.widthOfTextAtSize(text, size);
@@ -235,8 +235,9 @@ function pdfPainter(page: PDFPage, font: PDFFont, scale: number, ox: number, pag
 }
 
 export async function chartToPdfBlob(model: SeatingChartModel, paper: PaperSize = "A4"): Promise<Blob> {
-  const doc = await PDFDocument.create();
-  doc.registerFontkit(fontkit);
+  await ensurePdfLib({ fontkit: true });
+  const doc = await pdfLib().PDFDocument.create();
+  doc.registerFontkit(fontkitLib());
   // 日本語フォントは、一部の文字が欠けないよう、サブセットにしない（帳票のPDFと同じ方針）
   const font = await doc.embedFont(await loadJapaneseFontBytes(), { subset: false });
   const { width, height } = chartSize(model);

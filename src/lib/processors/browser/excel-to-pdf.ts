@@ -1,21 +1,4 @@
-import {
-  clip,
-  degrees,
-  endPath,
-  PDFDocument,
-  type PDFFont,
-  type PDFImage,
-  type PDFPage,
-  popGraphicsState,
-  pushGraphicsState,
-  rectangle,
-  rgb,
-  setLineWidth,
-  setStrokingRgbColor,
-  setTextRenderingMode,
-  TextRenderingMode,
-} from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont, PDFImage, PDFPage } from "pdf-lib";
 import { BrowserProcessor } from "../types";
 import type { PdfProcessorOutput } from "../types";
 import { loadJapaneseFontBytes, loadJapaneseSerifFontBytes } from "@/lib/pdf/japanese-font";
@@ -32,6 +15,8 @@ import { evaluateConditionalFormats } from "@/lib/excel/conditional-format";
 import { formatExcelDate } from "@/lib/excel/excel-date-format";
 import { formatExcelNumber, formatExcelText, formatGeneralNumber } from "@/lib/excel/excel-number-format";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * Excel（XLSX）→ PDF Processor（Phase 9、Phase 18.2 B節で大幅改修）。
@@ -388,6 +373,7 @@ interface PictureAnchorLike {
 
 export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, ExcelToPdfOutput> {
   async process({ file, sheets, selectedSheetNames, orientation, fitMode, repeatHeaderRow }: ExcelToPdfInput): Promise<ExcelToPdfOutput> {
+    await ensurePdfLib({ fontkit: true });
     const targetSheets = sheets.filter((s) => selectedSheetNames.includes(s.name));
     if (targetSheets.length === 0) {
       throw new Error("変換するシートを1つ以上選択してください。");
@@ -407,11 +393,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       throw new Error("日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。");
     }
 
-    let doc: PDFDocument;
+    let doc: PdfLibTypes.PDFDocument;
     let font: PDFFont;
     try {
-      doc = await PDFDocument.create();
-      doc.registerFontkit(fontkit);
+      doc = await pdfLib().PDFDocument.create();
+      doc.registerFontkit(fontkitLib());
       font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
     } catch {
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
@@ -531,7 +517,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       x: number,
       y: number,
       size: number,
-      color: ReturnType<typeof rgb>,
+      color: ReturnType<typeof PdfLibTypes.rgb>,
       embedFont: PDFFont,
       bold = false,
       italic = false,
@@ -541,9 +527,9 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       // 同じ「塗り+縁取り(FillAndOutline)」による疑似ボールドで近似する(開発指示書§29-31)。
       if (bold) {
         page.pushOperators(
-          setLineWidth(size * 0.028),
-          setStrokingRgbColor(color.red, color.green, color.blue),
-          setTextRenderingMode(TextRenderingMode.FillAndOutline)
+          pdfLib().setLineWidth(size * 0.028),
+          pdfLib().setStrokingRgbColor(color.red, color.green, color.blue),
+          pdfLib().setTextRenderingMode(pdfLib().TextRenderingMode.FillAndOutline)
         );
       }
       const rad = (angleDeg * Math.PI) / 180;
@@ -558,8 +544,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             size,
             font: embedFont,
             color,
-            ...(angleDeg !== 0 ? { rotate: degrees(angleDeg) } : {}),
-            ...(italic ? { ySkew: degrees(ITALIC_SKEW_DEG) } : {}),
+            ...(angleDeg !== 0 ? { rotate: pdfLib().degrees(angleDeg) } : {}),
+            ...(italic ? { ySkew: pdfLib().degrees(ITALIC_SKEW_DEG) } : {}),
           });
         } catch {
           // フォントに無い文字は描かない(幅だけ進める)
@@ -567,7 +553,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         advance += unitWidth(embedFont, ch) * size;
       }
       if (bold) {
-        page.pushOperators(setTextRenderingMode(TextRenderingMode.Fill));
+        page.pushOperators(pdfLib().setTextRenderingMode(pdfLib().TextRenderingMode.Fill));
       }
       return advance;
     }
@@ -582,7 +568,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       x: number,
       y: number,
       sizeFactor: number,
-      defaultColor: ReturnType<typeof rgb>,
+      defaultColor: ReturnType<typeof PdfLibTypes.rgb>,
       blackAndWhite: boolean,
       angleDeg = 0
     ): number {
@@ -607,7 +593,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         const shift = style.vertAlign === "super" ? style.fs * 0.33 * sizeFactor : style.vertAlign === "sub" ? -style.fs * 0.12 * sizeFactor : 0;
         const bx = x + advance * ux + shift * nx;
         const by = y + advance * uy + shift * ny;
-        const color = style.color && !blackAndWhite ? rgb(...hexToRgb01(style.color)) : defaultColor;
+        const color = style.color && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(style.color)) : defaultColor;
         const len = drawTextRobust(page, text, bx, by, size, color, f, style.bold, style.italic, angleDeg);
         if (style.underline || style.strike) {
           const thickness = Math.max(0.3, size * 0.06);
@@ -644,7 +630,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       areaRight: number
     ) {
       const size = 8;
-      const color = rgb(...MUTED_COLOR);
+      const color = pdfLib().rgb(...MUTED_COLOR);
       if (sections.left) {
         drawTextRobust(page, sections.left, areaLeft, baselineY, size, color, font);
       }
@@ -1074,7 +1060,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         const drawBorderLine = (page: PDFPage, side: BorderSideStyle, x1: number, y1: number, x2: number, y2: number, s: number) => {
           const spec = BORDER_SPECS[side.style] ?? BORDER_SPECS.thin;
           // 色が指定されていなければExcelの「自動」(黒)。白黒印刷では常に黒。
-          const color = side.color && !blackAndWhite ? rgb(...hexToRgb01(side.color)) : rgb(0, 0, 0);
+          const color = side.color && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(side.color)) : pdfLib().rgb(0, 0, 0);
           const thickness = Math.max(0.2, spec.width * s);
           if (spec.double) {
             // 二重線: 辺の位置を中心に、細い線2本を線の太さ程度あけて引く
@@ -1163,7 +1149,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             for (const origCol of colsOnPage) {
               const w = colWidthOf(origCol) * scale;
               const fill = fillFor(origRow, origCol);
-              if (fill) page.drawRectangle({ x: fx, y: top - rowH, width: w, height: rowH, color: rgb(...hexToRgb01(fill)) });
+              if (fill) page.drawRectangle({ x: fx, y: top - rowH, width: w, height: rowH, color: pdfLib().rgb(...hexToRgb01(fill)) });
               const bar = cf?.dataBars.get(`${origRow}:${origCol}`);
               if (bar && !blackAndWhite) {
                 const inset = Math.min(1.5, rowH * 0.12);
@@ -1172,7 +1158,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
                   y: top - rowH + inset,
                   width: Math.max(0, (w - 2) * bar.ratio),
                   height: Math.max(0, rowH - inset * 2),
-                  color: rgb(...hexToRgb01(bar.color)),
+                  color: pdfLib().rgb(...hexToRgb01(bar.color)),
                   opacity: 0.7,
                 });
               }
@@ -1181,7 +1167,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             top -= rowH;
           }
           if (settings?.printGridLines) {
-            const gridColor = rgb(0.55, 0.55, 0.55);
+            const gridColor = pdfLib().rgb(0.55, 0.55, 0.55);
             const thickness = Math.max(0.2, 0.4 * scale);
             let gTop = startTop;
             for (const origRow of rowsOnPage) {
@@ -1217,7 +1203,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           const pad = cellPadding * s;
           let x = startX;
           // 既定の文字色: Excelの「自動」(黒)。以前は本文を薄いグレーで描いていた
-          const defaultColor = blackAndWhite ? rgb(0, 0, 0) : rgb(...TEXT_COLOR);
+          const defaultColor = blackAndWhite ? pdfLib().rgb(0, 0, 0) : pdfLib().rgb(...TEXT_COLOR);
           const colWidthsOnPage = colsOnPage.map((c) => colWidthOf(c) * s);
 
           colsOnPage.forEach((origCol, groupPos) => {
@@ -1370,7 +1356,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
                 // Excelは、はみ出した文字を「セルの右端の罫線」の位置で切る(セル内の余白では切らない)。
                 // 余白で切ると、列の幅にぎりぎり収まる見出し(例: 4文字の「生徒番号」)の最後の字が半分欠けてしまう。
                 const clipW = rotation !== 0 ? boxW : fullBoxW;
-                page.pushOperators(pushGraphicsState(), rectangle(clipX, top - boxH, clipW, boxH), clip(), endPath());
+                page.pushOperators(pdfLib().pushGraphicsState(), pdfLib().rectangle(clipX, top - boxH, clipW, boxH), pdfLib().clip(), pdfLib().endPath());
               }
 
               if (rotation !== 0 && rotation !== 255) {
@@ -1429,7 +1415,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
                   }
                 });
               }
-              if (needsClip) page.pushOperators(popGraphicsState());
+              if (needsClip) page.pushOperators(pdfLib().popGraphicsState());
             }
             drawCellBorders(page, x, top, w, rowH, origRow, origCol, scale);
             x += w;
@@ -1461,7 +1447,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           const intersects = (r: { x1: number; y1: number; x2: number; y2: number }) =>
             r.x2 > sheetLeft && r.x1 < sheetLeft + regionW && r.y2 > sheetTop && r.y1 < sheetTop + regionH;
           const clipToRegion = () =>
-            page.pushOperators(pushGraphicsState(), rectangle(bodyX, bodyTop - regionH * s, regionW * s, regionH * s), clip(), endPath());
+            page.pushOperators(pdfLib().pushGraphicsState(), pdfLib().rectangle(bodyX, bodyTop - regionH * s, regionW * s, regionH * s), pdfLib().clip(), pdfLib().endPath());
 
           for (const pic of settings.pictures) {
             const img = embeddedImages.get(pic);
@@ -1472,14 +1458,14 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             if (p.w <= 0 || p.h <= 0) continue;
             clipToRegion();
             page.drawImage(img, { x: p.x, y: p.y, width: p.w, height: p.h });
-            page.pushOperators(popGraphicsState());
+            page.pushOperators(pdfLib().popGraphicsState());
           }
           for (const shape of settings.shapes) {
             const r = anchorRect(shape);
             if (!intersects(r)) continue;
             const p = toPage(r);
-            const lineColor = shape.line && !blackAndWhite ? rgb(...hexToRgb01(shape.line)) : shape.line ? rgb(0, 0, 0) : undefined;
-            const fillColor = shape.fill && !blackAndWhite ? rgb(...hexToRgb01(shape.fill)) : undefined;
+            const lineColor = shape.line && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(shape.line)) : shape.line ? pdfLib().rgb(0, 0, 0) : undefined;
+            const fillColor = shape.fill && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(shape.fill)) : undefined;
             const borderWidth = lineColor ? Math.max(0.3, shape.lineWidthPt * s) : 0;
             clipToRegion();
             if (shape.kind === "line") {
@@ -1530,11 +1516,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
               let yTop = p.y + p.h / 2 + (shapeLines.length * lh) / 2;
               for (const line of shapeLines) {
                 const lw = lineWidthOf(line, s);
-                drawGlyphLine(page, line, p.x + (p.w - lw) / 2, yTop - (lh - fs) / 2 - 0.88 * fs, s, rgb(...TEXT_COLOR), blackAndWhite);
+                drawGlyphLine(page, line, p.x + (p.w - lw) / 2, yTop - (lh - fs) / 2 - 0.88 * fs, s, pdfLib().rgb(...TEXT_COLOR), blackAndWhite);
                 yTop -= lh;
               }
             }
-            page.pushOperators(popGraphicsState());
+            page.pushOperators(pdfLib().popGraphicsState());
           }
         };
 

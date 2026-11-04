@@ -1,8 +1,8 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFStream, type PDFObject } from "pdf-lib";
+import type { PDFObject } from "pdf-lib";
 import { BrowserProcessor, type PdfProcessorOutput } from "../types";
 import { canvasToBlob } from "./image";
 import { loadPdfDoc } from "./pdf";
-import { loadPdfDocument, PDFJS_ASSET_OPTIONS } from "@/lib/pdf/pdfjs-client";
+import { closePdfDocument, loadPdfDocument, PDFJS_ASSET_OPTIONS } from "@/lib/pdf/pdfjs-client";
 import {
   REDACT_COLOR,
   RedactError,
@@ -11,6 +11,8 @@ import {
   validateRedactPlan,
   type RedactRegion,
 } from "@/lib/pdf/redact";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * PDF黒塗り・墨消し（ブラウザ内だけで処理する。ファイルは外部に送らず、元のファイルも書き換えない）。
@@ -43,19 +45,28 @@ function sourceUnreadableMessage(fileName: string): string {
 export class PdfRedactProcessor extends BrowserProcessor<PdfRedactInput, PdfRedactOutput> {
   async process({ file, regions }: PdfRedactInput): Promise<PdfRedactOutput> {
     // 読み込み（パスワード付き・破損したPDFは、ここで分かりやすいエラーになる）
+    await ensurePdfLib();
     const view = await loadPdfDocument(file);
     const pageCount = view.numPages;
-    const grouped = validateRedactPlan(pageCount, regions);
-    const source = await loadPdfDoc(file, { updateMetadata: false });
-    if (source.getPageCount() !== pageCount) throw new RedactError(sourceUnreadableMessage(file.name));
+    let grouped: ReturnType<typeof validateRedactPlan>;
+    let source: Awaited<ReturnType<typeof loadPdfDoc>>;
+    try {
+      grouped = validateRedactPlan(pageCount, regions);
+      source = await loadPdfDoc(file, { updateMetadata: false });
+      if (source.getPageCount() !== pageCount) throw new RedactError(sourceUnreadableMessage(file.name));
+    } catch (e) {
+      // 途中で止まったときも、開いたPDFを閉じる（作業用スレッドを残さない。ロードマップC 工程2）
+      await closePdfDocument(view);
+      throw e;
+    }
 
     // 引き継がない項目は、コピーする前に元のページ（メモリ上の複製）から取り除く。
     // コピーしてから取り除くと、リンクの行き先として、黒塗りするページ（の文字）がコピーに巻き込まれる。
     for (const page of source.getPages()) {
-      for (const key of DROPPED_PAGE_KEYS) page.node.delete(PDFName.of(key));
+      for (const key of DROPPED_PAGE_KEYS) page.node.delete(pdfLib().PDFName.of(key));
     }
 
-    const out = await PDFDocument.create();
+    const out = await pdfLib().PDFDocument.create();
     out.setProducer("Mr.Satto");
     out.setCreator("Mr.Satto");
 
@@ -98,7 +109,7 @@ export class PdfRedactProcessor extends BrowserProcessor<PdfRedactInput, PdfReda
         page.cleanup();
       }
     } finally {
-      await view.destroy();
+      await closePdfDocument(view);
     }
 
     // どこからも参照されていないデータ（コピーの際に紛れ込んだ、黒塗りするページの一部など）は、念のため書き出さない
@@ -129,9 +140,11 @@ async function verifyRedactedOutput(bytes: Uint8Array, pageCount: number, redact
     new RedactError("黒塗り後のPDFの確認に失敗したため、ファイルを作成しませんでした。もう一度お試しください。");
   const pdfjs = await (await import("@/lib/pdf/pdfjs-client")).getPdfjs();
   let doc;
+  const task = pdfjs.getDocument({ data: bytes.slice(), ...PDFJS_ASSET_OPTIONS });
   try {
-    doc = await pdfjs.getDocument({ data: bytes.slice(), ...PDFJS_ASSET_OPTIONS }).promise;
+    doc = await task.promise;
   } catch {
+    await task.destroy().catch(() => {});
     throw fail();
   }
   try {
@@ -148,28 +161,28 @@ async function verifyRedactedOutput(bytes: Uint8Array, pageCount: number, redact
   }
 }
 
-function collectRefs(value: PDFObject | undefined, found: PDFRef[]): void {
+function collectRefs(value: PDFObject | undefined, found: PdfLibTypes.PDFRef[]): void {
   if (!value) return;
-  if (value instanceof PDFRef) found.push(value);
-  else if (value instanceof PDFDict) for (const [, v] of value.entries()) collectRefs(v, found);
-  else if (value instanceof PDFArray) for (let i = 0; i < value.size(); i++) collectRefs(value.get(i), found);
-  else if (value instanceof PDFStream) collectRefs(value.dict, found);
+  if (value instanceof pdfLib().PDFRef) found.push(value);
+  else if (value instanceof pdfLib().PDFDict) for (const [, v] of value.entries()) collectRefs(v, found);
+  else if (value instanceof pdfLib().PDFArray) for (let i = 0; i < value.size(); i++) collectRefs(value.get(i), found);
+  else if (value instanceof pdfLib().PDFStream) collectRefs(value.dict, found);
 }
 
 /** 書き出すPDFのルート（文書カタログ・文書情報）から辿れないデータを、PDFから取り除く */
-function pruneUnreachableObjects(doc: PDFDocument): void {
+function pruneUnreachableObjects(doc: PdfLibTypes.PDFDocument): void {
   const context = doc.context;
-  const reachable = new Set<PDFRef>();
-  const queue: PDFRef[] = [];
-  const trailerRefs: PDFRef[] = [];
+  const reachable = new Set<PdfLibTypes.PDFRef>();
+  const queue: PdfLibTypes.PDFRef[] = [];
+  const trailerRefs: PdfLibTypes.PDFRef[] = [];
   collectRefs(context.trailerInfo.Root, trailerRefs);
   collectRefs(context.trailerInfo.Info, trailerRefs);
   queue.push(...trailerRefs);
   while (queue.length > 0) {
-    const ref = queue.pop() as PDFRef;
+    const ref = queue.pop() as PdfLibTypes.PDFRef;
     if (reachable.has(ref)) continue;
     reachable.add(ref);
-    const found: PDFRef[] = [];
+    const found: PdfLibTypes.PDFRef[] = [];
     collectRefs(context.lookup(ref), found);
     queue.push(...found);
   }

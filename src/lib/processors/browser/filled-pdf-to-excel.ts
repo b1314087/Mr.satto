@@ -1,5 +1,5 @@
 import { BrowserProcessor } from "../types";
-import { loadPdfDocument, getPositionedTextItems, pageHasText, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
+import { closePdfDocument, loadPdfDocument, getPositionedTextItems, pageHasText, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
 import { reconstructTable, tryParseNumberCell, tryParseDateCell } from "@/lib/pdf/table-reconstruction";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 
@@ -106,91 +106,60 @@ export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcel
     // 先に全ファイルを読み込み、合計ページ数を確定させてから上限判定する
     // （「3ページ」はファイル数ではなく全ファイル合計ページ数のため）。
     const pdfDocs: { file: File; pdf: Awaited<ReturnType<typeof loadPdfDocument>> }[] = [];
-    for (const file of files) {
-      let pdf;
-      try {
-        pdf = await loadPdfDocument(file);
-      } catch {
-        throw new Error(`${file.name} の読み込みに失敗しました`);
-      }
-      if (pdf.numPages === 0) {
-        throw new Error(`${file.name} にはページがありません`);
-      }
-      pdfDocs.push({ file, pdf });
-    }
-
-    const totalPages = pdfDocs.reduce((sum, d) => sum + d.pdf.numPages, 0);
-    const effectiveLimit = Math.min(maxTotalPages ?? MAX_PAGES_HARD_LIMIT, MAX_PAGES_HARD_LIMIT);
-    if (totalPages > effectiveLimit) {
-      throw new Error(
-        `処理できるページ数の上限は合計${effectiveLimit}ページです（選択したファイルの合計は${totalPages}ページです）。`
-      );
-    }
-
-    const sheetRows: ExcelCell[][] = [];
-    const pages: FilledPdfToExcelPageInfo[] = [];
-    const previewRows: string[][] = [];
-    let totalRowCount = 0;
-    let usedOcr = false;
-    const PREVIEW_ROW_LIMIT = 20;
-
-    for (let fileIndex = 0; fileIndex < pdfDocs.length; fileIndex++) {
-      const { file, pdf } = pdfDocs[fileIndex];
-
-      if (pdfDocs.length > 1) {
-        if (sheetRows.length > 0) sheetRows.push([""]);
-        sheetRows.push([`--- ${file.name} ---`]);
-      }
-
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-        let page;
+    try {
+      for (const file of files) {
+        let pdf;
         try {
-          page = await pdf.getPage(pageNumber);
+          pdf = await loadPdfDocument(file);
         } catch {
-          throw new Error(`${file.name} の${pageNumber}ページ目の読み込みに失敗しました`);
+          throw new Error(`${file.name} の読み込みに失敗しました`);
+        }
+        // 先に一覧へ入れてから確かめる（途中で止まっても、開いたPDFを全部閉じられるように）
+        pdfDocs.push({ file, pdf });
+        if (pdf.numPages === 0) {
+          throw new Error(`${file.name} にはページがありません`);
+        }
+      }
+
+      const totalPages = pdfDocs.reduce((sum, d) => sum + d.pdf.numPages, 0);
+      const effectiveLimit = Math.min(maxTotalPages ?? MAX_PAGES_HARD_LIMIT, MAX_PAGES_HARD_LIMIT);
+      if (totalPages > effectiveLimit) {
+        throw new Error(
+          `処理できるページ数の上限は合計${effectiveLimit}ページです（選択したファイルの合計は${totalPages}ページです）。`
+        );
+      }
+
+      const sheetRows: ExcelCell[][] = [];
+      const pages: FilledPdfToExcelPageInfo[] = [];
+      const previewRows: string[][] = [];
+      let totalRowCount = 0;
+      let usedOcr = false;
+      const PREVIEW_ROW_LIMIT = 20;
+
+      for (let fileIndex = 0; fileIndex < pdfDocs.length; fileIndex++) {
+        const { file, pdf } = pdfDocs[fileIndex];
+
+        if (pdfDocs.length > 1) {
+          if (sheetRows.length > 0) sheetRows.push([""]);
+          sheetRows.push([`--- ${file.name} ---`]);
         }
 
-        const textItems = await getPositionedTextItems(page);
-        let items: PositionedTextItem[];
-        let method: "text-layer" | "ocr";
-        let confidence: number | null = null;
-
-        if (pageHasText(textItems)) {
-          items = textItems;
-          method = "text-layer";
-          onPageProgress?.({
-            fileName: file.name,
-            currentPage: pageNumber,
-            totalPagesInFile: pdf.numPages,
-            fileIndex,
-            fileCount: pdfDocs.length,
-            method,
-            pageProgress: 1,
-          });
-        } else {
-          // 文字情報を持たないページ（スキャンした記入済み帳票の画像等）は
-          // ページ全体を画像化してOCRする。全ページ分の画像を同時に保持せず、
-          // 1ページ処理するごとにcanvasの参照を手放す。
-          usedOcr = true;
-          method = "ocr";
-          let canvas: HTMLCanvasElement;
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          let page;
           try {
-            const baseViewport = page.getViewport({ scale: PDF_RENDER_SCALE });
-            const longest = Math.max(baseViewport.width, baseViewport.height);
-            const renderScale =
-              longest > MAX_OCR_DIMENSION ? PDF_RENDER_SCALE * (MAX_OCR_DIMENSION / longest) : PDF_RENDER_SCALE;
-            const viewport = page.getViewport({ scale: renderScale });
-            canvas = document.createElement("canvas");
-            canvas.width = Math.ceil(viewport.width);
-            canvas.height = Math.ceil(viewport.height);
-            const canvasContext = canvas.getContext("2d");
-            if (!canvasContext) throw new Error("Canvasの初期化に失敗しました");
-            await page.render({ canvasContext, viewport }).promise;
+            page = await pdf.getPage(pageNumber);
           } catch {
-            throw new Error(`${file.name} の${pageNumber}ページ目の画像化に失敗しました`);
+            throw new Error(`${file.name} の${pageNumber}ページ目の読み込みに失敗しました`);
           }
 
-          const result = await recognizeImageWithWords(canvas, language, (p) => {
+          const textItems = await getPositionedTextItems(page);
+          let items: PositionedTextItem[];
+          let method: "text-layer" | "ocr";
+          let confidence: number | null = null;
+
+          if (pageHasText(textItems)) {
+            items = textItems;
+            method = "text-layer";
             onPageProgress?.({
               fileName: file.name,
               currentPage: pageNumber,
@@ -198,54 +167,90 @@ export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcel
               fileIndex,
               fileCount: pdfDocs.length,
               method,
-              pageProgress: p.progress,
+              pageProgress: 1,
             });
-          });
-          confidence = result.confidence;
-          items = ocrWordsToPositionedTextItems(result.words);
-        }
+          } else {
+            // 文字情報を持たないページ（スキャンした記入済み帳票の画像等）は
+            // ページ全体を画像化してOCRする。全ページ分の画像を同時に保持せず、
+            // 1ページ処理するごとにcanvasの参照を手放す。
+            usedOcr = true;
+            method = "ocr";
+            let canvas: HTMLCanvasElement;
+            try {
+              const baseViewport = page.getViewport({ scale: PDF_RENDER_SCALE });
+              const longest = Math.max(baseViewport.width, baseViewport.height);
+              const renderScale =
+                longest > MAX_OCR_DIMENSION ? PDF_RENDER_SCALE * (MAX_OCR_DIMENSION / longest) : PDF_RENDER_SCALE;
+              const viewport = page.getViewport({ scale: renderScale });
+              canvas = document.createElement("canvas");
+              canvas.width = Math.ceil(viewport.width);
+              canvas.height = Math.ceil(viewport.height);
+              const canvasContext = canvas.getContext("2d");
+              if (!canvasContext) throw new Error("Canvasの初期化に失敗しました");
+              await page.render({ canvasContext, viewport }).promise;
+            } catch {
+              throw new Error(`${file.name} の${pageNumber}ページ目の画像化に失敗しました`);
+            }
 
-        const table = reconstructTable(items);
-        if (table.rows.length === 0) {
-          pages.push({ fileName: file.name, pageNumber, rowCount: 0, columnCount: 0, method, confidence });
-          continue;
-        }
+            const result = await recognizeImageWithWords(canvas, language, (p) => {
+              onPageProgress?.({
+                fileName: file.name,
+                currentPage: pageNumber,
+                totalPagesInFile: pdf.numPages,
+                fileIndex,
+                fileCount: pdfDocs.length,
+                method,
+                pageProgress: p.progress,
+              });
+            });
+            confidence = result.confidence;
+            items = ocrWordsToPositionedTextItems(result.words);
+          }
 
-        if (sheetRows.length > 0) {
-          sheetRows.push(new Array(Math.max(table.columnCount, 1)).fill(""));
-        }
-        for (const row of table.rows) {
-          sheetRows.push(row.map(toExcelCell));
-          if (previewRows.length < PREVIEW_ROW_LIMIT) previewRows.push(row);
-        }
+          const table = reconstructTable(items);
+          if (table.rows.length === 0) {
+            pages.push({ fileName: file.name, pageNumber, rowCount: 0, columnCount: 0, method, confidence });
+            continue;
+          }
 
-        pages.push({ fileName: file.name, pageNumber, rowCount: table.rows.length, columnCount: table.columnCount, method, confidence });
-        totalRowCount += table.rows.length;
+          if (sheetRows.length > 0) {
+            sheetRows.push(new Array(Math.max(table.columnCount, 1)).fill(""));
+          }
+          for (const row of table.rows) {
+            sheetRows.push(row.map(toExcelCell));
+            if (previewRows.length < PREVIEW_ROW_LIMIT) previewRows.push(row);
+          }
+
+          pages.push({ fileName: file.name, pageNumber, rowCount: table.rows.length, columnCount: table.columnCount, method, confidence });
+          totalRowCount += table.rows.length;
+        }
       }
-    }
 
-    if (sheetRows.length === 0) {
-      throw new Error(
-        "項目として認識できる内容が見つかりませんでした。文字がはっきり読み取れるスキャン画像かご確認ください。"
-      );
-    }
+      if (sheetRows.length === 0) {
+        throw new Error(
+          "項目として認識できる内容が見つかりませんでした。文字がはっきり読み取れるスキャン画像かご確認ください。"
+        );
+      }
 
-    const { default: writeXlsxFile } = await import("write-excel-file/universal");
-    let blob: Blob;
-    try {
-      blob = await writeXlsxFile(sheetRows).toBlob();
-    } catch {
-      throw new Error("Excelファイルの生成に失敗しました");
-    }
+      const { default: writeXlsxFile } = await import("write-excel-file/universal");
+      let blob: Blob;
+      try {
+        blob = await writeXlsxFile(sheetRows).toBlob();
+      } catch {
+        throw new Error("Excelファイルの生成に失敗しました");
+      }
 
-    return {
-      blob,
-      sizeBytes: blob.size,
-      pageCount: totalPages,
-      pages,
-      totalRowCount,
-      usedOcr,
-      previewRows,
-    };
+      return {
+        blob,
+        sizeBytes: blob.size,
+        pageCount: totalPages,
+        pages,
+        totalRowCount,
+        usedOcr,
+        previewRows,
+      };
+    } finally {
+      await Promise.all(pdfDocs.map((d) => closePdfDocument(d.pdf)));
+    }
   }
 }

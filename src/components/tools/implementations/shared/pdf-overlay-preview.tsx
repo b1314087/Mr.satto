@@ -56,10 +56,14 @@ export function usePdfPageGeometry(
   return { pageCount: state.pageCount, pages: state.pages };
 }
 
-/** pdf-libのフォントを非同期で読み込むフック(失敗したら failed=true) */
-export function usePdfFont(loader: () => Promise<PDFFont>): { font: PDFFont | null; failed: boolean } {
+/**
+ * pdf-libのフォントを非同期で読み込むフック(失敗したら failed=true)。
+ * enabled が false の間は読み込まない（PDFを選ぶ前に、PDFを作る部品やフォントを読み込まないため。ロードマップC 工程2）
+ */
+export function usePdfFont(loader: () => Promise<PDFFont>, enabled = true): { font: PDFFont | null; failed: boolean } {
   const [state, setState] = useState<{ font: PDFFont | null; failed: boolean }>({ font: null, failed: false });
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     loader()
       .then((font) => {
@@ -71,7 +75,7 @@ export function usePdfFont(loader: () => Promise<PDFFont>): { font: PDFFont | nu
     return () => {
       cancelled = true;
     };
-  }, [loader]);
+  }, [loader, enabled]);
   return state;
 }
 

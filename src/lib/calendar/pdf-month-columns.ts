@@ -193,17 +193,21 @@ export async function extractMonthColumnEntries(
   file: File,
   onProgress?: (currentPage: number, totalPages: number) => void,
 ): Promise<MonthColumnParse & { pageCount: number; pagesRead: number }> {
-  const { loadPdfDocument, getPositionedTextItems } = await import("@/lib/pdf/pdfjs-client");
+  const { loadPdfDocument, getPositionedTextItems, closePdfDocument } = await import("@/lib/pdf/pdfjs-client");
   const pdf = await loadPdfDocument(file);
-  const total = Math.min(pdf.numPages, 30);
-  const entries: MonthColumnEntry[] = [];
-  let dayRowCount = 0;
-  for (let n = 1; n <= total; n++) {
-    onProgress?.(n, total);
-    const page = await pdf.getPage(n);
-    const parsed = parseMonthColumns(await getPositionedTextItems(page), n);
-    entries.push(...parsed.entries);
-    dayRowCount += parsed.dayRowCount;
+  try {
+    const total = Math.min(pdf.numPages, 30);
+    const entries: MonthColumnEntry[] = [];
+    let dayRowCount = 0;
+    for (let n = 1; n <= total; n++) {
+      onProgress?.(n, total);
+      const page = await pdf.getPage(n);
+      const parsed = parseMonthColumns(await getPositionedTextItems(page), n);
+      entries.push(...parsed.entries);
+      dayRowCount += parsed.dayRowCount;
+    }
+    return { entries, dayRowCount, pageCount: pdf.numPages, pagesRead: total };
+  } finally {
+    await closePdfDocument(pdf);
   }
-  return { entries, dayRowCount, pageCount: pdf.numPages, pagesRead: total };
 }

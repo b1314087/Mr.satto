@@ -15,8 +15,7 @@
  * バイト列を取り出す。CSPの都合でdata URLへのfetch()は失敗するため
  * （document-pdf.ts等、既存コードのコメントで明示されている既知の制約）。
  */
-import { PDFDocument, type PDFFont, type PDFImage } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import type { PDFFont, PDFImage } from "pdf-lib";
 import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
 import { BrowserProcessor } from "../types";
@@ -33,6 +32,8 @@ import {
   type TicketGroup,
   type TicketRow,
 } from "@/lib/tickets/ticket-layout";
+import type * as PdfLibTypes from "pdf-lib";
+import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * 券の入力。「券の種類」(groups。タイトル・金額・開始番号〜終了番号)を複数並べるか、
@@ -87,6 +88,7 @@ function renderBarcodePng(text: string): Uint8Array | null {
 
 export class TicketVoucherProcessor extends BrowserProcessor<TicketVoucherInput, TicketVoucherOutput> {
   async process(input: TicketVoucherInput): Promise<TicketVoucherOutput> {
+    await ensurePdfLib({ fontkit: true });
     const validationError = validateTicketVoucherInput(input);
     if (validationError) throw new Error(validationError);
 
@@ -97,11 +99,11 @@ export class TicketVoucherProcessor extends BrowserProcessor<TicketVoucherInput,
       throw new Error("日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。");
     }
 
-    let doc: PDFDocument;
+    let doc: PdfLibTypes.PDFDocument;
     let font: PDFFont;
     try {
-      doc = await PDFDocument.create();
-      doc.registerFontkit(fontkit);
+      doc = await pdfLib().PDFDocument.create();
+      doc.registerFontkit(fontkitLib());
       font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
     } catch {
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");

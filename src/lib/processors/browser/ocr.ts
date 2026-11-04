@@ -1,5 +1,5 @@
 import { BrowserProcessor } from "../types";
-import { loadPdfDocument, getPositionedTextItems, pageHasText } from "@/lib/pdf/pdfjs-client";
+import { loadPdfDocument, getPositionedTextItems, pageHasText, closePdfDocument } from "@/lib/pdf/pdfjs-client";
 import { recognizeImage, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { loadImage } from "./image";
 import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
@@ -129,90 +129,94 @@ export class OcrProcessor extends BrowserProcessor<OcrInput, OcrOutput> {
     }
 
     const pdf = await loadPdfDocument(file);
-    if (pdf.numPages === 0) {
-      throw new Error("このPDFにはページがありません");
-    }
-    if (pdf.numPages > MAX_OCR_PAGES) {
-      throw new Error(
-        `OCRで処理できるページ数の上限は${MAX_OCR_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
-      );
-    }
-
-    const pages: OcrPageResult[] = [];
-
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-      if (isCancelled?.()) {
-        return {
-          pages,
-          combinedText: pages.map(formatPageText).join("\n\n"),
-          isSingleImage: false,
-          cancelled: true,
-        };
+    try {
+      if (pdf.numPages === 0) {
+        throw new Error("このPDFにはページがありません");
+      }
+      if (pdf.numPages > MAX_OCR_PAGES) {
+        throw new Error(
+          `OCRで処理できるページ数の上限は${MAX_OCR_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
+        );
       }
 
-      let page;
-      try {
-        page = await pdf.getPage(pageNumber);
-      } catch {
-        throw new Error(`${pageNumber}ページ目の読み込みに失敗しました`);
-      }
+      const pages: OcrPageResult[] = [];
 
-      const items = await getPositionedTextItems(page);
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        if (isCancelled?.()) {
+          return {
+            pages,
+            combinedText: pages.map(formatPageText).join("\n\n"),
+            isSingleImage: false,
+            cancelled: true,
+          };
+        }
 
-      if (pageHasText(items)) {
-        // 既に文字情報を持つページはOCR不要（PDF→テキストと同じ抽出方式を使う）
-        const text = items
-          .map((i) => i.str)
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim();
-        pages.push({ pageNumber, text, method: "text-layer", confidence: null });
-        onPageProgress?.({
-          currentPage: pageNumber,
-          totalPages: pdf.numPages,
-          method: "text-layer",
-          pageProgress: 1,
+        let page;
+        try {
+          page = await pdf.getPage(pageNumber);
+        } catch {
+          throw new Error(`${pageNumber}ページ目の読み込みに失敗しました`);
+        }
+
+        const items = await getPositionedTextItems(page);
+
+        if (pageHasText(items)) {
+          // 既に文字情報を持つページはOCR不要（PDF→テキストと同じ抽出方式を使う）
+          const text = items
+            .map((i) => i.str)
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+          pages.push({ pageNumber, text, method: "text-layer", confidence: null });
+          onPageProgress?.({
+            currentPage: pageNumber,
+            totalPages: pdf.numPages,
+            method: "text-layer",
+            pageProgress: 1,
+          });
+          continue;
+        }
+
+        // 文字情報を持たないページ（スキャン画像等）はページ全体を画像化してOCRする。
+        // 全ページ分の画像を同時に保持せず、1ページ処理するごとにcanvasの参照を手放す。
+        let canvas: HTMLCanvasElement;
+        try {
+          const baseViewport = page.getViewport({ scale: PDF_RENDER_SCALE });
+          const longest = Math.max(baseViewport.width, baseViewport.height);
+          const renderScale =
+            longest > MAX_OCR_DIMENSION
+              ? PDF_RENDER_SCALE * (MAX_OCR_DIMENSION / longest)
+              : PDF_RENDER_SCALE;
+          const viewport = page.getViewport({ scale: renderScale });
+          canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          const canvasContext = canvas.getContext("2d");
+          if (!canvasContext) throw new Error("Canvasの初期化に失敗しました");
+          await page.render({ canvasContext, viewport }).promise;
+        } catch {
+          throw new Error(`${pageNumber}ページ目の画像化に失敗しました`);
+        }
+
+        const { text, confidence } = await recognizeImage(canvas, language, (p) => {
+          onPageProgress?.({
+            currentPage: pageNumber,
+            totalPages: pdf.numPages,
+            method: "ocr",
+            pageProgress: p.progress,
+          });
         });
-        continue;
+        pages.push({ pageNumber, text: text.trim(), method: "ocr", confidence });
       }
 
-      // 文字情報を持たないページ（スキャン画像等）はページ全体を画像化してOCRする。
-      // 全ページ分の画像を同時に保持せず、1ページ処理するごとにcanvasの参照を手放す。
-      let canvas: HTMLCanvasElement;
-      try {
-        const baseViewport = page.getViewport({ scale: PDF_RENDER_SCALE });
-        const longest = Math.max(baseViewport.width, baseViewport.height);
-        const renderScale =
-          longest > MAX_OCR_DIMENSION
-            ? PDF_RENDER_SCALE * (MAX_OCR_DIMENSION / longest)
-            : PDF_RENDER_SCALE;
-        const viewport = page.getViewport({ scale: renderScale });
-        canvas = document.createElement("canvas");
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        const canvasContext = canvas.getContext("2d");
-        if (!canvasContext) throw new Error("Canvasの初期化に失敗しました");
-        await page.render({ canvasContext, viewport }).promise;
-      } catch {
-        throw new Error(`${pageNumber}ページ目の画像化に失敗しました`);
-      }
-
-      const { text, confidence } = await recognizeImage(canvas, language, (p) => {
-        onPageProgress?.({
-          currentPage: pageNumber,
-          totalPages: pdf.numPages,
-          method: "ocr",
-          pageProgress: p.progress,
-        });
-      });
-      pages.push({ pageNumber, text: text.trim(), method: "ocr", confidence });
+      return {
+        pages,
+        combinedText: pages.map(formatPageText).join("\n\n"),
+        isSingleImage: false,
+        cancelled: false,
+      };
+    } finally {
+      await closePdfDocument(pdf);
     }
-
-    return {
-      pages,
-      combinedText: pages.map(formatPageText).join("\n\n"),
-      isSingleImage: false,
-      cancelled: false,
-    };
   }
 }
