@@ -9,7 +9,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { usePdfThumbnails } from "@/components/common/pdf-thumbnails";
-import { PdfCompressProcessor, compressPdfToTarget } from "@/lib/processors/browser/pdf";
+import { PdfCompressProcessor, checkPdfReadable, compressPdfToTarget } from "@/lib/processors/browser/pdf";
 import type { PdfCompressOutput, PdfCompressToTargetOutput } from "@/lib/processors/browser/pdf";
 import { dedupeFileNames, downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useBatchSelection } from "@/components/common/use-batch-selection";
@@ -26,6 +26,7 @@ import {
   TARGET_LADDER,
   TARGET_MB_BYTES,
   TARGET_MB_CHOICES,
+  comparableOriginalBytes,
   formatTargetMB,
   getPreset,
   matchPreset,
@@ -35,6 +36,7 @@ import {
   suggestTargetMB,
   type PdfCompressPresetId,
   type PdfCompressSettings,
+  type PdfReadState,
 } from "@/lib/pdf/compress-settings";
 
 /** 1つのPDFの先頭ページの縮小表示(圧縮前・圧縮後で同じ形式) */
@@ -173,9 +175,23 @@ export function PdfCompressTool() {
   const [input, setInput] = useState<SettingsInput>(() => inputFromSettings(getPreset(DEFAULT_PRESET_ID).settings));
   const checked = validateInput(input);
   const presetId: PdfCompressPresetId | null = checked.settings ? matchPreset(checked.settings) : null;
+  // 選んだPDF（1つのとき）を読み込めるかの確認。サイズによる案内は、読み込めると分かってから出す（ロードマップC 工程4）
+  const [readCheck, setReadCheck] = useState<{ file: File; state: PdfReadState } | null>(null);
+  const readState: PdfReadState | null = !file || isBatch ? null : readCheck?.file === file ? readCheck.state : { status: "checking" };
+  useEffect(() => {
+    if (!file || isBatch) return;
+    let canceled = false;
+    void checkPdfReadable(file).then((message) => {
+      if (!canceled) setReadCheck({ file, state: message === null ? { status: "ok" } : { status: "error", message } });
+    });
+    return () => {
+      canceled = true;
+    };
+  }, [file, isBatch]);
+  const unreadable = readState?.status === "error" ? readState.message : null;
   // 一括処理では、目標のサイズを全部のPDFに共通で使う（元のサイズとの比べ方はPDFごとに違うため、ここでは比べない）
-  const targetCheck = parseTargetMB(targetText, isBatch ? null : file?.size ?? null);
-  const canRun = mode === "target" ? targetCheck.ok : checked.settings !== null;
+  const targetCheck = parseTargetMB(targetText, isBatch ? null : comparableOriginalBytes(file?.size ?? null, readState));
+  const canRun = readState?.status === "checking" || unreadable !== null ? false : mode === "target" ? targetCheck.ok : checked.settings !== null;
 
   // 設定を変えたら、前の設定で作った結果は捨てる（違う設定の結果をダウンロードさせない）
   function clearResult() {
@@ -368,6 +384,12 @@ export function PdfCompressTool() {
         />
       ) : (
         <CompressSettingsPanel input={input} presetId={presetId} checked={checked} onChange={changeInput} />
+      )}
+
+      {unreadable && (
+        <p role="alert" data-testid="compress-unreadable" className="text-sm text-red-700 dark:text-red-400">
+          {unreadable}
+        </p>
       )}
 
       {file && (

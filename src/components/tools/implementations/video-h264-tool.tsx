@@ -60,9 +60,12 @@ export function VideoH264Tool() {
   const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
 
   useEffect(() => {
+    // 動画を扱う部品（mediabunny）の読み込みを伴うため、ページを開いた時点ではなく、
+    // 動画を選んだ時点で1回だけ確認する（ロードマップC 工程4）。
+    if (!file || supportChecked) return;
     let cancelled = false;
     // 汎用的な解像度(1280x720)でこのブラウザのH.264エンコード対応を事前確認する。
-    // ファイル選択後、実際の解像度でも再度確認する（Processor内部）。
+    // 実際の解像度でも再度確認する（Processor内部）。
     // ※この cancelled はこのeffect専用の既存の中断フラグであり、下の
     //   キャンセル機能（cancelControllerRef）とは無関係。混同しないよう
     //   キャンセル機能側は別名の状態・refを使う。
@@ -75,7 +78,7 @@ export function VideoH264Tool() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [file, supportChecked]);
 
   useEffect(() => {
     if (!file) return;

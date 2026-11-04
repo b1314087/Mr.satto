@@ -43,9 +43,11 @@ export function useAudioPreview(file: File | null) {
 }
 
 /** このブラウザで書き出せる出力形式の一覧（初回に1度だけ調べる） */
-export function useWritableAudioKinds(): AudioOutputKind[] | null {
+export function useWritableAudioKinds(enabled = true): AudioOutputKind[] | null {
+  // MP3 エンコーダーなどの読み込みを伴うため、ファイル選択後（enabled=true）に初めて確認する
   const [kinds, setKinds] = useState<AudioOutputKind[] | null>(null);
   useEffect(() => {
+    if (!enabled || kinds !== null) return;
     let canceled = false;
     void getWritableAudioKinds().then((k) => {
       if (!canceled) setKinds(k);
@@ -53,6 +55,6 @@ export function useWritableAudioKinds(): AudioOutputKind[] | null {
     return () => {
       canceled = true;
     };
-  }, []);
+  }, [enabled, kinds]);
   return kinds;
 }

@@ -10,34 +10,9 @@
  *   動的に読み込んで登録する。他の形式を使うときは読み込まれない
  *   （ライセンス表記は /licenses ページを参照）。
  */
-
-import {
-  ADTS,
-  AudioSample,
-  AudioSampleSink,
-  BlobSource,
-  BufferTarget,
-  Conversion,
-  FLAC,
-  FlacOutputFormat,
-  Input,
-  MATROSKA,
-  MP3,
-  MP4,
-  Mp3OutputFormat,
-  Mp4OutputFormat,
-  OGG,
-  OggOutputFormat,
-  Output,
-  QTFF,
-  WAVE,
-  WEBM,
-  WavOutputFormat,
-  canEncodeAudio,
-  type AudioCodec,
-  type InputAudioTrack,
-  type OutputFormat,
-} from "mediabunny";
+import type { AudioCodec, InputAudioTrack, OutputFormat } from "mediabunny";
+import type * as MB from "mediabunny";
+import { ensureMediabunny, mediabunny } from "@/lib/media/mediabunny-loader";
 
 /** ファイル選択ダイアログ／ドロップゾーンのaccept属性（音声ファイル） */
 export const AUDIO_INPUT_ACCEPT =
@@ -46,8 +21,13 @@ export const AUDIO_INPUT_ACCEPT =
 /** 動画から音声を取り出すツール用のaccept属性 */
 export const VIDEO_TO_AUDIO_INPUT_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.mkv,.m4v";
 
-/** 読み取りに使うコンテナ（動画ファイルの音声トラックも含む） */
-export const AUDIO_INPUT_FORMATS = [MP3, WAVE, OGG, FLAC, ADTS, MP4, QTFF, WEBM, MATROSKA];
+/**
+ * 読み取りに使うコンテナ（動画ファイルの音声トラックも含む）。
+ * 音声の部品（mediabunny）を読み込んだあとに使うため、関数にしている（ロードマップC 工程4）
+ */
+export function audioInputFormats() {
+  return [mediabunny().MP3, mediabunny().WAVE, mediabunny().OGG, mediabunny().FLAC, mediabunny().ADTS, mediabunny().MP4, mediabunny().QTFF, mediabunny().WEBM, mediabunny().MATROSKA];
+}
 
 /** ドロップゾーンのサイズ上限(MB)。動画ツールと同様、実質的に上限を設けない */
 export const AUDIO_DROPZONE_MAX_MB = 100000;
@@ -176,15 +156,15 @@ export function getAudioOutputOption(kind: AudioOutputKind): AudioOutputOption {
 export function outputFormatForKind(kind: AudioOutputKind): OutputFormat {
   switch (kind) {
     case "mp3":
-      return new Mp3OutputFormat();
+      return new (mediabunny().Mp3OutputFormat)();
     case "wav":
-      return new WavOutputFormat();
+      return new (mediabunny().WavOutputFormat)();
     case "m4a":
-      return new Mp4OutputFormat();
+      return new (mediabunny().Mp4OutputFormat)();
     case "ogg":
-      return new OggOutputFormat();
+      return new (mediabunny().OggOutputFormat)();
     case "flac":
-      return new FlacOutputFormat();
+      return new (mediabunny().FlacOutputFormat)();
   }
 }
 
@@ -201,11 +181,12 @@ let mp3EncoderReady: Promise<boolean> | null = null;
 export function ensureMp3Encoder(): Promise<boolean> {
   if (!mp3EncoderReady) {
     mp3EncoderReady = (async () => {
+      await ensureMediabunny();
       try {
-        if (await canEncodeAudio("mp3")) return true;
+        if (await mediabunny().canEncodeAudio("mp3")) return true;
         const { registerMp3Encoder } = await import("@mediabunny/mp3-encoder");
         registerMp3Encoder();
-        return await canEncodeAudio("mp3");
+        return await mediabunny().canEncodeAudio("mp3");
       } catch {
         return false;
       }
@@ -216,10 +197,11 @@ export function ensureMp3Encoder(): Promise<boolean> {
 
 /** この形式で書き出せるか（実行時にこのブラウザで確認する） */
 export async function canWriteAudioKind(kind: AudioOutputKind): Promise<boolean> {
+  await ensureMediabunny();
   const opt = getAudioOutputOption(kind);
   try {
     if (kind === "mp3") return await ensureMp3Encoder();
-    return await canEncodeAudio(opt.codec);
+    return await mediabunny().canEncodeAudio(opt.codec);
   } catch {
     return false;
   }
@@ -310,7 +292,7 @@ export function audioCodecLabel(codec: string | null | undefined): string {
 }
 
 export interface AudioInputInfo {
-  input: Input;
+  input: MB.Input;
   audioTrack: InputAudioTrack;
   codec: string | null;
   durationSec: number;
@@ -324,7 +306,8 @@ export interface AudioInputInfo {
  * 失敗時は分かりやすい日本語のErrorを投げる。
  */
 export async function inspectAudioFile(file: File): Promise<AudioInputInfo> {
-  const input = new Input({ source: new BlobSource(file), formats: AUDIO_INPUT_FORMATS });
+  await ensureMediabunny();
+  const input = new (mediabunny().Input)({ source: new (mediabunny().BlobSource)(file), formats: audioInputFormats() });
 
   let canRead = false;
   try {
@@ -392,7 +375,7 @@ export async function probeAudioFile(file: File): Promise<AudioProbe | null> {
 // ---------------------------------------------------------------------------
 
 export interface RunAudioConversionParams {
-  input: Input;
+  input: MB.Input;
   kind: AudioOutputKind;
   /** コーデックを明示する（元の音声をそのまま取り出す場合に使う）。省略時は形式の既定 */
   codec?: AudioCodec;
@@ -405,7 +388,7 @@ export interface RunAudioConversionParams {
   /** 範囲を切り出す（秒）。省略時は全体 */
   trim?: { start?: number; end?: number };
   /** サンプルごとの加工（音量調整など）。返した新しいサンプルが使われる */
-  process?: (sample: AudioSample) => AudioSample;
+  process?: (sample: MB.AudioSample) => MB.AudioSample;
   /** trueで必ず再エンコードする（圧縮・音量調整など） */
   forceTranscode?: boolean;
   onProgress?: (progress: number) => void;
@@ -434,6 +417,7 @@ export async function runAudioConversion({
   onProgress,
   cancelSignal,
 }: RunAudioConversionParams): Promise<RunAudioConversionResult> {
+  await ensureMediabunny();
   if (cancelSignal?.aborted) throw new AudioCanceledByUserError();
 
   // 元の音声をそのまま取り出す場合はエンコーダ不要（コンテナに詰め替えるだけ）
@@ -445,8 +429,8 @@ export async function runAudioConversion({
   }
   const opt = getAudioOutputOption(kind);
 
-  const target = new BufferTarget();
-  const output = new Output({ format: outputFormatForKind(kind), target });
+  const target = new (mediabunny().BufferTarget)();
+  const output = new (mediabunny().Output)({ format: outputFormatForKind(kind), target });
 
   // MP3（LAME）は最大2チャンネル。多チャンネルの音声は自動的にステレオへまとめる。
   let outChannels = channels;
@@ -456,7 +440,7 @@ export async function runAudioConversion({
     if (n > 2) outChannels = 2;
   }
 
-  const conversion = await Conversion.init({
+  const conversion = await mediabunny().Conversion.init({
     input,
     output,
     video: { discard: true },
@@ -526,7 +510,7 @@ export function gainToDb(gain: number): number {
  * 元のサンプルのcloseはmediabunny側が行うため、ここでは触らない。
  * 振幅は-1〜1にクリップする（音割れを起こす場合があるため、UIで警告を出す）。
  */
-export function applyGain(sample: AudioSample, gain: number): AudioSample {
+export function applyGain(sample: MB.AudioSample, gain: number): MB.AudioSample {
   const total = sample.numberOfFrames * sample.numberOfChannels;
   const buf = new Float32Array(total);
   sample.copyTo(buf, { planeIndex: 0, format: "f32" });
@@ -534,7 +518,7 @@ export function applyGain(sample: AudioSample, gain: number): AudioSample {
     const v = buf[i] * gain;
     buf[i] = v > 1 ? 1 : v < -1 ? -1 : v;
   }
-  return new AudioSample({
+  return new (mediabunny().AudioSample)({
     data: buf,
     format: "f32",
     numberOfChannels: sample.numberOfChannels,
@@ -553,7 +537,8 @@ export async function scanPeak(
   onProgress?: (progress: number) => void,
   cancelSignal?: AbortSignal
 ): Promise<number> {
-  const sink = new AudioSampleSink(audioTrack);
+  await ensureMediabunny();
+  const sink = new (mediabunny().AudioSampleSink)(audioTrack);
   let peak = 0;
   for await (const sample of sink.samples()) {
     if (cancelSignal?.aborted) {

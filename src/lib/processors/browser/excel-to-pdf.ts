@@ -344,11 +344,16 @@ async function convertImageToPng(bytes: Uint8Array, ext: string): Promise<Uint8A
     if (!mime) return null;
     const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: mime }));
     const canvas = document.createElement("canvas");
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(bitmap, 0, 0);
+    try {
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(bitmap, 0, 0);
+    } finally {
+      // 描画が終われば ImageBitmap は不要。失敗したときも必ず解放する
+      bitmap.close();
+    }
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
     return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
   } catch {

@@ -21,6 +21,7 @@ import {
   type VideoEditSettings,
 } from "@/lib/video/edit-settings";
 import { getToolSeoContent } from "@/lib/seo/tool-content";
+import { ensureMediabunny } from "@/lib/media/mediabunny-loader";
 
 /**
  * 動画編集 工程2（形式変換・圧縮・解像度・フレームレートの4ツール統合）のテスト。
@@ -98,6 +99,10 @@ async function openWithVideo(page: Page, toolId: string, file: string) {
 
 baseTest.describe("設定の仕組み", () => {
   const base: VideoEditSettings = { container: "mp4", quality: "original", resolution: "original", fps: "original", ...EDIT_DEFAULTS };
+  // 画質の設定値は mediabunny の定数を使うため、先に読み込んでおく（ページでは処理の直前に読み込む）
+  baseTest.beforeAll(async () => {
+    await ensureMediabunny();
+  });
 
   baseTest("何も変えないときは映像のオプションを渡さない（使えるならコピーで済ませる。従来の形式変換と同じ）", () => {
     expect(buildVideoOptions(base, { width: 1280, height: 720 })).toBeUndefined();

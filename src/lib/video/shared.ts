@@ -37,31 +37,18 @@
  * トップ・料金・About・画像/PDFツール等のバンドルには含まれない
  * （本番ビルドでの検証結果は最終報告を参照）。
  */
-
-import {
-  BlobSource,
-  CanvasSink,
-  Conversion,
-  Input,
-  Mp4OutputFormat,
-  MP4,
-  Output,
-  QTFF,
-  Quality,
-  WEBM,
-  WebMOutputFormat,
-  canEncodeVideo,
-  getFirstEncodableVideoCodec,
-  type ConversionAudioOptions,
-  type ConversionCopyOptions,
-  type ConversionVideoOptions,
-  type InputVideoTrack,
-  type MetadataTags,
-} from "mediabunny";
+import type { ConversionAudioOptions, ConversionCopyOptions, ConversionVideoOptions, InputVideoTrack, MetadataTags } from "mediabunny";
 import { createBlobStreamTarget, moveMoovToFront } from "./stream-output";
+import type * as MB from "mediabunny";
+import { ensureMediabunny, mediabunny } from "@/lib/media/mediabunny-loader";
 
-/** このアプリが「対応形式」として明示的にサポートする入力コンテナ */
-export const SUPPORTED_INPUT_FORMATS = [MP4, QTFF, WEBM];
+/**
+ * このアプリが「対応形式」として明示的にサポートする入力コンテナ。
+ * 動画の部品（mediabunny）を読み込んだあとに使うため、関数にしている（ロードマップC 工程4：ページを開いた時点では部品を読み込まない）
+ */
+export function supportedInputFormats() {
+  return [mediabunny().MP4, mediabunny().QTFF, mediabunny().WEBM];
+}
 
 /** ファイル選択ダイアログ／ドロップゾーンのaccept属性（実際にdemuxを検証済みの拡張子のみ） */
 export const VIDEO_INPUT_ACCEPT =
@@ -198,7 +185,7 @@ export function discardReasonMessage(kind: "video" | "audio", reason: string, co
 export function outputFormatFor(container: OutputContainer) {
   // MP4は、書き出しの途中でデータをメモリにためないよう、再生情報（moov）を最後に書く（fastStart: false）。
   // 書き出し後に moov を先頭へ移す（stream-output.ts の moveMoovToFront）ため、できあがるファイルは従来と同じ並び。
-  return container === "mp4" ? new Mp4OutputFormat({ fastStart: false }) : new WebMOutputFormat();
+  return container === "mp4" ? new (mediabunny().Mp4OutputFormat)({ fastStart: false }) : new (mediabunny().WebMOutputFormat)();
 }
 
 export function mimeTypeFor(container: OutputContainer): string {
@@ -212,10 +199,10 @@ export function mimeTypeFor(container: OutputContainer): string {
  * ここではBlobSourceを使い、File全体をサーバーへ送ることなく、
  * ブラウザ内のメモリ／ストリームとしてのみ参照する。
  */
-export function createVideoInput(file: File): Input {
-  return new Input({
-    source: new BlobSource(file),
-    formats: SUPPORTED_INPUT_FORMATS,
+export function createVideoInput(file: File): MB.Input {
+  return new (mediabunny().Input)({
+    source: new (mediabunny().BlobSource)(file),
+    formats: supportedInputFormats(),
   });
 }
 
@@ -242,7 +229,7 @@ export const HEVC_UNSUPPORTED_MESSAGE =
   "この動画はH.265（HEVC）形式ですが、お使いのブラウザでは読み込めません。H.265の読み込みには、Safari、またはH.265に対応したパソコン・スマートフォンの最新のChrome・Edgeが必要です（Firefoxは非対応）。対応ブラウザでお試しください。";
 
 export interface VideoInputInfo {
-  input: Input;
+  input: MB.Input;
   videoTrack: InputVideoTrack;
   /** 映像コーデック("avc" / "hevc" / "vp9" など) */
   codec: string | null;
@@ -261,6 +248,7 @@ export interface VideoInputInfo {
  * （internal stack traceは含めない。開発指示書 41章）。
  */
 export async function inspectVideoFile(file: File): Promise<VideoInputInfo> {
+  await ensureMediabunny();
   const input = createVideoInput(file);
 
   let canRead: boolean;
@@ -328,6 +316,7 @@ export interface VideoCodecProbe {
  * 読み取れないファイルは null。
  */
 export async function probeVideoCodec(file: File): Promise<VideoCodecProbe | null> {
+  await ensureMediabunny();
   const input = createVideoInput(file);
   try {
     if (!(await input.canRead())) return null;
@@ -352,8 +341,9 @@ export async function probeVideoCodec(file: File): Promise<VideoCodecProbe | nul
  * 引っかかるケースも可能な範囲で検出する。
  */
 export async function checkH264EncodeSupport(width: number, height: number): Promise<boolean> {
+  await ensureMediabunny();
   try {
-    return await canEncodeVideo("avc", { width, height });
+    return await mediabunny().canEncodeVideo("avc", { width, height });
   } catch {
     return false;
   }
@@ -364,9 +354,10 @@ export async function checkH264EncodeSupport(width: number, height: number): Pro
  * 形式に入れられるコーデックのうち、どれか1つでも実際にエンコードできれば true。
  */
 export async function canEncodeVideoInto(container: OutputContainer, width: number, height: number): Promise<boolean> {
+  await ensureMediabunny();
   try {
     const codecs = outputFormatFor(container).getSupportedVideoCodecs();
-    return (await getFirstEncodableVideoCodec(codecs, { width, height })) !== null;
+    return (await mediabunny().getFirstEncodableVideoCodec(codecs, { width, height })) !== null;
   } catch {
     return false;
   }
@@ -410,13 +401,13 @@ export const COMPRESSION_LEVEL_OPTIONS: {
 /** 画質の指定("high"=高画質 / "medium"=標準 / "low"=ファイルサイズ優先) */
 export type VideoQualityName = "high" | "medium" | "low";
 
-export function qualityFromName(name: VideoQualityName): Quality {
-  return new Quality(name);
+export function qualityFromName(name: VideoQualityName): MB.Quality {
+  return new (mediabunny().Quality)(name);
 }
 
-export function qualityFor(level: CompressionLevel): Quality {
+export function qualityFor(level: CompressionLevel): MB.Quality {
   const opt = COMPRESSION_LEVEL_OPTIONS.find((o) => o.value === level);
-  return new Quality(opt?.quality ?? "medium");
+  return new (mediabunny().Quality)(opt?.quality ?? "medium");
 }
 
 /** 解像度プリセット。入力より大きい場合はアップスケールしないため候補から除外する（開発指示書 20章） */
@@ -484,8 +475,8 @@ export function createThumbnailCanvasSink(
   videoTrack: InputVideoTrack,
   displayWidth: number,
   displayHeight: number
-): CanvasSink {
-  return new CanvasSink(videoTrack, thumbnailCanvasOptionsFor(displayWidth, displayHeight));
+): MB.CanvasSink {
+  return new (mediabunny().CanvasSink)(videoTrack, thumbnailCanvasOptionsFor(displayWidth, displayHeight));
 }
 
 export interface VideoOutputSummary {
@@ -502,9 +493,10 @@ export interface VideoOutputSummary {
  * 設定から「なったはず」の値を計算するのではなく、できあがったファイルそのものを確かめて結果に表示する。
  */
 export async function inspectOutputSummary(blob: Blob, container: OutputContainer): Promise<VideoOutputSummary> {
-  const input = new Input({
-    source: new BlobSource(blob),
-    formats: container === "mp4" ? [MP4] : [WEBM],
+  await ensureMediabunny();
+  const input = new (mediabunny().Input)({
+    source: new (mediabunny().BlobSource)(blob),
+    formats: container === "mp4" ? [mediabunny().MP4] : [mediabunny().WEBM],
   });
   try {
     const track = await input.getPrimaryVideoTrack();
@@ -553,7 +545,7 @@ export class VideoAudioWouldBeLostError extends Error {
 }
 
 export interface RunConversionParams {
-  input: Input;
+  input: MB.Input;
   container: OutputContainer;
   video?: ConversionVideoOptions;
   audio?: ConversionAudioOptions;
@@ -619,20 +611,21 @@ export async function runConversion({
   dropAudio = false,
   cancelSignal,
 }: RunConversionParams): Promise<RunConversionResult> {
+  await ensureMediabunny();
   if (cancelSignal?.aborted) {
     throw new VideoCanceledByUserError();
   }
 
   const sourceAudio = await input.getPrimaryAudioTrack().catch(() => null);
   const { target, assembler } = createBlobStreamTarget();
-  const output = new Output({
+  const output = new (mediabunny().Output)({
     format: outputFormatFor(container),
     target,
   });
 
   let succeeded = false;
   try {
-    const conversion = await Conversion.init({
+    const conversion = await mediabunny().Conversion.init({
       input,
       output,
       video,
@@ -715,7 +708,8 @@ export async function runConversion({
  * 完成した結果として渡さないための最低限の確認。
  */
 async function verifyOutput(blob: Blob, container: OutputContainer, expectAudio: boolean): Promise<void> {
-  const check = new Input({ source: new BlobSource(blob), formats: container === "mp4" ? [MP4] : [WEBM] });
+  await ensureMediabunny();
+  const check = new (mediabunny().Input)({ source: new (mediabunny().BlobSource)(blob), formats: container === "mp4" ? [mediabunny().MP4] : [mediabunny().WEBM] });
   try {
     const videoTrack = await check.getPrimaryVideoTrack().catch(() => null);
     if (!videoTrack) {

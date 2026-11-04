@@ -364,6 +364,70 @@ test("画像(PNG)がPDFに埋め込まれる", async ({ page }) => {
   expect(countPixels(img, 0, 0, img.w, img.h, reddish)).toBeGreaterThan(200);
 });
 
+/** 赤一色の16×16のGIF（PNGに変換してから埋め込む経路の確認用。架空の図形） */
+const RED_GIF = new Uint8Array(Buffer.from("R0lGODdhEAAQAIEAAP8AAAAAAAAAAAAAACwAAAAAEAAQAEAIHQABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFgQEBADs=", "base64"));
+
+/** GIF画像を1つ置いたシートのxlsx */
+function gifXlsx(): Uint8Array {
+  const drawing = `<?xml version="1.0" encoding="UTF-8"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>3</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Pic"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rIdI1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm><a:prstGeom prst="rect"/></xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdI1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.gif"/></Relationships>`;
+  const xml = sheetXml({
+    cols: '<col min="1" max="4" width="12" customWidth="1"/>',
+    rows: cellsXml({ 1: { A: { v: "gif" } } }),
+    extraAfterData: "",
+  }).replace("</worksheet>", '<drawing r:id="rIdD1"/></worksheet>');
+  return buildXlsx({ sheets: [{ name: "画像", xml, drawing: { xml: drawing, rels } }], media: { "xl/media/image1.gif": RED_GIF } });
+}
+
+/** ImageBitmap を作った数・閉じた数を数える（ページを開く前に仕込む） */
+async function countImageBitmaps(page: Page, opts: { failDraw?: boolean } = {}) {
+  await page.addInitScript((failDraw) => {
+    const w = window as unknown as { __bm: { created: number; closed: number } };
+    w.__bm = { created: 0, closed: 0 };
+    const orig = window.createImageBitmap.bind(window);
+    window.createImageBitmap = (async (...args: Parameters<typeof createImageBitmap>) => {
+      const bm = await orig(...args);
+      w.__bm.created++;
+      const close = bm.close.bind(bm);
+      bm.close = () => {
+        w.__bm.closed++;
+        close();
+      };
+      return bm;
+    }) as typeof createImageBitmap;
+    if (failDraw) {
+      const draw = CanvasRenderingContext2D.prototype.drawImage;
+      CanvasRenderingContext2D.prototype.drawImage = function (this: CanvasRenderingContext2D, ...args: unknown[]) {
+        if (args[0] instanceof ImageBitmap) throw new Error("simulated draw failure");
+        return (draw as (...a: unknown[]) => void).apply(this, args);
+      };
+    }
+  }, opts.failDraw ?? false);
+}
+
+test("画像(GIF)はPNGにしてからPDFに埋め込まれ、変換に使った ImageBitmap は閉じられる（ロードマップC 工程4）", async ({ page }) => {
+  test.setTimeout(120_000);
+  await countImageBitmaps(page);
+  const { pdf } = await convert(page, gifXlsx());
+  const list = execFileSync("pdfimages", ["-list", pdf]).toString();
+  expect(list.split("\n").filter((l) => /\bimage\b/.test(l)).length).toBeGreaterThanOrEqual(1);
+  const img = render(pdf);
+  expect(countPixels(img, 0, 0, img.w, img.h, reddish)).toBeGreaterThan(200);
+  const bm = await page.evaluate(() => (window as unknown as { __bm: { created: number; closed: number } }).__bm);
+  expect(bm.created).toBeGreaterThanOrEqual(1);
+  expect(bm.closed).toBe(bm.created);
+});
+
+test("GIFの変換の途中で失敗しても ImageBitmap は閉じられ、PDFは作られる（ロードマップC 工程4）", async ({ page }) => {
+  test.setTimeout(120_000);
+  await countImageBitmaps(page, { failDraw: true });
+  const { pdf } = await convert(page, gifXlsx());
+  expect(fs.readFileSync(pdf).subarray(0, 5).toString()).toBe("%PDF-");
+  const bm = await page.evaluate(() => (window as unknown as { __bm: { created: number; closed: number } }).__bm);
+  expect(bm.created).toBeGreaterThanOrEqual(1);
+  expect(bm.closed).toBe(bm.created);
+});
+
 test("非表示のシートは、最初は変換対象に選ばれない", async ({ page }) => {
   test.setTimeout(120_000);
   const visible = sheetXml({ rows: cellsXml({ 1: { A: { v: "VISIBLE_SHEET" } } }) });

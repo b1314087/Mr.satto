@@ -41,7 +41,7 @@ export function AudioMergeTool() {
   const [bitrate, setBitrate] = useState(DEFAULT_AUDIO_BITRATE_KBPS);
   const [probes, setProbes] = useState<Map<File, AudioProbe | null>>(new Map());
   const job = useAudioJob<Awaited<ReturnType<AudioMergeProcessor["process"]>>>();
-  const writable = useWritableAudioKinds();
+  const writable = useWritableAudioKinds(files.length > 0);
   const choice = coerceAudioChoice(rawChoice, writable);
 
   // 追加されたファイルを1つずつ調べる（長さの合計を出すため）。結果が入るたびに次のファイルへ進む

@@ -40,7 +40,7 @@ export function AudioCompressTool() {
   const [bitrate, setBitrate] = useState<number>(128);
   const [mono, setMono] = useState(false);
   const job = useAudioJob<Awaited<ReturnType<AudioCompressProcessor["process"]>>>();
-  const writable = useWritableAudioKinds();
+  const writable = useWritableAudioKinds(file !== null);
   const choice = coerceAudioChoice(rawChoice, writable, true);
   const { previewUrl, probe, probeDone } = useAudioPreview(file);
 

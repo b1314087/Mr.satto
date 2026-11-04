@@ -1,4 +1,6 @@
-import { StreamTarget, type StreamTargetChunk } from "mediabunny";
+import type { StreamTargetChunk } from "mediabunny";
+import type * as MB from "mediabunny";
+import { mediabunny } from "@/lib/media/mediabunny-loader";
 
 /**
  * 動画の書き出し先（動画編集 工程1：書き出し時のメモリ削減）。
@@ -101,7 +103,7 @@ export class BlobAssembler {
 }
 
 /** mediabunny の StreamTarget と、その書き込みを受け取る BlobAssembler を作る */
-export function createBlobStreamTarget(): { target: StreamTarget; assembler: BlobAssembler } {
+export function createBlobStreamTarget(): { target: MB.StreamTarget; assembler: BlobAssembler } {
   const assembler = new BlobAssembler();
   const writable = new WritableStream<StreamTargetChunk>({
     write(chunk) {
@@ -111,7 +113,7 @@ export function createBlobStreamTarget(): { target: StreamTarget; assembler: Blo
       assembler.clear();
     },
   });
-  const target = new StreamTarget(writable, { chunked: true, chunkSize: STREAM_CHUNK_SIZE });
+  const target = new (mediabunny().StreamTarget)(writable, { chunked: true, chunkSize: STREAM_CHUNK_SIZE });
   return { target, assembler };
 }
 

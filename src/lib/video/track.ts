@@ -1,6 +1,7 @@
-import { CanvasSink, type InputVideoTrack } from "mediabunny";
+import type { InputVideoTrack } from "mediabunny";
 import { VideoCanceledByUserError } from "./shared";
 import { LOW_SCORE, type Box, type Keyframe, type TrackPoint } from "./mosaic-regions";
+import { ensureMediabunny, mediabunny } from "@/lib/media/mediabunny-loader";
 
 /**
  * 動画モザイク（Stage 5）：指定した範囲の追跡。ブラウザ内だけで行う（外部送信・AIなし・新しい依存なし）。
@@ -137,7 +138,6 @@ function normalize(a: Float32Array): number {
   }
   return Math.sqrt(ss);
 }
-
 
 export class TemplateTracker {
   private tw: number;
@@ -303,6 +303,7 @@ function yieldToUi(): Promise<void> {
 }
 
 export async function trackRegion(p: TrackParams): Promise<TrackPoint[]> {
+  await ensureMediabunny();
   const s = analysisScale(p.width, p.anchor);
   const aw = Math.max(16, Math.round(p.width * s));
   const ah = Math.max(16, Math.round(p.height * s));
@@ -315,7 +316,7 @@ export async function trackRegion(p: TrackParams): Promise<TrackPoint[]> {
   const to = Math.min(p.durationSec, p.to ?? p.durationSec);
   const total = Math.max(1e-3, (p.direction === "both" ? to - from : to - p.anchor.t));
   let done = 0;
-  const sink = new CanvasSink(p.videoTrack, { width: aw, height: ah, fit: "fill", poolSize: 2 });
+  const sink = new (mediabunny().CanvasSink)(p.videoTrack, { width: aw, height: ah, fit: "fill", poolSize: 2 });
   const reader = new LumReader(aw, ah);
   const keyAt = (t: number) => p.keyframes.find((k) => Math.abs(k.t - t) <= frameSec / 2 + 1e-6);
   const check = () => {

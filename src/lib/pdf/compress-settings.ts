@@ -168,9 +168,28 @@ export function formatTargetMB(bytes: number): string {
   return `${bytesToTargetMB(bytes).toFixed(2)}MB`;
 }
 
+/** PDFとして読み込めなかったときの案内（壊れたPDF・拡張子だけPDFのファイルなど） */
+export function unreadablePdfMessage(fileName: string): string {
+  return `「${fileName}」はPDFとして読み込めませんでした。ファイルが壊れているか、PDFではないファイルの可能性があります。別のPDFを選んでください。`;
+}
+
+/** 選んだPDFを読み込めるかの確認の状態（サイズによる案内は、読み込めると分かってから出す） */
+export type PdfReadState = { status: "checking" } | { status: "ok" } | { status: "error"; message: string };
+
+/**
+ * サイズの比較に使ってよい元のサイズを返す。
+ * PDFとして読み込めると確認できたときだけ元のサイズを返し、確認中・読み込めないときは null
+ * （壊れたPDFに「すでに十分小さい」の案内を出さないため。ロードマップC 工程4）。
+ */
+export function comparableOriginalBytes(sizeBytes: number | null, read: PdfReadState | null): number | null {
+  if (sizeBytes === null || read === null || read.status !== "ok") return null;
+  return sizeBytes;
+}
+
 /**
  * 目標のサイズ（MB）の入力を確かめる。全角の数字・小数点も受け付ける。
  * 元のPDFがすでに目標以下のときは、圧縮しなくてよいことを伝える。
+ * originalBytes には、PDFとして読み込めると確認できたときだけ値を渡す（comparableOriginalBytes）。
  */
 export function parseTargetMB(raw: string, originalBytes: number | null): { ok: true; bytes: number; mb: number } | { ok: false; message: string } {
   const text = raw

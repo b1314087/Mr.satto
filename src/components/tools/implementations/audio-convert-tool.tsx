@@ -40,7 +40,7 @@ export function AudioConvertTool() {
   const [rawChoice, setChoice] = useState<AudioOutputChoice>("mp3");
   const [bitrate, setBitrate] = useState(DEFAULT_AUDIO_BITRATE_KBPS);
   const job = useAudioJob<Awaited<ReturnType<AudioConvertProcessor["process"]>>>();
-  const writable = useWritableAudioKinds();
+  const writable = useWritableAudioKinds(file !== null);
   const choice = coerceAudioChoice(rawChoice, writable);
   const { previewUrl, probe, probeDone } = useAudioPreview(file);
 

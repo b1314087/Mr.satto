@@ -21,6 +21,8 @@ import {
   parseTargetMB,
   sizeReduction,
   suggestTargetMB,
+  comparableOriginalBytes,
+  unreadablePdfMessage,
 } from "@/lib/pdf/compress-settings";
 
 /**
@@ -292,13 +294,84 @@ test.describe("PDF圧縮：数値の設定と結果", () => {
     await expect(page.getByTestId("compress-signature-warning")).toContainText("署名は無効");
   });
 
-  test("壊れたPDFは、これまでどおりの読み込みエラーを出す", async ({ page }) => {
-    const broken = workPath("broken.pdf");
-    fs.writeFileSync(broken, "this is not a pdf");
-    await openWithPdf(page, broken);
-    await page.getByRole("button", { name: "圧縮する" }).click();
-    await expect(page.getByText(/broken\.pdf の読み込みに失敗しました/)).toBeVisible({ timeout: 20_000 });
+});
+
+// ---------------------------------------------------------------------------
+// 2-2. 読み込めるかの確認と案内（ロードマップC 工程4：サイズの案内より先に、PDFとして読み込めるかを確かめる）
+// ---------------------------------------------------------------------------
+plainTest.describe("読み込めるかの確認（画面なし）", () => {
+  plainTest("元のサイズは、読み込めると確認できたときだけ比較に使う（確認中・読み込めないときは比べない）", () => {
+    expect(comparableOriginalBytes(30_000, { status: "ok" })).toBe(30_000);
+    expect(comparableOriginalBytes(30_000, { status: "checking" })).toBeNull();
+    expect(comparableOriginalBytes(30_000, { status: "error", message: "x" })).toBeNull();
+    expect(comparableOriginalBytes(30_000, null)).toBeNull();
+    expect(comparableOriginalBytes(null, { status: "ok" })).toBeNull();
+    // 読み込めないPDFには「すでに十分小さい」を出さない
+    expect(parseTargetMB("0.5", comparableOriginalBytes(30_000, { status: "error", message: "x" })).ok).toBe(true);
+    expect(unreadablePdfMessage("a.pdf")).toContain("「a.pdf」はPDFとして読み込めませんでした");
+  });
+});
+
+test.describe("PDF圧縮：読み込めないPDFと、圧縮中の失敗", () => {
+  async function selectFile(page: Page, file: string) {
+    await page.goto("/tools/pdf-compress");
+    await waitForFileInputHydrated(page);
+    await page.locator('input[type="file"]').first().setInputFiles(file);
+  }
+
+  test("拡張子だけPDFのファイル（中身は文字）は、読み込めないことを伝え、「すでに十分小さい」とは言わない。圧縮は押せない", async ({ page }) => {
+    const fake = workPath("fake.pdf");
+    fs.writeFileSync(fake, "this is not a pdf");
+    await selectFile(page, fake);
+    await expect(page.getByTestId("compress-unreadable")).toContainText("「fake.pdf」はPDFとして読み込めませんでした", { timeout: 20_000 });
+    await expect(page.getByText("すでに十分小さい")).toHaveCount(0);
+    await expect(page.getByTestId("compress-target-error")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "圧縮する" })).toBeDisabled();
+    // 「画質を指定する」に切り替えても、圧縮はできない
+    await page.getByTestId("compress-mode-quality").check();
+    await expect(page.getByRole("button", { name: "圧縮する" })).toBeDisabled();
     await expect(page.getByTestId("compress-result")).toHaveCount(0);
+  });
+
+  test("壊れたPDF（途中で切れている）は、読み込めないことを伝え、「すでに十分小さい」とは言わない", async ({ page }) => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([200, 200]).drawText("broken", { x: 20, y: 100, size: 12, font });
+    const bytes = await doc.save();
+    const broken = workPath("broken.pdf");
+    // 先頭のヘッダーだけを残し、ページの情報を切り落とす（小さいファイルなので、従来は「すでに十分小さい」が出ていた）
+    fs.writeFileSync(broken, Buffer.from(bytes).subarray(0, 40));
+    await selectFile(page, broken);
+    await expect(page.getByTestId("compress-unreadable")).toContainText("「broken.pdf」はPDFとして読み込めませんでした", { timeout: 20_000 });
+    await expect(page.getByText("すでに十分小さい")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "圧縮する" })).toBeDisabled();
+  });
+
+  test("読み込めないPDFのあとに正常なPDFを選び直すと、案内が消えて圧縮できる", async ({ page }) => {
+    const fake = workPath("fake2.pdf");
+    fs.writeFileSync(fake, "not a pdf at all");
+    await selectFile(page, fake);
+    await expect(page.getByTestId("compress-unreadable")).toBeVisible({ timeout: 20_000 });
+    const src = await writePhotoPdf(page, "photo-after-fake.pdf");
+    await page.locator('input[type="file"]').first().setInputFiles(src);
+    await expect(page.getByTestId("compress-unreadable")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "圧縮する" })).toBeEnabled({ timeout: 20_000 });
+  });
+
+  test("圧縮処理の途中で失敗したときは、圧縮の失敗として伝え、結果（ダウンロード）を出さない", async ({ page }) => {
+    await page.goto("/tools/pdf-compress");
+    const src = await writePhotoPdf(page, "photo-fail.pdf");
+    await openWithPdf(page, src);
+    // 画像の作り直し（canvas の JPEG 書き出し）で失敗させる
+    await page.evaluate(() => {
+      HTMLCanvasElement.prototype.toBlob = function () {
+        throw new Error("simulated encode failure");
+      };
+    });
+    await page.getByRole("button", { name: "圧縮する" }).click();
+    await expect(page.getByText("PDFの画像の圧縮に失敗しました")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("compress-result")).toHaveCount(0);
+    await expect(page.getByTestId("compress-unreadable")).toHaveCount(0);
   });
 });
 

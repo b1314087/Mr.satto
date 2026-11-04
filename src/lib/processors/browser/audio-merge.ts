@@ -1,4 +1,3 @@
-import { AudioBufferSource, BufferTarget, Output } from "mediabunny";
 import { BrowserProcessor } from "../types";
 import {
   AudioCanceledByUserError,
@@ -9,6 +8,7 @@ import {
   toFriendlyAudioError,
   type AudioOutputKind,
 } from "@/lib/audio/shared";
+import { ensureMediabunny, mediabunny } from "@/lib/media/mediabunny-loader";
 
 export interface AudioMergeInput {
   files: File[];
@@ -62,6 +62,7 @@ function toStereo(buffer: AudioBuffer): AudioBuffer {
  */
 export class AudioMergeProcessor extends BrowserProcessor<AudioMergeInput, AudioMergeOutput> {
   async process({ files, kind, bitrateKbps, onProgress, cancelSignal }: AudioMergeInput): Promise<AudioMergeOutput> {
+    await ensureMediabunny();
     if (files.length < 2) throw new Error("結合するには2つ以上のファイルを選んでください。");
     if (cancelSignal?.aborted) throw new AudioCanceledByUserError();
     if (!(await canWriteAudioKind(kind))) {
@@ -71,9 +72,9 @@ export class AudioMergeProcessor extends BrowserProcessor<AudioMergeInput, Audio
     }
 
     const opt = getAudioOutputOption(kind);
-    const target = new BufferTarget();
-    const output = new Output({ format: outputFormatForKind(kind), target });
-    const source = new AudioBufferSource({
+    const target = new (mediabunny().BufferTarget)();
+    const output = new (mediabunny().Output)({ format: outputFormatForKind(kind), target });
+    const source = new (mediabunny().AudioBufferSource)({
       codec: opt.codec,
       ...(opt.lossy ? { bitrate: (bitrateKbps ?? DEFAULT_AUDIO_BITRATE_KBPS) * 1000 } : {}),
     });

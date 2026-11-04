@@ -5,7 +5,7 @@ import { computeImagePageLayout } from "./image-to-pdf-layout";
 import { stripExtension } from "@/lib/utils/format";
 import { assertValidPageRange, parsePageSelection, rangeToIndices } from "@/lib/pdf/page-selection";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
-import { TARGET_LADDER, type PdfCompressSettings } from "@/lib/pdf/compress-settings";
+import { TARGET_LADDER, unreadablePdfMessage, type PdfCompressSettings } from "@/lib/pdf/compress-settings";
 import { hasDigitalSignature, recompressPdfImages, type RecompressStats } from "./pdf-image-recompress";
 import {
   PAGE_NUMBER_COLOR,
@@ -81,6 +81,23 @@ export async function loadPdfDoc(file: File, options?: { updateMetadata?: boolea
     throw new Error(
       `${file.name} の読み込みに失敗しました。PDFファイルが破損している可能性があります。`
     );
+  }
+}
+
+/**
+ * PDFとして読み込めるかを確かめる（PDF圧縮：サイズによる案内を出す前の確認。ロードマップC 工程4）。
+ * 読み込めれば null、読み込めなければ利用者向けのメッセージを返す。圧縮と同じ読み込み方（loadPdfDoc）で確かめる。
+ */
+export async function checkPdfReadable(file: File): Promise<string | null> {
+  try {
+    const doc = await loadPdfDoc(file, { updateMetadata: false });
+    if (doc.getPageCount() === 0) return unreadablePdfMessage(file.name);
+    return null;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "";
+    // パスワード保護は、読み込み時と同じ案内をそのまま使う
+    if (message.startsWith("パスワード保護")) return message;
+    return unreadablePdfMessage(file.name);
   }
 }
 

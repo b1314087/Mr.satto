@@ -1,4 +1,3 @@
-import { WEBM } from "mediabunny";
 import { BrowserProcessor } from "../types";
 import {
   VideoCanceledByUserError,
@@ -6,6 +5,7 @@ import {
   runConversion,
   type OutputContainer,
 } from "@/lib/video/shared";
+import { ensureMediabunny, mediabunny } from "@/lib/media/mediabunny-loader";
 
 export interface VideoMetadataRemoveInput {
   file: File;
@@ -65,6 +65,7 @@ export class VideoMetadataRemoveProcessor extends BrowserProcessor<
     cancelSignal,
     dropAudio,
   }: VideoMetadataRemoveInput): Promise<VideoMetadataRemoveOutput> {
+    await ensureMediabunny();
     if (cancelSignal?.aborted) {
       throw new VideoCanceledByUserError();
     }
@@ -76,7 +77,7 @@ export class VideoMetadataRemoveProcessor extends BrowserProcessor<
       }
 
       const inputFormat = await info.input.getFormat();
-      const outputContainer: OutputContainer = inputFormat === WEBM ? "webm" : "mp4";
+      const outputContainer: OutputContainer = inputFormat === mediabunny().WEBM ? "webm" : "mp4";
 
       const { blob, sizeBytes } = await runConversion({
         input: info.input,
