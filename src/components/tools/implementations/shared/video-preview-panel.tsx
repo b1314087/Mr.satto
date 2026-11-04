@@ -1,6 +1,6 @@
 "use client";
 
-import type { SyntheticEvent } from "react";
+import type { ReactNode, RefObject, SyntheticEvent } from "react";
 import { formatBytes } from "@/lib/utils/format";
 import { formatDuration } from "@/lib/video/estimate";
 import type { VideoPreviewMeta } from "@/lib/video/use-video-preview";
@@ -27,6 +27,8 @@ export function VideoPreviewPanel({
   outputRows,
   outputNote,
   className = "",
+  videoRef,
+  children,
 }: {
   file: File;
   previewUrl: string | null;
@@ -40,6 +42,10 @@ export function VideoPreviewPanel({
   outputRows?: VideoOutputRow[];
   outputNote?: string;
   className?: string;
+  /** 元の動画の <video>（再生位置を読みたいとき。動画編集 工程3の切り取り） */
+  videoRef?: RefObject<HTMLVideoElement | null>;
+  /** 動画のすぐ下に置くもの（切り取りの操作など） */
+  children?: ReactNode;
 }) {
   const sourceParts: string[] = [];
   if (meta && meta.width > 0) sourceParts.push(`${meta.width}×${meta.height}`);
@@ -58,6 +64,7 @@ export function VideoPreviewPanel({
       <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">元の動画</p>
       {previewUrl && (
         <video
+          ref={videoRef}
           src={previewUrl}
           onLoadedMetadata={onLoadedMetadata}
           controls
@@ -66,6 +73,7 @@ export function VideoPreviewPanel({
           className="max-h-64 w-full rounded-lg bg-black"
         />
       )}
+      {children}
       <p className="break-all text-xs text-neutral-500 dark:text-neutral-400">
         {file.name}（{sourceParts.join(" ・ ")}）
       </p>

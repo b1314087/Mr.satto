@@ -27,11 +27,18 @@ import {
   VIDEO_EDIT_PRESETS,
   compareSizes,
   estimateOutputRange,
+  formatTimeInput,
   fpsChoicesFor,
+  hasTrim,
   missingChoice,
+  needsReencode,
+  parseTimeInput,
   plannedDimensions,
+  plannedDuration,
   resolutionChoicesFor,
+  trimError,
   type QualityChoice,
+  type RotateChoice,
   type VideoEditFocus,
   type VideoEditSettings,
   type VideoEditToolId,
@@ -79,6 +86,9 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
   const runIdRef = useRef(0);
   // 音声を書き出せないときの案内（音声なしで書き出すかを選んでもらう）
   const [audioLoss, setAudioLoss] = useState<string | null>(null);
+  // 切り取りの入力欄の文字（入力途中の「1:」なども残せるよう、設定とは別に持つ）
+  const [trimText, setTrimText] = useState({ start: "", end: "" });
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
 
   useRevokeObjectUrlOnChange(result?.url);
   const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
@@ -114,7 +124,9 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     setCanceling(false);
     setAudioLoss(null);
     // 解像度・フレームレートの選択肢は動画によって変わるため、ページの初期値に戻す（形式・画質はそのまま）
-    setSettings((cur) => ({ ...cur, resolution: preset.initial.resolution, fps: preset.initial.fps }));
+    // 切り取りの範囲も動画ごとに違うため、最初から最後までに戻す
+    setSettings((cur) => ({ ...cur, resolution: preset.initial.resolution, fps: preset.initial.fps, trimStart: 0, trimEnd: null }));
+    setTrimText({ start: "", end: "" });
     setDetecting(true);
     try {
       const info = await inspectVideoFile(selected);
@@ -142,8 +154,28 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     }
   }
 
+  /** 切り取りの入力欄の変更（読める時間だけ設定に反映する） */
+  function changeTrimText(which: "start" | "end", text: string) {
+    setTrimText((cur) => ({ ...cur, [which]: text }));
+    const sec = parseTimeInput(text);
+    if (which === "start") update({ trimStart: sec === null ? 0 : sec });
+    else update({ trimEnd: sec });
+  }
+
+  /** プレビューの今の再生位置を、開始または終了にする */
+  function setTrimFromPlayer(which: "start" | "end") {
+    const t = previewVideoRef.current?.currentTime;
+    if (t === undefined || !Number.isFinite(t)) return;
+    changeTrimText(which, formatTimeInput(t));
+  }
+
+  function resetTrim() {
+    setTrimText({ start: "", end: "" });
+    update({ trimStart: 0, trimEnd: null });
+  }
+
   async function handleRun(options: { dropAudio?: boolean } = {}) {
-    if (!file || missingChoice(settings)) return;
+    if (!file || missingChoice(settings) || (source && trimError(settings, source.durationSec))) return;
     const controller = new AbortController();
     cancelControllerRef.current = controller;
     const runId = ++runIdRef.current;
@@ -201,6 +233,8 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     setCanceling(false);
     setAudioLoss(null);
     setDetecting(false);
+    setTrimText({ start: "", end: "" });
+    setSettings((cur) => ({ ...cur, trimStart: 0, trimEnd: null }));
   }
 
   function handleCancel() {
@@ -219,14 +253,78 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     downloadBlob(result.blob, outputName(result.outputContainer));
   }
 
-  // 作り直しが必要か（画質・解像度・フレームレートのどれかを変えるとき）
-  const needsTranscode = settings.quality !== "original" || typeof settings.resolution === "number" || typeof settings.fps === "number";
+  // 作り直しが必要か（画質・解像度・フレームレートを変える、正確に途中から切り取る、WebMで回転する）
+  const needsTranscode = needsReencode(settings);
   const containerAvailable = (c: OutputContainer) =>
     !source || source.encodable[c] || (!needsTranscode && canCopyVideoInto(c, source.codec));
   const selectedContainerUnavailable = !containerAvailable(settings.container);
   const missing = missingChoice(settings);
   const resolutionOptions = source ? resolutionChoicesFor(source.width, source.height) : [];
   const fpsOptions = source ? fpsChoicesFor(source.fps) : [];
+  const trimProblem = source ? trimError(settings, source.durationSec) : null;
+  const trimInvalidText = (text: string) => text.trim() !== "" && Number.isNaN(parseTimeInput(text) ?? 0);
+
+  // 工程3：切り取り（動画のすぐ下に置き、再生位置を見ながら決められるようにする）
+  const trimControls = source && (
+    <fieldset className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="video-edit-trim">
+      <legend className="px-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">切り取り（トリミング）</legend>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        残したい部分の開始と終了を入れます（例: 1:05.5）。動画を再生して止め、「今の位置」を押しても入れられます。空なら最初から・最後まで。
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        {(["start", "end"] as const).map((which) => (
+          <div key={which} className="flex flex-col gap-1">
+            <label className="text-xs text-neutral-600 dark:text-neutral-300" htmlFor={`${toolId}-trim-${which}`}>
+              {which === "start" ? "開始" : "終了"}
+            </label>
+            <div className="flex items-center gap-1.5">
+              <input
+                id={`${toolId}-trim-${which}`}
+                type="text"
+                inputMode="decimal"
+                value={trimText[which]}
+                placeholder={which === "start" ? "0:00.0" : formatTimeInput(source.durationSec)}
+                onChange={(e) => changeTrimText(which, e.target.value)}
+                aria-invalid={trimInvalidText(trimText[which]) || undefined}
+                className={`w-24 rounded-md border px-2 py-1.5 text-sm dark:bg-neutral-900 dark:text-neutral-100 ${
+                  trimInvalidText(trimText[which]) ? "border-red-400" : "border-neutral-300 dark:border-neutral-700"
+                }`}
+                data-testid={`video-edit-trim-${which}`}
+              />
+              <button
+                type="button"
+                onClick={() => setTrimFromPlayer(which)}
+                className="rounded-md bg-neutral-100 px-2 py-1.5 text-xs text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
+                data-testid={`video-edit-trim-${which}-now`}
+              >
+                今の位置
+              </button>
+            </div>
+          </div>
+        ))}
+        {hasTrim(settings, source.durationSec) && (
+          <button type="button" onClick={resetTrim} className="text-xs text-blue-600 underline dark:text-blue-400" data-testid="video-edit-trim-reset">
+            切り取りをやめる
+          </button>
+        )}
+      </div>
+      {trimProblem ? (
+        <p className="text-xs text-red-600 dark:text-red-400" data-testid="video-edit-trim-error">
+          {trimProblem}
+        </p>
+      ) : (
+        hasTrim(settings, source.durationSec) && (
+          <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="video-edit-trim-summary">
+            {formatTimeInput(settings.trimStart)} 〜 {formatTimeInput(settings.trimEnd ?? source.durationSec)}（{formatTimeInput(plannedDuration(settings, source.durationSec))}）を残します
+          </p>
+        )
+      )}
+      <label className="flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-300">
+        <input type="checkbox" checked={settings.fastTrim} onChange={(e) => update({ fastTrim: e.target.checked })} className="mt-0.5" data-testid="video-edit-trim-fast" />
+        <span>速さを優先する（作り直さずに切るので速く、画質も変わりません。ただし開始が少し前（多くは数秒以内）にずれることがあります）</span>
+      </label>
+    </fieldset>
+  );
 
   const sections: Record<VideoEditFocus, ReactNode> = {
     container: (
@@ -285,25 +383,61 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
       />
     ),
   };
+
+  // 工程3：音声・回転（どのページでも「あわせて変えられる設定」に置く）
+  const editSections = (
+    <>
+      <ChoiceGroup
+        key="rotate"
+        legend="回転"
+        name={`${toolId}-rotate`}
+        options={[
+          { value: "0", label: "回転しない" },
+          { value: "90", label: "右に90°" },
+          { value: "180", label: "180°" },
+          { value: "270", label: "左に90°" },
+        ]}
+        value={String(settings.rotate)}
+        onChange={(v) => update({ rotate: Number(v) as RotateChoice })}
+        note={settings.rotate !== 0 && settings.container === "mp4" ? "MP4は、作り直さずに向きの情報を付けて回転します（速く、画質も変わりません）。" : undefined}
+      />
+      <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+        <input
+          type="checkbox"
+          checked={settings.muted}
+          disabled={source?.hasAudio === false}
+          onChange={(e) => update({ muted: e.target.checked })}
+          data-testid="video-edit-mute"
+        />
+        音声を消す（無音の動画にする）
+        {source?.hasAudio === false && <span className="text-xs text-neutral-500 dark:text-neutral-400">（元の動画に音声がありません）</span>}
+      </label>
+    </>
+  );
   const otherSections = (["container", "quality", "resolution", "fps"] as const).filter((k) => k !== preset.focus);
 
   // 変換後の予定（目安）。実際の結果は、書き出したあとに読み直して表示する
   const planRows = (() => {
     if (!file || !source) return undefined;
     const dims = plannedDimensions(settings, source.width, source.height);
-    const range = estimateOutputRange(settings, { bytes: file.size, width: source.width, height: source.height, fps: source.fps });
+    const range = estimateOutputRange(settings, { bytes: file.size, width: source.width, height: source.height, fps: source.fps, durationSec: source.durationSec });
+    const trimmed = hasTrim(settings, source.durationSec) && !trimProblem;
     return [
       { label: "形式", value: settings.container.toUpperCase() },
       { label: "画質", value: QUALITY_CHOICES.find((o) => o.value === settings.quality)?.label ?? "" },
       {
         label: "解像度",
-        value: settings.resolution === null ? "（選んでください）" : `${dims.width}×${dims.height}${settings.resolution === "original" ? "（変更なし）" : ""}`,
+        value: settings.resolution === null ? "（選んでください）" : `${dims.width}×${dims.height}${settings.resolution === "original" && settings.rotate === 0 ? "（変更なし）" : ""}`,
       },
       {
         label: "フレームレート",
         value: settings.fps === null ? "（選んでください）" : settings.fps === "original" ? `${fpsText(source.fps)}（変更なし）` : `${settings.fps}fps`,
       },
-      { label: "音声", value: source.hasAudio ? "残す" : "なし（元の動画に音声がありません）" },
+      ...(trimmed
+        ? [{ label: "長さ", value: `${formatTimeInput(plannedDuration(settings, source.durationSec))}（${formatTimeInput(settings.trimStart)}〜${formatTimeInput(settings.trimEnd ?? source.durationSec)}）` }]
+        : []),
+      ...(settings.rotate !== 0 ? [{ label: "回転", value: settings.rotate === 90 ? "右に90°" : settings.rotate === 180 ? "180°" : "左に90°" }] : []),
+      { label: "音声", value: !source.hasAudio ? "なし（元の動画に音声がありません）" : settings.muted ? "消す" : "残す" },
       ...(range ? [{ label: "サイズの目安", value: `約 ${formatBytes(range[0])}〜${formatBytes(range[1])}` }] : []),
     ];
   })();
@@ -332,9 +466,10 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
           </div>
           <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
             <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
-              あわせて変えられる設定（変えなければ元のまま。すべての設定を1回の変換でまとめて反映します）
+              あわせて変えられる設定（変えなければ元のまま。切り取りは下の動画のところで決められます。すべての設定を1回の変換でまとめて反映します）
             </p>
             {otherSections.map((k) => sections[k])}
+            {editSections}
           </div>
         </div>
       )}
@@ -349,7 +484,10 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
           hasAudio={source?.hasAudio ?? null}
           outputRows={planRows}
           outputNote="サイズは目安です。元の動画の画質・内容によって大きく前後し、増える場合もあります。"
-        />
+          videoRef={previewVideoRef}
+        >
+          {trimControls}
+        </VideoPreviewPanel>
       )}
 
       {file && (
@@ -357,7 +495,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
           <button
             type="button"
             onClick={() => handleRun()}
-            disabled={busy || detecting || !source || missing !== null || selectedContainerUnavailable}
+            disabled={busy || detecting || !source || missing !== null || selectedContainerUnavailable || trimProblem !== null}
             aria-busy={busy || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >

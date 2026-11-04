@@ -7,8 +7,14 @@ import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { uploadFixture } from "../helpers/tool-runner";
 import {
+  EDIT_DEFAULTS,
   VIDEO_EDIT_PRESETS,
   buildVideoOptions,
+  formatTimeInput,
+  needsReencode,
+  parseTimeInput,
+  plannedDimensions,
+  trimError,
   compareSizes,
   estimateOutputRange,
   missingChoice,
@@ -91,14 +97,14 @@ async function openWithVideo(page: Page, toolId: string, file: string) {
 // ---------------------------------------------------------------------------
 
 baseTest.describe("設定の仕組み", () => {
-  const base: VideoEditSettings = { container: "mp4", quality: "original", resolution: "original", fps: "original" };
+  const base: VideoEditSettings = { container: "mp4", quality: "original", resolution: "original", fps: "original", ...EDIT_DEFAULTS };
 
   baseTest("何も変えないときは映像のオプションを渡さない（使えるならコピーで済ませる。従来の形式変換と同じ）", () => {
     expect(buildVideoOptions(base, { width: 1280, height: 720 })).toBeUndefined();
   });
 
   baseTest("画質・解像度・fpsの指定は、1つのオプションにまとめて渡す（1回の変換で反映）", () => {
-    const opts = buildVideoOptions({ container: "webm", quality: "high", resolution: 480, fps: 30 }, { width: 1280, height: 720 });
+    const opts = buildVideoOptions({ ...base, container: "webm", quality: "high", resolution: 480, fps: 30 }, { width: 1280, height: 720 });
     expect(opts?.forceTranscode).toBe(true);
     expect(opts?.quality).toBeTruthy();
     expect(opts?.height).toBe(480);
@@ -128,6 +134,40 @@ baseTest.describe("設定の仕組み", () => {
     const [, hiAll] = estimateOutputRange({ ...base, quality: "medium", resolution: 720, fps: 30 }, src)!;
     expect(hiAll).toBeLessThan(hiQ);
     expect(estimateOutputRange({ ...base, resolution: null }, src)).toBeNull();
+  });
+
+  baseTest("工程3：時間の入力（1:05.5・65.5・全角）を秒に読み、読めないものは NaN", () => {
+    expect(parseTimeInput("1:05.5")).toBe(65.5);
+    expect(parseTimeInput("65.5")).toBe(65.5);
+    expect(parseTimeInput("１：０２")).toBe(62);
+    expect(parseTimeInput("1:02:03")).toBe(3723);
+    expect(parseTimeInput("")).toBeNull();
+    expect(parseTimeInput("1:75")).toBeNaN();
+    expect(parseTimeInput("abc")).toBeNaN();
+    expect(formatTimeInput(65.5)).toBe("1:05.5");
+    expect(formatTimeInput(3723)).toBe("1:02:03.0");
+  });
+
+  baseTest("工程3：切り取りの範囲の確認（終了は開始より後・動画の長さまで）", () => {
+    expect(trimError({ ...base, trimStart: 1, trimEnd: 3 }, 10)).toBeNull();
+    expect(trimError({ ...base, trimStart: 3, trimEnd: 2 }, 10)).toContain("開始より後");
+    expect(trimError({ ...base, trimStart: 12 }, 10)).toContain("動画の長さ");
+    expect(trimError({ ...base, trimEnd: 15 }, 10)).toContain("動画の長さ");
+    expect(trimError({ ...base, trimStart: Number.NaN }, 10)).toContain("開始");
+  });
+
+  baseTest("工程3：回転は解像度より先にかかる（縦横が入れ替わる）。作り直しが要る設定の判定", () => {
+    expect(buildVideoOptions({ ...base, rotate: 90 }, { width: 1280, height: 720 })).toEqual({ rotate: 90 });
+    // 横動画を90°回すと縦動画になり、短い辺（幅）で縮める
+    expect(buildVideoOptions({ ...base, rotate: 90, resolution: 480 }, { width: 1280, height: 720 })).toEqual({ rotate: 90, width: 480 });
+    expect(plannedDimensions({ ...base, rotate: 270 }, 1280, 720)).toEqual({ width: 720, height: 1280 });
+    expect(needsReencode(base)).toBe(false);
+    expect(needsReencode({ ...base, muted: true })).toBe(false);
+    expect(needsReencode({ ...base, rotate: 90 })).toBe(false);
+    expect(needsReencode({ ...base, rotate: 90, container: "webm" })).toBe(true);
+    expect(needsReencode({ ...base, trimStart: 2 })).toBe(true);
+    expect(needsReencode({ ...base, trimStart: 2, fastTrim: true })).toBe(false);
+    expect(needsReencode({ ...base, trimEnd: 5 })).toBe(false);
   });
 });
 
@@ -275,5 +315,120 @@ test.describe("画面・SEO", () => {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow, id).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 工程3：切り取り・音声を消す・回転
+// ---------------------------------------------------------------------------
+
+function probeDuration(file: string): number {
+  return Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).toString().trim());
+}
+
+test.describe("工程3：切り取り・音声を消す・回転", () => {
+  test.setTimeout(180_000);
+  let src = "";
+  test.beforeAll(() => {
+    src = makeVideo({ w: 640, h: 360, fps: 30, sec: 6 });
+  });
+
+  test("4つのページとも、切り取り・回転・音声を消すの設定がある", async ({ page }) => {
+    for (const id of TOOLS) {
+      await openWithVideo(page, id, src);
+      await expect(page.getByTestId("video-edit-trim")).toBeVisible();
+      await expect(page.getByTestId("video-edit-mute")).toBeVisible();
+      await expect(page.getByTestId("video-edit-settings").getByText("右に90°", { exact: true })).toBeVisible();
+    }
+  });
+
+  test("切り取り（正確）：2秒〜4.5秒を残すと、長さが約2.5秒になり、音声も残る", async ({ page }) => {
+    await openWithVideo(page, "video-convert", src);
+    await page.getByTestId("video-edit-trim-start").fill("0:02");
+    await page.getByTestId("video-edit-trim-end").fill("4.5");
+    await expect(page.getByTestId("video-edit-trim-summary")).toContainText("0:02.0 〜 0:04.5（0:02.5）を残します");
+    await expect(page.getByTestId("tool-preview")).toContainText("0:02.5（0:02.0〜0:04.5）");
+    const out = await runAndDownload(page, "変換する");
+    const dur = probeDuration(out);
+    expect(dur).toBeGreaterThan(2.3);
+    expect(dur).toBeLessThan(2.75);
+    expect(probe(out).hasAudio).toBe(true);
+    await expect(page.getByTestId("video-edit-result").getByTestId("video-edit-row-長さ")).toContainText("0:060:03");
+  });
+
+  test("切り取り（速さ優先）：作り直さずに切れ、長さは指定以上・元より短い", async ({ page }) => {
+    await openWithVideo(page, "video-convert", src);
+    await page.getByTestId("video-edit-trim-start").fill("2");
+    await page.getByTestId("video-edit-trim-fast").check();
+    const out = await runAndDownload(page, "変換する");
+    const dur = probeDuration(out);
+    expect(dur).toBeGreaterThan(3.8);
+    expect(dur).toBeLessThan(5.9);
+  });
+
+  test("切り取りの範囲がおかしいときは、理由を出して実行できない。「切り取りをやめる」で戻る", async ({ page }) => {
+    await openWithVideo(page, "video-convert", src);
+    await page.getByTestId("video-edit-trim-start").fill("5");
+    await page.getByTestId("video-edit-trim-end").fill("3");
+    await expect(page.getByTestId("video-edit-trim-error")).toContainText("開始より後");
+    await expect(page.getByRole("button", { name: "変換する", exact: true })).toBeDisabled();
+    await page.getByTestId("video-edit-trim-end").fill("9");
+    await expect(page.getByTestId("video-edit-trim-error")).toContainText("動画の長さ");
+    await page.getByTestId("video-edit-trim-reset").click();
+    await expect(page.getByTestId("video-edit-trim-error")).toHaveCount(0);
+    await expect(page.getByTestId("video-edit-trim-start")).toHaveValue("");
+    await expect(page.getByRole("button", { name: "変換する", exact: true })).toBeEnabled();
+  });
+
+  test("「今の位置」：プレビューの再生位置が、開始に入る", async ({ page }) => {
+    await openWithVideo(page, "video-convert", src);
+    const video = page.getByTestId("tool-preview").locator("video");
+    await video.evaluate(async (el: HTMLVideoElement) => {
+      if (el.readyState < 1) await new Promise((r) => el.addEventListener("loadedmetadata", r, { once: true }));
+      el.currentTime = 1.5;
+      await new Promise((r) => el.addEventListener("seeked", r, { once: true }));
+    });
+    await page.getByTestId("video-edit-trim-start-now").click();
+    await expect(page.getByTestId("video-edit-trim-start")).toHaveValue("0:01.5");
+  });
+
+  test("音声を消す：書き出した動画に音声がない", async ({ page }) => {
+    await openWithVideo(page, "video-compress", src);
+    await page.getByTestId("video-edit-mute").check();
+    await expect(page.getByTestId("tool-preview")).toContainText("消す");
+    const out = await runAndDownload(page, "圧縮する");
+    expect(probe(out).hasAudio).toBe(false);
+    await expect(page.getByTestId("video-edit-result").getByTestId("video-edit-row-音声")).toContainText("ありなし");
+  });
+
+  test("回転：MP4は右に90°で縦向き（360×640）になる。WebMは作り直して実際に縦の映像になる", async ({ page }) => {
+    await openWithVideo(page, "video-convert", src);
+    await choose(page, "右に90°");
+    await expect(page.getByTestId("tool-preview")).toContainText("360×640");
+    await runAndDownload(page, "変換する");
+    await expect(page.getByTestId("video-edit-result").getByTestId("video-edit-row-解像度")).toContainText("640×360360×640");
+    await page.keyboard.press("Escape");
+    await choose(page, "WebM");
+    await choose(page, "左に90°");
+    const webm = await runAndDownload(page, "変換する");
+    expect(probe(webm)).toMatchObject({ format: "webm", width: 360, height: 640, hasAudio: true });
+  });
+
+  test("組み合わせ：切り取り＋回転＋解像度＋音声を消すを、1回の変換でまとめて反映できる", async ({ page }) => {
+    const wide = makeVideo({ w: 1280, h: 720, fps: 30, sec: 6 });
+    await openWithVideo(page, "video-resize", wide);
+    await choose(page, "480p");
+    await choose(page, "右に90°");
+    await page.getByTestId("video-edit-mute").check();
+    await page.getByTestId("video-edit-trim-start").fill("1");
+    await page.getByTestId("video-edit-trim-end").fill("3");
+    const out = await runAndDownload(page, "解像度を変更する");
+    const p = probe(out);
+    expect(p.hasAudio).toBe(false);
+    const dur = probeDuration(out);
+    expect(dur).toBeGreaterThan(1.8);
+    expect(dur).toBeLessThan(2.3);
+    // 縦になってから短い辺（幅）を480にする（480×854）
+    await expect(page.getByTestId("video-edit-result").getByTestId("video-edit-row-解像度")).toContainText("1280×720480×85");
   });
 });

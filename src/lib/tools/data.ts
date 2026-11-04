@@ -1058,7 +1058,7 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
-    keywords: ["動画変換", "mp4", "webm", "mov", "形式変換"],
+    keywords: ["動画変換", "mp4", "webm", "mov", "形式変換", "動画 トリミング", "動画 切り取り", "動画 カット", "動画 回転", "動画 音声を消す", "動画 ミュート"],
   },
   {
     id: "video-compress",

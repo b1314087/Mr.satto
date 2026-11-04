@@ -7,7 +7,7 @@ import {
   type OutputContainer,
   type VideoOutputSummary,
 } from "@/lib/video/shared";
-import { buildVideoOptions, fpsChoicesFor, resolutionChoicesFor, type VideoEditSettings } from "@/lib/video/edit-settings";
+import { buildVideoOptions, fpsChoicesFor, hasTrim, resolutionChoicesFor, trimError, type VideoEditSettings } from "@/lib/video/edit-settings";
 
 export interface VideoEditInput {
   file: File;
@@ -31,7 +31,8 @@ export interface VideoEditOutput {
 }
 
 /**
- * 動画の変換・編集（動画編集 工程2）。形式変換・圧縮・解像度変更・フレームレート変更の4ページが共通で使う。
+ * 動画の変換・編集（動画編集 工程2・3）。形式変換・圧縮・解像度変更・フレームレート変更の4ページが共通で使う。
+ * 工程3で、切り取り（トリミング）・音声を消す・回転も、同じ1回の変換で反映するようにした。
  *
  * 出力形式・画質・解像度・フレームレートの指定を、1回の変換（runConversion）にまとめて渡す。
  * 解像度を変えてから別に圧縮する、のような二重の作り直しはしない（時間がかかり、画質も落ちるため）。
@@ -58,13 +59,21 @@ export class VideoEditProcessor extends BrowserProcessor<VideoEditInput, VideoEd
         throw new Error("指定したフレームレートはこの動画では選択できません（元の動画より高いフレームレートには変更できません）。");
       }
 
+      // 切り取り（工程3）：範囲を確かめ、正確に切るときは開始位置をずらさない（キーフレームから写さず、必要なら作り直す）
+      const trimProblem = trimError(settings, info.durationSec);
+      if (trimProblem) throw new Error(trimProblem);
+      const trimmed = hasTrim(settings, info.durationSec);
+
       const { blob, sizeBytes } = await runConversion({
         input: info.input,
         container: settings.container,
         video: buildVideoOptions(settings, { width: info.displayWidth, height: info.displayHeight }),
+        trim: trimmed ? { start: settings.trimStart, end: settings.trimEnd ?? undefined } : undefined,
+        copy: trimmed && !settings.fastTrim && settings.trimStart > 0 ? { boundaryTolerance: 0 } : undefined,
         onProgress,
         cancelSignal,
-        dropAudio,
+        // 音声を消す（工程3）も「音声なしで書き出す」と同じ仕組みで外す（書き出し後の確認で、音声が無いことを失敗にしない）
+        dropAudio: dropAudio || settings.muted,
       });
 
       const output = await inspectOutputSummary(blob, settings.container);

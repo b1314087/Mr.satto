@@ -53,6 +53,7 @@ import {
   canEncodeVideo,
   getFirstEncodableVideoCodec,
   type ConversionAudioOptions,
+  type ConversionCopyOptions,
   type ConversionVideoOptions,
   type InputVideoTrack,
   type MetadataTags,
@@ -564,6 +565,10 @@ export interface RunConversionParams {
    * （開発指示書「単なるリネームではなく実際に除去する」に対応）。
    */
   tags?: MetadataTags;
+  /** 切り取る範囲（秒）。動画編集 工程3 */
+  trim?: { start?: number; end?: number };
+  /** そのまま写す（作り直さない）ときの決まり。正確に切り取るときに使う。動画編集 工程3 */
+  copy?: ConversionCopyOptions | false;
   onProgress?: (progress: number) => void;
   /**
    * 音声を書き出さない（映像だけにする）。音声を書き出せない形式で、利用者が「音声なしで書き出す」を
@@ -608,6 +613,8 @@ export async function runConversion({
   video,
   audio,
   tags,
+  trim,
+  copy,
   onProgress,
   dropAudio = false,
   cancelSignal,
@@ -631,6 +638,8 @@ export async function runConversion({
       video,
       audio: dropAudio ? { ...audio, discard: true } : audio,
       tags,
+      ...(trim ? { trim } : {}),
+      ...(copy !== undefined ? { copy } : {}),
       showWarnings: false,
     });
 
