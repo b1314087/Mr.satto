@@ -858,7 +858,7 @@ test("seating-chart: 出席番号を付けると、名前の前に番号が出�
   plainExpect(rows[h + 1].slice(0, 3)).toEqual(["1", "12", "山田"]);
 });
 
-test("seating-chart: 3席以上を選ぶと「入れ替え」の代わりに「選んだ席をシャッフル」が出て、選んだ席の中だけで並び替わる（鍵の席は動かない）", async ({ page }) => {
+test("seating-chart: 3席以上を選ぶと「入れ替え」の代わりに「選んだ席をシャッフル」が出て、選んだ席の中だけで並び替わる（鍵の席は動かない・選択は外れず続けてシャッフルできる）", async ({ page }) => {
   await openTool(page);
   await start(page, "classroom", Array.from({ length: 12 }, (_, i) => `N${i + 1}`));
   // 席3に鍵をかける
@@ -871,16 +871,18 @@ test("seating-chart: 3席以上を選ぶと「入れ替え」の代わりに「�
   await expect(page.getByTestId("seat-shuffle-selected")).toHaveText("選んだ5席をシャッフル");
   let changed = false;
   for (let k = 0; k < 4; k++) {
-    if (k > 0) for (const i of [0, 1, 2, 3, 4]) await seat(page, i).click();
+    // 選択は外れないので、そのまま続けてシャッフルできる
     await page.getByTestId("seat-shuffle-selected").click();
     const now = await seatNames(page);
     plainExpect(now[2]).toBe("N3"); // 鍵の席はそのまま
     plainExpect(now.slice(5)).toEqual(before.slice(5)); // 選んでいない席はそのまま
     plainExpect(now.slice(0, 5).sort()).toEqual(before.slice(0, 5).sort());
     if (now.join() !== before.join()) changed = true;
-    await expect(page.getByTestId("seat-tag-bar")).toHaveCount(0); // 終わると選択は外れる
+    await expect(page.getByTestId("seat-selected-count")).toHaveText("5席を選択中"); // 選択はそのまま
+    for (const i of [0, 1, 2, 3, 4]) await expect(seat(page, i)).toHaveAttribute("aria-pressed", "true");
   }
   plainExpect(changed).toBe(true);
+  await page.getByTestId("seat-clear-selection").click();
   // 2席なら「入れ替え」、選択を解除できる
   await seat(page, 6).click();
   await seat(page, 7).click();

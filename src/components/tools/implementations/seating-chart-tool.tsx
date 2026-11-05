@@ -245,7 +245,7 @@ export function SeatingChartTool() {
   /** 今の並びで満たしていない条件 */
   const unmet = violatedRules(activeRules, slots, nameOf, grid);
 
-  /** 選んだ席（鍵・空席を除く）の中だけで、人を並べ替える。席の条件も守る */
+  /** 選んだ席（鍵・空席を除く）の中だけで、人を並べ替える。席の条件も守る。選択は外さない */
   function shuffleSelected() {
     const chosen = new Set(selected.filter((i) => !fixedSet.has(i)));
     if (chosen.size < 2) return;
@@ -257,7 +257,7 @@ export function SeatingChartTool() {
     } else {
       setRuleError("選んだ席の中では、席の条件をすべて満たす並びが見つかりませんでした（並びは変えていません）。");
     }
-    setSelected([]);
+    // 選んだ席はそのまま残す（同じ席の中で、続けて何度でもシャッフルできる）
   }
 
   function shuffle() {
