@@ -433,6 +433,10 @@ const EnvelopeAddressTool = dynamic(() =>
   import("./implementations/envelope-address-tool").then((m) => m.EnvelopeAddressTool),
   { loading: ToolLoading }
 );
+const MailMergeTool = dynamic(() =>
+  import("./implementations/mail-merge-tool").then((m) => m.MailMergeTool),
+  { loading: ToolLoading }
+);
 const TicketVoucherTool = dynamic(() =>
   import("./implementations/ticket-voucher-tool").then((m) => m.TicketVoucherTool),
   { loading: ToolLoading }
@@ -694,6 +698,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelLabelTool />;
     case "envelope-address":
       return <EnvelopeAddressTool />;
+    case "mail-merge":
+      return <MailMergeTool />;
     case "ticket-voucher":
       return <TicketVoucherTool />;
     case "roster-template":

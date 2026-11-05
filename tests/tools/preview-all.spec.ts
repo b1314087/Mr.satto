@@ -83,6 +83,7 @@ const CASES: [string, Input][] = [
   ["order-generator", none],
   ["envelope-address", none],
   ["ticket-voucher", none],
+  ["mail-merge", none],
   ["electronic-stamp-generator", none],
 ];
 
