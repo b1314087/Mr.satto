@@ -108,19 +108,6 @@ function reconcile(prevSlots: (number | null)[], prevNames: string[], participan
   return slots;
 }
 
-/** PC幅（右にメニューを出す幅。Tailwind の lg と同じ 1024px 以上）か */
-function useDesktop(): boolean {
-  const [desktop, setDesktop] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1024px)");
-    const update = () => setDesktop(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
-  return desktop;
-}
-
 interface Manual {
   slots: (number | null)[];
   names: string[];
@@ -163,7 +150,6 @@ export function SeatingChartTool() {
   const [fullscreen, setFullscreen] = useState(false);
   /** 座席表の向きを逆にする（前を下にする。先生・司会から見た向き）。画面・印刷・ダウンロードに反映する */
   const [flipped, setFlipped] = useState(false);
-  const desktop = useDesktop();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed = useMemo(() => parseParticipants(namesText), [namesText]);
@@ -540,25 +526,6 @@ export function SeatingChartTool() {
         // PC：真ん中にプレビュー、右にメニュー。スマホ：メニュー → 下に固定したプレビュー（これまでどおり）
         <div data-preview-split className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
           <div className="contents lg:order-2 lg:flex lg:min-w-0 lg:flex-col lg:gap-4" data-testid="seat-menu">
-      {model && selected.length > 0 && !fullscreen && desktop && (
-        <section className={`${sectionClass} border-blue-300 bg-blue-50/40 dark:border-blue-800 dark:bg-blue-950/20`} aria-label="選んだ席の操作" data-testid="seat-selection-menu">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-            選んだ席（{selected.length}席）
-            <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
-              {selected.map((i) => model.assignment[i]?.name ?? `席${i + 1}`).join("・")}
-            </span>
-          </h2>
-          <SelectionPanel
-            selected={selected}
-            locked={lockedSet}
-            blocked={blockedSet}
-            showMarks={showMarks}
-            onTag={tagSelected}
-            onToggleLock={toggleLock}
-            onToggleBlocked={toggleBlocked}
-          />
-        </section>
-      )}
 
       {step1}
 
@@ -724,7 +691,6 @@ export function SeatingChartTool() {
           onFullscreenChange={setFullscreen}
           flipped={flipped}
           onFlippedChange={setFlipped}
-          desktop={desktop}
           onShuffle={shuffle}
           canShuffle={canShuffle(slots, fixedSet) && participants.length > 0}
           onTag={tagSelected}
@@ -755,7 +721,6 @@ function SeatPreview({
   onFullscreenChange,
   flipped,
   onFlippedChange,
-  desktop,
   onShuffle,
   canShuffle: shuffleEnabled,
 }: {
@@ -769,8 +734,6 @@ function SeatPreview({
   /** 向きを逆にしている（前が下） */
   flipped: boolean;
   onFlippedChange: (v: boolean) => void;
-  /** PC幅か（PCでは、選んだ席の操作を右のメニューに出す） */
-  desktop: boolean;
   selected: number[];
   onTag: (text: string) => void;
   locked: ReadonlySet<number>;
@@ -927,8 +890,8 @@ function SeatPreview({
           </button>
         </div>
       </div>
-      {selected.length > 0 && (fullscreen || !desktop) && (
-        // 大きく表示しているときと、スマホ（右のメニューがない幅）では、プレビューの上に出す
+      {selected.length > 0 && (
+        // 選んだ席の操作（札・鍵・空席）は、プレビューのすぐ上に出す（PC・スマホ・大きく表示のどれでも）
         <SelectionPanel
           selected={selected}
           locked={locked}

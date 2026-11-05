@@ -260,7 +260,7 @@ test("seating-chart: 2人を選んで「入れ替え」、またはドラッグ�
   plainExpect((await seatNames(page)).slice(0, 6)).toEqual(["A1", "A2", "A3", "A4", "A5", "A6"]);
 });
 
-test("seating-chart: PCでは、プレビューが真ん中（左）に大きく、メニューが右に並ぶ。メニューを下まで見てもプレビューは見えたまま。選んだ席の操作は右のメニューに出る", async ({ page }) => {
+test("seating-chart: PCでは、プレビューが真ん中（左）に大きく、メニューが右に並ぶ。メニューを下まで見てもプレビューは見えたまま。選んだ席の操作はプレビューの上に出る", async ({ page }) => {
   await openTool(page, 1440);
   await start(page, "classroom", Array.from({ length: 30 }, (_, i) => `生徒${i + 1}`));
   const preview = (await page.getByTestId("tool-preview").boundingBox())!;
@@ -270,8 +270,8 @@ test("seating-chart: PCでは、プレビューが真ん中（左）に大きく
   await page.getByTestId("seat-format-pdf").scrollIntoViewIfNeeded();
   await expect(seat(page, 0)).toBeInViewport();
   await seat(page, 3).click();
-  await expect(page.getByTestId("seat-selection-menu")).toBeVisible();
-  await expect(page.getByTestId("seat-selection-menu").getByTestId("seat-lock")).toBeVisible();
+  // 選んだ席の操作（鍵・札・空席）は、プレビューのすぐ上に出る
+  await expect(page.getByTestId("tool-preview").getByTestId("seat-lock")).toBeVisible();
   await expect(page.getByTestId("seat-tag-bar")).toHaveCount(1);
   // 大きく表示しているときは、操作をプレビューの上に出す
   await page.getByTestId("seat-fullscreen").click();
