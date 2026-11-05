@@ -477,7 +477,7 @@ plainTest("席の条件：離す・近くにする・列を決める・今の列
   plainExpect(isActiveRule({ id: "z", kind: "place", a: "だれか", axis: "col", from: 1, to: 1 }, new Set(["P0"]))).toBe(false);
 });
 
-test("seating-chart: 鍵の印は最初はプレビューに出ない（生徒に見せても分からない）。「印を表示」で確認できる", async ({ page }) => {
+test("seating-chart: 鍵の印は最初はプレビューに出ない（生徒に見せても分からない）。右のメニューの「鍵の印を表示する」で確認できる", async ({ page }) => {
   await openTool(page);
   await start(page, "classroom", ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"]);
   await seat(page, 2).click();
@@ -487,6 +487,10 @@ test("seating-chart: 鍵の印は最初はプレビューに出ない（生徒�
   const bgLocked = await seat(page, 2).evaluate((e) => getComputedStyle(e).backgroundColor);
   const bgOther = await seat(page, 3).evaluate((e) => getComputedStyle(e).backgroundColor);
   plainExpect(bgLocked).toBe(bgOther);
+  // 切り替えは右のメニュー（編集する側）にあり、プレビューの欄には出ない
+  await expect(page.getByTestId("tool-preview").getByTestId("seat-show-marks")).toHaveCount(0);
+  await expect(page.getByTestId("seat-marks-section").getByTestId("seat-show-marks")).toBeVisible();
+  await expect(page.getByTestId("seat-locked-count")).toHaveText("鍵をかけた席：1席");
   await page.getByTestId("seat-show-marks").check();
   await expect(seat(page, 2).getByTestId("seat-lock-icon")).toBeVisible();
 });

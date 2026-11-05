@@ -619,6 +619,29 @@ export function SeatingChartTool() {
       )}
 
       {purpose && model && (
+        // 鍵の印の表示（プレビューの欄には置かない。生徒に見せる画面に、切り替えのスイッチを出さないため）
+        <section className={sectionClass} aria-labelledby="seat-marks-heading" data-testid="seat-marks-section">
+          <h2 id="seat-marks-heading" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+            鍵をかけた席の確認
+          </h2>
+          <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            <input type="checkbox" checked={showMarks} onChange={(e) => setShowMarks(e.target.checked)} className="mt-1" data-testid="seat-show-marks" />
+            <span>
+              プレビューに鍵の印（🔒）を表示する
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                鍵をかけた席を確かめたいときだけオンにします。生徒に画面を見せるときはオフにしておくと、どの席に鍵があるか分かりません。印刷・ダウンロードには、オンでも印は出ません。
+              </span>
+            </span>
+          </label>
+          {lockedSet.size > 0 && (
+            <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="seat-locked-count">
+              鍵をかけた席：{lockedSet.size}席
+            </p>
+          )}
+        </section>
+      )}
+
+      {purpose && model && (
         <ConditionsPanel
           names={names}
           rules={rules}
@@ -686,7 +709,6 @@ export function SeatingChartTool() {
           onToggleLock={toggleLock}
           onToggleBlocked={toggleBlocked}
           showMarks={showMarks}
-          onShowMarksChange={setShowMarks}
           fullscreen={fullscreen}
           onFullscreenChange={setFullscreen}
           flipped={flipped}
@@ -716,7 +738,6 @@ function SeatPreview({
   onToggleLock,
   onToggleBlocked,
   showMarks,
-  onShowMarksChange,
   fullscreen,
   onFullscreenChange,
   flipped,
@@ -727,7 +748,6 @@ function SeatPreview({
   model: SeatingChartModel;
   /** 鍵の印をプレビューに出すか */
   showMarks: boolean;
-  onShowMarksChange: (v: boolean) => void;
   /** 画面いっぱいに大きく表示しているか */
   fullscreen: boolean;
   onFullscreenChange: (v: boolean) => void;
@@ -854,10 +874,6 @@ function SeatPreview({
             </button>
           </>
         )}
-        <label className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300" title="鍵をかけた席に印を付けます。生徒に見せるときは外しておくと、分かりません（席の条件は、プレビューには出ません）">
-          <input type="checkbox" checked={showMarks} onChange={(e) => onShowMarksChange(e.target.checked)} data-testid="seat-show-marks" />
-          鍵の印を表示
-        </label>
         {fullscreen && <span className="text-xs text-neutral-500 sm:hidden dark:text-neutral-400">スマホは横向きにすると、大きく見えます</span>}
         <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="seat-swap-help">
           入れ替え：席をドラッグ、または2人を選んで［入れ替え］
