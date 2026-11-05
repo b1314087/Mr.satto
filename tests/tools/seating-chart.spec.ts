@@ -747,3 +747,32 @@ test("seating-chart: 席を選んで「空席にする」と、だれも座ら�
   plainExpect((await seatNames(page)).slice(0, 6)).toEqual(["C1", "C2", "C3", "C4", "C5", "C6"]);
   await expect(seat(page, 1)).not.toHaveAttribute("data-blocked", "true");
 });
+
+/** ページの指定した場所で、ファイルのドラッグ&ドロップ（dragenter → dragover → drop）を起こす */
+async function dropFile(page: Page, selector: string, name: string, mime: string, content: string) {
+  await page.evaluate(
+    ({ selector, name, mime, content }) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([content], name, { type: mime }));
+      const el = document.querySelector(selector)!;
+      for (const type of ["dragenter", "dragover", "drop"]) {
+        el.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 300, clientY: 300 }));
+      }
+    },
+    { selector, name, mime, content }
+  );
+}
+
+test("seating-chart: Excel・CSVの名簿を、ページのどこに落としても読み込める（大きく表示している画面でも）", async ({ page }) => {
+  await openTool(page);
+  await page.getByTestId("seat-purpose-classroom").click();
+  await dropFile(page, "h1", "meibo.csv", "text/csv", "氏名\n田中\n高橋\n伊藤\n");
+  await expect(page.getByTestId("seat-names")).toHaveValue("田中\n高橋\n伊藤");
+  plainExpect((await seatNames(page)).slice(0, 3)).toEqual(["田中", "高橋", "伊藤"]);
+
+  await page.getByTestId("seat-fullscreen").click();
+  await expect(page.getByTestId("tool-preview")).toHaveAttribute("data-fullscreen", "true");
+  await dropFile(page, '[data-testid="tool-preview"]', "meibo2.csv", "text/csv", "氏名\n山本\n中村\n");
+  await expect.poll(async () => (await seatNames(page)).slice(0, 2)).toEqual(["山本", "中村"]);
+  await expect(page.getByTestId("tool-preview")).toHaveAttribute("data-fullscreen", "true");
+});

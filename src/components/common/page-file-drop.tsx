@@ -61,7 +61,7 @@ function PageDropOverlay({ hint }: { hint?: string }) {
     <div
       data-testid="page-drop-overlay"
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center bg-ms-page/60 p-4"
+      className="pointer-events-none fixed inset-0 z-[110] flex items-center justify-center bg-ms-page/60 p-4"
     >
       <div className="absolute inset-3 rounded-ms-card border-2 border-dashed border-ms-accent" />
       <div className="relative flex flex-col items-center gap-1 rounded-ms-card bg-ms-strong px-6 py-4 text-center shadow-[var(--ms-shadow-lift)]">

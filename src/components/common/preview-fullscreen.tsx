@@ -74,6 +74,7 @@ export function PreviewFullscreenFrame({ children, className = "" }: { children:
       data-preview-fullscreen={fullscreen ? "true" : undefined}
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen ? true : undefined}
+      data-page-drop-ok={fullscreen ? "true" : undefined}
       aria-label={fullscreen ? "プレビュー（大きく表示）" : undefined}
     >
       <div

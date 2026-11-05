@@ -1296,3 +1296,10 @@ a[data-nav-pending="true"] {
   max-height: calc(100dvh - 7rem) !important;
   max-width: 100%;
 }
+/*
+ * 大きく表示している枠の親（PreviewSplitLayout の sticky の列など）は、それだけで重なり順のまとまりを作るため、
+ * そのままだと上の固定ヘッダー（z-40）の下に隠れる。大きく表示している間だけ、親も前に出す。
+ */
+:where(body *):has(.ms-preview-fs) {
+  z-index: 100 !important;
+}

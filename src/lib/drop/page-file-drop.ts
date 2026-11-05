@@ -86,7 +86,8 @@ export function containsDirectory(dataTransfer: DataTransfer | null): boolean {
 }
 
 function isModalOpen(): boolean {
-  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+  // プレビューを大きく表示している画面（data-page-drop-ok）は、ページの続きとして扱い、ドロップを受け付ける
+  return document.querySelector('[role="dialog"][aria-modal="true"]:not([data-page-drop-ok])') !== null;
 }
 
 function onDragStart(): void {

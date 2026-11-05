@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ErrorMessage } from "@/components/common/error-message";
+import { usePageFileDrop } from "@/components/common/page-file-drop";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   autoParams,
@@ -353,6 +354,16 @@ export function SeatingChartTool() {
     }
   }
 
+  // ページ全体へのドロップ：Excel・CSVの名簿を、ページ（大きく表示している画面も含む）のどこに落としても読み込む
+  const pageDropOverlay = usePageFileDrop({
+    enabled: purpose !== null,
+    onFiles: (files) => {
+      if (files.length > 0) void importFile(files[0]);
+    },
+    onReject: setImportError,
+    hint: "名簿（Excel・CSV）",
+  });
+
   /** 選んだ席に札を付ける（空なら外す） */
   function tagSelected(text: string) {
     setTags((prev) => {
@@ -500,6 +511,7 @@ export function SeatingChartTool() {
   return (
     // スマホ：画面の下に固定したプレビューの裏に、入力欄が隠れないよう、移動するときは下に余白をとる
     <div className="flex flex-col gap-5 max-lg:[&_:is(button,input,select,textarea,a)]:scroll-mb-[45vh]">
+      {pageDropOverlay}
       {!purpose && step1}
       {purpose && (
         // PC：真ん中にプレビュー、右にメニュー。スマホ：メニュー → 下に固定したプレビュー（これまでどおり）
@@ -831,6 +843,7 @@ function SeatPreview({
       data-fullscreen={fullscreen ? "true" : undefined}
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen ? true : undefined}
+      data-page-drop-ok={fullscreen ? "true" : undefined}
     >
       <div ref={toolbarRef} className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">

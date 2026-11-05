@@ -129,6 +129,12 @@ for (const [id, input] of CASES) {
       const vp = page.viewportSize()!;
       expect(fb.width, `${id} の「大きく表示」が画面いっぱいになりません`).toBeGreaterThan(vp.width * 0.95);
       expect(fb.height).toBeGreaterThan(vp.height * 0.95);
+      // 閉じるボタンが画面の中に見えていて、押せる（ほかの物に隠れていない）
+      const closeBtn = page.getByTestId(/^(preview-fullscreen-close|seat-fullscreen-close)$/).first();
+      await expect(closeBtn, `${id} の「閉じる」が見えません`).toBeInViewport();
+      const cb = (await closeBtn.boundingBox())!;
+      const topTestId = await page.evaluate(([x, y]) => (document.elementFromPoint(x, y)?.closest("button") as HTMLElement | null)?.dataset.testid ?? "", [cb.x + cb.width / 2, cb.y + cb.height / 2]);
+      expect(topTestId, `${id} の「閉じる」がほかの物に隠れています`).toMatch(/fullscreen-close$/);
       await page.keyboard.press("Escape");
       await expect(frame).toHaveCount(0);
       await expect(preview).toBeVisible();
