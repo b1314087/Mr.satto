@@ -765,10 +765,9 @@ async function renderScannedFieldsToPdf(fields: TemplateFieldSpec[], textForFiel
  * 手組みXLSXビルダー（fflateのみ使用、新規依存なし）で、これらの印刷設定を
  * 直接埋め込んだ最小限のXLSXを生成する。実在の企業・個人データは一切使用しない。
  *
- * Fit to Width/Height を明示指定したケース(B-13)は、内容量に関わらず必ず
- * 指定ページ数になる(computePageGrid の splitIntoExactGroups による保証)ため、
- * セルの内容自体は「行数・列数が指定ページ数以上あること」だけを満たす
- * 単純なダミー値で十分（実際のフォント計測に依存しない、決定的なテスト）。
+ * Fit to Width/Height を明示指定したケース(B-13)は、Excelと同じく「縮小だけ（最大100%）・
+ * 指定のページ数は上限」で分ける。そのため、指定のページ数ちょうどになることを確かめるケースでは、
+ * 100%のままでは指定より多いページ数になる量のデータを用意する（縮小して、上限のページ数に収まる）。
  */
 function generateExcelToPdfFixtures() {
   function cell(value: string | number, border?: XlsxCellSpec["border"]): XlsxCellSpec {
@@ -797,11 +796,11 @@ function generateExcelToPdfFixtures() {
     },
   ]);
 
-  // Test2(B-20): Fit to Width 1 × Fit to Height 3 → 必ず3ページ(横1×縦3)
+  // Test2(B-20): Fit to Width 1 × Fit to Height 3 → 100%では4ページ以上になる量を、縮小して3ページ(横1×縦3)に収める
   write(fixtures.excelFit1x3Xlsx, [
     {
       name: "Sheet1",
-      rows: grid(12, 4, "FIT1X3_"),
+      rows: grid(200, 4, "FIT1X3_"),
       paperSize: 9,
       orientation: "portrait",
       fitToPage: true,
@@ -810,11 +809,11 @@ function generateExcelToPdfFixtures() {
     },
   ]);
 
-  // Test3(B-20): Fit to Width 2 × Fit to Height 2 → 必ず4ページ(横2×縦2)
+  // Test3(B-20): Fit to Width 2 × Fit to Height 2 → 100%では横3ページ以上になる量を、縮小して4ページ(横2×縦2)に収める
   write(fixtures.excelFit2x2Xlsx, [
     {
       name: "Sheet1",
-      rows: grid(8, 8, "FIT2X2_"),
+      rows: grid(100, 30, "FIT2X2_"),
       paperSize: 9,
       orientation: "portrait",
       fitToPage: true,
@@ -923,7 +922,8 @@ function generateExcelToPdfFixtures() {
   write(fixtures.excelHeaderFooterXlsx, [
     {
       name: "Sheet1",
-      rows: Array.from({ length: 4 }, (_, r) => [cell(`HF_ROW${r}`)]),
+      // 100%のままで2ページになる量（Fit to Pageは拡大しないので、少ないと1ページになる）
+      rows: Array.from({ length: 80 }, (_, r) => [cell(`HF_ROW${r}`)]),
       paperSize: 9,
       orientation: "portrait",
       fitToPage: true,

@@ -133,14 +133,19 @@ export function computePageGrid(params: ComputePageGridParams): PageGridResult {
     const candidates = [requiredScaleForWidth, requiredScaleForHeight].filter((v): v is number => v !== null);
     // Fit to Width/Heightのどちらも指定がある場合は、両方を満たすようより小さい(より縮小する)方を採用する
     // （実際のExcelの挙動：両方を同時に満たす必要があるため）。
-    const scale = clampScale(candidates.length > 0 ? Math.min(...candidates) : 1);
+    // Excelの「次のページ数に合わせて印刷」は縮小するだけで、拡大はしない(最大100%)。指定のページ数は「上限」で、
+    // 100%のままで収まる表は、そのまま(より少ないページ数)で印刷される。以前は小さい表を用紙いっぱいまで拡大し、
+    // 指定のページ数ちょうどに分けていたため、Excelで印刷した結果と大きさ・ページ数が違っていた。
+    const scale = clampScale(Math.min(1, ...candidates));
 
-    const colGroups = targetWidthPages
-      ? splitIntoExactGroups(colSizesPt, targetWidthPages)
-      : groupByThreshold(colSizesPt, contentWidthPt / scale, new Set());
-    const rowGroups = targetHeightPages
-      ? splitIntoExactGroups(rowSizesPt, targetHeightPages)
-      : groupByThreshold(rowSizesPt, contentHeightPt / scale, new Set());
+    // その倍率で、Excelと同じく内容の量なりにページを分ける(Fit to Pageのときは、手動の改ページは使わない)。
+    // 計算の誤差で上限を1ページ超えたときだけ、上限のページ数に収まるよう分け直す。
+    const fitGroups = (sizes: number[], contentPt: number, target: number | null) => {
+      const natural = groupByThreshold(sizes, (contentPt / scale) * (1 + 1e-9), new Set());
+      return target && natural.length > target ? splitIntoExactGroups(sizes, target) : natural;
+    };
+    const colGroups = fitGroups(colSizesPt, contentWidthPt, targetWidthPages);
+    const rowGroups = fitGroups(rowSizesPt, contentHeightPt, targetHeightPages);
 
     return { colGroups, rowGroups, scale };
   }

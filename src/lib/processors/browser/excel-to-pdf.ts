@@ -13,7 +13,7 @@ import {
 } from "@/lib/excel/ooxml-page-settings";
 import { evaluateConditionalFormats } from "@/lib/excel/conditional-format";
 import { formatExcelDate } from "@/lib/excel/excel-date-format";
-import { formatExcelNumber, formatExcelText, formatGeneralNumber } from "@/lib/excel/excel-number-format";
+import { excelNumberFormatColor, excelTextFormatColor, formatExcelNumber, formatExcelText, formatGeneralNumber } from "@/lib/excel/excel-number-format";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
 import type * as PdfLibTypes from "pdf-lib";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
@@ -66,7 +66,6 @@ const MAX_PAGE_COUNT = 500;
 const MIN_COL_WIDTH = 24;
 const MAX_COL_WIDTH = 220;
 const TEXT_COLOR: [number, number, number] = [0.13, 0.13, 0.15];
-const MUTED_COLOR: [number, number, number] = [0.45, 0.45, 0.48];
 /** 上付き・下付き文字の大きさの比率 */
 const SCRIPT_SIZE_RATIO = 0.65;
 /** 斜体: 文字を右へ傾ける角度(度)。日本語フォントには斜体がないため、文字を傾けて近似する */
@@ -89,7 +88,7 @@ const BORDER_SPECS: Record<BorderLineStyle, { width: number; dash: number[] | nu
   mediumDashDot: { width: 1, dash: [4, 2, 1, 2], rank: 5 },
   mediumDashed: { width: 1, dash: [4, 2], rank: 5 },
   medium: { width: 1, dash: null, rank: 6 },
-  double: { width: 0.4, dash: null, double: true, rank: 7 },
+  double: { width: 0.5, dash: null, double: true, rank: 7 },
   thick: { width: 1.75, dash: null, rank: 8 },
 };
 const BORDER_FALLBACK: BorderSideStyle = { style: "thin", color: null };
@@ -627,23 +626,31 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
      * Excel側で実際に設定されている場合のみ呼び出す側で呼ぶため、ここでは
      * 「与えられたセクションをそのまま描く」ことだけに責務を絞っている。
      */
+    /**
+     * ヘッダー/フッターを描く。文字サイズは &nn の指定があればそれ、無ければブックの標準の文字サイズ(Excelと同じ。通常11pt)。
+     * 色はExcelの既定(自動＝黒)。scaleWithDoc(既定オン)のときは、表と同じ倍率で拡大縮小する。
+     */
     function drawHeaderFooterSections(
       page: PDFPage,
-      sections: { left: string; center: string; right: string },
+      sections: HeaderFooterSections,
       baselineY: number,
       areaLeft: number,
-      areaRight: number
+      areaRight: number,
+      baseSize: number,
+      scaleFactor: number
     ) {
-      const size = 8;
-      const color = pdfLib().rgb(...MUTED_COLOR);
+      const color = pdfLib().rgb(...TEXT_COLOR);
+      const sizeOf = (key: "left" | "center" | "right") => Math.max(4, (sections.sizes?.[key] ?? baseSize) * scaleFactor);
       if (sections.left) {
-        drawTextRobust(page, sections.left, areaLeft, baselineY, size, color, font);
+        drawTextRobust(page, sections.left, areaLeft, baselineY, sizeOf("left"), color, font);
       }
       if (sections.center) {
+        const size = sizeOf("center");
         const w = textWidth(font, sections.center, size);
         drawTextRobust(page, sections.center, areaLeft + (areaRight - areaLeft - w) / 2, baselineY, size, color, font);
       }
       if (sections.right) {
+        const size = sizeOf("right");
         const w = textWidth(font, sections.right, size);
         drawTextRobust(page, sections.right, areaRight - w, baselineY, size, color, font);
       }
@@ -808,6 +815,16 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       };
 
       /** セルの基本の書式(文字サイズ・太字・斜体・下線・色・書体) */
+      /** 書式の色指定（[Red]など）。日付の書式には色を付けない */
+      const formatColorOf = (origRow: number, origCol: number): string | null => {
+        const key = `${origRow}:${origCol}`;
+        const code = settings?.cellNumFormat.get(key) ?? null;
+        if (!code || settings?.cellDateFormat.get(key)) return null;
+        const v = sheet.rows[origRow]?.[origCol] ?? null;
+        if (typeof v === "number") return excelNumberFormatColor(v, code);
+        if (typeof v === "string") return excelTextFormatColor(code);
+        return null;
+      };
       const baseStyleOf = (origRow: number, origCol: number): TextStyle => {
         const fkey = formatKey(origRow, origCol);
         const extras = settings?.cellFontExtras.get(fkey);
@@ -817,7 +834,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           italic: cf?.italic.get(fkey) ?? extras?.italic ?? false,
           underline: cf?.underline.get(fkey) ?? extras?.underline ?? null,
           strike: cf?.strike.get(fkey) ?? extras?.strike ?? false,
-          color: cf?.fontColors.get(fkey) ?? settings?.cellFontColors.get(fkey) ?? null,
+          color: cf?.fontColors.get(fkey) ?? formatColorOf(origRow, origCol) ?? settings?.cellFontColors.get(fkey) ?? null,
           serif: extras?.serif ?? settings?.defaultFontSerif ?? false,
           vertAlign: extras?.vertAlign ?? null,
         };
@@ -964,9 +981,10 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           if (typeof value === "number" || value instanceof Date || typeof value === "boolean") continue;
           if (mergeByCell.has(`${r}:${lc}`)) continue;
           const align = settings?.cellAlign.get(`${r}:${lc}`) ?? null;
-          if (align?.wrapText || (align?.textRotation ?? 0) !== 0) continue;
+          // 折り返し・回転・「縮小して全体を表示」・均等割り付けのセルは、Excelでも隣のセルへはみ出さない
+          if (align?.wrapText || align?.shrinkToFit || (align?.textRotation ?? 0) !== 0) continue;
           const horizontal = align?.horizontal ?? "left";
-          if (horizontal !== "left" && horizontal !== "distributed") continue;
+          if (horizontal !== "left") continue;
           const text = cellDisplayText(row, r, lc).split("\n")[0];
           const need = textWidth(font, text, fontSizeFor(r, lc)) + cellPadding * 2 + (align?.indent ?? 0) * defaultFontSize * 0.6;
           let have = 0;
@@ -983,6 +1001,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
 
       // ヘッダー/フッターは、全ページ数が確定してから描く(複数の印刷範囲があっても通しのページ番号にするため)
       const pendingHeaderFooter: { page: PDFPage; pageNo: number }[] = [];
+      /** ヘッダー/フッターの文字の倍率(表の拡大縮小と同じ。印刷範囲が複数あるときは最後の範囲の倍率) */
+      let headerFooterScale = 1;
       let pageInSheet = 0;
 
       // ---- 印刷範囲ごとの描画 --------------------------------------------------
@@ -1045,6 +1065,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           rowBreaksAfterIndex: mapBreaksToLocalIndex(settings?.rowBreaksAfter ?? [], bodyRows),
         });
         const scale = grid.scale;
+        headerFooterScale = scale;
         if (grid.colGroups.length * grid.rowGroups.length > 1) {
           warnings.push(
             `「${sheet.name}」は${grid.colGroups.length}(横)×${grid.rowGroups.length}(縦)ページに分割しました（Excelの印刷ページ数に合わせています）`
@@ -1068,9 +1089,10 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           const color = side.color && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(side.color)) : pdfLib().rgb(0, 0, 0);
           const thickness = Math.max(0.2, spec.width * s);
           if (spec.double) {
-            // 二重線: 辺の位置を中心に、細い線2本を線の太さ程度あけて引く
+            // 二重線: 辺の位置を中心に、細い線2本を引く。Excelの二重線は「線・すき間・線」が1pxずつ(全体で約2.25pt)なので、
+            // 2本の中心を線の太さの1.5倍ずつ離す(すき間が線と同じ太さになり、印刷しても1本に見えない)
             const horizontal = y1 === y2;
-            const off = thickness * 1.2;
+            const off = thickness * 1.5;
             const lines: [number, number, number, number][] = horizontal
               ? [
                   [x1, y1 + off, x2, y2 + off],
@@ -1269,7 +1291,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
                   if (!isEmptyCell(nc) || !(settings?.cellAlign.get(`${origRow}:${nc}`)?.centerContinuous ?? false)) break;
                   rightExtra += colWidthsOnPage[gp];
                 }
-              } else if (!wrap && !merge && !isNumeric && rotation === 0) {
+              } else if (!wrap && !merge && !isNumeric && rotation === 0 && !align?.shrinkToFit && !distributed) {
+                // 「縮小して全体を表示」と「均等割り付け」は、Excelでもセルの中だけに収める（隣の空きセルへはみ出さない）
                 const spillRight = () => {
                   let sum = 0;
                   for (let gp = groupPos + 1; gp < colsOnPage.length; gp++) {
@@ -1575,6 +1598,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         if (settings.differentOddEven && pageNo % 2 === 0) return kind === "header" ? settings.evenHeader : settings.evenFooter;
         return kind === "header" ? settings.header : settings.footer;
       };
+      const hfBaseSize = settings?.defaultFontSizePt ?? 11;
+      const hfScale = settings?.headerFooterScaleWithDoc === false ? 1 : headerFooterScale;
+      /** ヘッダーは上端から余白の位置に文字の上端がくる(Excelと同じ)ので、ベースラインは文字の高さぶん下げる */
+      const hfSize = (sec: HeaderFooterSections) =>
+        Math.max(hfBaseSize, sec.sizes?.left ?? 0, sec.sizes?.center ?? 0, sec.sizes?.right ?? 0) * hfScale * 0.88;
       for (const { page, pageNo } of pendingHeaderFooter) {
         const ctx = { pageInSheet: pageNo, totalPagesInSheet: totalPagesForSheet, sheetName: sheet.name };
         const header = sectionsFor("header", pageNo);
@@ -1585,10 +1613,13 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
               left: resolveHeaderFooterTokens(header.left, ctx),
               center: resolveHeaderFooterTokens(header.center, ctx),
               right: resolveHeaderFooterTokens(header.right, ctx),
+              sizes: header.sizes,
             },
-            pageHeight - headerMarginPt,
+            pageHeight - headerMarginPt - hfSize(header),
             marginLeft,
-            pageWidth - marginRight
+            pageWidth - marginRight,
+            hfBaseSize,
+            hfScale
           );
         }
         const footer = sectionsFor("footer", pageNo);
@@ -1599,10 +1630,13 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
               left: resolveHeaderFooterTokens(footer.left, ctx),
               center: resolveHeaderFooterTokens(footer.center, ctx),
               right: resolveHeaderFooterTokens(footer.right, ctx),
+              sizes: footer.sizes,
             },
-            Math.max(footerMarginPt - 10, 8),
+            Math.max(footerMarginPt, 4),
             marginLeft,
-            pageWidth - marginRight
+            pageWidth - marginRight,
+            hfBaseSize,
+            hfScale
           );
         }
       }

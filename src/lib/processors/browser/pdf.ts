@@ -23,6 +23,7 @@ import {
   type WatermarkPosition as LayoutWatermarkPosition,
 } from "@/lib/pdf/overlay-layout";
 import type * as PdfLibTypes from "pdf-lib";
+import { orientationMatrix, orientationSwapsSides, readJpegOrientation } from "@/lib/image/exif-orientation";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
@@ -532,10 +533,29 @@ export class ImagesToPdfProcessor extends BrowserProcessor<ImageToPdfInput, PdfP
           ? await doc.embedPng(embeddable.bytes)
           : await doc.embedJpg(embeddable.bytes);
 
-      // ページ配置はライブプレビュー(image-to-pdf-tool)と共通の計算を使う
-      const layout = computeImagePageLayout(image.width, image.height, pageSize);
+      // スマートフォンの写真などは、JPEGの中の「向き」の印（EXIF）で回して表示される。
+      // 画面のプレビュー（ブラウザ）と同じ向きになるよう、PDFでも同じ向きに回して描く（画質は落とさない）。
+      const orientation = embeddable.mimeType === "image/jpeg" ? readJpegOrientation(embeddable.bytes) : 1;
+      const swap = orientationSwapsSides(orientation);
+      const shownW = swap ? image.height : image.width;
+      const shownH = swap ? image.width : image.height;
+
+      // ページ配置はライブプレビュー(image-to-pdf-tool)と共通の計算を使う（表示したときの幅・高さで計算する）
+      const layout = computeImagePageLayout(shownW, shownH, pageSize);
       const page = doc.addPage([layout.pageWidth, layout.pageHeight]);
-      page.drawImage(image, { x: layout.x, y: layout.y, width: layout.width, height: layout.height });
+      if (orientation === 1) {
+        page.drawImage(image, { x: layout.x, y: layout.y, width: layout.width, height: layout.height });
+      } else {
+        const { PDFName, pushGraphicsState, concatTransformationMatrix, drawObject, popGraphicsState } = pdfLib();
+        const key = `Image${Math.random().toString(36).slice(2, 12)}`;
+        page.node.setXObject(PDFName.of(key), image.ref);
+        page.pushOperators(
+          pushGraphicsState(),
+          concatTransformationMatrix(...orientationMatrix(orientation, layout.x, layout.y, layout.width, layout.height)),
+          drawObject(key),
+          popGraphicsState()
+        );
+      }
     }
     return finalizePdf(doc);
   }

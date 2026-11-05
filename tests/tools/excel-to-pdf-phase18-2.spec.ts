@@ -56,13 +56,13 @@ test("Fit to Width1×Height1: 内容量に関わらず必ず1ページになる(
   expect(pdf.text).toContain("FIT1X1_R14C5"); // 最終行・最終列のセルも1ページに収まっている
 });
 
-test("Fit to Width1×Height3: 必ず3ページ(横1×縦3)になる(B-13/B-20 Test2)", async ({ page }) => {
+test("Fit to Width1×Height3: 100%では収まらない量は、縮小して3ページ(横1×縦3)に収まる(B-13/B-20 Test2)", async ({ page }) => {
   const path = await convertAndDownload(page, fixtures.excelFit1x3Xlsx);
   const pdf = await extractPdfContent(path);
   expect(pdf.pageCount).toBe(3);
 });
 
-test("Fit to Width2×Height2: 必ず4ページ(横2×縦2)になる(B-13/B-20 Test3)", async ({ page }) => {
+test("Fit to Width2×Height2: 100%では収まらない量は、縮小して4ページ(横2×縦2)に収まる(B-13/B-20 Test3)", async ({ page }) => {
   const path = await convertAndDownload(page, fixtures.excelFit2x2Xlsx);
   const pdf = await extractPdfContent(path);
   expect(pdf.pageCount).toBe(4);

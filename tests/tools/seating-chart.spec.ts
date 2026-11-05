@@ -6,7 +6,6 @@ import { test, expect } from "../fixtures/premium-test";
 import { buildMinimalXlsx } from "../fixtures/xlsx-writer";
 import { assertDownloadedFile, clickAndDownload } from "../helpers/tool-runner";
 import { extractPdfContent, isValidPdfFile } from "../helpers/pdf-inspect";
-import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { autoParams, buildLayout, DEFAULT_PARAMS, rotateLayout, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
 import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
@@ -297,7 +296,7 @@ test("seating-chart: スマホ幅では、プレビューは画面の下に固�
   await expect(seat(page, 0)).toBeVisible();
 });
 
-test("seating-chart: 画像（PNG・JPEG）・PDF・Excelで書き出せ、入れ替えた席が反映される。名前は外部に送信されない", async ({ page, baseURL }) => {
+test("seating-chart: 画像（PNG・JPEG）・PDFで書き出せ（Excelの書き出しは無い）、入れ替えた席が反映される。名前は外部に送信されない", async ({ page, baseURL }) => {
   test.setTimeout(120_000);
   const recorder = new NetworkRecorder(page);
   await openTool(page);
@@ -326,15 +325,10 @@ test("seating-chart: 画像（PNG・JPEG）・PDF・Excelで書き出せ、入�
   plainExpect(content.pageCount).toBe(1);
   for (const t of ["役員会議", MARKER, "社長", "佐藤花子", "部長", "小林四郎"]) plainExpect(content.text).toContain(t);
 
-  await page.getByTestId("seat-format-xlsx").click();
-  const xl = await clickAndDownload(page, "Excel（一覧）でダウンロード");
-  const sheet = await readXlsxSheet((await assertDownloadedFile(xl, { format: "zip" })).path);
-  const rows = sheet.rows.map((r) => r.map((c) => (c == null ? "" : String(c))));
-  const header = rows.findIndex((r) => r[0] === "席番号");
-  plainExpect(rows[header]).toEqual(["席番号", "名前", "役職", "場所", "札"]);
+  // Excelの書き出しは無い
+  await expect(page.getByTestId("seat-format-xlsx")).toHaveCount(0);
   // 入れ替えたので、席1は佐藤花子、席2が秘密太郎
-  plainExpect(rows[header + 1].slice(0, 4)).toEqual(["1", "佐藤花子", "部長", "議長席"]);
-  plainExpect(rows[header + 2].slice(0, 4)).toEqual(["2", MARKER, "社長", "奥側 1番目"]);
+  plainExpect((await seatNames(page)).slice(0, 2)).toEqual(["佐藤花子", MARKER]);
 
   expect(findLeakedRequests(recorder, MARKER)).toEqual([]);
   expect(findLeakedRequests(recorder, encodeURIComponent(MARKER))).toEqual([]);
@@ -378,15 +372,8 @@ test("seating-chart: 席を選んで「来賓」「司会」などの札を付�
   plainExpect(Math.round(Math.max(content.pages[0].width, content.pages[0].height))).toBe(1191);
   plainExpect(content.text).toContain("来賓");
   plainExpect(content.text).toContain("司会");
-
-  await page.getByTestId("seat-format-xlsx").click();
-  const xl = await clickAndDownload(page, "Excel（一覧）でダウンロード");
-  const sheet = await readXlsxSheet((await assertDownloadedFile(xl, { format: "zip" })).path);
-  const rows = sheet.rows.map((r) => r.map((c) => (c == null ? "" : String(c))));
-  const h = rows.findIndex((r) => r[0] === "席番号");
-  plainExpect(rows[h]).toEqual(["席番号", "名前", "役職", "場所", "札"]);
-  plainExpect(rows[h + 1].slice(0, 2).concat(rows[h + 1][4])).toEqual(["1", "来賓A", "来賓"]);
-  plainExpect(rows[h + 3].slice(0, 2).concat(rows[h + 3][4])).toEqual(["3", "一般D", "司会"]);
+  plainExpect(content.text).toContain("来賓A");
+  plainExpect(content.text).toContain("一般D");
 });
 
 test.describe("スマートフォンの幅", () => {
@@ -644,7 +631,7 @@ test("seating-chart: 「前を下にする」で座席表の向きが逆にな�
   plainExpect(await top(0)).toBeLessThan(await top(11));
 });
 
-test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力・まとめて貼り付けでき、未入力は目立つ。画面・Excelに出る", async ({ page }) => {
+test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力・まとめて貼り付けでき、未入力は目立つ。画面・PDFに出る", async ({ page }) => {
   test.setTimeout(90_000);
   await openTool(page);
   await start(page, "meeting", ["山田太郎, 部長", "佐藤花子", "鈴木一郎"]);
@@ -674,18 +661,11 @@ test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力�
   await page.getByTestId("seat-names").fill(["山田太郎, 部長", "佐藤花子", "鈴木一郎", "高橋次郎"].join("\n"));
   await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 1人");
 
-  await page.getByTestId("seat-format-xlsx").click();
-  const xl = await clickAndDownload(page, "Excel（一覧）でダウンロード");
-  const sheet = await readXlsxSheet((await assertDownloadedFile(xl, { format: "zip" })).path);
-  const rows = sheet.rows.map((r) => r.map((c) => (c == null ? "" : String(c))));
-  const header = rows.findIndex((r) => r[0] === "席番号");
-  plainExpect(rows[header]).toEqual(["席番号", "名前", "ふりがな", "役職", "場所", "札"]);
-  plainExpect(rows[header + 1].slice(0, 4)).toEqual(["1", "山田太郎", "ヤマダ タロウ", "部長"]);
-
   await page.getByTestId("seat-format-pdf").click();
   const pdf = await clickAndDownload(page, "PDFでダウンロード");
   const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
   plainExpect(content.text).toContain("さとう はなこ");
+  plainExpect(content.text).toContain("ヤマダ タロウ");
 
   // 外すと、画面から消える
   await page.getByTestId("seat-furigana").uncheck();
@@ -739,12 +719,10 @@ test("seating-chart: 席を選んで「空席にする」と、だれも座ら�
   await expect(page.getByTestId("seat-swap")).toBeDisabled();
   await seat(page, 0).click();
 
-  await page.getByTestId("seat-format-xlsx").click();
-  const xl = await clickAndDownload(page, "Excel（一覧）でダウンロード");
-  const sheet = await readXlsxSheet((await assertDownloadedFile(xl, { format: "zip" })).path);
-  const rows = sheet.rows.map((r) => r.map((c) => (c == null ? "" : String(c))));
-  const header = rows.findIndex((r) => r[0] === "席番号");
-  plainExpect(rows[header + 2].slice(0, 2)).toEqual(["2", "（空席）"]);
+  await page.getByTestId("seat-format-pdf").click();
+  const pdf = await clickAndDownload(page, "PDFでダウンロード");
+  const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
+  plainExpect(content.text).toContain("空席");
 
   // 戻すと、入力順に詰まる
   await expect(page.getByTestId("seat-block")).toHaveText("空席を戻す");
@@ -824,7 +802,7 @@ plainTest("授業・カスタム：席の間隔は縦も横もすべて同じ。
   plainExpect(br[0].group).toBe("前から3列目・左から6番目");
 });
 
-test("seating-chart: 出席番号を付けると、名前の前に番号が出て、画像・PDF・Excelにも入る。1番の席を後ろの右にできる", async ({ page }) => {
+test("seating-chart: 出席番号を付けると、名前の前に番号が出て、画像・PDFにも入る。1番の席を後ろの右にできる", async ({ page }) => {
   test.setTimeout(120_000);
   await openTool(page);
   await start(page, "classroom", ["12 山田", "3 佐藤", "鈴木"]);
@@ -849,13 +827,7 @@ test("seating-chart: 出席番号を付けると、名前の前に番号が出�
   const pdf = await clickAndDownload(page, "PDFでダウンロード");
   const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
   plainExpect(content.text).toContain("12 山田");
-  await page.getByTestId("seat-format-xlsx").click();
-  const xl = await clickAndDownload(page, "Excel（一覧）でダウンロード");
-  const sheet = await readXlsxSheet((await assertDownloadedFile(xl, { format: "zip" })).path);
-  const rows = sheet.rows.map((r) => r.map((c) => (c == null ? "" : String(c))));
-  const h = rows.findIndex((r) => r[0] === "席番号");
-  plainExpect(rows[h].slice(0, 3)).toEqual(["席番号", "出席番号", "名前"]);
-  plainExpect(rows[h + 1].slice(0, 3)).toEqual(["1", "12", "山田"]);
+  plainExpect(content.text).toContain("3 佐藤");
 });
 
 test("seating-chart: 3席以上を選ぶと「入れ替え」の代わりに「選んだ席をシャッフル」が出て、選んだ席の中だけで並び替わる（鍵の席は動かない・選択は外れず続けてシャッフルできる）", async ({ page }) => {
@@ -890,4 +862,63 @@ test("seating-chart: 3席以上を選ぶと「入れ替え」の代わりに「�
   await expect(page.getByTestId("seat-shuffle-selected")).toHaveCount(0);
   await page.getByTestId("seat-clear-selection").click();
   await expect(page.getByTestId("seat-tag-bar")).toHaveCount(0);
+});
+
+test("seating-chart: PDFの用紙（B6などJISのA・B列ぜんぶ）と向き（縦・横）を選べ、「前後を1ページに並べる」で前が上・前が下の2つを1枚に印刷する", async ({ page }) => {
+  test.setTimeout(120_000);
+  await openTool(page);
+  await start(page, "classroom", ["前の左", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "後ろの右"]);
+  await page.getByTestId("seat-format-pdf").click();
+  const options = await page.getByTestId("seat-paper").locator("option").evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+  plainExpect(options).toEqual(["A3", "A4", "A5", "A6", "B4", "B5", "B6", "Letter", "Legal"]);
+
+  const download = async () => {
+    const pdf = await clickAndDownload(page, "PDFでダウンロード");
+    return extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
+  };
+  // B6・縦：128×182mm（362.8×515.9pt）
+  await page.getByTestId("seat-paper").selectOption("B6");
+  await page.getByTestId("seat-paper-orientation").selectOption("portrait");
+  let c = await download();
+  plainExpect(Math.round(c.pages[0].width)).toBe(363);
+  plainExpect(Math.round(c.pages[0].height)).toBe(516);
+  // 横を選ぶと、幅と高さが入れ替わる
+  await page.getByTestId("seat-paper-orientation").selectOption("landscape");
+  c = await download();
+  plainExpect(Math.round(c.pages[0].width)).toBe(516);
+  plainExpect(Math.round(c.pages[0].height)).toBe(363);
+
+  // 前後を1ページに：1ページに、同じ名前が2回・2つの向きの見出しが出る。上の図は前が上、下の図は前が下
+  await page.getByTestId("seat-paper").selectOption("A4");
+  await page.getByTestId("seat-paper-orientation").selectOption("portrait");
+  await page.getByTestId("seat-both-views").check();
+  c = await download();
+  plainExpect(c.pageCount).toBe(1);
+  const items = c.pages[0].items;
+  const ys = (text: string) => items.filter((it) => it.str.includes(text)).map((it) => it.y).sort((a, b) => b - a);
+  plainExpect(c.text).toContain("前が上の向き");
+  plainExpect(c.text).toContain("前が下の向き");
+  plainExpect(ys("前の左").length).toBe(2);
+  const [kyotakuUpper, kyotakuLower] = ys("教卓");
+  const [leftUpper, leftLower] = ys("前の左");
+  const [rightUpper, rightLower] = ys("後ろの右");
+  // PDF の y は下から上へ増える。上の図：教卓が一番上 → 前の左 → 後ろの右
+  plainExpect(kyotakuUpper).toBeGreaterThan(leftUpper);
+  plainExpect(leftUpper).toBeGreaterThan(rightUpper);
+  // 下の図：後ろの右 → 前の左 → 教卓（前が下）
+  plainExpect(rightLower).toBeGreaterThan(leftLower);
+  plainExpect(leftLower).toBeGreaterThan(kyotakuLower);
+  // 上の図は、下の図より上にある
+  plainExpect(rightUpper).toBeGreaterThan(rightLower);
+
+  // 画像でも2つ並ぶ（横長の座席表は上下に並ぶので、高さが約2倍になる）
+  await page.getByTestId("seat-format-png").click();
+  const pngHeight = async () => {
+    const png = await clickAndDownload(page, "画像（PNG）でダウンロード");
+    return fs.readFileSync((await assertDownloadedFile(png, { format: "png" })).path).readUInt32BE(20);
+  };
+  const both = await pngHeight();
+  await page.getByTestId("seat-both-views").uncheck();
+  const single = await pngHeight();
+  plainExpect(both).toBeGreaterThan(single * 1.8);
 });

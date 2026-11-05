@@ -24,7 +24,7 @@ import {
 import { cleanReading, namesFromRows, parseParticipants, readingsFromPaste, SEATING_MAX_PARTICIPANTS, type Participant } from "@/lib/seating/participants";
 import { axisGroups, canShuffle, evictBlocked, fillAroundLocked } from "@/lib/seating/arrange";
 import { describeRule, isActiveRule, shuffleWithRules, violatedRules, type SeatGrid, type SeatRule } from "@/lib/seating/conditions";
-import { exportChart, type ExportFormat, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
+import { exportChart, PAPER_SIZES, type ExportFormat, type PaperOrientation, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 
@@ -60,7 +60,6 @@ const FORMATS: { value: ExportFormat; label: string; ext: string }[] = [
   { value: "png", label: "画像（PNG）", ext: "png" },
   { value: "jpeg", label: "画像（JPEG）", ext: "jpg" },
   { value: "pdf", label: "PDF", ext: "pdf" },
-  { value: "xlsx", label: "Excel（一覧）", ext: "xlsx" },
 ];
 
 /** 札の候補（自由に書くこともできる） */
@@ -127,6 +126,9 @@ export function SeatingChartTool() {
   const [selected, setSelected] = useState<number[]>([]);
   const [tags, setTags] = useState<Record<number, string>>({});
   const [paper, setPaper] = useState<PaperSize>("A4");
+  const [paperOrientation, setPaperOrientation] = useState<PaperOrientation>("auto");
+  /** 前が上の向きと、上下を逆にした向きを、1枚に並べて書き出す */
+  const [bothViews, setBothViews] = useState(false);
   const [format, setFormat] = useState<ExportFormat>("png");
   const [exportError, setExportError] = useState<string | null>(null);
   const [importNote, setImportNote] = useState<string | null>(null);
@@ -359,7 +361,7 @@ export function SeatingChartTool() {
     if (!model) return;
     setExportError(null);
     try {
-      const blob = await exportChart(model, format, paper);
+      const blob = await exportChart(model, format, { paper, orientation: paperOrientation, bothViews });
       const ext = FORMATS.find((f) => f.value === format)!.ext;
       downloadBlob(blob, `${sanitizeFileName(model.title)}.${ext}`);
     } catch (e) {
@@ -697,15 +699,34 @@ export function SeatingChartTool() {
             ))}
           </div>
           {format === "pdf" && (
-            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-              用紙
-              <select value={paper} onChange={(e) => setPaper(e.target.value as PaperSize)} className={`${inputClass} w-auto`} data-testid="seat-paper">
-                <option value="A4">A4</option>
-                <option value="B4">B4</option>
-                <option value="A3">A3</option>
-              </select>
-            </label>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-700 dark:text-neutral-200">
+              <label className="flex items-center gap-2 whitespace-nowrap">
+                用紙
+                <select value={paper} onChange={(e) => setPaper(e.target.value as PaperSize)} className={`${inputClass} w-auto`} data-testid="seat-paper">
+                  {PAPER_SIZES.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 whitespace-nowrap">
+                向き
+                <select value={paperOrientation} onChange={(e) => setPaperOrientation(e.target.value as PaperOrientation)} className={`${inputClass} w-auto`} data-testid="seat-paper-orientation">
+                  <option value="auto">自動（表の形に合わせる）</option>
+                  <option value="portrait">縦</option>
+                  <option value="landscape">横</option>
+                </select>
+              </label>
+            </div>
           )}
+          <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            <input type="checkbox" className="mt-1" checked={bothViews} onChange={(e) => setBothViews(e.target.checked)} data-testid="seat-both-views" />
+            <span>
+              前後を1ページに並べる
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">前が上の向きと、上下を逆にした向き（前が下）を1枚に印刷します。前に立つ人と、席に座る人の両方がそのまま読めます。</span>
+            </span>
+          </label>
           <RewardedDownloadGate onDownload={download} label={`${FORMATS.find((f) => f.value === format)!.label}でダウンロード`} disabled={participants.length === 0} />
           {exportError && <ErrorMessage message={exportError} />}
         </section>

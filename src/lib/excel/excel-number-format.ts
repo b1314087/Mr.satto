@@ -9,7 +9,7 @@
  *       パーセント(%)・正負0文字のセクション(;区切り)・条件つきセクション([>=100]等)・
  *       指数(0.00E+00)・分数(# ?/? ・ ?/8)・引用符"..."と\xのリテラル・¥/$等の通貨記号・
  *       文字列用のセクション(@)・標準(General)表示。
- * [Red]等の色指定・[$-411]等の言語指定・_x(桁揃えの空白)・*x(繰り返し)は読み飛ばす。
+ * [Red]等の色指定は excelNumberFormatColor で別に返す。[$-411]等の言語指定・_x(桁揃えの空白)・*x(繰り返し)は読み飛ばす。
  * 日付時刻は別処理(excel-date-format.ts)。解釈できない書式は null を返し、呼び出し側で元の値を表示する。
  */
 
@@ -335,10 +335,8 @@ function applyNumberSection(abs: number, s: NumberSection): string {
   return decPart ? `${intPart}.${decPart}` : intPart;
 }
 
-/** 数値をExcelの書式コードで整形する。解釈できない書式なら null（呼び出し側で標準表示にする） */
-export function formatExcelNumber(value: number, code: string | null): string | null {
-  if (!code || code === "General" || code === "@") return null;
-  if (!Number.isFinite(value)) return null;
+/** 数値に使う書式のセクション(;区切りのどれか)を選ぶ。implicitNegative=負数用のセクションを選んだ(符号は書式で表す) */
+function pickNumberSection(value: number, code: string): { sectionText: string; implicitNegative: boolean } {
   const all = splitSections(code);
   // 4つ目のセクションは文字列用なので、数値の選択には使わない
   const sections = all.length >= 4 ? all.slice(0, 3) : all;
@@ -364,9 +362,57 @@ export function formatExcelNumber(value: number, code: string | null): string | 
   } else if (value === 0 && sections.length >= 3) {
     idx = 2;
   }
+  return { sectionText: sections[idx] ?? "", implicitNegative };
+}
+
+/** 書式の色指定([Red]・[Blue]・[Color10]など)の色。Excelの標準の56色のうち、名前で指定できる8色と[Color1]〜[Color8] */
+const NAMED_FORMAT_COLORS: Record<string, string> = {
+  black: "#000000",
+  white: "#FFFFFF",
+  red: "#FF0000",
+  green: "#00FF00",
+  blue: "#0000FF",
+  yellow: "#FFFF00",
+  magenta: "#FF00FF",
+  cyan: "#00FFFF",
+};
+const INDEXED_FORMAT_COLORS = ["#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#800000", "#008000", "#000080", "#808000", "#800080", "#008080", "#C0C0C0", "#808080"];
+
+function sectionColor(sectionText: string): string | null {
+  const re = /\[([^\]]+)\]/g;
+  for (let m = re.exec(sectionText.replace(/"[^"]*"/g, "")); m; m = re.exec(sectionText.replace(/"[^"]*"/g, ""))) {
+    const name = m[1].trim().toLowerCase();
+    if (NAMED_FORMAT_COLORS[name]) return NAMED_FORMAT_COLORS[name];
+    const idx = /^color\s*(\d+)$/.exec(name);
+    if (idx) return INDEXED_FORMAT_COLORS[Number(idx[1]) - 1] ?? null;
+  }
+  return null;
+}
+
+/**
+ * 書式で指定された文字色（例：#,##0;[Red]-#,##0 の負数は赤）。色の指定が無ければ null。
+ * Excelでは、この色はセルの文字色より優先される（条件付き書式の色はさらに優先）。
+ */
+export function excelNumberFormatColor(value: number, code: string | null): string | null {
+  if (!code || code === "General" || code === "@" || !Number.isFinite(value)) return null;
+  return sectionColor(pickNumberSection(value, code).sectionText);
+}
+
+/** 文字列のセルに使う書式の色（4つ目のセクション、または@だけの1セクションの色） */
+export function excelTextFormatColor(code: string | null): string | null {
+  if (!code || code === "General" || code === "@") return null;
+  const all = splitSections(code);
+  const textSection = all.length >= 4 ? all[3] : all.length === 1 && all[0].includes("@") ? all[0] : null;
+  return textSection ? sectionColor(textSection) : null;
+}
+
+/** 数値をExcelの書式コードで整形する。解釈できない書式なら null（呼び出し側で標準表示にする） */
+export function formatExcelNumber(value: number, code: string | null): string | null {
+  if (!code || code === "General" || code === "@") return null;
+  if (!Number.isFinite(value)) return null;
+  const { sectionText, implicitNegative } = pickNumberSection(value, code);
 
   // "General"のセクション(例: General"人")は、標準表示に前後の文字を付ける
-  const sectionText = sections[idx] ?? "";
   if (/(^|[^A-Za-z])General([^A-Za-z]|$)/i.test(sectionText.replace(/"[^"]*"/g, ""))) {
     const parts = sectionText.split(/General/i);
     const lit = (t: string) => t.replace(/"([^"]*)"/g, "$1").replace(/\[[^\]]*\]|[_*].|\\/g, "");

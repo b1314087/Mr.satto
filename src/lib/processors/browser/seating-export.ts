@@ -1,13 +1,14 @@
 import type { PDFFont, PDFPage } from "pdf-lib";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
-import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
-import { SEAT_H, SEAT_W, type LayoutGeometry } from "@/lib/seating/layouts";
+import { rotateLayout, SEAT_H, SEAT_W, type LayoutGeometry } from "@/lib/seating/layouts";
 import type { Participant } from "@/lib/seating/participants";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
- * 座席表の書き出し（画像 PNG・JPEG、PDF、Excel）。ブラウザ内だけで作る（名前は外部に送らない）。
+ * 座席表の書き出し（画像 PNG・JPEG、PDF）。ブラウザ内だけで作る（名前は外部に送らない）。
  * 画像とPDFは、同じ描き方（paintChart）で描く。PDFは文字のまま（拡大しても粗くならず、文字を選べる）。
+ * 「前後を1ページに」を選ぶと、前が上の向きと、上下を逆にした向き（前が下）の2つを、1枚に並べる
+ * （黒板側から見る人と、後ろから見る人の両方がそのまま読めるように）。
  */
 
 export interface SeatingChartModel {
@@ -19,11 +20,11 @@ export interface SeatingChartModel {
   unseated: Participant[];
   /** 席ごとの札（「来賓」「司会」など。geometry.seats と同じ並び。無ければ空文字）。札は人ではなく席に付く */
   tags?: string[];
-  /** ふりがなを付けるか（付けるときは、名前の上に小さく描き、Excelに「ふりがな」の列を足す） */
+  /** ふりがなを付けるか（付けるときは、名前の上に小さく描く） */
   furigana?: boolean;
   /** 空席にした席（だれも座らせない席。「空席」と描く。geometry.seats と同じ並び） */
   blocked?: boolean[];
-  /** 出席番号を付けるか（付けるときは、名前の前に描き、Excelに「出席番号」の列を足す。番号は Participant.number） */
+  /** 出席番号を付けるか（付けるときは、名前の前に描く。番号は Participant.number） */
   numbers?: boolean;
 }
 
@@ -32,15 +33,36 @@ export function seatLabel(model: Pick<SeatingChartModel, "numbers">, person: Par
   return model.numbers && person.number ? `${person.number} ${person.name}` : person.name;
 }
 
-export type PaperSize = "A4" | "B4" | "A3";
+/** 用紙（JISのA列・B列と、レター・リーガル） */
+export const PAPER_SIZES = [
+  { value: "A3", label: "A3（297×420mm）", mm: [297, 420] },
+  { value: "A4", label: "A4（210×297mm）", mm: [210, 297] },
+  { value: "A5", label: "A5（148×210mm）", mm: [148, 210] },
+  { value: "A6", label: "A6（105×148mm）", mm: [105, 148] },
+  { value: "B4", label: "B4（257×364mm）", mm: [257, 364] },
+  { value: "B5", label: "B5（182×257mm）", mm: [182, 257] },
+  { value: "B6", label: "B6（128×182mm）", mm: [128, 182] },
+  { value: "Letter", label: "レター（216×279mm）", mm: [215.9, 279.4] },
+  { value: "Legal", label: "リーガル（216×356mm）", mm: [215.9, 355.6] },
+] as const;
+export type PaperSize = (typeof PAPER_SIZES)[number]["value"];
+const PT_PER_MM = 72 / 25.4;
 /** 用紙の長い辺・短い辺（pt） */
-export const PAPER_PT: Record<PaperSize, [number, number]> = {
-  A4: [841.89, 595.28],
-  B4: [1031.81, 728.5],
-  A3: [1190.55, 841.89],
-};
+export const PAPER_PT = Object.fromEntries(
+  PAPER_SIZES.map((p) => [p.value, [p.mm[1] * PT_PER_MM, p.mm[0] * PT_PER_MM]])
+) as Record<PaperSize, [number, number]>;
 
-export type ExportFormat = "png" | "jpeg" | "pdf" | "xlsx";
+/** 用紙の向き：auto＝座席表の形に合わせる */
+export type PaperOrientation = "auto" | "portrait" | "landscape";
+
+export type ExportFormat = "png" | "jpeg" | "pdf";
+
+export interface ExportOptions {
+  paper?: PaperSize;
+  orientation?: PaperOrientation;
+  /** 前が上の向きと、上下を逆にした向きを、1枚に並べる */
+  bothViews?: boolean;
+}
 
 export const TITLE_H = 64;
 const FONT = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","YuGothic","Meiryo","Noto Sans JP",sans-serif';
@@ -188,8 +210,75 @@ export function chartSize(model: SeatingChartModel): { width: number; height: nu
   return { width: Math.ceil(model.geometry.width), height: Math.ceil(model.geometry.height + TITLE_H) };
 }
 
-export async function chartToImageBlob(model: SeatingChartModel, format: "png" | "jpeg", scale = 2): Promise<Blob> {
-  const { width, height } = chartSize(model);
+// ---------------------------------------------------------------------------
+// 前後を1ページに（2つの向きを並べる）
+// ---------------------------------------------------------------------------
+
+const CAPTION_H = 30;
+const VIEW_GAP = 36;
+
+interface PlacedView {
+  model: SeatingChartModel;
+  caption: string | null;
+  dx: number;
+  dy: number;
+}
+
+/** 前の印（教卓・スクリーンなど）が、座席表の上半分にあるか（印が無ければ null） */
+function frontIsUp(g: LayoutGeometry): boolean | null {
+  if (g.marks.length === 0) return null;
+  const m = g.marks[0];
+  return m.y + 15 < g.height / 2;
+}
+
+/** 書き出す絵の並べ方（1つ、または2つの向き）と、全体の大きさ */
+export function composeViews(model: SeatingChartModel, bothViews: boolean): { views: PlacedView[]; width: number; height: number } {
+  const size = chartSize(model);
+  if (!bothViews) return { views: [{ model, caption: null, dx: 0, dy: 0 }], ...size };
+  const other: SeatingChartModel = { ...model, geometry: rotateLayout(model.geometry) };
+  const up = frontIsUp(model.geometry);
+  const cap = (isUp: boolean | null, fallback: string) => (isUp === null ? fallback : isUp ? "前が上の向き" : "前が下の向き");
+  const first = cap(up, "そのままの向き");
+  const second = cap(up === null ? null : !up, "上下を逆にした向き");
+  // 横長の座席表は上下に、縦長の座席表は左右に並べる（用紙に大きく入るように）
+  const stacked = size.width >= size.height;
+  const blockW = size.width;
+  const blockH = size.height + CAPTION_H;
+  const views: PlacedView[] = [
+    { model, caption: first, dx: 0, dy: 0 },
+    { model: other, caption: second, dx: stacked ? 0 : blockW + VIEW_GAP, dy: stacked ? blockH + VIEW_GAP : 0 },
+  ];
+  return {
+    views,
+    width: stacked ? blockW : blockW * 2 + VIEW_GAP,
+    height: stacked ? blockH * 2 + VIEW_GAP : blockH,
+  };
+}
+
+/** 描く位置をずらす */
+function offsetPainter(p: Painter, dx: number, dy: number): Painter {
+  return {
+    rect: (x, y, w, h, fill, stroke, lw) => p.rect(x + dx, y + dy, w, h, fill, stroke, lw),
+    circle: (cx, cy, r, fill, stroke) => p.circle(cx + dx, cy + dy, r, fill, stroke),
+    text: (t, x, y, o) => p.text(t, x + dx, y + dy, o),
+    measure: (t, size, bold) => p.measure(t, size, bold),
+  };
+}
+
+function paintViews(p: Painter, layout: ReturnType<typeof composeViews>) {
+  for (const v of layout.views) {
+    if (v.caption) {
+      p.rect(v.dx, v.dy + 2, chartSize(v.model).width, CAPTION_H - 6, [0.93, 0.95, 0.98], null);
+      p.text(v.caption, v.dx + 12, v.dy + 2 + (CAPTION_H - 6) / 2, { size: 14, color: INK, bold: true, align: "left" });
+    }
+    paintChart(offsetPainter(p, v.dx, v.dy + (v.caption ? CAPTION_H : 0)), v.model);
+  }
+}
+
+export async function chartToImageBlob(model: SeatingChartModel, format: "png" | "jpeg", scale = 2, bothViews = false): Promise<Blob> {
+  const layout = composeViews(model, bothViews);
+  const width = Math.ceil(layout.width);
+  const height = Math.ceil(layout.height);
   // 大きすぎる画像は作れないブラウザがあるため、辺の長さを抑える
   const s = Math.min(scale, 8000 / width, 8000 / height);
   const canvas = document.createElement("canvas");
@@ -200,7 +289,7 @@ export async function chartToImageBlob(model: SeatingChartModel, format: "png" |
   ctx.scale(s, s);
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
-  paintChart(canvasPainter(ctx), model);
+  paintViews(canvasPainter(ctx), layout);
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("画像を作れませんでした"))), format === "png" ? "image/png" : "image/jpeg", 0.92);
   });
@@ -242,72 +331,36 @@ function pdfPainter(page: PDFPage, font: PDFFont, scale: number, ox: number, pag
   };
 }
 
-export async function chartToPdfBlob(model: SeatingChartModel, paper: PaperSize = "A4"): Promise<Blob> {
+/** 用紙の幅・高さ（pt）。向きが auto のときは、絵の形に合わせる */
+export function pdfPageSize(paper: PaperSize, orientation: PaperOrientation, contentW: number, contentH: number): [number, number] {
+  const [long, short] = PAPER_PT[paper] ?? PAPER_PT.A4;
+  const landscape = orientation === "landscape" || (orientation === "auto" && contentW >= contentH);
+  return landscape ? [long, short] : [short, long];
+}
+
+export async function chartToPdfBlob(model: SeatingChartModel, options: ExportOptions = {}): Promise<Blob> {
+  const { paper = "A4", orientation = "auto", bothViews = false } = options;
   await ensurePdfLib({ fontkit: true });
   const doc = await pdfLib().PDFDocument.create();
   doc.registerFontkit(fontkitLib());
   // 日本語フォントは、一部の文字が欠けないよう、サブセットにしない（帳票のPDFと同じ方針）
   const font = await doc.embedFont(await loadJapaneseFontBytes(), { subset: false });
-  const { width, height } = chartSize(model);
-  const landscape = width >= height;
-  const [long, short] = PAPER_PT[paper];
-  const pageW = landscape ? long : short;
-  const pageH = landscape ? short : long;
-  const scale = Math.min((pageW - PDF_MARGIN * 2) / width, (pageH - PDF_MARGIN * 2) / height);
+  const layout = composeViews(model, bothViews);
+  const { width, height } = layout;
+  const [pageW, pageH] = pdfPageSize(paper, orientation, width, height);
+  // 小さい用紙では余白も小さくする（B6・A6でも座席表を大きく入れる）
+  const margin = Math.min(PDF_MARGIN, Math.min(pageW, pageH) * 0.05);
+  const scale = Math.min((pageW - margin * 2) / width, (pageH - margin * 2) / height);
   const page = doc.addPage([pageW, pageH]);
   const ox = (pageW - width * scale) / 2;
-  const oy = PDF_MARGIN;
-  paintChart(pdfPainter(page, font, scale, ox, pageH, oy), model);
+  const oy = margin;
+  paintViews(pdfPainter(page, font, scale, ox, pageH, oy), layout);
   doc.setTitle(model.title.trim() || "座席表");
   const bytes = await doc.save();
   return new Blob([bytes as BlobPart], { type: "application/pdf" });
 }
 
-// ---------------------------------------------------------------------------
-// Excel（席の一覧）
-// ---------------------------------------------------------------------------
-
-export function seatingListRows(model: SeatingChartModel): (string | number)[][] {
-  const kana = !!model.furigana;
-  const nums = !!model.numbers;
-  const reading = (p: Participant | null) => (p?.reading ?? "").trim();
-  const num = (p: Participant | null): string | number => (p?.number && /^\d+$/.test(p.number) ? Number(p.number) : (p?.number ?? ""));
-  // 列：席番号・（出席番号）・名前・（ふりがな）・役職・場所・札
-  const row = (seat: string | number, p: Participant | null, name: string, group: string, tag: string) => [
-    seat,
-    ...(nums ? [num(p)] : []),
-    name,
-    ...(kana ? [reading(p)] : []),
-    p ? p.role : "",
-    group,
-    tag,
-  ];
-  const rows: (string | number)[][] = [["席番号", ...(nums ? ["出席番号"] : []), "名前", ...(kana ? ["ふりがな"] : []), "役職", "場所", "札"]];
-  model.geometry.seats.forEach((seat, i) => {
-    const p = model.assignment[i];
-    const tag = (model.tags?.[i] ?? "").trim();
-    rows.push(row(i + 1, p, p ? p.name : "（空席）", seat.group, tag));
-  });
-  for (const p of model.unseated) rows.push(row("（席なし）", p, p.name, "", ""));
-  return rows;
-}
-
-export async function chartToXlsxBlob(model: SeatingChartModel): Promise<Blob> {
-  const rows = seatingListRows(model);
-  const columns = [
-    { width: 10 },
-    ...(model.numbers ? [{ width: 10 }] : []),
-    { width: 24 },
-    ...(model.furigana ? [{ width: 24 }] : []),
-    { width: 18 },
-    { width: 28 },
-    { width: 12 },
-  ];
-  return writeXlsxSheets([{ name: "座席表", rows: [[model.title.trim() || "座席表"], [], ...rows], columns }]);
-}
-
-export async function exportChart(model: SeatingChartModel, format: ExportFormat, paper: PaperSize = "A4"): Promise<Blob> {
-  if (format === "png" || format === "jpeg") return chartToImageBlob(model, format);
-  if (format === "pdf") return chartToPdfBlob(model, paper);
-  return chartToXlsxBlob(model);
+export async function exportChart(model: SeatingChartModel, format: ExportFormat, options: ExportOptions = {}): Promise<Blob> {
+  if (format === "png" || format === "jpeg") return chartToImageBlob(model, format, 2, options.bothViews ?? false);
+  return chartToPdfBlob(model, options);
 }

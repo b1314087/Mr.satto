@@ -220,6 +220,8 @@ export interface SheetPageSettings {
    */
   header: HeaderFooterSections | null;
   footer: HeaderFooterSections | null;
+  /** ヘッダー/フッターの文字を、表と同じ倍率で拡大縮小するか(headerFooter@scaleWithDoc。既定はtrue) */
+  headerFooterScaleWithDoc: boolean;
   /** 先頭ページだけ・偶数ページだけ別のヘッダー/フッターを使う設定(differentFirst/differentOddEven) */
   differentFirst: boolean;
   differentOddEven: boolean;
@@ -288,6 +290,8 @@ export interface HeaderFooterSections {
   left: string;
   center: string;
   right: string;
+  /** 各セクションの文字サイズ(&nnの指定。無ければ省略＝ブックの標準の文字サイズ) */
+  sizes?: { left?: number; center?: number; right?: number };
 }
 
 function emptySheetSettings(): SheetPageSettings {
@@ -322,6 +326,7 @@ function emptySheetSettings(): SheetPageSettings {
     cellBold: new Map(),
     header: null,
     footer: null,
+    headerFooterScaleWithDoc: true,
     differentFirst: false,
     differentOddEven: false,
     firstHeader: null,
@@ -380,12 +385,13 @@ export function parseHeaderFooterSections(raw: string): HeaderFooterSections {
   // 実装では再現しないため読み飛ばす。
   s = s.replace(/&"[^"]*"/g, "");
   s = s.replace(/&K[0-9A-Fa-f]{6}/g, "");
-  s = s.replace(/&\d{1,3}/g, "");
+  // 文字サイズ(&nn)は、セクションごとに最初の指定を覚えておく(一時的な印に置き換え、セクションに分けたあとで読む)
+  s = s.replace(/&(\d{1,3})/g, "\u0001$1\u0002");
   s = s.replace(/&[BIUESXYO]/g, "");
 
   s = s.replace(new RegExp(AMP_ESCAPE, "g"), "&");
 
-  const sections: HeaderFooterSections = { left: "", center: "", right: "" };
+  const sections = { left: "", center: "", right: "" };
   const markerRe = /&([LCR])/g;
   let match: RegExpExecArray | null;
   let lastIndex = 0;
@@ -404,11 +410,15 @@ export function parseHeaderFooterSections(raw: string): HeaderFooterSections {
   }
   assign(currentKey, s.slice(lastIndex));
 
-  return {
-    left: sections.left.trim(),
-    center: sections.center.trim(),
-    right: sections.right.trim(),
+  const sizes: NonNullable<HeaderFooterSections["sizes"]> = {};
+  const clean = (key: "left" | "center" | "right") => {
+    const m = /\u0001(\d{1,3})\u0002/.exec(sections[key]);
+    if (m && Number(m[1]) >= 1 && Number(m[1]) <= 400) sizes[key] = Number(m[1]);
+    return sections[key].replace(/\u0001\d{1,3}\u0002/g, "").trim();
   };
+  const out: HeaderFooterSections = { left: clean("left"), center: clean("center"), right: clean("right") };
+  if (Object.keys(sizes).length > 0) out.sizes = sizes;
+  return out;
 }
 
 /** "A1" 形式のセル参照を0始まりの{row, col}へ変換する */
@@ -464,12 +474,12 @@ function excelColumnWidthToPt(charWidth: number, mdw: number): number {
  * Fit to Widthの縮小率やページ分割がExcel実際の計算から数%ずれることが
  * 判明した(「Excel通りになってない」調査、ページ数が1枚多くなる不具合)。
  *
- * 游ゴシック等の正確なMDWはExcel/フォントの内部実装に依存し一次情報を
- * 入手できていないため、公開されている実測報告(標準の列幅が游ゴシック
- * 11pt≈8.1文字、ＭＳ Ｐゴシック11pt≈8.11文字、メイリオ11pt≈8.09文字。
- * 対してCalibri 11ptは8.43文字=MDW7px)から比率的に逆算した近似値
- * (7.3px)を使う。OS・Excelのバージョン・画面スケーリングによる実際の
- * ばらつきもあるため、この近似だけで常にExcelと完全に一致するとは限らない
+ * 日本語Excelの既定フォント(游ゴシック・ＭＳ Ｐゴシック・メイリオ等の11pt)では、標準の列幅は
+ * 「8.38文字(72ピクセル)」と表示される。Excelの標準の列幅は「8文字×MDW＋余白5px を8pxの倍数に切り上げ」
+ * なので、8.38文字＝(72−5)÷8 からMDWは8pxと決まる(MDW=7なら8.43文字・64px、7.3のような端数はとらない)。
+ * 以前は実測報告から逆算した近似値7.3pxを使っていたが、既定の列幅(下のdefaultColumnWidthPt)は8pxで
+ * 求めていたため、「幅を手で設定した列」だけが約8%せまくなり、標準の幅のまま残した列と食い違っていた。
+ * 両方を8pxにそろえる。OS・画面の拡大率・フォントの大きさでExcel側の値が変わる場合までは再現しない
  * （開発指示書E章「完全再現は保証しない」の方針どおり）。
  */
 // 比較対象(fontName)は必ず.toLowerCase()を通すため、ここに置くキーも
@@ -507,7 +517,7 @@ function normalizeFontNameForCompare(name: string): string {
 
 function resolveMaximumDigitWidth(stylesXmlText: string | null): number {
   const CALIBRI_MDW = 7;
-  const JP_GOTHIC_MDW = 7.3;
+  const JP_GOTHIC_MDW = 8;
   if (!stylesXmlText) return CALIBRI_MDW;
   const doc = parseXml(stylesXmlText);
   if (!doc) return CALIBRI_MDW;
@@ -1162,8 +1172,7 @@ function parseSheetXml(
     // Calibri等(MDW=7px): 8×7+5=61 → 64px(8.43文字)、日本語Excelの既定フォント(MDW=8px相当):
     // 8×8+5=69 → 72px(8.38文字)。切り上げずに61px・約63px等で描くと、列が5〜15%せまくなり、
     // ふつうに収まるはずの見出しが欠けたり、ページの分かれ方がExcelとずれたりする。
-    const defaultMdw = mdw >= 7.2 ? 8 : mdw;
-    const defaultPx = Math.ceil((base * defaultMdw + 5) / 8) * 8;
+    const defaultPx = Math.ceil((base * mdw + 5) / 8) * 8;
     result.defaultColumnWidthPt = defaultPx * 0.75;
   }
 
@@ -1433,6 +1442,8 @@ function parseSheetXml(
     };
     result.header = pick("oddHeader");
     result.footer = pick("oddFooter");
+    // scaleWithDoc(既定はオン): ヘッダー/フッターの文字も、表と同じ倍率で拡大縮小する
+    result.headerFooterScaleWithDoc = headerFooterEl.getAttribute("scaleWithDoc") === null ? true : isTrueAttr(headerFooterEl.getAttribute("scaleWithDoc"));
     result.differentFirst = isTrueAttr(headerFooterEl.getAttribute("differentFirst"));
     result.differentOddEven = isTrueAttr(headerFooterEl.getAttribute("differentOddEven"));
     result.firstHeader = pick("firstHeader");
