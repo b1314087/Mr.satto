@@ -356,3 +356,19 @@ export function buildLayout(purpose: Purpose, params: LayoutParams): LayoutGeome
       return grid(p, true);
   }
 }
+
+/**
+ * 座席表の向きを逆にする（180度回す）。前（教卓・議長席など）が上の図を、前が下の図にする。
+ * 先生・司会など、前から見た向きにするときに使う。左右も逆になる（前から見ると、生徒の右手が左に見えるため）。
+ * 文字は回さない（読める向きのまま）。席の番号・人の割り当ては変えない。
+ */
+export function rotateLayout(g: LayoutGeometry): LayoutGeometry {
+  const W = g.width;
+  const H = g.height;
+  return {
+    ...g,
+    seats: g.seats.map((s) => ({ ...s, x: W - s.x - SEAT_W, y: H - s.y - SEAT_H })),
+    shapes: g.shapes.map((sh) => (sh.kind === "rect" ? { ...sh, x: W - sh.x - sh.w, y: H - sh.y - sh.h } : { ...sh, cx: W - sh.cx, cy: H - sh.cy })),
+    marks: g.marks.map((m) => ({ ...m, x: W - m.x - m.w, y: H - m.y - 30 })),
+  };
+}

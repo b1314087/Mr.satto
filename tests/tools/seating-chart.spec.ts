@@ -8,7 +8,7 @@ import { assertDownloadedFile, clickAndDownload } from "../helpers/tool-runner";
 import { extractPdfContent, isValidPdfFile } from "../helpers/pdf-inspect";
 import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
-import { autoParams, buildLayout, DEFAULT_PARAMS, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
+import { autoParams, buildLayout, DEFAULT_PARAMS, rotateLayout, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
 import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
 import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked, shuffleWithAxisFix } from "@/lib/seating/arrange";
 
@@ -510,6 +510,45 @@ test("seating-chart: 「大きく表示」で座席表を画面いっぱいに�
   await page.getByTestId("seat-fullscreen").click();
   await page.getByTestId("seat-fullscreen-close").click();
   await expect(preview).not.toHaveAttribute("data-fullscreen", "true");
+});
+
+plainTest("向きを逆にする：前（教卓）が下・左右も逆になり、2回で元に戻る。席の番号・大きさは変わらない", () => {
+  const g = buildLayout("classroom", { ...DEFAULT_PARAMS, cols: 3, rows: 2 });
+  const r = rotateLayout(g);
+  plainExpect(r.width).toBe(g.width);
+  plainExpect(r.height).toBe(g.height);
+  plainExpect(r.seats).toHaveLength(g.seats.length);
+  // 前（教卓）は上 → 下へ
+  plainExpect(g.marks[0].y).toBeLessThan(g.seats[0].y);
+  plainExpect(r.marks[0].y).toBeGreaterThan(r.seats[0].y);
+  // 席1（前の左）は、後ろの右へ
+  plainExpect(r.seats[0].x).toBeGreaterThan(r.seats[1].x);
+  plainExpect(r.seats[0].y).toBeGreaterThan(r.seats[g.seats.length - 1].y);
+  plainExpect(r.seats[0].group).toBe(g.seats[0].group);
+  plainExpect(rotateLayout(r)).toEqual(g);
+});
+
+test("seating-chart: 「前を下にする」で座席表の向きが逆になり、PDFにも反映される。もう一度押すと戻る", async ({ page }) => {
+  await openTool(page);
+  await start(page, "classroom", ["前の左", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "後ろの右"]);
+  const top = async (i: number) => (await seat(page, i).boundingBox())!.y;
+  plainExpect(await top(0)).toBeLessThan(await top(11));
+  await page.getByTestId("seat-flip").click();
+  await expect(page.getByTestId("seat-flip")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("seat-flip")).toContainText("前を上にする");
+  plainExpect(await top(0)).toBeGreaterThan(await top(11));
+  await expect(seat(page, 0)).toHaveAttribute("data-name", "前の左");
+
+  await page.getByTestId("seat-format-pdf").click();
+  const pdf = await clickAndDownload(page, "PDFでダウンロード");
+  const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
+  const y = (text: string) => content.pages[0].items.find((it) => it.str.includes(text))!.y;
+  // PDF の y は下から上へ増える：前を下にすると、教卓は「前の左」より下（y が小さい）
+  plainExpect(y("教卓")).toBeLessThan(y("前の左"));
+  plainExpect(y("前の左")).toBeLessThan(y("後ろの右"));
+
+  await page.getByTestId("seat-flip").click();
+  plainExpect(await top(0)).toBeLessThan(await top(11));
 });
 
 test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力・まとめて貼り付けでき、未入力は目立つ。画面・Excelに出る", async ({ page }) => {

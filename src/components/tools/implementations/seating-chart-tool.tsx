@@ -12,6 +12,7 @@ import {
   MAX_SEATS,
   normalizeParams,
   PURPOSES,
+  rotateLayout,
   SEAT_H,
   SEAT_W,
   type LayoutParams,
@@ -139,6 +140,8 @@ export function SeatingChartTool() {
   const [showMarks, setShowMarks] = useState(false);
   /** プレビューを画面いっぱいに大きく表示しているか */
   const [fullscreen, setFullscreen] = useState(false);
+  /** 座席表の向きを逆にする（前を下にする。先生・司会から見た向き）。画面・印刷・ダウンロードに反映する */
+  const [flipped, setFlipped] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed = useMemo(() => parseParticipants(namesText), [namesText]);
@@ -181,7 +184,10 @@ export function SeatingChartTool() {
   const model: SeatingChartModel | null = geometry
     ? {
         title: title.trim() || (purpose ? TITLE_BY_PURPOSE[purpose] : "座席表"),
-        geometry: { ...geometry, seats: geometry.seats.slice(0, seatCount) },
+        geometry: (() => {
+          const g = { ...geometry, seats: geometry.seats.slice(0, seatCount) };
+          return flipped ? rotateLayout(g) : g;
+        })(),
         assignment: slots.map((id) => (id === null ? null : withReading(participants[id]))),
         unseated: unseated.map(withReading),
         tags: Array.from({ length: seatCount }, (_, i) => tags[i] ?? ""),
@@ -608,6 +614,8 @@ export function SeatingChartTool() {
           onShowMarksChange={setShowMarks}
           fullscreen={fullscreen}
           onFullscreenChange={setFullscreen}
+          flipped={flipped}
+          onFlippedChange={setFlipped}
           onShuffle={shuffle}
           canShuffle={canShuffle(slots, fixedSet) && participants.length > 0}
           onTag={(text) => {
@@ -645,6 +653,8 @@ function SeatPreview({
   onShowMarksChange,
   fullscreen,
   onFullscreenChange,
+  flipped,
+  onFlippedChange,
   onShuffle,
   canShuffle: shuffleEnabled,
 }: {
@@ -657,6 +667,9 @@ function SeatPreview({
   /** 画面いっぱいに大きく表示しているか */
   fullscreen: boolean;
   onFullscreenChange: (v: boolean) => void;
+  /** 向きを逆にしている（前が下） */
+  flipped: boolean;
+  onFlippedChange: (v: boolean) => void;
   selected: number[];
   onTag: (text: string) => void;
   locked: ReadonlySet<number>;
@@ -782,6 +795,16 @@ function SeatPreview({
           入れ替え：席をドラッグ、または2人を選んで［入れ替え］
         </p>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onFlippedChange(!flipped)}
+            aria-pressed={flipped}
+            className={smallButton}
+            data-testid="seat-flip"
+            title="座席表の向きを逆にします（前が上：後ろから見た向き／前が下：前から見た向き）。印刷・ダウンロードにも反映されます"
+          >
+            ⇅ {flipped ? "前を上にする" : "前を下にする"}
+          </button>
           <button type="button" disabled={!shuffleEnabled} onClick={onShuffle} className={smallButton} data-testid="seat-shuffle" title="鍵をかけた席はそのままにして、ほかの席をランダムに並べ替えます">
             シャッフル
           </button>
