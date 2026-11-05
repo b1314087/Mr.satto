@@ -87,6 +87,8 @@ const SYNONYMS: readonly SynonymEntry[] = [
   { keys: ["形式", "ファイル形式", "拡張子"], alts: ["形式", "変換"] },
   { keys: ["切り抜", "切り取", "切抜"], alts: ["トリミング", "切り抜き", "切り取り", "クロップ", "カット"] },
   { keys: ["透明", "背景を消", "背景消"], alts: ["透過", "背景除去"] },
+  // トップページの検索改善：「動画を短くする」「長さを詰める」→ トリミング（切り取り）
+  { keys: ["短く", "短い", "詰め"], alts: ["トリミング", "切り取り", "カット"] },
   { keys: ["ぼかし", "ぼかす", "隠す", "隠し"], alts: ["モザイク", "ぼかし", "黒塗り", "隠す"] },
   { keys: ["写真"], alts: ["写真", "画像"] },
   { keys: ["ムービー", "ビデオ"], alts: ["動画"] },
@@ -97,6 +99,8 @@ const SYNONYMS: readonly SynonymEntry[] = [
   { keys: ["直し", "直す", "直"], alts: ["修正", "直す"], soft: true },
   { keys: ["入力", "入れ", "書き込", "打ち込"], alts: ["入力", "記入", "書き込"], soft: true },
   { keys: ["作り", "作る", "つくる", "つくり"], alts: ["作成", "生成"], soft: true },
+  // 「背景を消す」「余白を消したい」など。何を消すかは、ほかの語で決まる
+  { keys: ["消す", "消し", "消去", "消"], alts: ["除去", "削除", "消去", "透過"], soft: true },
 ];
 
 /** 正規化済みの言い換え（最初に1回だけ作る） */
@@ -176,6 +180,8 @@ function tokenize(rawQuery: string): string[] {
   s = s.replace(/[、。,!?！？「」『』()（）［］[\]【】]/g, " ");
   s = s.replace(/を|から|まで/g, " ");
   s = s.replace(/([^ぁ-ゟ\s])(に|へ|で|が|は|の|と|も)/g, "$1 ");
+  // 英数字と日本語の境目でも区切る（「PDFまとめる」→「pdf まとめる」、「画像png」→「画像 png」）
+  s = s.replace(/([a-z0-9])(?=[^\x00-\x7f\s])/g, "$1 ").replace(/([^\x00-\x7f\s])(?=[a-z0-9])/g, "$1 ");
   return s
     .split(/\s+/)
     .map(stripSuffix)
@@ -251,9 +257,12 @@ interface PreparedTool {
   fields: { text: string; weight: number }[];
 }
 
-const preparedCache = new WeakMap<Tool, PreparedTool>();
+/** 検索に使うツールの項目（トップページの検索候補では、この項目だけを画面に渡す） */
+export type SearchableTool = Pick<Tool, "id" | "name" | "description" | "category" | "keywords">;
 
-function prepare(tool: Tool): PreparedTool {
+const preparedCache = new WeakMap<SearchableTool, PreparedTool>();
+
+function prepare(tool: SearchableTool): PreparedTool {
   const cached = preparedCache.get(tool);
   if (cached) return cached;
   const name = normalizeForSearch(tool.name);
@@ -323,14 +332,14 @@ function wholeNameBonus(prepared: PreparedTool, compactQuery: string): number {
  * すべての語（並び順にだけ使う語を除く）が、元の語か言い換えのどちらかで当てはまるツールだけを残す。
  * 当てはまるツールがなければ空の配列を返す（一覧側が「該当するツールが見つかりませんでした」と出す）。
  */
-export function searchTools(tools: Tool[], rawQuery: string): Tool[] {
+export function searchTools<T extends SearchableTool>(tools: T[], rawQuery: string): T[] {
   const terms = buildTerms(rawQuery);
   if (terms.length === 0) return tools;
 
   const compactQuery = normalizeForSearch(rawQuery).replace(/\s/g, "");
   const hardTerms = terms.filter((t) => !t.soft);
 
-  const scored: { tool: Tool; score: number; index: number }[] = [];
+  const scored: { tool: T; score: number; index: number }[] = [];
   tools.forEach((tool, index) => {
     const prepared = prepare(tool);
     let total = 0;

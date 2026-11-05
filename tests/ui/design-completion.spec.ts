@@ -55,7 +55,7 @@ test.describe("共通の見た目（背景・ロゴ・アイコン）", () => {
 
   test("ホーム: 検索ボタン（青い丸）でも、Enterと同じく /tools?q=… へ移動する", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("searchbox", { name: "ツールを検索" }).last().fill("画像 圧縮");
+    await page.getByRole("combobox", { name: "何をしたいですか？" }).fill("画像 圧縮");
     await page.getByRole("button", { name: "検索する" }).click();
     await expect(page).toHaveURL(/\/tools\?q=/);
   });

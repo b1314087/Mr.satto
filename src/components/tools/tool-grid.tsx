@@ -1,7 +1,7 @@
 import type { Tool } from "@/lib/tools/types";
 import { ToolCard } from "./tool-card";
 
-export function ToolGrid({ tools, emptyMessage = "該当するツールが見つかりませんでした" }: {
+export function ToolGrid({ tools, emptyMessage = "該当するツールが見つかりませんでした。別の言葉でも検索してみてください。" }: {
   tools: Tool[];
   emptyMessage?: string;
 }) {

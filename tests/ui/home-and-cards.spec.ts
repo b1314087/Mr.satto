@@ -126,7 +126,7 @@ test.describe("トップページの構成", () => {
 
   test("検索欄が先に、その次にカテゴリが並ぶ（上から順）", async ({ page }) => {
     await page.goto("/");
-    const search = main(page).getByRole("searchbox", { name: "ツールを検索" });
+    const search = main(page).getByRole("combobox", { name: "何をしたいですか？" });
     const catHeading = page.getByRole("heading", { name: "カテゴリから探す" });
     const first = await search.boundingBox();
     const second = await catHeading.boundingBox();
@@ -135,7 +135,7 @@ test.describe("トップページの構成", () => {
 
   test("検索欄から既存の検索機能が使える（/tools?q=… へ移動し、結果が絞り込まれる）", async ({ page }) => {
     await page.goto("/");
-    const search = main(page).getByRole("searchbox", { name: "ツールを検索" });
+    const search = main(page).getByRole("combobox", { name: "何をしたいですか？" });
     await expect(async () => {
       await search.fill("画像 圧縮");
       await search.press("Enter");
@@ -188,7 +188,7 @@ test.describe("トップページの構成", () => {
     ]) {
       await page.setViewportSize(vp);
       await page.goto("/");
-      const search = await main(page).getByRole("searchbox", { name: "ツールを検索" }).boundingBox();
+      const search = await main(page).getByRole("combobox", { name: "何をしたいですか？" }).boundingBox();
       expect(search!.y + search!.height, `${vp.width}px: 検索欄`).toBeLessThanOrEqual(vp.height);
       const card = await page.locator('section:has(h2:text("カテゴリから探す")) a[href^="/tools/"]').first().boundingBox();
       expect(card!.y, `${vp.width}px: 最初のカテゴリ`).toBeLessThan(vp.height);
@@ -363,7 +363,8 @@ for (const scheme of ["light", "dark"] as const) {
         "main h1",
         'main p:has-text("面倒な作業を、サッと。")',
         'main p:has-text("ブラウザ上でサッと解決")',
-        'main p:has-text("ツール名や作業内容から探せます")',
+        'main p:has-text("ツール名を知らなくても")',
+        'main label:has-text("何をしたいですか？")',
         'main h2:has-text("カテゴリから探す")',
         'section:has(h2:text("カテゴリから探す")) a[href="/tools/image"] span.block:first-child',
         'section:has(h2:text("カテゴリから探す")) a[href="/tools/image"] span.block:last-child',

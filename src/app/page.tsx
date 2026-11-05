@@ -1,6 +1,6 @@
 import { featureFlags } from "@/lib/config/features";
 import Link from "next/link";
-import { SearchBar } from "@/components/tools/search-bar";
+import { HomeSearch } from "@/components/tools/home-search";
 import { CategoryCard } from "@/components/tools/category-card";
 import { categories } from "@/lib/tools/categories";
 import { getListedTools } from "@/lib/tools/data";
@@ -48,11 +48,8 @@ export default function Home() {
               画像・PDF・CSV・ファイルなどの面倒な作業を、ブラウザ上でサッと解決できるWebツール集です。
             </p>
             <div className="mt-2 w-full max-w-xl">
-              <SearchBar placeholder="ツールを検索（例: 画像 圧縮）" pill />
+              <HomeSearch total={availableTools.length} />
             </div>
-            <p className="text-xs text-ms-muted">
-              ツール名や作業内容から探せます ・ 全 {availableTools.length} ツール
-            </p>
           </div>
           <div className="hidden justify-center lg:flex" aria-hidden="true">
             <span className="ms-emblem h-56 w-56 xl:h-64 xl:w-64">
