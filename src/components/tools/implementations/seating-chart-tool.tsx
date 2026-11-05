@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
@@ -17,7 +18,7 @@ import {
   type Purpose,
 } from "@/lib/seating/layouts";
 import { cleanReading, namesFromRows, parseParticipants, readingsFromPaste, SEATING_MAX_PARTICIPANTS, type Participant } from "@/lib/seating/participants";
-import { canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
+import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleWithAxisFix, type AxisFix } from "@/lib/seating/arrange";
 import { exportChart, type ExportFormat, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
@@ -132,6 +133,12 @@ export function SeatingChartTool() {
   const [locked, setLocked] = useState<number[]>([]);
   /** 空席にした席の番号（だれも座らせない席。入力順・シャッフルでも人が入らない） */
   const [blocked, setBlocked] = useState<number[]>([]);
+  /** 列だけ固定した人（名前ごと）：col＝縦の列の中だけ、row＝横の列の中だけで動く */
+  const [axisFix, setAxisFix] = useState<Record<string, AxisFix>>({});
+  /** プレビューに、鍵・列の固定の印を出すか（生徒に見せるときに分からないよう、最初は出さない） */
+  const [showMarks, setShowMarks] = useState(false);
+  /** プレビューを画面いっぱいに大きく表示しているか */
+  const [fullscreen, setFullscreen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed = useMemo(() => parseParticipants(namesText), [namesText]);
@@ -190,6 +197,7 @@ export function SeatingChartTool() {
     setTags({});
     setLocked([]);
     setBlocked([]);
+    setAxisFix({});
   }
 
   function updateParam<K extends keyof LayoutParams>(key: K, value: LayoutParams[K]) {
@@ -207,8 +215,31 @@ export function SeatingChartTool() {
     setSelected([]);
   }
 
+  // 席ごとの縦の列・横の列（位置が近い席を同じ列とみなす）
+  const colOf = geometry ? axisGroups(geometry.seats.slice(0, seatCount).map((st) => st.x), SEAT_W / 2) : [];
+  const rowOf = geometry ? axisGroups(geometry.seats.slice(0, seatCount).map((st) => st.y), SEAT_H / 2) : [];
+  const axisOfPerson = (id: number): AxisFix | null => axisFix[participants[id]?.name ?? ""] ?? null;
+  /** 席ごとの、座っている人の列の固定（プレビューの印用） */
+  const axisBySeat = slots.map((id) => (id === null ? null : axisOfPerson(id)));
+
   function shuffle() {
-    setManual({ slots: shuffleUnlocked(slots, fixedSet), names });
+    setManual({ slots: shuffleWithAxisFix(slots, fixedSet, axisOfPerson, colOf, rowOf), names });
+    setSelected([]);
+  }
+
+  /** 選んだ席の人の列の固定：すべて同じ固定なら外し、そうでなければその固定にする */
+  function toggleAxisFix(axis: AxisFix) {
+    const people = selected.map((i) => slots[i]).filter((id): id is number => id !== null).map((id) => participants[id].name);
+    if (people.length === 0) return;
+    const allSame = people.every((n) => axisFix[n] === axis);
+    setAxisFix((prev) => {
+      const next = { ...prev };
+      for (const n of people) {
+        if (allSame) delete next[n];
+        else next[n] = axis;
+      }
+      return next;
+    });
     setSelected([]);
   }
 
@@ -273,6 +304,7 @@ export function SeatingChartTool() {
       setNamesText(result.text);
       setManual(null);
       setLocked([]);
+      setAxisFix({});
       let note = `${result.count}人を読み込みました`;
       if (result.readings) {
         // ふりがなの列：名簿と同じ順番で割り当てる（同じ名前に番号を付けた後の名前で覚える）
@@ -570,6 +602,12 @@ export function SeatingChartTool() {
           blocked={blockedSet}
           onToggleLock={toggleLock}
           onToggleBlocked={toggleBlocked}
+          axisBySeat={axisBySeat}
+          onToggleAxisFix={toggleAxisFix}
+          showMarks={showMarks}
+          onShowMarksChange={setShowMarks}
+          fullscreen={fullscreen}
+          onFullscreenChange={setFullscreen}
           onShuffle={shuffle}
           canShuffle={canShuffle(slots, fixedSet) && participants.length > 0}
           onTag={(text) => {
@@ -601,10 +639,24 @@ function SeatPreview({
   blocked,
   onToggleLock,
   onToggleBlocked,
+  axisBySeat,
+  onToggleAxisFix,
+  showMarks,
+  onShowMarksChange,
+  fullscreen,
+  onFullscreenChange,
   onShuffle,
   canShuffle: shuffleEnabled,
 }: {
   model: SeatingChartModel;
+  axisBySeat: (AxisFix | null)[];
+  onToggleAxisFix: (axis: AxisFix) => void;
+  /** 鍵・列の固定の印をプレビューに出すか */
+  showMarks: boolean;
+  onShowMarksChange: (v: boolean) => void;
+  /** 画面いっぱいに大きく表示しているか */
+  fullscreen: boolean;
+  onFullscreenChange: (v: boolean) => void;
   selected: number[];
   onTag: (text: string) => void;
   locked: ReadonlySet<number>;
@@ -635,16 +687,43 @@ function SeatPreview({
     ro.observe(el);
     setBoxW(el.clientWidth);
     return () => ro.disconnect();
-  }, [open]);
+  }, [open, fullscreen]);
 
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const [maxH, setMaxH] = useState(440);
   useEffect(() => {
-    const update = () => setMaxH(Math.max(180, Math.min(window.innerHeight * 0.38, 480)));
+    const update = () => {
+      if (fullscreen) {
+        // 画面いっぱい：操作の段（ボタン・札の欄）を除いた高さを、すべて座席表に使う
+        const bar = toolbarRef.current?.offsetHeight ?? 120;
+        setMaxH(Math.max(200, window.innerHeight - bar - 40));
+      } else {
+        setMaxH(Math.max(180, Math.min(window.innerHeight * 0.38, 480)));
+      }
+    };
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, []);
-  const scale = Math.max(0.3, Math.min(1, (boxW - 4) / g.width, maxH / g.height));
+  }, [fullscreen, selected.length]);
+
+  // 大きく表示しているときは、Esc で戻る。後ろのページはスクロールさせない
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onFullscreenChange(false);
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fullscreen, onFullscreenChange]);
+
+  // 大きく表示しているときは、文字が読みやすいよう、元の大きさより大きくしてよい（最大2倍）
+  const maxScale = fullscreen ? 2 : 1;
+  const scale = Math.max(0.3, Math.min(maxScale, (boxW - 4) / g.width, maxH / g.height));
 
   function seatAt(clientX: number, clientY: number, except: number): number | null {
     for (const el of document.elementsFromPoint(clientX, clientY)) {
@@ -665,16 +744,40 @@ function SeatPreview({
     touchAction: "none",
   });
 
-  return (
+  const content = (
     <section
-      className="sticky bottom-0 z-20 -mx-4 flex flex-col gap-2 rounded-t-xl border border-neutral-200 bg-white p-3 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.35)] sm:-mx-6 dark:border-neutral-800 dark:bg-neutral-950"
+      className={
+        fullscreen
+          ? "fixed inset-0 z-[100] flex flex-col gap-2 overflow-hidden bg-white p-4 dark:bg-neutral-950"
+          : "sticky bottom-0 z-20 -mx-4 flex flex-col gap-2 rounded-t-xl border border-neutral-200 bg-white p-3 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.35)] sm:-mx-6 dark:border-neutral-800 dark:bg-neutral-950"
+      }
       aria-label="座席表のプレビュー"
       data-testid="tool-preview"
+      data-fullscreen={fullscreen ? "true" : undefined}
+      role={fullscreen ? "dialog" : undefined}
+      aria-modal={fullscreen ? true : undefined}
     >
+      <div ref={toolbarRef} className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={smallButton} data-testid="seat-preview-toggle">
-          {open ? "▼ たたむ" : "▲ プレビュー"}
-        </button>
+        {fullscreen ? (
+          <button type="button" onClick={() => onFullscreenChange(false)} className="ms-focus-ring rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white" data-testid="seat-fullscreen-close">
+            ✕ 閉じる（Esc）
+          </button>
+        ) : (
+          <>
+            <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={smallButton} data-testid="seat-preview-toggle">
+              {open ? "▼ たたむ" : "▲ プレビュー"}
+            </button>
+            <button type="button" onClick={() => { setOpen(true); onFullscreenChange(true); }} className="ms-focus-ring rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white" data-testid="seat-fullscreen" title="座席表を画面いっぱいに大きく表示します（入れ替え・シャッフルもできます）">
+              ⛶ 大きく表示
+            </button>
+          </>
+        )}
+        <label className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300" title="鍵をかけた席・列を固定した人に印を付けます。生徒に見せるときは外しておくと、分かりません">
+          <input type="checkbox" checked={showMarks} onChange={(e) => onShowMarksChange(e.target.checked)} data-testid="seat-show-marks" />
+          鍵・固定の印を表示
+        </label>
+        {fullscreen && <span className="text-xs text-neutral-500 sm:hidden dark:text-neutral-400">スマホは横向きにすると、大きく見えます</span>}
         <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="seat-swap-help">
           入れ替え：席をドラッグ、または2人を選んで［入れ替え］
         </p>
@@ -733,11 +836,22 @@ function SeatPreview({
           <button type="button" onClick={onToggleBlocked} className={smallButton} data-testid="seat-block">
             {selected.every((i) => blocked.has(i)) ? "空席を戻す" : "空席にする"}
           </button>
-          {selected.some((i) => locked.has(i)) && (
+          {selected.some((i) => model.assignment[i]) && (
+            <>
+              <button type="button" onClick={() => onToggleAxisFix("col")} className={smallButton} data-testid="seat-fix-col" title="シャッフルしても、この人は同じ縦の列（左右の位置が同じ席）の中だけで動きます">
+                {selected.every((i) => !model.assignment[i] || axisBySeat[i] === "col") ? "縦の列の固定を外す" : "↕ 縦の列だけ固定"}
+              </button>
+              <button type="button" onClick={() => onToggleAxisFix("row")} className={smallButton} data-testid="seat-fix-row" title="シャッフルしても、この人は同じ横の列（前からの位置が同じ席）の中だけで動きます">
+                {selected.every((i) => !model.assignment[i] || axisBySeat[i] === "row") ? "横の列の固定を外す" : "↔ 横の列だけ固定"}
+              </button>
+            </>
+          )}
+          {showMarks && selected.some((i) => locked.has(i)) && (
             <span className="text-neutral-500 dark:text-neutral-400">鍵をかけた席は、入れ替え・シャッフルで動きません</span>
           )}
         </div>
       )}
+      </div>
       {open && (
         <div ref={boxRef} className="overflow-auto" style={{ maxHeight: maxH + 8 }}>
           <div style={{ width: g.width * scale, height: g.height * scale }} className="relative mx-auto">
@@ -763,6 +877,9 @@ function SeatPreview({
                 const isSel = selected.includes(i);
                 const isHover = hover === i;
                 const isLocked = locked.has(i);
+                // 印を出さないときは、鍵の席も見た目をほかの席と同じにする（生徒に分からないように）
+                const showLock = showMarks && isLocked;
+                const axis = showMarks && person ? axisBySeat[i] : null;
                 const isBlocked = blocked.has(i);
                 const reading = model.furigana ? (person?.reading ?? "") : "";
                 return (
@@ -776,13 +893,13 @@ function SeatPreview({
                     data-blocked={isBlocked ? "true" : undefined}
                     aria-pressed={isSel}
                     aria-label={`席${i + 1}${model.tags?.[i] ? `［${model.tags[i]}］` : ""}：${person ? `${person.name}${person.role ? `（${person.role}）` : ""}` : isBlocked ? "空席（空席にした席）" : "空席"}${isLocked ? "・鍵" : ""}`}
-                    className={`ms-focus-ring absolute flex ${isLocked || isBlocked ? "cursor-pointer" : "cursor-grab"} select-none flex-col items-center justify-center rounded-lg border px-1.5 text-center shadow-sm active:cursor-grabbing ${
+                    className={`ms-focus-ring absolute flex ${showLock || isBlocked ? "cursor-pointer" : "cursor-grab"} select-none flex-col items-center justify-center rounded-lg border px-1.5 text-center shadow-sm active:cursor-grabbing ${
                       isSel
                         ? "border-blue-600 bg-blue-50 ring-4 ring-blue-500/60 dark:bg-blue-950"
                         : isHover
                           ? "border-emerald-500 bg-emerald-50 ring-4 ring-emerald-400/60 dark:bg-emerald-950"
                           : person
-                            ? isLocked
+                            ? showLock
                               ? "border-slate-500 bg-slate-100 dark:border-slate-400 dark:bg-slate-800"
                               : "border-slate-400 bg-white dark:border-slate-500 dark:bg-slate-900"
                             : isBlocked
@@ -840,9 +957,14 @@ function SeatPreview({
                         空席
                       </span>
                     )}
-                    {isLocked && (
+                    {showLock && (
                       <span className="absolute bottom-0.5 right-1 text-[11px] leading-none" aria-hidden="true" data-testid="seat-lock-icon">
                         🔒
+                      </span>
+                    )}
+                    {axis && (
+                      <span className="absolute bottom-0.5 left-1.5 text-[11px] font-bold leading-none text-blue-600 dark:text-blue-400" aria-hidden="true" data-testid="seat-axis-icon" data-axis={axis}>
+                        {axis === "col" ? "↕" : "↔"}
                       </span>
                     )}
                     {person && (
@@ -865,6 +987,8 @@ function SeatPreview({
       )}
     </section>
   );
+  // 大きく表示するときは、ページの外枠（ぼかし・重なりの設定）に影響されないよう、body の直下に出す
+  return fullscreen && typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }
 
 /**

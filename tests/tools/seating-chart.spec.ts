@@ -10,7 +10,7 @@ import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { autoParams, buildLayout, DEFAULT_PARAMS, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
 import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
-import { canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
+import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked, shuffleWithAxisFix } from "@/lib/seating/arrange";
 
 /**
  * 座席表作成（seating-chart）のテスト（2026-11 作り直し）。
@@ -418,6 +418,98 @@ test("seating-chart: 席に鍵をかけると、シャッフル・入れ替え�
   await expect(page.getByTestId("seat-lock")).toHaveText("🔓 鍵を外す");
   await page.getByTestId("seat-lock").click();
   await expect(seat(page, 2)).not.toHaveAttribute("data-locked", "true");
+});
+
+plainTest("列の固定：位置の近い席を同じ列にまとめ、列を固定した人は同じ列の中だけで動く（鍵の席は動かない）", () => {
+  plainExpect(axisGroups([0, 200, 0.5, 400, 201], 50)).toEqual([0, 1, 0, 2, 1]);
+  // 3列×3行（席の番号＝行×3＋列）。人の番号＝席の番号
+  const cols = [0, 1, 2, 0, 1, 2, 0, 1, 2];
+  const rows = [0, 0, 0, 1, 1, 1, 2, 2, 2];
+  const slots = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  const axis = (id: number) => (id === 4 ? "col" : id === 6 ? "row" : null);
+  let moved = false;
+  for (let k = 0; k < 200; k++) {
+    const next = shuffleWithAxisFix(slots, new Set([0]), axis, cols, rows);
+    plainExpect(next[0]).toBe(0);
+    plainExpect([...next].sort()).toEqual(slots);
+    plainExpect(cols[next.indexOf(4)]).toBe(1); // 人4は縦の列1のまま
+    plainExpect(rows[next.indexOf(6)]).toBe(2); // 人6は横の列2のまま
+    if (next.indexOf(4) !== 4) moved = true;
+  }
+  plainExpect(moved).toBe(true); // 列の中では動く
+  // 列を固定した人がいなければ、これまでのシャッフルと同じ
+  plainExpect(shuffleWithAxisFix([0, 1], new Set(), () => null, [0, 1], [0, 0], () => 0)).toEqual(shuffleUnlocked([0, 1], new Set(), () => 0));
+});
+
+test("seating-chart: 鍵・列の固定の印は、最初はプレビューに出ない（生徒に見せても分からない）。「印を表示」で確認できる", async ({ page }) => {
+  await openTool(page);
+  await start(page, "classroom", ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"]);
+  await seat(page, 2).click();
+  await page.getByTestId("seat-lock").click();
+  await seat(page, 7).click();
+  await page.getByTestId("seat-fix-col").click();
+  await expect(seat(page, 2)).toHaveAttribute("data-locked", "true");
+  await expect(page.getByTestId("seat-lock-icon")).toHaveCount(0);
+  await expect(page.getByTestId("seat-axis-icon")).toHaveCount(0);
+  // 鍵の席も、ほかの席と同じ見た目
+  const bgLocked = await seat(page, 2).evaluate((e) => getComputedStyle(e).backgroundColor);
+  const bgOther = await seat(page, 3).evaluate((e) => getComputedStyle(e).backgroundColor);
+  plainExpect(bgLocked).toBe(bgOther);
+  await page.getByTestId("seat-show-marks").check();
+  await expect(seat(page, 2).getByTestId("seat-lock-icon")).toBeVisible();
+  await expect(seat(page, 7).getByTestId("seat-axis-icon")).toHaveAttribute("data-axis", "col");
+});
+
+test("seating-chart: 「縦の列だけ固定」した人は、シャッフルしても同じ縦の列の中だけで動く。外すと自由に動く", async ({ page }) => {
+  await openTool(page);
+  const names = Array.from({ length: 24 }, (_, i) => `N${i + 1}`);
+  await start(page, "classroom", names);
+  await seat(page, 1).click();
+  await page.getByTestId("seat-fix-col").click();
+  const xOf = async (name: string) =>
+    page.locator(`[data-testid="seat"][data-name="${name}"]`).evaluate((e) => (e as HTMLElement).style.left);
+  const x0 = await xOf("N2");
+  let movedRow = false;
+  for (let k = 0; k < 6; k++) {
+    await page.getByTestId("seat-shuffle").click();
+    plainExpect(await xOf("N2")).toBe(x0);
+    if ((await seatNames(page)).indexOf("N2") !== 1) movedRow = true;
+  }
+  plainExpect(movedRow).toBe(true);
+  // 固定を外す（同じ人の席を選んで、もう一度押す）
+  const idx = (await seatNames(page)).indexOf("N2");
+  await seat(page, idx).click();
+  await expect(page.getByTestId("seat-fix-col")).toHaveText("縦の列の固定を外す");
+  await page.getByTestId("seat-fix-col").click();
+  let left = false;
+  for (let k = 0; k < 10 && !left; k++) {
+    await page.getByTestId("seat-shuffle").click();
+    if ((await xOf("N2")) !== x0) left = true;
+  }
+  plainExpect(left).toBe(true);
+});
+
+test("seating-chart: 「大きく表示」で座席表を画面いっぱいに出し、そこでも入れ替え・シャッフルでき、Esc・閉じるで戻る", async ({ page }) => {
+  await openTool(page);
+  await start(page, "classroom", Array.from({ length: 30 }, (_, i) => `生徒${i + 1}`));
+  const smallW = (await seat(page, 0).boundingBox())!.width;
+  await page.getByTestId("seat-fullscreen").click();
+  const preview = page.getByTestId("tool-preview");
+  await expect(preview).toHaveAttribute("data-fullscreen", "true");
+  const box = (await preview.boundingBox())!;
+  plainExpect(box.width).toBeGreaterThanOrEqual(1240);
+  plainExpect(box.height).toBeGreaterThanOrEqual(880);
+  plainExpect((await seat(page, 0).boundingBox())!.width).toBeGreaterThan(smallW * 1.3);
+  await seat(page, 0).click();
+  await seat(page, 1).click();
+  await page.getByTestId("seat-swap").click();
+  plainExpect((await seatNames(page)).slice(0, 2)).toEqual(["生徒2", "生徒1"]);
+  await page.getByTestId("seat-shuffle").click();
+  await page.keyboard.press("Escape");
+  await expect(preview).not.toHaveAttribute("data-fullscreen", "true");
+  await page.getByTestId("seat-fullscreen").click();
+  await page.getByTestId("seat-fullscreen-close").click();
+  await expect(preview).not.toHaveAttribute("data-fullscreen", "true");
 });
 
 test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力・まとめて貼り付けでき、未入力は目立つ。画面・Excelに出る", async ({ page }) => {

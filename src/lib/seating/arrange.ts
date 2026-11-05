@@ -85,3 +85,85 @@ export function evictBlocked(slots: Slots, blocked: ReadonlySet<number>): Slots 
   }
   return next;
 }
+
+/** 列の固定：縦の列（同じ左右の位置）だけ、または横の列（同じ前後の位置）だけで動かす */
+export type AxisFix = "col" | "row";
+
+/**
+ * 位置（x または y）が近い席を、同じ列としてまとめる。返り値は席ごとの列の番号。
+ * tolerance 以内の差は同じ列とみなす（席の大きさの半分ほど）。
+ */
+export function axisGroups(values: readonly number[], tolerance: number): number[] {
+  const order = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+  const group = Array<number>(values.length).fill(0);
+  let g = -1;
+  let last = Number.NEGATIVE_INFINITY;
+  for (const { v, i } of order) {
+    if (v - last > tolerance) g++;
+    group[i] = g;
+    last = v;
+  }
+  return group;
+}
+
+/**
+ * 鍵・空席の席はそのまま、列を固定した人は同じ列の席の中だけで、ほかの人は自由に並べ替える。
+ * - axisOf(人の番号)：その人の列の固定（なければ null）
+ * - colOf / rowOf：席ごとの縦の列・横の列の番号（axisGroups）
+ * 列を固定した人を先に、選べる席が少ない人から順に置く（行き詰まったら、やり直す）。
+ * 並べ替えられる人が2人以上なら、元と同じ並びにはしない（どうしても同じになる場合はそのまま）。
+ */
+export function shuffleWithAxisFix(
+  slots: Slots,
+  locked: ReadonlySet<number>,
+  axisOf: (personId: number) => AxisFix | null,
+  colOf: readonly number[],
+  rowOf: readonly number[],
+  rand: (n: number) => number = randomIndex
+): Slots {
+  const free = slots.map((_, i) => i).filter((i) => !locked.has(i));
+  const fixedPeople = free.filter((i) => slots[i] !== null && axisOf(slots[i]!) !== null);
+  if (fixedPeople.length === 0) return shuffleUnlocked(slots, locked, rand);
+  if (!canShuffle(slots, locked)) return slots.slice();
+
+  const sameLine = (seat: number, other: number, axis: AxisFix) => (axis === "col" ? colOf[seat] === colOf[other] : rowOf[seat] === rowOf[other]);
+
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const next: Slots = slots.slice();
+    const taken = new Set<number>();
+    // 選べる席が少ない人から置く
+    const constrained = fixedPeople
+      .map((seat) => {
+        const id = slots[seat]!;
+        const axis = axisOf(id)!;
+        return { id, options: free.filter((s) => sameLine(s, seat, axis)) };
+      })
+      .sort((a, b) => a.options.length - b.options.length || rand(3) - 1);
+    let ok = true;
+    for (const { id, options } of constrained) {
+      const open = options.filter((s) => !taken.has(s));
+      if (open.length === 0) {
+        ok = false;
+        break;
+      }
+      const s = open[rand(open.length)];
+      next[s] = id;
+      taken.add(s);
+    }
+    if (!ok) continue;
+    // 残りの人（空席も含む）を、残りの席へランダムに入れる
+    const fixedIds = new Set(constrained.map((c) => c.id));
+    const rest = free.map((i) => slots[i]).filter((v) => v === null || !fixedIds.has(v));
+    for (let k = rest.length - 1; k > 0; k--) {
+      const j = rand(k + 1);
+      [rest[k], rest[j]] = [rest[j], rest[k]];
+    }
+    let r = 0;
+    for (const s of free) {
+      if (taken.has(s)) continue;
+      next[s] = rest[r++] ?? null;
+    }
+    if (next.some((v, i) => v !== slots[i])) return next;
+  }
+  return slots.slice();
+}
