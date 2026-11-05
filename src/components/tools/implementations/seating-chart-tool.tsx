@@ -245,6 +245,21 @@ export function SeatingChartTool() {
   /** 今の並びで満たしていない条件 */
   const unmet = violatedRules(activeRules, slots, nameOf, grid);
 
+  /** 選んだ席（鍵・空席を除く）の中だけで、人を並べ替える。席の条件も守る */
+  function shuffleSelected() {
+    const chosen = new Set(selected.filter((i) => !fixedSet.has(i)));
+    if (chosen.size < 2) return;
+    const others = new Set(slots.map((_, i) => i).filter((i) => !chosen.has(i)));
+    const result = shuffleWithRules(slots, others, activeRules, nameOf, grid);
+    if (result.ok) {
+      setManual({ slots: result.slots, names });
+      setRuleError(null);
+    } else {
+      setRuleError("選んだ席の中では、席の条件をすべて満たす並びが見つかりませんでした（並びは変えていません）。");
+    }
+    setSelected([]);
+  }
+
   function shuffle() {
     const result = shuffleWithRules(slots, fixedSet, activeRules, nameOf, grid);
     if (result.ok) {
@@ -300,7 +315,8 @@ export function SeatingChartTool() {
   }
 
   function toggleSelect(i: number) {
-    setSelected((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : prev.length >= 2 ? [prev[1], i] : [...prev, i]));
+    // 何席でも選べる（2席なら入れ替え、3席以上なら選んだ席の中でシャッフル）
+    setSelected((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
   }
 
   async function importFile(file: File) {
@@ -702,6 +718,8 @@ export function SeatingChartTool() {
           selected={selected}
           onToggle={toggleSelect}
           onSwap={swap}
+          onShuffleSelected={shuffleSelected}
+          onClearSelection={() => setSelected([])}
           onReset={resetOrder}
           canReset={manual !== null}
           locked={lockedSet}
@@ -730,6 +748,8 @@ function SeatPreview({
   selected,
   onToggle,
   onSwap,
+  onShuffleSelected,
+  onClearSelection,
   onReset,
   canReset,
   onTag,
@@ -764,6 +784,8 @@ function SeatPreview({
   canShuffle: boolean;
   onToggle: (i: number) => void;
   onSwap: (a: number, b: number) => void;
+  onShuffleSelected: () => void;
+  onClearSelection: () => void;
   onReset: () => void;
   canReset: boolean;
 }) {
@@ -892,15 +914,17 @@ function SeatPreview({
           <button type="button" disabled={!shuffleEnabled} onClick={onShuffle} className={smallButton} data-testid="seat-shuffle" title="鍵をかけた席はそのままにして、ほかの席をランダムに並べ替えます">
             シャッフル
           </button>
-          <button
-            type="button"
-            disabled={selected.length !== 2 || selected.some((i) => locked.has(i) || blocked.has(i))}
-            onClick={() => onSwap(selected[0], selected[1])}
-            className="ms-focus-ring rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-            data-testid="seat-swap"
-          >
-            入れ替え{selected.length > 0 ? `（${selected.length}/2）` : ""}
-          </button>
+          {selected.length <= 2 && (
+            <button
+              type="button"
+              disabled={selected.length !== 2 || selected.some((i) => locked.has(i) || blocked.has(i))}
+              onClick={() => onSwap(selected[0], selected[1])}
+              className="ms-focus-ring rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+              data-testid="seat-swap"
+            >
+              入れ替え{selected.length > 0 ? `（${selected.length}/2）` : ""}
+            </button>
+          )}
           <button type="button" disabled={!canReset} onClick={onReset} className={smallButton} data-testid="seat-reset">
             入力順に戻す
           </button>
@@ -916,6 +940,8 @@ function SeatPreview({
           onTag={onTag}
           onToggleLock={onToggleLock}
           onToggleBlocked={onToggleBlocked}
+          onShuffleSelected={onShuffleSelected}
+          onClearSelection={onClearSelection}
         />
       )}
       </div>
@@ -1069,6 +1095,8 @@ function SelectionPanel({
   onTag,
   onToggleLock,
   onToggleBlocked,
+  onShuffleSelected,
+  onClearSelection,
   className = "",
 }: {
   selected: number[];
@@ -1078,11 +1106,34 @@ function SelectionPanel({
   onTag: (text: string) => void;
   onToggleLock: () => void;
   onToggleBlocked: () => void;
+  /** 選んだ席（3席以上）の中でシャッフル */
+  onShuffleSelected: () => void;
+  onClearSelection: () => void;
   className?: string;
 }) {
   const [tagText, setTagText] = useState("");
+  // シャッフルできる席（鍵・空席を除く）
+  const movable = selected.filter((i) => !locked.has(i) && !blocked.has(i)).length;
   return (
         <div className={`flex flex-wrap items-center gap-2 text-xs ${className}`} data-testid="seat-tag-bar">
+          <span className="font-semibold text-neutral-700 dark:text-neutral-200" data-testid="seat-selected-count">
+            {selected.length}席を選択中
+          </span>
+          {selected.length >= 3 && (
+            <button
+              type="button"
+              onClick={onShuffleSelected}
+              disabled={movable < 2}
+              className="ms-focus-ring rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+              data-testid="seat-shuffle-selected"
+              title="選んだ席の中だけで、人をランダムに並べ替えます（鍵・空席の席は動きません）"
+            >
+              選んだ{selected.length}席をシャッフル
+            </button>
+          )}
+          <button type="button" onClick={onClearSelection} className={smallButton} data-testid="seat-clear-selection">
+            選択を解除
+          </button>
           <label className="flex items-center gap-1.5 text-neutral-700 dark:text-neutral-200">
             札
             <input

@@ -857,3 +857,35 @@ test("seating-chart: 出席番号を付けると、名前の前に番号が出�
   plainExpect(rows[h].slice(0, 3)).toEqual(["席番号", "出席番号", "名前"]);
   plainExpect(rows[h + 1].slice(0, 3)).toEqual(["1", "12", "山田"]);
 });
+
+test("seating-chart: 3席以上を選ぶと「入れ替え」の代わりに「選んだ席をシャッフル」が出て、選んだ席の中だけで並び替わる（鍵の席は動かない）", async ({ page }) => {
+  await openTool(page);
+  await start(page, "classroom", Array.from({ length: 12 }, (_, i) => `N${i + 1}`));
+  // 席3に鍵をかける
+  await seat(page, 2).click();
+  await page.getByTestId("seat-lock").click();
+  const before = await seatNames(page);
+  for (const i of [0, 1, 2, 3, 4]) await seat(page, i).click();
+  await expect(page.getByTestId("seat-selected-count")).toHaveText("5席を選択中");
+  await expect(page.getByTestId("seat-swap")).toHaveCount(0);
+  await expect(page.getByTestId("seat-shuffle-selected")).toHaveText("選んだ5席をシャッフル");
+  let changed = false;
+  for (let k = 0; k < 4; k++) {
+    if (k > 0) for (const i of [0, 1, 2, 3, 4]) await seat(page, i).click();
+    await page.getByTestId("seat-shuffle-selected").click();
+    const now = await seatNames(page);
+    plainExpect(now[2]).toBe("N3"); // 鍵の席はそのまま
+    plainExpect(now.slice(5)).toEqual(before.slice(5)); // 選んでいない席はそのまま
+    plainExpect(now.slice(0, 5).sort()).toEqual(before.slice(0, 5).sort());
+    if (now.join() !== before.join()) changed = true;
+    await expect(page.getByTestId("seat-tag-bar")).toHaveCount(0); // 終わると選択は外れる
+  }
+  plainExpect(changed).toBe(true);
+  // 2席なら「入れ替え」、選択を解除できる
+  await seat(page, 6).click();
+  await seat(page, 7).click();
+  await expect(page.getByTestId("seat-swap")).toBeEnabled();
+  await expect(page.getByTestId("seat-shuffle-selected")).toHaveCount(0);
+  await page.getByTestId("seat-clear-selection").click();
+  await expect(page.getByTestId("seat-tag-bar")).toHaveCount(0);
+});
