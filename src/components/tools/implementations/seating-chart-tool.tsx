@@ -15,7 +15,9 @@ import {
   PURPOSES,
   rotateLayout,
   SEAT_H,
+  SEAT_START_OPTIONS,
   SEAT_W,
+  type SeatStart,
   type LayoutParams,
   type Purpose,
 } from "@/lib/seating/layouts";
@@ -145,6 +147,8 @@ export function SeatingChartTool() {
   /** ふりがな（名前ごと。名簿を書き直しても、同じ名前ならそのまま残る） */
   const [readings, setReadings] = useState<Record<string, string>>({});
   const [furigana, setFurigana] = useState(false);
+  /** 出席番号を付けるか（null のときは、名簿に番号が書かれていれば付ける） */
+  const [showNumbers, setShowNumbers] = useState<boolean | null>(null);
   /** 鍵をかけた席の番号 */
   const [locked, setLocked] = useState<number[]>([]);
   /** 空席にした席の番号（だれも座らせない席。入力順・シャッフルでも人が入らない） */
@@ -194,7 +198,13 @@ export function SeatingChartTool() {
   const lockedSet = new Set(locked.filter((i) => i < seatCount));
   /** シャッフル・入力順に戻すで動かさない席（鍵の席と、空席にした席） */
   const fixedSet = new Set([...lockedSet, ...blockedSet]);
-  const withReading = (p: Participant): Participant => ({ ...p, reading: furigana ? (readings[p.name] ?? "").trim() : "" });
+  // 出席番号：名簿に書かれた番号を使い、無い人は名簿の順番（1から）
+  const numbersOn = showNumbers ?? parsed.hasNumbers;
+  const withReading = (p: Participant): Participant => ({
+    ...p,
+    reading: furigana ? (readings[p.name] ?? "").trim() : "",
+    number: p.number ?? String(p.id + 1),
+  });
 
   const seatedIds = new Set(slots.filter((s): s is number => s !== null));
   const unseated = participants.filter((p) => !seatedIds.has(p.id));
@@ -210,6 +220,7 @@ export function SeatingChartTool() {
         unseated: unseated.map(withReading),
         tags: Array.from({ length: seatCount }, (_, i) => tags[i] ?? ""),
         furigana,
+        numbers: numbersOn,
         blocked: Array.from({ length: seatCount }, (_, i) => blockedSet.has(i)),
       }
     : null;
@@ -465,8 +476,20 @@ export function SeatingChartTool() {
               <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
                 入れ方
                 <select value={params.byColumn ? "col" : "row"} onChange={(e) => updateParam("byColumn", e.target.value === "col")} className={`${inputClass} w-auto`} data-testid="seat-by-column">
-                  <option value="row">前から横に</option>
-                  <option value="col">前から縦に</option>
+                  <option value="row">横に順番</option>
+                  <option value="col">縦に順番</option>
+                </select>
+              </label>
+            )}
+            {(purpose === "classroom" || purpose === "custom") && (
+              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200" title="席番号1（名前を入れ始める席）の場所。前を上にした図で見た位置です">
+                1番の席
+                <select value={params.start ?? "front-left"} onChange={(e) => updateParam("start", e.target.value as SeatStart)} className={`${inputClass} w-auto`} data-testid="seat-start">
+                  {SEAT_START_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             )}
@@ -590,6 +613,13 @@ export function SeatingChartTool() {
               </button>
             </div>
           )}
+          <div className="flex flex-col gap-0.5">
+            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+              <input type="checkbox" checked={numbersOn} onChange={(e) => setShowNumbers(e.target.checked)} data-testid="seat-numbers" />
+              出席番号を付ける
+            </label>
+            <p className="pl-6 text-xs text-neutral-500 dark:text-neutral-400">「12 山田太郎」のように行の先頭に書いた番号を使います（無い人は名簿の順）</p>
+          </div>
           <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
             <input type="checkbox" checked={furigana} onChange={(e) => setFurigana(e.target.checked)} data-testid="seat-furigana" />
             ふりがなを付ける
@@ -1026,7 +1056,14 @@ function SeatPreview({
                             {reading}
                           </span>
                         )}
-                        <span className="max-w-full truncate text-[16px] font-bold leading-tight text-slate-900 dark:text-slate-100">{person.name}</span>
+                        <span className="max-w-full truncate text-[16px] font-bold leading-tight text-slate-900 dark:text-slate-100">
+                          {model.numbers && person.number && (
+                            <span className="mr-1 text-blue-700 dark:text-blue-300" data-testid="seat-number">
+                              {person.number}
+                            </span>
+                          )}
+                          {person.name}
+                        </span>
                         {person.role && <span className="max-w-full truncate text-[11px] leading-tight text-slate-500 dark:text-slate-400">{person.role}</span>}
                       </>
                     )}

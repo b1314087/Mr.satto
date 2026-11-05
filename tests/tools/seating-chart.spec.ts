@@ -39,7 +39,8 @@ plainTest("名簿：1行に1人。「,」やタブのあとは役職。空行を
 
 plainTest("表の読み込み：「氏名」「役職」の見出しがあればその列、無ければ1列目・2列目", () => {
   const withHeader = namesFromRows([["No", "氏名", "所属"], [1, "山田", "営業部"], [2, "佐藤", null], [3, "", "総務"]]);
-  plainExpect(withHeader).toMatchObject({ count: 2, hadHeader: true, text: "山田\t営業部\n佐藤" });
+  // 「No」の列は出席番号として読む（行の先頭に番号を付ける）
+  plainExpect(withHeader).toMatchObject({ count: 2, hadHeader: true, text: "1\t山田\t営業部\n2\t佐藤" });
   const noHeader = namesFromRows([["田中", "部長"], ["小林", "課長"]]);
   plainExpect(noHeader.text).toBe("田中\t部長\n小林\t課長");
 });
@@ -219,7 +220,8 @@ test("seating-chart: ExcelとCSVの名簿（名前・役職）を読み込める
   await expect(page.getByTestId("seat-names")).toHaveValue("Excel花子\t部長\nExcel月子\t主任");
   await expect(seat(page, 0)).toHaveAttribute("aria-label", "席1：Excel花子（部長）");
   await page.getByTestId("seat-import-input").setInputFiles(csv);
-  await expect(page.getByTestId("seat-names")).toHaveValue("CSV一郎\t営業\nCSV二郎\t総務");
+  await expect(page.getByTestId("seat-names")).toHaveValue("1\tCSV一郎\t営業\n2\tCSV二郎\t総務");
+  await expect(page.getByTestId("seat-numbers")).toBeChecked();
   await page.getByTestId("seat-import-input").setInputFiles(xls);
   await expect(page.getByRole("alert").filter({ hasText: ".xls" })).toBeVisible();
   fs.rmSync(dir, { recursive: true, force: true });
@@ -775,4 +777,79 @@ test("seating-chart: Excel・CSVの名簿を、ページのどこに落として
   await dropFile(page, '[data-testid="tool-preview"]', "meibo2.csv", "text/csv", "氏名\n山本\n中村\n");
   await expect.poll(async () => (await seatNames(page)).slice(0, 2)).toEqual(["山本", "中村"]);
   await expect(page.getByTestId("tool-preview")).toHaveAttribute("data-fullscreen", "true");
+});
+
+plainTest("出席番号：行の先頭の数字（全角も・区切りはいろいろ）を出席番号として読み、名前には含めない。表の「出席番号」の列・数字だけの1列目も読む", () => {
+  const r = parseParticipants("12 山田太郎\n３、佐藤花子, 部長\n7\t鈴木\n高橋");
+  plainExpect(r.participants.map((p) => [p.number ?? "", p.name, p.role])).toEqual([
+    ["12", "山田太郎", ""],
+    ["3", "佐藤花子", "部長"],
+    ["7", "鈴木", ""],
+    ["", "高橋", ""],
+  ]);
+  plainExpect(r.hasNumbers).toBe(true);
+  plainExpect(parseParticipants("3年1組 山田").participants[0]).toMatchObject({ name: "3年1組 山田" });
+  const withHeader = namesFromRows([["出席番号", "氏名", "役職"], [1, "山田", "係"], [2, "佐藤", null]]);
+  plainExpect(withHeader.text).toBe("1\t山田\t係\n2\t佐藤");
+  const noHeader = namesFromRows([[1, "山田"], [2, "佐藤"]]);
+  plainExpect(noHeader.text).toBe("1\t山田\n2\t佐藤");
+  plainExpect(parseParticipants(withHeader.text).participants.map((p) => [p.number, p.name, p.role])).toEqual([["1", "山田", "係"], ["2", "佐藤", ""]]);
+});
+
+plainTest("授業・カスタム：席の間隔は縦も横もすべて同じ。1番の席を4すみから選べ、そこから順番が付く", () => {
+  const g = buildLayout("classroom", { ...DEFAULT_PARAMS, cols: 6, rows: 3 });
+  const xs = [...new Set(g.seats.map((s) => s.x))].sort((a, b) => a - b);
+  const ys = [...new Set(g.seats.map((s) => s.y))].sort((a, b) => a - b);
+  const gapsX = xs.slice(1).map((x, i) => x - xs[i] - SEAT_W);
+  const gapsY = ys.slice(1).map((y, i) => y - ys[i] - SEAT_H);
+  plainExpect(new Set(gapsX).size).toBe(1);
+  plainExpect(new Set(gapsY).size).toBe(1);
+  plainExpect(gapsX[0]).toBe(gapsY[0]);
+  const first = (start: "front-left" | "front-right" | "back-left" | "back-right") => {
+    const s = buildLayout("classroom", { ...DEFAULT_PARAMS, cols: 6, rows: 3, start }).seats;
+    return { x: s[0].x === Math.min(...s.map((v) => v.x)) ? "left" : "right", y: s[0].y === Math.min(...s.map((v) => v.y)) ? "front" : "back", second: s[1] };
+  };
+  plainExpect(first("front-left")).toMatchObject({ x: "left", y: "front" });
+  plainExpect(first("front-right")).toMatchObject({ x: "right", y: "front" });
+  plainExpect(first("back-left")).toMatchObject({ x: "left", y: "back" });
+  plainExpect(first("back-right")).toMatchObject({ x: "right", y: "back" });
+  // 後ろの右から横に：2番は1番の左隣
+  const br = buildLayout("classroom", { ...DEFAULT_PARAMS, cols: 6, rows: 3, start: "back-right" }).seats;
+  plainExpect(br[1].y).toBe(br[0].y);
+  plainExpect(br[1].x).toBeLessThan(br[0].x);
+  plainExpect(br[0].group).toBe("前から3列目・左から6番目");
+});
+
+test("seating-chart: 出席番号を付けると、名前の前に番号が出て、画像・PDF・Excelにも入る。1番の席を後ろの右にできる", async ({ page }) => {
+  test.setTimeout(120_000);
+  await openTool(page);
+  await start(page, "classroom", ["12 山田", "3 佐藤", "鈴木"]);
+  await expect(page.getByTestId("seat-numbers")).toBeChecked();
+  await expect(seat(page, 0).getByTestId("seat-number")).toHaveText("12");
+  await expect(seat(page, 2).getByTestId("seat-number")).toHaveText("3"); // 番号の無い人は名簿の順
+  plainExpect((await seatNames(page)).slice(0, 3)).toEqual(["山田", "佐藤", "鈴木"]);
+  await page.getByTestId("seat-numbers").uncheck();
+  await expect(page.getByTestId("seat-number")).toHaveCount(0);
+  await page.getByTestId("seat-numbers").check();
+
+  // 1番の席を後ろの右に
+  await page.getByTestId("seat-start").selectOption("back-right");
+  const box = async (i: number) => (await seat(page, i).boundingBox())!;
+  const all = await page.getByTestId("seat").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y })));
+  const b0 = await box(0);
+  plainExpect(b0.x).toBeGreaterThanOrEqual(Math.max(...all.map((r) => r.x)) - 1);
+  plainExpect(b0.y).toBeGreaterThanOrEqual(Math.max(...all.map((r) => r.y)) - 1);
+  await expect(seat(page, 0)).toHaveAttribute("data-name", "山田");
+
+  await page.getByTestId("seat-format-pdf").click();
+  const pdf = await clickAndDownload(page, "PDFでダウンロード");
+  const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
+  plainExpect(content.text).toContain("12 山田");
+  await page.getByTestId("seat-format-xlsx").click();
+  const xl = await clickAndDownload(page, "Excel（一覧）でダウンロード");
+  const sheet = await readXlsxSheet((await assertDownloadedFile(xl, { format: "zip" })).path);
+  const rows = sheet.rows.map((r) => r.map((c) => (c == null ? "" : String(c))));
+  const h = rows.findIndex((r) => r[0] === "席番号");
+  plainExpect(rows[h].slice(0, 3)).toEqual(["席番号", "出席番号", "名前"]);
+  plainExpect(rows[h + 1].slice(0, 3)).toEqual(["1", "12", "山田"]);
 });

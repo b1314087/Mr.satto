@@ -7,6 +7,7 @@
  * - 入力した順番が、席に入る順番になる。
  * - 同じ名前（全角・半角・大文字小文字・空白の違いを無視）が2人以上いるときは、2人目以降に「(2)」のように番号を付けて残す
  *   （席の入れ替えで、人を取り違えないため）。
+ * - 行の先頭の数字（「12 山田太郎」「12、山田太郎」「12<タブ>山田太郎」）は、出席番号として読む（名前には含めない）。
  */
 import type { XlsxCellValue } from "@/lib/excel/xlsx-simple-io";
 
@@ -16,6 +17,8 @@ export interface Participant {
   role: string;
   /** ふりがな（付けるときだけ。空なら付けない） */
   reading?: string;
+  /** 出席番号（行の先頭の数字、または表の「出席番号」の列。無ければ undefined） */
+  number?: string;
 }
 
 export interface ParsedParticipants {
@@ -24,6 +27,8 @@ export interface ParsedParticipants {
   renamedDuplicates: string[];
   /** 上限を超えたために読み込まなかった人数 */
   overLimit: number;
+  /** 出席番号が書かれた行があったか */
+  hasNumbers: boolean;
 }
 
 /** 1回に扱える参加者の上限 */
@@ -39,6 +44,13 @@ export function cleanText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** 行の先頭の出席番号（「12 山田」「１２、山田」「12. 山田」「12<タブ>山田」）を取り出す */
+export function splitNumber(line: string): { number: string | null; rest: string } {
+  const m = /^\s*([0-9０-９]{1,4})[\s.,、，．:：]+(\S.*)$/.exec(line);
+  if (!m) return { number: null, rest: line };
+  return { number: String(Number(m[1].normalize("NFKC"))), rest: m[2] };
+}
+
 /** 1行を、名前と役職に分ける */
 export function splitLine(line: string): { name: string; role: string } {
   const m = /^([^\t,、，]*)[\t,、，](.*)$/.exec(line);
@@ -52,8 +64,10 @@ export function parseParticipants(text: string): ParsedParticipants {
   const used = new Set<string>();
   const counts = new Map<string, number>();
   let overLimit = 0;
+  let hasNumbers = false;
   for (const raw of text.split(/\r?\n/)) {
-    const { name, role } = splitLine(raw);
+    const { number, rest } = splitNumber(raw);
+    const { name, role } = splitLine(rest);
     if (name === "") continue;
     if (participants.length >= SEATING_MAX_PARTICIPANTS) {
       overLimit++;
@@ -71,13 +85,15 @@ export function parseParticipants(text: string): ParsedParticipants {
       counts.set(key, 1);
     }
     used.add(nameKey(finalName));
-    participants.push({ id: participants.length, name: finalName, role });
+    if (number !== null) hasNumbers = true;
+    participants.push({ id: participants.length, name: finalName, role, ...(number !== null ? { number } : {}) });
   }
-  return { participants, renamedDuplicates, overLimit };
+  return { participants, renamedDuplicates, overLimit, hasNumbers };
 }
 
 const NAME_HEADERS = /^(氏名|名前|お名前|参加者|参加者名|生徒名|児童名|社員名|name|names|full ?name)$/i;
 const READING_HEADERS = /^(ふりがな|フリガナ|ﾌﾘｶﾞﾅ|よみ|ヨミ|よみがな|ヨミガナ|読み|読み仮名|読みがな|読み方|かな|カナ|氏名かな|氏名カナ|kana|reading|furigana)$/i;
+const NUMBER_HEADERS = /^(出席番号|出席No\.?|番号|No\.?|NO\.?|№|#|出席|学籍番号)$/i;
 const ROLE_HEADERS = /^(役職|肩書き?|職位|職名|所属|部署|部門|会社名?|学年|クラス|担当|role|title|position|department)$/i;
 
 function cellText(value: XlsxCellValue | undefined): string {
@@ -106,9 +122,14 @@ export function namesFromRows(rows: XlsxCellValue[][]): {
   const nameCol = header.findIndex((h) => NAME_HEADERS.test(h));
   const roleHeaderCol = header.findIndex((h) => ROLE_HEADERS.test(h));
   const readingCol = header.findIndex((h) => READING_HEADERS.test(h));
+  const numberHeaderCol = header.findIndex((h) => NUMBER_HEADERS.test(h));
   const hadHeader = nameCol >= 0;
-  const column = hadHeader ? nameCol : 0;
-  const roleCol = hadHeader ? roleHeaderCol : readingCol === 1 ? -1 : 1;
+  // 見出しがないとき：1列目がすべて数字なら出席番号、名前は2列目
+  const dataRows = rows.slice(first).filter((r) => r.some((c) => cellText(c).trim() !== ""));
+  const firstColNumeric = !hadHeader && dataRows.length > 0 && dataRows.every((r) => /^[0-9０-９]{1,4}$/.test(cellText(r[0]).trim()) && cellText(r[1]).trim() !== "");
+  const numberCol = hadHeader ? numberHeaderCol : firstColNumeric ? 0 : -1;
+  const column = hadHeader ? nameCol : firstColNumeric ? 1 : 0;
+  const roleCol = hadHeader ? roleHeaderCol : firstColNumeric ? (readingCol === 2 ? -1 : 2) : readingCol === 1 ? -1 : 1;
   const start = hadHeader || readingCol >= 0 ? first + 1 : first;
   const lines: string[] = [];
   const readings: string[] = [];
@@ -116,7 +137,9 @@ export function namesFromRows(rows: XlsxCellValue[][]): {
     const name = cleanText(cellText(rows[i][column]).replace(/[\t,、，]/g, " "));
     if (name === "") continue;
     const role = roleCol >= 0 ? cleanText(cellText(rows[i][roleCol])) : "";
-    lines.push(role ? `${name}\t${role}` : name);
+    const num = numberCol >= 0 ? cellText(rows[i][numberCol]).trim().normalize("NFKC") : "";
+    const head = /^\d{1,4}$/.test(num) ? `${Number(num)}\t` : "";
+    lines.push(head + (role ? `${name}\t${role}` : name));
     readings.push(readingCol >= 0 ? cleanReading(cellText(rows[i][readingCol])) : "");
   }
   return {

@@ -1143,7 +1143,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["字幕", "字幕追加", "動画 字幕", "字幕トラック", "サブタイトル", "テロップ", "srt", "vtt", "WebVTT", "字幕ファイル", "subtitle", "caption", "MKV"],
-    relatedToolIds: ["video-convert", "video-mosaic", "video-thumbnail"],
+    relatedToolIds: ["video-convert", "video-mosaic"],
   },
 
   // ------------------------------------------------------------------

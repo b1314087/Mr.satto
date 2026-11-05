@@ -44,7 +44,18 @@ export interface LayoutParams {
   byColumn: boolean;
   /** カスタム：席にしないマス（"行-列"、0始まり） */
   holes: string[];
+  /** 授業・カスタム：席番号1（名前を入れ始める席）の角。前の左・前の右・後ろの左・後ろの右（前を上にした図で） */
+  start: SeatStart;
 }
+
+export type SeatStart = "front-left" | "front-right" | "back-left" | "back-right";
+
+export const SEAT_START_OPTIONS: { value: SeatStart; label: string }[] = [
+  { value: "front-left", label: "前の左" },
+  { value: "front-right", label: "前の右" },
+  { value: "back-left", label: "後ろの左" },
+  { value: "back-right", label: "後ろの右" },
+];
 
 export const DEFAULT_PARAMS: LayoutParams = {
   perSide: 4,
@@ -58,6 +69,7 @@ export const DEFAULT_PARAMS: LayoutParams = {
   cols: 6,
   byColumn: false,
   holes: [],
+  start: "front-left",
 };
 
 export const LIMITS = {
@@ -317,19 +329,19 @@ function islands(p: LayoutParams, round: boolean): LayoutGeometry {
 
 function grid(p: LayoutParams, custom: boolean): LayoutGeometry {
   const holes = new Set(custom ? p.holes : []);
-  const aisle = (c: number) => (!custom && c > 0 && c % 2 === 0 ? GAP * 2 : 0);
-  const xOf = (c: number) => {
-    let x = 0;
-    for (let i = 0; i < c; i++) x += SEAT_W + GAP + aisle(i + 1);
-    return x;
-  };
+  // 席どうしの間隔は、縦も横も同じにする（通路の分の広い間隔は付けない）
+  const xOf = (c: number) => c * (SEAT_W + GAP);
   const top = 30 + GAP * 3;
-  const yOf = (r: number) => top + r * (SEAT_H + GAP + 6);
+  const yOf = (r: number) => top + r * (SEAT_H + GAP);
+  // 席番号1の角から、横に（または縦に）順番を付ける
+  const start = p.start ?? "front-left";
+  const rowOrder = Array.from({ length: p.rows }, (_, i) => (start.startsWith("back") ? p.rows - 1 - i : i));
+  const colOrder = Array.from({ length: p.cols }, (_, i) => (start.endsWith("right") ? p.cols - 1 - i : i));
   const cells: { r: number; c: number }[] = [];
   if (!custom && p.byColumn) {
-    for (let c = 0; c < p.cols; c++) for (let r = 0; r < p.rows; r++) cells.push({ r, c });
+    for (const c of colOrder) for (const r of rowOrder) cells.push({ r, c });
   } else {
-    for (let r = 0; r < p.rows; r++) for (let c = 0; c < p.cols; c++) cells.push({ r, c });
+    for (const r of rowOrder) for (const c of colOrder) cells.push({ r, c });
   }
   const seats = cells
     .filter(({ r, c }) => !holes.has(`${r}-${c}`))

@@ -23,6 +23,13 @@ export interface SeatingChartModel {
   furigana?: boolean;
   /** 空席にした席（だれも座らせない席。「空席」と描く。geometry.seats と同じ並び） */
   blocked?: boolean[];
+  /** 出席番号を付けるか（付けるときは、名前の前に描き、Excelに「出席番号」の列を足す。番号は Participant.number） */
+  numbers?: boolean;
+}
+
+/** 席に描く名前（出席番号を付けるときは「12 山田太郎」） */
+export function seatLabel(model: Pick<SeatingChartModel, "numbers">, person: Participant): string {
+  return model.numbers && person.number ? `${person.number} ${person.name}` : person.name;
 }
 
 export type PaperSize = "A4" | "B4" | "A3";
@@ -111,20 +118,21 @@ export function paintChart(p: Painter, model: SeatingChartModel) {
       return;
     }
     const maxW = SEAT_W - 14;
+    const label = seatLabel(model, person);
     const reading = model.furigana ? (person.reading ?? "").trim() : "";
     const cx = x + SEAT_W / 2;
     if (reading && person.role) {
       p.text(reading, cx, y + 17, { size: fitSize(p, reading, 9, maxW, false, 5), color: MUTED });
-      p.text(person.name, cx, y + 32, { size: fitSize(p, person.name, 16, maxW, true, 7), color: INK, bold: true });
+      p.text(label, cx, y + 32, { size: fitSize(p, label, 16, maxW, true, 7), color: INK, bold: true });
       p.text(person.role, cx, y + 49, { size: fitSize(p, person.role, 10, maxW, false, 6), color: MUTED });
     } else if (reading) {
       p.text(reading, cx, y + 20, { size: fitSize(p, reading, 10, maxW, false, 5), color: MUTED });
-      p.text(person.name, cx, y + 38, { size: fitSize(p, person.name, 18, maxW, true, 7), color: INK, bold: true });
+      p.text(label, cx, y + 38, { size: fitSize(p, label, 18, maxW, true, 7), color: INK, bold: true });
     } else if (person.role) {
-      p.text(person.name, cx, y + 27, { size: fitSize(p, person.name, 17, maxW, true, 7), color: INK, bold: true });
+      p.text(label, cx, y + 27, { size: fitSize(p, label, 17, maxW, true, 7), color: INK, bold: true });
       p.text(person.role, cx, y + 46, { size: fitSize(p, person.role, 11, maxW, false, 6), color: MUTED });
     } else {
-      p.text(person.name, cx, y + SEAT_H / 2 + 3, { size: fitSize(p, person.name, 18, maxW, true, 7), color: INK, bold: true });
+      p.text(label, cx, y + SEAT_H / 2 + 3, { size: fitSize(p, label, 18, maxW, true, 7), color: INK, bold: true });
     }
   });
 }
@@ -261,23 +269,40 @@ export async function chartToPdfBlob(model: SeatingChartModel, paper: PaperSize 
 
 export function seatingListRows(model: SeatingChartModel): (string | number)[][] {
   const kana = !!model.furigana;
+  const nums = !!model.numbers;
   const reading = (p: Participant | null) => (p?.reading ?? "").trim();
-  const rows: (string | number)[][] = [kana ? ["席番号", "名前", "ふりがな", "役職", "場所", "札"] : ["席番号", "名前", "役職", "場所", "札"]];
+  const num = (p: Participant | null): string | number => (p?.number && /^\d+$/.test(p.number) ? Number(p.number) : (p?.number ?? ""));
+  // 列：席番号・（出席番号）・名前・（ふりがな）・役職・場所・札
+  const row = (seat: string | number, p: Participant | null, name: string, group: string, tag: string) => [
+    seat,
+    ...(nums ? [num(p)] : []),
+    name,
+    ...(kana ? [reading(p)] : []),
+    p ? p.role : "",
+    group,
+    tag,
+  ];
+  const rows: (string | number)[][] = [["席番号", ...(nums ? ["出席番号"] : []), "名前", ...(kana ? ["ふりがな"] : []), "役職", "場所", "札"]];
   model.geometry.seats.forEach((seat, i) => {
     const p = model.assignment[i];
     const tag = (model.tags?.[i] ?? "").trim();
-    const name = p ? p.name : "（空席）";
-    rows.push(kana ? [i + 1, name, reading(p), p ? p.role : "", seat.group, tag] : [i + 1, name, p ? p.role : "", seat.group, tag]);
+    rows.push(row(i + 1, p, p ? p.name : "（空席）", seat.group, tag));
   });
-  for (const p of model.unseated) rows.push(kana ? ["（席なし）", p.name, reading(p), p.role, "", ""] : ["（席なし）", p.name, p.role, "", ""]);
+  for (const p of model.unseated) rows.push(row("（席なし）", p, p.name, "", ""));
   return rows;
 }
 
 export async function chartToXlsxBlob(model: SeatingChartModel): Promise<Blob> {
   const rows = seatingListRows(model);
-  const columns = model.furigana
-    ? [{ width: 10 }, { width: 24 }, { width: 24 }, { width: 18 }, { width: 28 }, { width: 12 }]
-    : [{ width: 10 }, { width: 24 }, { width: 18 }, { width: 28 }, { width: 12 }];
+  const columns = [
+    { width: 10 },
+    ...(model.numbers ? [{ width: 10 }] : []),
+    { width: 24 },
+    ...(model.furigana ? [{ width: 24 }] : []),
+    { width: 18 },
+    { width: 28 },
+    { width: 12 },
+  ];
   return writeXlsxSheets([{ name: "座席表", rows: [[model.title.trim() || "座席表"], [], ...rows], columns }]);
 }
 
