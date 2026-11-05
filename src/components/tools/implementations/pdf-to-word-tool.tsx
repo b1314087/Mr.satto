@@ -11,6 +11,7 @@ import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { PdfToWordProcessor, previewPdfToWordBlocks, type PdfToWordOutput } from "@/lib/processors/browser/pdf-to-word";
 import type { DocumentBlock, RunInfo } from "@/lib/pdf/paragraph-reconstruction";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /** プレビューに出す先頭ページのブロック数の上限(重くならないよう先頭だけ) */
 const PREVIEW_MAX_BLOCKS = 30;
@@ -201,6 +202,7 @@ export function PdfToWordTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
+        <PreviewFullscreenFrame>
         <div data-testid="tool-preview" className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <PdfThumbnails file={file} pages={[1]} maxPages={1} width={160} title="先頭ページ(元のPDF)" className="sm:shrink-0" />
           <section
@@ -221,6 +223,7 @@ export function PdfToWordTool() {
             )}
           </section>
         </div>
+        </PreviewFullscreenFrame>
       )}
 
       {file && (

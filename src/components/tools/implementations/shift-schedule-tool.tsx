@@ -33,6 +33,7 @@ import {
 } from "@/lib/shift/model";
 import { shiftTitle, shiftToCsvBlob, shiftToPdfBlob, shiftToXlsxBlob, typeTimeText } from "@/lib/processors/browser/shift-export";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 const inputClass =
   "rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
@@ -402,6 +403,7 @@ export function ShiftScheduleTool() {
         )}
       </section>
 
+      <PreviewFullscreenFrame>
       <section className={sectionClass} aria-labelledby="shift-step4" data-testid="tool-preview">
         <h3 id="shift-step4" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">4. 勤務表（{schedule.year}年{schedule.month}月）</h3>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -571,6 +573,7 @@ export function ShiftScheduleTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">これは入力した目安との比較だけで、労働基準法などの法令や、就業規則に合っているかの判定ではありません。</p>
         </div>
       </section>
+      </PreviewFullscreenFrame>
 
       <section className={sectionClass} aria-labelledby="shift-step5">
         <h3 id="shift-step5" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">5. 保存と書き出し</h3>

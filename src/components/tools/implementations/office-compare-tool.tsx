@@ -21,6 +21,7 @@ import {
 } from "@/lib/compare/item-match";
 import { exportReportDocx, exportReportXlsx, reportFileName, type CompareReport } from "@/lib/compare/report-export";
 import { diffChars } from "@/lib/compare/sequence-diff";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 type Mode = "diff" | "match";
 
@@ -215,6 +216,7 @@ export function OfficeCompareTool() {
         </div>
 
         {(fileA || fileB) && (
+          <PreviewFullscreenFrame>
           <div data-testid="tool-preview" className="flex flex-col gap-1 rounded-lg bg-neutral-50 p-3 text-xs text-neutral-700 dark:bg-neutral-900/60 dark:text-neutral-300">
             <p className="font-medium text-neutral-800 dark:text-neutral-100">選んだファイル</p>
             <p>
@@ -230,6 +232,7 @@ export function OfficeCompareTool() {
             )}
             {(fileA?.macro || fileB?.macro) && <p>マクロ有効ブック（.xlsm）は、セルの値と数式だけを読み取ります。マクロは比べません。元のファイルは変更しません。</p>}
           </div>
+          </PreviewFullscreenFrame>
         )}
 
         {mode === "diff" && (fileA?.kind === "xlsx" || fileB?.kind === "xlsx") && (

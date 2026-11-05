@@ -15,6 +15,7 @@ import { FormToIndividualPdfsProcessor, type FilenameStrategy } from "@/lib/proc
 import { readCsvFile } from "@/lib/utils/csv";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /**
  * フォーム回答から個別PDFを一括作成（Phase 11 ツール②）。
@@ -434,6 +435,7 @@ export function FormToIndividualPdfsTool() {
           </button>
           </div>
 
+          <PreviewFullscreenFrame>
           <div
             ref={canvasWrapRef}
             data-testid="tool-preview"
@@ -475,6 +477,7 @@ export function FormToIndividualPdfsTool() {
             </div>
 
           </div>
+          </PreviewFullscreenFrame>
 
           {fields.length > 0 && (
             <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-2">

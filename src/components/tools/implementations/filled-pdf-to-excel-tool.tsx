@@ -14,6 +14,7 @@ import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { useFilledPdfToExcelUsage, UsageGatePanel, describeConsumeFailure } from "./filled-pdf-to-excel/usage-gate";
 import { FilledPdfToExcelTemplatePanel } from "./filled-pdf-to-excel-template-panel";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 const LANGUAGE_OPTIONS: { value: OcrLanguageOption; label: string }[] = [
   { value: "ja+en", label: "日本語＋英語" },
@@ -223,6 +224,7 @@ function AutoExtractSection() {
       {pageCountError && <ErrorMessage message={pageCountError} />}
 
       {files.length > 0 && (
+        <PreviewFullscreenFrame>
         <div data-testid="tool-preview">
           <PdfThumbnails
             file={files[0]}
@@ -232,6 +234,7 @@ function AutoExtractSection() {
             title={files.length > 1 ? `読み取るPDFの1ページ目(1/${files.length}ファイル目)` : "読み取るPDFの1ページ目"}
           />
         </div>
+        </PreviewFullscreenFrame>
       )}
 
       <UsageGatePanel usage={usage} usageLoading={usageLoading} totalPages={totalPages} adPhase={adPhase} isAdBusy={isAdBusy} onWatchAd={() => void handleWatchAd()} />

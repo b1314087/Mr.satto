@@ -4,6 +4,7 @@ import type { ReactNode, RefObject, SyntheticEvent } from "react";
 import { formatBytes } from "@/lib/utils/format";
 import { formatDuration } from "@/lib/video/estimate";
 import type { VideoPreviewMeta } from "@/lib/video/use-video-preview";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 export interface VideoOutputRow {
   label: string;
@@ -56,6 +57,7 @@ export function VideoPreviewPanel({
   sourceParts.push(formatBytes(file.size));
 
   return (
+    <PreviewFullscreenFrame>
     <section
       data-testid="tool-preview"
       aria-label="動画のプレビュー"
@@ -95,6 +97,7 @@ export function VideoPreviewPanel({
         </div>
       )}
     </section>
+    </PreviewFullscreenFrame>
   );
 }
 

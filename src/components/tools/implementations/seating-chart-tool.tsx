@@ -104,6 +104,19 @@ function reconcile(prevSlots: (number | null)[], prevNames: string[], participan
   return slots;
 }
 
+/** PC幅（右にメニューを出す幅。Tailwind の lg と同じ 1024px 以上）か */
+function useDesktop(): boolean {
+  const [desktop, setDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setDesktop(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return desktop;
+}
+
 interface Manual {
   slots: (number | null)[];
   names: string[];
@@ -142,6 +155,7 @@ export function SeatingChartTool() {
   const [fullscreen, setFullscreen] = useState(false);
   /** 座席表の向きを逆にする（前を下にする。先生・司会から見た向き）。画面・印刷・ダウンロードに反映する */
   const [flipped, setFlipped] = useState(false);
+  const desktop = useDesktop();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const parsed = useMemo(() => parseParticipants(namesText), [namesText]);
@@ -345,6 +359,19 @@ export function SeatingChartTool() {
     }
   }
 
+  /** 選んだ席に札を付ける（空なら外す） */
+  function tagSelected(text: string) {
+    setTags((prev) => {
+      const next = { ...prev };
+      for (const i of selected) {
+        if (text.trim()) next[i] = text.trim().slice(0, 10);
+        else delete next[i];
+      }
+      return next;
+    });
+    setSelected([]);
+  }
+
   const numberField = (label: string, key: "perSide" | "front" | "sides" | "tables" | "perTable" | "rows" | "cols", testId: string) =>
     params && (
       <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
@@ -362,14 +389,12 @@ export function SeatingChartTool() {
       </label>
     );
 
-  return (
-    // 画面の下に固定したプレビューの裏に、入力欄が隠れないよう、移動するときは下に余白をとる
-    <div className="flex flex-col gap-5 [&_:is(button,input,select,textarea,a)]:scroll-mb-[45vh]">
+  const step1 = (
       <section className={sectionClass} aria-labelledby="seat-step1">
         <h2 id="seat-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
           1. 用途を選ぶ
         </h2>
-        <div role="radiogroup" aria-label="用途" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div role="radiogroup" aria-label="用途" className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${purpose ? "lg:grid-cols-2" : ""}`}>
           {PURPOSES.map((p) => (
             <button
               key={p.id}
@@ -378,16 +403,16 @@ export function SeatingChartTool() {
               aria-checked={purpose === p.id}
               onClick={() => choosePurpose(p.id)}
               data-testid={`seat-purpose-${p.id}`}
-              className={`ms-focus-ring flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
+              className={`ms-focus-ring flex items-center gap-3 rounded-lg border p-3 text-left transition-colors ${purpose ? "lg:gap-1.5 lg:p-2" : ""} ${
                 purpose === p.id ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500 dark:bg-blue-950/40" : "border-neutral-200 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
               }`}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true" className="h-8 w-8 shrink-0 text-blue-600 dark:text-blue-400">
+              <svg viewBox="0 0 24 24" aria-hidden="true" className={`h-8 w-8 shrink-0 text-blue-600 dark:text-blue-400 ${purpose ? "lg:h-5 lg:w-5" : ""}`}>
                 <path d={PURPOSE_ICON[p.id]} fill="currentColor" fillRule="evenodd" />
               </svg>
               <span className="flex flex-col">
-                <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{p.name}</span>
-                <span className="text-xs text-neutral-500 dark:text-neutral-400">{p.short}</span>
+                <span className={`text-sm font-semibold text-neutral-900 dark:text-neutral-100 ${purpose ? "lg:text-xs" : ""}`}>{p.name}</span>
+                <span className={`text-xs text-neutral-500 dark:text-neutral-400 ${purpose ? "lg:hidden" : ""}`}>{p.short}</span>
               </span>
             </button>
           ))}
@@ -476,6 +501,40 @@ export function SeatingChartTool() {
           </div>
         )}
       </section>
+  );
+
+  return (
+    // スマホ：画面の下に固定したプレビューの裏に、入力欄が隠れないよう、移動するときは下に余白をとる
+    <div className="flex flex-col gap-5 max-lg:[&_:is(button,input,select,textarea,a)]:scroll-mb-[45vh]">
+      {!purpose && step1}
+      {purpose && (
+        // PC：真ん中にプレビュー、右にメニュー。スマホ：メニュー → 下に固定したプレビュー（これまでどおり）
+        <div data-preview-split className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+          <div className="contents lg:order-2 lg:flex lg:min-w-0 lg:flex-col lg:gap-4" data-testid="seat-menu">
+      {model && selected.length > 0 && !fullscreen && desktop && (
+        <section className={`${sectionClass} border-blue-300 bg-blue-50/40 dark:border-blue-800 dark:bg-blue-950/20`} aria-label="選んだ席の操作" data-testid="seat-selection-menu">
+          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+            選んだ席（{selected.length}席）
+            <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
+              {selected.map((i) => model.assignment[i]?.name ?? `席${i + 1}`).join("・")}
+            </span>
+          </h2>
+          <SelectionPanel
+            model={model}
+            selected={selected}
+            locked={lockedSet}
+            blocked={blockedSet}
+            axisBySeat={axisBySeat}
+            showMarks={showMarks}
+            onTag={tagSelected}
+            onToggleLock={toggleLock}
+            onToggleBlocked={toggleBlocked}
+            onToggleAxisFix={toggleAxisFix}
+          />
+        </section>
+      )}
+
+      {step1}
 
       {purpose && (
         <section className={sectionClass} aria-labelledby="seat-step2">
@@ -595,8 +654,9 @@ export function SeatingChartTool() {
           {exportError && <ErrorMessage message={exportError} />}
         </section>
       )}
-
-      {purpose && model && (
+          </div>
+          <div className="contents lg:order-1 lg:block lg:min-w-0 lg:self-start lg:sticky lg:top-20">
+      {model && (
         <SeatPreview
           model={model}
           selected={selected}
@@ -616,20 +676,14 @@ export function SeatingChartTool() {
           onFullscreenChange={setFullscreen}
           flipped={flipped}
           onFlippedChange={setFlipped}
+          desktop={desktop}
           onShuffle={shuffle}
           canShuffle={canShuffle(slots, fixedSet) && participants.length > 0}
-          onTag={(text) => {
-            setTags((prev) => {
-              const next = { ...prev };
-              for (const i of selected) {
-                if (text.trim()) next[i] = text.trim().slice(0, 10);
-                else delete next[i];
-              }
-              return next;
-            });
-            setSelected([]);
-          }}
+          onTag={tagSelected}
         />
+      )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -655,6 +709,7 @@ function SeatPreview({
   onFullscreenChange,
   flipped,
   onFlippedChange,
+  desktop,
   onShuffle,
   canShuffle: shuffleEnabled,
 }: {
@@ -670,6 +725,8 @@ function SeatPreview({
   /** 向きを逆にしている（前が下） */
   flipped: boolean;
   onFlippedChange: (v: boolean) => void;
+  /** PC幅か（PCでは、選んだ席の操作を右のメニューに出す） */
+  desktop: boolean;
   selected: number[];
   onTag: (text: string) => void;
   locked: ReadonlySet<number>;
@@ -683,7 +740,6 @@ function SeatPreview({
   onReset: () => void;
   canReset: boolean;
 }) {
-  const [tagText, setTagText] = useState("");
   const g = model.geometry;
   const [open, setOpen] = useState(true);
   const [boxW, setBoxW] = useState(800);
@@ -710,6 +766,10 @@ function SeatPreview({
         // 画面いっぱい：操作の段（ボタン・札の欄）を除いた高さを、すべて座席表に使う
         const bar = toolbarRef.current?.offsetHeight ?? 120;
         setMaxH(Math.max(200, window.innerHeight - bar - 40));
+      } else if (window.innerWidth >= 1024) {
+        // PC：プレビューを真ん中に大きく出す（画面の高さから、上のヘッダー・操作の段を除いた分）
+        const bar = toolbarRef.current?.offsetHeight ?? 60;
+        setMaxH(Math.max(240, window.innerHeight - bar - 140));
       } else {
         setMaxH(Math.max(180, Math.min(window.innerHeight * 0.38, 480)));
       }
@@ -762,7 +822,7 @@ function SeatPreview({
       className={
         fullscreen
           ? "fixed inset-0 z-[100] flex flex-col gap-2 overflow-hidden bg-white p-4 dark:bg-neutral-950"
-          : "sticky bottom-0 z-20 -mx-4 flex flex-col gap-2 rounded-t-xl border border-neutral-200 bg-white p-3 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.35)] sm:-mx-6 dark:border-neutral-800 dark:bg-neutral-950"
+          : "sticky bottom-0 z-20 -mx-4 flex flex-col gap-2 rounded-t-xl border border-neutral-200 bg-white p-3 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.35)] sm:-mx-6 lg:bottom-auto lg:top-20 lg:mx-0 lg:self-start lg:rounded-xl lg:shadow-sm dark:border-neutral-800 dark:bg-neutral-950"
       }
       aria-label="座席表のプレビュー"
       data-testid="tool-preview"
@@ -778,7 +838,7 @@ function SeatPreview({
           </button>
         ) : (
           <>
-            <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={smallButton} data-testid="seat-preview-toggle">
+            <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`${smallButton} lg:hidden`} data-testid="seat-preview-toggle">
               {open ? "▼ たたむ" : "▲ プレビュー"}
             </button>
             <button type="button" onClick={() => { setOpen(true); onFullscreenChange(true); }} className="ms-focus-ring rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white" data-testid="seat-fullscreen" title="座席表を画面いっぱいに大きく表示します（入れ替え・シャッフルもできます）">
@@ -822,57 +882,20 @@ function SeatPreview({
           </button>
         </div>
       </div>
-      {selected.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="seat-tag-bar">
-          <label className="flex items-center gap-1.5 text-neutral-700 dark:text-neutral-200">
-            札
-            <input
-              type="text"
-              list="seat-tag-presets"
-              value={tagText}
-              onChange={(e) => setTagText(e.target.value)}
-              placeholder="来賓・司会など"
-              maxLength={10}
-              className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-              data-testid="seat-tag-input"
-            />
-          </label>
-          <datalist id="seat-tag-presets">
-            {TAG_PRESETS.map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
-          {TAG_PRESETS.slice(0, 4).map((t) => (
-            <button key={t} type="button" className={smallButton} onClick={() => setTagText(t)}>
-              {t}
-            </button>
-          ))}
-          <button type="button" disabled={tagText.trim() === ""} onClick={() => { onTag(tagText); setTagText(""); }} className="ms-focus-ring rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-950 disabled:opacity-40" data-testid="seat-tag-apply">
-            札を付ける
-          </button>
-          <button type="button" onClick={() => onTag("")} className={smallButton} data-testid="seat-tag-clear">
-            札を外す
-          </button>
-          <button type="button" onClick={onToggleLock} className={smallButton} data-testid="seat-lock">
-            {selected.every((i) => locked.has(i)) ? "🔓 鍵を外す" : "🔒 鍵をかける"}
-          </button>
-          <button type="button" onClick={onToggleBlocked} className={smallButton} data-testid="seat-block">
-            {selected.every((i) => blocked.has(i)) ? "空席を戻す" : "空席にする"}
-          </button>
-          {selected.some((i) => model.assignment[i]) && (
-            <>
-              <button type="button" onClick={() => onToggleAxisFix("col")} className={smallButton} data-testid="seat-fix-col" title="シャッフルしても、この人は同じ縦の列（左右の位置が同じ席）の中だけで動きます">
-                {selected.every((i) => !model.assignment[i] || axisBySeat[i] === "col") ? "縦の列の固定を外す" : "↕ 縦の列だけ固定"}
-              </button>
-              <button type="button" onClick={() => onToggleAxisFix("row")} className={smallButton} data-testid="seat-fix-row" title="シャッフルしても、この人は同じ横の列（前からの位置が同じ席）の中だけで動きます">
-                {selected.every((i) => !model.assignment[i] || axisBySeat[i] === "row") ? "横の列の固定を外す" : "↔ 横の列だけ固定"}
-              </button>
-            </>
-          )}
-          {showMarks && selected.some((i) => locked.has(i)) && (
-            <span className="text-neutral-500 dark:text-neutral-400">鍵をかけた席は、入れ替え・シャッフルで動きません</span>
-          )}
-        </div>
+      {selected.length > 0 && (fullscreen || !desktop) && (
+        // 大きく表示しているときと、スマホ（右のメニューがない幅）では、プレビューの上に出す
+        <SelectionPanel
+          model={model}
+          selected={selected}
+          locked={locked}
+          blocked={blocked}
+          axisBySeat={axisBySeat}
+          showMarks={showMarks}
+          onTag={onTag}
+          onToggleLock={onToggleLock}
+          onToggleBlocked={onToggleBlocked}
+          onToggleAxisFix={onToggleAxisFix}
+        />
       )}
       </div>
       {open && (
@@ -1014,6 +1037,88 @@ function SeatPreview({
   return fullscreen && typeof document !== "undefined" ? createPortal(content, document.body) : content;
 }
 
+
+/** 選んだ席の操作（札・鍵・空席・列の固定）。ふだんは右のメニュー、大きく表示しているときはプレビューの上に出す */
+function SelectionPanel({
+  model,
+  selected,
+  locked,
+  blocked,
+  axisBySeat,
+  showMarks,
+  onTag,
+  onToggleLock,
+  onToggleBlocked,
+  onToggleAxisFix,
+  className = "",
+}: {
+  model: SeatingChartModel;
+  selected: number[];
+  locked: ReadonlySet<number>;
+  blocked: ReadonlySet<number>;
+  axisBySeat: (AxisFix | null)[];
+  showMarks: boolean;
+  onTag: (text: string) => void;
+  onToggleLock: () => void;
+  onToggleBlocked: () => void;
+  onToggleAxisFix: (axis: AxisFix) => void;
+  className?: string;
+}) {
+  const [tagText, setTagText] = useState("");
+  return (
+        <div className={`flex flex-wrap items-center gap-2 text-xs ${className}`} data-testid="seat-tag-bar">
+          <label className="flex items-center gap-1.5 text-neutral-700 dark:text-neutral-200">
+            札
+            <input
+              type="text"
+              list="seat-tag-presets"
+              value={tagText}
+              onChange={(e) => setTagText(e.target.value)}
+              placeholder="来賓・司会など"
+              maxLength={10}
+              className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+              data-testid="seat-tag-input"
+            />
+          </label>
+          <datalist id="seat-tag-presets">
+            {TAG_PRESETS.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+          {TAG_PRESETS.slice(0, 4).map((t) => (
+            <button key={t} type="button" className={smallButton} onClick={() => setTagText(t)}>
+              {t}
+            </button>
+          ))}
+          <button type="button" disabled={tagText.trim() === ""} onClick={() => { onTag(tagText); setTagText(""); }} className="ms-focus-ring rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-amber-950 disabled:opacity-40" data-testid="seat-tag-apply">
+            札を付ける
+          </button>
+          <button type="button" onClick={() => onTag("")} className={smallButton} data-testid="seat-tag-clear">
+            札を外す
+          </button>
+          <button type="button" onClick={onToggleLock} className={smallButton} data-testid="seat-lock">
+            {selected.every((i) => locked.has(i)) ? "🔓 鍵を外す" : "🔒 鍵をかける"}
+          </button>
+          <button type="button" onClick={onToggleBlocked} className={smallButton} data-testid="seat-block">
+            {selected.every((i) => blocked.has(i)) ? "空席を戻す" : "空席にする"}
+          </button>
+          {selected.some((i) => model.assignment[i]) && (
+            <>
+              <button type="button" onClick={() => onToggleAxisFix("col")} className={smallButton} data-testid="seat-fix-col" title="シャッフルしても、この人は同じ縦の列（左右の位置が同じ席）の中だけで動きます">
+                {selected.every((i) => !model.assignment[i] || axisBySeat[i] === "col") ? "縦の列の固定を外す" : "↕ 縦の列だけ固定"}
+              </button>
+              <button type="button" onClick={() => onToggleAxisFix("row")} className={smallButton} data-testid="seat-fix-row" title="シャッフルしても、この人は同じ横の列（前からの位置が同じ席）の中だけで動きます">
+                {selected.every((i) => !model.assignment[i] || axisBySeat[i] === "row") ? "横の列の固定を外す" : "↔ 横の列だけ固定"}
+              </button>
+            </>
+          )}
+          {showMarks && selected.some((i) => locked.has(i)) && (
+            <span className="text-neutral-500 dark:text-neutral-400">鍵をかけた席は、入れ替え・シャッフルで動きません</span>
+          )}
+        </div>
+  );
+}
+
 /**
  * ふりがなの入力欄（名前ごと）。名前をコピーして貼り付けたあとに、ふりがなだけを入れられる。
  * - Enterで次の人の欄へ移る（漢字変換の確定のEnterでは移らない）
@@ -1090,7 +1195,7 @@ function ReadingEditor({
         </div>
       )}
       {note && <p className="text-xs text-emerald-700 dark:text-emerald-300">{note}</p>}
-      <div ref={listRef} className="grid max-h-72 grid-cols-1 gap-x-4 gap-y-1.5 overflow-auto pr-1 sm:grid-cols-2" data-testid="seat-reading-list">
+      <div ref={listRef} className="grid max-h-72 grid-cols-1 gap-x-4 gap-y-1.5 overflow-auto pr-1 sm:grid-cols-2 lg:grid-cols-1" data-testid="seat-reading-list">
         {participants.map((p, i) => {
           const value = readings[p.name] ?? "";
           const empty = value.trim() === "";

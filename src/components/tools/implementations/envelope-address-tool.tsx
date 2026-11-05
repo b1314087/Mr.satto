@@ -42,6 +42,7 @@ import {
 } from "@/lib/print/envelope-sizes";
 import { parseTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 const ACCEPT =
   ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
@@ -269,6 +270,7 @@ export function EnvelopeAddressTool() {
     <div data-preview-split className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,460px)] lg:items-start">
       {/* プレビュー: 設定を操作しているあいだも見えるように、画面に固定する（スマホは下部、PC幅は右側） */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-neutral-200 bg-white/95 px-2 pb-2 pt-1 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 lg:sticky lg:inset-x-auto lg:bottom-auto lg:top-20 lg:order-2 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none lg:dark:bg-transparent">
+        <PreviewFullscreenFrame>
         <div
           data-testid="tool-preview"
           className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-800 lg:p-4"
@@ -322,6 +324,7 @@ export function EnvelopeAddressTool() {
             sender={useSender ? sender : null}
           />
         </div>
+        </PreviewFullscreenFrame>
       </div>
 
       <div className="flex min-w-0 flex-col gap-5 pb-[42vh] lg:order-1 lg:pb-0">

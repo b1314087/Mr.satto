@@ -35,6 +35,7 @@ import {
 } from "@/lib/video/shared";
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 const FORMAT_OPTIONS: { value: ThumbnailImageFormat; label: string }[] = [
   { value: "png", label: "PNG" },
@@ -371,6 +372,7 @@ export function VideoThumbnailTool() {
       )}
 
       {file && previewUrl && (
+        <PreviewFullscreenFrame>
         <section
           data-testid="tool-preview"
           aria-label="抽出するフレームのプレビュー"
@@ -471,6 +473,7 @@ export function VideoThumbnailTool() {
             </p>
           )}
         </section>
+        </PreviewFullscreenFrame>
       )}
 
       {file && (

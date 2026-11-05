@@ -19,6 +19,7 @@ import {
 import { FilledPdfAiPanel, formAiEnabled } from "./filled-pdf-to-excel/ai-panel";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 type TablePreview =
   | { file: File; hasTextLayer: boolean; rows: string[][]; layout: PdfToExcelLayoutNotes | null }
@@ -217,6 +218,7 @@ export function PdfToExcelTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
+        <PreviewFullscreenFrame>
         <div data-testid="tool-preview" className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <PdfThumbnails file={file} pages={[1]} maxPages={1} width={160} title="先頭ページ(元のPDF)" className="sm:shrink-0" />
           <section
@@ -255,6 +257,7 @@ export function PdfToExcelTool() {
             )}
           </section>
         </div>
+        </PreviewFullscreenFrame>
       )}
 
       {file && (

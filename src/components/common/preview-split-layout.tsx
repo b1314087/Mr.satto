@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PreviewFullscreenFrame } from "./preview-fullscreen";
 
 /**
  * 「設定を操作しながら、プレビューを見続けられる」2カラムの共通レイアウト。
@@ -10,6 +11,7 @@ import type { ReactNode } from "react";
  *
  * 使い方: 設定やボタンなど「操作する部分」を children に、プレビュー部分を preview に渡す。
  * プレビュー側に data-testid="tool-preview" を付ける構造は、そのまま preview の中に置く。
+ * プレビューには「大きく表示」（画面いっぱい）のボタンが付く（PreviewFullscreenFrame）。
  */
 export function PreviewSplitLayout({
   preview,
@@ -42,7 +44,8 @@ export function PreviewSplitLayout({
     <div className={`grid grid-cols-1 gap-6 ${cols} lg:items-start`} data-preview-split>
       <div className="flex min-w-0 flex-col gap-6">{children}</div>
       <div className="min-w-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto">
-        {preview}
+        {/* 「大きく表示」で、プレビューを画面いっぱいに広げられる（全ツール共通） */}
+        <PreviewFullscreenFrame>{preview}</PreviewFullscreenFrame>
       </div>
     </div>
   );

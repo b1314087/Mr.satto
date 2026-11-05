@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { PDFFont } from "pdf-lib";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { loadPdfDoc } from "@/lib/processors/browser/pdf";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 export interface PdfBox {
   x: number;
@@ -106,6 +107,7 @@ export function PdfOverlayPreview({
   const shown = geo ? pages.filter((n) => n <= geo.pageCount) : [pages[0]];
 
   return (
+    <PreviewFullscreenFrame>
     <div data-testid="tool-preview" className="flex flex-col gap-2">
       <PdfThumbnails
         file={file}
@@ -147,5 +149,6 @@ export function PdfOverlayPreview({
       />
       {caption && <div className="text-xs text-neutral-500 dark:text-neutral-400">{caption}</div>}
     </div>
+    </PreviewFullscreenFrame>
   );
 }

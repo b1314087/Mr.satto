@@ -1284,3 +1284,15 @@ a[data-nav-pending="true"] {
     width: 70%;
   }
 }
+
+/*
+ * プレビューを大きく表示しているとき（PreviewFullscreenFrame）。
+ * ツールごとに付けている高さの上限（max-h-*）を外し、画像・動画・キャンバスは画面の高さいっぱいまで大きく見せる。
+ */
+.ms-preview-fs [class*="max-h-"] {
+  max-height: none !important;
+}
+.ms-preview-fs.ms-preview-fs :is(img, video, canvas) {
+  max-height: calc(100dvh - 7rem) !important;
+  max-width: 100%;
+}

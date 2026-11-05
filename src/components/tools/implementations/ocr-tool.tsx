@@ -12,6 +12,7 @@ import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { OcrProcessor, type OcrOutput } from "@/lib/processors/browser/ocr";
 import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 const LANGUAGE_OPTIONS: { value: OcrLanguageOption; label: string }[] = [
   { value: "ja+en", label: "日本語＋英語" },
@@ -159,6 +160,7 @@ export function OcrTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
+        <PreviewFullscreenFrame>
         <div data-testid="tool-preview">
           {isPdfFile(file) ? (
             <PdfThumbnails file={file} pages={[1]} maxPages={1} width={200} title="読み取るPDFの1ページ目" />
@@ -179,6 +181,7 @@ export function OcrTool() {
             </section>
           )}
         </div>
+        </PreviewFullscreenFrame>
       )}
 
       {file && (

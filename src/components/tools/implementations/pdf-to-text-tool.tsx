@@ -9,6 +9,7 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { PdfToTextProcessor, type PdfToTextOutput } from "@/lib/processors/browser/pdf-render";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /** 画面のプレビューで抽出するページ数・表示する文字数(重くならないよう先頭だけ) */
 const PREVIEW_PAGES = 2;
@@ -90,6 +91,7 @@ export function PdfToTextTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && !result && (
+        <PreviewFullscreenFrame>
         <section
           aria-label="抽出されるテキストのプレビュー"
           data-testid="tool-preview"
@@ -111,6 +113,7 @@ export function PdfToTextTool() {
             </p>
           )}
         </section>
+        </PreviewFullscreenFrame>
       )}
 
       {file && (

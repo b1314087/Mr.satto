@@ -41,6 +41,7 @@ import {
   type SubtitleStyle,
 } from "@/lib/video/subtitles";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /** 新しく足す字幕の長さ（秒） */
 const NEW_CUE_LENGTH_SEC = 2;
@@ -326,6 +327,7 @@ export function VideoSubtitleTool() {
       {probeState?.error && <ErrorMessage message={probeState.error} />}
 
       {file && previewUrl && probeState?.result && (
+        <PreviewFullscreenFrame>
         <section data-testid="tool-preview" aria-label="字幕のプレビュー" className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（字幕の表示時間・位置・大きさの確認）</p>
           <div className="relative w-full overflow-hidden rounded-lg bg-black" style={{ containerType: "inline-size" }}>
@@ -368,6 +370,7 @@ export function VideoSubtitleTool() {
             プレビューの字幕は確認用の表示です。実際の見た目（文字の形・大きさ）は、再生アプリによって少し変わります。
           </p>
         </section>
+        </PreviewFullscreenFrame>
       )}
 
       {file && probeState?.result && (

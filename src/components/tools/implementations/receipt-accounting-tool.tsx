@@ -35,6 +35,7 @@ import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { ReceiptReadError, readReceiptFile, type ReadDocument } from "@/lib/processors/browser/receipt-ocr";
 import { downloadBlob } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /**
  * 領収書・レシートから会計CSV作成（工程8）。
@@ -548,6 +549,7 @@ export function ReceiptAccountingTool() {
               </div>
             </div>
 
+            <PreviewFullscreenFrame>
             <ul className="flex flex-col gap-3" data-testid="tool-preview">
               {docs.map((row) => {
                 const live = validateRow(row.values, { today });
@@ -722,6 +724,7 @@ export function ReceiptAccountingTool() {
                 );
               })}
             </ul>
+            </PreviewFullscreenFrame>
           </>
         )}
       </section>

@@ -25,6 +25,7 @@ import {
 } from "@/lib/print/paper-sizes";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /**
  * 画像レイアウトツール（Mr.Satto 次工程フェーズの中心ツール）。
@@ -512,6 +513,7 @@ export function ImageLayoutTool() {
           )}
         </div>
 
+        <PreviewFullscreenFrame>
         <div
           ref={canvasRef}
           data-testid="tool-preview"
@@ -598,6 +600,7 @@ export function ImageLayoutTool() {
             );
           })}
         </div>
+        </PreviewFullscreenFrame>
 
         {selectedItem?.kind === "image" && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-700">

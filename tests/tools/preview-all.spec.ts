@@ -118,5 +118,20 @@ for (const [id, input] of CASES) {
     await expect(preview, `${id} のプレビューが表示されません`).toBeVisible({ timeout: 10_000 });
     const box = await preview.boundingBox();
     expect(box && box.width > 20 && box.height > 10, `${id} のプレビューが空です`).toBeTruthy();
+
+    // 「大きく表示」があるツールでは、画面いっぱいに広がり、Esc で戻る
+    const fsButton = page.getByTestId(/^(preview-fullscreen|seat-fullscreen)$/).first();
+    if (await fsButton.isVisible().catch(() => false)) {
+      await fsButton.click();
+      const frame = page.locator('[data-preview-fullscreen="true"], [data-fullscreen="true"]').first();
+      await expect(frame, `${id} の「大きく表示」が開きません`).toBeVisible();
+      const fb = (await frame.boundingBox())!;
+      const vp = page.viewportSize()!;
+      expect(fb.width, `${id} の「大きく表示」が画面いっぱいになりません`).toBeGreaterThan(vp.width * 0.95);
+      expect(fb.height).toBeGreaterThan(vp.height * 0.95);
+      await page.keyboard.press("Escape");
+      await expect(frame).toHaveCount(0);
+      await expect(preview).toBeVisible();
+    }
   });
 }

@@ -15,6 +15,7 @@ import {
   type PdfMetadataRemoveOutput,
 } from "@/lib/processors/browser/pdf";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 const FIELD_LABELS: { key: keyof PdfMetadataInfo; label: string }[] = [
   { key: "title", label: "タイトル" },
@@ -106,6 +107,7 @@ export function PdfMetadataRemoveTool() {
       {beforeError && <ErrorMessage message={beforeError} />}
 
       {file && (
+        <PreviewFullscreenFrame>
         <div data-testid="tool-preview" className="flex flex-col gap-4 sm:flex-row sm:items-start">
           <PdfThumbnails file={file} pages={[1]} maxPages={1} width={140} title="先頭ページ" className="sm:shrink-0" />
           {before && (
@@ -140,6 +142,7 @@ export function PdfMetadataRemoveTool() {
             </div>
           )}
         </div>
+        </PreviewFullscreenFrame>
       )}
 
       {file && (

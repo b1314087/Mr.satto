@@ -12,6 +12,7 @@ import { inspectImageMetadata, hasAnyMetadata, type ImageMetadataReport } from "
 import { useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
+import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -150,6 +151,7 @@ export function ImageMetadataRemoveTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
+        <PreviewFullscreenFrame>
         <div
           data-testid="tool-preview"
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
@@ -182,6 +184,7 @@ export function ImageMetadataRemoveTool() {
           </div>
           <p className="text-xs text-neutral-400 dark:text-neutral-500">代表的な情報のみを表示しています。</p>
         </div>
+        </PreviewFullscreenFrame>
       )}
 
       {file && (
