@@ -19,7 +19,8 @@ import {
   type Purpose,
 } from "@/lib/seating/layouts";
 import { cleanReading, namesFromRows, parseParticipants, readingsFromPaste, SEATING_MAX_PARTICIPANTS, type Participant } from "@/lib/seating/participants";
-import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleWithAxisFix, type AxisFix } from "@/lib/seating/arrange";
+import { axisGroups, canShuffle, evictBlocked, fillAroundLocked } from "@/lib/seating/arrange";
+import { describeRule, isActiveRule, shuffleWithRules, violatedRules, type SeatGrid, type SeatRule } from "@/lib/seating/conditions";
 import { exportChart, type ExportFormat, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
@@ -147,8 +148,10 @@ export function SeatingChartTool() {
   const [locked, setLocked] = useState<number[]>([]);
   /** 空席にした席の番号（だれも座らせない席。入力順・シャッフルでも人が入らない） */
   const [blocked, setBlocked] = useState<number[]>([]);
-  /** 列だけ固定した人（名前ごと）：col＝縦の列の中だけ、row＝横の列の中だけで動く */
-  const [axisFix, setAxisFix] = useState<Record<string, AxisFix>>({});
+  /** 席の条件（離す・近くにする・列を決める・今の列のまま）。プレビュー・書き出しには出さない */
+  const [rules, setRules] = useState<SeatRule[]>([]);
+  /** 条件を満たす並びが見つからなかったときの案内（条件の欄の中にだけ出す） */
+  const [ruleError, setRuleError] = useState<string | null>(null);
   /** プレビューに、鍵・列の固定の印を出すか（生徒に見せるときに分からないよう、最初は出さない） */
   const [showMarks, setShowMarks] = useState(false);
   /** プレビューを画面いっぱいに大きく表示しているか */
@@ -217,7 +220,6 @@ export function SeatingChartTool() {
     setTags({});
     setLocked([]);
     setBlocked([]);
-    setAxisFix({});
   }
 
   function updateParam<K extends keyof LayoutParams>(key: K, value: LayoutParams[K]) {
@@ -238,28 +240,21 @@ export function SeatingChartTool() {
   // 席ごとの縦の列・横の列（位置が近い席を同じ列とみなす）
   const colOf = geometry ? axisGroups(geometry.seats.slice(0, seatCount).map((st) => st.x), SEAT_W / 2) : [];
   const rowOf = geometry ? axisGroups(geometry.seats.slice(0, seatCount).map((st) => st.y), SEAT_H / 2) : [];
-  const axisOfPerson = (id: number): AxisFix | null => axisFix[participants[id]?.name ?? ""] ?? null;
-  /** 席ごとの、座っている人の列の固定（プレビューの印用） */
-  const axisBySeat = slots.map((id) => (id === null ? null : axisOfPerson(id)));
+  const grid: SeatGrid = { col: colOf, row: rowOf };
+  const nameSet = new Set(names);
+  const activeRules = rules.filter((r) => isActiveRule(r, nameSet));
+  const nameOf = (id: number) => participants[id]?.name ?? "";
+  /** 今の並びで満たしていない条件 */
+  const unmet = violatedRules(activeRules, slots, nameOf, grid);
 
   function shuffle() {
-    setManual({ slots: shuffleWithAxisFix(slots, fixedSet, axisOfPerson, colOf, rowOf), names });
-    setSelected([]);
-  }
-
-  /** 選んだ席の人の列の固定：すべて同じ固定なら外し、そうでなければその固定にする */
-  function toggleAxisFix(axis: AxisFix) {
-    const people = selected.map((i) => slots[i]).filter((id): id is number => id !== null).map((id) => participants[id].name);
-    if (people.length === 0) return;
-    const allSame = people.every((n) => axisFix[n] === axis);
-    setAxisFix((prev) => {
-      const next = { ...prev };
-      for (const n of people) {
-        if (allSame) delete next[n];
-        else next[n] = axis;
-      }
-      return next;
-    });
+    const result = shuffleWithRules(slots, fixedSet, activeRules, nameOf, grid);
+    if (result.ok) {
+      setManual({ slots: result.slots, names });
+      setRuleError(null);
+    } else {
+      setRuleError("席の条件をすべて満たす並びが見つかりませんでした。条件を減らすか、離す席の数を少なくしてください（並びは変えていません）。");
+    }
     setSelected([]);
   }
 
@@ -324,7 +319,6 @@ export function SeatingChartTool() {
       setNamesText(result.text);
       setManual(null);
       setLocked([]);
-      setAxisFix({});
       let note = `${result.count}人を読み込みました`;
       if (result.readings) {
         // ふりがなの列：名簿と同じ順番で割り当てる（同じ名前に番号を付けた後の名前で覚える）
@@ -520,16 +514,13 @@ export function SeatingChartTool() {
             </span>
           </h2>
           <SelectionPanel
-            model={model}
             selected={selected}
             locked={lockedSet}
             blocked={blockedSet}
-            axisBySeat={axisBySeat}
             showMarks={showMarks}
             onTag={tagSelected}
             onToggleLock={toggleLock}
             onToggleBlocked={toggleBlocked}
-            onToggleAxisFix={toggleAxisFix}
           />
         </section>
       )}
@@ -619,6 +610,23 @@ export function SeatingChartTool() {
       )}
 
       {purpose && model && (
+        <ConditionsPanel
+          names={names}
+          rules={rules}
+          onChange={(next) => {
+            setRules(next);
+            setRuleError(null);
+          }}
+          unmet={unmet}
+          error={ruleError}
+          maxCol={Math.max(1, ...colOf.map((c) => c + 1))}
+          maxRow={Math.max(1, ...rowOf.map((r) => r + 1))}
+          onApply={shuffle}
+          canApply={canShuffle(slots, fixedSet) && participants.length > 0}
+        />
+      )}
+
+      {purpose && model && (
         <section className={sectionClass} aria-labelledby="seat-step3">
           <h2 id="seat-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
             3. 書き出す
@@ -668,8 +676,6 @@ export function SeatingChartTool() {
           blocked={blockedSet}
           onToggleLock={toggleLock}
           onToggleBlocked={toggleBlocked}
-          axisBySeat={axisBySeat}
-          onToggleAxisFix={toggleAxisFix}
           showMarks={showMarks}
           onShowMarksChange={setShowMarks}
           fullscreen={fullscreen}
@@ -701,8 +707,6 @@ function SeatPreview({
   blocked,
   onToggleLock,
   onToggleBlocked,
-  axisBySeat,
-  onToggleAxisFix,
   showMarks,
   onShowMarksChange,
   fullscreen,
@@ -714,9 +718,7 @@ function SeatPreview({
   canShuffle: shuffleEnabled,
 }: {
   model: SeatingChartModel;
-  axisBySeat: (AxisFix | null)[];
-  onToggleAxisFix: (axis: AxisFix) => void;
-  /** 鍵・列の固定の印をプレビューに出すか */
+  /** 鍵の印をプレビューに出すか */
   showMarks: boolean;
   onShowMarksChange: (v: boolean) => void;
   /** 画面いっぱいに大きく表示しているか */
@@ -846,9 +848,9 @@ function SeatPreview({
             </button>
           </>
         )}
-        <label className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300" title="鍵をかけた席・列を固定した人に印を付けます。生徒に見せるときは外しておくと、分かりません">
+        <label className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300" title="鍵をかけた席に印を付けます。生徒に見せるときは外しておくと、分かりません（席の条件は、プレビューには出ません）">
           <input type="checkbox" checked={showMarks} onChange={(e) => onShowMarksChange(e.target.checked)} data-testid="seat-show-marks" />
-          鍵・固定の印を表示
+          鍵の印を表示
         </label>
         {fullscreen && <span className="text-xs text-neutral-500 sm:hidden dark:text-neutral-400">スマホは横向きにすると、大きく見えます</span>}
         <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="seat-swap-help">
@@ -885,16 +887,13 @@ function SeatPreview({
       {selected.length > 0 && (fullscreen || !desktop) && (
         // 大きく表示しているときと、スマホ（右のメニューがない幅）では、プレビューの上に出す
         <SelectionPanel
-          model={model}
           selected={selected}
           locked={locked}
           blocked={blocked}
-          axisBySeat={axisBySeat}
           showMarks={showMarks}
           onTag={onTag}
           onToggleLock={onToggleLock}
           onToggleBlocked={onToggleBlocked}
-          onToggleAxisFix={onToggleAxisFix}
         />
       )}
       </div>
@@ -925,7 +924,6 @@ function SeatPreview({
                 const isLocked = locked.has(i);
                 // 印を出さないときは、鍵の席も見た目をほかの席と同じにする（生徒に分からないように）
                 const showLock = showMarks && isLocked;
-                const axis = showMarks && person ? axisBySeat[i] : null;
                 const isBlocked = blocked.has(i);
                 const reading = model.furigana ? (person?.reading ?? "") : "";
                 return (
@@ -1008,11 +1006,6 @@ function SeatPreview({
                         🔒
                       </span>
                     )}
-                    {axis && (
-                      <span className="absolute bottom-0.5 left-1.5 text-[11px] font-bold leading-none text-blue-600 dark:text-blue-400" aria-hidden="true" data-testid="seat-axis-icon" data-axis={axis}>
-                        {axis === "col" ? "↕" : "↔"}
-                      </span>
-                    )}
                     {person && (
                       <>
                         {reading && (
@@ -1040,28 +1033,22 @@ function SeatPreview({
 
 /** 選んだ席の操作（札・鍵・空席・列の固定）。ふだんは右のメニュー、大きく表示しているときはプレビューの上に出す */
 function SelectionPanel({
-  model,
   selected,
   locked,
   blocked,
-  axisBySeat,
   showMarks,
   onTag,
   onToggleLock,
   onToggleBlocked,
-  onToggleAxisFix,
   className = "",
 }: {
-  model: SeatingChartModel;
   selected: number[];
   locked: ReadonlySet<number>;
   blocked: ReadonlySet<number>;
-  axisBySeat: (AxisFix | null)[];
   showMarks: boolean;
   onTag: (text: string) => void;
   onToggleLock: () => void;
   onToggleBlocked: () => void;
-  onToggleAxisFix: (axis: AxisFix) => void;
   className?: string;
 }) {
   const [tagText, setTagText] = useState("");
@@ -1102,20 +1089,177 @@ function SelectionPanel({
           <button type="button" onClick={onToggleBlocked} className={smallButton} data-testid="seat-block">
             {selected.every((i) => blocked.has(i)) ? "空席を戻す" : "空席にする"}
           </button>
-          {selected.some((i) => model.assignment[i]) && (
-            <>
-              <button type="button" onClick={() => onToggleAxisFix("col")} className={smallButton} data-testid="seat-fix-col" title="シャッフルしても、この人は同じ縦の列（左右の位置が同じ席）の中だけで動きます">
-                {selected.every((i) => !model.assignment[i] || axisBySeat[i] === "col") ? "縦の列の固定を外す" : "↕ 縦の列だけ固定"}
-              </button>
-              <button type="button" onClick={() => onToggleAxisFix("row")} className={smallButton} data-testid="seat-fix-row" title="シャッフルしても、この人は同じ横の列（前からの位置が同じ席）の中だけで動きます">
-                {selected.every((i) => !model.assignment[i] || axisBySeat[i] === "row") ? "横の列の固定を外す" : "↔ 横の列だけ固定"}
-              </button>
-            </>
-          )}
           {showMarks && selected.some((i) => locked.has(i)) && (
             <span className="text-neutral-500 dark:text-neutral-400">鍵をかけた席は、入れ替え・シャッフルで動きません</span>
           )}
         </div>
+  );
+}
+
+
+/**
+ * 席の条件（隠せる欄）。だれとだれを離す・近くにする・どの列にする・今の列のまま。
+ * 最初はたたんでおき、見出しには件数も出さない（生徒に見られても、条件があるか分からないように）。
+ * 条件は、プレビュー・大きく表示・印刷・ダウンロードのどこにも出さない。
+ */
+function ConditionsPanel({
+  names,
+  rules,
+  onChange,
+  unmet,
+  error,
+  maxCol,
+  maxRow,
+  onApply,
+  canApply,
+}: {
+  names: string[];
+  rules: SeatRule[];
+  onChange: (next: SeatRule[]) => void;
+  unmet: SeatRule[];
+  error: string | null;
+  maxCol: number;
+  maxRow: number;
+  onApply: () => void;
+  canApply: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const nameSet = new Set(names);
+  const unmetIds = new Set(unmet.map((r) => r.id));
+  const warn = error !== null || unmet.length > 0;
+  const select = "min-w-0 rounded-md border border-neutral-300 px-1.5 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
+  const num = "w-12 rounded-md border border-neutral-300 px-1.5 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
+
+  function update(id: string, patch: Partial<SeatRule>) {
+    onChange(rules.map((r) => (r.id === id ? ({ ...r, ...patch } as SeatRule) : r)));
+  }
+  function changeKind(r: SeatRule, kind: SeatRule["kind"]) {
+    const b = r.kind === "apart" || r.kind === "near" ? r.b : names.find((n) => n !== r.a) ?? "";
+    const next: SeatRule =
+      kind === "apart"
+        ? { id: r.id, kind, a: r.a, b, n: 2 }
+        : kind === "near"
+          ? { id: r.id, kind, a: r.a, b }
+          : kind === "place"
+            ? { id: r.id, kind, a: r.a, axis: "row", from: 1, to: 1 }
+            : { id: r.id, kind, a: r.a, axis: "col" };
+    onChange(rules.map((x) => (x.id === r.id ? next : x)));
+  }
+  function add() {
+    onChange([...rules, { id: `rule-${Date.now().toString(36)}-${rules.length}`, kind: "apart", a: names[0] ?? "", b: names[1] ?? "", n: 2 }]);
+  }
+  const personSelect = (value: string, onSel: (v: string) => void, testId: string) => (
+    <select value={value} onChange={(e) => onSel(e.target.value)} className={`${select} max-w-[7.5rem]`} data-testid={testId}>
+      {!nameSet.has(value) && <option value={value}>{value ? `${value}（名簿にいません）` : "選ぶ"}</option>}
+      {names.map((n) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
+      ))}
+    </select>
+  );
+
+  return (
+    <section className={sectionClass} aria-label="席の条件" data-testid="seat-conditions">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex items-center gap-2 text-left text-sm font-semibold text-neutral-800 dark:text-neutral-100" data-testid="seat-conditions-toggle">
+        <span aria-hidden="true">{open ? "▼" : "▶"}</span>
+        席の条件
+        {warn && !open && (
+          <span className="rounded-full bg-amber-400 px-1.5 text-[10px] font-bold text-amber-950" title="満たしていない条件があります" data-testid="seat-conditions-warn">
+            ！
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2" data-testid="seat-conditions-body">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            シャッフルするときに守る条件です。プレビュー・印刷・ダウンロードには表示されません。「離す」の席の数は、隣・前後・斜めを1席として数えます。
+          </p>
+          {rules.length === 0 && <p className="text-xs text-neutral-500 dark:text-neutral-400">条件はまだありません。</p>}
+          <ul className="flex flex-col gap-2">
+            {rules.map((r, k) => (
+              <li
+                key={r.id}
+                className={`flex flex-col gap-1.5 rounded-lg border p-2 ${unmetIds.has(r.id) ? "border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30" : "border-neutral-200 dark:border-neutral-800"}`}
+                data-testid="seat-rule"
+                data-unmet={unmetIds.has(r.id) ? "true" : undefined}
+              >
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-neutral-700 dark:text-neutral-200">
+                  <span className="text-neutral-400">{k + 1}</span>
+                  <select value={r.kind} onChange={(e) => changeKind(r, e.target.value as SeatRule["kind"])} className={select} data-testid="seat-rule-kind" aria-label="条件の種類">
+                    <option value="apart">2人を離す</option>
+                    <option value="near">2人を近くにする</option>
+                    <option value="place">列を決める</option>
+                    <option value="stay">今の列のまま</option>
+                  </select>
+                  <button type="button" onClick={() => onChange(rules.filter((x) => x.id !== r.id))} className="ml-auto rounded px-1.5 py-0.5 text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40" data-testid="seat-rule-delete" aria-label={`条件${k + 1}を消す`}>
+                    消す
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-neutral-700 dark:text-neutral-200">
+                  {personSelect(r.a, (v) => update(r.id, { a: v }), "seat-rule-a")}
+                  {(r.kind === "apart" || r.kind === "near") && (
+                    <>
+                      <span>と</span>
+                      {personSelect(r.b, (v) => update(r.id, { b: v }), "seat-rule-b")}
+                      {r.kind === "apart" ? (
+                        <>
+                          <span>を</span>
+                          <input type="number" min={2} max={20} value={r.n} onChange={(e) => update(r.id, { n: Math.max(2, Math.min(20, Number(e.target.value) || 2)) })} className={num} data-testid="seat-rule-n" aria-label="離す席の数" />
+                          <span>席以上離す</span>
+                        </>
+                      ) : (
+                        <span>を隣・前後にする</span>
+                      )}
+                    </>
+                  )}
+                  {r.kind === "place" && (
+                    <>
+                      <span>を</span>
+                      <select value={r.axis} onChange={(e) => update(r.id, { axis: e.target.value as "col" | "row", from: 1, to: 1 })} className={select} data-testid="seat-rule-axis" aria-label="列の向き">
+                        <option value="row">前から</option>
+                        <option value="col">左から</option>
+                      </select>
+                      <input type="number" min={1} max={r.axis === "col" ? maxCol : maxRow} value={r.from} onChange={(e) => { const v = Math.max(1, Number(e.target.value) || 1); update(r.id, { from: v, to: Math.max(v, r.to) }); }} className={num} data-testid="seat-rule-from" aria-label="何列目から" />
+                      <span>〜</span>
+                      <input type="number" min={1} max={r.axis === "col" ? maxCol : maxRow} value={r.to} onChange={(e) => { const v = Math.max(1, Number(e.target.value) || 1); update(r.id, { to: v, from: Math.min(v, r.from) }); }} className={num} data-testid="seat-rule-to" aria-label="何列目まで" />
+                      <span>列目</span>
+                    </>
+                  )}
+                  {r.kind === "stay" && (
+                    <>
+                      <span>を今の</span>
+                      <select value={r.axis} onChange={(e) => update(r.id, { axis: e.target.value as "col" | "row" })} className={select} data-testid="seat-rule-axis" aria-label="列の向き">
+                        <option value="col">縦の列</option>
+                        <option value="row">横の列</option>
+                      </select>
+                      <span>のままにする</span>
+                    </>
+                  )}
+                </div>
+                {unmetIds.has(r.id) && <p className="text-[11px] text-amber-800 dark:text-amber-300">今の並びでは満たしていません（シャッフルすると、条件に合わせて並べ替えます）</p>}
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={add} disabled={names.length === 0} className={smallButton} data-testid="seat-rule-add">
+              ＋ 条件を追加
+            </button>
+            <button type="button" onClick={onApply} disabled={!canApply || rules.length === 0} className="ms-focus-ring rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40" data-testid="seat-rule-apply">
+              条件に合わせてシャッフル
+            </button>
+          </div>
+          {error && (
+            <p role="alert" className="text-xs text-red-700 dark:text-red-400" data-testid="seat-rule-error">
+              {error}
+            </p>
+          )}
+          {rules.length > 0 && (
+            <p className="sr-only">{rules.map(describeRule).join("。")}</p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

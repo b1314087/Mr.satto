@@ -10,7 +10,8 @@ import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { autoParams, buildLayout, DEFAULT_PARAMS, rotateLayout, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
 import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
-import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked, shuffleWithAxisFix } from "@/lib/seating/arrange";
+import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
+import { isActiveRule, isNear, seatDistance, shuffleWithRules, violatedRules, type SeatRule } from "@/lib/seating/conditions";
 
 /**
  * 座席表作成（seating-chart）のテスト（2026-11 作り直し）。
@@ -440,73 +441,139 @@ test("seating-chart: 席に鍵をかけると、シャッフル・入れ替え�
   await expect(seat(page, 2)).not.toHaveAttribute("data-locked", "true");
 });
 
-plainTest("列の固定：位置の近い席を同じ列にまとめ、列を固定した人は同じ列の中だけで動く（鍵の席は動かない）", () => {
+plainTest("席の条件：離す・近くにする・列を決める・今の列のまま を、シャッフルで必ず守る（鍵の席は動かない）。満たせなければ並びを変えない", () => {
   plainExpect(axisGroups([0, 200, 0.5, 400, 201], 50)).toEqual([0, 1, 0, 2, 1]);
-  // 3列×3行（席の番号＝行×3＋列）。人の番号＝席の番号
-  const cols = [0, 1, 2, 0, 1, 2, 0, 1, 2];
-  const rows = [0, 0, 0, 1, 1, 1, 2, 2, 2];
-  const slots = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-  const axis = (id: number) => (id === 4 ? "col" : id === 6 ? "row" : null);
-  let moved = false;
-  for (let k = 0; k < 200; k++) {
-    const next = shuffleWithAxisFix(slots, new Set([0]), axis, cols, rows);
-    plainExpect(next[0]).toBe(0);
-    plainExpect([...next].sort()).toEqual(slots);
-    plainExpect(cols[next.indexOf(4)]).toBe(1); // 人4は縦の列1のまま
-    plainExpect(rows[next.indexOf(6)]).toBe(2); // 人6は横の列2のまま
-    if (next.indexOf(4) !== 4) moved = true;
+  // 4列×4行（席の番号＝行×4＋列）。人の番号＝席の番号、名前は P0〜P15
+  const g = { col: Array.from({ length: 16 }, (_, i) => i % 4), row: Array.from({ length: 16 }, (_, i) => Math.floor(i / 4)) };
+  const slots = Array.from({ length: 16 }, (_, i) => i);
+  const nameOf = (id: number) => `P${id}`;
+  const rules: SeatRule[] = [
+    { id: "1", kind: "apart", a: "P0", b: "P1", n: 3 },
+    { id: "2", kind: "near", a: "P2", b: "P3" },
+    { id: "3", kind: "place", a: "P4", axis: "row", from: 1, to: 1 },
+    { id: "4", kind: "stay", a: "P5", axis: "col" },
+  ];
+  for (let k = 0; k < 100; k++) {
+    const res = shuffleWithRules(slots, new Set([15]), rules, nameOf, g);
+    plainExpect(res.ok).toBe(true);
+    const next = res.slots;
+    plainExpect(next[15]).toBe(15);
+    plainExpect([...next].sort((x, y) => x! - y!)).toEqual(slots);
+    const at = (id: number) => next.indexOf(id);
+    plainExpect(seatDistance(g, at(0), at(1))).toBeGreaterThanOrEqual(3);
+    plainExpect(isNear(g, at(2), at(3))).toBe(true);
+    plainExpect(g.row[at(4)]).toBe(0);
+    plainExpect(g.col[at(5)]).toBe(1);
+    plainExpect(violatedRules(rules, next, nameOf, g)).toEqual([]);
   }
-  plainExpect(moved).toBe(true); // 列の中では動く
-  // 列を固定した人がいなければ、これまでのシャッフルと同じ
-  plainExpect(shuffleWithAxisFix([0, 1], new Set(), () => null, [0, 1], [0, 0], () => 0)).toEqual(shuffleUnlocked([0, 1], new Set(), () => 0));
+  // 4列×4行では、5席以上は離せない → 見つからず、並びは変えない
+  const impossible = shuffleWithRules(slots, new Set(), [{ id: "x", kind: "apart", a: "P0", b: "P1", n: 5 }], nameOf, g);
+  plainExpect(impossible.ok).toBe(false);
+  plainExpect(impossible.slots).toEqual(slots);
+  // 名簿にいない人・同じ人どうしの条件は使わない
+  plainExpect(isActiveRule({ id: "y", kind: "near", a: "P0", b: "P0" }, new Set(["P0"]))).toBe(false);
+  plainExpect(isActiveRule({ id: "z", kind: "place", a: "だれか", axis: "col", from: 1, to: 1 }, new Set(["P0"]))).toBe(false);
 });
 
-test("seating-chart: 鍵・列の固定の印は、最初はプレビューに出ない（生徒に見せても分からない）。「印を表示」で確認できる", async ({ page }) => {
+test("seating-chart: 鍵の印は最初はプレビューに出ない（生徒に見せても分からない）。「印を表示」で確認できる", async ({ page }) => {
   await openTool(page);
   await start(page, "classroom", ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"]);
   await seat(page, 2).click();
   await page.getByTestId("seat-lock").click();
-  await seat(page, 7).click();
-  await page.getByTestId("seat-fix-col").click();
   await expect(seat(page, 2)).toHaveAttribute("data-locked", "true");
   await expect(page.getByTestId("seat-lock-icon")).toHaveCount(0);
-  await expect(page.getByTestId("seat-axis-icon")).toHaveCount(0);
-  // 鍵の席も、ほかの席と同じ見た目
   const bgLocked = await seat(page, 2).evaluate((e) => getComputedStyle(e).backgroundColor);
   const bgOther = await seat(page, 3).evaluate((e) => getComputedStyle(e).backgroundColor);
   plainExpect(bgLocked).toBe(bgOther);
   await page.getByTestId("seat-show-marks").check();
   await expect(seat(page, 2).getByTestId("seat-lock-icon")).toBeVisible();
-  await expect(seat(page, 7).getByTestId("seat-axis-icon")).toHaveAttribute("data-axis", "col");
 });
 
-test("seating-chart: 「縦の列だけ固定」した人は、シャッフルしても同じ縦の列の中だけで動く。外すと自由に動く", async ({ page }) => {
+/** 席の条件を1つ足す（欄を開いて、種類と人を選ぶ） */
+async function addRule(page: Page, kind: "apart" | "near" | "place" | "stay", a: string, b?: string) {
+  if ((await page.getByTestId("seat-conditions-body").count()) === 0) await page.getByTestId("seat-conditions-toggle").click();
+  await page.getByTestId("seat-rule-add").click();
+  const rule = page.getByTestId("seat-rule").last();
+  await rule.getByTestId("seat-rule-kind").selectOption(kind);
+  await rule.getByTestId("seat-rule-a").selectOption(a);
+  if (b) await rule.getByTestId("seat-rule-b").selectOption(b);
+  return rule;
+}
+
+async function seatGrid(page: Page) {
+  return page.getByTestId("seat").evaluateAll((els) =>
+    els.map((el) => ({ name: (el as HTMLElement).dataset.name ?? "", x: parseFloat((el as HTMLElement).style.left), y: parseFloat((el as HTMLElement).style.top) }))
+  );
+}
+
+test("seating-chart: 席の条件は最初はたたまれていて、件数も出ない。条件はプレビュー・印の表示にも出ない", async ({ page }) => {
+  await openTool(page);
+  await start(page, "classroom", Array.from({ length: 12 }, (_, i) => `N${i + 1}`));
+  await expect(page.getByTestId("seat-conditions-toggle")).toHaveText(/^▶\s*席の条件$/);
+  await expect(page.getByTestId("seat-conditions-body")).toHaveCount(0);
+  await addRule(page, "apart", "N1", "N2");
+  await page.getByTestId("seat-conditions-toggle").click();
+  await expect(page.getByTestId("seat-conditions-body")).toHaveCount(0);
+  // たたんでいると、満たしていない条件があっても「！」だけ（N1とN2は最初は隣どうし）
+  await expect(page.getByTestId("seat-conditions-warn")).toBeVisible();
+  await expect(page.getByTestId("seat-conditions-toggle")).not.toContainText("1");
+  await page.getByTestId("seat-show-marks").check();
+  const previewText = await page.getByTestId("tool-preview").innerText();
+  plainExpect(previewText).not.toContain("離す");
+  plainExpect(previewText).not.toContain("条件");
+});
+
+test("seating-chart: 「2人を離す」「近くにする」「列を決める」「今の列のまま」をシャッフルで守る", async ({ page }) => {
   await openTool(page);
   const names = Array.from({ length: 24 }, (_, i) => `N${i + 1}`);
   await start(page, "classroom", names);
-  await seat(page, 1).click();
-  await page.getByTestId("seat-fix-col").click();
-  const xOf = async (name: string) =>
-    page.locator(`[data-testid="seat"][data-name="${name}"]`).evaluate((e) => (e as HTMLElement).style.left);
-  const x0 = await xOf("N2");
-  let movedRow = false;
-  for (let k = 0; k < 6; k++) {
-    await page.getByTestId("seat-shuffle").click();
-    plainExpect(await xOf("N2")).toBe(x0);
-    if ((await seatNames(page)).indexOf("N2") !== 1) movedRow = true;
+  const apart = await addRule(page, "apart", "N1", "N2");
+  await apart.getByTestId("seat-rule-n").fill("3");
+  await expect(apart).toHaveAttribute("data-unmet", "true");
+  await addRule(page, "near", "N3", "N20");
+  const place = await addRule(page, "place", "N24");
+  await place.getByTestId("seat-rule-axis").selectOption("row");
+  await place.getByTestId("seat-rule-from").fill("1");
+  await place.getByTestId("seat-rule-to").fill("1");
+  await addRule(page, "stay", "N8");
+
+  const before = await seatGrid(page);
+  const n8x = before.find((s) => s.name === "N8")!.x;
+  const xs = [...new Set(before.map((s) => s.x))].sort((a, b) => a - b);
+  const ys = [...new Set(before.map((s) => s.y))].sort((a, b) => a - b);
+  const pos = (grid: typeof before, name: string) => {
+    const s = grid.find((g) => g.name === name)!;
+    return { c: xs.indexOf(s.x), r: ys.indexOf(s.y), x: s.x };
+  };
+  for (let k = 0; k < 5; k++) {
+    await page.getByTestId(k % 2 ? "seat-shuffle" : "seat-rule-apply").click();
+    const g = await seatGrid(page);
+    const a = pos(g, "N1");
+    const b = pos(g, "N2");
+    plainExpect(Math.max(Math.abs(a.c - b.c), Math.abs(a.r - b.r))).toBeGreaterThanOrEqual(3);
+    const c = pos(g, "N3");
+    const d = pos(g, "N20");
+    plainExpect(Math.abs(c.c - d.c) + Math.abs(c.r - d.r)).toBe(1);
+    plainExpect(pos(g, "N24").r).toBe(0);
+    plainExpect(pos(g, "N8").x).toBe(n8x);
   }
-  plainExpect(movedRow).toBe(true);
-  // 固定を外す（同じ人の席を選んで、もう一度押す）
-  const idx = (await seatNames(page)).indexOf("N2");
-  await seat(page, idx).click();
-  await expect(page.getByTestId("seat-fix-col")).toHaveText("縦の列の固定を外す");
-  await page.getByTestId("seat-fix-col").click();
-  let left = false;
-  for (let k = 0; k < 10 && !left; k++) {
-    await page.getByTestId("seat-shuffle").click();
-    if ((await xOf("N2")) !== x0) left = true;
-  }
-  plainExpect(left).toBe(true);
+  await expect(page.getByTestId("seat-rule").first()).not.toHaveAttribute("data-unmet", "true");
+  await expect(page.getByTestId("seat-rule-error")).toHaveCount(0);
+});
+
+test("seating-chart: 満たせない条件のときは、並びを変えずに案内を出す（条件の欄の中だけ）", async ({ page }) => {
+  await openTool(page);
+  await start(page, "classroom", Array.from({ length: 6 }, (_, i) => `N${i + 1}`));
+  await page.getByTestId("seat-autofit").uncheck().catch(() => undefined);
+  const rule = await addRule(page, "apart", "N1", "N2");
+  await rule.getByTestId("seat-rule-n").fill("20");
+  const before = await seatNames(page);
+  await page.getByTestId("seat-rule-apply").click();
+  await expect(page.getByTestId("seat-rule-error")).toContainText("見つかりませんでした");
+  plainExpect(await seatNames(page)).toEqual(before);
+  plainExpect(await page.getByTestId("tool-preview").innerText()).not.toContain("見つかりませんでした");
+  await page.getByTestId("seat-conditions-toggle").click();
+  await expect(page.getByTestId("seat-conditions-warn")).toBeVisible();
 });
 
 test("seating-chart: 「大きく表示」で座席表を画面いっぱいに出し、そこでも入れ替え・シャッフルでき、Esc・閉じるで戻る", async ({ page }) => {
