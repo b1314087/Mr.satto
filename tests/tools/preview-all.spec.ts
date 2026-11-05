@@ -49,7 +49,7 @@ const CASES: [string, Input][] = [
   ["file-sequential-rename", csv],
   ["file-hash", csv],
   // 動画(video-h264 はヘッドレスChromiumがH.264エンコード非対応のため、この環境では対象外)
-  ...(["video-convert", "video-compress", "video-resize", "video-frame-rate", "video-thumbnail", "video-metadata-remove", "video-mosaic"] as const).map((id) => [id, video] as [string, Input]),
+  ...(["video-convert", "video-compress", "video-resize", "video-frame-rate", "video-thumbnail", "video-metadata-remove", "video-mosaic", "video-subtitle"] as const).map((id) => [id, video] as [string, Input]),
   // 音声（音声付き動画から抽出する audio-extract も、プレビュー自体は動画を受け付けた時点で表示される）
   ...(["audio-convert", "audio-trim", "audio-volume", "audio-compress"] as const).map((id) => [id, audio] as [string, Input]),
   ["audio-extract", video],

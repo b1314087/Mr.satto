@@ -38,6 +38,7 @@ const VIDEO_TOOLS = [
   "video-mosaic",
   "video-thumbnail",
   "video-h264",
+  "video-subtitle",
 ];
 const AUDIO_TOOLS = ["audio-convert", "audio-compress", "audio-extract", "audio-trim", "audio-volume", "audio-merge"];
 

@@ -333,6 +333,10 @@ const VideoMetadataRemoveTool = dynamic(() =>
   import("./implementations/video-metadata-remove-tool").then((m) => m.VideoMetadataRemoveTool),
   { loading: ToolLoading }
 );
+const VideoSubtitleTool = dynamic(() =>
+  import("./implementations/video-subtitle-tool").then((m) => m.VideoSubtitleTool),
+  { loading: ToolLoading }
+);
 // 音声ツール（mediabunny。MP3書き出し時のみ LAME/WASM を動的に読み込む）
 const AudioConvertTool = dynamic(() =>
   import("./implementations/audio-convert-tool").then((m) => m.AudioConvertTool),
@@ -644,6 +648,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <VideoMetadataRemoveTool />;
     case "video-mosaic":
       return <VideoMosaicTool />;
+    case "video-subtitle":
+      return <VideoSubtitleTool />;
     case "audio-convert":
       return <AudioConvertTool />;
     case "audio-extract":

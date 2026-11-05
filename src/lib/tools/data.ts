@@ -1132,6 +1132,19 @@ const toolDefinitions: Tool[] = [
     processor: "browser",
     keywords: ["モザイク", "動画 モザイク", "ぼかし", "黒塗り", "追跡", "トラッキング", "顔隠し", "ナンバープレート", "個人情報", "プライバシー", "mosaic", "blur", "動画 モザイク 高速化", "高速"],
   },
+  {
+    // 動画字幕追加：字幕を手入力し、動画とは別の字幕トラック（WebVTT）として入れた動画（MKV・WebM）を書き出す。
+    // 字幕は焼き付けない。字幕だけのファイル（.srt・.vtt）も保存できる。
+    id: "video-subtitle",
+    name: "動画字幕追加",
+    category: "video",
+    description: "動画に字幕を手入力で追加します。字幕は焼き付けず、ON・OFFできる字幕トラックとして入れます（MKV・WebM）。字幕ファイル（.srt・.vtt）も保存できます",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["字幕", "字幕追加", "動画 字幕", "字幕トラック", "サブタイトル", "テロップ", "srt", "vtt", "WebVTT", "字幕ファイル", "subtitle", "caption", "MKV"],
+    relatedToolIds: ["video-convert", "video-mosaic", "video-thumbnail"],
+  },
 
   // ------------------------------------------------------------------
   // 学生向け
