@@ -1237,18 +1237,6 @@ const toolDefinitions: Tool[] = [
     keywords: ["封筒", "宛名", "宛名印刷", "長形3号", "角形2号"],
   },
   {
-    // 差し込み印刷・レイアウト作成：PDFまたは白紙の上に、Excel・CSVの1行ごとに文字を差し込み、1件1ページのPDFを作る。
-    // レイアウトはブラウザ（IndexedDB）に保存でき、JSONで書き出し・読み込みもできる（ファイルは外部に送らない）。
-    id: "mail-merge",
-    name: "差し込み印刷・レイアウト作成",
-    category: "generator",
-    description: "PDFの帳票や白紙の用紙に、Excel・CSVの氏名・住所などを好きな位置へ差し込み、1件1ページの印刷用PDFをまとめて作成します。項目はクリックで置いてドラッグで動かし、mm単位で調整できます。レイアウトはブラウザに保存できます",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["差し込み印刷", "差込印刷", "差し込み", "宛名", "帳票", "印刷", "レイアウト", "テンプレート", "賞状", "修了証", "案内状", "ラベル", "Excel", "CSV", "PDF"],
-  },
-  {
     id: "ticket-voucher",
     name: "整理券・金券・引換券作成",
     category: "generator",
