@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -25,6 +25,7 @@ import {
   xlsxRowsToText,
 } from "@/components/tools/implementations/shared/before-after-table";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { ExcelChartPageCheck, type ChartPageCheckState } from "@/components/tools/implementations/excel-chart-page-check";
 
 /**
  * Excel（XLSX）→ PDF（Phase 9、Phase 18.2 B節で大幅改修）。
@@ -81,6 +82,37 @@ export function ExcelToPdfTool() {
   const [loadingSheets, setLoadingSheets] = useState(false);
   /** シートごとの印刷設定の要約(用紙・向き・拡大縮小・印刷範囲)。読めないときは空 */
   const [printSummaries, setPrintSummaries] = useState<Map<string, SheetPrintSummary>>(new Map());
+  /** 変換の前の「グラフのページ境界チェック」(する・しない と結果) */
+  const [chartCheckEnabled, setChartCheckEnabled] = useState(true);
+  /** key は、その結果を調べたときの条件(ファイル・シート・向き・収め方)。今の条件と違う結果は表示しない */
+  const [chartCheck, setChartCheck] = useState<{ key: string | null; value: ChartPageCheckState }>({ key: null, value: { state: "idle" } });
+  const sheetsHaveCharts =
+    !!sheets && printSummaries.size > 0 && Array.from(selectedSheets).some((name) => (printSummaries.get(name)?.chartCount ?? 0) > 0);
+  const chartCheckKey = sheetsHaveCharts && chartCheckEnabled && file ? [file.name, file.size, file.lastModified, Array.from(selectedSheets).sort().join("\u0000"), orientation, fitMode, repeatHeaderRow].join("|") : null;
+
+  // グラフのあるシートを選んでいるときだけ、変換の前にページの境目を調べる(シートの選択・向き・ページの収め方を変えたら調べ直す)。
+  // PDFを作るときと同じ計算でページを分け、ページを描く手前で止める。失敗しても変換は止めない
+  useEffect(() => {
+    if (!chartCheckKey || !file || !sheets) return;
+    let cancelled = false;
+    const key = chartCheckKey;
+    const timer = setTimeout(() => {
+      new ExcelToPdfProcessor()
+        .analyzeChartPages({ file, sheets, selectedSheetNames: Array.from(selectedSheets), orientation, fitMode, repeatHeaderRow })
+        .then((result) => {
+          if (!cancelled) setChartCheck({ key, value: { state: "done", result } });
+        })
+        .catch(() => {
+          if (!cancelled) setChartCheck({ key, value: { state: "error" } });
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // chartCheckKey が、調べ直す条件(ファイル・シートの選択・向き・収め方)をまとめて表す
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartCheckKey]);
 
   async function handleSelect(files: File[]) {
     const selected = files[0];
@@ -284,6 +316,15 @@ export function ExcelToPdfTool() {
           )}
           {resultPdf && <PdfThumbnails file={resultPdf} maxPages={1} width={260} title="変換後PDFの1ページ目" />}
         </PreviewShell>
+      )}
+
+      {/* 変換の前の確認なので、変換中・変換の後は表示しない(変換の結果の注意書きと混ざらないように) */}
+      {sheets && sheetsHaveCharts && status !== "processing" && status !== "success" && (
+        <ExcelChartPageCheck
+          check={!chartCheckKey ? { state: "idle" } : chartCheck.key === chartCheckKey ? chartCheck.value : { state: "running" }}
+          enabled={chartCheckEnabled}
+          onToggle={setChartCheckEnabled}
+        />
       )}
 
       {sheets && (

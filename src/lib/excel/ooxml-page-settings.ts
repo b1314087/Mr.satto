@@ -1634,6 +1634,8 @@ export interface SheetPrintSummary {
   /** 拡大縮小。fit=ページ数に合わせる(0は「自動」)、scale=拡大縮小率(%)、none=指定なし */
   fit: { kind: "fit"; width: number; height: number } | { kind: "scale"; percent: number } | { kind: "none" };
   hasPrintArea: boolean;
+  /** シートにあるグラフの数(表示できない種類も含む)。変換の前のグラフの確認を行うかの判断に使う */
+  chartCount: number;
 }
 
 /**
@@ -1645,7 +1647,11 @@ export async function readSheetPrintSummaries(file: File): Promise<Map<string, S
   const result = new Map<string, SheetPrintSummary>();
   try {
     const entries = unzipSync(new Uint8Array(await file.arrayBuffer()), {
-      filter: (info) => info.name === "xl/workbook.xml" || info.name === "xl/_rels/workbook.xml.rels" || /^xl\/worksheets\/[^/]+\.xml$/.test(info.name),
+      filter: (info) =>
+        info.name === "xl/workbook.xml" ||
+        info.name === "xl/_rels/workbook.xml.rels" ||
+        /^xl\/worksheets\/[^/]+\.xml$/.test(info.name) ||
+        /^xl\/(worksheets|drawings)\/_rels\/[^/]+\.rels$/.test(info.name),
     });
     const workbookDoc = parseXml((await readEntryText(entries, "xl/workbook.xml")) ?? "");
     const relsDoc = parseXml((await readEntryText(entries, "xl/_rels/workbook.xml.rels")) ?? "");
@@ -1678,6 +1684,18 @@ export async function readSheetPrintSummaries(file: File): Promise<Map<string, S
       const paperSize = code !== null ? (PAPER_SIZE_MAP[code] ?? null) : null;
       const fitToPage = isTrueAttr(attr(pageSetUpPr, "fitToPage"));
       const scale = pageSetup ? Number(attr(pageSetup, "scale") ?? "100") : 100;
+      // グラフの数：シートの <drawing r:id> → シートの関係(rels)で図(drawing)のファイル → 図の関係でグラフ(chart・chartEx)を数える
+      let chartCount = 0;
+      const drawingRid = /<(?:\w+:)?drawing\b[^>]*\br:id="([^"]+)"/.exec(tail)?.[1];
+      if (drawingRid && target) {
+        const fileName = target.split("/").pop() ?? "";
+        const sheetRels = entries[`xl/worksheets/_rels/${fileName}.rels`];
+        const relText = sheetRels ? decoder.decode(sheetRels) : "";
+        const drawingTarget = new RegExp(`<Relationship\\b[^>]*\\bId="${drawingRid}"[^>]*>`).exec(relText)?.[0];
+        const drawingFile = drawingTarget ? (attr(drawingTarget, "Target") ?? "").split("/").pop() : undefined;
+        const drawingRels = drawingFile ? entries[`xl/drawings/_rels/${drawingFile}.rels`] : undefined;
+        if (drawingRels) chartCount = (decoder.decode(drawingRels).match(/Type="[^"]*\/(?:chart|chartEx)"/g) ?? []).length;
+      }
       result.set(name, {
         hidden: state === "hidden" || state === "veryHidden",
         paperSize,
@@ -1689,6 +1707,7 @@ export async function readSheetPrintSummaries(file: File): Promise<Map<string, S
             ? { kind: "scale", percent: scale }
             : { kind: "none" },
         hasPrintArea: printAreaSheetIndexes.has(index),
+        chartCount,
       });
     });
   } catch {

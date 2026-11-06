@@ -18,6 +18,7 @@ import { parseRangeRef } from "@/lib/excel/ooxml-charts";
 import { excelSerialToDate, formatExcelDate } from "@/lib/excel/excel-date-format";
 import { excelNumberFormatColor, excelTextFormatColor, formatExcelNumber, formatExcelText, formatGeneralNumber } from "@/lib/excel/excel-number-format";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
+import { checkChart, sortIssues, type ChartPageCheckResult, type ChartPageIssue, type CheckArea, type CheckPage } from "@/lib/excel/chart-page-check";
 import type * as PdfLibTypes from "pdf-lib";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
@@ -213,6 +214,8 @@ export interface ExcelToPdfOutput extends Omit<PdfProcessorOutput, "url"> {
   warnings: string[];
   sheetCount: number;
   totalRowCount: number;
+  /** グラフとページの境目の関係(このPDFのページの分け方で調べたもの) */
+  chartPageCheck: ChartPageCheckResult;
 }
 
 function inchesToPt(inches: number): number {
@@ -455,7 +458,20 @@ interface PictureAnchorLike {
 }
 
 export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, ExcelToPdfOutput> {
-  async process({ file, sheets, selectedSheetNames, orientation, fitMode, repeatHeaderRow }: ExcelToPdfInput): Promise<ExcelToPdfOutput> {
+  async process(input: ExcelToPdfInput): Promise<ExcelToPdfOutput> {
+    return this.run(input, false);
+  }
+
+  /**
+   * 変換の前の確認：グラフがページの境目にかかっていないかを調べる。
+   * PDFを作るときと同じ処理(印刷範囲・余白・倍率・改ページ・何も無いページの省略)でページの分け方を決め、
+   * ページを描く手前で止める(ページの分け方を別に計算しないので、実際のPDFと食い違わない)。PDFは作らない
+   */
+  async analyzeChartPages(input: ExcelToPdfInput): Promise<ChartPageCheckResult> {
+    return (await this.run(input, true)).chartPageCheck;
+  }
+
+  private async run({ file, sheets, selectedSheetNames, orientation, fitMode, repeatHeaderRow }: ExcelToPdfInput, analyzeOnly: boolean): Promise<ExcelToPdfOutput> {
     await ensurePdfLib({ fontkit: true });
     const targetSheets = sheets.filter((s) => selectedSheetNames.includes(s.name));
     if (targetSheets.length === 0) {
@@ -647,6 +663,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
     let chartDrawFailures = 0;
     /** 何も無いため出力しなかったページの数 */
     let skippedBlankPages = 0;
+    /** グラフとページの境目の確認の結果 */
+    const chartIssues: ChartPageIssue[] = [];
+    let checkedCharts = 0;
+    /** 確認だけのとき(ページを作らない)に、作るはずのページを数える */
+    let analyzedPageCount = 0;
     /**
      * 描けないグラフの場所に、薄い灰色の点線の枠と説明を出す(グラフが黙って消えた状態のPDFにしない)。
      * 別の種類のグラフとして描き替えることはしない。
@@ -1221,6 +1242,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       /** ヘッダー/フッターの文字の倍率(表の拡大縮小と同じ。印刷範囲が複数あるときは最後の範囲の倍率) */
       let headerFooterScale = 1;
       let pageInSheet = 0;
+      /** グラフの確認用：印刷範囲ごとのページの分け方 */
+      const chartCheckAreas: CheckArea[] = [];
 
       // ---- 印刷範囲ごとの描画 --------------------------------------------------
       for (const area of areas) {
@@ -1842,6 +1865,54 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           );
           if (blankGridPages.size === grid.colGroups.length * grid.rowGroups.length) blankGridPages.delete("0:0");
         }
+
+        // グラフの確認用に、出力する各ページの範囲(シートの座標)と、PDFのページ番号を記録する(下のページの生成と同じ順・同じ省略)
+        if (settings && settings.charts.length > 0) {
+          const firstPageNo = (analyzeOnly ? analyzedPageCount : doc.getPageCount()) + 1;
+          const checkPages: CheckPage[] = [];
+          grid.colGroups.forEach((colGroup, ci) =>
+            grid.rowGroups.forEach((rowGroup, ri) => {
+              if (blankGridPages.has(`${ci}:${ri}`)) return;
+              const cols = colGroup.map((i) => bodyCols[i]);
+              const rows = rowGroup.map((i) => bodyRows[i]);
+              if (cols.length === 0 || rows.length === 0) return;
+              const x1 = colLeftSheet(cols[0]);
+              const y1 = rowTopSheet(rows[0]);
+              checkPages.push({
+                pageNo: firstPageNo + checkPages.length,
+                ci,
+                ri,
+                x1,
+                y1,
+                x2: x1 + cols.reduce((sum, c) => sum + colWidthOf(c), 0),
+                y2: y1 + rows.reduce((sum, r) => sum + rowHeightOf(r), 0),
+              });
+            })
+          );
+          const lastCol = bodyCols[bodyCols.length - 1];
+          const lastRow = bodyRows[bodyRows.length - 1];
+          const colBreaks = new Set(settings.colBreaksAfter);
+          const rowBreaks = new Set(settings.rowBreaksAfter);
+          chartCheckAreas.push({
+            pages: checkPages,
+            rect: {
+              x1: colLeftSheet(bodyCols[0]),
+              y1: rowTopSheet(bodyRows[0]),
+              x2: colLeftSheet(lastCol) + colWidthOf(lastCol),
+              y2: rowTopSheet(lastRow) + rowHeightOf(lastRow),
+            },
+            scale,
+            pageBodyWidthPt: contentWidth - titleColsWidth * scale,
+            pageBodyHeightPt: contentHeightForData - titleRowsHeight * scale,
+            manualColBreakAfter: (ci) => colBreaks.has(bodyCols[grid.colGroups[ci][grid.colGroups[ci].length - 1]]),
+            manualRowBreakAfter: (ri) => rowBreaks.has(bodyRows[grid.rowGroups[ri][grid.rowGroups[ri].length - 1]]),
+          });
+        }
+        // 確認だけのとき：ページを作らずに、作るはずのページの数だけを数えて次へ
+        if (analyzeOnly) {
+          analyzedPageCount += grid.colGroups.length * grid.rowGroups.length - blankGridPages.size;
+          continue;
+        }
         for (const [ci, colGroup] of grid.colGroups.entries()) {
           for (const [ri, rowGroup] of grid.rowGroups.entries()) {
             if (blankGridPages.has(`${ci}:${ri}`)) {
@@ -1878,6 +1949,19 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             drawDrawings(page, bodyColsOnPage, bodyRowsOnPage, startX + titleColsWidth * scale, bodyTop);
           }
         }
+      }
+
+      // グラフとページの境目の確認(シートのすべての印刷範囲を見てから、グラフごとに判定する)
+      if (settings && settings.charts.length > 0) {
+        settings.charts.forEach((chart, i) => {
+          checkedCharts++;
+          try {
+            const issue = checkChart(sheet.name, i + 1, chart, anchorRect(chart), chartCheckAreas);
+            if (issue) chartIssues.push(issue);
+          } catch {
+            // 確認の失敗で、PDFの変換を止めない
+          }
+        });
       }
 
       // ---- ヘッダー/フッター(全ページ数が確定してから描く) ----
@@ -1932,6 +2016,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       }
     }
 
+    const chartPageCheck: ChartPageCheckResult = { checkedCharts, issues: sortIssues(chartIssues) };
+    if (analyzeOnly) {
+      return { blob: new Blob([], { type: "application/pdf" }), pageCount: analyzedPageCount, sizeBytes: 0, warnings: [], sheetCount, totalRowCount: totalRows, chartPageCheck };
+    }
+
     if (skippedBlankPages > 0) {
       warnings.push(`値・書式・画像・グラフが何も無いページ${skippedBlankPages}枚は、出力していません`);
     }
@@ -1961,6 +2050,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       warnings: Array.from(new Set(warnings)),
       sheetCount,
       totalRowCount: totalRows,
+      chartPageCheck,
     };
   }
 }

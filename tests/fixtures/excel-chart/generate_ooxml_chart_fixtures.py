@@ -34,6 +34,8 @@ def attr(v: str) -> str:
 OUT = os.path.join(os.path.dirname(__file__), "..", "static", "excel-chart-ooxml")
 # 分類の軸の項目名の表示(間引き・折り返し・回転)の検証用
 OUT_LABELS = os.path.join(os.path.dirname(__file__), "..", "static", "excel-chart-labels")
+# 変換の前の「グラフのページ境界チェック」の検証用
+OUT_PAGECHECK = os.path.join(os.path.dirname(__file__), "..", "static", "excel-chart-pagecheck")
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -359,6 +361,8 @@ class Sheet:
         self.row_breaks: list[int] = []
         self.state = "visible"
         self.print_area: str | None = None
+        self.scale: int | None = None  # 拡大縮小(%)
+        self.col_breaks: list[int] = []
 
     def put(self, r: int, c: int, v, style: int = ST_GENERAL):
         self.cells[(r, c)] = v
@@ -507,10 +511,13 @@ class Book:
                     f'<xdr:wsDr xmlns:xdr="{NS_XDR}" xmlns:a="{NS_A}" xmlns:r="{NS_R}">{"".join(anchors)}</xdr:wsDr>'
                 )
                 files[f"xl/drawings/_rels/drawing{drawing_no}.xml.rels"] = rels_xml(drels)
-            setup = f'<pageSetup paperSize="9" orientation="{"landscape" if sh.landscape else "portrait"}"/>'
+            scale_attr = f' scale="{sh.scale}"' if sh.scale else ""
+            setup = f'<pageSetup paperSize="9"{scale_attr} orientation="{"landscape" if sh.landscape else "portrait"}"/>'
             breaks = ""
             if sh.row_breaks:
                 breaks = f'<rowBreaks count="{len(sh.row_breaks)}" manualBreakCount="{len(sh.row_breaks)}">' + "".join(f'<brk id="{b}" max="16383" man="1"/>' for b in sh.row_breaks) + "</rowBreaks>"
+            if sh.col_breaks:
+                breaks += f'<colBreaks count="{len(sh.col_breaks)}" manualBreakCount="{len(sh.col_breaks)}">' + "".join(f'<brk id="{b}" max="1048575" man="1"/>' for b in sh.col_breaks) + "</colBreaks>"
             sel = ' tabSelected="1"' if si == 1 else ""
             files[f"xl/worksheets/sheet{si}.xml"] = (
                 '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -1344,11 +1351,167 @@ LABEL_CASES = [
 ]
 
 
+# ───────────────────────── グラフのページ境界チェックの検証ケース ─────────────────────────
+# A4縦・余白(左右0.7インチ・上下0.75インチ)・游ゴシック11pt(標準の列幅8.38文字=54pt、行の高さ18.75pt)のとき、
+# 1ページに入るのは 9列(A〜I、486pt) × 39行(731.25pt)。A4横は 13列 × 25行。
+
+
+def pc_sheet(b: Book, name="Sheet1", rows=45, cols=12) -> Sheet:
+    """表(番号と値)を入れたシート。何も無いページにならないよう、指定した範囲の四隅にも文字を置く"""
+    s = b.sheet(name)
+    s.put(0, 0, "月")
+    s.put(0, 1, "売上")
+    for i, m in enumerate(MONTHS[:4]):
+        s.put(i + 1, 0, m)
+        s.put(i + 1, 1, [120, 180, 150, 210][i])
+    for r in range(6, rows):
+        s.put(r, 0, f"行{r + 1}")
+    s.put(0, cols - 1, "右上")
+    s.put(rows - 1, cols - 1, "右下")
+    return s
+
+
+def pc_chart(sheet: str, title: str, color="accent1") -> str:
+    return small_chart(sheet, title, color)
+
+
+def case_p01(b):
+    """ページの境目をまたがないグラフ(D2〜H16。1ページ目の中)"""
+    s = pc_sheet(b)
+    s.chart(two_cell(3, 1, 8, 16), pc_chart("Sheet1", "1ページに収まる"))
+
+
+def case_p02(b):
+    """左右のページの境目(I列とJ列の間)をまたぐグラフ(G2〜M16)"""
+    s = pc_sheet(b, cols=16)
+    s.chart(two_cell(6, 1, 13, 16), pc_chart("Sheet1", "左右にまたぐ"))
+
+
+def case_p03(b):
+    """上下のページの境目(39行目と40行目の間)をまたぐグラフ(B31〜H50)"""
+    s = pc_sheet(b, rows=60)
+    s.chart(two_cell(1, 30, 7, 50), pc_chart("Sheet1", "上下にまたぐ"))
+
+
+def case_p04(b):
+    """手動の改ページ(20行目の下)の上に置いたグラフ(B13〜H28)"""
+    s = pc_sheet(b, rows=50)
+    s.row_breaks = [20]
+    s.chart(two_cell(1, 12, 7, 28), pc_chart("Sheet1", "手動の改ページ"))
+
+
+def case_p05(b):
+    """自動の改ページ(39行目の下)の上に置いたグラフ。表は80行(B35〜G46)"""
+    s = pc_sheet(b, rows=80, cols=8)
+    s.chart(two_cell(1, 34, 6, 46), pc_chart("Sheet1", "自動の改ページ"))
+
+
+def case_p06(b):
+    """印刷範囲(A1:G30)の右の端にかかるグラフ(E3〜J15)。範囲の外の部分は出力されない"""
+    s = pc_sheet(b, rows=30, cols=7)
+    s.print_area = "Sheet1!$A$1:$G$30"
+    s.chart(two_cell(4, 2, 9, 15), pc_chart("Sheet1", "印刷範囲の端"))
+
+
+def case_p07(b):
+    """印刷範囲(A1:E20)の外にあるグラフ(K3〜Q15)"""
+    s = pc_sheet(b, rows=20, cols=5)
+    s.print_area = "Sheet1!$A$1:$E$20"
+    s.chart(two_cell(10, 2, 16, 15), pc_chart("Sheet1", "印刷範囲の外"))
+
+
+def case_p08(b):
+    """拡大縮小50%：1ページに 18列 × 78行 入る。グラフ(B71〜H86)は78行目と79行目の間をまたぐ"""
+    s = pc_sheet(b, rows=120, cols=10)
+    s.scale = 50
+    s.chart(two_cell(1, 70, 7, 86), pc_chart("Sheet1", "縮小50%でまたぐ"))
+
+
+def case_p09(b):
+    """A4横：1ページに 13列 × 25行。グラフ(C19〜I32)は25行目と26行目の間をまたぐ"""
+    s = pc_sheet(b, rows=40, cols=10)
+    s.landscape = True
+    s.chart(two_cell(2, 18, 8, 32), pc_chart("Sheet1", "横向きでまたぐ"))
+
+
+def case_p10(b):
+    """1ページより大きいグラフ(B3〜U70。幅も高さも1ページより大きい)"""
+    s = pc_sheet(b, rows=75, cols=22)
+    s.chart(two_cell(1, 2, 20, 70), pc_chart("Sheet1", "大きなグラフ"))
+
+
+def case_p11(b):
+    """1シートに複数のグラフ：①1ページに収まる ②左右にまたぐ ③上下の境目にわずかにかかる(約5pt)"""
+    s = pc_sheet(b, rows=60, cols=16)
+    s.chart(two_cell(2, 1, 7, 14), pc_chart("Sheet1", "収まる"))
+    s.chart(two_cell(6, 16, 12, 28), pc_chart("Sheet1", "左右にまたぐ", "accent2"))
+    s.chart(two_cell(1, 30, 6, 39, ro1=5 * EMU), pc_chart("Sheet1", "わずかにかかる", "accent6"))
+
+
+def case_p12(b):
+    """非表示のシートにあるグラフ：表示されるシート(収まるグラフ)と、非表示のシート(またぐグラフ)"""
+    s = pc_sheet(b, name="表示")
+    s.chart(two_cell(3, 1, 8, 16), small_chart("表示", "表示のシート"))
+    h = pc_sheet(b, name="非表示", cols=16)
+    h.state = "hidden"
+    h.chart(two_cell(6, 1, 13, 16), small_chart("非表示", "非表示のシート"))
+
+
+def case_p13(b):
+    """グラフと画像の重なり：上下にまたぐグラフ(B31〜H50)の上に画像。画像は確認の対象にしない"""
+    s = pc_sheet(b, rows=60)
+    s.chart(two_cell(1, 30, 7, 50), pc_chart("Sheet1", "画像と重なる"))
+    s.picture(two_cell(3, 33, 5, 37, edit_as="oneCell"), png_bytes(60, 40, (112, 48, 160)))
+
+
+def case_p14(b):
+    """ページの境目に近いだけで、またがないグラフ(B26〜H39。39行目の下端の約3pt手前で終わる)"""
+    s = pc_sheet(b, rows=60)
+    s.chart(two_cell(1, 25, 7, 38, ro1=int((18.75 - 3) * EMU)), pc_chart("Sheet1", "近いがまたがない"))
+
+
+def case_p15(b):
+    """非表示の行(5〜14行目)があるシート：グラフ(B41〜H47)は、非表示の行を除くと1ページ目に収まる"""
+    s = pc_sheet(b, rows=60)
+    for r in range(4, 14):
+        s.hidden_rows.add(r)
+    s.chart(two_cell(1, 40, 7, 47), pc_chart("Sheet1", "非表示の行の後"))
+
+
+def case_p16(b):
+    """手動の改ページ(列：E列の右)の上に置いたグラフ(C3〜H15)"""
+    s = pc_sheet(b, rows=30, cols=10)
+    s.col_breaks = [5]
+    s.chart(two_cell(2, 2, 7, 15), pc_chart("Sheet1", "列の手動改ページ"))
+
+
+PAGECHECK_CASES = [
+    ("p01-no-cross", case_p01),
+    ("p02-cross-columns", case_p02),
+    ("p03-cross-rows", case_p03),
+    ("p04-manual-row-break", case_p04),
+    ("p05-auto-row-break", case_p05),
+    ("p06-print-area-edge", case_p06),
+    ("p07-outside-print-area", case_p07),
+    ("p08-scaled-50", case_p08),
+    ("p09-landscape", case_p09),
+    ("p10-large-chart", case_p10),
+    ("p11-multiple-charts", case_p11),
+    ("p12-hidden-sheet", case_p12),
+    ("p13-chart-and-image", case_p13),
+    ("p14-near-not-crossing", case_p14),
+    ("p15-hidden-rows", case_p15),
+    ("p16-manual-col-break", case_p16),
+]
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(OUT_LABELS, exist_ok=True)
+    os.makedirs(OUT_PAGECHECK, exist_ok=True)
     bad = 0
-    for out_dir, name, fn in [(OUT, n, f) for n, f in CASES] + [(OUT_LABELS, n, f) for n, f in LABEL_CASES]:
+    all_cases = [(OUT, n, f) for n, f in CASES] + [(OUT_LABELS, n, f) for n, f in LABEL_CASES] + [(OUT_PAGECHECK, n, f) for n, f in PAGECHECK_CASES]
+    for out_dir, name, fn in all_cases:
         _uid[0] = 0
         b = Book()
         fn(b)
