@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+
+/** 大きいPDF(多くのページ・小さい倍率)でも、外部のコマンドの出力を受け取れるように */
+const BIG = { maxBuffer: 512 * 1024 * 1024 };
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +12,7 @@ import path from "node:path";
  */
 
 export function pageSizes(pdf: string): { w: number; h: number }[] {
-  const out = execFileSync("pdfinfo", ["-f", "1", "-l", "9999", pdf]).toString();
+  const out = execFileSync("pdfinfo", ["-f", "1", "-l", "9999", pdf], BIG).toString();
   return [...out.matchAll(/Page\s+\d+\s+size:\s+([\d.]+) x ([\d.]+)/g)].map((m) => ({ w: Number(m[1]), h: Number(m[2]) }));
 }
 
@@ -21,7 +24,7 @@ export function pageCount(pdf: string): number {
 export function pdfText(pdf: string, pageNo?: number): string {
   const args = ["-layout"];
   if (pageNo) args.push("-f", String(pageNo), "-l", String(pageNo));
-  return execFileSync("pdftotext", [...args, pdf, "-"]).toString();
+  return execFileSync("pdftotext", [...args, pdf, "-"], BIG).toString();
 }
 
 export interface Word {
@@ -33,7 +36,7 @@ export interface Word {
 }
 
 export function words(pdf: string, pageNo = 1): Word[] {
-  const out = execFileSync("pdftotext", ["-bbox", "-f", String(pageNo), "-l", String(pageNo), pdf, "-"]).toString();
+  const out = execFileSync("pdftotext", ["-bbox", "-f", String(pageNo), "-l", String(pageNo), pdf, "-"], BIG).toString();
   return [...out.matchAll(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g)].map((m) => ({
     x: Number(m[1]),
     y: Number(m[2]),
@@ -51,7 +54,7 @@ export interface Img {
 
 export function render(pdf: string, pageNo = 1): Img {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pdfinspect-"));
-  execFileSync("pdftoppm", ["-r", "72", "-f", String(pageNo), "-l", String(pageNo), pdf, path.join(dir, "p")]);
+  execFileSync("pdftoppm", ["-r", "72", "-f", String(pageNo), "-l", String(pageNo), pdf, path.join(dir, "p")], BIG);
   const file = fs.readdirSync(dir).find((f) => f.endsWith(".ppm"))!;
   const buf = fs.readFileSync(path.join(dir, file));
   const m = buf.toString("latin1", 0, 30).match(/^P6\s+(\d+)\s+(\d+)\s+255\s/)!;

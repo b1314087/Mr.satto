@@ -356,6 +356,7 @@ class Sheet:
         self.col_widths: dict[int, float] = {}
         self.row_heights: dict[int, float] = {}
         self.hidden_rows: set[int] = set()
+        self.hidden_cols: set[int] = set()
         self.drawings: list[dict] = []  # {"anchor":..., "chart": xml} / {"anchor":..., "png": bytes} / {"anchor":..., "chartex": xml}
         self.landscape = False
         self.row_breaks: list[int] = []
@@ -363,6 +364,17 @@ class Sheet:
         self.print_area: str | None = None
         self.scale: int | None = None  # 拡大縮小(%)
         self.col_breaks: list[int] = []
+        # 印刷の設定(既定のままなら、これまでと同じXMLになる)
+        self.paper = 9  # 用紙の番号(9=A4)
+        self.margins: dict | None = None  # {"left":, "right":, "top":, "bottom":, "header":, "footer":}(インチ)
+        self.fit: tuple[int, int] | None = None  # 次のページ数に合わせて印刷(横, 縦)。0=自動
+        self.fit_attrs_without_flag: tuple[int, int] | None = None  # fitToWidth/Height だけ書いて fitToPage を有効にしない(異常系)
+        self.h_center = False
+        self.v_center = False
+        self.merges: list[str] = []  # "A1:D3"
+        self.header: str | None = None  # oddHeader(&L/&C/&R 形式)
+        self.footer: str | None = None
+        self.print_title_rows: str | None = None  # "$1:$1"
 
     def put(self, r: int, c: int, v, style: int = ST_GENERAL):
         self.cells[(r, c)] = v
@@ -438,8 +450,13 @@ class Book:
                         cs.append(f'<c r="{ref}"{sa}><v>{fmt_num(v)}</v></c>')
                 rows_xml.append(f"<row{attrs}>{''.join(cs)}</row>")
             cols = ""
-            if sh.col_widths:
-                cols = "<cols>" + "".join(f'<col min="{c + 1}" max="{c + 1}" width="{w}" customWidth="1"/>' for c, w in sorted(sh.col_widths.items())) + "</cols>"
+            if sh.col_widths or sh.hidden_cols:
+                col_xml = []
+                for c in sorted(set(sh.col_widths) | sh.hidden_cols):
+                    w = sh.col_widths.get(c, 8.38)
+                    hid = ' hidden="1"' if c in sh.hidden_cols else ""
+                    col_xml.append(f'<col min="{c + 1}" max="{c + 1}" width="{w}"{hid} customWidth="1"/>')
+                cols = "<cols>" + "".join(col_xml) + "</cols>"
             maxr = max([r for r, _ in sh.cells] or [0])
             maxc = max([c for _, c in sh.cells] or [0])
             sheet_rels = []
@@ -512,18 +529,32 @@ class Book:
                 )
                 files[f"xl/drawings/_rels/drawing{drawing_no}.xml.rels"] = rels_xml(drels)
             scale_attr = f' scale="{sh.scale}"' if sh.scale else ""
-            setup = f'<pageSetup paperSize="9"{scale_attr} orientation="{"landscape" if sh.landscape else "portrait"}"/>'
+            fit_attrs = sh.fit or sh.fit_attrs_without_flag
+            fit_attr = f' fitToWidth="{fit_attrs[0]}" fitToHeight="{fit_attrs[1]}"' if fit_attrs else ""
+            setup = f'<pageSetup paperSize="{sh.paper}"{scale_attr}{fit_attr} orientation="{"landscape" if sh.landscape else "portrait"}"/>'
             breaks = ""
             if sh.row_breaks:
                 breaks = f'<rowBreaks count="{len(sh.row_breaks)}" manualBreakCount="{len(sh.row_breaks)}">' + "".join(f'<brk id="{b}" max="16383" man="1"/>' for b in sh.row_breaks) + "</rowBreaks>"
             if sh.col_breaks:
                 breaks += f'<colBreaks count="{len(sh.col_breaks)}" manualBreakCount="{len(sh.col_breaks)}">' + "".join(f'<brk id="{b}" max="1048575" man="1"/>' for b in sh.col_breaks) + "</colBreaks>"
             sel = ' tabSelected="1"' if si == 1 else ""
+            sheet_pr = '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' if sh.fit else ""
+            merge_xml = (f'<mergeCells count="{len(sh.merges)}">' + "".join(f'<mergeCell ref="{m}"/>' for m in sh.merges) + "</mergeCells>") if sh.merges else ""
+            print_opts = ""
+            if sh.h_center or sh.v_center:
+                print_opts = "<printOptions" + (' horizontalCentered="1"' if sh.h_center else "") + (' verticalCentered="1"' if sh.v_center else "") + "/>"
+            m = sh.margins or {"left": 0.7, "right": 0.7, "top": 0.75, "bottom": 0.75, "header": 0.3, "footer": 0.3}
+            margins_xml = f'<pageMargins left="{m["left"]}" right="{m["right"]}" top="{m["top"]}" bottom="{m["bottom"]}" header="{m["header"]}" footer="{m["footer"]}"/>'
+            if getattr(sh, "no_margins", False):
+                margins_xml = ""  # 余白の要素を書かない(Excel以外のソフトが作るファイルの例)
+            hf_xml = ""
+            if sh.header or sh.footer:
+                hf_xml = "<headerFooter>" + (f"<oddHeader>{escape(sh.header)}</oddHeader>" if sh.header else "") + (f"<oddFooter>{escape(sh.footer)}</oddFooter>" if sh.footer else "") + "</headerFooter>"
             files[f"xl/worksheets/sheet{si}.xml"] = (
                 '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-                f'<worksheet xmlns="{NS_MAIN}" xmlns:r="{NS_R}"><dimension ref="A1:{cell_ref(maxr, maxc)}"/>'
+                f'<worksheet xmlns="{NS_MAIN}" xmlns:r="{NS_R}">{sheet_pr}<dimension ref="A1:{cell_ref(maxr, maxc)}"/>'
                 f'<sheetViews><sheetView{sel} workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="18.75"/>{cols}'
-                f'<sheetData>{"".join(rows_xml)}</sheetData><pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>{setup}{breaks}{drawing_xml}</worksheet>'
+                f'<sheetData>{"".join(rows_xml)}</sheetData>{merge_xml}{print_opts}{margins_xml}{setup}{hf_xml}{breaks}{drawing_xml}</worksheet>'
             )
             overrides.append((f"/xl/worksheets/sheet{si}.xml", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"))
             if sheet_rels:
@@ -549,6 +580,10 @@ class Book:
         )
         names = list(self.defined_names)
         for i, sh in enumerate(self.sheets):
+            if sh.print_title_rows:
+                q = f"'{sh.name}'" if re.search(r"[^A-Za-z0-9_]", sh.name) else sh.name
+                names.append(("_xlnm.Print_Titles", f"{q}!{sh.print_title_rows}", i))
+        for i, sh in enumerate(self.sheets):
             if sh.print_area:
                 names.append(("_xlnm.Print_Area", sh.print_area, i))
         dn = ""
@@ -564,7 +599,7 @@ class Book:
         )
         files["xl/_rels/workbook.xml.rels"] = rels_xml(wb_rels)
         files["xl/theme/theme1.xml"] = THEME
-        files["xl/styles.xml"] = STYLES
+        files["xl/styles.xml"] = getattr(self, "styles_xml", None) or STYLES
         files["xl/sharedStrings.xml"] = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
             f'<sst xmlns="{NS_MAIN}" count="{len(sst)}" uniqueCount="{len(sst)}">' + "".join(f"<si><t>{escape(t)}</t></si>" for t in sst) + "</sst>"

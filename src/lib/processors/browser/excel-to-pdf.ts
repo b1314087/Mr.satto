@@ -78,8 +78,11 @@ const PAPER_SIZES_PT: Record<string, { width: number; height: number }> = {
   DoublePostcard: { width: mm(200), height: mm(148) },
 };
 const DEFAULT_PAPER_SIZE = "A4";
-/** Excel側の余白情報が取得できない場合のフォールバック（既存Phase 9の値を踏襲） */
-const DEFAULT_MARGIN_PT = 40;
+/**
+ * Excel側の余白の指定(<pageMargins>)が無い場合の余白(pt)。Excelの「標準」の余白と同じ
+ * (左右0.7インチ・上下0.75インチ・ヘッダー/フッター0.3インチ)。Excelは余白の指定が無いシートをこの余白で印刷する。
+ */
+const DEFAULT_MARGINS_PT = { left: 50.4, right: 50.4, top: 54, bottom: 54, header: 21.6, footer: 21.6 };
 const MAX_ROWS_TOTAL = 50000;
 const MAX_PAGE_COUNT = 500;
 const MIN_COL_WIDTH = 24;
@@ -733,6 +736,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       const rad = (angleDeg * Math.PI) / 180;
       const cos = Math.cos(rad);
       const sin = Math.sin(rad);
+      // pdf-libは、drawTextにfontを渡すたびに(さらに描いたあと元のフォントへ戻すときにも)、ページのフォントの一覧へ
+      // 新しい名前を追加する。1文字ずつ描くため、1ページに数千〜数万の名前ができ、PDFが大きく重くなり、
+      // PDFを開くソフトによっては(popplerを使うものなど)、メモリが足りなくなって開けなかった。
+      // ページのフォントが違うときだけ1回設定し、drawTextにはfontを渡さない(同じ名前を使い回す)。
+      if ((page as unknown as { font?: PDFFont }).font !== embedFont) page.setFont(embedFont);
       let advance = 0;
       for (const ch of Array.from(text)) {
         try {
@@ -740,7 +748,6 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             x: x + advance * cos,
             y: y + advance * sin,
             size,
-            font: embedFont,
             color,
             ...(angleDeg !== 0 ? { rotate: pdfLib().degrees(angleDeg) } : {}),
             ...(italic ? { ySkew: pdfLib().degrees(ITALIC_SKEW_DEG) } : {}),
@@ -890,15 +897,15 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       }
       const pageWidth = effectiveOrientation === "landscape" ? paper.height : paper.width;
       const pageHeight = effectiveOrientation === "landscape" ? paper.width : paper.height;
-      const marginLeft = settings?.margins ? inchesToPt(settings.margins.left) : DEFAULT_MARGIN_PT;
-      const marginRight = settings?.margins ? inchesToPt(settings.margins.right) : DEFAULT_MARGIN_PT;
-      const marginTop = settings?.margins ? inchesToPt(settings.margins.top) : DEFAULT_MARGIN_PT;
-      const marginBottom = settings?.margins ? inchesToPt(settings.margins.bottom) : DEFAULT_MARGIN_PT;
+      const marginLeft = settings?.margins ? inchesToPt(settings.margins.left) : DEFAULT_MARGINS_PT.left;
+      const marginRight = settings?.margins ? inchesToPt(settings.margins.right) : DEFAULT_MARGINS_PT.right;
+      const marginTop = settings?.margins ? inchesToPt(settings.margins.top) : DEFAULT_MARGINS_PT.top;
+      const marginBottom = settings?.margins ? inchesToPt(settings.margins.bottom) : DEFAULT_MARGINS_PT.bottom;
       const contentWidth = Math.max(50, pageWidth - marginLeft - marginRight);
       // シート名の自動タイトル(旧titleBlock)を撤廃した(B-9)ため、その分の予約高さも差し引かない。
       const contentHeightForData = Math.max(50, pageHeight - marginTop - marginBottom);
-      const headerMarginPt = settings?.margins ? inchesToPt(settings.margins.header) : DEFAULT_MARGIN_PT / 2;
-      const footerMarginPt = settings?.margins ? inchesToPt(settings.margins.footer) : DEFAULT_MARGIN_PT / 2;
+      const headerMarginPt = settings?.margins ? inchesToPt(settings.margins.header) : DEFAULT_MARGINS_PT.header;
+      const footerMarginPt = settings?.margins ? inchesToPt(settings.margins.footer) : DEFAULT_MARGINS_PT.footer;
 
       const fit: FitPageSettings =
         fitMode === "fit-width"
@@ -1298,8 +1305,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         const grid = computePageGrid({
           colSizesPt: bodyCols.map(colWidthOf),
           rowSizesPt: bodyRows.map(rowHeightOf),
-          contentWidthPt: Math.max(20, contentWidth - titleColsWidth),
-          contentHeightPt: Math.max(20, contentHeightForData - titleRowsHeight),
+          // 印刷タイトルの分は、倍率をかけた長さで差し引く(computePageGridの中で)
+          contentWidthPt: contentWidth,
+          contentHeightPt: contentHeightForData,
+          titleColsWidthPt: titleColsWidth,
+          titleRowsHeightPt: titleRowsHeight,
           fit,
           colBreaksAfterIndex: mapBreaksToLocalIndex(settings?.colBreaksAfter ?? [], bodyCols),
           rowBreaksAfterIndex: mapBreaksToLocalIndex(settings?.rowBreaksAfter ?? [], bodyRows),

@@ -489,16 +489,45 @@ function parseCellRef(ref: string): { row: number; col: number } | null {
   return { row: Number(m[2]) - 1, col: col - 1 };
 }
 
-/** "Sheet1!$A$1:$H$30" のような印刷範囲文字列をパースする（複数範囲がある場合は最初の1つのみ対応） */
+/** Excelのシートの最後の行・列(0始まり)。列全体・行全体の指定("$A:$D"・"$1:$20")で使う */
+const SHEET_LAST_ROW = 1048575;
+const SHEET_LAST_COL = 16383;
+
+/** 列の文字("AB")を0始まりの番号へ */
+function parseColLetters(letters: string): number | null {
+  if (!/^[A-Z]{1,3}$/.test(letters)) return null;
+  let col = 0;
+  for (const ch of letters) col = col * 26 + (ch.charCodeAt(0) - 64);
+  return col - 1;
+}
+
+/**
+ * "Sheet1!$A$1:$H$30" のような範囲の文字列をパースする(","で区切られた複数の範囲は最初の1つ。全部は parsePrintAreaRefs)。
+ * 列全体("$A:$D")・行全体("$1:$20")の指定にも対応する(Excelの「印刷範囲の設定」で列や行を丸ごと選んだとき)。
+ * 列全体・行全体の範囲はシートの端までになるが、PDFを作る処理で、値・書式・画像のある範囲までに縮める。
+ */
 function parsePrintAreaRef(defined: string): CellRangeRef | null {
-  // シート名部分（"'名前'!"または"名前!"）を除去し、セル範囲部分だけを取り出す
-  const parts = defined.split("!");
-  const rangePart = (parts.length > 1 ? parts[1] : parts[0]).split(",")[0];
-  const cleaned = rangePart.replace(/\$/g, "");
-  const [startRef, endRef] = cleaned.split(":");
+  // シート名部分（"'名前'!"または"名前!"）を除去し、セル範囲部分だけを取り出す(シート名に"!"があってもよいように最後の"!"で分ける)
+  const bang = defined.lastIndexOf("!");
+  const rangePart = (bang >= 0 ? defined.slice(bang + 1) : defined).split(",")[0];
+  const cleaned = rangePart.replace(/\$/g, "").trim().toUpperCase();
+  const [startRef, endRef = startRef] = cleaned.split(":");
+  // 列全体: "A:D"
+  const c1 = parseColLetters(startRef);
+  const c2 = parseColLetters(endRef);
+  if (c1 !== null && c2 !== null) {
+    return { startRow: 0, startCol: Math.min(c1, c2), endRow: SHEET_LAST_ROW, endCol: Math.max(c1, c2) };
+  }
+  // 行全体: "1:20"
+  if (/^\d+$/.test(startRef) && /^\d+$/.test(endRef)) {
+    const r1 = Number(startRef) - 1;
+    const r2 = Number(endRef) - 1;
+    if (r1 < 0 || r2 < 0) return null;
+    return { startRow: Math.min(r1, r2), startCol: 0, endRow: Math.max(r1, r2), endCol: SHEET_LAST_COL };
+  }
   const start = parseCellRef(startRef);
   if (!start) return null;
-  const end = endRef ? parseCellRef(endRef) : start;
+  const end = parseCellRef(endRef);
   if (!end) return null;
   return {
     startRow: Math.min(start.row, end.row),
@@ -1323,7 +1352,9 @@ function parseSheetXml(
   if (pageMargins) {
     const num = (name: string, fallback: number) => {
       const v = pageMargins.getAttribute(name);
-      return v !== null ? Number(v) : fallback;
+      // 数値でない・負の値・極端に大きい値(10インチ超)は壊れた指定として、Excelの標準の余白にする
+      const n = v !== null ? Number(v) : NaN;
+      return Number.isFinite(n) && n >= 0 && n <= 10 ? n : fallback;
     };
     result.margins = {
       top: num("top", 0.75),

@@ -65,39 +65,39 @@ function groupByThreshold(sizes: number[], threshold: number, breaksAfterIndex: 
 }
 
 /**
- * 与えられたサイズ配列を、必ずtargetGroups個以下のグループへ分割する
- * （開発指示書B-13「横1×縦1は必ず1ページ」のような、Fit to Pageの
- * 明示的なページ数指定を確実に守るための分割）。
- * groupByThresholdと異なり、端数による「目標より1つ多いグループ」が
- * 生まれないよう、最後に余剰グループを末尾へ統合する。
+ * 1ページに入る表の本体の長さ(シートの座標・拡大縮小の前)。
+ * 印刷タイトル(毎ページに繰り返す行・列)も同じ倍率で縮小・拡大されて紙の上の場所を使うため、
+ * 紙の上で本体に使える長さは「印刷できる長さ − タイトルの長さ×倍率」。
  */
-function splitIntoExactGroups(sizes: number[], targetGroups: number): number[][] {
-  if (sizes.length === 0) return [[]];
-  if (targetGroups <= 1) return [sizes.map((_, i) => i)];
+function bodyLimit(contentPt: number, titlePt: number, scale: number): number {
+  return (Math.max(1, contentPt - titlePt * scale) / scale) * (1 + 1e-9);
+}
 
-  const total = sizes.reduce((a, b) => a + b, 0);
-  const milestoneSize = total / targetGroups;
-  const groups: number[][] = [];
-  let current: number[] = [];
-  let currentSum = 0;
-
-  sizes.forEach((size, idx) => {
-    current.push(idx);
-    currentSum += size;
-    const remainingGroups = targetGroups - groups.length - 1;
-    if (remainingGroups > 0 && currentSum >= milestoneSize && idx < sizes.length - 1) {
-      groups.push(current);
-      current = [];
-      currentSum = 0;
-    }
-  });
-  if (current.length > 0) groups.push(current);
-
-  while (groups.length > targetGroups && groups.length > 1) {
-    const last = groups.pop();
-    if (last) groups[groups.length - 1] = [...groups[groups.length - 1], ...last];
+/**
+ * 「次のページ数に合わせて印刷」で、列(行)を途中で分けずに、指定のページ数に収まる倍率を求める。
+ * 合計の長さだけで求めた倍率(start)では、列の幅の切れ目の都合で、1ページに入りきらない列が次のページへ送られ、
+ * 指定より多いページになることがある。Excelは列や行を途中で分けないため、そのときはさらに縮小して収める。
+ * ここでは、指定のページ数に収まる最も大きい倍率(start以下・10%以上)を二分探索で求める
+ * (倍率を小さくするほど1ページに入る量が増え、ページ数は増えないため、二分探索で求められる)。
+ * 10%まで縮小しても収まらないとき(極端に多い列など)は、10%で内容の量なりに分ける(データを切り取らないため、ページ数は増える)。
+ */
+function scaleToFitTargets(
+  start: number,
+  dims: { sizes: number[]; contentPt: number; titlePt: number; target: number | null }[]
+): number {
+  const fits = (scale: number) =>
+    dims.every((d) => !d.target || groupByThreshold(d.sizes, bodyLimit(d.contentPt, d.titlePt, scale), new Set()).length <= d.target);
+  if (fits(start)) return start;
+  const min = 0.1;
+  if (!fits(min)) return min;
+  let lo = min;
+  let hi = start;
+  for (let i = 0; i < 40 && hi - lo > 1e-6; i++) {
+    const mid = (lo + hi) / 2;
+    if (fits(mid)) lo = mid;
+    else hi = mid;
   }
-  return groups;
+  return lo;
 }
 
 export interface ComputePageGridParams {
@@ -108,6 +108,12 @@ export interface ComputePageGridParams {
   fit: FitPageSettings;
   colBreaksAfterIndex: Set<number>;
   rowBreaksAfterIndex: Set<number>;
+  /**
+   * 印刷タイトル(毎ページに繰り返す列・行)の幅・高さ(シートの座標・拡大縮小の前)。
+   * contentWidthPt/contentHeightPt は、タイトルの分を引く前の、紙の上で印刷できる幅・高さ。
+   */
+  titleColsWidthPt?: number;
+  titleRowsHeightPt?: number;
 }
 
 /**
@@ -120,6 +126,8 @@ export interface ComputePageGridParams {
  */
 export function computePageGrid(params: ComputePageGridParams): PageGridResult {
   const { colSizesPt, rowSizesPt, contentWidthPt, contentHeightPt, fit, colBreaksAfterIndex, rowBreaksAfterIndex } = params;
+  const titleW = params.titleColsWidthPt ?? 0;
+  const titleH = params.titleRowsHeightPt ?? 0;
   const totalWidth = colSizesPt.reduce((a, b) => a + b, 0);
   const totalHeight = rowSizesPt.reduce((a, b) => a + b, 0);
 
@@ -127,8 +135,11 @@ export function computePageGrid(params: ComputePageGridParams): PageGridResult {
     const targetWidthPages = fit.fitToWidth && fit.fitToWidth > 0 ? fit.fitToWidth : null;
     const targetHeightPages = fit.fitToHeight && fit.fitToHeight > 0 ? fit.fitToHeight : null;
 
-    const requiredScaleForWidth = targetWidthPages && totalWidth > 0 ? (targetWidthPages * contentWidthPt) / totalWidth : null;
-    const requiredScaleForHeight = targetHeightPages && totalHeight > 0 ? (targetHeightPages * contentHeightPt) / totalHeight : null;
+    // N ページに収める倍率 s：N×(印刷できる長さ − タイトル×s) ≥ 本体の合計×s より、s = N×印刷できる長さ ÷ (本体の合計 + N×タイトル)
+    const requiredScaleForWidth =
+      targetWidthPages && totalWidth > 0 ? (targetWidthPages * contentWidthPt) / (totalWidth + targetWidthPages * titleW) : null;
+    const requiredScaleForHeight =
+      targetHeightPages && totalHeight > 0 ? (targetHeightPages * contentHeightPt) / (totalHeight + targetHeightPages * titleH) : null;
 
     const candidates = [requiredScaleForWidth, requiredScaleForHeight].filter((v): v is number => v !== null);
     // Fit to Width/Heightのどちらも指定がある場合は、両方を満たすようより小さい(より縮小する)方を採用する
@@ -136,16 +147,16 @@ export function computePageGrid(params: ComputePageGridParams): PageGridResult {
     // Excelの「次のページ数に合わせて印刷」は縮小するだけで、拡大はしない(最大100%)。指定のページ数は「上限」で、
     // 100%のままで収まる表は、そのまま(より少ないページ数)で印刷される。以前は小さい表を用紙いっぱいまで拡大し、
     // 指定のページ数ちょうどに分けていたため、Excelで印刷した結果と大きさ・ページ数が違っていた。
-    const scale = clampScale(Math.min(1, ...candidates));
+    // 列や行は途中で分けないため、その切れ目の都合で指定のページ数を超えるときは、さらに縮小して収める(Excelと同じ)。
+    const scale = scaleToFitTargets(clampScale(Math.min(1, ...candidates)), [
+      { sizes: colSizesPt, contentPt: contentWidthPt, titlePt: titleW, target: targetWidthPages },
+      { sizes: rowSizesPt, contentPt: contentHeightPt, titlePt: titleH, target: targetHeightPages },
+    ]);
 
     // その倍率で、Excelと同じく内容の量なりにページを分ける(Fit to Pageのときは、手動の改ページは使わない)。
-    // 計算の誤差で上限を1ページ超えたときだけ、上限のページ数に収まるよう分け直す。
-    const fitGroups = (sizes: number[], contentPt: number, target: number | null) => {
-      const natural = groupByThreshold(sizes, (contentPt / scale) * (1 + 1e-9), new Set());
-      return target && natural.length > target ? splitIntoExactGroups(sizes, target) : natural;
-    };
-    const colGroups = fitGroups(colSizesPt, contentWidthPt, targetWidthPages);
-    const rowGroups = fitGroups(rowSizesPt, contentHeightPt, targetHeightPages);
+    // 以前は、指定のページ数を超えたときに、1ページの幅より広いまとまりへ無理に分けていたため、ページの端で表が切れていた。
+    const colGroups = groupByThreshold(colSizesPt, bodyLimit(contentWidthPt, titleW, scale), new Set());
+    const rowGroups = groupByThreshold(rowSizesPt, bodyLimit(contentHeightPt, titleH, scale), new Set());
 
     return { colGroups, rowGroups, scale };
   }
@@ -153,7 +164,7 @@ export function computePageGrid(params: ComputePageGridParams): PageGridResult {
   // Fit to Pageが無効な場合: 明示的なscale(%)があればそれを、無ければ100%を使い、
   // 閾値ベースの自然なページ分割（明示的な改ページがあれば優先）を行う。
   const scale = clampScale(fit.scalePercent ? fit.scalePercent / 100 : 1);
-  const colGroups = groupByThreshold(colSizesPt, contentWidthPt / scale, colBreaksAfterIndex);
-  const rowGroups = groupByThreshold(rowSizesPt, contentHeightPt / scale, rowBreaksAfterIndex);
+  const colGroups = groupByThreshold(colSizesPt, bodyLimit(contentWidthPt, titleW, scale), colBreaksAfterIndex);
+  const rowGroups = groupByThreshold(rowSizesPt, bodyLimit(contentHeightPt, titleH, scale), rowBreaksAfterIndex);
   return { colGroups, rowGroups, scale };
 }
