@@ -22,8 +22,20 @@ export interface ChartTextApi {
   draw(page: PDFPage, text: string, x: number, y: number, size: number, color: string, bold: boolean, angleDeg?: number): void;
 }
 
-/** セル範囲の参照(例: 'Sheet1'!$B$2:$B$7)の値。読めなければnull。display は表示用の文字(書式済み) */
-export type ChartRangeResolver = (ref: string) => { values: (string | number | null)[]; display: string[] } | null;
+/**
+ * セル範囲の参照(例: 'Sheet1'!$B$2:$B$7、名前の定義、別のブックの [1]Sheet1!…)の値。読めなければnull。
+ * display は表示用の文字(書式済み)。visibleOnly=true なら、非表示の行・列のセルを除く(グラフの plotVisOnly)
+ */
+export type ChartRangeResolver = (
+  ref: string,
+  opts?: { visibleOnly?: boolean }
+) => { values: (string | number | null)[]; display: string[]; /** 最初の値のあるセルの表示形式(日付の分類の判定に使う) */ format?: string | null } | null;
+
+/** drawChart の結果(画面の注意書きに使う) */
+export interface ChartDrawResult {
+  /** 値の控えが無く、参照先も読めなかった(描けなかった)系列の数 */
+  unresolvedSeries: number;
+}
 
 export interface ChartDrawOptions {
   page: PDFPage;
@@ -51,6 +63,8 @@ interface PreparedSeries {
   categories: string[];
   /** 分類の元の値(数値の分類・日付の分類のときの書式付けに使う) */
   rawCategories: (string | number)[];
+  /** 分類の表示形式(値の控えの formatCode、無ければ参照先のセルの表示形式) */
+  categoriesFormat: string | null;
   values: (number | null)[];
   xValues: (number | null)[] | null;
   color: string;
@@ -101,23 +115,28 @@ function mergeLabels(group: ChartDataLabels | null, series: ChartDataLabels | nu
   return group;
 }
 
-function prepareSeries(model: ChartModel, resolve: ChartRangeResolver): PreparedSeries[] {
+function prepareSeries(model: ChartModel, resolve0: ChartRangeResolver, stats: ChartDrawResult): PreparedSeries[] {
   const out: PreparedSeries[] = [];
   let colorIndex = 0;
+  // 値の控えが無いときに参照先のセルから読む。Excelと同じく、既定(plotVisOnly)では非表示の行・列を除く
+  const resolve = (ref: string) => resolve0(ref, { visibleOnly: model.plotVisOnly });
   for (const group of model.groups) {
     for (const s of group.series) {
       let values = s.values;
       if (!values && s.valuesRef) {
         const r = resolve(s.valuesRef);
         values = r ? r.values.map((v) => (typeof v === "number" ? v : v !== null && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null)) : null;
+        if (!r) stats.unresolvedSeries++;
       }
       let rawCategories: (string | number)[] = s.categories ?? [];
       let categories: string[] = rawCategories.map((c) => formatCategory(c, s.categoriesFormat));
+      let categoriesFormat = s.categoriesFormat;
       if (!s.categories && s.categoriesRef) {
         const r = resolve(s.categoriesRef);
         if (r) {
           rawCategories = r.values.map((v) => (v === null ? "" : v));
           categories = r.display;
+          categoriesFormat = categoriesFormat ?? r.format ?? null;
         }
       }
       let xValues = s.xValues;
@@ -153,6 +172,7 @@ function prepareSeries(model: ChartModel, resolve: ChartRangeResolver): Prepared
         name,
         categories,
         rawCategories,
+        categoriesFormat,
         values: values ?? [],
         xValues,
         color,
@@ -224,9 +244,10 @@ function ticksOf(scale: Scale): number[] {
 // ---------------------------------------------------------------------------
 // 描画
 // ---------------------------------------------------------------------------
-export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
+export function drawChart(model: ChartModel, opts: ChartDrawOptions): ChartDrawResult {
+  const result: ChartDrawResult = { unresolvedSeries: 0 };
   const { page, lib, box, scale: s, text, resolve, blackAndWhite } = opts;
-  if (box.w <= 2 || box.h <= 2) return;
+  if (box.w <= 2 || box.h <= 2) return result;
   const X0 = box.x;
   const Y0 = box.y + box.h; // ローカル座標: 左上が原点、下向きが正
   const W = box.w;
@@ -245,26 +266,26 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   const dashArray = (dash: ChartLine["dash"], width: number): number[] | undefined =>
     dash === "dash" ? [width * 4, width * 3] : dash === "dot" ? [width, width * 2] : undefined;
 
-  const rect = (x: number, y: number, w: number, h: number, fill: string | null, stroke: string | null, width = 0.75 * s, dash: ChartLine["dash"] = null) => {
+  const rect = (x: number, y: number, w: number, h: number, fill: string | null, stroke: string | null, width = 0.75 * s, dash: ChartLine["dash"] = null, opacity: number | null = null) => {
     if (w <= 0 || h <= 0) return;
     page.drawRectangle({
       x: X0 + x,
       y: Y0 - y - h,
       width: w,
       height: h,
-      ...(fill ? { color: rgb(fill) } : {}),
+      ...(fill ? { color: rgb(fill), ...(opacity !== null ? { opacity } : {}) } : {}),
       ...(stroke ? { borderColor: rgb(stroke), borderWidth: width, borderDashArray: dashArray(dash, width) } : {}),
     });
   };
   const line = (x1: number, y1: number, x2: number, y2: number, color: string, width: number, dash: ChartLine["dash"] = null) => {
     page.drawLine({ start: { x: X0 + x1, y: Y0 - y1 }, end: { x: X0 + x2, y: Y0 - y2 }, thickness: width, color: rgb(color), dashArray: dashArray(dash, width) });
   };
-  const path = (d: string, fill: string | null, stroke: string | null, width = 0.75 * s, dash: ChartLine["dash"] = null) => {
+  const path = (d: string, fill: string | null, stroke: string | null, width = 0.75 * s, dash: ChartLine["dash"] = null, opacity: number | null = null) => {
     if (!d) return;
     page.drawSvgPath(d, {
       x: X0,
       y: Y0,
-      ...(fill ? { color: rgb(fill) } : {}),
+      ...(fill ? { color: rgb(fill), ...(opacity !== null ? { opacity } : {}) } : {}),
       ...(stroke ? { borderColor: rgb(stroke), borderWidth: width, borderDashArray: dashArray(dash, width), borderLineCap: lib.LineCapStyle.Round } : {}),
     });
   };
@@ -295,7 +316,7 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   const border = model.border.color === undefined ? DEFAULT_LINE_COLOR : model.border.color;
   rect(0, 0, W, H, bg, border, (model.border.widthPt ?? 0.75) * s, model.border.dash);
 
-  const series = prepareSeries(model, resolve);
+  const series = prepareSeries(model, resolve, result);
   const pad = 7 * s;
   let top = pad;
   let bottom = H - pad;
@@ -322,7 +343,7 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
 
   // --- 凡例 ---
   const isRound = model.groups.every((g) => g.kind === "pie" || g.kind === "doughnut");
-  type LegendEntry = { name: string; color: string; kind: "box" | "line"; lineColor: string | null; marker: PreparedSeries["marker"] };
+  type LegendEntry = { name: string; color: string; kind: "box" | "line"; lineColor: string | null; marker: PreparedSeries["marker"]; alpha?: number | null };
   const legendEntries: LegendEntry[] = [];
   if (model.legend) {
     if (isRound && series.length > 0) {
@@ -335,7 +356,7 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
       series.forEach((p, i) => {
         if (model.legend!.deletedEntries.has(i)) return;
         const lineLike = p.group.kind === "line" || p.group.kind === "scatter";
-        legendEntries.push({ name: p.name, color: p.color, kind: lineLike ? "line" : "box", lineColor: p.lineColor, marker: p.marker });
+        legendEntries.push({ name: p.name, color: p.color, kind: lineLike ? "line" : "box", lineColor: p.lineColor, marker: p.marker, alpha: p.src.fillAlpha });
       });
     }
   }
@@ -399,7 +420,7 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
       if (e.marker) drawMarker(e.marker, x + 9 * s, cy, s);
     } else {
       const b = legendSize * 0.75;
-      rect(x, cy - b / 2, b, b, e.color, null);
+      rect(x, cy - b / 2, b, b, e.color, null, 0.75 * s, null, e.alpha ?? null);
     }
     label(e.name, x + swatchW(e) + 4 * s, cy - legendSize / 2, legendSize, legendColor, false);
   }
@@ -455,11 +476,15 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   const labelText = (p: PreparedSeries, i: number, value: number | null, percent: number | null): string => {
     const l = p.labels;
     if (!l || !l.any || l.deletedPoints.has(i)) return "";
+    // 点ごとの設定(dLbl)：文字を直接入力したラベルはその文字、表示する項目の指定があればそれを使う
+    const pt = l.points.get(i);
+    if (pt?.text) return pt.text;
+    const f = pt ?? l;
     const parts: string[] = [];
-    if (l.showSerName) parts.push(p.name);
-    if (l.showCatName) parts.push(p.group.kind === "scatter" ? formatValue(p.xValues?.[i] ?? i + 1, null) : (p.categories[i] ?? ""));
-    if (l.showVal && value !== null) parts.push(formatValue(value, l.numFmt && l.numFmt !== "General" ? l.numFmt : p.src.valuesFormat));
-    if (l.showPercent && percent !== null) parts.push(formatValue(percent, l.numFmt && /%/.test(l.numFmt) ? l.numFmt : "0%"));
+    if (f.showSerName) parts.push(p.name);
+    if (f.showCatName) parts.push(p.group.kind === "scatter" ? formatValue(p.xValues?.[i] ?? i + 1, null) : (p.categories[i] ?? ""));
+    if (f.showVal && value !== null) parts.push(formatValue(value, l.numFmt && l.numFmt !== "General" ? l.numFmt : p.src.valuesFormat));
+    if (f.showPercent && percent !== null) parts.push(formatValue(percent, l.numFmt && /%/.test(l.numFmt) ? l.numFmt : "0%"));
     return parts.join(l.separator ?? ", ");
   };
 
@@ -490,8 +515,8 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
         const mid = angle + sweep / 2;
         const t = labelText(p, i, p.values[i], v / total);
         if (t) {
-          const size = sz(p.labels?.text, baseSize);
-          const pos = p.labels?.position ?? "bestFit";
+          const size = sz(p.labels?.points.get(i)?.style ?? p.labels?.text, baseSize);
+          const pos = p.labels?.points.get(i)?.position ?? p.labels?.position ?? "bestFit";
           const inside = pos === "ctr" || pos === "inEnd" || (pos === "bestFit" && sweep > 25 && inner === 0) || group.kind === "doughnut";
           const rr = inside ? (inner > 0 ? (outer + inner) / 2 : pos === "inEnd" ? outer * 0.8 : outer * 0.62) : outer + size * 0.9;
           const rad = ((mid - 90) * Math.PI) / 180;
@@ -505,7 +530,7 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
       });
     });
     legendDraw?.();
-    return;
+    return result;
   }
 
   // ==========================================================================
@@ -517,7 +542,43 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   const catCount = Math.max(0, ...series.map((p) => Math.max(p.values.length, p.categories.length)));
   const categories: string[] = [];
   const catSource = nonScatter.find((p) => p.categories.length > 0);
-  for (let i = 0; i < catCount; i++) categories.push(catSource?.categories[i] ?? String(i + 1));
+  const catAxis0 = model.axes.get(model.groups[0].catAxisId ?? "");
+  // 分類の軸に、セルと連動しない表示形式(sourceLinked=0)が指定されていれば、数値・日付の分類はその形式で表示する
+  const catAxisFmt = catAxis0 && !catAxis0.numFmtLinked && catAxis0.numFmt && catAxis0.numFmt !== "General" ? catAxis0.numFmt : null;
+  for (let i = 0; i < catCount; i++) {
+    const raw = catSource?.rawCategories[i];
+    categories.push(catAxisFmt && typeof raw === "number" ? formatCategory(raw, catAxisFmt) : (catSource?.categories[i] ?? String(i + 1)));
+  }
+
+  // 日付の軸：分類が日付(日付の表示形式の数値)で、日付の軸(dateAx)または「自動で判断」(auto)のとき、
+  // Excelと同じく日付の間隔どおりに並べる(データの無い日・月も、間を空ける)
+  const dateSlots = (() => {
+    if (isScatter || !catAxis0 || !catSource) return null;
+    if (catAxis0.kind !== "date" && !catAxis0.auto) return null;
+    const raws = catSource.rawCategories.slice(0, catCount);
+    if (raws.length === 0 || raws.some((v) => typeof v !== "number" || !Number.isFinite(v))) return null;
+    const fmt = catSource.categoriesFormat;
+    const dateLike = (f: string | null) => !!f && /[ymd]/i.test(f.replace(/"[^"]*"|\[[^\]]*\]/g, "")) && !/0\.?0*E[+-]/i.test(f);
+    if (catAxis0.kind !== "date" && !dateLike(fmt)) return null;
+    const nums = raws as number[];
+    const dates = nums.map((v) => excelSerialToDate(Math.floor(v)));
+    if (dates.some((d) => !d)) return null;
+    const allFirst = dates.every((d) => d!.getDate() === 1);
+    const unit = catAxis0.baseTimeUnit ?? (allFirst && new Set(dates.map((d) => d!.getFullYear() * 12 + d!.getMonth())).size === dates.length ? "months" : "days");
+    const keyOf = (v: number, d: Date) => (unit === "days" ? Math.floor(v) : unit === "months" ? d.getFullYear() * 12 + d.getMonth() : d.getFullYear());
+    const keys = nums.map((v, i) => keyOf(v, dates[i]!));
+    const minKey = Math.min(...keys);
+    const count = Math.max(...keys) - minKey + 1;
+    if (!(count >= 1) || count > 5000) return null;
+    const serialOfSlot = (k: number): number => {
+      if (unit === "days") return minKey + k;
+      const y = unit === "months" ? Math.floor((minKey + k) / 12) : minKey + k;
+      const m = unit === "months" ? (minKey + k) % 12 : 0;
+      return Math.round((Date.UTC(y, m, 1) - Date.UTC(1899, 11, 30)) / 86_400_000);
+    };
+    const labelFmt = catAxisFmt ?? fmt ?? (unit === "days" ? "m/d" : "yyyy/m");
+    return { index: keys.map((k) => k - minKey), count, unit, serialOfSlot, labelFmt, majorUnit: catAxis0.majorUnit };
+  })();
 
   // 値の軸ごとに、対象のグループと範囲を求める
   const valAxisIds = Array.from(new Set(model.groups.map((g) => g.valAxisId ?? "")));
@@ -614,8 +675,36 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   const primaryTickW = valVisible(primaryAxis) ? Math.max(0, ...primaryLabels.map((t) => text.width(t, tickSize(primaryAxis)))) : 0;
   const secondaryTickW = valVisible(secondaryAxis) ? Math.max(0, ...secondaryLabels.map((t) => text.width(t, tickSize(secondaryAxis)))) : 0;
   const catTickSize = tickSize(catAxis);
-  const catLabels = isScatter ? xLabels : categories;
+  // 日付の軸の目盛りの文字(基本単位ごと。間引きは描くときに決める)
+  const dateLabelOf = (k: number) => (dateSlots ? formatCategory(dateSlots.serialOfSlot(k), dateSlots.labelFmt) : "");
+  const dateLabelSamples = dateSlots ? [0, Math.floor(dateSlots.count / 2), dateSlots.count - 1].map(dateLabelOf) : [];
+  const catLabels = isScatter ? xLabels : dateSlots ? dateLabelSamples : categories;
   const catMaxW = catVisible ? Math.max(0, ...catLabels.map((t) => text.width(t, catTickSize))) : 0;
+
+  // 分類の軸が値の軸と交わる値(Excelの「横軸との交点」)。棒はこの値から伸び、分類の軸の線もここに引く
+  const crossValueOn = (sc: Scale, a: ChartAxis | undefined): number => {
+    const clamp = (v: number) => Math.min(sc.max, Math.max(sc.min, v));
+    if (a?.crossesAt !== null && a?.crossesAt !== undefined) return clamp(a.crossesAt);
+    if (a?.crosses === "max") return sc.max;
+    if (a?.crosses === "min") return sc.min;
+    return clamp(0);
+  };
+  const catCross = crossValueOn(primaryScale, catAxis);
+  // 分類の軸の文字の位置: low=下端(左端)、high=上端(右端)、nextTo=軸の線のそば(軸が上端なら外側の上、途中なら線のすぐ下)
+  const catAtMax = (catCross >= primaryScale.max) !== !!primaryAxis?.reversed;
+  const catAtMin = (catCross <= primaryScale.min) !== !!primaryAxis?.reversed;
+  const catLabelWhere: "low" | "high" | "axis" =
+    isScatter || !catAxis
+      ? "low"
+      : catAxis.tickLabelPosition === "low"
+        ? "low"
+        : catAxis.tickLabelPosition === "high"
+          ? "high"
+          : catAtMax
+            ? "high"
+            : catAtMin
+              ? "low"
+              : "axis";
 
   let plot: { x: number; y: number; w: number; h: number };
   let catRotate = 0;
@@ -627,8 +716,9 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
     let pt = top + 4 * s;
     let pb = bottom;
     if (horizontalBars) {
-      // 横棒: 分類は左、値は下
-      if (catVisible) pl += Math.min((right - left) * 0.4, catMaxW) + 5 * s;
+      // 横棒: 分類は左(軸が右端で交わるときは右)、値は下
+      if (catVisible && catLabelWhere === "low") pl += Math.min((right - left) * 0.4, catMaxW) + 5 * s;
+      if (catVisible && catLabelWhere === "high") pr -= Math.min((right - left) * 0.4, catMaxW) + 5 * s;
       if (valVisible(primaryAxis)) pb -= tickSize(primaryAxis) * 1.5;
       if (secondaryAxis && valVisible(secondaryAxis)) pt += tickSize(secondaryAxis) * 1.5;
       if (catAxis?.title) pl += titleSize(catAxis) * 1.5;
@@ -640,8 +730,10 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
       if (secondaryAxis?.title) pr -= titleSize(secondaryAxis) * 1.5;
       if (catVisible) {
         const slot = (pr - pl) / Math.max(1, catLabels.length);
-        if (!isScatter && catMaxW > slot * 0.95) catRotate = 45;
-        pb -= catRotate ? Math.min((bottom - top) * 0.4, catMaxW * 0.72 + catTickSize) + 4 * s : catTickSize * 1.6;
+        if (!isScatter && !dateSlots && catMaxW > slot * 0.95) catRotate = 45;
+        const need = catRotate ? Math.min((bottom - top) * 0.4, catMaxW * 0.72 + catTickSize) + 4 * s : catTickSize * 1.6;
+        if (catLabelWhere === "high") pt += need;
+        else if (catLabelWhere === "low") pb -= need;
       }
       if (catAxis?.title) pb -= titleSize(catAxis) * 1.5;
     }
@@ -662,15 +754,29 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   const anyBarOrLine = model.groups.some((g) => g.kind === "bar" || g.kind === "line");
   const between = (primaryAxis?.crossBetween ?? (anyBarOrLine ? "between" : "midCat")) === "between" || model.groups.some((g) => g.kind === "bar");
   const catReversed = catAxis?.reversed ?? false;
-  const slotCount = Math.max(1, catCount);
+  const slotCount = Math.max(1, dateSlots ? dateSlots.count : catCount);
   const catCenter = (i: number): number => {
     const len = horizontalBars ? plot.h : plot.w;
-    const k = catReversed ? slotCount - 1 - i : i;
+    const si = dateSlots ? (dateSlots.index[i] ?? i) : i;
+    const k = catReversed ? slotCount - 1 - si : si;
     const t = between ? (k + 0.5) / slotCount : slotCount === 1 ? 0.5 : k / (slotCount - 1);
     // 横棒は、最初の分類を下に置く(Excelの既定)
     return horizontalBars ? plot.y + plot.h - t * len : plot.x + t * len;
   };
   const slotLen = (horizontalBars ? plot.h : plot.w) / slotCount;
+  /** 日付の軸の k 番目の単位(日・月)の中心の位置 */
+  const slotCenter = (k: number): number => {
+    const len = horizontalBars ? plot.h : plot.w;
+    const kk = catReversed ? slotCount - 1 - k : k;
+    const t = between ? (kk + 0.5) / slotCount : slotCount === 1 ? 0.5 : kk / (slotCount - 1);
+    return horizontalBars ? plot.y + plot.h - t * len : plot.x + t * len;
+  };
+  /** 日付の軸の目盛りの文字の間隔(単位の数)。指定(majorUnit)があればそれ以上、文字が重ならない間隔に広げる */
+  const dateLabelStep = (labelLen: number): number => {
+    const need = Math.max(1, Math.ceil(labelLen / Math.max(0.1, slotLen)));
+    const unit = dateSlots?.majorUnit && dateSlots.majorUnit > 0 ? Math.round(dateSlots.majorUnit) : 1;
+    return Math.max(unit, Math.ceil(need / unit) * unit);
+  };
   const xToPos = (x: number) => {
     if (!xScale) return plot.x;
     const t = (x - xScale.min) / (xScale.max - xScale.min);
@@ -721,12 +827,15 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   // ---- 系列の描画(面 → 棒 → 折れ線・散布図の順。Excelと同じく、線は面や棒の上に描く) ----
   type PendingLabel = { text: string; x: number; y: number; size: number; color: string; bold: boolean; align: "left" | "center" | "right" };
   const pendingLabels: PendingLabel[] = [];
-  const pushLabel = (p: PreparedSeries, str: string, x: number, yCenter: number, align: "left" | "center" | "right", onFill: string | null) => {
+  const pushLabel = (p: PreparedSeries, str: string, x: number, yCenter: number, align: "left" | "center" | "right", onFill: string | null, i?: number) => {
     if (!str) return;
-    const size = sz(p.labels?.text, baseSize);
-    const color = p.labels?.text.color ?? (onFill ? contrastText(onFill) : textColor);
-    pendingLabels.push({ text: str, x, y: yCenter - size / 2, size, color, bold: p.labels?.text.bold ?? false, align });
+    const style = (i !== undefined ? p.labels?.points.get(i)?.style : undefined) ?? p.labels?.text;
+    const size = sz(style, baseSize);
+    const color = style?.color ?? (onFill ? contrastText(onFill) : textColor);
+    pendingLabels.push({ text: str, x, y: yCenter - size / 2, size, color, bold: style?.bold ?? false, align });
   };
+  /** データ点のラベルの位置(点ごとの指定 → 系列・グループの指定) */
+  const labelPosOf = (p: PreparedSeries, i: number) => p.labels?.points.get(i)?.position ?? p.labels?.position ?? null;
   const scaleOfGroup = (g: ChartGroup) => ((g.valAxisId ?? "") === secondaryValId && secondaryScale ? secondaryScale : primaryScale);
   const axisOfGroup = (g: ChartGroup) => ((g.valAxisId ?? "") === secondaryValId && secondaryAxis ? secondaryAxis : primaryAxis);
   const pointsLimit = 4000; // データ点が極端に多いときは、ラベル・マーカーを省いて固まりにくくする
@@ -754,12 +863,12 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
             .reverse()
             .map(([x, y]) => `${n2(x)} ${n2(y)}`)
             .join(" L ")} Z`;
-          path(d, p.color, p.src.line.color ?? null, p.lineWidth * s, p.dash);
+          path(d, p.color, p.src.line.color ?? null, p.lineWidth * s, p.dash, p.src.fillAlpha);
           if (p.labels?.any && catCount <= pointsLimit) {
             for (let i = 0; i < catCount; i++) {
               const r = stackedValue(g, p, i);
               if (!r) continue;
-              pushLabel(p, labelText(p, i, p.values[i], null), catCenter(i), valToPos(sc, (r.base + r.end) / 2, ax), "center", p.color);
+              pushLabel(p, labelText(p, i, p.values[i], null), catCenter(i), valToPos(sc, (r.base + r.end) / 2, ax), "center", p.color, i);
             }
           }
         }
@@ -772,29 +881,34 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
         const gap = Math.max(0, g.gapWidth / 100);
         const barW = slotLen / (n - (n - 1) * ov + gap);
         const groupW = barW * (n - (n - 1) * ov);
+        // 棒は、分類の軸と交わる値(既定は0。最小値が0より大きければ最小値)から伸ばし、プロットエリアの外へははみ出さない
+        const groupCross = crossValueOn(sc, axisOf(g.catAxisId));
+        const clampV = (v: number) => Math.min(sc.max, Math.max(sc.min, v));
         members.forEach((p, si) => {
           for (let i = 0; i < catCount; i++) {
-            const r = stackedValue(g, p, i);
-            if (!r) continue;
+            const r0 = stackedValue(g, p, i);
+            if (!r0) continue;
+            const r = stacked ? r0 : { base: groupCross, end: r0.end };
             const offset = stacked ? 0 : si * barW * (1 - ov);
             const start = catCenter(i) - (horizontalBars ? -groupW / 2 : groupW / 2) + (horizontalBars ? -offset : offset);
-            const a = valToPos(sc, r.base, ax);
-            const b = valToPos(sc, r.end, ax);
+            const a = valToPos(sc, clampV(r.base), ax);
+            const b = valToPos(sc, clampV(r.end), ax);
             const fill = pointColor(model, p, i);
             const stroke = p.src.line.color ?? null;
-            if (horizontalBars) rect(Math.min(a, b), start - barW, Math.abs(b - a), barW, fill, stroke, p.lineWidth * s);
-            else rect(start, Math.min(a, b), barW, Math.abs(b - a), fill, stroke, p.lineWidth * s);
+            const alpha = p.src.pointFills.has(i) ? null : p.src.fillAlpha;
+            if (horizontalBars) rect(Math.min(a, b), start - barW, Math.abs(b - a), barW, fill, stroke, p.lineWidth * s, null, alpha);
+            else rect(start, Math.min(a, b), barW, Math.abs(b - a), fill, stroke, p.lineWidth * s, null, alpha);
             if (p.labels?.any && catCount <= pointsLimit) {
               const t = labelText(p, i, p.values[i], g.grouping === "percentStacked" ? r.end - r.base : null);
-              const pos = p.labels.position ?? (stacked ? "ctr" : "outEnd");
-              const size = sz(p.labels.text, baseSize);
+              const pos = labelPosOf(p, i) ?? (stacked ? "ctr" : "outEnd");
+              const size = sz(p.labels.points.get(i)?.style ?? p.labels.text, baseSize);
               const positive = r.end >= r.base;
               const centerAcross = horizontalBars ? start - barW / 2 : start + barW / 2;
               if (horizontalBars) {
                 const xEnd = b;
                 const lx = pos === "ctr" ? (a + b) / 2 : pos === "inBase" ? a + (positive ? 3 : -3) * s : pos === "inEnd" ? xEnd + (positive ? -3 : 3) * s : xEnd + (positive ? 3 : -3) * s;
                 const align = pos === "ctr" ? "center" : (pos === "outEnd") === positive ? "left" : "right";
-                pushLabel(p, t, lx, centerAcross, align, pos === "outEnd" ? null : fill);
+                pushLabel(p, t, lx, centerAcross, align, pos === "outEnd" ? null : fill, i);
               } else {
                 const yEnd = b;
                 const ly =
@@ -805,7 +919,7 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
                       : pos === "inEnd"
                         ? yEnd + (positive ? 1 : -1) * (size * 0.5 + 3 * s)
                         : yEnd + (positive ? -1 : 1) * (size * 0.5 + 3 * s);
-                pushLabel(p, t, centerAcross, ly, "center", pos === "outEnd" ? null : fill);
+                pushLabel(p, t, centerAcross, ly, "center", pos === "outEnd" ? null : fill, i);
               }
             }
           }
@@ -848,14 +962,14 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
             pts.forEach((pt, i) => {
               if (!pt) return;
               const t = labelText(p, i, p.values[i], null);
-              const size = sz(p.labels!.text, baseSize);
-              const pos = p.labels!.position ?? "r";
+              const size = sz(p.labels!.points.get(i)?.style ?? p.labels!.text, baseSize);
+              const pos = labelPosOf(p, i) ?? "r";
               const off = (p.marker ? p.marker.size / 2 : 2) * s + 3 * s;
-              if (pos === "t") pushLabel(p, t, pt[0], pt[1] - off - size / 2, "center", null);
-              else if (pos === "b") pushLabel(p, t, pt[0], pt[1] + off + size / 2, "center", null);
-              else if (pos === "l") pushLabel(p, t, pt[0] - off, pt[1], "right", null);
-              else if (pos === "ctr") pushLabel(p, t, pt[0], pt[1], "center", null);
-              else pushLabel(p, t, pt[0] + off, pt[1], "left", null);
+              if (pos === "t") pushLabel(p, t, pt[0], pt[1] - off - size / 2, "center", null, i);
+              else if (pos === "b") pushLabel(p, t, pt[0], pt[1] + off + size / 2, "center", null, i);
+              else if (pos === "l") pushLabel(p, t, pt[0] - off, pt[1], "right", null, i);
+              else if (pos === "ctr") pushLabel(p, t, pt[0], pt[1], "center", null, i);
+              else pushLabel(p, t, pt[0] + off, pt[1], "left", null, i);
             });
           }
         }
@@ -868,8 +982,7 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   // 分類の軸(値が0の位置、または最小値の位置に引く)
   if (catAxis && !catAxis.deleted) {
     const c = axisLineColor(catAxis, DEFAULT_AXIS_LINE);
-    const crossV = Math.min(primaryScale.max, Math.max(primaryScale.min, 0));
-    const at = isScatter && xScale ? valToPos(primaryScale, crossV, primaryAxis) : valToPos(primaryScale, crossV, primaryAxis);
+    const at = valToPos(primaryScale, catCross, primaryAxis);
     if (c) {
       if (horizontalBars) line(at, plot.y, at, plot.y + plot.h, c, (catAxis.line.widthPt ?? 0.75) * s);
       else line(plot.x, at, plot.x + plot.w, at, c, (catAxis.line.widthPt ?? 0.75) * s);
@@ -920,18 +1033,36 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
     if (isScatter && xScale) {
       ticksOf(xScale).forEach((t, i) => label(xLabels[i] ?? "", xToPos(t), plot.y + plot.h + 3 * s, size, color, false, "center"));
     } else if (horizontalBars) {
-      const step = Math.max(1, Math.ceil((size * 1.15) / Math.max(0.1, slotLen)));
-      categories.forEach((c, i) => {
-        if (i % step !== 0) return;
-        label(c, plot.x - 4 * s, catCenter(i) - size / 2, size, color, false, "right");
-      });
+      // 文字の位置: low=左端、high=右端、axis=軸の線の左
+      const axisX = valToPos(primaryScale, catCross, primaryAxis);
+      const lx = catLabelWhere === "high" ? plot.x + plot.w + 4 * s : catLabelWhere === "axis" ? axisX - 4 * s : plot.x - 4 * s;
+      const align = catLabelWhere === "high" ? "left" : "right";
+      if (dateSlots) {
+        const step = dateLabelStep(size * 1.15);
+        for (let k = 0; k < dateSlots.count; k += step) label(dateLabelOf(k), lx, slotCenter(k) - size / 2, size, color, false, align);
+      } else {
+        const step = Math.max(1, Math.ceil((size * 1.15) / Math.max(0.1, slotLen)));
+        categories.forEach((c, i) => {
+          if (i % step !== 0) return;
+          label(c, lx, catCenter(i) - size / 2, size, color, false, align);
+        });
+      }
     } else {
-      const step = catRotate ? Math.max(1, Math.ceil((size * 1.3) / Math.max(0.1, slotLen))) : 1;
-      categories.forEach((c, i) => {
-        if (i % step !== 0) return;
-        if (catRotate) label(c, catCenter(i) + size * 0.3, plot.y + plot.h + 3 * s, size, color, false, "right", catRotate);
-        else label(c, catCenter(i), plot.y + plot.h + 3 * s, size, color, false, "center");
-      });
+      // 文字の位置: low=下端、high=上端の外側、axis=軸の線のすぐ下
+      const axisY = valToPos(primaryScale, catCross, primaryAxis);
+      const ly = catLabelWhere === "high" ? plot.y - 3 * s - size : catLabelWhere === "axis" ? axisY + 3 * s : plot.y + plot.h + 3 * s;
+      if (dateSlots) {
+        const widest = Math.max(...dateLabelSamples.map((t) => text.width(t, size)));
+        const step = dateLabelStep(widest * 1.2);
+        for (let k = 0; k < dateSlots.count; k += step) label(dateLabelOf(k), slotCenter(k), ly, size, color, false, "center");
+      } else {
+        const step = catRotate ? Math.max(1, Math.ceil((size * 1.3) / Math.max(0.1, slotLen))) : 1;
+        categories.forEach((c, i) => {
+          if (i % step !== 0) return;
+          if (catRotate) label(c, catCenter(i) + size * 0.3, ly, size, color, false, "right", catRotate);
+          else label(c, catCenter(i), ly, size, color, false, "center");
+        });
+      }
     }
   }
 
@@ -961,6 +1092,7 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): void {
   for (const l of pendingLabels) label(l.text, l.x, l.y, l.size, l.color, l.bold, l.align);
 
   legendDraw?.();
+  return result;
 
   function smoothPath(pts: [number, number][]): string {
     // Catmull-Rom → ベジェ曲線(Excelの「スムージング」に近い、点を通るなめらかな線)

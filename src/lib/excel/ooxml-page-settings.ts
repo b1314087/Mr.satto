@@ -116,6 +116,16 @@ export interface CellFontExtras {
   vertAlign?: "super" | "sub";
 }
 
+/** グラフの参照の解決に使う、ブック全体の情報 */
+export interface ChartLookup {
+  /** ブック全体の名前の定義(名前は小文字) → 参照(例: Sheet1!$B$2:$B$5) */
+  names: Map<string, string>;
+  /** シートだけの名前の定義: シート名 → (名前(小文字) → 参照) */
+  localNames: Map<string, Map<string, string>>;
+  /** 別のブックの値の控え(externalLink): "1"(=[1]) → シート名(小文字) → セル番地(A1) → 値 */
+  external: Map<string, Map<string, Map<string, string | number>>>;
+}
+
 export interface SheetPicture {
   /** 配置(0始まりのセル位置＋セル内オフセット(pt))。oneCell/absoluteは終点をext(pt)から求める */
   fromCol: number;
@@ -131,6 +141,8 @@ export interface SheetPicture {
   extHeightPt: number | null;
   mime: "image/png" | "image/jpeg";
   bytes: Uint8Array;
+  /** 描画の重なり順(drawingの中の出現順。後のものほど上) */
+  z?: number;
 }
 
 export interface SheetShape {
@@ -152,6 +164,8 @@ export interface SheetShape {
   textColor: string | null;
   fontSizePt: number | null;
   bold: boolean;
+  /** 描画の重なり順(drawingの中の出現順。後のものほど上) */
+  z?: number;
 }
 
 export interface SheetPageSettings {
@@ -264,6 +278,8 @@ export interface SheetPageSettings {
   shapes: SheetShape[];
   /** グラフ(対応していない種類も、位置と理由を付けて含む)。描画は src/lib/excel/chart-render.ts */
   charts: SheetChart[];
+  /** グラフの参照の解決に使う、ブック全体の情報(名前の定義・別のブックの値の控え)。全シートで同じもの */
+  chartLookup: ChartLookup;
   /** PNG・JPEG以外の画像(GIF・BMP等)。描画側でブラウザの機能を使ってPNGへ変換して使う */
   otherImages: SheetDrawings["otherImages"];
   /** 再現できない図形等の数(警告表示用。グラフは charts の unsupportedReason で数える) */
@@ -377,6 +393,7 @@ function emptySheetSettings(): SheetPageSettings {
     pictures: [],
     shapes: [],
     charts: [],
+    chartLookup: { names: new Map(), localNames: new Map(), external: new Map() },
     otherImages: [],
     unsupportedDrawingCount: 0,
     merges: [],
@@ -1709,7 +1726,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
     const bytes = new Uint8Array(await file.arrayBuffer());
     const entries = unzipSync(bytes, {
       filter: (info) =>
-        /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|styles\.xml|sharedStrings\.xml|theme\/theme1\.xml|worksheets\/.*\.(xml|rels)|drawings\/.*|media\/.*|charts\/chart\d+\.xml)$/.test(
+        /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|styles\.xml|sharedStrings\.xml|theme\/theme1\.xml|worksheets\/.*\.(xml|rels)|drawings\/.*|media\/.*|charts\/chart\d+\.xml|externalLinks\/externalLink\d+\.xml)$/.test(
           info.name
         ),
     });
@@ -1776,6 +1793,49 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
 
     const themeColors = parseThemeColors(themeXmlText);
 
+    // グラフの参照の解決用：名前の定義(ブック全体・シートだけ)と、別のブック([1]Sheet1!…)の値の控え
+    const chartLookup: ChartLookup = { names: new Map(), localNames: new Map(), external: new Map() };
+    if (definedNamesEl) {
+      for (const dn of Array.from(definedNamesEl.getElementsByTagName("definedName"))) {
+        const dnName = dn.getAttribute("name");
+        const refText = (dn.textContent ?? "").trim();
+        if (!dnName || dnName.startsWith("_xlnm.") || !refText) continue;
+        const lid = dn.getAttribute("localSheetId");
+        if (lid === null) chartLookup.names.set(dnName.toLowerCase(), refText);
+        else {
+          const sheetName = sheetNamesInOrder[Number(lid)];
+          if (!sheetName) continue;
+          const m = chartLookup.localNames.get(sheetName) ?? new Map<string, string>();
+          m.set(dnName.toLowerCase(), refText);
+          chartLookup.localNames.set(sheetName, m);
+        }
+      }
+    }
+    const extRefs = Array.from(workbookDoc.getElementsByTagName("externalReference"));
+    for (let k = 0; k < extRefs.length; k++) {
+      const rid = extRefs[k].getAttribute("r:id") ?? extRefs[k].getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+      const target = rid ? ridToTarget.get(rid) : undefined;
+      const xmlText = target ? await readEntryText(entries, `xl/${target}`) : null;
+      const doc = xmlText ? parseXml(xmlText) : null;
+      if (!doc) continue;
+      const names = Array.from(doc.getElementsByTagName("sheetName")).map((e) => e.getAttribute("val") ?? "");
+      const book = new Map<string, Map<string, string | number>>();
+      for (const sd of Array.from(doc.getElementsByTagName("sheetData"))) {
+        const sheetName = names[Number(sd.getAttribute("sheetId") ?? "-1")];
+        if (sheetName === undefined) continue;
+        const cells = new Map<string, string | number>();
+        for (const cell of Array.from(sd.getElementsByTagName("cell"))) {
+          const addr = cell.getAttribute("r");
+          const v = cell.getElementsByTagName("v")[0]?.textContent;
+          if (!addr || v === undefined || v === null) continue;
+          const t = cell.getAttribute("t");
+          cells.set(addr.toUpperCase(), t === "s" || t === "str" || t === "e" || t === "b" || !Number.isFinite(Number(v)) ? v : Number(v));
+        }
+        book.set(sheetName.toLowerCase(), cells);
+      }
+      chartLookup.external.set(String(k + 1), book);
+    }
+
     // シートXMLを先にすべて読み、列幅の傾向から、このファイルのMDW(半角数字の幅)を推定する
     const sheetXmlByName = new Map<string, string>();
     const allWidths: number[] = [];
@@ -1828,6 +1888,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
         settings.otherImages = drawings.otherImages;
       }
       settings.date1904 = date1904;
+      settings.chartLookup = chartLookup;
       result.set(name, settings);
     }
   } catch {

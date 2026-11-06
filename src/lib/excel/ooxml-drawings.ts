@@ -159,6 +159,8 @@ interface Anchor {
   toRowOffPt: number;
   extWidthPt: number | null;
   extHeightPt: number | null;
+  /** 描画の重なり順(drawingの中の出現順。後のものほど上) */
+  z?: number;
 }
 
 function readMarker(el: Element | undefined): { col: number; row: number; colOffPt: number; rowOffPt: number } | null {
@@ -169,7 +171,17 @@ function readMarker(el: Element | undefined): { col: number; row: number; colOff
 
 function readAnchor(anchorEl: Element): Anchor | null {
   const from = readMarker(child(anchorEl, "from"));
-  if (!from) return null; // absoluteAnchor等は対象外
+  if (!from) {
+    // absoluteAnchor：シートの左上からの位置(pos)と大きさ(ext)で置かれたもの。A1セルの左上を基準にした位置として扱う
+    const pos = child(anchorEl, "pos");
+    const ext = child(anchorEl, "ext");
+    if (anchorEl.localName !== "absoluteAnchor" || !pos || !ext) return null;
+    const num = (el: Element, a: string) => Number(el.getAttribute(a) ?? "0") / EMU_PER_PT;
+    const w = num(ext, "cx");
+    const h = num(ext, "cy");
+    if (!(w > 0 && h > 0)) return null;
+    return { fromCol: 0, fromRow: 0, fromColOffPt: num(pos, "x"), fromRowOffPt: num(pos, "y"), toCol: null, toRow: null, toColOffPt: 0, toRowOffPt: 0, extWidthPt: w, extHeightPt: h };
+  }
   const to = readMarker(child(anchorEl, "to"));
   const ext = child(anchorEl, "ext");
   return {
@@ -255,9 +267,11 @@ export function parseSheetDrawings(
     const drawingRels = readRels(entries, `${drawingPath.slice(0, drawingPath.length - dName.length)}_rels/${dName}.rels`, drawingPath);
 
     const root = doc.documentElement;
+    let z = 0;
     for (const anchorEl of Array.from(root.children)) {
       if (!["twoCellAnchor", "oneCellAnchor", "absoluteAnchor"].includes(anchorEl.localName)) continue;
       const anchor = readAnchor(anchorEl);
+      if (anchor) anchor.z = z++;
       let content = Array.from(anchorEl.children).find((c) => ["pic", "sp", "cxnSp", "graphicFrame", "grpSp"].includes(c.localName));
       // Excel 2016以降の新しいグラフ(ウォーターフォール等)は mc:AlternateContent で包まれて保存される。
       // 包みの中を見て、新しいグラフなら「未対応のグラフ」、そうでなければ中の要素(Fallback等)を使う

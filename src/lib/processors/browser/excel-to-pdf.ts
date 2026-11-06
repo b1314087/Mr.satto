@@ -579,28 +579,74 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       },
     };
     /** グラフに値が保存されていないとき、参照先のセル範囲(例: 'Sheet1'!$B$2:$B$7)の値をシートから読む */
-    const makeChartResolver = (currentSheet: string): ChartRangeResolver => (ref) => {
-      const range = parseRangeRef(ref);
-      if (!range) return null;
-      const name = range.sheet ?? currentSheet;
-      const target = sheets.find((sh) => sh.name === name);
-      if (!target) return null;
-      const st = pageSettingsBySheet.get(name) ?? null;
-      const values: (string | number | null)[] = [];
-      const display: string[] = [];
-      const cellCount = (range.endRow - range.startRow + 1) * (range.endCol - range.startCol + 1);
-      if (cellCount > 100_000) return null;
-      for (let r = range.startRow; r <= range.endRow; r++) {
-        for (let c = range.startCol; c <= range.endCol; c++) {
-          const raw = target.rows[r]?.[c] ?? null;
-          values.push(raw instanceof Date ? raw.getTime() / 86_400_000 + 25569 : typeof raw === "boolean" ? (raw ? 1 : 0) : raw === undefined ? null : (raw as string | number | null));
-          display.push(cellToDisplayString(raw, st?.cellDateFormat.get(`${r}:${c}`) ?? null, st?.cellNumFormat.get(`${r}:${c}`) ?? null, st?.date1904 ?? false));
+    const makeChartResolver = (currentSheet: string): ChartRangeResolver => {
+      const lookup = pageSettingsBySheet.get(currentSheet)?.chartLookup;
+      const resolveRef = (ref0: string, visibleOnly: boolean, depth: number): ReturnType<ChartRangeResolver> => {
+        const ref = ref0.trim().replace(/^=/, "");
+        if (depth > 3 || !ref) return null;
+        // 別のブック([1]Sheet1!$B$2:$B$5 / '[1]Sheet 1'!…)：ブックの中に保存されている値の控え(externalLink)から読む
+        const ext = /^'?\[(\d+)\]((?:[^'!]|'')*)'?!(.+)$/.exec(ref);
+        if (ext) {
+          const cells = lookup?.external.get(ext[1])?.get(ext[2].replace(/''/g, "'").toLowerCase());
+          const range = parseRangeRef(ext[3]);
+          if (!cells || !range) return null;
+          const values: (string | number | null)[] = [];
+          for (let r = range.startRow; r <= range.endRow; r++) {
+            for (let c = range.startCol; c <= range.endCol; c++) {
+              let col = "";
+              for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) col = String.fromCharCode(65 + ((n - 1) % 26)) + col;
+              values.push(cells.get(`${col}${r + 1}`) ?? null);
+            }
+          }
+          if (values.every((v) => v === null)) return null;
+          return { values, display: values.map((v) => (v === null ? "" : String(v))) };
         }
-      }
-      return { values, display };
+        const range = parseRangeRef(ref);
+        if (!range) {
+          // 名前の定義(Sheet1!売上データ・売上データ・Book1.xlsx!売上データ・[0]!売上データ)
+          const m = /^(?:(?:'((?:[^']|'')+)'|([^!]+))!)?([^!]+)$/.exec(ref);
+          if (!m) return null;
+          const scope = (m[1] ?? m[2] ?? "").replace(/''/g, "'");
+          const nm = m[3].toLowerCase();
+          const local = scope && !/^\[0\]$|\.xls[xmb]?$/i.test(scope) ? lookup?.localNames.get(scope)?.get(nm) : lookup?.localNames.get(currentSheet)?.get(nm);
+          const target = local ?? lookup?.names.get(nm);
+          return target ? resolveRef(target, visibleOnly, depth + 1) : null;
+        }
+        return readCells(range, visibleOnly);
+      };
+      const readCells = (range: NonNullable<ReturnType<typeof parseRangeRef>>, visibleOnly: boolean): ReturnType<ChartRangeResolver> => {
+        const name = range.sheet ?? currentSheet;
+        const target = sheets.find((sh) => sh.name === name);
+        if (!target) return null;
+        const st = pageSettingsBySheet.get(name) ?? null;
+        const values: (string | number | null)[] = [];
+        const display: string[] = [];
+        let format: string | null | undefined;
+        const cellCount = (range.endRow - range.startRow + 1) * (range.endCol - range.startCol + 1);
+        if (cellCount > 100_000) return null;
+        for (let r = range.startRow; r <= range.endRow; r++) {
+          // 非表示の行・列は、グラフの「表示されているセルだけ」(既定)では使わない
+          if (visibleOnly && st?.hiddenRows.has(r) && range.endRow > range.startRow) continue;
+          for (let c = range.startCol; c <= range.endCol; c++) {
+            if (visibleOnly && st?.hiddenCols.has(c) && range.endCol > range.startCol) continue;
+            const raw = target.rows[r]?.[c] ?? null;
+            values.push(raw instanceof Date ? raw.getTime() / 86_400_000 + 25569 : typeof raw === "boolean" ? (raw ? 1 : 0) : raw === undefined ? null : (raw as string | number | null));
+            const dateFmt = st?.cellDateFormat.get(`${r}:${c}`) ?? null;
+            const numFmt = st?.cellNumFormat.get(`${r}:${c}`) ?? null;
+            if (format === undefined && raw !== null && raw !== "") format = dateFmt ?? numFmt ?? null;
+            display.push(cellToDisplayString(raw, dateFmt, numFmt, st?.date1904 ?? false));
+          }
+        }
+        return { values, display, format: format ?? null };
+      };
+      return (ref, opts) => resolveRef(ref, opts?.visibleOnly ?? true, 0);
     };
+    /** 値を読めない系列があったグラフ(グラフごとに1回だけ数える。ページをまたいで何度描いても同じ) */
+    const unresolvedCharts = new Map<object, { sheet: string; series: number }>();
     let chartsDrawn = 0;
     let chartDrawFailures = 0;
+    /** 何も無いため出力しなかったページの数 */
+    let skippedBlankPages = 0;
     /**
      * 描けないグラフの場所に、薄い灰色の点線の枠と説明を出す(グラフが黙って消えた状態のPDFにしない)。
      * 別の種類のグラフとして描き替えることはしない。
@@ -1653,30 +1699,31 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           const clipToRegion = () =>
             page.pushOperators(pdfLib().pushGraphicsState(), pdfLib().rectangle(bodyX, bodyTop - regionH * s, regionW * s, regionH * s), pdfLib().clip(), pdfLib().endPath());
 
-          for (const pic of settings.pictures) {
+          const drawPicture = (pic: (typeof settings.pictures)[number]) => {
             const img = embeddedImages.get(pic);
-            if (!img) continue;
+            if (!img) return;
             const r = anchorRect(pic);
-            if (!intersects(r)) continue;
+            if (!intersects(r)) return;
             const p = toPage(r);
-            if (p.w <= 0 || p.h <= 0) continue;
+            if (p.w <= 0 || p.h <= 0) return;
             clipToRegion();
             page.drawImage(img, { x: p.x, y: p.y, width: p.w, height: p.h });
             page.pushOperators(pdfLib().popGraphicsState());
-          }
+          };
           // グラフ(画像と同じく、ページに表示される範囲だけにクリップする。ページの境目をまたぐグラフは、
           // Excelと同じく、それぞれのページに入る部分だけが印刷される)
-          for (const chart of settings.charts) {
+          const drawChartItem = (chart: (typeof settings.charts)[number]) => {
             const r = anchorRect(chart);
-            if (!intersects(r)) continue;
+            if (!intersects(r)) return;
             const p = toPage(r);
-            if (p.w <= 0 || p.h <= 0) continue;
+            if (p.w <= 0 || p.h <= 0) return;
             clipToRegion();
             page.pushOperators(pdfLib().pushGraphicsState(), pdfLib().rectangle(p.x, p.y, p.w, p.h), pdfLib().clip(), pdfLib().endPath());
             let failed = chart.model === null;
             if (chart.model) {
               try {
-                drawChart(chart.model, { page, lib: pdfLib(), box: p, scale: s, text: chartText, resolve: makeChartResolver(sheet.name), blackAndWhite });
+                const res = drawChart(chart.model, { page, lib: pdfLib(), box: p, scale: s, text: chartText, resolve: makeChartResolver(sheet.name), blackAndWhite });
+                if (res.unresolvedSeries > 0) unresolvedCharts.set(chart, { sheet: sheet.name, series: res.unresolvedSeries });
                 chartsDrawn++;
               } catch {
                 failed = true;
@@ -1685,10 +1732,10 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             }
             if (failed) drawChartPlaceholder(page, p, chart.unsupportedReason ?? "グラフを描けませんでした", s);
             page.pushOperators(pdfLib().popGraphicsState(), pdfLib().popGraphicsState());
-          }
-          for (const shape of settings.shapes) {
+          };
+          const drawShape = (shape: (typeof settings.shapes)[number]) => {
             const r = anchorRect(shape);
-            if (!intersects(r)) continue;
+            if (!intersects(r)) return;
             const p = toPage(r);
             const lineColor = shape.line && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(shape.line)) : shape.line ? pdfLib().rgb(0, 0, 0) : undefined;
             const fillColor = shape.fill && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(shape.fill)) : undefined;
@@ -1747,15 +1794,60 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
               }
             }
             page.pushOperators(pdfLib().popGraphicsState());
-          }
+          };
+          // 重なり順：Excelのdrawingの中の順(後のものほど上)。画像・グラフ・図形を混ぜて、その順に描く
+          const items: { z: number; draw: () => void }[] = [
+            ...settings.pictures.map((pic) => ({ z: pic.z ?? -1, draw: () => drawPicture(pic) })),
+            ...settings.charts.map((chart) => ({ z: chart.z ?? -1, draw: () => drawChartItem(chart) })),
+            ...settings.shapes.map((shape) => ({ z: shape.z ?? -1, draw: () => drawShape(shape) })),
+          ];
+          items.sort((x, y) => x.z - y.z);
+          for (const item of items) item.draw();
         };
 
         // ---- ページの生成: Excelの既定(down, then over) = 同じ列グループ内で縦方向に進み、
         //      縦方向を使い切ってから次の列グループへ進む ----
         // シート名を自動でページ上部へ表示する処理(旧titleBlock)は、開発指示書B-9(Phase 22)により撤廃した。
         // 「Excel側で設定されていないシート名をMr.Sattoが勝手にページへ追加しない」ことが「非常に重要」と明記されているため。
-        for (const colGroup of grid.colGroups) {
-          for (const rowGroup of grid.rowGroups) {
+        // 何も無いページ(値・背景色・罫線のあるセルも、画像・グラフ・図形も無いページ)は出力しない。
+        // 表やグラフが横に広いと、縦に長い表の右側に空白のページが大量にできるため(LibreOfficeも空白のページは出力しない)。
+        // シートのすべてのページが空のときは、1ページ目だけは出力する
+        const pageHasContent = (cols: number[], rows: number[]): boolean => {
+          for (const r of rows) {
+            const row = sheet.rows[r];
+            for (const c of cols) {
+              const v = row?.[c];
+              if (v !== null && v !== undefined && v !== "") return true;
+              if (fillFor(r, c) || borderFor(r, c)) return true;
+            }
+          }
+          if (settings && cols.length > 0 && rows.length > 0) {
+            const x1 = colLeftSheet(cols[0]);
+            const y1 = rowTopSheet(rows[0]);
+            const x2 = x1 + cols.reduce((sum, c) => sum + colWidthOf(c), 0);
+            const y2 = y1 + rows.reduce((sum, r) => sum + rowHeightOf(r), 0);
+            for (const d of [...settings.pictures, ...settings.charts, ...settings.shapes]) {
+              const rr = anchorRect(d);
+              if (rr.x2 > x1 && rr.x1 < x2 && rr.y2 > y1 && rr.y1 < y2) return true;
+            }
+          }
+          return false;
+        };
+        const blankGridPages = new Set<string>();
+        if (grid.colGroups.length * grid.rowGroups.length > 1) {
+          grid.colGroups.forEach((colGroup, ci) =>
+            grid.rowGroups.forEach((rowGroup, ri) => {
+              if (!pageHasContent(colGroup.map((i) => bodyCols[i]), rowGroup.map((i) => bodyRows[i]))) blankGridPages.add(`${ci}:${ri}`);
+            })
+          );
+          if (blankGridPages.size === grid.colGroups.length * grid.rowGroups.length) blankGridPages.delete("0:0");
+        }
+        for (const [ci, colGroup] of grid.colGroups.entries()) {
+          for (const [ri, rowGroup] of grid.rowGroups.entries()) {
+            if (blankGridPages.has(`${ci}:${ri}`)) {
+              skippedBlankPages++;
+              continue;
+            }
             if (doc.getPageCount() >= MAX_PAGE_COUNT) {
               throw new Error(`変換できるページ数の上限は${MAX_PAGE_COUNT}ページです。`);
             }
@@ -1840,6 +1932,16 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       }
     }
 
+    if (skippedBlankPages > 0) {
+      warnings.push(`値・書式・画像・グラフが何も無いページ${skippedBlankPages}枚は、出力していません`);
+    }
+    if (unresolvedCharts.size > 0) {
+      const bySheet = new Map<string, number>();
+      for (const u of unresolvedCharts.values()) bySheet.set(u.sheet, (bySheet.get(u.sheet) ?? 0) + u.series);
+      for (const [name, n] of bySheet) {
+        warnings.push(`「${name}」のグラフで、データを読み取れない系列が${n}個ありました（別のブックや、見つからない名前を参照している等）。その系列は描いていません`);
+      }
+    }
     if (chartDrawFailures > 0) warnings.push(`グラフ${chartDrawFailures}個は、描く途中で問題が起きたため、その場所に枠と説明を表示しています`);
     if (chartsDrawn > 0) {
       warnings.push("グラフは、Excelの見た目に近づけて描いています。文字の位置や目盛りの間隔などが少し異なることがあるため、変換後のPDFをご確認ください");

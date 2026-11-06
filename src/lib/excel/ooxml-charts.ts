@@ -51,6 +51,19 @@ export interface ChartDataLabels {
   any: boolean;
   /** 個別に消されたデータ点(dLbl/delete) */
   deletedPoints: Set<number>;
+  /** データ点ごとの個別の設定(dLbl)。1つの点だけラベルを出す・文字を書き換える等 */
+  points: Map<number, ChartPointLabel>;
+}
+
+/** データ点ごとのデータラベルの設定(dLbl)。text は文字を直接入力したラベル */
+export interface ChartPointLabel {
+  showVal: boolean;
+  showPercent: boolean;
+  showSerName: boolean;
+  showCatName: boolean;
+  position: ChartDataLabels["position"];
+  text: string | null;
+  style: ChartTextStyle;
 }
 
 export interface ChartSeries {
@@ -67,6 +80,8 @@ export interface ChartSeries {
   xValues: (number | null)[] | null;
   xValuesRef: string | null;
   fill: string | null | undefined;
+  /** 塗りの透明度(alpha、0〜1)。1=不透明。null=指定なし */
+  fillAlpha: number | null;
   line: ChartLine;
   marker: ChartMarker | null;
   smooth: boolean;
@@ -118,6 +133,12 @@ export interface ChartAxis {
   text: ChartTextStyle;
   crossAxisId: string | null;
   crosses: "autoZero" | "min" | "max";
+  /** 交わる位置を値で指定(crossesAt)。この軸が、相手の軸のこの値の所に引かれる */
+  crossesAt: number | null;
+  /** 分類の軸の「日付の軸を自動で判断する」(auto)。日付の分類なら、日付の間隔どおりに並べる */
+  auto: boolean;
+  /** 日付の軸の基本単位(baseTimeUnit) */
+  baseTimeUnit: "days" | "months" | "years" | null;
   /** 値の軸の設定: between=分類の間(目盛りの間に点を置く)、midCat=目盛りの上。nullは種類ごとの既定 */
   crossBetween: "between" | "midCat" | null;
 }
@@ -137,6 +158,8 @@ export interface ChartModel {
   text: ChartTextStyle;
   /** 空のセルの扱い: gap=線を切る、zero=0として描く、span=線をつなぐ */
   dispBlanksAs: "gap" | "zero" | "span";
+  /** 表示されているセルだけを使う(plotVisOnly。既定true)。非表示の行・列の値はグラフに出さない */
+  plotVisOnly: boolean;
   /** 再現していない装飾(近似曲線・誤差範囲・データテーブル・対数目盛り等)。警告に使う */
   unsupportedDecorations: string[];
   /** テーマのアクセント色1〜6(系列に色の指定が無いときに、Excelと同じ順で使う) */
@@ -157,6 +180,8 @@ export interface SheetChart {
   /** 読み取れたグラフ。読めない・対応していない種類のときはnullで、unsupportedReasonに理由 */
   model: ChartModel | null;
   unsupportedReason: string | null;
+  /** 描画の重なり順(drawingの中の出現順。後のものほど上) */
+  z?: number;
 }
 
 const EMU_PER_PT = 12700;
@@ -275,7 +300,7 @@ export function adjustColor(hex: string, mods: { lumMod?: number; lumOff?: numbe
   return rgbToHex(r, g, b);
 }
 
-function readColor(container: Element | undefined, theme: string[] | null): string | null {
+function readColor(container: Element | undefined, theme: string[] | null, ignoreAlpha = false): string | null {
   if (!container) return null;
   const colorEl = Array.from(container.children).find((c) => ["srgbClr", "schemeClr", "prstClr", "sysClr", "scrgbClr"].includes(c.localName));
   if (!colorEl) return null;
@@ -306,7 +331,17 @@ function readColor(container: Element | undefined, theme: string[] | null): stri
     const v = child(colorEl, local)?.getAttribute("val");
     return v !== null && v !== undefined ? Number(v) / 100000 : undefined;
   };
-  return adjustColor(hex.toUpperCase(), { lumMod: mod("lumMod"), lumOff: mod("lumOff"), shade: mod("shade"), tint: mod("tint"), alpha: mod("alpha") });
+  return adjustColor(hex.toUpperCase(), { lumMod: mod("lumMod"), lumOff: mod("lumOff"), shade: mod("shade"), tint: mod("tint"), alpha: ignoreAlpha ? undefined : mod("alpha") });
+}
+
+/** 単色の塗り(solidFill)の透明度(alpha)。0〜1、指定が無ければnull */
+function readFillAlpha(spPr: Element | undefined): number | null {
+  const solid = child(spPr, "solidFill");
+  const colorEl = solid ? Array.from(solid.children)[0] : undefined;
+  const a = child(colorEl, "alpha")?.getAttribute("val");
+  if (a === null || a === undefined) return null;
+  const v = Number(a) / 100000;
+  return Number.isFinite(v) && v < 1 ? Math.max(0, v) : null;
 }
 
 /** spPr(図形の書式)の塗りつぶし。null=塗りなし、undefined=指定なし */
@@ -468,7 +503,7 @@ function readMarker(el: Element | undefined, theme: string[] | null): ChartMarke
 function readDataLabels(el: Element | undefined, theme: string[] | null): ChartDataLabels | null {
   if (!el) return null;
   if (boolVal(el, "delete", false)) {
-    return { showVal: false, showPercent: false, showSerName: false, showCatName: false, position: null, numFmt: null, separator: null, text: readTextStyle(undefined, theme), any: false, deletedPoints: new Set() };
+    return { showVal: false, showPercent: false, showSerName: false, showCatName: false, position: null, numFmt: null, separator: null, text: readTextStyle(undefined, theme), any: false, deletedPoints: new Set(), points: new Map() };
   }
   const labels: ChartDataLabels = {
     showVal: boolVal(el, "showVal", false),
@@ -481,11 +516,30 @@ function readDataLabels(el: Element | undefined, theme: string[] | null): ChartD
     text: readTextStyle(child(el, "txPr"), theme),
     any: false,
     deletedPoints: new Set(),
+    points: new Map(),
   };
   for (const d of children(el, "dLbl")) {
-    if (boolVal(d, "delete", false)) labels.deletedPoints.add(Number(valOf(d, "idx") ?? "-1"));
+    const idx = Number(valOf(d, "idx") ?? "-1");
+    if (idx < 0) continue;
+    if (boolVal(d, "delete", false)) {
+      labels.deletedPoints.add(idx);
+      continue;
+    }
+    // 点ごとの設定は、書かれていない項目をグループ/系列の設定から引き継ぐ
+    const tx = child(d, "tx");
+    const text = richText(tx);
+    labels.points.set(idx, {
+      showVal: boolVal(d, "showVal", labels.showVal),
+      showPercent: boolVal(d, "showPercent", labels.showPercent),
+      showSerName: boolVal(d, "showSerName", labels.showSerName),
+      showCatName: boolVal(d, "showCatName", labels.showCatName),
+      position: (valOf(d, "dLblPos") as ChartDataLabels["position"]) ?? labels.position,
+      text,
+      style: text ? readTextStyle(child(tx, "rich"), theme) : child(d, "txPr") ? readTextStyle(child(d, "txPr"), theme) : labels.text,
+    });
   }
-  labels.any = labels.showVal || labels.showPercent || labels.showSerName || labels.showCatName;
+  const shows = (l: { showVal: boolean; showPercent: boolean; showSerName: boolean; showCatName: boolean }) => l.showVal || l.showPercent || l.showSerName || l.showCatName;
+  labels.any = shows(labels) || Array.from(labels.points.values()).some((pt) => shows(pt) || !!pt.text);
   return labels;
 }
 
@@ -522,6 +576,7 @@ function readAxis(el: Element, kind: ChartAxis["kind"], theme: string[] | null, 
   const logBase = numVal(scaling, "logBase");
   if (logBase) unsupported.add("対数目盛り");
   const crossesVal = valOf(el, "crosses");
+  const baseUnit = valOf(el, "baseTimeUnit");
   return {
     id: valOf(el, "axId") ?? "",
     kind,
@@ -542,6 +597,9 @@ function readAxis(el: Element, kind: ChartAxis["kind"], theme: string[] | null, 
     text: readTextStyle(child(el, "txPr"), theme),
     crossAxisId: valOf(el, "crossAx"),
     crosses: crossesVal === "max" ? "max" : crossesVal === "min" ? "min" : "autoZero",
+    crossesAt: numVal(el, "crossesAt"),
+    auto: boolVal(el, "auto", kind === "cat"),
+    baseTimeUnit: baseUnit === "days" || baseUnit === "months" || baseUnit === "years" ? baseUnit : null,
     crossBetween: valOf(el, "crossBetween") === "midCat" ? "midCat" : valOf(el, "crossBetween") === "between" ? "between" : null,
   };
 }
@@ -570,7 +628,9 @@ function readSeries(ser: Element, kind: ChartKind, theme: string[] | null, unsup
     valuesFormat: val.format,
     xValues: kind === "scatter" ? cat.numbers : null,
     xValuesRef: kind === "scatter" ? cat.ref : null,
-    fill: readFill(spPr, theme),
+    // 透明度のある塗りは、色そのものと透明度を分けて持つ(描くときにPDFの透明度で重ねる)
+    fill: readFillAlpha(spPr) !== null ? (readColor(child(spPr, "solidFill"), theme, true) ?? readFill(spPr, theme)) : readFill(spPr, theme),
+    fillAlpha: readFillAlpha(spPr),
     line: readLine(spPr, theme),
     marker: readMarker(child(ser, "marker"), theme),
     smooth: boolVal(ser, "smooth", false),
@@ -699,6 +759,7 @@ export function parseChartXml(xmlText: string, theme: string[] | null): { model:
       plotLayout: readManualLayout(child(plotArea, "layout")),
       text: readTextStyle(child(space, "txPr"), theme),
       dispBlanksAs: blanks === "zero" ? "zero" : blanks === "span" ? "span" : "gap",
+      plotVisOnly: boolVal(chart, "plotVisOnly", true),
       unsupportedDecorations: Array.from(unsupported),
       accents: [4, 5, 6, 7, 8, 9].map((i, n) => theme?.[i] ?? DEFAULT_ACCENTS[n]),
     },
