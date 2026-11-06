@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AdSlot } from "@/components/ads/ad-slot";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getBrowserUser } from "@/lib/auth/browser-session";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { shouldShowAds } from "@/lib/plans/access";
 import type { Plan } from "@/lib/plans/types";
@@ -82,8 +83,8 @@ function useFooterShouldShowAds(): boolean {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) return;
 
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData.user;
+      // ヘッダーのログイン表示と同じ確認結果を使う（1ページにつき1回。src/lib/auth/browser-session.ts）
+      const user = await getBrowserUser();
       if (!user) return; // 未ログイン = free。デフォルトのtrue(広告あり)のまま。
 
       const { data } = await supabase

@@ -78,16 +78,21 @@ export default async function AccountPage({
   }
 
   const planDefinition = PLAN_DEFINITIONS[serverPlan.plan];
-  // 現在の利用規約・プライバシーポリシーへの同意の記録（読み取れないときは、案内を出さない）
-  const consentState = await getConsentState(serverPlan.userId);
-  const consentMissing = consentState.ok && consentState.missing.length > 0;
-  const username = await getOwnUsername(await getSupabaseServerClient(), serverPlan.userId);
   const subscriptionPremium = resolveEffectivePlan(serverPlan.subscription) === "premium";
+  const userId = serverPlan.userId;
+  // 同意の記録・ユーザー名・無料お試しの利用歴は、互いの結果を使わないので、同時に問い合わせる（順番に待たない）
+  const [consentState, username, trialUsed] = await Promise.all([
+    // 現在の利用規約・プライバシーポリシーへの同意の記録（読み取れないときは、案内を出さない）
+    getConsentState(userId),
+    getSupabaseServerClient().then((client) => getOwnUsername(client, userId)),
+    !serverPlan.grantActive && !subscriptionPremium ? hasUsedTrial(userId) : Promise.resolve(false),
+  ]);
+  const consentMissing = consentState.ok && consentState.missing.length > 0;
   const trialState = trialOfferState({
     signedIn: true,
     subscriptionPremium,
     grantActive: serverPlan.grantActive,
-    trialUsed: !serverPlan.grantActive && !subscriptionPremium ? await hasUsedTrial(serverPlan.userId) : false,
+    trialUsed,
   });
 
   return (

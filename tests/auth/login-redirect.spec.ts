@@ -59,7 +59,10 @@ async function loginWithNext(page: import("@playwright/test").Page, next: string
   await page.getByLabel("メールアドレス").fill("redirect-test@example.com");
   await page.getByLabel("パスワード").fill("password-1234");
   await page.getByRole("button", { name: "ログイン", exact: true }).click();
-  await expect(page.getByText("ログインしました")).toBeVisible();
+  // ログインが成功すると、ログイン画面から移動する。「ログインしました」の表示は移動までの一瞬しか出ず、
+  // 移動先を先読み済みだとすぐ消えて確かめられないため、ログイン画面を離れたことで成功を確かめる
+  // （外部サイトへ移動していないことは、呼び出し側で確かめる）
+  await expect(page).not.toHaveURL(/\/login(\?|$)/);
   return () => externalRequests;
 }
 

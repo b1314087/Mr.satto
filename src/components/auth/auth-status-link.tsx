@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getBrowserUser } from "@/lib/auth/browser-session";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 /**
@@ -32,8 +33,9 @@ export function AuthStatusLink({
     if (!supabase) return;
 
     let cancelled = false;
-    supabase.auth.getUser().then(({ data }) => {
-      if (!cancelled) setSignedIn(data.user !== null);
+    // ヘッダー・メニュー・管理画面リンクと同じ確認結果を使う（1ページにつき1回。src/lib/auth/browser-session.ts）
+    getBrowserUser().then((user) => {
+      if (!cancelled) setSignedIn(user !== null);
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {

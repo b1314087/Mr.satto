@@ -44,11 +44,35 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * 静的アセット・画像最適化・メタデータファイルを除く全パスに適用する。
-     * ツール本体はログイン不要のため、対象から除外する必要はない
-     * （未ログイン時は単にセッションが存在しないだけで処理は継続する）。
-     */
-    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|opengraph-image).*)",
+    {
+      /*
+       * 静的アセット・画像最適化・メタデータファイルを除く全パスに適用する。
+       * ツール本体はログイン不要のため、対象から除外する必要はない
+       * （未ログイン時は単にセッションが存在しないだけで処理は継続する）。
+       *
+       * 次のものはログイン状態と無関係なファイルなので、Proxyを通さない
+       * （ログイン中の人がOCRや背景除去を使うたびに、ファイル1つごとにSupabaseへ問い合わせていたのを防ぐ）。
+       *   - public/ の大きなファイル：fonts/・models/・ort/・pdfjs/・tesseract/・pdf.worker.min.mjs・ads.txt・Search Consoleの確認ファイル
+       *   - アイコン（/icon・/apple-icon）
+       * 「icon」「apple-icon」は、その名前ちょうどのときだけ除く（/icon-xxx のようなページを作っても対象から外れないように）。
+       *
+       * API（/api/...）も通さない（Next.js公式の proxy.md の例と同じ）。どのAPIも、ログインが必要な処理は
+       * 自分で getCurrentUser()／getServerPlan() を呼んでSupabaseに確かめており（必要ならそこでトークンも更新する）、
+       * Proxyでも確かめると、1回のAPI呼び出しで同じ確認が2回になっていた。Stripe Webhook はCookieを持たないので影響しない。
+       * AIのAPI（画像つきで約3.8MB）がProxyの本文の上限に近づくことも避けられる。
+       */
+      source:
+        "/((?!api/|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|opengraph-image|icon$|apple-icon$|fonts/|models/|ort/|pdfjs/|tesseract/|pdf\\.worker\\.min\\.mjs$|ads\\.txt$|google4bf3b445fef7778c\\.html$).*)",
+      /*
+       * リンクの先読み（prefetch）では、Proxyを通さない（Next.js公式の proxy.md にある書き方）。
+       * 画面に出ているリンクごとに先読みが走り、そのたびにSupabaseへログイン確認をしていた（ログイン中は1ページで10回以上）。
+       * 先読みでは、ログイン状態に関わる部分は作らず、実際に開いたときのリクエストは、これまでどおりProxyを通ってセッションを更新する。
+       * また、期限切れのトークンを多数の先読みが同時に更新しようとすることも防げる。
+       */
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 };

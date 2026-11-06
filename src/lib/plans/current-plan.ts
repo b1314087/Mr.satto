@@ -117,8 +117,9 @@ export async function getServerPlan(): Promise<ServerPlanContext> {
     };
   }
 
-  const subscription = await fetchSubscriptionSnapshot(user.id);
-  const grant = await fetchOwnGrant(user.id);
+  // 契約（subscriptions）と付与（premium_grants）は、どちらもログインしている人のIDだけで決まり、
+  // 互いの結果を使わないので、同時に問い合わせる（順番に待たない）。判定の仕方は変えない。
+  const [subscription, grant] = await Promise.all([fetchSubscriptionSnapshot(user.id), fetchOwnGrant(user.id)]);
   const nowMs = Date.now();
   // Stripeの契約でのプラン。有効な付与（無料付与・無料お試し）があれば、プレミアムに引き上げる（期限が切れれば、自動で戻る）
   const effectivePlan: Plan = applyGrantToPlan(resolveEffectivePlan(subscription), grant, nowMs);

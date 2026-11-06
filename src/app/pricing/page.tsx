@@ -74,9 +74,12 @@ export default async function PricingPage({
   if (!featureFlags.billing) return <FeatureUnavailable title="料金プラン" />;
 
   const { checkout } = await searchParams;
-  const serverPlan = await getServerPlan();
+  // プランの判定と、Stripeの価格の確認は、互いの結果を使わないので、同時に行う（順番に待たない）。
   // 画面の料金とStripeの実際の価格が一致しているときだけ、お申し込みを受け付ける
-  const stripeConfigured = isStripeConfigured() && (await verifyPremiumPrice()).ok;
+  const [serverPlan, stripeConfigured] = await Promise.all([
+    getServerPlan(),
+    isStripeConfigured() ? verifyPremiumPrice().then((check) => check.ok) : Promise.resolve(false),
+  ]);
   const adGateActive = isRewardedAdGateActive();
   // Stripeの契約でのプラン（無料付与・お試しによるプレミアムとは分ける。付与中の人も、通常どおり申し込める）
   const subscriptionPlan = resolveEffectivePlan(serverPlan.subscription);
