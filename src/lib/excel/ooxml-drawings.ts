@@ -1,11 +1,14 @@
 import type { SheetPicture, SheetShape } from "@/lib/excel/ooxml-page-settings";
+import { graphicFrameChartKind, parseChartXml, type SheetChart } from "@/lib/excel/ooxml-charts";
 
 /**
  * シートに貼られた図・画像・図形(xl/drawings/drawingN.xml)の読み取り。
  *
  * 対応するもの: 画像(PNG・JPEG。GIF・BMP等は描画側でブラウザの機能でPNGへ変換する)、
  * 単純な図形(四角形・角丸四角形・楕円・直線)と、その中の文字。
- * 対応しないもの(グラフ・SmartArt・グループ化された図形・EMF/WMF画像・ワードアート等)は、
+ * グラフ(graphicFrameの中のグラフ)は、グラフの定義(xl/charts/chartN.xml)を ooxml-charts.ts で読み、
+ * charts として返す(対応していない種類のグラフも、位置と理由を付けて返し、描画側が警告と枠を出す)。
+ * 対応しないもの(SmartArt・グループ化された図形・EMF/WMF画像・ワードアート等)は、
  * 数だけ数えて呼び出し側が「再現できない」と警告する。
  */
 
@@ -210,7 +213,9 @@ function readRels(entries: Record<string, Uint8Array>, relsPath: string, ownerPa
 export interface SheetDrawings {
   pictures: SheetPicture[];
   shapes: SheetShape[];
-  /** 再現できなかった図形・グラフ・画像の数 */
+  /** グラフ(対応していない種類のグラフも、位置と理由を付けて含む) */
+  charts: SheetChart[];
+  /** 再現できなかった図形・画像の数(グラフは charts の unsupportedReason で数える) */
   unsupportedCount: number;
   /** PNG・JPEG以外の画像(描画側でブラウザの機能を使ってPNGへ変換する) */
   otherImages: { picture: Omit<SheetPicture, "mime" | "bytes">; bytes: Uint8Array; ext: string }[];
@@ -233,7 +238,7 @@ export function parseSheetDrawings(
   sheetPath: string,
   themeColors: string[] | null
 ): SheetDrawings {
-  const out: SheetDrawings = { pictures: [], shapes: [], unsupportedCount: 0, otherImages: [] };
+  const out: SheetDrawings = { pictures: [], shapes: [], charts: [], unsupportedCount: 0, otherImages: [] };
   const sheetName = sheetPath.split("/").pop() ?? "";
   const sheetRelsPath = `${sheetPath.slice(0, sheetPath.length - sheetName.length)}_rels/${sheetName}.rels`;
   const sheetRels = readRels(entries, sheetRelsPath, sheetPath);
@@ -253,7 +258,21 @@ export function parseSheetDrawings(
     for (const anchorEl of Array.from(root.children)) {
       if (!["twoCellAnchor", "oneCellAnchor", "absoluteAnchor"].includes(anchorEl.localName)) continue;
       const anchor = readAnchor(anchorEl);
-      const content = Array.from(anchorEl.children).find((c) => ["pic", "sp", "cxnSp", "graphicFrame", "grpSp"].includes(c.localName));
+      let content = Array.from(anchorEl.children).find((c) => ["pic", "sp", "cxnSp", "graphicFrame", "grpSp"].includes(c.localName));
+      // Excel 2016以降の新しいグラフ(ウォーターフォール等)は mc:AlternateContent で包まれて保存される。
+      // 包みの中を見て、新しいグラフなら「未対応のグラフ」、そうでなければ中の要素(Fallback等)を使う
+      const alternate = Array.from(anchorEl.children).find((c) => c.localName === "AlternateContent");
+      if (!content && alternate) {
+        const choice = Array.from(alternate.children).find((c) => c.localName === "Choice");
+        const requires = choice?.getAttribute("Requires") ?? "";
+        if (/cx/.test(requires) || /chartex/i.test(choice?.innerHTML ?? "")) {
+          if (anchor) out.charts.push({ ...anchor, model: null, unsupportedReason: "Excel 2016以降の新しい種類のグラフ（ウォーターフォール・ツリーマップ等）" });
+          else out.unsupportedCount++;
+          continue;
+        }
+        const inner = choice ?? Array.from(alternate.children).find((c) => c.localName === "Fallback");
+        content = inner ? Array.from(inner.children).find((c) => ["pic", "sp", "cxnSp", "graphicFrame", "grpSp"].includes(c.localName)) : undefined;
+      }
       if (!content) continue;
       if (!anchor) {
         out.unsupportedCount++;
@@ -327,7 +346,21 @@ export function parseSheetDrawings(
         continue;
       }
 
-      // graphicFrame(グラフ・表)・grpSp(グループ化された図形)は再現しない
+      if (content.localName === "graphicFrame") {
+        const chartRef = graphicFrameChartKind(content);
+        if (chartRef?.kind === "chart") {
+          const rel = drawingRels.get(chartRef.rid);
+          const chartXml = rel ? entryText(entries, rel.target) : null;
+          const parsed = chartXml ? parseChartXml(chartXml, themeColors) : { model: null, reason: "グラフの定義が見つからない" };
+          out.charts.push({ ...anchor, model: parsed.model, unsupportedReason: parsed.reason });
+          continue;
+        }
+        if (chartRef?.kind === "chartex") {
+          out.charts.push({ ...anchor, model: null, unsupportedReason: "Excel 2016以降の新しい種類のグラフ（ウォーターフォール・ツリーマップ等）" });
+          continue;
+        }
+      }
+      // 表(graphicFrameのうちグラフ以外)・grpSp(グループ化された図形)は再現しない
       out.unsupportedCount++;
     }
   }

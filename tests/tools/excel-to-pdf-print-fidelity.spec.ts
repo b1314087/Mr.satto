@@ -19,7 +19,7 @@ import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUpload
  * - 用紙の大きさはExcelの用紙番号の定義（A4=210×297mm、B4・B5はJIS規格 等）
  * - 列幅はExcelの列幅の計算式（標準フォントの数字の幅7pxで、幅5→35px=26.25pt、幅30→210px=157.5pt）
  * - 行の高さは、Excelの既定（Calibri 11ptで15pt）と、ファイルに保存された高さ
- * - ページ数は、同じファイルをLibreOfficeでPDFにした結果とも照合済み（ヘッダー/フッターとグラフを除き一致）
+ * - ページ数は、同じファイルをLibreOfficeでPDFにした結果とも照合済み（ヘッダー/フッターを除き一致）
  */
 
 const SRC = path.join(__dirname, "..", "fixtures", "static", "excel-print");
@@ -278,7 +278,7 @@ test("11 ヘッダー・フッター：ファイル名・シート名・日付�
   }
 });
 
-test("12 画像・グラフ：画像は元の位置に出し、再現できないグラフは表示せずに知らせる。ファイルは外部に送らない", async ({ page, baseURL }) => {
+test("12 画像・グラフ：画像は元の位置に出し、グラフ(縦棒)も描く。ファイルは外部に送らない", async ({ page, baseURL }) => {
   test.setTimeout(120_000);
   const recorder = new NetworkRecorder(page);
   const { pdf, screen } = await convert(page, "12-image-chart.xlsx");
@@ -297,7 +297,10 @@ test("12 画像・グラフ：画像は元の位置に出し、再現できな�
   // D2セルの左上：このファイルの余白(左0.75インチ=54pt・上1インチ=72pt)＋標準の幅3列(3×48pt)・1行(15pt)
   expect(Math.abs(minX - (54 + 3 * 48))).toBeLessThan(1.5);
   expect(Math.abs(minY - (72 + 15))).toBeLessThan(1.5);
-  expect(screen).toContain("グラフ・複雑な図形など1個は、再現できないため表示していません");
+  // グラフ(縦棒・テーマのアクセント1の青)も描かれる(グラフの描画は tests/tools/excel-to-pdf-charts.spec.ts で詳しく確かめる)
+  expect(countPixels(img, (r, g, b) => b > 150 && r < 110 && g > 90 && g < 160)).toBeGreaterThan(100);
+  expect(pdfText(pdf)).toContain("売上（架空）");
+  expect(screen).toContain("グラフは、Excelの見た目に近づけて描いています");
   expect(findSuspiciousApiUploads(recorder, baseURL ?? "")).toEqual([]);
   expect(findSuspiciousExternalUploads(recorder, baseURL ?? "")).toEqual([]);
 });

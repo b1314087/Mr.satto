@@ -1,6 +1,7 @@
 import { unzipSync } from "fflate";
 import { baseCellOf, type ConditionalRule, type DxfStyle } from "@/lib/excel/conditional-format";
 import { parseSheetDrawings, type SheetDrawings } from "@/lib/excel/ooxml-drawings";
+import type { SheetChart } from "@/lib/excel/ooxml-charts";
 
 /** OOXMLの真偽値の属性。"1" だけでなく "true" も真（LibreOfficeやGoogleスプレッドシート等は "true" と書く） */
 function isTrueAttr(value: string | null | undefined): boolean {
@@ -261,9 +262,11 @@ export interface SheetPageSettings {
   cellRich: Map<string, RichRun[]>;
   pictures: SheetPicture[];
   shapes: SheetShape[];
+  /** グラフ(対応していない種類も、位置と理由を付けて含む)。描画は src/lib/excel/chart-render.ts */
+  charts: SheetChart[];
   /** PNG・JPEG以外の画像(GIF・BMP等)。描画側でブラウザの機能を使ってPNGへ変換して使う */
   otherImages: SheetDrawings["otherImages"];
-  /** 再現できない図形・グラフ等の数(警告表示用) */
+  /** 再現できない図形等の数(警告表示用。グラフは charts の unsupportedReason で数える) */
   unsupportedDrawingCount: number;
   /**
    * 結合セル(<mergeCells>)。Excelで結合されたセルは、左上セル(アンカー)の値が
@@ -373,6 +376,7 @@ function emptySheetSettings(): SheetPageSettings {
     cellRich: new Map(),
     pictures: [],
     shapes: [],
+    charts: [],
     otherImages: [],
     unsupportedDrawingCount: 0,
     merges: [],
@@ -1705,7 +1709,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
     const bytes = new Uint8Array(await file.arrayBuffer());
     const entries = unzipSync(bytes, {
       filter: (info) =>
-        /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|styles\.xml|sharedStrings\.xml|theme\/theme1\.xml|worksheets\/.*\.(xml|rels)|drawings\/.*|media\/.*)$/.test(
+        /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|styles\.xml|sharedStrings\.xml|theme\/theme1\.xml|worksheets\/.*\.(xml|rels)|drawings\/.*|media\/.*|charts\/chart\d+\.xml)$/.test(
           info.name
         ),
     });
@@ -1819,6 +1823,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
         const drawings = parseSheetDrawings(entries, target, themeColors);
         settings.pictures = drawings.pictures;
         settings.shapes = drawings.shapes;
+        settings.charts = drawings.charts;
         settings.unsupportedDrawingCount = drawings.unsupportedCount;
         settings.otherImages = drawings.otherImages;
       }

@@ -13,6 +13,8 @@ import {
   type SheetPicture,
 } from "@/lib/excel/ooxml-page-settings";
 import { evaluateConditionalFormats } from "@/lib/excel/conditional-format";
+import { drawChart, type ChartRangeResolver, type ChartTextApi } from "@/lib/excel/chart-render";
+import { parseRangeRef } from "@/lib/excel/ooxml-charts";
 import { excelSerialToDate, formatExcelDate } from "@/lib/excel/excel-date-format";
 import { excelNumberFormatColor, excelTextFormatColor, formatExcelNumber, formatExcelText, formatGeneralNumber } from "@/lib/excel/excel-number-format";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
@@ -569,6 +571,53 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       unitWidth(fontOf(g.style.serif), g.ch) * g.style.fs * (g.style.vertAlign ? SCRIPT_SIZE_RATIO : 1) * sizeFactor;
     const lineWidthOf = (line: Glyph[], sizeFactor: number): number => line.reduce((sum, g) => sum + glyphWidth(g, sizeFactor), 0);
 
+    // グラフの文字(chart-render.ts)。セルと同じフォントで、1文字ずつ描く(drawTextRobust)
+    const chartText: ChartTextApi = {
+      width: (str, size) => textWidth(font, str, size),
+      draw: (page, str, x, y, size, color, bold, angleDeg = 0) => {
+        drawTextRobust(page, str, x, y, size, pdfLib().rgb(...hexToRgb01(color)), font, bold, false, angleDeg);
+      },
+    };
+    /** グラフに値が保存されていないとき、参照先のセル範囲(例: 'Sheet1'!$B$2:$B$7)の値をシートから読む */
+    const makeChartResolver = (currentSheet: string): ChartRangeResolver => (ref) => {
+      const range = parseRangeRef(ref);
+      if (!range) return null;
+      const name = range.sheet ?? currentSheet;
+      const target = sheets.find((sh) => sh.name === name);
+      if (!target) return null;
+      const st = pageSettingsBySheet.get(name) ?? null;
+      const values: (string | number | null)[] = [];
+      const display: string[] = [];
+      const cellCount = (range.endRow - range.startRow + 1) * (range.endCol - range.startCol + 1);
+      if (cellCount > 100_000) return null;
+      for (let r = range.startRow; r <= range.endRow; r++) {
+        for (let c = range.startCol; c <= range.endCol; c++) {
+          const raw = target.rows[r]?.[c] ?? null;
+          values.push(raw instanceof Date ? raw.getTime() / 86_400_000 + 25569 : typeof raw === "boolean" ? (raw ? 1 : 0) : raw === undefined ? null : (raw as string | number | null));
+          display.push(cellToDisplayString(raw, st?.cellDateFormat.get(`${r}:${c}`) ?? null, st?.cellNumFormat.get(`${r}:${c}`) ?? null, st?.date1904 ?? false));
+        }
+      }
+      return { values, display };
+    };
+    let chartsDrawn = 0;
+    let chartDrawFailures = 0;
+    /**
+     * 描けないグラフの場所に、薄い灰色の点線の枠と説明を出す(グラフが黙って消えた状態のPDFにしない)。
+     * 別の種類のグラフとして描き替えることはしない。
+     */
+    const drawChartPlaceholder = (page: PDFPage, p: { x: number; y: number; w: number; h: number }, reason: string, k: number) => {
+      const gray = pdfLib().rgb(0.55, 0.55, 0.55);
+      page.drawRectangle({ x: p.x, y: p.y, width: p.w, height: p.h, color: pdfLib().rgb(0.97, 0.97, 0.97), borderColor: gray, borderWidth: 0.75 * k, borderDashArray: [3 * k, 2 * k] });
+      const size = Math.max(5, Math.min(10 * k, p.w / 22));
+      const lines = ["このグラフは表示できません", `（${reason}）`];
+      let y = p.y + p.h / 2 + size * 0.6;
+      for (const ln of lines) {
+        const w = textWidth(font, ln, size);
+        drawTextRobust(page, ln, p.x + Math.max(2, (p.w - w) / 2), y - size * 0.35, size, gray, font);
+        y -= size * 1.5;
+      }
+    };
+
     // ヘッダー/フッター(B-9・B-10)の&D(日付)・&T(時刻)トークン解決用に、
     // 変換実行時刻を1回だけ取得する(ページごとに変わると使いにくいため)。
     const now = new Date();
@@ -880,7 +929,18 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         warnings.push(`「${sheet.name}」のExcelの条件付き書式のうち${cf.unsupportedCount}件は、再現できない種類（未対応の数式や関数など）のため反映していません`);
       }
       if (settings && settings.unsupportedDrawingCount > 0) {
-        warnings.push(`「${sheet.name}」のグラフ・複雑な図形など${settings.unsupportedDrawingCount}個は、再現できないため表示していません`);
+        warnings.push(`「${sheet.name}」の複雑な図形など${settings.unsupportedDrawingCount}個は、再現できないため表示していません`);
+      }
+      if (settings && settings.charts.length > 0) {
+        const unsupportedCharts = settings.charts.filter((c) => !c.model);
+        if (unsupportedCharts.length > 0) {
+          const reasons = Array.from(new Set(unsupportedCharts.map((c) => c.unsupportedReason ?? "不明な形式")));
+          warnings.push(
+            `「${sheet.name}」のグラフ${unsupportedCharts.length}個は、対応していない種類（${reasons.join("・")}）のため描けません。PDFでは、その場所に枠と説明を表示しています`
+          );
+        }
+        const decorations = Array.from(new Set(settings.charts.flatMap((c) => c.model?.unsupportedDecorations ?? [])));
+        if (decorations.length > 0) warnings.push(`「${sheet.name}」のグラフの一部の装飾（${decorations.join("・")}）は再現していません`);
       }
 
       const fillFor = (origRow: number, origCol: number): string | null => {
@@ -1068,7 +1128,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           while (i < 2000 && startOf(i + 1) < limit - 0.5) i++;
           return i;
         };
-        for (const a of [...settings.pictures, ...settings.shapes]) {
+        for (const a of [...settings.pictures, ...settings.shapes, ...settings.charts]) {
           const r = anchorRect(a);
           drawingLastCol = Math.max(drawingLastCol, lastIndexBefore(r.x2, colLeftSheet));
           drawingLastRow = Math.max(drawingLastRow, lastIndexBefore(r.y2, rowTopSheet));
@@ -1575,7 +1635,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           bodyX: number,
           bodyTop: number
         ) => {
-          if (!settings || (settings.pictures.length === 0 && settings.shapes.length === 0)) return;
+          if (!settings || (settings.pictures.length === 0 && settings.shapes.length === 0 && settings.charts.length === 0)) return;
           if (bodyColsOnPage.length === 0 || bodyRowsOnPage.length === 0) return;
           const s = scale;
           const sheetLeft = colLeftSheet(bodyColsOnPage[0]);
@@ -1603,6 +1663,28 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             clipToRegion();
             page.drawImage(img, { x: p.x, y: p.y, width: p.w, height: p.h });
             page.pushOperators(pdfLib().popGraphicsState());
+          }
+          // グラフ(画像と同じく、ページに表示される範囲だけにクリップする。ページの境目をまたぐグラフは、
+          // Excelと同じく、それぞれのページに入る部分だけが印刷される)
+          for (const chart of settings.charts) {
+            const r = anchorRect(chart);
+            if (!intersects(r)) continue;
+            const p = toPage(r);
+            if (p.w <= 0 || p.h <= 0) continue;
+            clipToRegion();
+            page.pushOperators(pdfLib().pushGraphicsState(), pdfLib().rectangle(p.x, p.y, p.w, p.h), pdfLib().clip(), pdfLib().endPath());
+            let failed = chart.model === null;
+            if (chart.model) {
+              try {
+                drawChart(chart.model, { page, lib: pdfLib(), box: p, scale: s, text: chartText, resolve: makeChartResolver(sheet.name), blackAndWhite });
+                chartsDrawn++;
+              } catch {
+                failed = true;
+                chartDrawFailures++;
+              }
+            }
+            if (failed) drawChartPlaceholder(page, p, chart.unsupportedReason ?? "グラフを描けませんでした", s);
+            page.pushOperators(pdfLib().popGraphicsState(), pdfLib().popGraphicsState());
           }
           for (const shape of settings.shapes) {
             const r = anchorRect(shape);
@@ -1756,6 +1838,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           );
         }
       }
+    }
+
+    if (chartDrawFailures > 0) warnings.push(`グラフ${chartDrawFailures}個は、描く途中で問題が起きたため、その場所に枠と説明を表示しています`);
+    if (chartsDrawn > 0) {
+      warnings.push("グラフは、Excelの見た目に近づけて描いています。文字の位置や目盛りの間隔などが少し異なることがあるため、変換後のPDFをご確認ください");
     }
 
     let bytes: Uint8Array;
