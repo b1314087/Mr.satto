@@ -1,10 +1,10 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { useEffect, useState } from "react";
 import { DateToolsProcessor, dateListToCsvBlob, type DateListItem } from "@/lib/processors/browser/date-tools";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ErrorMessage } from "@/components/common/error-message";
-import { downloadBlob } from "@/lib/utils/format";
 
 type Tab = "weekday" | "shift" | "list" | "extract" | "business";
 
@@ -82,6 +82,8 @@ async function computeDateView(p: {
  * をまとめる。内部処理は1つの DateToolsProcessor に委譲する。
  */
 export function DateWeekdayTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [tab, setTab] = useState<Tab>("weekday");
   const [baseDate, setBaseDate] = useState(todayIso());
   const [days, setDays] = useState(7);
@@ -131,7 +133,7 @@ export function DateWeekdayTool() {
 
   function handleDownloadCsv() {
     if (!list || list.length === 0) return;
-    downloadBlob(dateListToCsvBlob(list), "date-list.csv");
+    void csvExport.download(dateListToCsvBlob(list), "date-list.csv");
   }
 
   function toggleWeekday(value: number) {
@@ -291,6 +293,8 @@ export function DateWeekdayTool() {
               >
                 {copied ? "コピーしました" : "一覧をコピー"}
               </button>
+              {csvExport.picker}
+              {csvExport.confirm}
               <RewardedDownloadGate onDownload={handleDownloadCsv} label="CSVでダウンロード" />
             </div>
           )}

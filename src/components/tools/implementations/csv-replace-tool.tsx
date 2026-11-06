@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -18,9 +19,11 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { CsvReplaceProcessor, replaceCsvRows } from "@/lib/processors/browser/csv-ops";
 import { parseCsv } from "@/lib/utils/csv";
-import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { formatBytes } from "@/lib/utils/format";
 
 export function CsvReplaceTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [file, setFile] = useState<File | null>(null);
   const [search, setSearch] = useState("");
   const [replace, setReplace] = useState("");
@@ -168,8 +171,10 @@ export function CsvReplaceTool() {
             {result.replacedCount}件を置換しました ・ {formatBytes(result.blob.size)}
           </p>
           <CsvPreviewTable rows={result.previewRows} />
+          {csvExport.picker}
+          {csvExport.confirm}
           <RewardedDownloadGate
-            onDownload={() => downloadBlob(result.blob, "replaced.csv")}
+            onDownload={() => void csvExport.download(result.blob, "replaced.csv")}
             label="CSVでダウンロード"
           />
         </ResultPopup>

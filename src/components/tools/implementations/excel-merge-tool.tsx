@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -60,6 +61,8 @@ function toSampleGrid(result: MergeResult) {
 }
 
 export function ExcelMergeTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [files, setFiles] = useState<File[]>([]);
   const [sheetChoice, setSheetChoice] = useState<Record<string, number>>({});
   const [addSourceColumn, setAddSourceColumn] = useState(false);
@@ -356,8 +359,10 @@ export function ExcelMergeTool() {
             maxRows={6}
             totalRows={result.result.rows.length + 1}
           />
+          {result.format === "csv" && csvExport.picker}
+          {result.format === "csv" && csvExport.confirm}
           <RewardedDownloadGate
-            onDownload={() => downloadBlob(result.blob, result.fileName)}
+            onDownload={() => (result.format === "csv" ? void csvExport.download(result.blob, result.fileName) : downloadBlob(result.blob, result.fileName))}
             label={result.format === "csv" ? "CSVでダウンロード" : "Excelでダウンロード"}
           />
         </ResultPopup>

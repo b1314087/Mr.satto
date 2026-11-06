@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -10,9 +11,11 @@ import { WorkerCanceledError } from "@/lib/workers/worker-channel";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ExcelToCsvProcessor, sheetRowsToCsvBlob, type ExcelSheet } from "@/lib/processors/browser/csv-excel";
-import { downloadBlob, sanitizeFileName, stripExtension } from "@/lib/utils/format";
+import { sanitizeFileName, stripExtension } from "@/lib/utils/format";
 
 export function ExcelToCsvTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [file, setFile] = useState<File | null>(null);
   const [sheets, setSheets] = useState<ExcelSheet[] | null>(null);
   const [selectedSheetIndex, setSelectedSheetIndex] = useState(0);
@@ -79,7 +82,7 @@ export function ExcelToCsvTool() {
       sheets && sheets.length > 1
         ? `${base}-${sanitizeFileName(selectedSheet.name)}.csv`
         : `${base}.csv`;
-    downloadBlob(blob, name);
+    void csvExport.download(blob, name);
   }
 
   return (
@@ -168,6 +171,8 @@ export function ExcelToCsvTool() {
             </div>
           )}
 
+          {csvExport.picker}
+          {csvExport.confirm}
           <RewardedDownloadGate onDownload={handleDownload} label="CSVでダウンロード" />
         </div>
       )}

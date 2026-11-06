@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { useMemo, useState } from "react";
 import { CsvFormatProcessor, formatCsvText } from "@/lib/processors/browser/text";
 import {
@@ -10,9 +11,10 @@ import {
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { downloadBlob } from "@/lib/utils/format";
 
 export function CsvFormatTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport("utf-8");
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [rowCount, setRowCount] = useState(0);
@@ -65,7 +67,7 @@ export function CsvFormatTool() {
 
   function handleDownload() {
     const blob = new Blob([output], { type: "text/csv;charset=utf-8" });
-    downloadBlob(blob, "formatted.csv");
+    void csvExport.download(blob, "formatted.csv");
   }
 
   return (
@@ -141,6 +143,8 @@ export function CsvFormatTool() {
             rows={10}
             className="rounded-xl border border-neutral-300 bg-neutral-50 px-4 py-3 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900"
           />
+          {csvExport.picker}
+          {csvExport.confirm}
           <RewardedDownloadGate onDownload={handleDownload} label="CSVとしてダウンロード" />
         </div>
       )}

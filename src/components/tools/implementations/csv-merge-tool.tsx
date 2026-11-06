@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -21,9 +22,11 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { CsvMergeProcessor, mergeCsvRowSets } from "@/lib/processors/browser/csv-ops";
 import { parseCsv } from "@/lib/utils/csv";
-import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { formatBytes } from "@/lib/utils/format";
 
 export function CsvMergeTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -177,8 +180,10 @@ export function CsvMergeTool() {
             {result.rowCount}行に結合しました ・ {formatBytes(result.blob.size)}
           </p>
           <CsvPreviewTable rows={result.previewRows} />
+          {csvExport.picker}
+          {csvExport.confirm}
           <RewardedDownloadGate
-            onDownload={() => downloadBlob(result.blob, "merged.csv")}
+            onDownload={() => void csvExport.download(result.blob, "merged.csv")}
             label="CSVでダウンロード"
           />
         </ResultPopup>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { useMemo, useRef, useState } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -11,7 +12,6 @@ import {
   toGridRows,
 } from "@/components/tools/implementations/shared/before-after-table";
 import { JsonToCsvProcessor, jsonTextToCsvRows, type JsonToCsvOutput } from "@/lib/processors/browser/csv-json";
-import { downloadBlob } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
 
 const PLACEHOLDER = `[
@@ -20,6 +20,8 @@ const PLACEHOLDER = `[
 ]`;
 
 export function JsonToCsvTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -119,8 +121,10 @@ export function JsonToCsvTool() {
             </Button>
             <RewardedDownloadGate
               label=".csvをダウンロード"
-              onDownload={() => downloadBlob(result.blob, "output.csv")}
+              onDownload={() => void csvExport.download(result.blob, "output.csv")}
             />
+            {csvExport.picker}
+            {csvExport.confirm}
           </div>
         </div>
       )}

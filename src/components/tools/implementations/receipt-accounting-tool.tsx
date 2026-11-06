@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -34,7 +35,6 @@ import { duplicateKeys, validateRow } from "@/lib/accounting/receipt-validate";
 import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { ReceiptReadError, readReceiptFile, type ReadDocument } from "@/lib/processors/browser/receipt-ocr";
-import { downloadBlob } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /**
@@ -115,6 +115,8 @@ function sourceLabel(row: DocRow, key: ReceiptFieldKey): string {
 }
 
 export function ReceiptAccountingTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -426,7 +428,7 @@ export function ReceiptAccountingTool() {
     }
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-    downloadBlob(blob, format === "freee" ? `receipts-freee-${stamp}.csv` : `receipts-${stamp}.csv`);
+    void csvExport.download(blob, format === "freee" ? `receipts-freee-${stamp}.csv` : `receipts-${stamp}.csv`);
     setExportedSignature(signature);
   }
 
@@ -990,6 +992,8 @@ export function ReceiptAccountingTool() {
           </p>
         )}
         {exportError && <ErrorMessage message={exportError} />}
+        {csvExport.picker}
+        {csvExport.confirm}
         <div>
           <RewardedDownloadGate
             onDownload={exportCsv}

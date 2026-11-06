@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -66,6 +67,8 @@ function toInt(value: string, fallback: number): number {
 
 /** シフト表作成。勤務区分とスタッフを決め、日ごとの勤務を入れて、確認し、PDF・Excel・CSVで保存する（自動での割り当てはしない） */
 export function ShiftScheduleTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [schedule, setSchedule] = useState<ShiftSchedule>(initialSchedule);
   const [brush, setBrush] = useState<string | null>("t1");
   const [staffText, setStaffText] = useState("");
@@ -211,7 +214,7 @@ export function ShiftScheduleTool() {
       const base = sanitizeFileName(shiftTitle(schedule));
       if (kind === "pdf") downloadBlob((await shiftToPdfBlob(schedule)).blob, `${base}.pdf`);
       else if (kind === "xlsx") downloadBlob(await shiftToXlsxBlob(schedule), `${base}.xlsx`);
-      else downloadBlob(shiftToCsvBlob(schedule), `${base}.csv`);
+      else await csvExport.download(shiftToCsvBlob(schedule), `${base}.csv`);
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "ファイルを作成できませんでした");
     } finally {
@@ -582,6 +585,8 @@ export function ShiftScheduleTool() {
           <RewardedDownloadGate onDownload={() => exportAs("pdf")} label="PDFでダウンロード" disabled={exporting || problems.length > 0} />
           <RewardedDownloadGate onDownload={() => exportAs("xlsx")} label="Excelでダウンロード" disabled={exporting || problems.length > 0} />
           <RewardedDownloadGate onDownload={() => exportAs("csv")} label="CSVでダウンロード" disabled={exporting || problems.length > 0} />
+          {csvExport.picker}
+          {csvExport.confirm}
         </div>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           PDFはA4横です（30人を超えると、ページを分けます）。ExcelとPDFには、色つきの表、出勤日数・休日数・未入力・実働時間、日ごとの出勤人数が入ります。未入力のマスは空欄で出力します。

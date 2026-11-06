@@ -1,5 +1,6 @@
 "use client";
 
+import { useCsvExport } from "@/components/common/csv-export-encoding";
 import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -15,7 +16,7 @@ import {
 } from "@/components/tools/implementations/shared/before-after-table";
 import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
 import { CsvColumnEditProcessor, editCsvColumnRows } from "@/lib/processors/browser/csv-ops";
-import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { formatBytes, stripExtension } from "@/lib/utils/format";
 
 interface ColumnState {
   /** 元のCSVでの列インデックス（0始まり）。並び替えてもこの値は変わらない */
@@ -34,6 +35,8 @@ interface ColumnState {
  * （実行のたびに再パースしない）。
  */
 export function CsvColumnEditorTool() {
+  /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
+  const csvExport = useCsvExport();
   const [file, setFile] = useState<File | null>(null);
   const [hasHeader, setHasHeader] = useState(true);
   const [columns, setColumns] = useState<ColumnState[] | null>(null);
@@ -289,7 +292,9 @@ export function CsvColumnEditorTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.rowCount}行 ・ {result.columnCount}列 ・ {formatBytes(result.blob.size)}
           </p>
-          <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
+          {csvExport.picker}
+          {csvExport.confirm}
+          <RewardedDownloadGate onDownload={() => void csvExport.download(result.blob, downloadName)} />
         </ResultPopup>
       )}
     </div>
