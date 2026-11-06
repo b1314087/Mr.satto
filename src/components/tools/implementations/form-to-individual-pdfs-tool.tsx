@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useMemo, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -64,6 +65,8 @@ export function FormToIndividualPdfsTool() {
 
   // --- テンプレート ---
   const [templateFile, setTemplateFile] = useState<File | null>(null);
+  /** 回答データのファイル（CSVの文字コードを選び直したら、同じファイルを読み込み直す） */
+  const [dataFile, setDataFile] = useState<File | null>(null);
   const [templateBytes, setTemplateBytes] = useState<ArrayBuffer | null>(null);
   const [pages, setPages] = useState<TemplatePageInfo[]>([]);
   const [selectedPage, setSelectedPage] = useState(1);
@@ -240,6 +243,7 @@ export function FormToIndividualPdfsTool() {
   async function handleDataFileSelect(files: File[]) {
     const file = files[0];
     if (!file) return;
+    setDataFile(file);
     setError(null);
 
     try {
@@ -609,6 +613,7 @@ export function FormToIndividualPdfsTool() {
             onFilesSelected={handleDataFileSelect}
             onError={setError}
           />
+          <CsvEncodingControl files={[dataFile]} onChange={(f) => void handleDataFileSelect([f])} />
           {table && (
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               {table.rows.length}件のデータ行を読み込みました（列: {table.headers.join(", ")}）

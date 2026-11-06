@@ -10,6 +10,7 @@
  * をそのまま呼び出すだけで、新しいCSV/Excelパーサーは追加しない。
  */
 import { parseCsv } from "./csv";
+import { readCsvText } from "./csv-encoding";
 import { readXlsxSheets } from "@/lib/excel/xlsx-simple-io";
 
 export interface ParsedTableFile {
@@ -41,7 +42,8 @@ function cellToString(value: unknown): string {
  */
 export async function parseTableFile(file: File): Promise<ParsedTableFile> {
   if (isCsvFile(file)) {
-    const text = await file.text();
+    // 文字コードは自動判定（Excelの日本語CSVに多い Shift_JIS も読む）
+    const { text } = await readCsvText(file);
     const rows = parseCsv(text).filter((row) => row.some((cell) => cell.trim() !== ""));
     if (rows.length === 0) {
       throw new Error("このCSVファイルには読み取れるデータがありません");

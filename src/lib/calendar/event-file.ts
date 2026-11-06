@@ -2,6 +2,7 @@
  * 予定表として取り込むファイルの種類の判定と、CSVの読み取り（純粋な処理だけ。ブラウザ内で使う）。
  * 判定は、拡張子とMIMEタイプの両方を見る（ドラッグ&ドロップでは、選択ダイアログのaccept属性が効かないため）。
  */
+import { detectAndDecodeCsv } from "@/lib/utils/csv-encoding";
 import type { EventCellValue } from "./event-import";
 
 export type EventFileKind = "excel" | "csv" | "pdf" | "image" | "legacy-excel" | "unsupported";
@@ -28,17 +29,10 @@ export const UNSUPPORTED_FILE_MESSAGE =
 export const LEGACY_EXCEL_MESSAGE = "古い形式（.xls）は読み込めません。Excelで「名前を付けて保存」から、Excelブック（.xlsx）にして選んでください。";
 
 /** CSVの文字コードを判定して文字にする。UTF-8（BOMつき含む）で読めなければ、Excelの日本語CSVに多いShift_JISとして読む */
+// 判定の方法は、CSVを読むすべてのツールで共通（src/lib/utils/csv-encoding.ts）。
+// Excelの「Unicodeテキスト」（BOMつきのUTF-16）も、BOMで判定して先に読む
 export function decodeCsvBytes(bytes: ArrayBuffer): string {
-  // Excelの「Unicodeテキスト」で保存したファイルは、BOMつきのUTF-16。UTF-8やShift_JISとして読むと文字化けして、
-  // 読めない行が大量に出てしまう（AIに送る対象にもなってしまう）ため、BOMで判定して先に読む
-  const head = new Uint8Array(bytes.slice(0, 2));
-  if (head[0] === 0xff && head[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes).replace(/^\uFEFF/, "");
-  if (head[0] === 0xfe && head[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes).replace(/^\uFEFF/, "");
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^﻿/, "");
-  } catch {
-    return new TextDecoder("shift_jis").decode(bytes);
-  }
+  return detectAndDecodeCsv(bytes).text;
 }
 
 /** CSV（カンマ・タブ区切り、ダブルクォートで囲んだ項目・改行を含む項目に対応）→ 行 × セルの文字 */

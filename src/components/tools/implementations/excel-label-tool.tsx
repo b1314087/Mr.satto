@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useMemo, useState } from "react";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -142,6 +143,8 @@ export function ExcelLabelTool() {
   const [imported, setImported] = useState<LabelImportData | null>(null);
   const [skipHeader, setSkipHeader] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  /** 最後に読み込んだファイル（CSVの文字コードを選び直したら、同じファイルを読み込み直す） */
+  const [importedFile, setImportedFile] = useState<File | null>(null);
 
   function resetResult() {
     setResult(null);
@@ -169,6 +172,7 @@ export function ExcelLabelTool() {
   }
 
   async function handleImportFile(files: File[]) {
+    setImportedFile(files[0] ?? null);
     const file = files[0];
     if (!file) return;
     setImportError(null);
@@ -458,6 +462,7 @@ export function ExcelLabelTool() {
           onFilesSelected={handleImportFile}
           onError={setImportError}
         />
+        <CsvEncodingControl files={[importedFile]} onChange={(f) => void handleImportFile([f])} />
         {importError && <ErrorMessage message={importError} />}
         {imported && (
           <div className="flex flex-col gap-1.5 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300" data-testid="label-import-info">

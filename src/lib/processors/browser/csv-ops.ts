@@ -1,5 +1,6 @@
 import { BrowserProcessor } from "../types";
 import { parseCsv, isBlankRow, csvRowsToBlob } from "@/lib/utils/csv";
+import { readCsvText } from "@/lib/utils/csv-encoding";
 
 /**
  * CSV結合・CSV重複削除・CSV文字置換のProcessor（Phase 2-B）。
@@ -10,12 +11,9 @@ import { parseCsv, isBlankRow, csvRowsToBlob } from "@/lib/utils/csv";
  * （セル内のカンマ・改行・ダブルクォートを壊さないため）。
  */
 
+/** 文字コードを自動判定して読む（画面で選び直した場合はその文字コード。Shift_JIS・UTF-8 BOM付きにも対応） */
 async function readTextOrThrow(file: File): Promise<string> {
-  try {
-    return await file.text();
-  } catch {
-    throw new Error(`${file.name} の読み込みに失敗しました`);
-  }
+  return (await readCsvText(file)).text;
 }
 
 function rowsEqual(a: string[], b: string[]): boolean {

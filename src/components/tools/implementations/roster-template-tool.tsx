@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -182,6 +183,7 @@ export function RosterTemplateTool() {
               }}
             />
           )}
+          <CsvEncodingControl files={[file]} onChange={(f) => void handleSelect([f])} />
           {importError && <ErrorMessage message={importError} />}
 
           {table && (

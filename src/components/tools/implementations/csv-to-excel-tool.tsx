@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -90,6 +91,7 @@ export function CsvToExcelTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <CsvEncodingControl files={[file]} />}
 
       {file && (rows || previewError || loading) && (
         <PreviewShell

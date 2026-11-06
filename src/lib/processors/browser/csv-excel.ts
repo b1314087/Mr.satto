@@ -1,5 +1,6 @@
 import { BrowserProcessor } from "../types";
 import { serializeCsv } from "@/lib/utils/csv";
+import { getCsvEncodingChoice } from "@/lib/utils/csv-encoding";
 import { WorkerCanceledError, WorkerChannel, WorkerUnavailableError } from "@/lib/workers/worker-channel";
 import type { ExcelWorkerRequest } from "./csv-excel.worker";
 import { csvFileToXlsx, xlsxFileToSheets, type CsvToExcelOutput, type ExcelSheet, type ExcelToCsvOutput } from "./csv-excel-core";
@@ -79,10 +80,10 @@ export class CsvToExcelProcessor extends BrowserProcessor<CsvToExcelInput, CsvTo
   async process({ file, cancelSignal }: CsvToExcelInput): Promise<CsvToExcelOutput> {
     if (cancelSignal?.aborted) throw new WorkerCanceledError();
     if (file.size >= CSV_WORKER_MIN_BYTES) {
-      const out = await runInExcelWorker<CsvToExcelOutput>({ type: "csv-to-xlsx", file }, cancelSignal);
+      const out = await runInExcelWorker<CsvToExcelOutput>({ type: "csv-to-xlsx", file, encoding: getCsvEncodingChoice(file) }, cancelSignal);
       if (out) return out;
     }
-    const out = await csvFileToXlsx(file);
+    const out = await csvFileToXlsx(file, getCsvEncodingChoice(file));
     if (cancelSignal?.aborted) throw new WorkerCanceledError();
     lastExcelEngine = "main";
     return out;

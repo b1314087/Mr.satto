@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -133,6 +134,8 @@ export function SeatingChartTool() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [importNote, setImportNote] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  /** 最後に読み込んだ名簿のファイル（CSVの文字コードを選び直したら、同じファイルを読み込み直す） */
+  const [importedFile, setImportedFile] = useState<File | null>(null);
   /** ふりがな（名前ごと。名簿を書き直しても、同じ名前ならそのまま残る） */
   const [readings, setReadings] = useState<Record<string, string>>({});
   const [furigana, setFurigana] = useState(false);
@@ -322,6 +325,7 @@ export function SeatingChartTool() {
   }
 
   async function importFile(file: File) {
+    setImportedFile(file);
     setImportError(null);
     setImportNote(null);
     const kind = classifyMergeFile(file);
@@ -588,6 +592,7 @@ export function SeatingChartTool() {
             {parsed.overLimit > 0 && `（${SEATING_MAX_PARTICIPANTS}人まで。${parsed.overLimit}人は読み込んでいません）`}
           </p>
           {importNote && <p className="text-xs text-emerald-700 dark:text-emerald-300">{importNote}</p>}
+          <CsvEncodingControl files={[importedFile]} onChange={(f) => void importFile(f)} />
           {importError && <ErrorMessage message={importError} />}
           {unseated.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100" data-testid="seat-shortage">

@@ -1,5 +1,6 @@
 import { readXlsxSheets, type XlsxCellValue } from "@/lib/excel/xlsx-simple-io";
-import { decodeCsvBytes, LEGACY_EXCEL_MESSAGE } from "@/lib/calendar/event-file";
+import { LEGACY_EXCEL_MESSAGE } from "@/lib/calendar/event-file";
+import { readCsvText } from "@/lib/utils/csv-encoding";
 import { parseCsv } from "@/lib/utils/csv";
 import type { LabelHonorificLine } from "@/lib/label/layout";
 
@@ -71,7 +72,7 @@ export async function readLabelImportFile(file: File): Promise<LabelImportData> 
   let rows: string[][];
   let sheetName: string | null = null;
   if (name.endsWith(".csv") || name.endsWith(".txt") || file.type === "text/csv" || file.type === "text/plain") {
-    const text = decodeCsvBytes(await file.arrayBuffer());
+    const { text } = await readCsvText(file);
     // タブ区切り（Excelからコピーして保存したテキスト）にも対応する
     rows = text.includes("\t") && !text.includes(",") ? text.replace(/\r\n?/g, "\n").split("\n").map((l) => l.split("\t")) : parseCsv(text);
   } else {

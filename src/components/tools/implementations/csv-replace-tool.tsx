@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -92,6 +93,7 @@ export function CsvReplaceTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {file && <CsvEncodingControl files={[file]} />}
 
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">

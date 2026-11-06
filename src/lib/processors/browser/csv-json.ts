@@ -1,5 +1,6 @@
 import { BrowserProcessor } from "../types";
 import { parseCsv, isBlankRow, serializeCsv } from "@/lib/utils/csv";
+import { readCsvText } from "@/lib/utils/csv-encoding";
 
 /**
  * CSV⇄JSON変換Processor（Phase 6）。
@@ -64,12 +65,8 @@ export function csvRowsToJsonObjects(rows: string[][]): Record<string, string>[]
 
 export class CsvToJsonProcessor extends BrowserProcessor<CsvToJsonInput, CsvToJsonOutput> {
   async process({ file }: CsvToJsonInput): Promise<CsvToJsonOutput> {
-    let text: string;
-    try {
-      text = await file.text();
-    } catch {
-      throw new Error("ファイルの読み込みに失敗しました");
-    }
+    // 文字コードは自動判定（画面で選び直した場合はその文字コード）
+    const { text } = await readCsvText(file);
     const rows = parseCsv(text).filter((row) => !isBlankRow(row));
     if (rows.length === 0) {
       throw new Error("CSVの内容が空です。ファイルを確認してください。");

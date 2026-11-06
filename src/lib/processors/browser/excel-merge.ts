@@ -9,7 +9,8 @@ import {
   type MergeResult,
   type MergeSource,
 } from "@/lib/excel/merge-tables";
-import { decodeCsvBytes, LEGACY_EXCEL_MESSAGE } from "@/lib/calendar/event-file";
+import { LEGACY_EXCEL_MESSAGE } from "@/lib/calendar/event-file";
+import { readCsvText } from "@/lib/utils/csv-encoding";
 import { csvRowsToBlob, parseCsv } from "@/lib/utils/csv";
 
 /**
@@ -62,12 +63,8 @@ async function readMergeFile(file: File): Promise<LoadedMergeFile> {
     const sheets = await readXlsxSheets(file);
     return { fileName: file.name, kind: "excel", sheets };
   }
-  let text: string;
-  try {
-    text = decodeCsvBytes(await file.arrayBuffer());
-  } catch {
-    throw new Error(`${file.name} の読み込みに失敗しました`);
-  }
+  // 文字コードは自動判定（画面で選び直した場合はその文字コード）
+  const { text } = await readCsvText(file);
   const rows: XlsxCellValue[][] = parseCsv(text);
   return { fileName: file.name, kind: "csv", sheets: [{ name: "CSV", rows }] };
 }

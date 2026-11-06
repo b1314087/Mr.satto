@@ -1,4 +1,5 @@
 import { parseCsv, isBlankRow } from "@/lib/utils/csv";
+import { readCsvText, type CsvEncodingChoice } from "@/lib/utils/csv-encoding";
 
 /**
  * CSV⇄Excel変換の中身（ロードマップC 工程3で csv-excel.ts から分けた）。
@@ -43,14 +44,12 @@ function cellToString(value: unknown): string {
   return String(value);
 }
 
-/** CSVファイルを読み、Excelファイルにする（画面側・Worker の中のどちらでも同じ処理） */
-export async function csvFileToXlsx(file: File): Promise<CsvToExcelOutput> {
-  let text: string;
-  try {
-    text = await file.text();
-  } catch {
-    throw new Error("ファイルの読み込みに失敗しました");
-  }
+/**
+ * CSVファイルを読み、Excelファイルにする（画面側・Worker の中のどちらでも同じ処理）。
+ * encoding は画面で選んだ文字コード（Worker の中では画面の選択を見られないため、呼び出し側から渡す）。
+ */
+export async function csvFileToXlsx(file: File, encoding?: CsvEncodingChoice): Promise<CsvToExcelOutput> {
+  const { text } = await readCsvText(file, encoding);
   const rows = parseCsv(text).filter((row) => !isBlankRow(row));
   if (rows.length === 0) {
     throw new Error("CSVの内容が空です。ファイルを確認してください。");

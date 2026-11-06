@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
@@ -167,6 +168,7 @@ export function ExcelMergeTool() {
       />
 
       {files.length > 0 && <ReorderableFileList files={files} onReorder={reorderFiles} onRemove={removeFile} />}
+      {files.length > 0 && <CsvEncodingControl files={files} />}
 
       {files.length > 0 && files.length < 2 && (
         <p className="text-xs text-neutral-500 dark:text-neutral-400">もう1つ以上、ファイルを追加してください。</p>

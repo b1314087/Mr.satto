@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useMemo, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
@@ -106,6 +107,9 @@ export function CsvMergeTool() {
 
       {files.length > 0 && (
         <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />
+      )}
+      {files.length > 0 && (
+        <CsvEncodingControl files={files} />
       )}
 
       {files.length > 0 && files.length < 2 && (

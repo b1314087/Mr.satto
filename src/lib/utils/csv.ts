@@ -1,3 +1,4 @@
+import { readCsvText } from "./csv-encoding";
 /**
  * CSV共通ユーティリティ（Phase 2-B）。
  *
@@ -126,9 +127,9 @@ export function csvRowsToBlob(rows: string[][], options?: { includeBom?: boolean
   return new Blob([text], { type: "text/csv;charset=utf-8" });
 }
 
-/** Fileを読み込んでCSVとしてパースする共通ヘルパー */
+/** Fileを読み込んでCSVとしてパースする共通ヘルパー（文字コードは自動判定。画面で選び直した場合はその文字コード） */
 export async function readCsvFile(file: File): Promise<string[][]> {
-  const text = await file.text();
+  const { text } = await readCsvText(file);
   return parseCsv(text);
 }
 

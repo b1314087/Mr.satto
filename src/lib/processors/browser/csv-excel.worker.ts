@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { csvFileToXlsx, xlsxFileToSheets } from "./csv-excel-core";
 import { serveWorker } from "@/lib/workers/worker-serve";
+import type { CsvEncodingChoice } from "@/lib/utils/csv-encoding";
 
 /**
  * 大きなCSV・Excelの変換を、画面とは別の処理（Web Worker）で行う（ロードマップC 工程3）。
@@ -8,9 +9,9 @@ import { serveWorker } from "@/lib/workers/worker-serve";
  * 結果（Excelファイル、またはシートごとの行）だけを返す。変換の方法は画面側とまったく同じ関数を使う。
  */
 
-export type ExcelWorkerRequest = { type: "csv-to-xlsx"; file: File } | { type: "xlsx-to-csv"; file: File };
+export type ExcelWorkerRequest = { type: "csv-to-xlsx"; file: File; encoding?: CsvEncodingChoice } | { type: "xlsx-to-csv"; file: File };
 
 serveWorker<ExcelWorkerRequest>(async (req) => {
-  if (req.type === "csv-to-xlsx") return { value: await csvFileToXlsx(req.file) };
+  if (req.type === "csv-to-xlsx") return { value: await csvFileToXlsx(req.file, req.encoding) };
   return { value: await xlsxFileToSheets(req.file) };
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useState } from "react";
 import { EnvelopePreview } from "./shared/envelope-preview";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -138,6 +139,8 @@ export function EnvelopeAddressTool() {
     rows: string[][];
   } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  /** 最後に読み込んだファイル（CSVの文字コードを選び直したら、同じファイルを読み込み直す） */
+  const [importedFile, setImportedFile] = useState<File | null>(null);
   const [colPostal, setColPostal] = useState<string>("");
   const [colAddress, setColAddress] = useState<string>("");
   const [colName, setColName] = useState<string>("");
@@ -177,6 +180,7 @@ export function EnvelopeAddressTool() {
   }
 
   async function handleImportFile(files: File[]) {
+    setImportedFile(files[0] ?? null);
     setImportError(null);
     setImportTable(null);
     try {
@@ -426,7 +430,8 @@ export function EnvelopeAddressTool() {
             onFilesSelected={handleImportFile}
             onError={setImportError}
           />
-          {importError && <ErrorMessage message={importError} />}
+          <CsvEncodingControl files={[importedFile]} onChange={(f) => void handleImportFile([f])} />
+        {importError && <ErrorMessage message={importError} />}
           {importTable && (
             <div className="flex flex-col gap-2">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">

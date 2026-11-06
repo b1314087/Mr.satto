@@ -1448,7 +1448,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       {
         question: "CSVからExcelに変換するときの文字コードや区切り文字は？",
-        answer: "UTF-8（BOMの有無どちらでも可）で保存された、カンマ区切りのCSVに対応しています。Shift_JISなど別の文字コードで保存されたCSVは、文字が化けることがあります。その場合は、UTF-8で保存し直してからお試しください。",
+        answer: "カンマ区切りのCSVに対応しています。文字コードは、UTF-8（BOMの有無どちらでも可）と、Excelの日本語CSVや銀行・会計ソフトに多いShift_JIS（Windows-31J）を自動で判定して読み込みます。判定がはっきりしないときや文字化けしているときは、画面で文字コードを選び直せます。",
       },
       {
         question: "アップロードしたファイルはサーバーに保存されますか？",
@@ -1470,7 +1470,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     faq: [
       {
         question: "日本語のCSVで文字化けしませんか？",
-        answer: "UTF-8で保存されたCSVを読み込みます。日本語を含むUTF-8のCSVはそのまま変換できます。Shift_JISなど別の文字コードで保存されたCSVは、文字が化けることがあるため、UTF-8で保存し直してからお試しください。",
+        answer: "UTF-8（BOM付きを含む）と、Excelの日本語CSVに多いShift_JIS（Windows-31J）のCSVを、文字コードを自動で判定して読み込みます。保存し直す必要はありません。判定がはっきりしないときや文字化けしているときは、画面で文字コードを選び直せます。",
       },
       { question: "アップロードしたCSVはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
     ],

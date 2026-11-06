@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
@@ -129,6 +130,8 @@ export function TicketVoucherTool() {
 
   const [table, setTable] = useState<ParsedTableFile | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  /** 最後に読み込んだファイル（CSVの文字コードを選び直したら、同じファイルを読み込み直す） */
+  const [importedFile, setImportedFile] = useState<File | null>(null);
   const [mapping, setMapping] = useState<Record<FieldKey, string>>({
     title: "",
     date: "",
@@ -160,6 +163,7 @@ export function TicketVoucherTool() {
   const validationError = validateTicketVoucherInput(form);
 
   async function handleImportFile(files: File[]) {
+    setImportedFile(files[0] ?? null);
     setImportError(null);
     setTable(null);
     try {
@@ -324,6 +328,7 @@ export function TicketVoucherTool() {
         <p className="text-sm font-medium">Excel/CSVから一括で読み込む（任意・1行=1枚）</p>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">列ごとに「タイトル」「金額」などを割り当てます。</p>
         <FileDropzone accept={ACCEPT} maxSizeMB={20} label="CSV/Excelをドラッグ&ドロップ" hint="またはタップして選択" onFilesSelected={handleImportFile} onError={setImportError} />
+        <CsvEncodingControl files={[importedFile]} onChange={(f) => void handleImportFile([f])} />
         {importError && <ErrorMessage message={importError} />}
         {table && (
           <div className="flex flex-col gap-3">

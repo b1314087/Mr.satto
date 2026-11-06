@@ -1,5 +1,6 @@
 "use client";
 
+import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
 import { useRef, useState } from "react";
 import { ErrorMessage } from "@/components/common/error-message";
 import { FilePickButton } from "@/components/common/file-pick-button";
@@ -25,7 +26,8 @@ import type { FiscalCalendar } from "@/lib/calendar/model";
 import type { CalendarEvent } from "@/lib/calendar/events";
 import { featureFlags } from "@/lib/config/features";
 import { MAX_IMAGES } from "@/lib/ai/calendar-assist";
-import { EVENT_FILE_ACCEPT, LEGACY_EXCEL_MESSAGE, UNSUPPORTED_FILE_MESSAGE, classifyEventFile, decodeCsvBytes, parseCsv } from "@/lib/calendar/event-file";
+import { EVENT_FILE_ACCEPT, LEGACY_EXCEL_MESSAGE, UNSUPPORTED_FILE_MESSAGE, classifyEventFile, parseCsv } from "@/lib/calendar/event-file";
+import { readCsvText } from "@/lib/utils/csv-encoding";
 import type { PreparedImage } from "@/lib/calendar/event-image";
 import { FiscalCalendarAiAssist } from "./fiscal-calendar-ai-assist";
 import { FiscalCalendarImageAssist, type ImageDraft } from "./fiscal-calendar-image-assist";
@@ -104,6 +106,8 @@ export function FiscalCalendarEventsImport({
 }) {
   /** 読み込み中の案内（空でなければ処理中。処理中は、新しいファイルを受け付けない＝二重実行の防止） */
   const [busy, setBusy] = useState<string | null>(null);
+  /** 読み込んだCSV（文字コードを選び直したら、同じファイルを読み込み直す） */
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   /** AIで読み取る前の画像（画像ファイル・スキャンPDF）。確認・同意のあとに読み取り、結果を確認してから反映する */
@@ -142,6 +146,7 @@ export function FiscalCalendarEventsImport({
     if (allImages && files.length > MAX_IMAGES) return setFileError(`画像は一度に${MAX_IMAGES}枚までです。`);
     const kind = kinds[0];
     const file = files[0];
+    setCsvFile(kind === "csv" ? file : null);
     if ((kind === "excel" || kind === "csv") && file.size > MAX_FILE_BYTES) {
       return setFileError("ファイルが大きすぎます（10MBまで）。予定の行だけを残したファイルにして選んでください。");
     }
@@ -164,7 +169,7 @@ export function FiscalCalendarEventsImport({
         onChange(stateForSheet(base, pickEventSheet(base.sheets)));
       } else if (kind === "csv") {
         setBusy("CSVを読み込んでいます…");
-        const rows = parseCsv(decodeCsvBytes(await file.arrayBuffer()));
+        const rows = parseCsv((await readCsvText(file)).text);
         if (stale()) return;
         if (rows.every((r) => r.every((c) => String(c).trim() === ""))) throw new Error("CSVにデータがありません。");
         setPending(null);
@@ -354,6 +359,7 @@ export function FiscalCalendarEventsImport({
             </Button>
           )}
         </div>
+        {!busy && <CsvEncodingControl files={[csvFile]} onChange={(f) => void handleFiles([f])} />}
         {/* 読み込み中は、画面全体を薄暗くした処理中のパネルに、中止のボタンを出す */}
         {busy && (
           <ProcessingStatus
