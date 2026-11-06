@@ -3,6 +3,7 @@ import type * as PdfLibTypes from "pdf-lib";
 import { adjustColor, type ChartAxis, type ChartDataLabels, type ChartGroup, type ChartLine, type ChartModel, type ChartSeries } from "@/lib/excel/ooxml-charts";
 import { formatExcelNumber, formatGeneralNumber } from "@/lib/excel/excel-number-format";
 import { excelSerialToDate, formatExcelDate } from "@/lib/excel/excel-date-format";
+import { planCategoryLabels, truncateText, type CategoryLabelPlan } from "@/lib/excel/chart-axis-labels";
 
 /**
  * Excelのグラフ(ooxml-charts.ts で読んだ ChartModel)を、PDFのページに図形と文字で描く。
@@ -305,6 +306,18 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): ChartDrawR
       const by = yTop - start * Math.sin(rad) + size * 0.35 * Math.cos(rad);
       text.draw(page, str, X0 + bx, Y0 - by, size, blackAndWhite ? "#000000" : color, bold, angleDeg);
     }
+  };
+
+  // 文字列の幅は、同じ文字列・大きさなら1回だけ測る(項目名が数千ある分類の軸でも、測り直さない)
+  const widthCache = new Map<string, number>();
+  const tw = (str: string, size: number): number => {
+    const key = `${size}\u0000${str}`;
+    let w = widthCache.get(key);
+    if (w === undefined) {
+      w = text.width(str, size);
+      widthCache.set(key, w);
+    }
+    return w;
   };
 
   const baseSize = model.text.sizePt ?? 9;
@@ -679,7 +692,22 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): ChartDrawR
   const dateLabelOf = (k: number) => (dateSlots ? formatCategory(dateSlots.serialOfSlot(k), dateSlots.labelFmt) : "");
   const dateLabelSamples = dateSlots ? [0, Math.floor(dateSlots.count / 2), dateSlots.count - 1].map(dateLabelOf) : [];
   const catLabels = isScatter ? xLabels : dateSlots ? dateLabelSamples : categories;
-  const catMaxW = catVisible ? Math.max(0, ...catLabels.map((t) => text.width(t, catTickSize))) : 0;
+  const catMaxW = catVisible ? Math.max(0, ...catLabels.map((t) => tw(t, catTickSize))) : 0;
+  // 分類の項目名の並べ方(横書き・折り返し・斜め・間引き)。散布図(数値の目盛り)と日付の軸は別に扱う
+  const usesCatPlan = catVisible && !isScatter && !dateSlots;
+  const catSlotCount = Math.max(1, catCount);
+  const makeCatPlan = (axisLen: number, maxExtent: number): CategoryLabelPlan =>
+    planCategoryLabels({
+      labels: categories,
+      slotLen: axisLen / catSlotCount,
+      size: catTickSize,
+      width: (t) => tw(t, catTickSize),
+      maxExtent,
+      axis: horizontalBars ? "y" : "x",
+      explicitSkip: catAxis?.labelSkip ?? null,
+      explicitAngle: catAxis?.labelAngle ?? null,
+    });
+  let catPlan: CategoryLabelPlan | null = null;
 
   // 分類の軸が値の軸と交わる値(Excelの「横軸との交点」)。棒はこの値から伸び、分類の軸の線もここに引く
   const crossValueOn = (sc: Scale, a: ChartAxis | undefined): number => {
@@ -707,35 +735,40 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): ChartDrawR
               : "axis";
 
   let plot: { x: number; y: number; w: number; h: number };
-  let catRotate = 0;
   if (model.plotLayout) {
     plot = { x: model.plotLayout.x * W, y: model.plotLayout.y * H, w: model.plotLayout.w * W, h: model.plotLayout.h * H };
+    if (usesCatPlan) {
+      catPlan = horizontalBars
+        ? makeCatPlan(plot.h, Math.max(catTickSize * 2, plot.x - 6 * s))
+        : makeCatPlan(plot.w, Math.max(catTickSize * 1.6, H - (plot.y + plot.h) - 4 * s));
+    }
   } else {
     let pl = left;
     let pr = right;
     let pt = top + 4 * s;
     let pb = bottom;
     if (horizontalBars) {
-      // 横棒: 分類は左(軸が右端で交わるときは右)、値は下
-      if (catVisible && catLabelWhere === "low") pl += Math.min((right - left) * 0.4, catMaxW) + 5 * s;
-      if (catVisible && catLabelWhere === "high") pr -= Math.min((right - left) * 0.4, catMaxW) + 5 * s;
+      // 横棒: 値は下、分類は左(軸が右端で交わるときは右)。項目名の幅は、グラフの幅の4割まで(長ければ折り返し・「…」)
       if (valVisible(primaryAxis)) pb -= tickSize(primaryAxis) * 1.5;
       if (secondaryAxis && valVisible(secondaryAxis)) pt += tickSize(secondaryAxis) * 1.5;
-      if (catAxis?.title) pl += titleSize(catAxis) * 1.5;
       if (primaryAxis?.title) pb -= titleSize(primaryAxis) * 1.5;
+      if (catAxis?.title) pl += titleSize(catAxis) * 1.5;
+      const catW = usesCatPlan ? (catPlan = makeCatPlan(pb - pt, (right - left) * 0.4)).extent : Math.min((right - left) * 0.4, catMaxW);
+      if (catVisible && catLabelWhere === "low") pl += catW + 5 * s;
+      if (catVisible && catLabelWhere === "high") pr -= catW + 5 * s;
     } else {
       if (valVisible(primaryAxis)) pl += primaryTickW + 5 * s;
       if (secondaryAxis && valVisible(secondaryAxis)) pr -= secondaryTickW + 5 * s;
       if (primaryAxis?.title) pl += titleSize(primaryAxis) * 1.5;
       if (secondaryAxis?.title) pr -= titleSize(secondaryAxis) * 1.5;
+      if (catAxis?.title) pb -= titleSize(catAxis) * 1.5;
       if (catVisible) {
-        const slot = (pr - pl) / Math.max(1, catLabels.length);
-        if (!isScatter && !dateSlots && catMaxW > slot * 0.95) catRotate = 45;
-        const need = catRotate ? Math.min((bottom - top) * 0.4, catMaxW * 0.72 + catTickSize) + 4 * s : catTickSize * 1.6;
+        // 項目名の領域は、グラフの高さの35%まで(それより長い項目名は「…」で切る)
+        if (usesCatPlan) catPlan = makeCatPlan(pr - pl, Math.max(catTickSize * 1.6, (bottom - top) * 0.35));
+        const need = catPlan ? catPlan.extent + 3 * s : catTickSize * 1.6;
         if (catLabelWhere === "high") pt += need;
         else if (catLabelWhere === "low") pb -= need;
       }
-      if (catAxis?.title) pb -= titleSize(catAxis) * 1.5;
     }
     plot = { x: pl, y: pt, w: Math.max(10, pr - pl), h: Math.max(10, pb - pt) };
   }
@@ -1040,12 +1073,13 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): ChartDrawR
       if (dateSlots) {
         const step = dateLabelStep(size * 1.15);
         for (let k = 0; k < dateSlots.count; k += step) label(dateLabelOf(k), lx, slotCenter(k) - size / 2, size, color, false, align);
-      } else {
-        const step = Math.max(1, Math.ceil((size * 1.15) / Math.max(0.1, slotLen)));
-        categories.forEach((c, i) => {
-          if (i % step !== 0) return;
-          label(c, lx, catCenter(i) - size / 2, size, color, false, align);
-        });
+      } else if (catPlan) {
+        const lh = catPlan.lineHeight;
+        for (const i of catPlan.shown) {
+          const lines = catPlan.lines.get(i) ?? [categories[i] ?? ""];
+          const y0 = catCenter(i) - (lines.length * lh) / 2 + (lh - size) / 2;
+          lines.forEach((ln, k) => label(ln, lx, y0 + k * lh, size, color, false, align));
+        }
       }
     } else {
       // 文字の位置: low=下端、high=上端の外側、axis=軸の線のすぐ下
@@ -1055,13 +1089,32 @@ export function drawChart(model: ChartModel, opts: ChartDrawOptions): ChartDrawR
         const widest = Math.max(...dateLabelSamples.map((t) => text.width(t, size)));
         const step = dateLabelStep(widest * 1.2);
         for (let k = 0; k < dateSlots.count; k += step) label(dateLabelOf(k), slotCenter(k), ly, size, color, false, "center");
-      } else {
-        const step = catRotate ? Math.max(1, Math.ceil((size * 1.3) / Math.max(0.1, slotLen))) : 1;
-        categories.forEach((c, i) => {
-          if (i % step !== 0) return;
-          if (catRotate) label(c, catCenter(i) + size * 0.3, ly, size, color, false, "right", catRotate);
-          else label(c, catCenter(i), ly, size, color, false, "center");
-        });
+      } else if (catPlan) {
+        const lh = catPlan.lineHeight;
+        for (const i of catPlan.shown) {
+          const lines = catPlan.lines.get(i) ?? [categories[i] ?? ""];
+          const cx = catCenter(i);
+          if (catPlan.mode === "rotate") {
+            const angle = catPlan.angle;
+            const rad = (Math.abs(angle) * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            // 右上がり(正の角度)は、文字の終わりを目盛りの位置に置き、左下へ伸ばす。右下がり(負の角度)は、文字の始めを置き、右下へ伸ばす。
+            // グラフの枠の外へはみ出す分は「…」で切る(ページの端で文字が切れないように)
+            const room = angle >= 0 ? cx / Math.max(0.05, cos) : (W - cx) / Math.max(0.05, cos);
+            const t = cos > 0.05 ? truncateText(lines[0], Math.max(size, room - size * 0.3), (str) => tw(str, size)) : lines[0];
+            if (catLabelWhere === "high") label(t, cx - size * 0.3, ly + size, size, color, false, angle >= 0 ? "left" : "right", angle);
+            else if (angle >= 0) label(t, cx + size * 0.3, ly, size, color, false, "right", angle);
+            else label(t, cx - size * 0.3, ly, size, color, false, "left", angle);
+          } else {
+            // 横書き・折り返し：グラフの枠からはみ出さないよう、端の項目は内側へ寄せる
+            const yStart = catLabelWhere === "high" ? ly - (lines.length - 1) * lh : ly;
+            lines.forEach((ln, k) => {
+              const w = tw(ln, size);
+              const x = Math.min(W - w / 2 - 1 * s, Math.max(w / 2 + 1 * s, cx));
+              label(ln, x, yStart + k * lh, size, color, false, "center");
+            });
+          }
+        }
       }
     }
   }

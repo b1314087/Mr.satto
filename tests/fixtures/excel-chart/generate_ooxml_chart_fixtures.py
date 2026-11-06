@@ -32,6 +32,8 @@ def attr(v: str) -> str:
     return escape(v, {'"': "&quot;"})
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "static", "excel-chart-ooxml")
+# 分類の軸の項目名の表示(間引き・折り返し・回転)の検証用
+OUT_LABELS = os.path.join(os.path.dirname(__file__), "..", "static", "excel-chart-labels")
 
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -216,21 +218,23 @@ def dlbls(show_val=False, pos=None, num_fmt=None, extra="", show_pct=False, show
     )
 
 
-def cat_ax(ax_id, cross, *, pos="b", delete=False, title="", num_fmt="General", linked=True, crosses="autoZero", crosses_at=None, tick_lbl="nextTo", orientation="minMax", date=False, base_unit="days", major_unit=None, major_time_unit=None, extra_scaling="") -> str:
+def cat_ax(ax_id, cross, *, pos="b", delete=False, title="", num_fmt="General", linked=True, crosses="autoZero", crosses_at=None, tick_lbl="nextTo", orientation="minMax", date=False, base_unit="days", major_unit=None, major_time_unit=None, extra_scaling="", label_skip=None, label_rot=None) -> str:
     tag = "c:dateAx" if date else "c:catAx"
     cr = f'<c:crossesAt val="{crosses_at}"/>' if crosses_at is not None else f'<c:crosses val="{crosses}"/>'
     tail = (
         f'<c:auto val="1"/><c:lblOffset val="100"/><c:baseTimeUnit val="{base_unit}"/>'
         + (f'<c:majorUnit val="{major_unit}"/><c:majorTimeUnit val="{major_time_unit}"/>' if major_unit else "")
         if date
-        else '<c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/>'
+        else '<c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/>'
+        + (f'<c:tickLblSkip val="{label_skip}"/><c:tickMarkSkip val="{label_skip}"/>' if label_skip else "")
+        + '<c:noMultiLvlLbl val="0"/>'
     )
     return (
         f'<{tag}><c:axId val="{ax_id}"/><c:scaling><c:orientation val="{orientation}"/>{extra_scaling}</c:scaling><c:delete val="{int(delete)}"/>'
         f'<c:axPos val="{pos}"/>{title}<c:numFmt formatCode="{attr(num_fmt)}" sourceLinked="{int(linked)}"/>'
         f'<c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="{tick_lbl}"/>'
         f'<c:spPr><a:noFill/><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr">{LINE_GRAY}<a:round/></a:ln><a:effectLst/></c:spPr>'
-        f'{txpr(900)}<c:crossAx val="{cross}"/>{cr}{tail}</{tag}>'
+        f'{txpr(900, rot=label_rot)}<c:crossAx val="{cross}"/>{cr}{tail}</{tag}>'
     )
 
 
@@ -1157,14 +1161,198 @@ CASES = [
 ]
 
 
+# ───────────────────────── 分類の軸の項目名の表示の検証ケース ─────────────────────────
+
+
+def label_sheet(b: Book, cats: list, series: list[tuple[str, list]], name="Sheet1", cat_style=ST_GENERAL) -> Sheet:
+    s = b.sheet(name)
+    s.put(0, 0, "項目")
+    for j, (nm, vals) in enumerate(series):
+        s.put(0, j + 1, nm)
+        for i, v in enumerate(vals):
+            s.put(i + 1, j + 1, v)
+    for i, c in enumerate(cats):
+        s.put(i + 1, 0, c, cat_style)
+    return s
+
+
+def label_series(kind: str, sheet: str, cats: list, series, *, cat_num=False, cat_fmt="General", colors=("accent1", "accent2", "accent6")):
+    n = len(cats)
+    out = []
+    for j, (nm, vals) in enumerate(series):
+        col = colors[j % len(colors)]
+        common = dict(cat_num=cat_num, cat_fmt=cat_fmt)
+        if kind == "bar":
+            out.append(ser("bar", j, abs_range(sheet, 0, j + 1, 0, j + 1), nm, abs_range(sheet, 1, 0, n, 0), list(cats), abs_range(sheet, 1, j + 1, n, j + 1), list(vals), sppr=sppr_fill(solid(col)), **common))
+        else:
+            out.append(ser("line", j, abs_range(sheet, 0, j + 1, 0, j + 1), nm, abs_range(sheet, 1, 0, n, 0), list(cats), abs_range(sheet, 1, j + 1, n, j + 1), list(vals), sppr=sppr_line(solid(col), w=19050), marker=marker_xml("none"), **common))
+    return out
+
+
+def wave(n: int, k: int = 0) -> list:
+    import math
+
+    return [round(100 + 60 * math.sin((i + k * 7) / max(3, n / 12)) + (i * 13 + k * 5) % 17, 1) for i in range(n)]
+
+
+def simple_chart(b: Book, kind: str, cats: list, title: str, *, anchor=None, bar_dir="col", cat_ax_kw=None, leg=None, n_series=1, cat_num=False, cat_fmt="General", cat_style=ST_GENERAL):
+    series = [(["売上", "費用", "利益"][k], wave(len(cats), k)) for k in range(n_series)]
+    s = label_sheet(b, cats, series, cat_style=cat_style)
+    sers = label_series(kind, "Sheet1", cats, series, cat_num=cat_num, cat_fmt=cat_fmt)
+    group = bar_group(sers, bar_dir=bar_dir) if kind == "bar" else line_group(sers, marker=False)
+    pos_c, pos_v = ("l", "b") if bar_dir == "bar" else ("b", "l")
+    plot = group + cat_ax(500001, 500002, pos=pos_c, **(cat_ax_kw or {})) + val_ax(500002, 500001, pos=pos_v)
+    s.chart(anchor or two_cell(3, 1, 13, 20), chart_space(plot, title=rich_title(title), leg=leg))
+    return s
+
+
+def case_y01(b):
+    """項目数10(縦棒)：全部を横書きで表示できる"""
+    simple_chart(b, "bar", [f"{i + 1}月" for i in range(10)], "項目数10")
+
+
+def case_y02(b):
+    """項目数30(縦棒)：横書きでは入らない"""
+    simple_chart(b, "bar", [f"商品{i + 1:02d}" for i in range(30)], "項目数30")
+
+
+def case_y03(b):
+    """項目数100(折れ線)"""
+    simple_chart(b, "line", [f"No.{i + 1:03d}" for i in range(100)], "項目数100")
+
+
+def case_y04(b):
+    """項目数500(折れ線)"""
+    simple_chart(b, "line", [f"ID-{i + 1:04d}" for i in range(500)], "項目数500")
+
+
+def case_y05(b):
+    """項目数3000(折れ線・分類は数値)"""
+    n = 3000
+    simple_chart(b, "line", list(range(1, n + 1)), "項目数3000", cat_num=True)
+
+
+LONG_JA = ["北海道・東北地方の営業所（札幌・仙台）", "関東地方の本社営業部", "中部地方の営業所（名古屋）", "近畿地方の営業所（大阪・京都・神戸）", "中国・四国地方の営業所", "九州・沖縄地方の営業所（福岡）"]
+
+
+def case_y06(b):
+    """長い日本語の項目名(縦棒・6項目)"""
+    simple_chart(b, "bar", LONG_JA, "長い日本語の項目名", n_series=2, leg=legend("b"))
+
+
+def case_y07(b):
+    """英数字と日本語が混ざった項目名(縦棒)"""
+    cats = ["iPhone 15 Pro（256GB）", "Galaxy S24 Ultra 512GB", "Pixel 8a（ベーシック）", "Xperia 1 VI 限定モデル", "AQUOS sense8 SH-54D"]
+    simple_chart(b, "bar", cats, "英数字と日本語の混在")
+
+
+def case_y08(b):
+    """日付の横軸(折れ線・90日分の日付)"""
+    dates = [date_serial(2026, 1, 1) + i for i in range(90)]
+    simple_chart(b, "line", dates, "日付の横軸", cat_num=True, cat_fmt="yyyy/m/d", cat_style=ST_DATE)
+
+
+def case_y09(b):
+    """長さがばらばらな項目名(縦棒)"""
+    cats = ["A", "東京", "神奈川県横浜市", "B社", "株式会社サンプル商事 大阪支店", "C", "千葉", "埼玉県さいたま市大宮区"]
+    simple_chart(b, "bar", cats, "長さが不均一な項目名")
+
+
+def case_y10(b):
+    """横棒：長い日本語の項目名(8項目)と、項目数40"""
+    s = simple_chart(b, "bar", LONG_JA + ["本社（東京都千代田区丸の内）", "海外事業部"], "横棒・長い項目名", bar_dir="bar", anchor=two_cell(3, 1, 13, 20))
+    del s
+    # 2つ目のグラフ(同じシート、項目数40)
+    cats = [f"支店{i + 1:02d}" for i in range(40)]
+    sh = b.sheets[0]
+    for i, c in enumerate(cats):
+        sh.put(i + 1, 20, c)
+        sh.put(i + 1, 21, wave(40)[i])
+    sh.put(0, 20, "支店")
+    sh.put(0, 21, "件数")
+    sers = [ser("bar", 0, abs_range("Sheet1", 0, 21, 0, 21), "件数", abs_range("Sheet1", 1, 20, 40, 20), cats, abs_range("Sheet1", 1, 21, 40, 21), wave(40), sppr=sppr_fill(solid("accent2")))]
+    plot = bar_group(sers, bar_dir="bar", gap=50) + cat_ax(500001, 500002, pos="l") + val_ax(500002, 500001, pos="b")
+    sh.chart(two_cell(3, 22, 13, 48), chart_space(plot, title=rich_title("横棒・項目数40")))
+
+
+def case_y11(b):
+    """折れ線：36か月(2024年1月〜)"""
+    cats = [f"{2024 + i // 12}年{i % 12 + 1}月" for i in range(36)]
+    simple_chart(b, "line", cats, "折れ線・36か月", n_series=2, leg=legend("b"))
+
+
+def case_y12(b):
+    """複合(縦棒＋折れ線)：20項目の長めの項目名"""
+    cats = [f"{2021 + i // 4}年度 第{i % 4 + 1}四半期" for i in range(20)]
+    series = [("売上", wave(20)), ("利益率", [round(0.1 + (i % 7) * 0.02, 2) for i in range(20)])]
+    s = label_sheet(b, cats, series)
+    bars_ = label_series("bar", "Sheet1", cats, series[:1])
+    line = label_series("line", "Sheet1", cats, series[1:])
+    line = [x.replace('<c:idx val="0"/><c:order val="0"/>', '<c:idx val="1"/><c:order val="1"/>') for x in line]
+    plot = (
+        bar_group(bars_, ax=(500001, 500002))
+        + line_group(line, ax=(500003, 500004), marker=False)
+        + cat_ax(500001, 500002)
+        + val_ax(500002, 500001)
+        + cat_ax(500003, 500004, delete=True)
+        + val_ax(500004, 500003, pos="r", crosses="max", gridlines=False, num_fmt="0%", linked=False)
+    )
+    s.chart(two_cell(3, 1, 14, 22), chart_space(plot, title=rich_title("複合・20項目"), leg=legend("b")))
+
+
+def case_y13(b):
+    """凡例・タイトル・軸のタイトルがすべてある縦棒(12項目・長めの項目名)"""
+    cats = [f"{m}月度（第{(m - 1) // 3 + 1}四半期）" for m in range(1, 13)]
+    series = [("売上", wave(12)), ("費用", wave(12, 1))]
+    s = label_sheet(b, cats, series)
+    sers = label_series("bar", "Sheet1", cats, series)
+    plot = bar_group(sers) + cat_ax(500001, 500002, title=ax_title("月度")) + val_ax(500002, 500001, title=ax_title("金額（千円）", rot=-5400000))
+    s.chart(two_cell(3, 1, 13, 22), chart_space(plot, title=rich_title("月度別の売上と費用"), leg=legend("b")))
+
+
+def case_y14(b):
+    """Excel側の指定：①間隔3・角度-45度(右上がり)／②縦書き(90度)／③角度0度(横書き)・間隔2"""
+    cats = [f"商品{i + 1:02d}" for i in range(30)]
+    series = [("売上", wave(30))]
+    s = label_sheet(b, cats, series)
+    specs = [
+        ("間隔3・45度", dict(label_skip=3, label_rot="-2700000"), two_cell(3, 1, 12, 16)),
+        ("縦書き90度", dict(label_rot="-5400000"), two_cell(3, 17, 12, 32)),
+        ("横書き・間隔2", dict(label_skip=2, label_rot="0"), two_cell(3, 33, 12, 48)),
+    ]
+    for title, kw, anchor in specs:
+        sers = label_series("bar", "Sheet1", cats, series)
+        plot = bar_group(sers) + cat_ax(500001, 500002, **kw) + val_ax(500002, 500001)
+        s.chart(anchor, chart_space(plot, title=rich_title(title, sz=1200)))
+
+
+LABEL_CASES = [
+    ("y01-count-10", case_y01),
+    ("y02-count-30", case_y02),
+    ("y03-count-100", case_y03),
+    ("y04-count-500", case_y04),
+    ("y05-count-3000", case_y05),
+    ("y06-long-japanese", case_y06),
+    ("y07-mixed-alnum-japanese", case_y07),
+    ("y08-date-axis", case_y08),
+    ("y09-uneven-length", case_y09),
+    ("y10-horizontal-bar", case_y10),
+    ("y11-line-36-months", case_y11),
+    ("y12-combo", case_y12),
+    ("y13-title-legend-axis-titles", case_y13),
+    ("y14-explicit-skip-rotation", case_y14),
+]
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
+    os.makedirs(OUT_LABELS, exist_ok=True)
     bad = 0
-    for name, fn in CASES:
+    for out_dir, name, fn in [(OUT, n, f) for n, f in CASES] + [(OUT_LABELS, n, f) for n, f in LABEL_CASES]:
         _uid[0] = 0
         b = Book()
         fn(b)
-        path = os.path.join(OUT, f"{name}.xlsx")
+        path = os.path.join(out_dir, f"{name}.xlsx")
         b.save(path)
         problems = validate(path)
         print(f"{name}.xlsx  {'OK' if not problems else '問題あり'}")

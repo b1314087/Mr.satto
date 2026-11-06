@@ -139,6 +139,10 @@ export interface ChartAxis {
   auto: boolean;
   /** 日付の軸の基本単位(baseTimeUnit) */
   baseTimeUnit: "days" | "months" | "years" | null;
+  /** 目盛りの文字の間隔の指定(tickLblSkip。2なら1つおき)。null=自動 */
+  labelSkip: number | null;
+  /** 目盛りの文字の角度の指定(反時計回りの度。txPr の bodyPr@rot / vert)。null=自動 */
+  labelAngle: number | null;
   /** 値の軸の設定: between=分類の間(目盛りの間に点を置く)、midCat=目盛りの上。nullは種類ごとの既定 */
   crossBetween: "between" | "midCat" | null;
 }
@@ -392,6 +396,24 @@ function readTextStyle(container: Element | undefined, theme: string[] | null): 
   return style;
 }
 
+/**
+ * 軸の目盛りの文字の角度の指定(反時計回りの度)。bodyPr@rot は 1/60000 度・時計回りが正。
+ * Excelは「自動」のとき rot="-60000000" を書くので、それは指定なし(null)として扱う。
+ * vert="vert"/"eaVert"/"wordArtVert"(縦書き)は、上から下へ読む向き(時計回りに90度)として扱う
+ */
+function readLabelAngle(bodyPr: Element | undefined): number | null {
+  if (!bodyPr) return null;
+  const vert = bodyPr.getAttribute("vert");
+  if (vert === "vert" || vert === "eaVert" || vert === "wordArtVert" || vert === "wordArtVertRtl") return -90;
+  if (vert === "vert270") return 90;
+  const rot = bodyPr.getAttribute("rot");
+  if (rot === null) return null;
+  const v = Number(rot);
+  if (!Number.isFinite(v) || v <= -60000000 || v >= 60000000) return null;
+  const deg = -v / 60000;
+  return Math.max(-90, Math.min(90, Math.round(deg * 100) / 100));
+}
+
 function richText(tx: Element | undefined): string | null {
   const rich = child(tx, "rich");
   if (!rich) return null;
@@ -577,6 +599,7 @@ function readAxis(el: Element, kind: ChartAxis["kind"], theme: string[] | null, 
   if (logBase) unsupported.add("対数目盛り");
   const crossesVal = valOf(el, "crosses");
   const baseUnit = valOf(el, "baseTimeUnit");
+  const skip = numVal(el, "tickLblSkip");
   return {
     id: valOf(el, "axId") ?? "",
     kind,
@@ -600,6 +623,8 @@ function readAxis(el: Element, kind: ChartAxis["kind"], theme: string[] | null, 
     crossesAt: numVal(el, "crossesAt"),
     auto: boolVal(el, "auto", kind === "cat"),
     baseTimeUnit: baseUnit === "days" || baseUnit === "months" || baseUnit === "years" ? baseUnit : null,
+    labelSkip: skip !== null && skip >= 1 ? Math.round(skip) : null,
+    labelAngle: readLabelAngle(child(child(el, "txPr"), "bodyPr")),
     crossBetween: valOf(el, "crossBetween") === "midCat" ? "midCat" : valOf(el, "crossBetween") === "between" ? "between" : null,
   };
 }
