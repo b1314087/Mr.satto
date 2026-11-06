@@ -307,12 +307,14 @@ test("複数の印刷範囲は別々のページに出力される", async ({ pa
   expect(pdfText(pdf)).not.toContain("OUTSIDE");
 });
 
-test("B4の用紙サイズに対応し、未対応の用紙番号は警告してA4で出力する", async ({ page }) => {
+test("B4(JIS)の用紙サイズに対応し、未対応の用紙番号は警告してA4で出力する", async ({ page }) => {
   test.setTimeout(150_000);
   const rows = cellsXml({ 1: { A: { v: "paper" } } });
   const b4 = await convert(page, buildXlsx({ sheets: [{ name: "B4", xml: sheetXml({ rows, pageSetup: '<pageSetup paperSize="12" orientation="portrait"/>' }) }] }));
   const size = execFileSync("pdfinfo", [b4.pdf]).toString().match(/Page size:\s+([\d.]+) x ([\d.]+)/)!;
-  expect(Math.abs(Number(size[1]) - 708.66)).toBeLessThan(2);
+  // Excelの用紙番号12「B4」は日本のJIS規格(257×364mm = 728.5×1031.8pt)。ISO規格(250×353mm)ではない
+  expect(Math.abs(Number(size[1]) - 728.5)).toBeLessThan(2);
+  expect(Math.abs(Number(size[2]) - 1031.81)).toBeLessThan(2);
   const odd = await convert(page, buildXlsx({ sheets: [{ name: "奇数", xml: sheetXml({ rows, pageSetup: '<pageSetup paperSize="30" orientation="portrait"/>' }) }] }));
   expect(odd.pageText).toContain("未対応");
 });

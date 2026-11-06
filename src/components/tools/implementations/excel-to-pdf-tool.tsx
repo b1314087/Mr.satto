@@ -15,7 +15,7 @@ import {
   type FitOption,
   type RawExcelSheet,
 } from "@/lib/processors/browser/excel-to-pdf";
-import { readHiddenSheetNames } from "@/lib/excel/ooxml-page-settings";
+import { readHiddenSheetNames, readSheetPrintSummaries, type SheetPrintSummary } from "@/lib/excel/ooxml-page-settings";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import {
   PreviewGrid,
@@ -40,6 +40,34 @@ import { downloadBlob, stripExtension } from "@/lib/utils/format";
  * フォールバックする。色・罫線・結合セル・条件付き書式・画像と単純な図形も反映する。
  * 取得できないもの（チャート・複雑な図形・数式の再計算結果）は無理に再現しない。
  */
+/** 用紙の表示名（画面用） */
+const PAPER_LABELS: Record<string, string> = {
+  B4: "B4(JIS)",
+  B5: "B5(JIS)",
+  B6: "B6(JIS)",
+  "B4-ISO": "B4(ISO)",
+  "B5-ISO": "B5(ISO)",
+  Postcard: "はがき",
+  DoublePostcard: "往復はがき",
+};
+
+/** シートの印刷設定の要約を、短い文にする（例:「A4・横・横1ページに収める・印刷範囲あり」） */
+function describePrintSummary(summary: SheetPrintSummary): string {
+  const parts: string[] = [];
+  if (summary.unsupportedPaperCode !== null) parts.push(`用紙番号${summary.unsupportedPaperCode}（未対応のためA4）`);
+  else parts.push(summary.paperSize ? (PAPER_LABELS[summary.paperSize] ?? summary.paperSize) : "A4");
+  parts.push(summary.orientation === "landscape" ? "横" : "縦");
+  const { fit } = summary;
+  if (fit.kind === "fit") {
+    if (fit.width >= 1 && fit.height >= 1) parts.push(fit.width === 1 && fit.height === 1 ? "1ページに収める" : `横${fit.width}×縦${fit.height}ページに収める`);
+    else if (fit.width >= 1) parts.push(`横${fit.width}ページに収める`);
+    else if (fit.height >= 1) parts.push(`縦${fit.height}ページに収める`);
+  } else if (fit.kind === "scale") parts.push(`${fit.percent}%`);
+  if (summary.hasPrintArea) parts.push("印刷範囲あり");
+  if (summary.hidden) parts.push("非表示のシート");
+  return `— ${parts.join("・")}`;
+}
+
 export function ExcelToPdfTool() {
   const [file, setFile] = useState<File | null>(null);
   const [sheets, setSheets] = useState<RawExcelSheet[] | null>(null);
@@ -51,6 +79,8 @@ export function ExcelToPdfTool() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExcelToPdfOutput | null>(null);
   const [loadingSheets, setLoadingSheets] = useState(false);
+  /** シートごとの印刷設定の要約(用紙・向き・拡大縮小・印刷範囲)。読めないときは空 */
+  const [printSummaries, setPrintSummaries] = useState<Map<string, SheetPrintSummary>>(new Map());
 
   async function handleSelect(files: File[]) {
     const selected = files[0];
@@ -60,6 +90,7 @@ export function ExcelToPdfTool() {
     setError(null);
     setSheets(null);
     setSelectedSheets(new Set());
+    setPrintSummaries(new Map());
     setLoadingSheets(true);
     try {
       const readSheets = await readExcelSheets(selected);
@@ -71,6 +102,8 @@ export function ExcelToPdfTool() {
       } catch {
         hidden = new Set();
       }
+      // 用紙・向きなどの表示用。読めなくても変換はできるので、失敗しても何も出さないだけにする
+      setPrintSummaries(await readSheetPrintSummaries(selected).catch(() => new Map<string, SheetPrintSummary>()));
       const visible = readSheets.filter((s) => !hidden.has(s.name));
       setSelectedSheets(new Set((visible.length > 0 ? visible : readSheets).map((s) => s.name)));
     } catch (e) {
@@ -162,6 +195,11 @@ export function ExcelToPdfTool() {
                   />
                   {s.name}
                   <span className="text-xs text-neutral-400">({s.rows.length}行)</span>
+                  {printSummaries.get(s.name) && (
+                    <span className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="excel-sheet-print-summary">
+                      {describePrintSummary(printSummaries.get(s.name)!)}
+                    </span>
+                  )}
                 </label>
               ))}
             </div>

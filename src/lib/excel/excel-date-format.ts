@@ -108,6 +108,20 @@ function eraFor(date: Date): { era: (typeof ERAS)[number]; year: number } | null
   return null;
 }
 
+/**
+ * Excelのシリアル値(1900年1月1日を1とする日数。小数は時刻)を、UTC基準のDateにする(read-excel-fileと同じ基準)。
+ * - 1900年基準: Excelは1900年を閏年として扱う(存在しない1900/2/29=60)ため、60未満は1日ずらす。
+ * - 1904年基準(date1904): 1904年1月1日を0とする。
+ * 日付の書式なのに、読み込みライブラリが数値のまま返したセル(例: 和暦の書式「[$-ja-JP]ggge年…」)に使う。
+ */
+export function excelSerialToDate(serial: number, date1904 = false): Date | null {
+  if (!Number.isFinite(serial) || serial < 0) return null;
+  const DAY = 86_400_000;
+  if (date1904) return new Date(Date.UTC(1904, 0, 1) + Math.round(serial * DAY));
+  const days = serial < 60 ? serial + 1 : serial;
+  return new Date(Date.UTC(1899, 11, 31) + Math.round((days - 1) * DAY));
+}
+
 /** 日付値が時刻成分(0時0分0秒以外)を持つか。UTCで判定する(read-excel-fileの仕様) */
 export function hasTimePart(date: Date): boolean {
   return date.getUTCHours() !== 0 || date.getUTCMinutes() !== 0 || date.getUTCSeconds() !== 0;
@@ -117,7 +131,11 @@ export function hasTimePart(date: Date): boolean {
  * Dateを、Excelの書式コードに従った文字列へ整形する。codeがnullのときは、日付だけなら
  * 日本語環境のExcelの既定表示(yyyy/m/d)、時刻成分があれば「yyyy/m/d h:mm」とする。
  */
-export function formatExcelDate(date: Date, code: string | null): string {
+export function formatExcelDate(rawDate: Date, code: string | null): string {
+  // Excelの日時は「日数の小数」で保存されるため、14:30 が 14:29:59.999… のように、ごくわずかに手前の値で
+  // 読み込まれることがある。そのまま切り捨てると「14:29」と1分ずれる。Excelと同じく、まず秒単位に丸めてから表示する
+  // （この整形は小数点以下の秒を表示しないため、秒に丸めて差は出ない）。
+  const date = new Date(Math.round(rawDate.getTime() / 1000) * 1000);
   const effectiveCode = code ?? (hasTimePart(date) ? "yyyy/m/d h:mm" : "yyyy/m/d");
   const tokens = tokenize(effectiveCode);
   const hasAmPm = tokens.some((t) => t.kind === "ampm");

@@ -7,12 +7,13 @@ import {
   type BorderLineStyle,
   type BorderSideStyle,
   type CellRangeRef,
+  type GradientFillSpec,
   type HeaderFooterSections,
   type SheetPageSettings,
   type SheetPicture,
 } from "@/lib/excel/ooxml-page-settings";
 import { evaluateConditionalFormats } from "@/lib/excel/conditional-format";
-import { formatExcelDate } from "@/lib/excel/excel-date-format";
+import { excelSerialToDate, formatExcelDate } from "@/lib/excel/excel-date-format";
 import { excelNumberFormatColor, excelTextFormatColor, formatExcelNumber, formatExcelText, formatGeneralNumber } from "@/lib/excel/excel-number-format";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
 import type * as PdfLibTypes from "pdf-lib";
@@ -45,18 +46,33 @@ import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
  *  - 画像と単純な図形（四角・角丸・楕円・直線）
  */
 
+/**
+ * 用紙の大きさ(pt。縦向き)。キーは ooxml-page-settings.ts の PAPER_SIZE_MAP の用紙名。
+ * B4・B5・B6 はExcelと同じ日本のJIS規格（257×364mm・182×257mm・128×182mm）。
+ * 以前はB4だけISO規格(250×353mm)の大きさで出力していた（B5はJIS）。ISO規格のB列は「B4-ISO」「B5-ISO」。
+ */
+const mm = (v: number) => Math.round((v * 72 * 100) / 25.4) / 100;
 const PAPER_SIZES_PT: Record<string, { width: number; height: number }> = {
   A4: { width: 595.28, height: 841.89 },
   A3: { width: 841.89, height: 1190.55 },
   A2: { width: 1190.55, height: 1683.78 },
   A5: { width: 419.53, height: 595.28 },
   A6: { width: 297.64, height: 419.53 },
-  B4: { width: 708.66, height: 1003.46 },
-  B5: { width: 515.91, height: 728.5 },
+  B4: { width: mm(257), height: mm(364) },
+  B5: { width: mm(182), height: mm(257) },
+  B6: { width: mm(128), height: mm(182) },
+  "B4-ISO": { width: mm(250), height: mm(353) },
+  "B5-ISO": { width: mm(176), height: mm(250) },
   Letter: { width: 612, height: 792 },
   Legal: { width: 612, height: 1008 },
   Tabloid: { width: 792, height: 1224 },
+  Ledger: { width: 1224, height: 792 },
+  Statement: { width: 396, height: 612 },
   Executive: { width: 522, height: 756 },
+  Folio: { width: 612, height: 936 },
+  Quarto: { width: mm(215), height: mm(275) },
+  Postcard: { width: mm(100), height: mm(148) },
+  DoublePostcard: { width: mm(200), height: mm(148) },
 };
 const DEFAULT_PAPER_SIZE = "A4";
 /** Excel側の余白情報が取得できない場合のフォールバック（既存Phase 9の値を踏襲） */
@@ -134,9 +150,16 @@ export async function readExcelSheets(file: File): Promise<RawExcelSheet[]> {
 function cellToDisplayString(
   value: RawCellValue,
   dateFormatCode: string | null = null,
-  numFormatCode: string | null = null
+  numFormatCode: string | null = null,
+  date1904 = false
 ): string {
   if (value === null || value === undefined) return "";
+  if (typeof value === "number" && dateFormatCode) {
+    // 日付の書式なのに数値のまま読み込まれたセル(読み込みライブラリが日付の書式と判定できない、和暦
+    // 「[$-ja-JP]ggge"年"m"月"d"日"」など)。以前は「46332」のような日数のまま表示していた。日付に直して整形する。
+    const date = excelSerialToDate(value, date1904);
+    if (date) return formatExcelDate(date, dateFormatCode);
+  }
   if (value instanceof Date) {
     // read-excel-fileはExcelの日付をUTC基準のDateで返す。ローカル時刻(getHours等)で読むと
     // 日本時間では9時間ずれて「09:00:00」が付いてしまうため、UTCで読み、Excelの表示書式で整形する。
@@ -200,6 +223,60 @@ function hexToRgb01(hex: string): [number, number, number] {
   if (!m) return TEXT_COLOR;
   const n = parseInt(m[1], 16);
   return [((n >> 16) & 0xff) / 255, ((n >> 8) & 0xff) / 255, (n & 0xff) / 255];
+}
+
+/** グラデーションの位置t(0〜1)の色。区切り(stop)の間は直線的に混ぜる */
+function gradientColorAt(spec: GradientFillSpec, t: number): [number, number, number] {
+  const stops = spec.stops;
+  if (t <= stops[0].position) return hexToRgb01(stops[0].color);
+  const last = stops[stops.length - 1];
+  if (t >= last.position) return hexToRgb01(last.color);
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (t >= a.position && t <= b.position) {
+      const u = b.position > a.position ? (t - a.position) / (b.position - a.position) : 0;
+      const ca = hexToRgb01(a.color);
+      const cb = hexToRgb01(b.color);
+      return [ca[0] + (cb[0] - ca[0]) * u, ca[1] + (cb[1] - ca[1]) * u, ca[2] + (cb[2] - ca[2]) * u];
+    }
+  }
+  return hexToRgb01(last.color);
+}
+
+/**
+ * 線形グラデーションを、細い色の帯を並べて描く（pdf-libにはグラデーションの塗りの機能が無いため）。
+ * 向きはExcelのdegree: 0=左→右、90=上→下、180=右→左、270=下→上。斜め(45°など)は近い方の向き(横か縦)で描く。
+ * span: 結合セル全体の中でのこのセルの位置(倍率をかける前のpt)。結合範囲全体で1本のグラデーションにする。
+ */
+function drawGradientCell(
+  page: PDFPage,
+  spec: GradientFillSpec,
+  box: { x: number; yTop: number; width: number; height: number },
+  span: { offX: number; totalW: number; offY: number; totalH: number },
+  scale: number
+) {
+  const d = spec.degree;
+  const horizontal = d < 45 || d >= 315 || (d >= 135 && d < 225);
+  const reversed = horizontal ? d >= 135 && d < 225 : d >= 225 && d < 315;
+  const cellLen = horizontal ? box.width : box.height;
+  const totalLen = (horizontal ? span.totalW : span.totalH) * scale;
+  const offset = (horizontal ? span.offX : span.offY) * scale;
+  if (cellLen <= 0 || totalLen <= 0) return;
+  // 帯の数：範囲全体で約48本（1本あたり最低1.5pt）。帯の継ぎ目に隙間が見えないよう、少しだけ重ねる
+  const bands = Math.max(2, Math.min(96, Math.round((48 * cellLen) / totalLen), Math.ceil(cellLen / 1.5)));
+  const step = cellLen / bands;
+  for (let k = 0; k < bands; k++) {
+    const mid = offset + step * (k + 0.5);
+    const t = Math.min(1, Math.max(0, mid / totalLen));
+    const color = pdfLib().rgb(...gradientColorAt(spec, reversed ? 1 - t : t));
+    const overlap = k < bands - 1 ? 0.3 : 0;
+    if (horizontal) {
+      page.drawRectangle({ x: box.x + step * k, y: box.yTop - box.height, width: step + overlap, height: box.height, color });
+    } else {
+      page.drawRectangle({ x: box.x, y: box.yTop - step * (k + 1) - overlap, width: box.width, height: step + overlap, color });
+    }
+  }
 }
 
 /** 昇順の元インデックス配列に対して、OOXMLの改ページ位置（元インデックス基準）をローカルインデックス基準へ変換する */
@@ -495,7 +572,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
     // ヘッダー/フッター(B-9・B-10)の&D(日付)・&T(時刻)トークン解決用に、
     // 変換実行時刻を1回だけ取得する(ページごとに変わると使いにくいため)。
     const now = new Date();
-    const nowDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    // &D(日付)は、日本語のWindowsのExcelと同じ「yyyy/mm/dd」（OSの短い日付の形式）で表示する
+    const nowDateStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
     const nowTimeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
     function resolveHeaderFooterTokens(text: string, ctx: { pageInSheet: number; totalPagesInSheet: number; sheetName: string }): string {
@@ -733,7 +811,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         cellToDisplayString(
           row[origCol] ?? null,
           settings?.cellDateFormat.get(`${origRow}:${origCol}`) ?? null,
-          settings?.cellNumFormat.get(`${origRow}:${origCol}`) ?? null
+          settings?.cellNumFormat.get(`${origRow}:${origCol}`) ?? null,
+          settings?.date1904 ?? false
         );
 
       // --- 結合セル: アンカー(左上)セルの文字を結合範囲全体にまたがって描画する ---
@@ -808,6 +887,38 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         if (blackAndWhite) return null; // 白黒印刷では背景色を印刷しない
         const key = formatKey(origRow, origCol);
         return cf?.fills.get(key) ?? settings?.cellFills.get(key) ?? null;
+      };
+      /** グラデーションの塗りつぶし（線形のみ。条件付き書式の背景色・白黒印刷のときは使わない） */
+      const gradientFor = (origRow: number, origCol: number): GradientFillSpec | null => {
+        if (blackAndWhite) return null;
+        const key = formatKey(origRow, origCol);
+        if (cf?.fills.has(key)) return null;
+        const spec = settings?.cellGradients.get(key);
+        return spec && spec.type === "linear" ? spec : null;
+      };
+      /**
+       * グラデーションを描く範囲（結合セルなら結合範囲全体）の中で、このセルがどこにあるか(pt。倍率をかける前)。
+       * 結合セルは各セルを順に塗るため、範囲全体で1本のグラデーションになるよう、位置をずらして色を決める。
+       */
+      const gradientSpanOf = (origRow: number, origCol: number) => {
+        const merge = mergeByCell.get(`${origRow}:${origCol}`);
+        if (!merge) return { offX: 0, totalW: colWidthOf(origCol), offY: 0, totalH: rowHeightOf(origRow) };
+        const { startRow, endRow, startCol, endCol } = merge.range;
+        let offX = 0;
+        let totalW = 0;
+        for (let c = startCol; c <= endCol; c++) {
+          if (settings?.hiddenCols.has(c)) continue;
+          if (c < origCol) offX += colWidthOf(c);
+          totalW += colWidthOf(c);
+        }
+        let offY = 0;
+        let totalH = 0;
+        for (let r = startRow; r <= endRow; r++) {
+          if (settings?.hiddenRows.has(r)) continue;
+          if (r < origRow) offY += rowHeightOf(r);
+          totalH += rowHeightOf(r);
+        }
+        return { offX, totalW: Math.max(totalW, colWidthOf(origCol)), offY, totalH: Math.max(totalH, rowHeightOf(origRow)) };
       };
       const borderFor = (origRow: number, origCol: number) => {
         const key = `${origRow}:${origCol}`;
@@ -1176,7 +1287,12 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             for (const origCol of colsOnPage) {
               const w = colWidthOf(origCol) * scale;
               const fill = fillFor(origRow, origCol);
-              if (fill) page.drawRectangle({ x: fx, y: top - rowH, width: w, height: rowH, color: pdfLib().rgb(...hexToRgb01(fill)) });
+              const gradient = fill ? gradientFor(origRow, origCol) : null;
+              if (gradient) {
+                drawGradientCell(page, gradient, { x: fx, yTop: top, width: w, height: rowH }, gradientSpanOf(origRow, origCol), scale);
+              } else if (fill) {
+                page.drawRectangle({ x: fx, y: top - rowH, width: w, height: rowH, color: pdfLib().rgb(...hexToRgb01(fill)) });
+              }
               const bar = cf?.dataBars.get(`${origRow}:${origCol}`);
               if (bar && !blackAndWhite) {
                 const inset = Math.min(1.5, rowH * 0.12);

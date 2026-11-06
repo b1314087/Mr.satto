@@ -34,19 +34,33 @@ export interface CellRangeRef {
   endCol: number;
 }
 
-/** ECMA-376 ST_PaperSize の主要な値のみ対応（それ以外はnull=不明） */
+/**
+ * ECMA-376 ST_PaperSize（Excelの用紙番号）→ 用紙名。ここに無い番号はnull=不明（描画側でA4にして警告を出す）。
+ * Excelの「B4」「B5」(12・13)は日本のJIS規格のB列（257×364mm・182×257mm）。ISO規格のB列は別の番号(33・34)。
+ */
 const PAPER_SIZE_MAP: Record<number, string> = {
   1: "Letter",
+  2: "Letter", // Letter Small（大きさはLetterと同じ）
   3: "Tabloid",
+  4: "Ledger",
   5: "Legal",
+  6: "Statement",
   7: "Executive",
   8: "A3",
   9: "A4",
+  10: "A4", // A4 Small（大きさはA4と同じ）
   11: "A5",
   12: "B4",
   13: "B5",
+  14: "Folio",
+  15: "Quarto",
+  33: "B4-ISO",
+  34: "B5-ISO",
+  43: "Postcard",
   66: "A2",
+  69: "DoublePostcard",
   70: "A6",
+  88: "B6",
 };
 
 /** 罫線の種類(OOXMLのborder style)。none以外はすべて対応表で描き分ける */
@@ -203,11 +217,22 @@ export interface SheetPageSettings {
    * 記録しない。cellBordersと同じ「差分だけを持つ」方針で、巨大シートでのMapサイズを
    * 抑える）。値は"#RRGGBB"形式。rgb属性による明示指定に加え、theme属性(tint込み)の
    * 色解決にも対応する(xl/theme/theme1.xmlのclrSchemeから解決。詳細はparseThemeColors
-   * 参照)。indexed color(indexedColors.xml相当の固定パレット)のみ今回は未対応。
+   * 参照)、indexed属性(パレット番号。styles.xmlの<indexedColors>、無ければExcel標準のパレット)の色にも対応する。
+   * パターンは濃さで近似した単色、グラデーションは色の平均(描画はcellGradientsで帯を並べる)。
    */
   cellFills: Map<string, string>;
+  /**
+   * グラデーションの塗りつぶし(<gradientFill>)。cellFillsにも代わりの単色(グラデーションの色の平均)を入れておき、
+   * 描画側はこちらがあれば色の帯を並べてグラデーションを描く(線形のみ。中心から広がる種類は平均色のまま)。
+   */
+  cellGradients: Map<string, GradientFillSpec>;
   cellFontColors: Map<string, string>;
   cellBold: Map<string, boolean>;
+  /**
+   * ブックの日付の基準が1904年(workbookPr@date1904。古いMac版Excelの既定)か。
+   * 日付の書式なのに数値のまま渡されたセルを日付に直すときに使う。
+   */
+  date1904: boolean;
   /**
    * ヘッダー/フッター(開発指示書B-9・B-10、Phase 22)。Excel側で設定されている
    * 場合のみ値を持つ(未設定ならnull)。oddHeader/oddFooter(既定のヘッダー/
@@ -268,6 +293,14 @@ export interface SheetPageSettings {
   verticalCentered: boolean;
 }
 
+/** グラデーションの塗りつぶし。linear=直線(degree: 0で左→右、90で上→下)、path=中心から広がる */
+export interface GradientFillSpec {
+  type: "linear" | "path";
+  degree: number;
+  /** position: 0〜1 */
+  stops: { position: number; color: string }[];
+}
+
 export interface CellAlign {
   /** distributed = 均等割り付け(文字を領域の幅いっぱいに均等に並べる) */
   horizontal: "left" | "center" | "right" | "distributed" | null;
@@ -322,6 +355,8 @@ function emptySheetSettings(): SheetPageSettings {
     cellBorderStyles: new Map(),
     conditionalRules: [],
     cellFills: new Map(),
+    cellGradients: new Map(),
+    date1904: false,
     cellFontColors: new Map(),
     cellBold: new Map(),
     header: null,
@@ -564,6 +599,8 @@ interface ResolvedCellStyle {
   border: BorderDef;
   /** "#RRGGBB"。塗りつぶしなし・indexed/theme色など解決できない場合はnull */
   fillRgb: string | null;
+  /** グラデーションの塗りつぶし（fillRgbには代わりの平均色が入る）。無ければnull */
+  fillGradient: GradientFillSpec | null;
   fontRgb: string | null;
   bold: boolean;
   /** fonts[]のsz(pt)。取得できなければnull */
@@ -643,7 +680,13 @@ const BUILTIN_DATE_FORMATS: Record<number, string> = {
 
 /** 書式コードが「日付・時刻の書式」か(引用符・[]内を除いてy/m/d/h/s/g/eの記号を含むか)を判定する */
 function isDateFormatCode(code: string): boolean {
-  const stripped = code.replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "").replace(/\\./g, "");
+  // 指数表示(0.00E+00)の「E」は和暦の年(e)ではないので除く。日付と判定すると、数値が日付として表示されてしまう
+  const stripped = code
+    .replace(/"[^"]*"/g, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/\\./g, "")
+    .replace(/[_*]./g, "") // _x(桁揃えの空白)・*x(繰り返し)の x は記号ではない
+    .replace(/[eE][+-]/g, "");
   return /[ymdhsge]/i.test(stripped) && !/^(General|標準)$/i.test(stripped.trim());
 }
 
@@ -853,10 +896,49 @@ function blendHex(bg: string, fg: string, t: number): string {
   return `#${mix(0)}${mix(1)}${mix(2)}`;
 }
 
-/** <fill>要素から、描画に使う単色(パターンは濃さで近似)を求める。塗りなしはnull */
+/**
+ * <fill><gradientFill degree="90"><stop position="0"><color .../></stop>...</gradientFill></fill> を読む。
+ * 色が解決できない区切り(stop)は除く。色が1つも取れなければnull。
+ */
+function resolveGradientEl(fill: Element, ctx: ColorCtx): GradientFillSpec | null {
+  const gradient = fill.getElementsByTagName("gradientFill")[0];
+  if (!gradient) return null;
+  const stops = Array.from(gradient.getElementsByTagName("stop"))
+    .map((stop) => ({
+      position: Math.min(1, Math.max(0, Number(stop.getAttribute("position") ?? "0") || 0)),
+      color: readColorEl(stop.getElementsByTagName("color")[0], ctx),
+    }))
+    .filter((s): s is { position: number; color: string } => s.color !== null)
+    .sort((a, b) => a.position - b.position);
+  if (stops.length === 0) return null;
+  const type = gradient.getAttribute("type") === "path" ? "path" : "linear";
+  const degree = Number(gradient.getAttribute("degree") ?? "0") || 0;
+  return { type, degree: ((degree % 360) + 360) % 360, stops };
+}
+
+/** グラデーションの代わりに使う単色（区切りの色の平均）。白黒印刷・条件の判定など、単色が必要な所で使う */
+function gradientAverageColor(spec: GradientFillSpec): string {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  for (const s of spec.stops) {
+    r += parseInt(s.color.slice(1, 3), 16);
+    g += parseInt(s.color.slice(3, 5), 16);
+    b += parseInt(s.color.slice(5, 7), 16);
+  }
+  const n = spec.stops.length;
+  const hex = (v: number) => Math.round(v / n).toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+/** <fill>要素から、描画に使う単色(パターンは濃さで近似、グラデーションは色の平均)を求める。塗りなしはnull */
 function resolveFillEl(fill: Element, ctx: ColorCtx, preferBg: boolean): string | null {
   const patternFill = fill.getElementsByTagName("patternFill")[0];
-  if (!patternFill) return null;
+  if (!patternFill) {
+    // グラデーションの塗りつぶし。以前は「塗りなし」として扱い、Excelで色のあるセルが白くなっていた
+    const gradient = resolveGradientEl(fill, ctx);
+    return gradient ? gradientAverageColor(gradient) : null;
+  }
   const patternType = patternFill.getAttribute("patternType");
   const fg = readColorEl(patternFill.getElementsByTagName("fgColor")[0], ctx);
   const bg = readColorEl(patternFill.getElementsByTagName("bgColor")[0], ctx);
@@ -992,10 +1074,12 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
 
   // <fills><fill><patternFill patternType="solid"><fgColor .../>。縞模様等のパターンは濃さで近似した単色にする。
   const fillRgbs: (string | null)[] = [];
+  const fillGradients: (GradientFillSpec | null)[] = [];
   const fillsEl = doc.getElementsByTagName("fills")[0];
   if (fillsEl) {
     for (const fill of Array.from(fillsEl.getElementsByTagName("fill"))) {
       fillRgbs.push(resolveFillEl(fill, ctx, false));
+      fillGradients.push(resolveGradientEl(fill, ctx));
     }
   }
 
@@ -1019,6 +1103,7 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
       // fillIdが実際に効いているケースが大半のため、applyFill=0を明示していない限り適用する）
       const applyFillExplicit = xf.getAttribute("applyFill");
       const fillRgb = applyFillExplicit === "0" ? null : (fillRgbs[fillId ? Number(fillId) : 0] ?? null);
+      const fillGradient = applyFillExplicit === "0" ? null : (fillGradients[fillId ? Number(fillId) : 0] ?? null);
       const fontDef = fontDefs[fontId ? Number(fontId) : 0];
 
       // 配置: <alignment horizontal="center" vertical="center" wrapText="1"/>
@@ -1076,6 +1161,7 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
       result.push({
         border,
         fillRgb,
+        fillGradient,
         fontRgb: fontDef?.rgb ?? null,
         bold: fontDef?.bold ?? false,
         fontSizePt: fontDef?.sizePt ?? null,
@@ -1236,6 +1322,7 @@ function parseSheetXml(
   const cellBorders = new Map<string, BorderDef>();
   const cellBorderStyles = new Map<string, CellBorderStyles>();
   const cellFills = new Map<string, string>();
+  const cellGradients = new Map<string, GradientFillSpec>();
   const cellFontColors = new Map<string, string>();
   const cellBold = new Map<string, boolean>();
   const cellAlign = new Map<string, CellAlign>();
@@ -1297,6 +1384,7 @@ function parseSheetXml(
           if (border.styles) cellBorderStyles.set(key, border.styles);
         }
         if (style.fillRgb) cellFills.set(key, style.fillRgb);
+        if (style.fillGradient) cellGradients.set(key, style.fillGradient);
         if (style.fontRgb) cellFontColors.set(key, style.fontRgb);
         if (style.bold) cellBold.set(key, true);
         if (style.align) cellAlign.set(key, style.align);
@@ -1316,6 +1404,7 @@ function parseSheetXml(
   result.cellBorders = cellBorders;
   result.cellBorderStyles = cellBorderStyles;
   result.cellFills = cellFills;
+  result.cellGradients = cellGradients;
   result.cellFontColors = cellFontColors;
   result.cellBold = cellBold;
   result.cellAlign = cellAlign;
@@ -1513,6 +1602,80 @@ function parsePrintTitles(defined: string): { rows: { start: number; end: number
 }
 
 /** 非表示のシート(状態がhidden・veryHidden)の名前。印刷対象の初期選択から外すために使う */
+/** 変換する前に画面に出す、シートごとの印刷設定の要約 */
+export interface SheetPrintSummary {
+  hidden: boolean;
+  /** 用紙名(A4・B4 等)。設定が無いときnull(＝A4で出力) */
+  paperSize: string | null;
+  /** 対応していない用紙番号のときだけ番号を持つ(＝A4で出力) */
+  unsupportedPaperCode: number | null;
+  orientation: "portrait" | "landscape";
+  /** 拡大縮小。fit=ページ数に合わせる(0は「自動」)、scale=拡大縮小率(%)、none=指定なし */
+  fit: { kind: "fit"; width: number; height: number } | { kind: "scale"; percent: number } | { kind: "none" };
+  hasPrintArea: boolean;
+}
+
+/**
+ * シートごとの用紙・向き・拡大縮小・印刷範囲・非表示を、変換の前に軽く読む(画面の表示用)。
+ * 大きなファイルでも重くならないよう、シートのXMLは先頭(sheetPr)と末尾(pageSetup・printOptions)だけを文字にして調べる。
+ * 実際の変換は parseWorkbookPageSettings で、すべてを読み直して行う。読めないときは空のMapを返す。
+ */
+export async function readSheetPrintSummaries(file: File): Promise<Map<string, SheetPrintSummary>> {
+  const result = new Map<string, SheetPrintSummary>();
+  try {
+    const entries = unzipSync(new Uint8Array(await file.arrayBuffer()), {
+      filter: (info) => info.name === "xl/workbook.xml" || info.name === "xl/_rels/workbook.xml.rels" || /^xl\/worksheets\/[^/]+\.xml$/.test(info.name),
+    });
+    const workbookDoc = parseXml((await readEntryText(entries, "xl/workbook.xml")) ?? "");
+    const relsDoc = parseXml((await readEntryText(entries, "xl/_rels/workbook.xml.rels")) ?? "");
+    if (!workbookDoc || !relsDoc) return result;
+    const ridToTarget = new Map<string, string>();
+    for (const rel of Array.from(relsDoc.getElementsByTagName("Relationship"))) {
+      const id = rel.getAttribute("Id");
+      const target = rel.getAttribute("Target");
+      if (id && target) ridToTarget.set(id, target.startsWith("/") ? target.replace(/^\/xl\//, "").replace(/^\//, "") : target.replace(/^\.\//, ""));
+    }
+    const printAreaSheetIndexes = new Set<number>();
+    for (const dn of Array.from(workbookDoc.getElementsByTagName("definedName"))) {
+      const idx = dn.getAttribute("localSheetId");
+      if (dn.getAttribute("name") === "_xlnm.Print_Area" && idx !== null) printAreaSheetIndexes.add(Number(idx));
+    }
+    const decoder = new TextDecoder("utf-8");
+    const attr = (tag: string, name: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
+    Array.from(workbookDoc.getElementsByTagName("sheet")).forEach((sheetEl, index) => {
+      const name = sheetEl.getAttribute("name");
+      if (!name) return;
+      const state = sheetEl.getAttribute("state");
+      const rId = sheetEl.getAttribute("r:id") ?? sheetEl.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+      const target = rId ? ridToTarget.get(rId) : undefined;
+      const bytes = target ? entries[`xl/${target}`] : undefined;
+      const head = bytes ? decoder.decode(bytes.subarray(0, Math.min(bytes.length, 4096))) : "";
+      const tail = bytes ? decoder.decode(bytes.subarray(Math.max(0, bytes.length - 65536))) : "";
+      const pageSetup = /<(?:\w+:)?pageSetup\b[^>]*>/.exec(tail)?.[0] ?? "";
+      const pageSetUpPr = /<(?:\w+:)?pageSetUpPr\b[^>]*>/.exec(head)?.[0] ?? "";
+      const code = pageSetup ? Number(attr(pageSetup, "paperSize") ?? "9") : null;
+      const paperSize = code !== null ? (PAPER_SIZE_MAP[code] ?? null) : null;
+      const fitToPage = isTrueAttr(attr(pageSetUpPr, "fitToPage"));
+      const scale = pageSetup ? Number(attr(pageSetup, "scale") ?? "100") : 100;
+      result.set(name, {
+        hidden: state === "hidden" || state === "veryHidden",
+        paperSize,
+        unsupportedPaperCode: code !== null && paperSize === null ? code : null,
+        orientation: attr(pageSetup, "orientation") === "landscape" ? "landscape" : "portrait",
+        fit: fitToPage
+          ? { kind: "fit", width: Number(attr(pageSetup, "fitToWidth") ?? "1"), height: Number(attr(pageSetup, "fitToHeight") ?? "1") }
+          : scale && scale !== 100
+            ? { kind: "scale", percent: scale }
+            : { kind: "none" },
+        hasPrintArea: printAreaSheetIndexes.has(index),
+      });
+    });
+  } catch {
+    return new Map();
+  }
+  return result;
+}
+
 export async function readHiddenSheetNames(file: File): Promise<Set<string>> {
   const hidden = new Set<string>();
   try {
@@ -1570,6 +1733,9 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
         ridToTarget.set(id, normalized);
       }
     }
+
+    // 日付の基準(1900年 or 1904年)。<workbookPr date1904="1"/>
+    const date1904 = isTrueAttr(workbookDoc.getElementsByTagName("workbookPr")[0]?.getAttribute("date1904"));
 
     // シート名の並び順(workbook.xmlの<sheets>順)。definedNamesのlocalSheetIdはこの順序のインデックス。
     const sheetEls = Array.from(workbookDoc.getElementsByTagName("sheet"));
@@ -1656,6 +1822,7 @@ export async function parseWorkbookPageSettings(file: File): Promise<Map<string,
         settings.unsupportedDrawingCount = drawings.unsupportedCount;
         settings.otherImages = drawings.otherImages;
       }
+      settings.date1904 = date1904;
       result.set(name, settings);
     }
   } catch {
