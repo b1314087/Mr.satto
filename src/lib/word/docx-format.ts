@@ -29,6 +29,10 @@ export interface RunFmt {
   highlight: string | null;
   script: "super" | "sub" | null;
   hidden: boolean;
+  /** 英数字用のフォント名(w:rFonts の ascii。テーマのフォントは実際の名前にしたもの)。指定が無ければnull */
+  fontAscii: string | null;
+  /** 日本語用のフォント名(w:rFonts の eastAsia)。指定が無ければnull */
+  fontEastAsia: string | null;
 }
 
 export interface TabStopFmt {
@@ -82,6 +86,16 @@ export interface ParaFmt {
    * この位置が「Wordで印刷したときのページの境目」になっている。
    */
   renderedBreaks: number[];
+  /** 段落の番号付け(w:numPr)：番号の定義の番号・段落のレベル。番号付けが無ければ numId は null */
+  numId: string | null;
+  numLevel: number;
+  /**
+   * 箇条書き・番号付きの段落の、行頭の記号・番号(numbering.xml の定義から作った実際の文字)と、その後ろの区切り。
+   * parseDocxFormatting が本文の順に番号を数えて設定する。番号付けが無ければ null
+   */
+  numbering: { label: string; suffix: "tab" | "space" | "nothing"; fontAscii: string | null } | null;
+  /** 段落に直接の字下げの指定(w:pPr/w:ind)があるか(番号のレベルの字下げより優先するため) */
+  directIndent: boolean;
 }
 
 export interface CellFmt {
@@ -158,6 +172,8 @@ export interface DocxFormatting {
    * mammothがHTMLに出す画像の順と同じ順なので、個数が一致するときだけ、順番で対応づける
    */
   bodyImages: { widthPt: number; heightPt: number; floating: boolean }[];
+  /** 本文の段落に置かれた、浮動配置の画像・テキストボックス・図形(位置・大きさ・折り返し) */
+  floats: FloatObject[];
   /** 本文の標準のフォント名(英数字用・日本語用)。テーマのフォント(minorHAnsi等)は、テーマの実際のフォント名にする。分からなければnull */
   defaultFonts: { ascii: string | null; eastAsia: string | null };
 }
@@ -223,7 +239,7 @@ const HIGHLIGHT: Record<string, string> = {
 // 書式（部分指定）
 // ---------------------------------------------------------------------------
 type RunPartial = Partial<RunFmt>;
-type ParaPartial = Partial<Omit<ParaFmt, "runs" | "tabs" | "baseSizePt" | "styleId" | "renderedBreaks">> & { tabs?: TabStopFmt[]; tabClears?: number[] };
+type ParaPartial = Partial<Omit<ParaFmt, "runs" | "tabs" | "baseSizePt" | "styleId" | "renderedBreaks" | "numbering" | "directIndent">> & { tabs?: TabStopFmt[]; tabClears?: number[] };
 
 function parseRPr(rPr: Element | null): RunPartial {
   const out: RunPartial = {};
@@ -257,6 +273,13 @@ function parseRPr(rPr: Element | null): RunPartial {
   else if (va === "baseline") out.script = null;
   const vanish = onOff(kid(rPr, "w:vanish"));
   if (vanish !== null) out.hidden = vanish;
+  const rf = kid(rPr, "w:rFonts");
+  if (rf) {
+    const ascii = rf.getAttribute("w:ascii") || rf.getAttribute("w:hAnsi") || themeFontName(rf.getAttribute("w:asciiTheme") ?? rf.getAttribute("w:hAnsiTheme"), "latin");
+    if (ascii) out.fontAscii = ascii;
+    const ea = rf.getAttribute("w:eastAsia") || themeFontName(rf.getAttribute("w:eastAsiaTheme"), "ea");
+    if (ea) out.fontEastAsia = ea;
+  }
   return out;
 }
 
@@ -325,6 +348,13 @@ function parsePPr(pPr: Element | null, sizeForChars: number): ParaPartial {
   }
   const ctx = onOff(kid(pPr, "w:contextualSpacing"));
   if (ctx !== null) out.contextual = ctx;
+  const numPr = kid(pPr, "w:numPr");
+  if (numPr) {
+    const id = attr(kid(numPr, "w:numId"), "w:val");
+    if (id !== null) out.numId = id === "0" ? null : id;
+    const lvl = num(attr(kid(numPr, "w:ilvl"), "w:val"));
+    if (lvl !== null) out.numLevel = Math.max(0, Math.min(8, lvl));
+  }
   const keepNext = onOff(kid(pPr, "w:keepNext"));
   if (keepNext !== null) out.keepNext = keepNext;
   const keepLines = onOff(kid(pPr, "w:keepLines"));
@@ -435,7 +465,34 @@ function styleChain(sheet: StyleSheet, id: string | null): StyleDef[] {
   return chain;
 }
 
-const BASE_RUN: RunFmt = { sizePt: null, color: null, bold: false, italic: false, underline: false, strike: false, highlight: null, script: null, hidden: false };
+const BASE_RUN: RunFmt = {
+  sizePt: null,
+  color: null,
+  bold: false,
+  italic: false,
+  underline: false,
+  strike: false,
+  highlight: null,
+  script: null,
+  hidden: false,
+  fontAscii: null,
+  fontEastAsia: null,
+};
+
+/** テーマのフォント(w:asciiTheme="minorHAnsi" 等)の実際の名前。parseDocxFormatting がテーマを読んで設定する */
+let themeFonts: { minorLatin: string | null; minorEa: string | null; majorLatin: string | null; majorEa: string | null } = {
+  minorLatin: null,
+  minorEa: null,
+  majorLatin: null,
+  majorEa: null,
+};
+
+function themeFontName(token: string | null, script: "latin" | "ea"): string | null {
+  if (!token) return null;
+  const major = token.startsWith("major");
+  if (script === "latin") return major ? themeFonts.majorLatin : themeFonts.minorLatin;
+  return major ? themeFonts.majorEa : themeFonts.minorEa;
+}
 
 function mergeRun(base: RunFmt, over: RunPartial): RunFmt {
   const out = { ...base };
@@ -606,6 +663,13 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
         case "w:noBreakHyphen":
           push("-", fmt);
           break;
+        case "w:drawing":
+        case "w:pict":
+        case "mc:AlternateContent":
+          // 画像(mammothがHTMLの<img>を出すもの)の位置に、画像の目印の文字を1つ入れる(文字の位置の対応をとるため)
+          if (fieldStack.some((f) => f.skip || f.phase === "instr")) break;
+          if (containsPicture(c)) push(OBJECT_CHAR, fmt);
+          break;
         case "w:lastRenderedPageBreak":
           if (renderedBreaks[renderedBreaks.length - 1] !== charCount) renderedBreaks.push(charCount);
           break;
@@ -671,6 +735,10 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
     keepLines: props.keepLines ?? false,
     widowControl: props.widowControl ?? null,
     renderedBreaks,
+    numId: props.numId ?? null,
+    numLevel: props.numLevel ?? 0,
+    numbering: null,
+    directIndent: !!kid(pPr, "w:ind"),
   };
 }
 
@@ -786,10 +854,281 @@ const EMPTY: DocxFormatting = {
   savedPageCount: null,
   savedByWord: false,
   bodyImages: [],
+  floats: [],
   defaultFonts: { ascii: null, eastAsia: null },
 };
 
 /** DOCXから書式を読み取る。失敗した場合は空の結果（呼び出し側は従来の描画に戻る）。 */
+// ---------------------------------------------------------------------------
+// 画像・図形・テキストボックス(浮動配置)
+// ---------------------------------------------------------------------------
+
+/** 段落の中の画像の位置を表す文字(書式つきの文字列と、mammothの文字列の両方に同じ位置で入れる) */
+export const OBJECT_CHAR = "\uFFFC";
+
+/** その要素が、mammothが<img>として出す画像を含むか(w:drawing の a:blip、VMLの v:imagedata。mc:AlternateContentは1つと数える) */
+function containsPicture(el: Element): boolean {
+  if (el.tagName === "mc:AlternateContent") {
+    const fb = kid(el, "mc:Fallback");
+    return !!fb && fb.getElementsByTagName("v:imagedata").length > 0;
+  }
+  if (el.tagName === "w:drawing") return el.getElementsByTagName("a:blip").length > 0;
+  return el.getElementsByTagName("v:imagedata").length > 0;
+}
+
+/** 浮動配置(wp:anchor)の位置の指定の基準 */
+export type FloatRelH = "page" | "margin" | "column" | "character" | "leftMargin" | "rightMargin";
+export type FloatRelV = "page" | "margin" | "paragraph" | "line" | "topMargin" | "bottomMargin";
+
+/** 浮動配置の画像・テキストボックス・図形(本文の段落に置かれたもの) */
+export interface FloatObject {
+  kind: "image" | "textbox" | "shape";
+  /** 本文の何番目の要素(段落)に置かれているか */
+  bodyIndex: number;
+  /** 画像のとき：本文の段落の中の画像の通し番号(bodyImages の添字) */
+  imageOrdinal: number | null;
+  widthPt: number;
+  heightPt: number;
+  /** 横の位置：基準と、基準からの距離(pt)または揃え */
+  h: { rel: FloatRelH; offsetPt: number | null; align: "left" | "center" | "right" | "inside" | "outside" | null };
+  v: { rel: FloatRelV; offsetPt: number | null; align: "top" | "center" | "bottom" | "inside" | "outside" | null };
+  /** 文字列の折り返し：square/tight/through=横に回り込む、topAndBottom=上下、none=折り返さない(前面・背面) */
+  wrap: "square" | "topAndBottom" | "none";
+  /** 背面(文字の後ろ)に置くか */
+  behind: boolean;
+  /** 周りの文字との間隔(pt) */
+  dist: { top: number; bottom: number; left: number; right: number };
+  /** テキストボックス・図形の塗り・線(16進。無ければnull) */
+  fill: string | null;
+  line: string | null;
+  lineWidthPt: number;
+  geometry: "rect" | "roundRect" | "ellipse" | "line" | "other";
+  /** テキストボックスの中の段落と、内側の余白(pt) */
+  paragraphs: ParaFmt[];
+  inset: { left: number; right: number; top: number; bottom: number };
+}
+
+function readFloat(anchor: Element, rs: Resolver, bodyIndex: number, imageOrdinal: number | null): FloatObject | null {
+  const EMU = 12700;
+  const ext = kid(anchor, "wp:extent");
+  const w = (num(attr(ext, "cx")) ?? 0) / EMU;
+  const h = (num(attr(ext, "cy")) ?? 0) / EMU;
+  if (!(w > 0 && h > 0)) return null;
+  const ph = kid(anchor, "wp:positionH");
+  const pv = kid(anchor, "wp:positionV");
+  const offH = kid(ph, "wp:posOffset")?.textContent;
+  const offV = kid(pv, "wp:posOffset")?.textContent;
+  const relH = (ph?.getAttribute("relativeFrom") ?? "column") as string;
+  const relV = (pv?.getAttribute("relativeFrom") ?? "paragraph") as string;
+  const wrapEl = Array.from(anchor.children).find((c) => c.tagName.startsWith("wp:wrap"));
+  const wrapName = wrapEl?.tagName ?? "wp:wrapNone";
+  const wrap: FloatObject["wrap"] = wrapName === "wp:wrapTopAndBottom" ? "topAndBottom" : wrapName === "wp:wrapNone" ? "none" : "square";
+  const wsp = anchor.getElementsByTagName("wps:wsp")[0] ?? null;
+  const txbx = wsp ? wsp.getElementsByTagName("w:txbxContent")[0] ?? null : null;
+  const blip = anchor.getElementsByTagName("a:blip")[0] ?? null;
+  const kind: FloatObject["kind"] = blip ? "image" : txbx ? "textbox" : wsp ? "shape" : "image";
+  if (kind === "image" && imageOrdinal === null) return null;
+  const spPr = wsp ? kid(wsp, "wps:spPr") : null;
+  const solid = (el: Element | null) => hex(kid(kid(el, "a:solidFill"), "a:srgbClr")?.getAttribute("val") ?? null);
+  const ln = kid(spPr, "a:ln");
+  const noLine = !!kid(ln, "a:noFill");
+  const prst = kid(spPr, "a:prstGeom")?.getAttribute("prst") ?? "rect";
+  const bodyPr = wsp ? kid(wsp, "wps:bodyPr") : null;
+  const ins = (name: string, def: number) => (num(bodyPr?.getAttribute(name) ?? null) ?? def) / EMU;
+  const distOf = (name: string) => (num(anchor.getAttribute(name)) ?? 0) / EMU;
+  const alignH = kid(ph, "wp:align")?.textContent?.trim() as FloatObject["h"]["align"] | undefined;
+  const alignV = kid(pv, "wp:align")?.textContent?.trim() as FloatObject["v"]["align"] | undefined;
+  const mapRelH = (r: string): FloatRelH => (r === "page" || r === "margin" || r === "character" || r === "leftMargin" || r === "rightMargin" ? r : r === "insideMargin" ? "leftMargin" : r === "outsideMargin" ? "rightMargin" : "column");
+  const mapRelV = (r: string): FloatRelV => (r === "page" || r === "margin" || r === "line" || r === "topMargin" || r === "bottomMargin" ? r : "paragraph");
+  return {
+    kind,
+    bodyIndex,
+    imageOrdinal: kind === "image" ? imageOrdinal : null,
+    widthPt: w,
+    heightPt: h,
+    h: { rel: mapRelH(relH), offsetPt: offH != null ? Number(offH) / EMU : null, align: alignH ?? null },
+    v: { rel: mapRelV(relV), offsetPt: offV != null ? Number(offV) / EMU : null, align: alignV ?? null },
+    wrap,
+    behind: anchor.getAttribute("behindDoc") === "1" || anchor.getAttribute("behindDoc") === "true",
+    dist: { top: distOf("distT"), bottom: distOf("distB"), left: distOf("distL"), right: distOf("distR") },
+    fill: kind === "image" ? null : solid(spPr),
+    line: kind === "image" || noLine ? null : (solid(ln) ?? (ln ? "000000" : null)),
+    lineWidthPt: (num(ln?.getAttribute("w") ?? null) ?? 9525) / EMU,
+    geometry: prst === "rect" ? "rect" : prst === "roundRect" ? "roundRect" : prst === "ellipse" ? "ellipse" : prst === "line" ? "line" : "other",
+    paragraphs: txbx ? kids(txbx, "w:p").map((p) => readParagraph(p, rs, "result")) : [],
+    inset: { left: ins("lIns", 91440), right: ins("rIns", 91440), top: ins("tIns", 45720), bottom: ins("bIns", 45720) },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 箇条書き・番号付きリスト(numbering.xml)
+// ---------------------------------------------------------------------------
+
+interface NumLevelDef {
+  start: number;
+  numFmt: string;
+  lvlText: string;
+  leftPt: number | null;
+  hangingPt: number | null;
+  firstLinePt: number | null;
+  suffix: "tab" | "space" | "nothing";
+  fontAscii: string | null;
+}
+
+/** 記号用のフォント(Symbol・Wingdings)の私用領域の文字を、普通の文字にする(同梱のフォントで描けるように) */
+const SYMBOL_BULLETS: Record<string, string> = {
+  "\uF0B7": "●",
+  "\uF06C": "●",
+  "\uF0A7": "■",
+  "\uF0D8": "➢",
+  "\uF0FC": "✓",
+  "\uF076": "❖",
+  "\uF0A8": "□",
+  "\uF06E": "■",
+  "\uF0AE": "➔",
+  "\u00B7": "●",
+};
+
+const ROMAN: [number, string][] = [[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"], [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]];
+const AIUEO = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン";
+const IROHA = "イロハニホヘトチリヌルヲワカヨタレソツネナラムウヰノオクヤマケフコエテアサキユメミシヱヒモセス";
+const KANJI_DIGITS = "〇一二三四五六七八九";
+
+function kanjiNumber(n: number): string {
+  if (n < 10) return KANJI_DIGITS[n];
+  if (n < 100) return `${Math.floor(n / 10) > 1 ? KANJI_DIGITS[Math.floor(n / 10)] : ""}十${n % 10 ? KANJI_DIGITS[n % 10] : ""}`;
+  return String(n);
+}
+
+/** 番号の形式(w:numFmt)で、数を文字にする。対応していない形式は、算用数字 */
+export function formatListNumber(n: number, numFmt: string): string {
+  const toWide = (t: string) => t.replace(/[0-9]/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0));
+  const letters = (k: number) => {
+    let out = "";
+    for (let m = k; m > 0; m = Math.floor((m - 1) / 26)) out = String.fromCharCode(97 + ((m - 1) % 26)) + out;
+    return out;
+  };
+  switch (numFmt) {
+    case "lowerLetter":
+      return letters(n);
+    case "upperLetter":
+      return letters(n).toUpperCase();
+    case "lowerRoman":
+    case "upperRoman": {
+      let r = "";
+      let m = n;
+      for (const [v, t] of ROMAN) {
+        while (m >= v) {
+          r += t;
+          m -= v;
+        }
+      }
+      return numFmt === "upperRoman" ? r.toUpperCase() : r;
+    }
+    case "decimalZero":
+      return n < 10 ? `0${n}` : String(n);
+    case "decimalFullWidth":
+    case "decimalFullWidth2":
+      return toWide(String(n));
+    case "decimalEnclosedCircle":
+    case "decimalEnclosedCircleChinese":
+      return n >= 1 && n <= 20 ? String.fromCharCode(0x2460 + n - 1) : String(n);
+    case "aiueo":
+    case "aiueoFullWidth":
+      return AIUEO[(n - 1) % AIUEO.length] ?? String(n);
+    case "iroha":
+    case "irohaFullWidth":
+      return IROHA[(n - 1) % IROHA.length] ?? String(n);
+    case "ideographDigital":
+    case "japaneseCounting":
+    case "japaneseDigitalTenThousand":
+    case "chineseCounting":
+      return kanjiNumber(n);
+    case "none":
+      return "";
+    default:
+      return String(n);
+  }
+}
+
+/**
+ * numbering.xml を読み、本文の段落(表の中も含む、文書の順)に、行頭の記号・番号と字下げを設定する。
+ * 番号は、番号の定義(w:num)ごとに、レベルごとに数える(上のレベルの番号が進むと、下のレベルは始めに戻る)。
+ * 字下げは、段落に直接の指定が無ければ、番号のレベルの字下げ(Wordと同じ優先順位：直接の指定 > 番号のレベル > スタイル)。
+ */
+function applyNumbering(xmlText: string | null, parser: DOMParser, body: BodyFmt[]) {
+  if (!xmlText) return;
+  const nd = parser.parseFromString(xmlText, "application/xml");
+  if (nd.getElementsByTagName("parsererror").length > 0) return;
+  const abstracts = new Map<string, NumLevelDef[]>();
+  const readLevel = (lvl: Element, base?: NumLevelDef): NumLevelDef => {
+    const ind = kid(kid(lvl, "w:pPr"), "w:ind");
+    const left = num(ind?.getAttribute("w:left") ?? ind?.getAttribute("w:start") ?? null);
+    const hanging = num(ind?.getAttribute("w:hanging") ?? null);
+    const firstLine = num(ind?.getAttribute("w:firstLine") ?? null);
+    const rf = kid(kid(lvl, "w:rPr"), "w:rFonts");
+    const suff = attr(kid(lvl, "w:suff"), "w:val");
+    return {
+      start: num(attr(kid(lvl, "w:start"), "w:val")) ?? base?.start ?? 1,
+      numFmt: attr(kid(lvl, "w:numFmt"), "w:val") ?? base?.numFmt ?? "decimal",
+      lvlText: attr(kid(lvl, "w:lvlText"), "w:val") ?? base?.lvlText ?? "",
+      leftPt: left !== null ? left / TWIPS_PER_PT : (base?.leftPt ?? null),
+      hangingPt: hanging !== null ? hanging / TWIPS_PER_PT : (base?.hangingPt ?? null),
+      firstLinePt: firstLine !== null ? firstLine / TWIPS_PER_PT : (base?.firstLinePt ?? null),
+      suffix: suff === "space" ? "space" : suff === "nothing" ? "nothing" : "tab",
+      fontAscii: rf?.getAttribute("w:ascii") ?? base?.fontAscii ?? null,
+    };
+  };
+  for (const an of Array.from(nd.getElementsByTagName("w:abstractNum"))) {
+    const levels: NumLevelDef[] = [];
+    for (const lvl of kids(an, "w:lvl")) {
+      const il = num(lvl.getAttribute("w:ilvl")) ?? levels.length;
+      levels[il] = readLevel(lvl);
+    }
+    abstracts.set(an.getAttribute("w:abstractNumId") ?? "", levels);
+  }
+  const nums = new Map<string, NumLevelDef[]>();
+  for (const n of Array.from(nd.getElementsByTagName("w:num"))) {
+    const id = n.getAttribute("w:numId");
+    const abs = abstracts.get(attr(kid(n, "w:abstractNumId"), "w:val") ?? "");
+    if (!id || !abs) continue;
+    const levels = abs.map((l) => ({ ...l }));
+    for (const ov of kids(n, "w:lvlOverride")) {
+      const il = num(ov.getAttribute("w:ilvl")) ?? 0;
+      const startOv = num(attr(kid(ov, "w:startOverride"), "w:val"));
+      const lvlEl = kid(ov, "w:lvl");
+      if (lvlEl) levels[il] = readLevel(lvlEl, levels[il]);
+      if (startOv !== null && levels[il]) levels[il] = { ...levels[il], start: startOv };
+    }
+    nums.set(id, levels);
+  }
+  const counters = new Map<string, number[]>();
+  const visit = (para: ParaFmt) => {
+    if (!para.numId) return;
+    const levels = nums.get(para.numId);
+    const def = levels?.[para.numLevel];
+    if (!levels || !def) return;
+    const c = counters.get(para.numId) ?? [];
+    for (let i = 0; i < para.numLevel; i++) if (c[i] === undefined) c[i] = levels[i]?.start ?? 1;
+    c[para.numLevel] = c[para.numLevel] === undefined ? def.start : c[para.numLevel] + 1;
+    c.length = para.numLevel + 1;
+    counters.set(para.numId, c);
+    let label: string;
+    if (def.numFmt === "bullet") label = Array.from(def.lvlText).map((ch) => SYMBOL_BULLETS[ch] ?? ch).join("");
+    else label = def.lvlText.replace(/%([1-9])/g, (_, d: string) => formatListNumber(c[Number(d) - 1] ?? levels[Number(d) - 1]?.start ?? 1, levels[Number(d) - 1]?.numFmt ?? "decimal"));
+    para.numbering = { label, suffix: def.suffix, fontAscii: def.numFmt === "bullet" ? null : def.fontAscii };
+    // 字下げ：段落に直接の指定が無ければ、番号のレベルの字下げ(段落のスタイルの字下げより優先)
+    if (!para.directIndent) {
+      if (def.leftPt !== null) para.leftPt = def.leftPt;
+      if (def.hangingPt !== null || def.firstLinePt !== null) para.firstLinePt = def.hangingPt !== null ? -def.hangingPt : def.firstLinePt;
+    }
+  };
+  for (const b of body) {
+    if (b.tag === "p") visit(b.para);
+    else b.table?.rows.forEach((r) => r.cells.forEach((cell) => cell.paragraphs.forEach(visit)));
+  }
+}
+
 export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
   try {
     const entries = unzipSync(new Uint8Array(arrayBuffer), {
@@ -800,6 +1139,7 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
         info.name === "word/_rels/document.xml.rels" ||
         info.name === "docProps/app.xml" ||
         info.name === "word/theme/theme1.xml" ||
+        info.name === "word/numbering.xml" ||
         /^word\/(header|footer)\d*\.xml$/.test(info.name),
     });
     const text = (name: string) => (entries[name] ? new TextDecoder("utf-8").decode(entries[name]) : null);
@@ -811,6 +1151,18 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
     const body = doc.getElementsByTagName("w:body")[0];
     if (!body) return EMPTY;
 
+    // テーマのフォント(本文・見出し × 英数字・日本語)。文字のフォント名を決めるのに使う
+    {
+      const themeText = text("word/theme/theme1.xml");
+      const theme = themeText ? parser.parseFromString(themeText, "application/xml") : null;
+      const pick = (kind: string, script: "latin" | "ea"): string | null => {
+        const fontEl = theme?.getElementsByTagName(kind)[0];
+        if (!fontEl) return null;
+        if (script === "latin") return kid(fontEl, "a:latin")?.getAttribute("typeface") || null;
+        return kid(fontEl, "a:ea")?.getAttribute("typeface") || kids(fontEl, "a:font").find((f) => f.getAttribute("script") === "Jpan")?.getAttribute("typeface") || null;
+      };
+      themeFonts = { minorLatin: pick("a:minorFont", "latin"), minorEa: pick("a:minorFont", "ea"), majorLatin: pick("a:majorFont", "latin"), majorEa: pick("a:majorFont", "ea") };
+    }
     const rs = new Resolver(parseStyles(text("word/styles.xml")));
 
     let defaultTabPt = DEFAULT_TAB_PT;
@@ -895,10 +1247,22 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
       const unit = m[2] ?? "px";
       return unit === "pt" ? n : unit === "in" ? n * 72 : unit === "cm" ? (n * 72) / 2.54 : unit === "mm" ? (n * 72) / 25.4 : n * 0.75;
     };
-    for (const child of Array.from(body.children)) {
+    const floats: FloatObject[] = [];
+    Array.from(body.children).forEach((child, bodyIndex) => {
+      if (child.tagName !== "w:p") return;
+      // テキストボックス・図形(画像でない浮動配置)：mc:AlternateContent の mc:Choice 側の wp:anchor
+      for (const anchor of Array.from(child.getElementsByTagName("wp:anchor"))) {
+        let inFb = false;
+        for (let a = anchor.parentElement; a && a !== child; a = a.parentElement) if (a.tagName === "mc:Fallback" || a.tagName === "w:txbxContent") inFb = true;
+        if (inFb || anchor.getElementsByTagName("a:blip").length > 0) continue;
+        const f = readFloat(anchor, rs, bodyIndex, null);
+        if (f) floats.push(f);
+      }
+    });
+    for (const [bodyIndex, child] of Array.from(body.children).entries()) {
       if (child.tagName !== "w:p") continue;
       const inFallback = (el: Element) => {
-        for (let a = el.parentElement; a && a !== child; a = a.parentElement) if (a.tagName === "mc:Fallback") return true;
+        for (let a = el.parentElement; a && a !== child; a = a.parentElement) if (a.tagName === "mc:Fallback" || a.tagName === "w:txbxContent") return true;
         return false;
       };
       for (const el of Array.from(child.getElementsByTagName("*"))) {
@@ -909,6 +1273,10 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
           const ext = holder ? kid(holder, "wp:extent") : null;
           const cx = num(attr(ext, "cx"));
           const cy = num(attr(ext, "cy"));
+          if (holder?.tagName === "wp:anchor") {
+            const f = readFloat(holder, rs, bodyIndex, bodyImages.length);
+            if (f) floats.push(f);
+          }
           if (cx !== null && cy !== null && cx > 0 && cy > 0) {
             bodyImages.push({ widthPt: cx / EMU_PER_PT, heightPt: cy / EMU_PER_PT, floating: holder?.tagName === "wp:anchor" });
           } else bodyImages.push({ widthPt: 0, heightPt: 0, floating: false });
@@ -951,10 +1319,13 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
       const normal = Array.from(sd.getElementsByTagName("w:style")).find((st) => st.getAttribute("w:type") === "paragraph" && st.getAttribute("w:default") === "1");
       apply(kid(normal ?? null, "w:rPr"));
     }
+    // 箇条書き・番号付きリスト：numbering.xml の定義から、各段落の行頭の記号・番号と字下げを決める
+    applyNumbering(text("word/numbering.xml"), parser, bodyFmt);
+
     const hasRenderedBreaks = bodyFmt.some((b) =>
       b.tag === "p" ? b.para.renderedBreaks.length > 0 : !!b.table?.rows.some((r) => r.renderedBreak)
     );
-    return { body: bodyFmt, defaultTabPt, evenAndOdd, headers, footers, refs, hasRenderedBreaks, savedPageCount, savedByWord, bodyImages, defaultFonts };
+    return { body: bodyFmt, defaultTabPt, evenAndOdd, headers, footers, refs, hasRenderedBreaks, savedPageCount, savedByWord, bodyImages, floats, defaultFonts };
   } catch {
     return EMPTY;
   }

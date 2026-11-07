@@ -32,25 +32,32 @@ interface WordExpect {
   colorPages?: Record<string, number[]>;
   imageSize?: Record<string, [number, number]>;
   leftMargin?: Record<string, number>;
+  /** 画面の注意書きに含まれるべき文字 */
+  warningsContain?: string[];
+  /** 同じ行にあるべき目印の組(上の位置の差が3pt未満) */
+  sameLine?: [string, string][];
+  /** 目印の左の位置の下限(pt)。回り込み・テキストボックスの位置の確認 */
+  minX?: Record<string, number>;
 }
 
-async function convert(page: import("@playwright/test").Page, file: string): Promise<string> {
+async function convert(page: import("@playwright/test").Page, file: string): Promise<{ pdf: string; screen: string }> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wordfid-"));
   await page.goto("/tools/word-to-pdf");
   await uploadFixture(page, file);
   await page.getByRole("button", { name: "PDFに変換する" }).waitFor({ state: "visible", timeout: 30_000 });
   await page.getByRole("button", { name: "PDFに変換する" }).click();
   await page.getByText("完了", { exact: false }).first().waitFor({ timeout: 120_000 });
+  const screen = await page.locator("main").innerText();
   const download = await clickAndDownload(page, "PDFをダウンロード");
   const pdf = path.join(dir, "out.pdf");
   await download.saveAs(pdf);
-  return pdf;
+  return { pdf, screen };
 }
 
 const near = (rgb: [number, number, number], tol = 30): Pred => (r, g, b) => Math.abs(r - rgb[0]) < tol && Math.abs(g - rgb[1]) < tol && Math.abs(b - rgb[2]) < tol;
 const inkPixel: Pred = (r, g, b) => r < 200 && g < 200 && b < 200;
 
-function audit(pdf: string, e: WordExpect): string[] {
+function audit(pdf: string, screen: string, e: WordExpect): string[] {
   const problems: string[] = [];
   const sizes = pageSizes(pdf);
   if (e.pages !== null && sizes.length !== e.pages) problems.push(`ページ数：期待 ${e.pages}、実際 ${sizes.length}`);
@@ -132,6 +139,16 @@ function audit(pdf: string, e: WordExpect): string[] {
     const f = (found.get(marker) ?? [])[0];
     if (f && (f.w.x < left - 1 || f.w.x > left + 8)) problems.push(`${marker} の左の位置：期待 ${left}pt、実際 ${f.w.x.toFixed(1)}pt`);
   }
+  for (const t of e.warningsContain ?? []) if (!screen.includes(t)) problems.push(`画面の注意書きに「${t}」が無い`);
+  for (const [a, b] of e.sameLine ?? []) {
+    const fa = (found.get(a) ?? [])[0];
+    const fb = (found.get(b) ?? [])[0];
+    if (fa && fb && (fa.page !== fb.page || Math.abs(fa.w.y2 - fb.w.y2) >= 3)) problems.push(`${a} と ${b} が同じ行にない(下の位置 ${fa.w.y2.toFixed(1)} と ${fb.w.y2.toFixed(1)})`);
+  }
+  for (const [m, x] of Object.entries(e.minX ?? {})) {
+    const f = (found.get(m) ?? [])[0];
+    if (f && f.w.x < x) problems.push(`${m} の左の位置：期待 ${x}pt以上、実際 ${f.w.x.toFixed(1)}pt`);
+  }
   return [...problems, ...examples.map((x) => `  例：${x}`)];
 }
 
@@ -143,8 +160,8 @@ for (const file of files) {
   const e: WordExpect = JSON.parse(fs.readFileSync(path.join(DIR, file.replace(".docx", ".expect.json")), "utf-8"));
   test(`${file.replace(".docx", "")} ${e.title}：ページ数・改ページの位置・欠落`, async ({ page }) => {
     test.setTimeout(180_000);
-    const pdf = await convert(page, path.join(DIR, file));
-    const problems = audit(pdf, e);
+    const { pdf, screen } = await convert(page, path.join(DIR, file));
+    const problems = audit(pdf, screen, e);
     expect(problems, problems.join("\n")).toEqual([]);
   });
 }

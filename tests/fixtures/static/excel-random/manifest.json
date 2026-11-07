@@ -1,0 +1,102 @@
+[
+ {
+  "seed": 5,
+  "base": "x005.xlsx",
+  "variants": [
+   {
+    "file": "x005-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 14,
+  "base": "x014.xlsx",
+  "variants": [
+   {
+    "file": "x014-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 23,
+  "base": "x023.xlsx",
+  "variants": [
+   {
+    "file": "x023-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 31,
+  "base": "x031.xlsx",
+  "variants": [
+   {
+    "file": "x031-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 46,
+  "base": "x046.xlsx",
+  "variants": [
+   {
+    "file": "x046-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 52,
+  "base": "x052.xlsx",
+  "variants": [
+   {
+    "file": "x052-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 63,
+  "base": "x063.xlsx",
+  "variants": [
+   {
+    "file": "x063-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 70,
+  "base": "x070.xlsx",
+  "variants": [
+   {
+    "file": "x070-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 88,
+  "base": "x088.xlsx",
+  "variants": [
+   {
+    "file": "x088-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 99,
+  "base": "x099.xlsx",
+  "variants": [
+   {
+    "file": "x099-margins.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ }
+]

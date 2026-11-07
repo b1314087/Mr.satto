@@ -1,0 +1,134 @@
+[
+ {
+  "seed": 3,
+  "base": "r003.docx",
+  "variants": [
+   {
+    "file": "r003-margins.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r003-bigger.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r003-more.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r003-bigimg.docx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 11,
+  "base": "r011.docx",
+  "variants": [
+   {
+    "file": "r011-margins.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r011-bigger.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r011-more.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r011-bigimg.docx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 27,
+  "base": "r027.docx",
+  "variants": [
+   {
+    "file": "r027-margins.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r027-bigger.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r027-more.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r027-bigimg.docx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 42,
+  "base": "r042.docx",
+  "variants": [
+   {
+    "file": "r042-margins.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r042-bigger.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r042-more.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r042-bigimg.docx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 58,
+  "base": "r058.docx",
+  "variants": [
+   {
+    "file": "r058-margins.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r058-bigger.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r058-more.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r058-bigimg.docx",
+    "relation": "pages>=base"
+   }
+  ]
+ },
+ {
+  "seed": 77,
+  "base": "r077.docx",
+  "variants": [
+   {
+    "file": "r077-margins.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r077-bigger.docx",
+    "relation": "pages>=base"
+   },
+   {
+    "file": "r077-more.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r077-bigimg.docx",
+    "relation": "pages>=base"
+   }
+  ]
+ }
+]

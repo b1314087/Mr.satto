@@ -146,13 +146,31 @@ export function layoutParagraph(chars: string[], widths: number[], p: LayoutPara
     const avail = p.maxX - line.endX;
     if (p.align === "right" && !line.hasTab) shift(line, avail);
     else if (p.align === "center" && !line.hasTab) shift(line, avail / 2);
-    else if (p.align === "justify" && !line.hasTab && li !== lastIndex && !line.explicitBreak && line.items.length > 1 && avail > 0) {
-      const gaps = line.items.length - 1;
-      const add = avail / gaps;
+    else if (p.align === "justify" && !line.hasTab && li !== lastIndex && !line.explicitBreak && line.items.length > 1) {
+      // 両端揃え(Wordと同じ)：行末の空白は数えない。広げるのは「空白」と「日本語などの文字の前後」の間だけで、
+      // 英数字の単語の文字と文字の間は広げない(広げる所が無い行は、左揃えのまま)
+      let last = line.items.length - 1;
+      while (last > 0 && chars[line.items[last].index] === " ") last--;
+      const end = line.items[last].x + line.items[last].width;
+      const room = p.maxX - end;
+      if (room <= 0) return;
+      const expandable: boolean[] = [];
+      let gaps = 0;
+      for (let k = 0; k < last; k++) {
+        const a = chars[line.items[k].index];
+        const b = chars[line.items[k + 1].index];
+        const ok = a === " " || (b !== " " && !(isWordChar(a) && isWordChar(b)));
+        expandable.push(ok);
+        if (ok) gaps++;
+      }
+      if (gaps === 0) return;
+      const add = room / gaps;
+      let shiftBy = 0;
       line.items.forEach((it, k) => {
-        it.x += add * k;
+        it.x += shiftBy;
+        if (k < last && expandable[k]) shiftBy += add;
       });
-      line.endX += avail;
+      line.endX = p.maxX;
     }
   });
   return lines;

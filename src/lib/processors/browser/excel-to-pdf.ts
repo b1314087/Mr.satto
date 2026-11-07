@@ -17,6 +17,7 @@ import { drawChart, type ChartRangeResolver, type ChartTextApi } from "@/lib/exc
 import { parseRangeRef } from "@/lib/excel/ooxml-charts";
 import { excelSerialToDate, formatExcelDate } from "@/lib/excel/excel-date-format";
 import { excelNumberFormatColor, excelTextFormatColor, formatExcelNumber, formatExcelText, formatGeneralNumber } from "@/lib/excel/excel-number-format";
+import { fontMetricsFor } from "@/lib/fonts/office-font-metrics";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
 import { checkChart, sortIssues, type ChartPageCheckResult, type ChartPageIssue, type CheckArea, type CheckPage } from "@/lib/excel/chart-page-check";
 import type * as PdfLibTypes from "pdf-lib";
@@ -316,6 +317,8 @@ interface TextStyle {
   color: string | null;
   serif: boolean;
   vertAlign: "super" | "sub" | null;
+  /** セルのフォント名(文字の幅の計算に使う。PDFに描く字形は同梱のフォント)。分からなければnull */
+  fontName?: string | null;
 }
 
 interface Glyph {
@@ -585,9 +588,22 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       for (const ch of Array.from(text)) sum += unitWidth(f, ch);
       return sum * size;
     };
+    // ---- 文字の幅は、セルのフォントの寸法で求める(src/lib/fonts/office-font-metrics.ts) ----
+    // PDFに描く字形は同梱のNoto Sans JPだが、はみ出し・折り返し・「縮小して全体を表示」の判定は、Excelと同じく
+    // セルのフォント(Calibri・MS Pゴシック・游ゴシック 等)の文字の幅で行う。寸法が分からない文字は、同梱のフォントの幅。
+    const metricsUnitWidth = (fontName: string | null | undefined, serif: boolean, ch: string): number => {
+      const w = fontName ? fontMetricsFor(fontName).widthPerPt(ch) : null;
+      return w ?? unitWidth(fontOf(serif), ch);
+    };
+    /** セルのフォントでの文字列の幅 */
+    const cellTextWidth = (fontName: string | null | undefined, serif: boolean, text: string, size: number): number => {
+      let sum = 0;
+      for (const ch of Array.from(text)) sum += metricsUnitWidth(fontName, serif, ch);
+      return sum * size;
+    };
     /** 文字1つの幅(sizeFactor = ページの縮小率×「縮小して全体を表示」の倍率) */
     const glyphWidth = (g: Glyph, sizeFactor: number): number =>
-      unitWidth(fontOf(g.style.serif), g.ch) * g.style.fs * (g.style.vertAlign ? SCRIPT_SIZE_RATIO : 1) * sizeFactor;
+      metricsUnitWidth(g.style.fontName, g.style.serif, g.ch) * g.style.fs * (g.style.vertAlign ? SCRIPT_SIZE_RATIO : 1) * sizeFactor;
     const lineWidthOf = (line: Glyph[], sizeFactor: number): number => line.reduce((sum, g) => sum + glyphWidth(g, sizeFactor), 0);
 
     // グラフの文字(chart-render.ts)。セルと同じフォントで、1文字ずつ描く(drawTextRobust)
@@ -722,7 +738,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       embedFont: PDFFont,
       bold = false,
       italic = false,
-      angleDeg = 0
+      angleDeg = 0,
+      advanceOf?: (ch: string) => number
     ): number {
       // 太字フォント資産は無い(既存資産はRegularのみ)ため、word-to-pdf.tsと
       // 同じ「塗り+縁取り(FillAndOutline)」による疑似ボールドで近似する(開発指示書§29-31)。
@@ -743,6 +760,11 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       if ((page as unknown as { font?: PDFFont }).font !== embedFont) page.setFont(embedFont);
       let advance = 0;
       for (const ch of Array.from(text)) {
+        // セルのフォントの文字の幅(advanceOf)で並べる。同梱のフォントの字形の幅と違うときは、字形を横に伸縮して、その幅に収める
+        const own = unitWidth(embedFont, ch) * size;
+        const slot = advanceOf ? advanceOf(ch) : own;
+        const squeeze = own > 0 && slot > 0 && Math.abs(slot - own) > own * 0.02 ? Math.max(50, Math.min(150, (slot / own) * 100)) : null;
+        if (squeeze !== null) page.pushOperators(pdfLib().PDFOperator.of(pdfLib().PDFOperatorNames.SetTextHorizontalScaling, [pdfLib().PDFNumber.of(squeeze)]));
         try {
           page.drawText(ch, {
             x: x + advance * cos,
@@ -755,7 +777,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         } catch {
           // フォントに無い文字は描かない(幅だけ進める)
         }
-        advance += unitWidth(embedFont, ch) * size;
+        if (squeeze !== null) page.pushOperators(pdfLib().PDFOperator.of(pdfLib().PDFOperatorNames.SetTextHorizontalScaling, [pdfLib().PDFNumber.of(100)]));
+        advance += slot;
       }
       if (bold) {
         page.pushOperators(pdfLib().setTextRenderingMode(pdfLib().TextRenderingMode.Fill));
@@ -799,7 +822,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         const bx = x + advance * ux + shift * nx;
         const by = y + advance * uy + shift * ny;
         const color = style.color && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(style.color)) : defaultColor;
-        const len = drawTextRobust(page, text, bx, by, size, color, f, style.bold, style.italic, angleDeg);
+        const len = drawTextRobust(page, text, bx, by, size, color, f, style.bold, style.italic, angleDeg, (ch) => metricsUnitWidth(style.fontName, style.serif, ch) * size);
         if (style.underline || style.strike) {
           const thickness = Math.max(0.3, size * 0.06);
           const lineAt = (offset: number) => {
@@ -1082,6 +1105,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           color: cf?.fontColors.get(fkey) ?? formatColorOf(origRow, origCol) ?? settings?.cellFontColors.get(fkey) ?? null,
           serif: extras?.serif ?? settings?.defaultFontSerif ?? false,
           vertAlign: extras?.vertAlign ?? null,
+          fontName: extras?.fontName ?? settings?.defaultFontName ?? null,
         };
       };
       const glyphsOf = (text: string, base: TextStyle, origRow: number, origCol: number, value: RawCellValue): Glyph[] => {
@@ -1099,6 +1123,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
               color: run.color ?? base.color,
               serif: run.serif ?? base.serif,
               vertAlign: run.vertAlign ?? base.vertAlign,
+              fontName: run.fontName ?? base.fontName,
             };
             for (const ch of Array.from(normalizeNewlines(run.text))) out.push({ ch: displayCharOf(ch), style });
           }
@@ -1234,7 +1259,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           // Excelのセルの左右の余白は2ピクセル程度(合わせて約3pt)。描画用の余白(cellPadding)で判定すると、
           // 列の幅ぎりぎりの文字まで「はみ出す」と判定して、使われていない右の列まで印刷範囲を広げ、
           // 「ページ数に合わせる」の倍率やページの境目がExcelとずれていた。
-          const need = textWidth(font, text, fontSizeFor(r, lc)) + 3 + (align?.indent ?? 0) * defaultFontSize * 0.6;
+          const lcStyle = baseStyleOf(r, lc);
+          const need = cellTextWidth(lcStyle.fontName, lcStyle.serif, text, fontSizeFor(r, lc)) + 3 + (align?.indent ?? 0) * defaultFontSize * 0.6;
           let have = 0;
           let c = lc;
           // 最終列(値のある列)から右へ、はみ出す文字が収まるまでの列を数える

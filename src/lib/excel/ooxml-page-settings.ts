@@ -105,11 +105,15 @@ export interface RichRun {
   color: string | null;
   serif: boolean | null;
   vertAlign: "super" | "sub" | null;
+  /** その区間のフォント名(rFont)。指定が無ければnull */
+  fontName: string | null;
 }
 
 /** セルの文字の装飾(斜体・下線・取り消し線・明朝体・上付き/下付き)。既定値のセルは記録しない */
 export interface CellFontExtras {
   serif?: boolean;
+  /** ブックの既定と違うフォント名(文字の幅の計算に使う) */
+  fontName?: string;
   italic?: boolean;
   underline?: "single" | "double";
   strike?: boolean;
@@ -302,6 +306,8 @@ export interface SheetPageSettings {
   defaultFontSizePt: number | null;
   /** ブックの既定フォントが明朝系か(スタイル番号の無いセルの書体の判定用) */
   defaultFontSerif: boolean;
+  /** ブックの既定のフォント名(styles.xml の最初のフォント)。文字の幅の計算に使う */
+  defaultFontName: string | null;
   /** セルの配置(横・縦・折り返し)。style(xf)に<alignment>がある場合のみキーを持つ */
   cellAlign: Map<string, CellAlign>;
   /** セルの文字サイズ(pt)。fonts[]のsz。 */
@@ -408,6 +414,7 @@ function emptySheetSettings(): SheetPageSettings {
     merges: [],
     defaultFontSizePt: null,
     defaultFontSerif: false,
+    defaultFontName: null,
     cellAlign: new Map(),
     cellFontSizePt: new Map(),
     cellDateFormat: new Map(),
@@ -1212,6 +1219,7 @@ function parseCellStyles(stylesXmlText: string | null, themeColors: string[] | n
       const extras: CellFontExtras = {};
       if (isSerifFontName(fontDef?.name)) extras.serif = true;
       else if (isSerifFontName(fontDefs[0]?.name)) extras.serif = false; // 既定が明朝のブックで、明朝ではないフォントを指定したセル
+      if (fontDef?.name && fontDef.name !== fontDefs[0]?.name) extras.fontName = fontDef.name;
       if (fontDef?.italic) extras.italic = true;
       if (fontDef?.underline) extras.underline = fontDef.underline;
       if (fontDef?.strike) extras.strike = true;
@@ -1261,6 +1269,7 @@ function parseRunProps(rPr: Element | undefined, ctx: ColorCtx): Omit<RichRun, "
     color: readColorEl(rPr?.getElementsByTagName("color")[0], ctx),
     serif: rFont ? isSerifFontName(rFont) : null,
     vertAlign: vert === "superscript" ? "super" : vert === "subscript" ? "sub" : null,
+    fontName: rFont,
   };
 }
 
@@ -1297,6 +1306,7 @@ function parseSheetXml(
   const { cellStyles } = parsedStyles;
   result.defaultFontSizePt = parsedStyles.defaultFontSizePt;
   result.defaultFontSerif = isSerifFontName(parsedStyles.defaultFontName);
+  result.defaultFontName = parsedStyles.defaultFontName;
 
   // sheetPr/pageSetUpPr@fitToPage
   const pageSetUpPr = doc.getElementsByTagName("pageSetUpPr")[0];

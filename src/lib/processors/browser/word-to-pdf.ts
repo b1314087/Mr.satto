@@ -5,6 +5,8 @@ import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
 import { addLinkAnnotation } from "@/lib/pdf/pdf-link-annotation";
 import { parseWordDocumentStructure, type BodyChildHint, type DefaultParagraphSpacing } from "@/lib/word/section-settings";
 import {
+  OBJECT_CHAR,
+  type FloatObject,
   parseDocxFormatting,
   PAGE_NUMBER_CHAR,
   PAGE_COUNT_CHAR,
@@ -15,8 +17,10 @@ import {
   type RunFmt,
   type TableFmt,
 } from "@/lib/word/docx-format";
+import { fontMetricsFor, isEastAsianChar } from "@/lib/fonts/office-font-metrics";
 import { layoutParagraph, type LayoutLine, type TabStopSpec } from "@/lib/word/word-layout";
 import type * as PdfLibTypes from "pdf-lib";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
@@ -87,31 +91,9 @@ const PARAGRAPH_GAP = 6;
  *  で確認）。行間の指定が全く取得できない場合の近似係数として使う。 */
 const SINGLE_LINE_SPACING_FACTOR = 1.15;
 
-/**
- * Wordの「1行」の高さは、フォントの字形の上下の高さ(アセント+ディセント+行間の余白)で決まる。
- * 字形の寸法が確かに分かっているフォントだけ、その値(文字の大きさに対する倍率)を使う。分からないフォントは従来の近似(1.15)。
- * Noto Sans/Serif CJK JP・Noto Sans/Serif JP：アセント1.160+ディセント0.288=1.448(Mr.Sattoが埋め込むフォントと同じ寸法)。
- * Calibri：0.75+0.25+行間0.2207=1.2207(11ptで約13.4pt)。Arial・Times New Roman：約1.149。
- */
-const LINE_FACTOR_BY_FONT: Record<string, number> = {
-  "noto sans cjk jp": 1.448,
-  "noto serif cjk jp": 1.448,
-  "noto sans jp": 1.448,
-  "noto serif jp": 1.448,
-  calibri: 1.2207,
-  "calibri light": 1.2207,
-  arial: 1.149,
-  "times new roman": 1.149,
-};
-
-/** 文書の標準のフォントから、「1行」の高さの倍率を決める。日本語用のフォントが分からないときは、近似(1.15)より小さくしない */
+/** 文書の標準のフォント(英数字用・日本語用)から、「1行」の高さの倍率を決める(大きいほう) */
 function lineFactorForFonts(fonts: { ascii: string | null; eastAsia: string | null }): number {
-  const f = (name: string | null) => (name ? LINE_FACTOR_BY_FONT[name.trim().toLowerCase()] : undefined);
-  const ascii = f(fonts.ascii);
-  const ea = f(fonts.eastAsia);
-  if (ascii === undefined && ea === undefined) return SINGLE_LINE_SPACING_FACTOR;
-  if (ea === undefined && fonts.eastAsia) return Math.max(SINGLE_LINE_SPACING_FACTOR, ascii ?? 0);
-  return Math.max(ascii ?? 0, ea ?? 0);
+  return Math.max(fontMetricsFor(fonts.ascii).lineFactor, fonts.eastAsia ? fontMetricsFor(fonts.eastAsia).lineFactor : 0);
 }
 
 /**
@@ -236,6 +218,8 @@ interface TextRun {
   italic: boolean;
   underline: boolean;
   link?: string;
+  /** 段落の中の画像(text は画像の目印の文字 U+FFFC の1文字)。ordinal は本文の段落の中の画像の通し番号 */
+  image?: { dataUri: string; ordinal: number };
 }
 interface ListMeta {
   ordered: boolean;
@@ -330,6 +314,27 @@ function markPageBreaks(node: unknown): unknown {
     return makePageBreakMarkerParagraph();
   }
   return next;
+}
+
+/**
+ * mammothに渡す前に、本文のテキストボックスの中身(w:txbxContent)を取り除く(ブラウザの中で、元のファイルの写しを作り直す)。
+ * mammothはテキストボックスの中の段落を、本文の段落として、テキストボックスを置いた段落の後ろに並べる。そのため
+ * 本文の段落の数が word/document.xml と合わなくなり、文書の書式(文字の大きさ・間隔・セクションなど)をすべて
+ * 使えなくなっていた。テキストボックスは、元の位置に別に描く(word/document.xml から読んだ FloatObject)。
+ */
+function withoutTextBoxContent(arrayBuffer: ArrayBuffer): ArrayBuffer {
+  try {
+    const files = unzipSync(new Uint8Array(arrayBuffer));
+    const docXml = files["word/document.xml"];
+    if (!docXml) return arrayBuffer;
+    const text = strFromU8(docXml);
+    if (!text.includes("txbxContent")) return arrayBuffer;
+    files["word/document.xml"] = strToU8(text.replace(/<w:txbxContent\b[^>]*>[\s\S]*?<\/w:txbxContent>/g, "<w:txbxContent/>"));
+    const out = zipSync(files, { level: 0 });
+    return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+  } catch {
+    return arrayBuffer;
+  }
 }
 
 /** mammothの中間木の節の、文字の数（書式つきの文字列 ParaFmt.runs と同じ数え方：文字・タブ・改行を1文字） */
@@ -598,6 +603,11 @@ function extractRuns(
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
   if (tag === "br") return [{ text: "\n", ...style }];
+  // 画像：行の中の1文字(画像の目印の文字)にする。通し番号は htmlToBlocks の最後に、本文の順に付け直す
+  if (tag === "img") {
+    const src = el.getAttribute("src") || "";
+    return src.startsWith("data:image/") ? [{ text: OBJECT_CHAR, ...style, image: { dataUri: src, ordinal: -1 } }] : [];
+  }
   const nextStyle = { ...style };
   if (tag === "strong" || tag === "b") nextStyle.bold = true;
   if (tag === "em" || tag === "i") nextStyle.italic = true;
@@ -725,7 +735,7 @@ function htmlToBlocks(html: string, formatting: DocxFormatting | null): { blocks
       offset: Number(offText) || 0,
     };
   }
-  let imageOrdinal = 0;
+
 
   function walkListItems(listEl: Element, ordered: boolean, level: number) {
     let index = 0;
@@ -771,61 +781,37 @@ function htmlToBlocks(html: string, formatting: DocxFormatting | null): { blocks
         return;
       }
       if (tag === "p") {
-        // 段落の中の画像は、画像の前の文字・画像・画像の後ろの文字に分ける。
-        // 以前は画像のある段落の文字をすべて捨てていた(画像と同じ段落の文字が消えていた)。
-        const segments: (TextRun[] | Element)[] = [[]];
-        child.childNodes.forEach((c) => {
-          if (c.nodeType === Node.ELEMENT_NODE && (c as Element).tagName.toLowerCase() === "img") {
-            segments.push(c as Element, []);
-          } else {
-            (segments[segments.length - 1] as TextRun[]).push(...extractRuns(c, { bold: false, italic: false, underline: false }));
-          }
-        });
+        // 段落の中の画像は、行の中の1文字(画像の目印の文字)として扱う(文字と同じ行に並ぶ画像・浮動配置の画像の位置)。
+        // 以前は画像のある段落の文字を捨てたり、画像を段落の外の別のかたまりにしたりしていた。
+        let runs: TextRun[] = [];
+        child.childNodes.forEach((c) => runs.push(...extractRuns(c, { bold: false, italic: false, underline: false })));
         let paraId: number | null = null;
         let offset = 0;
-        let hangingIndentPt: number | null = null;
-        segments.forEach((seg, si) => {
-          if (!Array.isArray(seg)) {
-            const src = seg.getAttribute("src") || "";
-            if (src.startsWith("data:image/")) {
-              blocks.push({ kind: "image", dataUri: src, altText: seg.getAttribute("alt") || "", ordinal: imageOrdinal++, bodyIndex: paraId ?? undefined });
-            } else {
-              warnings.push("data URI形式でない画像を検出したため省略しました");
-            }
-            return;
-          }
-          let runs = seg;
-          if (si === 0) {
-            const cont = extractContMarker(runs);
-            if (cont.id !== null) {
-              runs = cont.runs;
-              paraId = cont.id;
-              offset = cont.offset;
-            } else {
-              const idRes = extractParaIdMarker(runs);
-              runs = idRes.runs;
-              paraId = idRes.id;
-            }
-            const hang = extractHangingIndentMarker(runs);
-            runs = hang.runs;
-            hangingIndentPt = hang.hangingIndentPt;
-          }
-          const hasText = runs.some((r) => r.text !== "");
-          if (si === 0 && isPageBreakParagraph(runs)) {
-            blocks.push({ kind: "pagebreak" });
-          } else if (si === 0 && segments.length === 1 && isEmptyParagraphMarker(runs)) {
-            // 開発指示書C-2〜C-4: mammothが本来消してしまう空段落を、
-            // markEmptyParagraphsで埋め込んだマーカーから実際の空段落(runs: [])へ戻す。
-            const block: ParagraphBlock = { kind: "paragraph", runs: [], heading: 0 };
-            attachFormat(block, paraId, offset);
-            blocks.push(block);
-          } else if (hasText) {
-            const block: ParagraphBlock = { kind: "paragraph", runs, heading: 0, hangingIndentPt };
-            attachFormat(block, paraId, offset);
-            blocks.push(block);
-          }
-          offset += flattenRuns(runs.filter((r) => r.text !== "" && !r.text.includes(EMPTY_PARAGRAPH_MARKER))).length;
-        });
+        const cont = extractContMarker(runs);
+        if (cont.id !== null) {
+          runs = cont.runs;
+          paraId = cont.id;
+          offset = cont.offset;
+        } else {
+          const idRes = extractParaIdMarker(runs);
+          runs = idRes.runs;
+          paraId = idRes.id;
+        }
+        const hang = extractHangingIndentMarker(runs);
+        runs = hang.runs;
+        if (isPageBreakParagraph(runs)) {
+          blocks.push({ kind: "pagebreak" });
+        } else if (isEmptyParagraphMarker(runs)) {
+          // 開発指示書C-2〜C-4: mammothが本来消してしまう空段落を、
+          // markEmptyParagraphsで埋め込んだマーカーから実際の空段落(runs: [])へ戻す。
+          const block: ParagraphBlock = { kind: "paragraph", runs: [], heading: 0 };
+          attachFormat(block, paraId, offset);
+          blocks.push(block);
+        } else if (runs.some((r) => r.text !== "")) {
+          const block: ParagraphBlock = { kind: "paragraph", runs, heading: 0, hangingIndentPt: hang.hangingIndentPt };
+          attachFormat(block, paraId, offset);
+          blocks.push(block);
+        }
         return;
       }
       if (tag === "ul" || tag === "ol") {
@@ -855,6 +841,12 @@ function htmlToBlocks(html: string, formatting: DocxFormatting | null): { blocks
   }
 
   walkBlockLevel(doc.body);
+  // 本文の段落(表の外)の画像に、文書の順の通し番号を付ける(word/document.xml の画像の大きさ・浮動配置と対応づける)
+  let ordinal = 0;
+  for (const b of blocks) {
+    if (b.kind !== "paragraph") continue;
+    for (const r of b.runs) if (r.image) r.image = { ...r.image, ordinal: ordinal++ };
+  }
   return { blocks, warnings };
 }
 
@@ -872,6 +864,11 @@ interface FlatChar {
   highlight: string | null;
   strike: boolean;
   script: "super" | "sub" | null;
+  /** 文書が指定したフォント名(英数字用・日本語用)。行の組み方(文字の幅・1行の高さ)に使う。分からなければ null */
+  fontAscii?: string | null;
+  fontEastAsia?: string | null;
+  /** 段落の中の画像(行の中に置く画像・浮動配置の画像の位置) */
+  image?: { dataUri: string; ordinal: number };
 }
 
 /** 空でない文字の並び（コードポイント単位）。書式つきの文字列との対応づけ（attachFormat）にも使う */
@@ -900,6 +897,9 @@ function toFlatChars(runs: TextRun[], charFmts: RunFmt[] | null | undefined, def
         highlight: f?.highlight ?? null,
         strike: f?.strike ?? false,
         script: f?.script ?? null,
+        fontAscii: f?.fontAscii ?? null,
+        fontEastAsia: f?.fontEastAsia ?? null,
+        ...(run.image ? { image: run.image } : {}),
       });
     }
   }
@@ -924,6 +924,8 @@ function fmtParagraphChars(para: ParaFmt, defaults: { size: number; bold: boolea
           highlight: f.highlight,
           strike: f.strike,
           script: f.script,
+          fontAscii: f.fontAscii,
+          fontEastAsia: f.fontEastAsia,
         });
       }
     }
@@ -992,7 +994,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     let html: string;
     try {
       const result = await mammoth.convertToHtml(
-        { arrayBuffer },
+        { arrayBuffer: withoutTextBoxContent(arrayBuffer) },
         {
           convertImage: mammoth.images.dataUri,
           transformDocument: ((documentNode: unknown) => {
@@ -1066,30 +1068,37 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       if (doc.getPageCount() >= MAX_PAGE_COUNT) {
         throw new Error(`変換できるページ数の上限は${MAX_PAGE_COUNT}ページです。`);
       }
+      flushFrontDrawsRef?.(page);
       page = doc.addPage([pageWidth, pageHeight]);
       pageGeom.set(page, { marginLeft, contentWidth });
       cursorY = pageHeight - marginTopEff;
     }
 
+    /** 前面の図形を描く関数(下で用意する。ページを変える前に、そのページの前面の図形を描く) */
+    let flushFrontDrawsRef: ((pg: PDFPage) => void) | null = null;
+
     /** このページに、まだ何も置いていないか(ページの先頭か) */
     const atPageTop = () => cursorY >= pageHeight - marginTopEff - 0.5;
 
-    // ---- Wordが保存した改ページの位置(w:lastRenderedPageBreak)に合わせる ----
-    // Microsoft Wordは保存のたびに、そのとき組んだページの境目を文書に記録する。この記録がある文書では、
-    // その位置で必ずページを変える(Mr.Sattoの行の組み方がWordとわずかに違っても、ページの中身がWordと同じになる)。
-    // 記録の位置より前でページの下に届いたときは、下の余白に少しはみ出して(フッターにかからない範囲で)同じページに収め、
-    // それでも入らないときだけ、自然にページを変える(そのときは警告を出す)。
-    const anchored = formattingMatched && formatting.hasRenderedBreaks;
-    let anchorOverflowCount = 0;
-    /** 自然にページを変える下の限界(ページの下端からの距離) */
-    const naturalLimit = () => {
-      if (!anchored) return bottomLimit;
-      const footerTop = footerReserve > 0 ? footerReserve + 4 : 0;
-      return Math.min(bottomLimit, Math.max(footerTop, marginBottom * 0.45));
-    };
-    /** 自然にページを変える(下に届いた)。記録に合わせている文書では、何回あったかを数える */
+    // ---- Wordが保存した改ページの位置(w:lastRenderedPageBreak)は「参考」として使う ----
+    // Microsoft Wordは保存のたびに、そのとき組んだページの境目を文書に記録する。ただし、保存したあとに内容が変わったり、
+    // フォントが違ったりすると、記録はいまの文書のページの境目と合わない。そこで、ページの区切りは常に
+    // Mr.Sattoのレイアウトの計算で決め、記録の位置は「計算した結果でも、そこがページの下の端の近く(残りが3行ぶん未満)」
+    // のときだけ使う(行の高さ・文字の幅のわずかな違いで、Wordより1〜2行ずれるのを防ぐため)。
+    // 計算と大きく離れた記録は使わない(使わなかった数は、注意書きで知らせる)。
+    const savedBreaksAvailable = formattingMatched && formatting.hasRenderedBreaks;
+    const SAVED_BREAK_LINES = 3;
+    let savedBreaksIgnored = 0;
+    /** 記録の位置を使ってよいか：その位置で、ページの残りの高さが、その位置の行の高さの3行ぶん未満 */
+    function savedBreakConsistent(roomPt: number, lineHeightPt: number): boolean {
+      const ok = roomPt < SAVED_BREAK_LINES * Math.max(1, lineHeightPt);
+      if (!ok) savedBreaksIgnored++;
+      return ok;
+    }
+    /** 自然にページを変える下の限界(ページの下端からの距離)。余白にははみ出さない */
+    const naturalLimit = () => bottomLimit;
+    /** 自然にページを変える(下に届いた) */
     function overflowPage() {
-      if (anchored) anchorOverflowCount++;
       newPage();
     }
 
@@ -1106,8 +1115,19 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     function drawSize(c: FlatChar): number {
       return c.script ? c.size * 0.65 : c.size;
     }
+    // ---- 文字の幅・1行の高さは、文書が指定したフォントの寸法で求める(src/lib/fonts/office-font-metrics.ts) ----
+    // PDFに描く字形は同梱のNoto Sans JPだが、行の折り返し・ページの区切りは、Wordと同じく文書のフォントの寸法で決める。
+    // 寸法が分からないフォントの文字は、同梱のフォントの幅を使う(従来どおり)。
+    const defaultFonts = formattingMatched ? formatting.defaultFonts : { ascii: null, eastAsia: null };
+    const metricsOfChar = (c: FlatChar) =>
+      fontMetricsFor(isEastAsianChar(c.ch) ? (c.fontEastAsia ?? defaultFonts.eastAsia ?? c.fontAscii ?? defaultFonts.ascii) : (c.fontAscii ?? defaultFonts.ascii));
     function widthsOf(chars: FlatChar[]): number[] {
-      return chars.map((c) => (c.ch === "\t" || c.ch === "\n" ? 0 : font.widthOfTextAtSize(c.ch, drawSize(c))));
+      return chars.map((c) => {
+        if (c.ch === "\t" || c.ch === "\n") return 0;
+        if (c.ch === OBJECT_CHAR) return inlineImageBox(c)?.w ?? 0;
+        const w = metricsOfChar(c).widthPerPt(c.ch);
+        return w !== null ? w * drawSize(c) : font.widthOfTextAtSize(c.ch, drawSize(c));
+      });
     }
 
     interface PlacedLines {
@@ -1138,18 +1158,36 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const sizes: number[] = [];
       const extras: number[] = [];
       for (const line of lines) {
+        // 行の高さ：その行の文字のうち、(文字の大きさ × そのフォントの1行の倍率)がいちばん大きいもの(Wordと同じ)
         let size = 0;
-        for (const it of line.items) size = Math.max(size, chars[it.index].size);
+        let natural = 0;
+        let imageH = 0;
+        for (const it of line.items) {
+          const c = chars[it.index];
+          size = Math.max(size, c.size);
+          if (c.ch === OBJECT_CHAR) {
+            // 行の中の画像：行の高さは、画像の高さ以上(Wordと同じ)
+            const box = inlineImageBox(c);
+            if (box) {
+              natural = Math.max(natural, box.h + c.size * 0.25);
+              imageH = Math.max(imageH, box.h);
+            }
+          } else if (c.ch !== "\n") natural = Math.max(natural, c.size * metricsOfChar(c).lineFactor);
+        }
         if (size === 0) size = o.paraSize;
+        if (natural === 0) natural = size * lineFactor;
+        const factor = natural / size;
         sizes.push(size);
         let h: number;
         let extra = 0;
         if (o.fixedLineHeight !== undefined) h = o.fixedLineHeight;
         else if (o.legacyHeadingHeight) h = size + 6;
         else {
-          h = resolveLineHeight(spacing, size, gridPitch, lineFactor);
-          if (spacing.lineRule === "auto" && (spacing.lineValue ?? 240) > 240 && !gridPitch) extra = Math.max(0, h - size * lineFactor);
+          h = resolveLineHeight(spacing, size, gridPitch, factor);
+          if (spacing.lineRule === "auto" && (spacing.lineValue ?? 240) > 240 && !gridPitch) extra = Math.max(0, h - natural);
         }
+        // 行の中の画像：文字の並びの線(ベースライン)を画像の下の端に置く(画像の高さの分だけ、文字を下げる)
+        if (imageH > 0) extra = Math.max(extra, Math.min(h - size, imageH - size));
         heights.push(h);
         extras.push(extra);
       }
@@ -1158,7 +1196,15 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
 
     /** 1行ぶんの文字を描く（同じ書式が続く文字をまとめて、塗り・縁取り・下線・取り消し線・リンクを付ける） */
     function paintLine(chars: FlatChar[], line: LayoutLine, originX: number, topY: number, size: number, extra: number) {
-      const items = line.items.filter((it) => chars[it.index].ch !== "\t" && chars[it.index].ch !== "\n");
+      for (const it of line.items) {
+        const c = chars[it.index];
+        if (c.ch !== OBJECT_CHAR) continue;
+        const box = inlineImageBox(c);
+        const img = c.image ? embeddedImages.get(c.image.dataUri) : undefined;
+        // 画像の下の端を、文字の並びの線(ベースライン)にそろえる
+        if (box && img) page.drawImage(img, { x: originX + it.x, y: topY - extra - size, width: box.w, height: box.h });
+      }
+      const items = line.items.filter((it) => chars[it.index].ch !== "\t" && chars[it.index].ch !== "\n" && chars[it.index].ch !== OBJECT_CHAR);
       const baseY = topY - extra - size;
       let k = 0;
       while (k < items.length) {
@@ -1182,7 +1228,13 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         // 1文字ずつdrawTextを呼ぶ理由: 英字に数字が続く文字列を1回で描くと、PDFの
         // テキスト情報（コピー・検索用）だけが化けることがあるため（従来からの回避策）。
         for (const it of group) {
-          page.drawText(chars[it.index].ch, { x: originX + it.x, y, size: ds, font, color, ...(first.italic ? { xSkew: pdfLib().degrees(12) } : {}) });
+          // 文書のフォントの文字の幅(it.width)で並べる。同梱のフォントの字形の幅と違うときは、字形を横に伸縮して、その幅に収める
+          const ch = chars[it.index].ch;
+          const own = font.widthOfTextAtSize(ch, ds);
+          const squeeze = own > 0 && it.width > 0 && Math.abs(it.width - own) > own * 0.02 && line.items.length > 0 ? Math.max(50, Math.min(150, (it.width / own) * 100)) : null;
+          if (squeeze !== null) page.pushOperators(pdfLib().PDFOperator.of(pdfLib().PDFOperatorNames.SetTextHorizontalScaling, [pdfLib().PDFNumber.of(squeeze)]));
+          page.drawText(ch, { x: originX + it.x, y, size: ds, font, color, ...(first.italic ? { xSkew: pdfLib().degrees(12) } : {}) });
+          if (squeeze !== null) page.pushOperators(pdfLib().PDFOperator.of(pdfLib().PDFOperatorNames.SetTextHorizontalScaling, [pdfLib().PDFNumber.of(100)]));
         }
         if (first.bold) page.pushOperators(pdfLib().setTextRenderingMode(pdfLib().TextRenderingMode.Fill));
         if (first.underline || first.link) {
@@ -1210,7 +1262,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
 
     /** 段落の中の、Wordが記録した改ページの位置(この部分の文字の中の位置)。0は段落の先頭 */
     function renderedBreaksOf(block: ParagraphBlock, length: number): number[] {
-      if (!anchored || !block.fmt) return [];
+      if (!savedBreaksAvailable || !block.fmt) return [];
       const start = block.contOffset ?? 0;
       return block.fmt.renderedBreaks
         .filter((k) => k >= start && (k < start + length || (length === 0 && k === start)))
@@ -1231,6 +1283,49 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       return { heights: placed.heights, before: fmt?.beforePt ?? 0, after: fmt?.afterPt ?? 0 };
     }
 
+    /**
+     * 回り込む図形があるときの段落：1行ずつ、その行の高さの範囲で空いている幅(図形の左右の広いほう)に行を組む。
+     * 上下に回り込む図形(band)や、空きが狭すぎるところは、図形の下まで行を下げる。
+     */
+    function flowParagraph(chars: FlatChar[], o: { firstX: number; contX: number; maxX: number; align: "left" | "center" | "right" | "justify"; tabs: TabStopSpec[]; paraSize: number; fmt: ParaFmt | null }) {
+      let idx = 0;
+      let first = true;
+      for (let guard = 0; idx < chars.length && guard < 10000; guard++) {
+        const rest = chars.slice(idx);
+        const est = placeParagraph(rest.slice(0, 1), { ...o, firstX: 0, contX: 0 }).heights[0] ?? o.paraSize * lineFactor;
+        if (cursorY - est < naturalLimit() && !atPageTop()) {
+          overflowPage();
+          continue;
+        }
+        const hits = exclusions.filter((e) => e.page === page && e.top > cursorY - est && e.bottom < cursorY);
+        const band = hits.filter((e) => e.band);
+        if (band.length > 0) {
+          cursorY = Math.min(...band.map((e) => e.bottom));
+          continue;
+        }
+        // 空いている幅(本文の左端からの位置)
+        let free: [number, number][] = [[first ? o.firstX : o.contX, o.maxX]];
+        for (const e of hits) {
+          const a = e.x1 - marginLeft;
+          const b = e.x2 - marginLeft;
+          free = free.flatMap(([l, r]) => (b <= l || a >= r ? [[l, r]] : [...(a > l ? [[l, a]] : []), ...(b < r ? [[b, r]] : [])]) as [number, number][]);
+        }
+        const widest = free.sort((p, q) => q[1] - q[0] - (p[1] - p[0]))[0];
+        if (!widest || widest[1] - widest[0] < Math.max(18, o.paraSize * 2)) {
+          cursorY = Math.min(...hits.map((e) => e.bottom));
+          continue;
+        }
+        const placed1 = placeParagraph(rest, { ...o, firstX: widest[0], contX: widest[0], maxX: widest[1] });
+        const line = placed1.lines[0];
+        if (!line) break;
+        paintLine(rest, line, marginLeft, cursorY, placed1.sizes[0], placed1.extras[0]);
+        cursorY -= placed1.heights[0];
+        const last = line.breakIndex ?? (line.items.length > 0 ? line.items[line.items.length - 1].index : 0);
+        idx += Math.max(1, last + 1);
+        first = false;
+      }
+    }
+
     function drawParagraph(block: ParagraphBlock, prevStyleId?: string | null, nextStyleId?: string | null, keepWithNextHeight = 0) {
       const fmt = block.fmt ?? null;
       const isHeading = block.heading > 0;
@@ -1239,20 +1334,30 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const runs = block.runs.filter((r) => r.text !== "");
       const isContinuation = (block.contOffset ?? 0) > 0;
       let chars = toFlatChars(runs, block.charFmts, { size: paraSize, bold: isHeading });
-      // Wordが記録した改ページの位置：段落の先頭ならこの段落の前で、途中ならその文字の前でページを変える
-      const anchors = renderedBreaksOf(block, chars.length);
-      if (anchors.includes(0) && !atPageTop()) newPage();
+      // Wordが記録した改ページの位置(参考)。使うかどうかは、行を組んだあとに決める(下)
+      let anchors = renderedBreaksOf(block, chars.length);
       const midAnchors = new Set<number>();
-      for (const k of anchors.filter((x) => x > 0).sort((a, b) => b - a)) {
-        // その文字の前に「行の終わり」を入れる(Wordでは、そこで行もページも変わっている)
-        chars = [...chars.slice(0, k), { ...chars[Math.max(0, k - 1)], ch: "\n" }, ...chars.slice(k)];
-        midAnchors.add(k);
+      // 箇条書き・番号付きの段落：行頭の記号・番号(numbering.xmlの定義どおり)と区切り(タブ・空白)を、行の先頭の文字として組む
+      const numbering = !isContinuation ? (fmt?.numbering ?? null) : null;
+      if (numbering && numbering.label !== "") {
+        const base = chars[0] ?? toFlatChars([{ text: " ", bold: false, italic: false, underline: false }], null, { size: paraSize, bold: isHeading })[0];
+        const labelChars: FlatChar[] = Array.from(numbering.label).map((ch) => ({
+          ...base,
+          ch,
+          link: undefined,
+          underline: false,
+          highlight: null,
+          fontAscii: numbering.fontAscii ?? base.fontAscii,
+        }));
+        if (numbering.suffix !== "nothing") labelChars.push({ ...base, ch: numbering.suffix === "tab" ? "\t" : " ", link: undefined, underline: false, highlight: null });
+        chars = [...labelChars, ...chars];
+        anchors = anchors.map((k) => (k > 0 ? k + labelChars.length : 0));
       }
 
       const listIndent = block.list ? 16 + block.list.level * 16 : 0;
       let firstX: number;
       let contX: number;
-      if (fmt && !block.list && (fmt.leftPt !== null || fmt.firstLinePt !== null)) {
+      if (fmt && (fmt.numbering || !block.list) && (fmt.leftPt !== null || fmt.firstLinePt !== null || fmt.numbering)) {
         const left = Math.max(0, fmt.leftPt ?? 0);
         contX = left;
         firstX = Math.max(0, left + (fmt.firstLinePt ?? 0));
@@ -1265,26 +1370,50 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const maxX = contentWidth - Math.max(0, fmt?.rightPt ?? 0);
       if (maxX - Math.max(firstX, contX) <= 10) return;
 
-      const placed = placeParagraph(chars, {
-        firstX,
-        contX,
-        maxX,
-        align: fmt?.align ?? "left",
-        tabs: tabSpecs(fmt),
-        paraSize,
-        fmt,
-        legacyHeadingHeight: isHeading && !fmt,
-      });
+      // ぶら下げインデントの位置は、Wordでは暗黙のタブ位置になる(箇条書きの記号の後ろのタブが、本文の始まりの位置まで進む)
+      const tabs = tabSpecs(fmt);
+      if (numbering && contX > firstX && !tabs.some((t) => Math.abs(t.pos - contX) < 0.5)) tabs.push({ pos: contX, kind: "left" });
+      tabs.sort((a, b) => a.pos - b.pos);
+      const placeOpts = { firstX, contX, maxX, align: fmt?.align ?? "left", tabs, paraSize, fmt, legacyHeadingHeight: isHeading && !fmt } as const;
+      let placed = placeParagraph(chars, placeOpts);
 
       const topY = pageHeight - marginTopEff;
       // 「同じスタイルの段落の間は間隔を空けない」（箇条書きなど）
       const sameAsPrev = !!fmt?.contextual && prevStyleId !== undefined && prevStyleId === fmt.styleId;
       const sameAsNext = !!fmt?.contextual && nextStyleId !== undefined && nextStyleId === fmt.styleId;
       const before = sameAsPrev || isContinuation ? 0 : (fmt?.beforePt ?? 0);
-      const totalHeight = placed.heights.reduce((a, b) => a + b, 0);
       const limit = naturalLimit();
-      // Wordの段落の改ページの制御(Wordが記録した改ページの位置に合わせている文書では、記録の位置を優先するので使わない)
-      if (!anchored && !atPageTop()) {
+
+      // Wordが記録した改ページの位置(参考)：計算した結果でもページの下の端の近くなら、その位置でページを変える
+      if (anchors.includes(0) && !atPageTop() && savedBreakConsistent(cursorY - before - limit, placed.heights[0] ?? paraSize)) newPage();
+      const mid = anchors.filter((x) => x > 0);
+      if (mid.length > 0) {
+        // 記録の位置の文字を含む行が、計算した結果で、どのページのどの高さに来るかを調べる(下の改ページの決め方と同じ)
+        let y = atPageTop() ? cursorY : cursorY - before;
+        const honored: number[] = [];
+        const decided = new Set<number>();
+        placed.lines.forEach((line, i) => {
+          const h = placed.heights[i];
+          const first = line.items[0]?.index ?? -1;
+          const last = line.items[line.items.length - 1]?.index ?? -1;
+          for (const k of mid) {
+            if (first < 0 || k < first || k > last || decided.has(k)) continue;
+            decided.add(k);
+            if (savedBreakConsistent(y - limit, h)) honored.push(k);
+          }
+          if (y - h < limit && y < topY - 0.01) y = topY;
+          y -= h;
+        });
+        for (const k of honored.sort((a, b) => b - a)) {
+          // その文字の前に「行の終わり」を入れる(Wordでは、そこで行もページも変わっている)
+          chars = [...chars.slice(0, k), { ...chars[Math.max(0, k - 1)], ch: "\n" }, ...chars.slice(k)];
+          midAnchors.add(k);
+        }
+        if (honored.length > 0) placed = placeParagraph(chars, placeOpts);
+      }
+      const totalHeight = placed.heights.reduce((a, b) => a + b, 0);
+      // Wordの段落の改ページの制御(段落を分割しない・次の段落と分離しない・1行残しの制御)
+      if (!atPageTop()) {
         const room = cursorY - before - limit;
         const fullPage = topY - limit;
         // 段落を分割しない(keepLines)：ページに収まらないが、1ページには収まる → 段落の前でページを変える
@@ -1296,6 +1425,15 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         else if (widowOn(fmt) && placed.lines.length >= 2 && placed.heights[0] <= room + 0.01 && placed.heights[0] + placed.heights[1] > room + 0.01) newPage();
       }
       if (before > 0 && cursorY < topY - 0.5) cursorY -= before;
+
+      // この段落に置かれた浮動配置(画像・テキストボックス・図形)を置く(段落の中の最初の部分のときだけ)
+      if (!isContinuation) placeFloats(block.bodyIndex, cursorY, marginLeft + firstX);
+      // 文字が回り込む領域がこのページにあり、この段落の高さの範囲にかかるときは、1行ずつ、空いている幅で行を組む
+      if (exclusions.some((e) => e.page === page && e.bottom < cursorY && e.top > cursorY - totalHeight - 1)) {
+        flowParagraph(chars, placeOpts);
+        if (!sameAsNext) cursorY -= fmt?.afterPt ?? 0;
+        return;
+      }
 
       // 改ページの位置を先に決める（枠線・背景色を、ページごとに正しい範囲へ描くため）
       interface Chunk { start: number; end: number; newPage: boolean; top: number; natural: boolean }
@@ -1328,7 +1466,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       cur.end = placed.lines.length;
       chunks.push(cur);
       // 改ページ時1行残して段落を区切らない(widowControl)：最後の1行だけが次のページに行く → 前のページの最後の1行も次のページへ
-      if (!anchored && widowOn(fmt)) {
+      if (widowOn(fmt) && midAnchors.size === 0) {
         for (let ci = 1; ci < chunks.length; ci++) {
           const a = chunks[ci - 1];
           const b = chunks[ci];
@@ -1370,7 +1508,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         }
         for (let i = chunk.start; i < chunk.end; i++) {
           const line = placed.lines[i];
-          if (block.list && i === 0) {
+          if (block.list && i === 0 && !fmt?.numbering) {
             const prefix = block.list.ordered ? `${block.list.number ?? 1}. ` : "・";
             page.drawText(prefix, { x: marginLeft + block.list.level * 16, y: cursorY - placed.sizes[i], size: placed.sizes[i], font, color: INK });
           }
@@ -1536,7 +1674,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const drawRowWithPaging = (ri: number) => {
         const rowHeight = rowHeights[ri];
         // Wordが保存したとき、この行の前でページが変わった
-        if (anchored && t.rowBreaks?.[ri] && !atPageTop()) {
+        if (t.rowBreaks?.[ri] && savedBreaksAvailable && !atPageTop() && savedBreakConsistent(cursorY - naturalLimit(), rowHeight)) {
           newPage();
           if (ri >= headerRows) repeatHeader();
         } else if (cursorY - rowHeight < naturalLimit() && !atPageTop()) {
@@ -1592,7 +1730,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         cursorY = rowTop - rowHeight;
       };
       // 表の最初の行の前でページが変わった記録 → 表の前でページを変える
-      if (anchored && t.rowBreaks?.[0] && !atPageTop()) newPage();
+      if (t.rowBreaks?.[0] && savedBreaksAvailable && !atPageTop() && savedBreakConsistent(cursorY - naturalLimit(), rowHeights[0] ?? 0)) newPage();
       for (let ri = 0; ri < layouts.length; ri++) drawRowWithPaging(ri);
       cursorY -= block.fmt ? 0 : PARAGRAPH_GAP;
     }
@@ -1639,7 +1777,6 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const saved = imageSizesUsable && block.ordinal !== undefined ? formatting.bodyImages[block.ordinal] : undefined;
       let width = saved && saved.widthPt > 0 ? saved.widthPt : embedded.width * 0.75;
       let height = saved && saved.heightPt > 0 ? saved.heightPt : embedded.height * 0.75;
-      if (saved?.floating) floatingImageCount++;
       const shrink = Math.min(1, contentWidth / Math.max(1, width), maxHeight / Math.max(1, height));
       width *= shrink;
       height *= shrink;
@@ -1727,11 +1864,166 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     }
     const pageDrawn = new Map<PDFPage, boolean>();
     const sectionOf = (bodyIndex: number | undefined) => (bodyIndex === undefined ? null : structure.bodyChildren[bodyIndex]?.sectionIndex ?? null);
-    const imageBlocksCount = blocks.filter((b) => b.kind === "image" && b.ordinal !== undefined).length;
-    const imageSizesUsable = formattingMatched && imageBlocksCount === formatting.bodyImages.length;
-    let floatingImageCount = 0;
+    const imageRunCount = blocks.reduce((n, b) => n + (b.kind === "paragraph" ? b.runs.filter((r) => r.image).length : 0), 0);
+    const imageSizesUsable = formattingMatched && imageRunCount === formatting.bodyImages.length;
 
     let paragraphCount = 0;
+
+    // ---- 画像・図形・テキストボックス ----
+    // 段落の中の画像は、先にすべてPDFに埋め込んでおく(行を描くときに使う)
+    const embeddedImages = new Map<string, PdfLibTypes.PDFImage>();
+    flushFrontDrawsRef = (pg) => flushFrontDraws(pg);
+    const imageByOrdinal = new Map<number, string>();
+    for (const b of blocks) {
+      if (b.kind !== "paragraph") continue;
+      for (const r of b.runs) {
+        if (!r.image) continue;
+        if (r.image.ordinal >= 0) imageByOrdinal.set(r.image.ordinal, r.image.dataUri);
+        if (embeddedImages.has(r.image.dataUri)) continue;
+        const img = await embedDataUri(r.image.dataUri);
+        if (img) embeddedImages.set(r.image.dataUri, img);
+      }
+    }
+    /** 浮動配置(wp:anchor)の画像の通し番号 → その位置・大きさ・折り返し */
+    const floatByImage = new Map<number, FloatObject>();
+    if (imageSizesUsable) for (const f of formatting.floats) if (f.kind === "image" && f.imageOrdinal !== null) floatByImage.set(f.imageOrdinal, f);
+    /** 行の中に置く画像の大きさ(浮動配置の画像は null。行の中では幅0で、別に置く) */
+    function inlineImageBox(c: FlatChar): { w: number; h: number } | null {
+      if (!c.image) return null;
+      if (c.image.ordinal >= 0 && floatByImage.has(c.image.ordinal)) return null;
+      const img = embeddedImages.get(c.image.dataUri);
+      if (!img) return null;
+      const saved = imageSizesUsable && c.image.ordinal >= 0 ? formatting.bodyImages[c.image.ordinal] : undefined;
+      let w = saved && saved.widthPt > 0 ? saved.widthPt : img.width * 0.75;
+      let h = saved && saved.heightPt > 0 ? saved.heightPt : img.height * 0.75;
+      // 本文の幅・高さに収まるように縮める(拡大はしない)
+      const shrink = Math.min(1, contentWidth / Math.max(1, w), (pageHeight - marginTopEff - bottomLimit) / Math.max(1, h));
+      w *= shrink;
+      h *= shrink;
+      return { w, h };
+    }
+
+    /** 文字が回り込む領域(このページの、浮動配置の画像・図形)。PDFの座標(下が0)。band=上下に回り込む(横には文字を置かない) */
+    interface Exclusion { page: PDFPage; x1: number; x2: number; top: number; bottom: number; band: boolean }
+    const exclusions: Exclusion[] = [];
+    /** 文字の前面に置く図形(そのページの文字を描いたあとに描く) */
+    const frontDraws: { page: PDFPage; draw: () => void }[] = [];
+    const flushFrontDraws = (pg: PDFPage) => {
+      for (let i = 0; i < frontDraws.length; i++) {
+        if (frontDraws[i].page !== pg) continue;
+        const saved = page;
+        page = pg;
+        frontDraws[i].draw();
+        page = saved;
+        frontDraws.splice(i--, 1);
+      }
+    };
+
+    /** 浮動配置の左上の位置(PDFの座標)。Wordの位置の基準(用紙・余白・段・段落・行)と、距離または揃えから求める */
+    function floatPosition(f: FloatObject, paraTopY: number, paraLeftX: number): { x: number; top: number } {
+      const frameH: [number, number] =
+        f.h.rel === "page" ? [0, pageWidth]
+        : f.h.rel === "leftMargin" ? [0, marginLeft]
+        : f.h.rel === "rightMargin" ? [pageWidth - marginRight, marginRight]
+        : f.h.rel === "character" ? [paraLeftX, contentWidth]
+        : [marginLeft, contentWidth];
+      let x = frameH[0] + (f.h.offsetPt ?? 0);
+      if (f.h.align === "center") x = frameH[0] + (frameH[1] - f.widthPt) / 2;
+      else if (f.h.align === "right" || f.h.align === "outside") x = frameH[0] + frameH[1] - f.widthPt;
+      else if (f.h.align === "left" || f.h.align === "inside") x = frameH[0];
+      const frameV: [number, number] =
+        f.v.rel === "page" ? [pageHeight, pageHeight]
+        : f.v.rel === "topMargin" ? [pageHeight, marginTop]
+        : f.v.rel === "bottomMargin" ? [marginBottom, marginBottom]
+        : f.v.rel === "margin" ? [pageHeight - marginTop, pageHeight - marginTop - marginBottom]
+        : [paraTopY, 0];
+      let top = frameV[0] - (f.v.offsetPt ?? 0);
+      if (f.v.align === "center") top = frameV[0] - (frameV[1] - f.heightPt) / 2;
+      else if (f.v.align === "bottom" || f.v.align === "outside") top = frameV[0] - frameV[1] + f.heightPt;
+      else if (f.v.align === "top" || f.v.align === "inside") top = frameV[0];
+      return { x, top };
+    }
+
+    /** 浮動配置の画像・図形・テキストボックスを描く */
+    function drawFloatObject(f: FloatObject, x: number, top: number) {
+      const w = f.widthPt;
+      const h = f.heightPt;
+      if (f.kind === "image") {
+        const uri = f.imageOrdinal !== null ? imageByOrdinal.get(f.imageOrdinal) : undefined;
+        const img = uri ? embeddedImages.get(uri) : undefined;
+        if (img) page.drawImage(img, { x, y: top - h, width: w, height: h });
+        return;
+      }
+      const fill = f.fill ? hexToRgb(f.fill) : undefined;
+      const border = f.line ? hexToRgb(f.line) : undefined;
+      const bw = border ? Math.max(0.25, f.lineWidthPt) : 0;
+      if (f.geometry === "ellipse") page.drawEllipse({ x: x + w / 2, y: top - h / 2, xScale: w / 2, yScale: h / 2, color: fill, borderColor: border, borderWidth: bw });
+      else if (f.geometry === "line") page.drawLine({ start: { x, y: top }, end: { x: x + w, y: top - h }, thickness: bw || 0.75, color: border ?? INK });
+      else if (fill || border) page.drawRectangle({ x, y: top - h, width: w, height: h, color: fill, borderColor: border, borderWidth: bw });
+      if (f.kind !== "textbox") return;
+      // テキストボックスの中の段落：箱の内側の幅で行を組み、箱の高さまで描く(はみ出す分は描かない。Wordと同じ)
+      const innerW = w - f.inset.left - f.inset.right;
+      const bottomY = top - h + f.inset.bottom;
+      let y = top - f.inset.top;
+      for (const para of f.paragraphs) {
+        const size = para.baseSizePt ?? BODY_SIZE;
+        const chars = fmtParagraphChars(para, { size, bold: false });
+        const left = Math.max(0, para.leftPt ?? 0);
+        const placedBox = placeParagraph(chars, { firstX: Math.max(0, left + (para.firstLinePt ?? 0)), contX: left, maxX: Math.max(10, innerW - Math.max(0, para.rightPt ?? 0)), align: para.align ?? "left", tabs: tabSpecs(para), paraSize: size, fmt: para });
+        y -= para.beforePt ?? 0;
+        for (let i = 0; i < placedBox.lines.length; i++) {
+          if (y - placedBox.heights[i] < bottomY - 0.5) return;
+          paintLine(chars, placedBox.lines[i], x + f.inset.left, y, placedBox.sizes[i], placedBox.extras[i]);
+          y -= placedBox.heights[i];
+        }
+        y -= para.afterPt ?? 0;
+      }
+    }
+
+    /** 段落に置かれた浮動配置を、いまのページに置く(位置を決めて描き、文字が回り込む領域を記録する) */
+    function placeFloats(bodyIndex: number | undefined, paraTopY: number, paraLeftX: number) {
+      if (bodyIndex === undefined || !formattingMatched) return;
+      for (const f of formatting.floats) {
+        if (f.bodyIndex !== bodyIndex) continue;
+        if (f.kind === "image" && (!imageSizesUsable || f.imageOrdinal === null)) continue;
+        const { x, top } = floatPosition(f, paraTopY, paraLeftX);
+        const pg = page;
+        if (f.wrap === "none" && !f.behind) frontDraws.push({ page: pg, draw: () => drawFloatObject(f, x, top) });
+        else drawFloatObject(f, x, top);
+        if (f.wrap !== "none") {
+          exclusions.push({
+            page: pg,
+            x1: x - f.dist.left,
+            x2: x + f.widthPt + f.dist.right,
+            top: top + f.dist.top,
+            bottom: top - f.heightPt - f.dist.bottom,
+            band: f.wrap === "topAndBottom",
+          });
+        }
+      }
+    }
+
+    /** 画像のdata URIを、PDFに埋め込む */
+    async function embedDataUri(uri: string): Promise<PdfLibTypes.PDFImage | null> {
+      const match = /^data:(image\/[a-zA-Z+]+);base64,(.*)$/.exec(uri);
+      if (!match) return null;
+      try {
+        const binary = atob(match[2]);
+        if (binary.length > MAX_IMAGE_BYTES) {
+          warnings.push("画像サイズが大きすぎるため省略しました");
+          return null;
+        }
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        if (match[1] === "image/png") return await doc.embedPng(bytes);
+        if (match[1] === "image/jpeg" || match[1] === "image/jpg") return await doc.embedJpg(bytes);
+        warnings.push(`対応していない画像形式(${match[1]})のため省略しました`);
+        return null;
+      } catch {
+        warnings.push("破損している可能性のある画像を省略しました");
+        return null;
+      }
+    }
     let tableCount = 0;
     let imageCount = 0;
 
@@ -1775,7 +2067,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         if (block.runs.some((r) => r.text.trim() !== "")) paragraphCount++;
         const next = blocks[bi + 1];
         const nextStyleId = next && next.kind === "paragraph" && next.fmt ? next.fmt.styleId : undefined;
-        drawParagraph(block, prevStyleId, nextStyleId, block.fmt?.keepNext && !anchored ? keepNextHeight(bi) : 0);
+        drawParagraph(block, prevStyleId, nextStyleId, block.fmt?.keepNext ? keepNextHeight(bi) : 0);
         prevStyleId = block.fmt ? block.fmt.styleId : undefined;
         continue;
       }
@@ -1832,18 +2124,15 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       });
     }
 
-    if (anchored && anchorOverflowCount > 0) {
+    // 文字の前面に置く図形を描く(まだ描いていないページの分)
+    for (const pg of doc.getPages()) flushFrontDraws(pg);
+    if (savedBreaksIgnored > 0) {
       warnings.push(
-        `Wordが保存したときのページの区切りに合わせて変換しましたが、${anchorOverflowCount}か所で内容がページに入りきらず、Wordとは違う位置でページが変わっています（文字の幅や行の高さがWordと少し違うため）。`
+        `Wordで保存したときに記録されたページの区切りのうち${savedBreaksIgnored}か所は、今回のレイアウトの計算と大きく離れていたため使っていません（保存したあとに内容が変わった、またはフォントが違う可能性があります）。`
       );
     }
     if (formattingMatched && formatting.savedByWord && formatting.savedPageCount && formatting.savedPageCount !== doc.getPageCount()) {
       warnings.push(`Wordで保存されたときのページ数は${formatting.savedPageCount}ページですが、PDFは${doc.getPageCount()}ページになりました。`);
-    }
-    if (floatingImageCount > 0) {
-      warnings.push(
-        `文字列の折り返しを設定した画像(浮動配置)が${floatingImageCount}個あります。画像は、置かれた段落の位置に、元の大きさで配置しました（文字を画像の横に回り込ませる配置は再現していません）。`
-      );
     }
 
     let bytes: Uint8Array;

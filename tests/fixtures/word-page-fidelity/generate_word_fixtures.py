@@ -481,32 +481,31 @@ def w11():
 
 
 def w12():
-    d = Doc("w12-word-saved-breaks", "Wordが保存した改ページの位置(段落の途中・段落の先頭)に合わせる", "C")
+    d = Doc("w12-word-saved-breaks", "Wordが保存した改ページの位置(計算と合う位置は使い、大きく離れた位置は使わない)", "C")
     d.word_saved = True
-    # 1ページ目：短い段落4つ。5つ目の段落の途中(S3の前)でWordが改ページした、という記録
-    for i in range(4):
-        d.p(d.mark(f"W12P{i + 1}") + " " + SENT, after=6)
-    d.p(d.mark("W12P5") + " " + d.mark("W12P5S1") + " 一つ目の文。 " + d.mark("W12P5S2") + " 二つ目の文。\r" + d.mark("W12P5S3", 2) + " 三つ目の文から2ページ目。", after=6)
+    # 1ページ目：固定値20ptの行が32行(640pt)。次の3行の段落の、2行目の前でWordが改ページした記録がある。
+    # 計算では2行目もまだ入る(残り57.9pt)が、残りが3行ぶん(60pt)未満なので、記録どおり2行目から2ページ目にする
+    body_lines(d, "W12L", 32, page=1)
+    d.p(d.mark("W12B1", 1) + " 段落1行目\n\r" + d.mark("W12B2", 2) + " 段落2行目\n" + d.mark("W12B3", 2) + " 段落3行目", exact=20, widow=False)
     d.page = 2
-    for i in range(6, 9):
-        d.p(d.mark(f"W12P{i}") + " " + SENT, after=6)
-    # 3ページ目は段落の先頭から
-    d.page = 3
-    d.p(d.mark("W12P9") + " 3ページ目の最初の段落。", lrpb=True)
-    d.p(d.mark("W12P10") + " " + SENT)
-    d.pages = 3
+    body_lines(d, "W12M", 3, page=2)
+    # 2ページ目の4行目の前にも記録があるが、ページの残りが大きく(30行ぶん以上)、計算と大きく離れているので使わない
+    d.p(d.mark("W12FAR", 2) + " 保存後に内容が変わった位置", exact=20, lrpb=True)
+    body_lines(d, "W12N", 3, page=2)
+    d.pages = 2
+    d.extra["warningsContain"] = ["使っていません"]
     return d
 
 
 def w13():
-    d = Doc("w13-word-saved-table", "Wordが保存した改ページの位置(表の途中の行・ページ末尾の表)", "C")
+    d = Doc("w13-word-saved-table", "Wordが保存した改ページの位置(ページの末尾近くの表の行)", "C")
     d.word_saved = True
-    for i in range(3):
-        d.p(d.mark(f"W13P{i + 1}") + " " + SENT, after=6)
-    rows = [[f"W13R{i:02d}", f"内容{i}"] for i in range(1, 13)]
-    d.table(rows, [200, 200], row_anchor={7})  # 8行目からWordでは2ページ目
-    for i in range(1, 13):
-        d.mark(f"W13R{i:02d}", 1 if i <= 7 else 2)
+    body_lines(d, "W13L", 30, page=1)
+    # 残り97.9pt：計算では4行入るが、Wordは3行目の前で改ページした(残りが3行ぶん未満なので、記録を使う)
+    rows = [[f"W13R{i:02d}", f"内容{i}"] for i in range(1, 7)]
+    d.table(rows, [200, 200], row_anchor={2}, exact=20)
+    for i in range(1, 7):
+        d.mark(f"W13R{i:02d}", 1 if i <= 2 else 2)
     d.page = 2
     d.p(d.mark("W13P4") + " 表の後の段落。")
     d.pages = 2
@@ -514,15 +513,17 @@ def w13():
 
 
 def w14():
-    d = Doc("w14-word-saved-flow", "Wordが保存した改ページの位置(長い文書・段落の間隔)", "C")
+    d = Doc("w14-word-saved-flow", "Wordが保存した改ページの位置(各ページで計算より1行早い記録)", "C")
     d.word_saved = True
+    # 固定値20ptの1行の段落が80個。計算では1ページに34行入るが、Wordは33行目・65行目の前で改ページした記録がある
+    # (どちらも、そのページの残りが3行ぶん未満なので、記録を使う)
     page = 1
-    for i in range(1, 25):
-        brk = i in (9, 17)
+    for i in range(1, 81):
+        brk = i in (33, 65)
         if brk:
             page += 1
         d.page = page
-        d.p(d.mark(f"W14P{i:02d}") + " " + SENT * 2, before=6, after=12, lrpb=brk)
+        d.p(d.mark(f"W14P{i:02d}") + " 固定の行の高さの段落", exact=20, lrpb=brk)
     d.pages = 3
     return d
 
@@ -552,6 +553,8 @@ def w17():
     d.extra["colors"] = {"purple": [112, 48, 160]}
     d.extra["colorPages"] = {"purple": [1]}
     d.extra["imageSize"] = {"purple": [120, 60]}
+    # 文字と同じ行に置く画像：画像の左の文字と右の文字は、同じ行にある
+    d.extra["sameLine"] = [["W17IMG", "W17IMGR"]]
     return d
 
 
@@ -564,6 +567,8 @@ def w18():
     d.extra["colors"] = {"green": [0, 176, 80]}
     d.extra["colorPages"] = {"green": [1]}
     d.extra["imageSize"] = {"green": [90, 90]}
+    # 四角形の折り返し：画像(段の左端・幅90pt・右の間隔9pt)の右に、本文の文字が回り込む
+    d.extra["minX"] = {"W18P2": 72 + 90 + 9 - 1}
     return d
 
 
@@ -590,6 +595,9 @@ def w20():
     d.p(d.mark("W20P3") + " " + SENT)
     d.mark("W20TB", 1)
     d.pages = 1
+    # テキストボックスは、段の左端から250ptの位置(内側の余白7.2pt)に描く(本文の流れには入れない)
+    d.extra["minX"] = {"W20TB": 72 + 250}
+    d.extra["sameLine"] = []
     return d
 
 
