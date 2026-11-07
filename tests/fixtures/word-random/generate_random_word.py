@@ -50,7 +50,7 @@ def run_xml(text: str, font: str, size: float, bold=False) -> str:
     return w.Doc.text_runs(text, rpr)
 
 
-def build(seed: int, *, margin_add: float = 0, size_mul: float = 1.0, extra_paras: int = 0, image_mul: float = 1.0) -> w.Doc:
+def build(seed: int, *, margin_add: float = 0, size_mul: float = 1.0, extra_paras: int = 0, image_mul: float = 1.0, extra_rows: int = 0, extra_images: int = 0) -> w.Doc:
     """シードで決まる文書を作る。引数は性質の確認のための変化(余白を足す・文字を大きく・段落を足す・画像を大きく)"""
     rng = random.Random(seed)
     name = f"r{seed:03d}"
@@ -67,6 +67,18 @@ def build(seed: int, *, margin_add: float = 0, size_mul: float = 1.0, extra_para
         t = f"Q{seed:03d}M{marker_no:03d}"
         d.mark(t, 1)
         return t
+
+    # 足した表の行・画像の目印(前からある目印の番号を変えないよう、別の番号)
+    extra_no = 0
+
+    def mark_extra() -> str:
+        nonlocal extra_no
+        extra_no += 1
+        t = f"Q{seed:03d}T{extra_no:03d}"
+        d.mark(t, 1)
+        return t
+
+    r_extra = random.Random(seed * 7919)
 
     for bi in range(n_blocks + extra_paras):
         if bi >= n_blocks:
@@ -101,6 +113,9 @@ def build(seed: int, *, margin_add: float = 0, size_mul: float = 1.0, extra_para
             for ri in range(rows_n):
                 # 繰り返す見出しの行には、目印を置かない(ページごとに繰り返して出るのが正しいため)
                 rows.append([("見出し" if ri < header else mark() + " ") + sentence(rng, rng.randint(0, 2)) for _ in range(cols)])
+            # 足した表の行(別の乱数で作る。前からある行・段落の乱数の並びを変えない)
+            for _ in range(extra_rows):
+                rows.append([mark_extra() + " " + sentence(r_extra, r_extra.randint(0, 3)) for _ in range(cols)])
             d.table(rows, widths, header_rows=header)
         elif kind == "image":
             iw = rng.choice([60, 120, 200]) * image_mul
@@ -113,6 +128,10 @@ def build(seed: int, *, margin_add: float = 0, size_mul: float = 1.0, extra_para
             d.page_break()
         elif kind == "section":
             d.p("", runs_xml=run_xml(mark() + " セクションの終わり", font, size), sect=w.sect_pr(margins=margins, landscape=landscape, brk=rng.choice([None, "continuous"])))
+        if extra_images and kind == "para" and r_extra.random() < 0.5:
+            # 画像を足す(段落の後ろに、行の中の画像の段落を1つ)
+            for _ in range(extra_images):
+                d.p("", runs_xml=run_xml(mark_extra() + " ", font, size) + d.image_xml((r_extra.randint(0, 200), 60, 160), 90, 60))
     d.final_sect = w.sect_pr(margins=margins, landscape=landscape)
     d.pages = None
     return d
@@ -130,6 +149,8 @@ def main():
             ("bigger", {"size_mul": 1.3}, "pages>=base"),
             ("more", {"extra_paras": 8}, "pages>=base,keeps-base-markers"),
             ("bigimg", {"image_mul": 1.6}, "pages>=base"),
+            ("morerows", {"extra_rows": 12}, "pages>=base,keeps-base-markers"),
+            ("addimg", {"extra_images": 1}, "pages>=base,keeps-base-markers"),
         ]:
             v = build(seed, **kwargs)
             v.name = f"r{seed:03d}-{suffix}"
@@ -138,7 +159,7 @@ def main():
         manifest.append(group)
     with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=1)
-    print(f"{len(manifest)}組 ({len(manifest) * 5}ファイル)")
+    print(f"{len(manifest)}組 ({len(manifest) * 7}ファイル)")
 
 
 if __name__ == "__main__":

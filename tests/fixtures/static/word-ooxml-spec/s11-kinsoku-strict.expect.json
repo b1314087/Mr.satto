@@ -1,0 +1,59 @@
+{
+ "title": "日本語の禁則(高レベル w:strictFirstAndLastChars：小さい仮名も行頭に置かない)",
+ "how": "A",
+ "pages": 1,
+ "markers": {
+  "K1MARK": [
+   1
+  ],
+  "K2MARK": [
+   1
+  ],
+  "K3MARK": [
+   1
+  ],
+  "K4MARK": [
+   1
+  ],
+  "K5MARK": [
+   1
+  ],
+  "K6MARK": [
+   1
+  ],
+  "K7MARK": [
+   1
+  ]
+ },
+ "forbiddenLineStarts": "、。，．」』）】〕〉》！？っゃゅょァィゥェォッャュョー",
+ "forbiddenLineEnds": "「『（【〔〈《",
+ "inseparable": [
+  "……"
+ ],
+ "dictWords": [
+  "layout",
+  "engine",
+  "paragraph",
+  "document",
+  "measure",
+  "boundary",
+  "consistent",
+  "rendering",
+  "kinsoku",
+  "spacing",
+  "table",
+  "section",
+  "English",
+  "words"
+ ],
+ "xRange": {
+  "K1MARK": [
+   71.5,
+   73.5
+  ],
+  "K4MARK": [
+   93.0,
+   98.0
+  ]
+ }
+}

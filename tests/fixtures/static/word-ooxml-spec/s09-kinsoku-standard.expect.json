@@ -1,0 +1,63 @@
+{
+ "title": "日本語の禁則(標準のレベル)・句読点のぶら下げ・分離禁止・英単語",
+ "how": "A",
+ "pages": 1,
+ "markers": {
+  "K1MARK": [
+   1
+  ],
+  "K2MARK": [
+   1
+  ],
+  "K3MARK": [
+   1
+  ],
+  "K4MARK": [
+   1
+  ],
+  "K5MARK": [
+   1
+  ],
+  "K6MARK": [
+   1
+  ],
+  "K7MARK": [
+   1
+  ]
+ },
+ "forbiddenLineStarts": "、。，．」』）】〕〉》！？",
+ "forbiddenLineEnds": "「『（【〔〈《",
+ "inseparable": [
+  "……"
+ ],
+ "dictWords": [
+  "layout",
+  "engine",
+  "paragraph",
+  "document",
+  "measure",
+  "boundary",
+  "consistent",
+  "rendering",
+  "kinsoku",
+  "spacing",
+  "table",
+  "section",
+  "English",
+  "words"
+ ],
+ "xRange": {
+  "K1MARK": [
+   71.5,
+   73.5
+  ],
+  "K2MARK": [
+   93.0,
+   98.0
+  ],
+  "K4MARK": [
+   82.5,
+   87.5
+  ]
+ }
+}

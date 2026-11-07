@@ -255,7 +255,7 @@ class Doc:
             rels.append(("rIdNum", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering", "numbering.xml"))
         rels += self.rels
         rels_xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + "".join(
-            f'<Relationship Id="{i}" Type="{t}" Target="{escape(tg)}"/>' for i, t, tg in rels) + "</Relationships>"
+            f'<Relationship Id="{i}" Type="{t}" Target="{escape(tg)}"{" TargetMode=" + chr(34) + "External" + chr(34) if tg.startswith("http") else ""}/>' for i, t, tg in rels) + "</Relationships>"
         overrides = ['<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
                      '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>',
                      '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>',
@@ -279,8 +279,8 @@ class Doc:
             "docProps/app.xml": app,
             "word/document.xml": doc_xml,
             "word/_rels/document.xml.rels": rels_xml,
-            "word/styles.xml": STYLES,
-            "word/settings.xml": f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:settings {NS}><w:defaultTabStop w:val="840"/></w:settings>',
+            "word/styles.xml": STYLES.replace("</w:styles>", getattr(self, "styles_extra", "") + "</w:styles>"),
+            "word/settings.xml": f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:settings {NS}><w:defaultTabStop w:val="840"/>{getattr(self, "settings_extra", "")}</w:settings>',
         }
         if self.numbering:
             files["word/numbering.xml"] = NUMBERING

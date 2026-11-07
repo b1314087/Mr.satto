@@ -1,0 +1,23 @@
+{
+ "title": "ハイパーリンク・すべて大文字・小さな大文字",
+ "how": "A",
+ "pages": 1,
+ "markers": {
+  "S10LINK": [
+   1
+  ],
+  "CAPSMARK": [
+   1
+  ],
+  "SMALLMARK": [
+   1
+  ]
+ },
+ "textsAbsent": [
+  "capsmark",
+  "smallmark"
+ ],
+ "linkUris": [
+  "https://example.com/mr-satto-spec"
+ ]
+}

@@ -18,6 +18,14 @@
    {
     "file": "r003-bigimg.docx",
     "relation": "pages>=base"
+   },
+   {
+    "file": "r003-morerows.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r003-addimg.docx",
+    "relation": "pages>=base,keeps-base-markers"
    }
   ]
  },
@@ -40,6 +48,14 @@
    {
     "file": "r011-bigimg.docx",
     "relation": "pages>=base"
+   },
+   {
+    "file": "r011-morerows.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r011-addimg.docx",
+    "relation": "pages>=base,keeps-base-markers"
    }
   ]
  },
@@ -62,6 +78,14 @@
    {
     "file": "r027-bigimg.docx",
     "relation": "pages>=base"
+   },
+   {
+    "file": "r027-morerows.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r027-addimg.docx",
+    "relation": "pages>=base,keeps-base-markers"
    }
   ]
  },
@@ -84,6 +108,14 @@
    {
     "file": "r042-bigimg.docx",
     "relation": "pages>=base"
+   },
+   {
+    "file": "r042-morerows.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r042-addimg.docx",
+    "relation": "pages>=base,keeps-base-markers"
    }
   ]
  },
@@ -106,6 +138,14 @@
    {
     "file": "r058-bigimg.docx",
     "relation": "pages>=base"
+   },
+   {
+    "file": "r058-morerows.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r058-addimg.docx",
+    "relation": "pages>=base,keeps-base-markers"
    }
   ]
  },
@@ -128,6 +168,14 @@
    {
     "file": "r077-bigimg.docx",
     "relation": "pages>=base"
+   },
+   {
+    "file": "r077-morerows.docx",
+    "relation": "pages>=base,keeps-base-markers"
+   },
+   {
+    "file": "r077-addimg.docx",
+    "relation": "pages>=base,keeps-base-markers"
    }
   ]
  }

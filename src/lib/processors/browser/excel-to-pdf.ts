@@ -18,6 +18,7 @@ import { parseRangeRef } from "@/lib/excel/ooxml-charts";
 import { excelSerialToDate, formatExcelDate } from "@/lib/excel/excel-date-format";
 import { excelNumberFormatColor, excelTextFormatColor, formatExcelNumber, formatExcelText, formatGeneralNumber } from "@/lib/excel/excel-number-format";
 import { fontMetricsFor } from "@/lib/fonts/office-font-metrics";
+import { defaultBreakRules, layoutParagraph, type BreakRules } from "@/lib/word/word-layout";
 import { computePageGrid, type FitPageSettings } from "@/lib/excel/pagination";
 import { checkChart, sortIssues, type ChartPageCheckResult, type ChartPageIssue, type CheckArea, type CheckPage } from "@/lib/excel/chart-page-check";
 import type * as PdfLibTypes from "pdf-lib";
@@ -326,43 +327,19 @@ interface Glyph {
   style: TextStyle;
 }
 
-function isCjk(ch: string): boolean {
-  const code = ch.codePointAt(0) ?? 0;
-  return code >= 0x2e80;
-}
-
-/** 行頭に置かない文字(句読点・閉じ括弧・長音など)。折り返し位置がここになるときは1文字前で折る */
-const NO_LINE_START = new Set(Array.from("、。，．）〕］｝〉》」』】！？ー・…ぁぃぅぇぉっゃゅょァィゥェォッャュョ)]},.!?:;"));
-
-/** 1段落ぶんの文字列を、幅(maxWidth)に収まるよう行へ分ける。半角英数は単語単位、日本語は文字単位で折り返す */
+/**
+ * 1段落ぶんの文字列を、幅(maxWidth)に収まるよう行へ分ける。改行の決まり(英数字は単語単位・日本語は文字単位・
+ * 行頭/行末の禁則)は、Word→PDFと同じ計算(src/lib/word/word-layout.ts)を使う。Excelは句読点のぶら下げをしない。
+ */
+const EXCEL_BREAK_RULES: BreakRules = { ...defaultBreakRules(), overflowPunct: false, breakAfter: new Set(["-", "/"]) };
 function wrapParagraph(glyphs: Glyph[], maxWidth: number, measure: (g: Glyph) => number): Glyph[][] {
-  const lines: Glyph[][] = [];
-  let start = 0;
-  let width = 0;
-  let lastBreak = -1;
-  for (let i = 0; i < glyphs.length; i++) {
-    const g = glyphs[i];
-    const w = measure(g);
-    if (i > start && width + w > maxWidth && g.ch !== " ") {
-      let brk = lastBreak > start ? lastBreak : i;
-      // 行頭禁則: 句読点などが行頭に来ないよう、1文字前で折る
-      while (brk > start + 1 && brk < glyphs.length && NO_LINE_START.has(glyphs[brk].ch)) brk--;
-      lines.push(glyphs.slice(start, brk));
-      start = brk;
-      width = 0;
-      for (let j = start; j < i; j++) width += measure(glyphs[j]);
-      lastBreak = -1;
-    }
-    width += w;
-    if (isCjk(g.ch)) {
-      if (i > start) lastBreak = Math.max(lastBreak, i);
-      lastBreak = Math.max(lastBreak, i + 1);
-    } else if (g.ch === " " || g.ch === "-" || g.ch === "/") {
-      lastBreak = i + 1;
-    }
-  }
-  lines.push(glyphs.slice(start));
-  return lines;
+  const lines = layoutParagraph(
+    glyphs.map((g) => g.ch),
+    glyphs.map(measure),
+    { firstX: 0, contX: 0, maxX: maxWidth, tabs: [], defaultTab: 36, align: "left", breaking: EXCEL_BREAK_RULES }
+  );
+  const out = lines.map((l) => l.items.map((it) => glyphs[it.index]));
+  return out.length > 0 ? out : [glyphs];
 }
 
 /** 文字列を、改行で段落に分け、さらに幅で折り返した行の配列にする(wrapWidthがnullなら折り返さず、改行は無視して1行) */
@@ -951,8 +928,14 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
 
       const fontSizeFor = (origRow: number, origCol: number): number =>
         settings?.cellFontSizePt.get(`${origRow}:${origCol}`) ?? defaultFontSize;
-      /** 1行ぶんの高さ。Excelの標準の行の高さ(defaultRowHeight)があれば文字サイズに比例させ、無ければ従来の「文字サイズ+3」 */
-      const lineHeightFor = (fs: number): number => (defaultRowPt ? (defaultRowPt * fs) / defaultFontSize : fs + 3);
+      /**
+       * 1行ぶんの高さ。Excelの標準の行の高さ(defaultRowHeight。ブックの標準のフォント・大きさの1行)を基準にして、
+       * 文字の大きさと、フォントの「1行の高さ」(フォントの寸法 src/lib/fonts/office-font-metrics.ts)の比で決める。
+       * 標準の行の高さが無ければ、従来の「文字サイズ+3」。
+       */
+      const defaultLineUnit = fontMetricsFor(settings?.defaultFontName ?? null).lineFactor * defaultFontSize;
+      const lineHeightFor = (fs: number, fontName?: string | null): number =>
+        defaultRowPt ? (defaultRowPt * fontMetricsFor(fontName ?? settings?.defaultFontName ?? null).lineFactor * fs) / defaultLineUnit : fs + 3;
       const cellDisplayText = (row: RawCellValue[], origRow: number, origCol: number): string =>
         cellToDisplayString(
           row[origCol] ?? null,
@@ -1133,6 +1116,9 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       };
       const maxFontSizeOf = (line: Glyph[], fallback: number): number =>
         line.length === 0 ? fallback : Math.max(...line.map((g) => g.style.fs));
+      /** 1行の高さ：その行の文字のうち、いちばん高いもの(文字の大きさ × フォントの1行の高さ) */
+      const lineHeightOfLine = (line: Glyph[], fallbackFs: number, fallbackFont: string | null | undefined): number =>
+        line.length === 0 ? lineHeightFor(fallbackFs, fallbackFont) : Math.max(...line.map((g) => lineHeightFor(g.style.fs, g.style.fontName)));
 
       const rowHeightCache = new Map<number, number>();
       const rowHeightOf = (origRow: number): number => {
@@ -1154,12 +1140,26 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
             if (text === "") continue;
             const align = settings?.cellAlign.get(`${origRow}:${origCol}`);
             const wrap = align?.wrapText ?? false;
-            const rotated = (align?.textRotation ?? 0) !== 0;
+            const rotation = align?.textRotation ?? 0;
             const base = baseStyleOf(origRow, origCol);
             const glyphs = glyphsOf(text, base, origRow, origCol, row[origCol] ?? null);
-            const lines = wrap && !rotated ? layoutGlyphs(glyphs, colWidthOf(origCol) - cellPadding * 2, (g) => glyphWidth(g, 1)) : [glyphs];
+            // 改行(セル内改行)は、折り返さないセルでも行を分ける。折り返すセルは、字下げを除いた幅で折り返す
+            const indentPt = (align?.indent ?? 0) * defaultFontSize * 0.6;
+            const paras = layoutGlyphs(glyphs, 1e9, (g) => glyphWidth(g, 1));
+            // 折り返さないセルは、改行があっても1行(Excelと同じ。描くときも1行)
+            const lines = wrap && rotation === 0 ? layoutGlyphs(glyphs, Math.max(1, colWidthOf(origCol) - cellPadding * 2 - indentPt), (g) => glyphWidth(g, 1)) : layoutGlyphs(glyphs, null, (g) => glyphWidth(g, 1));
             let h = 0;
-            for (const line of lines) h += lineHeightFor(maxFontSizeOf(line, base.fs));
+            if (rotation === 255) {
+              // 縦書き(文字を縦に積む)：いちばん長い行の文字の数 × 文字の高さ
+              const longest = Math.max(...paras.map((l) => l.length), 1);
+              h = longest * lineHeightFor(base.fs, base.fontName) * 0.85;
+            } else if (rotation !== 0) {
+              // 回転した文字：文字列の長さ × sin(角度) + 1行の高さ × cos(角度)
+              const angle = (Math.abs(rotation > 90 ? rotation - 90 : rotation) * Math.PI) / 180;
+              const w = Math.max(...paras.map((l) => l.reduce((a, g) => a + glyphWidth(g, 1), 0)), 0);
+              const lh = paras.reduce((a, l) => a + lineHeightOfLine(l, base.fs, base.fontName), 0);
+              h = w * Math.sin(angle) + lh * Math.cos(angle);
+            } else for (const line of lines) h += lineHeightOfLine(line, base.fs, base.fontName);
             needed = Math.max(needed, h);
           }
           // 標準の行の高さが取得できた場合はそれを下限にする(Excelは何も保存されていない行を標準の高さで描く)。
@@ -1167,6 +1167,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           height = defaultRowPt
             ? Math.max(defaultRowPt, needed)
             : Math.max(1, needed / lineHeightFor(defaultFontSize)) * lineHeightFor(defaultFontSize) + cellPadding * 2;
+          // Excelの行の高さの上限(409pt)
+          height = Math.min(height, 409);
         }
         rowHeightCache.set(origRow, height);
         return height;
@@ -1640,7 +1642,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
               }
 
               const sizeFactor = s * k;
-              const lhOf = (line: Glyph[]) => lineHeightFor(maxFontSizeOf(line, baseFs)) * sizeFactor;
+              const lhOf = (line: Glyph[]) => lineHeightOfLine(line, baseFs, glyphs[0]?.style.fontName) * sizeFactor;
               const lineHeights = lines.map(lhOf);
               const fits = (() => {
                 let count = 0;

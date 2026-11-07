@@ -10,12 +10,14 @@ import { FONT_METRICS_DATA, type FontMetricsData } from "@/lib/fonts/office-font
  *  1. 同梱の寸法の表(office-font-metrics-data.ts)：Calibri・Cambria・Arial・Times New Roman・Courier New・
  *     MS ゴシック/明朝・MS Pゴシック/P明朝。メトリック互換の自由なフォントから取り出した数値なので、
  *     利用者のパソコンに関係なく、いつも同じ結果になる。
- *  2. 利用者のパソコンに入っているフォントを、ブラウザの中で測る(游明朝・游ゴシック・メイリオ など、
- *     寸法の表を同梱できないフォント)。ファイルの内容は外に送らない(ブラウザの中で文字の幅を測るだけ)。
- *  3. どちらも無いときは、同梱の Noto Sans JP の幅と、近似の行の高さ(文字の大きさ × 1.15)。
+ *  2. 表に無いフォント(游明朝・游ゴシック・メイリオ など、自由に使える同じ寸法のフォントが無いもの)は、
+ *     同梱の Noto Sans JP の幅(日本語の文字は全角の幅。英数字は Noto の幅)と、近似の行の高さ(文字の大きさ × 1.15)。
+ *
+ * 利用者のパソコンに入っているフォントをブラウザで測る方式(以前の方式)は使わない。同じファイルでも、パソコン
+ * (Windows・Mac・フォントの有無)によって改行の位置・ページの区切りが変わってしまうため(結果の決定性を優先する)。
  */
 
-export type FontMetricsSource = "table" | "system" | "embedded" | "fallback";
+export type FontMetricsSource = "table" | "embedded" | "fallback";
 
 export interface FontMetrics {
   /** 文書が指定したフォント名 */
@@ -68,20 +70,6 @@ const TABLE_ALIASES: Record<string, string> = {
 const EMBEDDED_ALIASES = new Set(["noto sans jp", "noto sans cjk jp", "noto serif jp", "noto serif cjk jp", "源ノ角ゴシック", "源ノ明朝"]);
 const EMBEDDED_LINE_FACTOR = 1.448;
 
-/** パソコンに入っているかを確かめるときの、別名(Windows・macOSで名前が違うフォント) */
-const SYSTEM_ALIASES: Record<string, string[]> = {
-  游ゴシック: ["Yu Gothic", "YuGothic", "游ゴシック", "游ゴシック体"],
-  "yu gothic": ["Yu Gothic", "YuGothic", "游ゴシック体"],
-  游ゴシック体: ["YuGothic", "Yu Gothic", "游ゴシック体"],
-  "游ゴシック medium": ["Yu Gothic Medium", "Yu Gothic", "YuGothic"],
-  "yu gothic medium": ["Yu Gothic Medium", "Yu Gothic", "YuGothic"],
-  游明朝: ["Yu Mincho", "YuMincho", "游明朝", "游明朝体"],
-  "yu mincho": ["Yu Mincho", "YuMincho", "游明朝体"],
-  游明朝体: ["YuMincho", "Yu Mincho", "游明朝体"],
-  メイリオ: ["Meiryo", "メイリオ"],
-  meiryo: ["Meiryo", "メイリオ"],
-};
-
 /** 近似の行の高さ(寸法が分からないフォント)。従来のMr.Sattoの値 */
 export const FALLBACK_LINE_FACTOR = 1.15;
 
@@ -125,56 +113,6 @@ function fromTable(name: string, data: FontMetricsData): FontMetrics {
   };
 }
 
-// ---- パソコンに入っているフォントを、ブラウザの中で測る ----
-type Ctx2D = { font: string; measureText(t: string): { width: number; fontBoundingBoxAscent?: number; fontBoundingBoxDescent?: number } };
-let measureCtx: Ctx2D | null | undefined;
-function getMeasureContext(): Ctx2D | null {
-  if (measureCtx !== undefined) return measureCtx;
-  measureCtx = null;
-  try {
-    if (typeof OffscreenCanvas !== "undefined") measureCtx = new OffscreenCanvas(8, 8).getContext("2d") as unknown as Ctx2D | null;
-    else if (typeof document !== "undefined") measureCtx = document.createElement("canvas").getContext("2d") as unknown as Ctx2D | null;
-  } catch {
-    measureCtx = null;
-  }
-  return measureCtx;
-}
-
-const PROBE = "mmmmmmmmmmlli漢字あア12345WWW";
-/** そのフォントがパソコンに入っているか(入っていなければ、ブラウザは代わりのフォントで描くので、幅が代わりのフォントと同じになる) */
-function isInstalled(ctx: Ctx2D, family: string): boolean {
-  for (const generic of ["monospace", "serif", "sans-serif"]) {
-    ctx.font = `100px ${generic}`;
-    const base = ctx.measureText(PROBE).width;
-    ctx.font = `100px "${family}", ${generic}`;
-    if (Math.abs(ctx.measureText(PROBE).width - base) > 0.5) return true;
-  }
-  return false;
-}
-
-function fromSystem(name: string, family: string, ctx: Ctx2D): FontMetrics {
-  const cache = new Map<string, number>();
-  ctx.font = `100px "${family}"`;
-  const m = ctx.measureText("あAg");
-  const asc = m.fontBoundingBoxAscent;
-  const desc = m.fontBoundingBoxDescent;
-  // ブラウザが返す高さは、フォントのアセント+ディセント(行間を含まない)。測れないときは近似
-  const lineFactor = asc !== undefined && desc !== undefined && asc + desc > 50 ? (asc + desc) / 100 : FALLBACK_LINE_FACTOR;
-  return {
-    name,
-    source: "system",
-    lineFactor,
-    widthPerPt(ch) {
-      const hit = cache.get(ch);
-      if (hit !== undefined) return hit;
-      ctx.font = `100px "${family}"`;
-      const w = ctx.measureText(ch).width / 100;
-      cache.set(ch, w);
-      return w;
-    },
-  };
-}
-
 const resolved = new Map<string, FontMetrics>();
 
 /**
@@ -188,12 +126,7 @@ export function fontMetricsFor(name: string | null | undefined): FontMetrics {
   const table = TABLE_ALIASES[key];
   if (table && FONT_METRICS_DATA[table]) result = fromTable(name ?? key, FONT_METRICS_DATA[table]);
   else if (EMBEDDED_ALIASES.has(key)) result = { name: name ?? key, source: "embedded", lineFactor: EMBEDDED_LINE_FACTOR, widthPerPt: () => null };
-  else {
-    const ctx = key ? getMeasureContext() : null;
-    const candidates = ctx ? [...(SYSTEM_ALIASES[key] ?? []), name ?? ""].filter(Boolean) : [];
-    const family = ctx ? candidates.find((f) => isInstalled(ctx, f)) : undefined;
-    result = ctx && family ? fromSystem(name ?? key, family, ctx) : { name: name ?? key, source: "fallback", lineFactor: FALLBACK_LINE_FACTOR, widthPerPt: () => null };
-  }
+  else result = { name: name ?? key, source: "fallback", lineFactor: FALLBACK_LINE_FACTOR, widthPerPt: () => null };
   resolved.set(key, result);
   return result;
 }

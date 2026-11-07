@@ -18,7 +18,43 @@ export interface LayoutParams {
   tabs: TabStopSpec[];
   defaultTab: number;
   align: "left" | "center" | "right" | "justify";
+  /** 改行の決まり(禁則)。省略時は Word の既定(禁則あり・標準のレベル・ぶら下げあり・英単語の途中で改行しない) */
+  breaking?: BreakRules;
 }
+
+/** 行の折り返しの決まり(Wordの段落の設定 w:kinsoku・w:wordWrap・w:overflowPunct と、文書の禁則の設定) */
+export interface BreakRules {
+  /** 日本語の禁則処理を行うか */
+  kinsoku: boolean;
+  /** 英単語の途中では改行しない(false なら、どこでも改行できる) */
+  wordWrap: boolean;
+  /** 句読点(、。，．)を行末にぶら下げる */
+  overflowPunct: boolean;
+  /** 行頭に置かない文字・行末に置かない文字(禁則の文字の一覧) */
+  noLineStart: Set<string>;
+  noLineEnd: Set<string>;
+  /** この文字の後ろでは、英数字の単語の途中でも改行してよい(既定はハイフン) */
+  breakAfter?: Set<string>;
+}
+
+/**
+ * Wordの禁則の文字(「標準」のレベル)。行頭に置かない文字(閉じ括弧・句読点・繰り返し記号など)と、行末に置かない文字(開き括弧など)。
+ * 「高レベル」(settings.xml の w:strictFirstAndLastChars)は、小さい仮名・長音記号なども行頭に置かない。
+ */
+export const KINSOKU_STANDARD_START = "!%),.:;?]}¢°’”‰′″℃、。々〉》」』】〕゛゜ゝゞ・ヽヾ！％），．：；？］｝｡｣､･ﾞﾟ￠";
+export const KINSOKU_STRICT_START = KINSOKU_STANDARD_START + "ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿーｧｨｩｪｫｯｬｭｮｰ‐゠–〜～";
+export const KINSOKU_LINE_END = "$([\\{£¥‘“〈《「『【〔＄（［｛｢￡￥";
+
+export function defaultBreakRules(): BreakRules {
+  return { kinsoku: true, wordWrap: true, overflowPunct: true, noLineStart: new Set(Array.from(KINSOKU_STANDARD_START)), noLineEnd: new Set(Array.from(KINSOKU_LINE_END)) };
+}
+
+/** 行末にぶら下げてよい句読点(Wordの「句読点のぶら下げ」) */
+const HANGING_PUNCT = new Set(Array.from("、。，．､｡"));
+/** 英数字の単語の途中でも、この文字の後ろでは改行できる(ハイフン) */
+const DEFAULT_BREAK_AFTER = new Set(["-"]);
+/** 2つ続けたとき、間で改行しない文字(分離禁止：…… ‥‥ ——) */
+const INSEPARABLE = new Set(Array.from("…‥—―"));
 
 export interface PlacedItem {
   /** 入力の何文字目か */
@@ -38,11 +74,6 @@ export interface LayoutLine {
   breakIndex?: number;
 }
 
-/** 行頭に置いてはいけない文字（句読点・閉じ括弧・小さい仮名・長音） */
-const NO_LINE_START = new Set(Array.from("、。，．,.)）」』】〕〉》］｝!?！？:;：；ー々ゝゞ・ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ”’"));
-/** 行末に置いてはいけない文字（開き括弧） */
-const NO_LINE_END = new Set(Array.from("(（「『【〔〈《［｛“‘"));
-
 /** 英数字の単語を作る文字(この文字の間では行を折り返さない)。日本語の文字・空白・記号の一部は区切りになる */
 function isWordChar(ch: string): boolean {
   return /^[A-Za-z0-9@#$%&*+=_\-.,'"/:;!?()[\]{}<>~^|\\\u00C0-\u024F]$/.test(ch);
@@ -57,6 +88,7 @@ function nextTabStop(x: number, tabs: TabStopSpec[], defaultTab: number): TabSto
 /** 文字ごとの幅（widths）と文字（chars。タブは "\t"、改行は "\n"）から、行ごとの配置を求める */
 export function layoutParagraph(chars: string[], widths: number[], p: LayoutParams): LayoutLine[] {
   const tabs = [...p.tabs].sort((a, b) => a.pos - b.pos);
+  const rules = p.breaking ?? defaultBreakRules();
   const lines: LayoutLine[] = [];
   let items: PlacedItem[] = [];
   let x = p.firstX;
@@ -81,6 +113,26 @@ export function layoutParagraph(chars: string[], widths: number[], p: LayoutPara
     return w;
   };
 
+  /**
+   * 文字 i の前(文字 i-1 と i の間)で改行してよいか。
+   * 空白の後ろ・日本語の文字の前後では改行できる。英数字の単語の途中・空白の前・禁則の文字の前後・分離禁止の文字の間では改行しない
+   */
+  const canBreakBefore = (i: number): boolean => {
+    if (i <= 0 || i >= chars.length) return false;
+    const a = chars[i - 1];
+    const b = chars[i];
+    if (b === " " || b === "\u3000") return false; // 空白は行末にぶら下げる(行頭に送らない)
+    if (a === "\t") return true;
+    if (a === " " || a === "\u3000") return true;
+    if (rules.kinsoku) {
+      if (rules.noLineStart.has(b)) return false;
+      if (rules.noLineEnd.has(a)) return false;
+      if (INSEPARABLE.has(a) && a === b) return false;
+    }
+    if (isWordChar(a) && isWordChar(b)) return !rules.wordWrap || (rules.breakAfter ?? DEFAULT_BREAK_AFTER).has(a);
+    return true;
+  };
+
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i];
     if (ch === "\n") {
@@ -100,38 +152,34 @@ export function layoutParagraph(chars: string[], widths: number[], p: LayoutPara
     }
     const w = widths[i];
     // 行末の空白は、余白にはみ出しても次の行へ送らない(Wordと同じ)
-    if (ch === " " && x + w > p.maxX + 0.01) {
+    if ((ch === " " || ch === "\u3000") && x + w > p.maxX + 0.01) {
       items.push({ index: i, x, width: 0 });
       continue;
     }
-    // 英数字の単語は、単語の途中では折り返さない(行の中に区切り(空白・日本語の文字)があれば、単語ごと次の行へ送る)
-    if (x + w > p.maxX + 0.01 && isWordChar(ch) && items.length > 0 && isWordChar(chars[items[items.length - 1].index])) {
-      let k = items.length - 1;
-      while (k >= 0 && isWordChar(chars[items[k].index])) k--;
-      if (k >= 0 && chars[items[k].index] !== "\t") {
-        const carried = items.splice(k + 1);
-        closeLine(false);
-        for (const it of carried) {
-          items.push({ index: it.index, x, width: it.width });
-          x += it.width;
-        }
-        items.push({ index: i, x, width: w });
-        x += w;
-        continue;
-      }
-    }
     if (x + w > p.maxX + 0.01 && items.some((it) => chars[it.index] !== "\t")) {
-      // 行頭禁則: 句読点・閉じ括弧は行末にぶら下げる（次の行頭に置かない）
-      const hangs = NO_LINE_START.has(ch) && x + w <= p.maxX + w * 1.2;
+      // 句読点のぶら下げ：行末の句読点は、1文字だけ右の余白にはみ出して置く
+      const lastItem = items[items.length - 1];
+      const hangs =
+        rules.kinsoku && rules.overflowPunct && HANGING_PUNCT.has(ch) && x <= p.maxX + 0.01 && !(lastItem && HANGING_PUNCT.has(chars[lastItem.index]) && lastItem.x + lastItem.width > p.maxX + 0.01);
       if (!hangs) {
-        // 行末禁則: 開き括弧が行末に残るときは、次の行へ送る
-        const last = items[items.length - 1];
-        const carry = last && NO_LINE_END.has(chars[last.index]) && items.length > 1 ? items.pop()! : null;
-        closeLine(false);
-        if (carry) {
-          items.push({ index: carry.index, x: p.contX, width: carry.width });
-          x = p.contX + carry.width;
+        // この行の中で、いちばん後ろの「改行してよい位置」で改行する(禁則・英単語の途中を避ける)。
+        // 無ければ(1つの単語が行より長いなど)、この文字の前で改行する
+        const lineStart = items.length > 0 ? items[0].index : i;
+        let b = -1;
+        for (let k = i; k > lineStart; k--) {
+          if (canBreakBefore(k)) {
+            b = k;
+            break;
+          }
         }
+        if (b > lineStart && b < i) {
+          // 改行の位置から後ろの文字を、次の行で組み直す(タブの位置も計算し直すため)
+          items = items.filter((it) => it.index < b);
+          closeLine(false);
+          i = b - 1;
+          continue;
+        }
+        closeLine(false);
       }
     }
     items.push({ index: i, x, width: w });

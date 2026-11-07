@@ -1,0 +1,21 @@
+{
+ "title": "高さが固定(w:hRule=exact)の行(はみ出す文字の行は描かない)",
+ "how": "A",
+ "pages": 1,
+ "markers": {
+  "S12AFTER": [
+   1
+  ],
+  "S12E1": [
+   1
+  ],
+  "S12E2": [
+   1
+  ]
+ },
+ "textsAbsent": [
+  "S12E3",
+  "S12E4",
+  "S12E5"
+ ]
+}

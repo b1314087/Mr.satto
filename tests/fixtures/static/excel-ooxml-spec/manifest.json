@@ -1,0 +1,11 @@
+[
+ {
+  "base": "e02-long-wrap.xlsx",
+  "variants": [
+   {
+    "file": "e02-long-wrap-more.xlsx",
+    "relation": "pages>=base"
+   }
+  ]
+ }
+]

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { clickAndDownload, uploadFixture } from "../helpers/tool-runner";
 import { pageSizes, words, type Word } from "../helpers/chart-pdf-inspect";
+import { textLines } from "../helpers/word-audit";
 
 /**
  * Word→PDF：乱数で構造を変えた文書(6組×5)で、レイアウトの共通の処理が、特定の文書に依らず成り立つべき性質を確かめる。
@@ -14,7 +15,8 @@ import { pageSizes, words, type Word } from "../helpers/chart-pdf-inspect";
  *  - どの文書でも、目印の文字がちょうど1回ずつ出て、紙の中にある(内容の欠落・重複が無い)
  *  - 同じ文書を2回変換すると、同じ結果になる
  *  - 余白を広くする・文字を大きくする・画像を大きくする・段落を足すと、ページ数は減らない
- *  - 段落を足しても、前からあった目印の文字は消えない
+ *  - 段落・表の行・画像を足しても、前からあった目印の文字は消えない
+ *  - 日本語の禁則：行の先頭に句読点・閉じ括弧が来ない。英単語を途中で分けない(PDFの英単語が、元の単語のどれか)
  * Microsoft Wordの結果とは比べていない(Wordのページの区切りそのものではなく、レイアウトの計算の性質を確かめる)。
  */
 
@@ -42,7 +44,7 @@ function markersOf(pdf: string): Map<string, { page: number; w: Word }[]> {
   const sizes = pageSizes(pdf);
   for (let p = 1; p <= sizes.length; p++) {
     for (const w of words(pdf, p)) {
-      const m = /Q\d{3}M\d{3}/.exec(w.text);
+      const m = /Q\d{3}[MT]\d{3}/.exec(w.text);
       if (!m) continue;
       out.set(m[0], [...(out.get(m[0]) ?? []), { page: p, w }]);
     }
@@ -65,6 +67,19 @@ function contentProblems(file: string, pdf: string): string[] {
   if (missing.length) problems.push(`${file}: 出ていない目印 ${missing.length}個(例 ${missing.slice(0, 5).join("・")})`);
   if (dup.length) problems.push(`${file}: 2回以上出た目印 ${dup.length}個(例 ${dup.slice(0, 5).join("・")})`);
   if (outside.length) problems.push(`${file}: 紙の外の目印 ${outside.length}個(例 ${outside.slice(0, 5).join("・")})`);
+  // 禁則・英単語
+  const dict = new Set(["layout", "page", "break", "paragraph", "table", "image", "font", "width", "height", "margin", "section"]);
+  for (let p = 1; p <= sizes.length; p++) {
+    const ws = words(pdf, p);
+    for (const line of textLines(ws)) {
+      const first = Array.from(line[0].text)[0] ?? "";
+      if ("、。，．」』）】".includes(first)) problems.push(`${file}: ${p}ページ目の行の先頭に「${first}」(禁則)`);
+    }
+    for (const w of ws) {
+      if (/\d/.test(w.text)) continue;
+      for (const m of w.text.match(/[A-Za-z]{2,}/g) ?? []) if (!dict.has(m)) problems.push(`${file}: ${p}ページ目に、元の文書に無い英単語「${m}」(単語の途中で分けた可能性)`);
+    }
+  }
   return problems;
 }
 
@@ -72,7 +87,7 @@ test.describe.configure({ mode: "parallel" });
 
 for (const group of manifest) {
   test(`乱数の文書 ${group.seed}：欠落・重複なし・2回変換して同じ・余白/文字/画像/段落を増やしてもページ数が減らない`, async ({ page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(900_000);
     const problems: string[] = [];
     const base = await convert(page, group.base);
     problems.push(...contentProblems(group.base, base));

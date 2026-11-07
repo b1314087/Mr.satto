@@ -1,4 +1,5 @@
 import { unzipSync } from "fflate";
+import { blockElements } from "@/lib/word/docx-format";
 
 /**
  * DOCX（word/document.xml）内部XMLから、ページ設定（セクション情報）を
@@ -315,7 +316,8 @@ export function parseWordDocumentStructure(arrayBuffer: ArrayBuffer): WordDocume
     const sections: SectionSettings[] = [];
     const bodyChildren: BodyChildHint[] = [];
 
-    for (const child of Array.from(body.children)) {
+    // 内容コントロール(w:sdt)の中の段落・表も、本文の段落として数える(docx-format の blockElements と同じ並び)
+    for (const child of blockElements(body)) {
       const tag = child.tagName;
       if (tag === "w:p") {
         // セクションの番号：段落の中のsectPrは「その段落で終わるセクション」の設定なので、この段落はまだ今のセクションに属する

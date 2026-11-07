@@ -33,6 +33,24 @@ export interface RunFmt {
   fontAscii: string | null;
   /** 日本語用のフォント名(w:rFonts の eastAsia)。指定が無ければnull */
   fontEastAsia: string | null;
+  /** すべて大文字(w:caps)・小さな大文字(w:smallCaps) */
+  caps: boolean;
+  smallCaps: boolean;
+  /** ハイパーリンク(w:hyperlink の r:id。document.xml.rels で実際のURLにする)。リンクでなければnull */
+  linkRid: string | null;
+}
+
+/** 段落の中の画像(1つの画像の目印の文字 OBJECT_CHAR に1つ対応する) */
+export interface ParaObject {
+  /** 画像のデータの参照(a:blip の r:embed・v:imagedata の r:id)。分からなければnull */
+  rId: string | null;
+  /** 文書に保存された大きさ(pt)。分からなければ0 */
+  widthPt: number;
+  heightPt: number;
+  /** 浮動配置(wp:anchor・VMLの絶対位置)か */
+  anchored: boolean;
+  /** 浮動配置(wp:anchor)の位置・折り返し(読めたとき) */
+  float?: FloatObject | null;
 }
 
 export interface TabStopFmt {
@@ -96,6 +114,18 @@ export interface ParaFmt {
   numbering: { label: string; suffix: "tab" | "space" | "nothing"; fontAscii: string | null } | null;
   /** 段落に直接の字下げの指定(w:pPr/w:ind)があるか(番号のレベルの字下げより優先するため) */
   directIndent: boolean;
+  /** 段落の前で改ページ(w:pageBreakBefore。段落スタイルの指定も含む) */
+  pageBreakBefore: boolean;
+  /** 段落の途中の改ページ・段区切り(w:br type="page"/"column")の位置(runs の文字の通し番号。その文字の前で改ページ) */
+  pageBreaks: number[];
+  /** 段落の中の画像(runs の OBJECT_CHAR の順) */
+  objects: ParaObject[];
+  /** 日本語の禁則処理を行うか(w:kinsoku。既定は行う) */
+  kinsoku: boolean;
+  /** 英単語の途中で改行しない(w:wordWrap。既定はしない=true。false のときは単語の途中でも改行する) */
+  wordWrap: boolean;
+  /** 句読点のぶら下げを行うか(w:overflowPunct。既定は行う) */
+  overflowPunct: boolean;
 }
 
 export interface CellFmt {
@@ -114,6 +144,10 @@ export interface RowFmt {
   isHeader: boolean;
   /** Wordが最後に保存したとき、この行の前でページが変わった（行の中の段落に w:lastRenderedPageBreak がある） */
   renderedBreak: boolean;
+  /** 行の途中でページを分けない(w:cantSplit)。指定が無ければ、行の中の文字の行の境目でページを分けられる */
+  cantSplit: boolean;
+  /** 行の高さの決め方(w:trHeight の w:hRule)。exact=固定、atLeast=最小(既定) */
+  heightRule: "exact" | "atLeast";
 }
 
 export interface TableBorders {
@@ -176,6 +210,13 @@ export interface DocxFormatting {
   floats: FloatObject[];
   /** 本文の標準のフォント名(英数字用・日本語用)。テーマのフォント(minorHAnsi等)は、テーマの実際のフォント名にする。分からなければnull */
   defaultFonts: { ascii: string | null; eastAsia: string | null };
+  /** document.xml.rels の参照(r:id → 対象。画像は word/media/… のパス、リンクはURL) */
+  rels: Record<string, { target: string; external: boolean }>;
+  /**
+   * 禁則の設定(settings.xml)。strict=禁則の「高レベル」(w:strictFirstAndLastChars。小さい仮名・長音も行頭に置かない)、
+   * noLineStart/noLineEnd=文書が独自に決めた禁則の文字(w:noLineBreaksBefore/After)。無ければnull
+   */
+  kinsoku: { strict: boolean; noLineStart: string | null; noLineEnd: string | null };
 }
 
 /** ページ番号・総ページ数をヘッダー/フッターの文字列へ埋め込むための目印の文字 */
@@ -198,6 +239,26 @@ function kid(el: Element | null | undefined, tag: string): Element | null {
 }
 function attr(el: Element | null | undefined, name: string): string | null {
   return el ? el.getAttribute(name) : null;
+}
+
+/**
+ * 本文・セルの中の、段落(w:p)と表(w:tbl)を順に並べる。内容コントロール(w:sdt)・ユーザー定義のXML(w:customXml)の
+ * 中にある段落・表も、Wordで見えるとおりに並べる(以前は本文の直下の w:p・w:tbl だけを見ていたため、内容コントロールの
+ * 中の文字の書式が対応づけられず、文書全体の書式を使えなくなることがあった)。
+ */
+export function blockElements(container: Element): Element[] {
+  const out: Element[] = [];
+  const visit = (el: Element) => {
+    for (const c of Array.from(el.children)) {
+      if (c.tagName === "w:p" || c.tagName === "w:tbl") out.push(c);
+      else if (c.tagName === "w:sdt") {
+        const content = kid(c, "w:sdtContent");
+        if (content) visit(content);
+      } else if (c.tagName === "w:customXml" || c.tagName === "w:ins" || c.tagName === "w:moveTo") visit(c);
+    }
+  };
+  visit(container);
+  return out;
 }
 /** OOXMLの真偽値（属性なし=true、"0"/"false"/"off"=false） */
 function onOff(el: Element | null | undefined): boolean | null {
@@ -239,7 +300,7 @@ const HIGHLIGHT: Record<string, string> = {
 // 書式（部分指定）
 // ---------------------------------------------------------------------------
 type RunPartial = Partial<RunFmt>;
-type ParaPartial = Partial<Omit<ParaFmt, "runs" | "tabs" | "baseSizePt" | "styleId" | "renderedBreaks" | "numbering" | "directIndent">> & { tabs?: TabStopFmt[]; tabClears?: number[] };
+type ParaPartial = Partial<Omit<ParaFmt, "runs" | "tabs" | "baseSizePt" | "styleId" | "renderedBreaks" | "numbering" | "directIndent" | "pageBreaks" | "objects">> & { tabs?: TabStopFmt[]; tabClears?: number[] };
 
 function parseRPr(rPr: Element | null): RunPartial {
   const out: RunPartial = {};
@@ -273,6 +334,10 @@ function parseRPr(rPr: Element | null): RunPartial {
   else if (va === "baseline") out.script = null;
   const vanish = onOff(kid(rPr, "w:vanish"));
   if (vanish !== null) out.hidden = vanish;
+  const caps = onOff(kid(rPr, "w:caps"));
+  if (caps !== null) out.caps = caps;
+  const smallCaps = onOff(kid(rPr, "w:smallCaps"));
+  if (smallCaps !== null) out.smallCaps = smallCaps;
   const rf = kid(rPr, "w:rFonts");
   if (rf) {
     const ascii = rf.getAttribute("w:ascii") || rf.getAttribute("w:hAnsi") || themeFontName(rf.getAttribute("w:asciiTheme") ?? rf.getAttribute("w:hAnsiTheme"), "latin");
@@ -361,6 +426,14 @@ function parsePPr(pPr: Element | null, sizeForChars: number): ParaPartial {
   if (keepLines !== null) out.keepLines = keepLines;
   const widow = onOff(kid(pPr, "w:widowControl"));
   if (widow !== null) out.widowControl = widow;
+  const pbb = onOff(kid(pPr, "w:pageBreakBefore"));
+  if (pbb !== null) out.pageBreakBefore = pbb;
+  const kinsoku = onOff(kid(pPr, "w:kinsoku"));
+  if (kinsoku !== null) out.kinsoku = kinsoku;
+  const wordWrap = onOff(kid(pPr, "w:wordWrap"));
+  if (wordWrap !== null) out.wordWrap = wordWrap;
+  const overflow = onOff(kid(pPr, "w:overflowPunct"));
+  if (overflow !== null) out.overflowPunct = overflow;
   const shd = kid(pPr, "w:shd");
   if (shd) {
     const fill = hex(shd.getAttribute("w:fill"));
@@ -477,6 +550,9 @@ const BASE_RUN: RunFmt = {
   hidden: false,
   fontAscii: null,
   fontEastAsia: null,
+  caps: false,
+  smallCaps: false,
+  linkRid: null,
 };
 
 /** テーマのフォント(w:asciiTheme="minorHAnsi" 等)の実際の名前。parseDocxFormatting がテーマを読んで設定する */
@@ -587,13 +663,31 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
 
   const runs: { text: string; fmt: RunFmt }[] = [];
   const renderedBreaks: number[] = [];
+  const pageBreaks: number[] = [];
+  const objects: ParaObject[] = [];
   let charCount = 0;
-  const push = (text: string, fmt: RunFmt) => {
-    if (text === "" || fmt.hidden) return;
+  /** いま読んでいるハイパーリンクの参照(w:hyperlink の中のとき) */
+  let currentLink: string | null = null;
+  const pushOne = (text: string, fmt: RunFmt) => {
+    if (text === "") return;
     charCount += Array.from(text).length;
     const last = runs[runs.length - 1];
     if (last && JSON.stringify(last.fmt) === JSON.stringify(fmt)) last.text += text;
     else runs.push({ text, fmt });
+  };
+  const push = (text: string, fmt0: RunFmt): boolean => {
+    if (text === "" || fmt0.hidden) return false;
+    const fmt = currentLink && !fmt0.linkRid ? { ...fmt0, linkRid: currentLink } : fmt0;
+    if (fmt.caps) pushOne(text.toUpperCase(), fmt);
+    else if (fmt.smallCaps) {
+      // 小さな大文字：小文字を、少し小さい大文字にする(Wordと同じ。大きさは約8割)
+      for (const ch of Array.from(text)) {
+        const up = ch.toUpperCase();
+        if (up !== ch) pushOne(up, { ...fmt, sizePt: Math.round((fmt.sizePt ?? baseSize) * 0.8 * 2) / 2 });
+        else pushOne(ch, fmt);
+      }
+    } else pushOne(text, fmt);
+    return true;
   };
 
   // 複雑なフィールド（ページ番号など）の状態
@@ -653,7 +747,11 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
           break;
         case "w:br": {
           const type = c.getAttribute("w:type");
-          if (type === "page" || type === "column") break;
+          if (type === "page" || type === "column") {
+            // 改ページ・段区切り(段組みは扱わないので、段区切りも改ページにする)：その位置を覚える
+            if (!fieldStack.some((f) => f.skip || f.phase === "instr") && pageBreaks[pageBreaks.length - 1] !== charCount) pageBreaks.push(charCount);
+            break;
+          }
           push("\n", fmt);
           break;
         }
@@ -668,7 +766,10 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
         case "mc:AlternateContent":
           // 画像(mammothがHTMLの<img>を出すもの)の位置に、画像の目印の文字を1つ入れる(文字の位置の対応をとるため)
           if (fieldStack.some((f) => f.skip || f.phase === "instr")) break;
-          if (containsPicture(c)) push(OBJECT_CHAR, fmt);
+          {
+            const pic = pictureOf(c, rs);
+            if (pic && push(OBJECT_CHAR, fmt)) objects.push(pic);
+          }
           break;
         case "w:lastRenderedPageBreak":
           if (renderedBreaks[renderedBreaks.length - 1] !== charCount) renderedBreaks.push(charCount);
@@ -685,7 +786,13 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
         case "w:r":
           readRun(c);
           break;
-        case "w:hyperlink":
+        case "w:hyperlink": {
+          const saved = currentLink;
+          currentLink = c.getAttribute("r:id") ?? saved;
+          walk(c);
+          currentLink = saved;
+          break;
+        }
         case "w:ins":
         case "w:smartTag":
         case "w:sdt":
@@ -739,6 +846,12 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
     numLevel: props.numLevel ?? 0,
     numbering: null,
     directIndent: !!kid(pPr, "w:ind"),
+    pageBreakBefore: props.pageBreakBefore ?? false,
+    pageBreaks,
+    objects,
+    kinsoku: props.kinsoku ?? true,
+    wordWrap: props.wordWrap ?? true,
+    overflowPunct: props.overflowPunct ?? true,
   };
 }
 
@@ -749,10 +862,21 @@ function readTable(tbl: Element, rs: Resolver): TableFmt | null {
   const tblPr = kid(tbl, "w:tblPr");
   const styleId = attr(kid(tblPr, "w:tblStyle"), "w:val");
   const borders = rs.tableBorders(styleId, tblPr);
-  const grid = kids(kid(tbl, "w:tblGrid"), "w:gridCol")
+  let grid = kids(kid(tbl, "w:tblGrid"), "w:gridCol")
     .map((g) => (num(g.getAttribute("w:w")) ?? 0) / TWIPS_PER_PT)
     .filter((w) => w >= 0);
-  if (grid.length === 0) return null;
+  if (grid.length === 0 || grid.every((w) => w === 0)) {
+    // 列の幅の定義(w:tblGrid)が無い表：1行目のセルの幅(w:tcW)から決める。それも無ければ、同じ幅に分ける
+    const first = kids(tbl, "w:tr")[0];
+    const cellsW = kids(first, "w:tc").map((tc) => {
+      const w = kid(kid(tc, "w:tcPr"), "w:tcW");
+      return w && (w.getAttribute("w:type") ?? "dxa") === "dxa" ? (num(w.getAttribute("w:w")) ?? 0) / TWIPS_PER_PT : 0;
+    });
+    if (cellsW.length === 0) return null;
+    const known = cellsW.filter((w) => w > 0);
+    const fill = known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : 468 / cellsW.length;
+    grid = cellsW.map((w) => (w > 0 ? w : fill));
+  }
   const jc = attr(kid(tblPr, "w:jc"), "w:val");
   const indent = (num(attr(kid(tblPr, "w:tblInd"), "w:w")) ?? 0) / TWIPS_PER_PT;
   const mar = kid(tblPr, "w:tblCellMar");
@@ -788,8 +912,15 @@ function readTable(tbl: Element, rs: Resolver): TableFmt | null {
           }
         }
       }
+      // セルの中の段落。入れ子の表(セルの中の表)の文字も、失わないように、セルの段落として順に並べる
       const paragraphs: ParaFmt[] = [];
-      for (const p of kids(tc, "w:p")) paragraphs.push(readParagraph(p, rs, "result", styleId));
+      const collect = (container: Element) => {
+        for (const el of blockElements(container)) {
+          if (el.tagName === "w:p") paragraphs.push(readParagraph(el, rs, "result", styleId));
+          else for (const tr2 of kids(el, "w:tr")) for (const tc2 of kids(tr2, "w:tc")) collect(tc2);
+        }
+      };
+      collect(tc);
       cells.push({
         gridSpan: span,
         vMerge,
@@ -800,7 +931,14 @@ function readTable(tbl: Element, rs: Resolver): TableFmt | null {
       });
     }
     const renderedBreak = cells.some((c) => c.paragraphs.some((p) => p.renderedBreaks.length > 0));
-    rows.push({ cells, heightPt: h !== null ? h / TWIPS_PER_PT : null, isHeader: onOff(kid(trPr, "w:tblHeader")) === true, renderedBreak });
+    rows.push({
+      cells,
+      heightPt: h !== null ? h / TWIPS_PER_PT : null,
+      isHeader: onOff(kid(trPr, "w:tblHeader")) === true,
+      renderedBreak,
+      cantSplit: onOff(kid(trPr, "w:cantSplit")) === true,
+      heightRule: attr(kid(trPr, "w:trHeight"), "w:hRule") === "exact" ? "exact" : "atLeast",
+    });
   }
   if (rows.length === 0) return null;
   return {
@@ -856,6 +994,8 @@ const EMPTY: DocxFormatting = {
   bodyImages: [],
   floats: [],
   defaultFonts: { ascii: null, eastAsia: null },
+  rels: {},
+  kinsoku: { strict: false, noLineStart: null, noLineEnd: null },
 };
 
 /** DOCXから書式を読み取る。失敗した場合は空の結果（呼び出し側は従来の描画に戻る）。 */
@@ -866,14 +1006,60 @@ const EMPTY: DocxFormatting = {
 /** 段落の中の画像の位置を表す文字(書式つきの文字列と、mammothの文字列の両方に同じ位置で入れる) */
 export const OBJECT_CHAR = "\uFFFC";
 
-/** その要素が、mammothが<img>として出す画像を含むか(w:drawing の a:blip、VMLの v:imagedata。mc:AlternateContentは1つと数える) */
-function containsPicture(el: Element): boolean {
+/** 要素が、テキストボックスの中(w:txbxContent)にあるか(root より内側だけを見る) */
+function insideTextBox(el: Element, root: Element): boolean {
+  for (let a = el.parentElement; a && a !== root; a = a.parentElement) if (a.tagName === "w:txbxContent") return true;
+  return false;
+}
+
+/** VMLの style の長さ(例 "120pt"・"1.5in")をptにする */
+function lengthPt(v: string | undefined): number | null {
+  const m = v ? /^([\d.]+)(pt|in|cm|mm|px)?$/.exec(v.trim()) : null;
+  if (!m) return null;
+  const n = Number(m[1]);
+  const unit = m[2] ?? "px";
+  return unit === "pt" ? n : unit === "in" ? n * 72 : unit === "cm" ? (n * 72) / 2.54 : unit === "mm" ? (n * 72) / 25.4 : n * 0.75;
+}
+
+/**
+ * 段落の中の画像(w:drawing の a:blip、VMLの v:imagedata)。テキストボックスの中の画像は、ここでは数えない。
+ * mc:AlternateContent は、新しい形式(mc:Choice の w:drawing)を優先し、無ければ古い形式(mc:Fallback のVML)を使う。
+ * 浮動配置(wp:anchor)の画像は、位置・折り返しも読む(float。本文の段落の番号・画像の通し番号は呼び出し側で入れる)
+ */
+function pictureOf(el: Element, rs: Resolver): (ParaObject & { float?: FloatObject | null }) | null {
+  const EMU = 12700;
+  const fromDrawing = (d: Element) => {
+    const blip = Array.from(d.getElementsByTagName("a:blip")).find((b) => !insideTextBox(b, d));
+    if (!blip) return null;
+    const holder = Array.from(d.children).find((c) => c.tagName === "wp:inline" || c.tagName === "wp:anchor");
+    const ext = holder ? kid(holder, "wp:extent") : null;
+    const anchored = holder?.tagName === "wp:anchor";
+    return {
+      rId: blip.getAttribute("r:embed") ?? blip.getAttribute("r:link"),
+      widthPt: (num(attr(ext, "cx")) ?? 0) / EMU,
+      heightPt: (num(attr(ext, "cy")) ?? 0) / EMU,
+      anchored,
+      float: anchored && holder ? readFloat(holder, rs, -1, -1) : null,
+    };
+  };
+  const fromVml = (root: Element) => {
+    const im = Array.from(root.getElementsByTagName("v:imagedata")).find((x) => !insideTextBox(x, root));
+    if (!im) return null;
+    const style = im.parentElement?.getAttribute("style") ?? "";
+    const prop = (name: string) => new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`).exec(style)?.[1];
+    return { rId: im.getAttribute("r:id"), widthPt: lengthPt(prop("width")) ?? 0, heightPt: lengthPt(prop("height")) ?? 0, anchored: /position\s*:\s*absolute/.test(style) };
+  };
+  if (el.tagName === "w:drawing") return fromDrawing(el);
+  if (el.tagName === "w:pict") return fromVml(el);
   if (el.tagName === "mc:AlternateContent") {
+    const choice = kid(el, "mc:Choice");
+    const d = choice ? choice.getElementsByTagName("w:drawing")[0] : undefined;
+    const fromChoice = d ? fromDrawing(d) : null;
+    if (fromChoice) return fromChoice;
     const fb = kid(el, "mc:Fallback");
-    return !!fb && fb.getElementsByTagName("v:imagedata").length > 0;
+    return fb ? fromVml(fb) : null;
   }
-  if (el.tagName === "w:drawing") return el.getElementsByTagName("a:blip").length > 0;
-  return el.getElementsByTagName("v:imagedata").length > 0;
+  return null;
 }
 
 /** 浮動配置(wp:anchor)の位置の指定の基準 */
@@ -1167,16 +1353,43 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
 
     let defaultTabPt = DEFAULT_TAB_PT;
     let evenAndOdd = false;
+    const kinsoku: DocxFormatting["kinsoku"] = { strict: false, noLineStart: null, noLineEnd: null };
     const settingsText = text("word/settings.xml");
     if (settingsText) {
       const sd = parser.parseFromString(settingsText, "application/xml");
       const dt = num(attr(sd.getElementsByTagName("w:defaultTabStop")[0] ?? null, "w:val"));
       if (dt !== null && dt > 0) defaultTabPt = dt / TWIPS_PER_PT;
       evenAndOdd = onOff(sd.getElementsByTagName("w:evenAndOddHeaders")[0] ?? null) === true;
+      // 禁則の設定(日本語の文字の指定 w:lang="ja-JP" のもの、または言語の指定の無いもの)
+      kinsoku.strict = onOff(sd.getElementsByTagName("w:strictFirstAndLastChars")[0] ?? null) === true;
+      const custom = (tag: string) => {
+        const els = Array.from(sd.getElementsByTagName(tag));
+        const el = els.find((e) => /^ja/i.test(e.getAttribute("w:lang") ?? "")) ?? els.find((e) => !e.getAttribute("w:lang"));
+        const v = el?.getAttribute("w:val");
+        return v ? v : null;
+      };
+      kinsoku.noLineStart = custom("w:noLineBreaksBefore");
+      kinsoku.noLineEnd = custom("w:noLineBreaksAfter");
+    }
+    // 参照(r:id → 画像のファイル・リンクのURL・ヘッダー/フッターの部品)
+    const rels: DocxFormatting["rels"] = {};
+    {
+      const relsText = text("word/_rels/document.xml.rels");
+      if (relsText) {
+        const rd = parser.parseFromString(relsText, "application/xml");
+        for (const r of Array.from(rd.getElementsByTagName("Relationship"))) {
+          const id = r.getAttribute("Id");
+          const t = r.getAttribute("Target");
+          if (!id || !t) continue;
+          const external = r.getAttribute("TargetMode") === "External";
+          rels[id] = { target: external ? t : t.replace(/^\/?(word\/)?/, "word/"), external };
+        }
+      }
     }
 
+    const bodyEls = blockElements(body);
     const bodyFmt: BodyFmt[] = [];
-    for (const child of Array.from(body.children)) {
+    for (const child of bodyEls) {
       if (child.tagName === "w:p") bodyFmt.push({ tag: "p", para: readParagraph(child, rs, "result") });
       else if (child.tagName === "w:tbl") {
         let table: TableFmt | null = null;
@@ -1199,19 +1412,9 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
     const footers: DocxFormatting["footers"] = {};
     if (firstSectPr) {
       refs = readSectionRefs(firstSectPr);
-      const relsText = text("word/_rels/document.xml.rels");
-      const targets = new Map<string, string>();
-      if (relsText) {
-        const rd = parser.parseFromString(relsText, "application/xml");
-        for (const r of Array.from(rd.getElementsByTagName("Relationship"))) {
-          const id = r.getAttribute("Id");
-          const t = r.getAttribute("Target");
-          if (id && t) targets.set(id, t.replace(/^\/?(word\/)?/, "word/"));
-        }
-      }
       const load = (rid: string | undefined): HeaderFooterFmt | undefined => {
         if (!rid) return undefined;
-        const target = targets.get(rid);
+        const target = rels[rid] && !rels[rid].external ? rels[rid].target : undefined;
         const partText = target ? text(target) : null;
         if (!partText) return undefined;
         const pd = parser.parseFromString(partText, "application/xml");
@@ -1237,56 +1440,27 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
       if (pagesN !== null && pagesN > 0) savedPageCount = pagesN;
       savedByWord = /microsoft/i.test(ad.getElementsByTagName("Application")[0]?.textContent ?? "");
     }
-    // 本文の段落の中の画像の大きさ（表の中の画像は数えない）
-    const EMU_PER_PT = 12700;
+    // 本文の段落の中の画像の大きさ(表の中の画像は数えない)と、浮動配置の画像の位置。段落を読んだときの画像(objects)から作る
     const bodyImages: DocxFormatting["bodyImages"] = [];
-    const lengthPt = (v: string | undefined): number | null => {
-      const m = v ? /^([\d.]+)(pt|in|cm|mm|px)?$/.exec(v.trim()) : null;
-      if (!m) return null;
-      const n = Number(m[1]);
-      const unit = m[2] ?? "px";
-      return unit === "pt" ? n : unit === "in" ? n * 72 : unit === "cm" ? (n * 72) / 2.54 : unit === "mm" ? (n * 72) / 25.4 : n * 0.75;
-    };
     const floats: FloatObject[] = [];
-    Array.from(body.children).forEach((child, bodyIndex) => {
+    bodyFmt.forEach((b, bodyIndex) => {
+      if (b.tag !== "p") return;
+      for (const o of b.para.objects) {
+        if (o.float) floats.push({ ...o.float, bodyIndex, imageOrdinal: bodyImages.length });
+        bodyImages.push({ widthPt: o.widthPt, heightPt: o.heightPt, floating: o.anchored });
+      }
+    });
+    // テキストボックス・図形(画像でない浮動配置)：mc:AlternateContent の mc:Choice 側の wp:anchor
+    bodyEls.forEach((child, bodyIndex) => {
       if (child.tagName !== "w:p") return;
-      // テキストボックス・図形(画像でない浮動配置)：mc:AlternateContent の mc:Choice 側の wp:anchor
       for (const anchor of Array.from(child.getElementsByTagName("wp:anchor"))) {
         let inFb = false;
         for (let a = anchor.parentElement; a && a !== child; a = a.parentElement) if (a.tagName === "mc:Fallback" || a.tagName === "w:txbxContent") inFb = true;
-        if (inFb || anchor.getElementsByTagName("a:blip").length > 0) continue;
+        if (inFb || Array.from(anchor.getElementsByTagName("a:blip")).some((b) => !insideTextBox(b, anchor))) continue;
         const f = readFloat(anchor, rs, bodyIndex, null);
         if (f) floats.push(f);
       }
     });
-    for (const [bodyIndex, child] of Array.from(body.children).entries()) {
-      if (child.tagName !== "w:p") continue;
-      const inFallback = (el: Element) => {
-        for (let a = el.parentElement; a && a !== child; a = a.parentElement) if (a.tagName === "mc:Fallback" || a.tagName === "w:txbxContent") return true;
-        return false;
-      };
-      for (const el of Array.from(child.getElementsByTagName("*"))) {
-        if ((el.tagName === "w:drawing" || el.tagName === "v:imagedata") && inFallback(el)) continue;
-        if (el.tagName === "w:drawing") {
-          if (el.getElementsByTagName("a:blip").length === 0) continue;
-          const holder = Array.from(el.children).find((c) => c.tagName === "wp:inline" || c.tagName === "wp:anchor");
-          const ext = holder ? kid(holder, "wp:extent") : null;
-          const cx = num(attr(ext, "cx"));
-          const cy = num(attr(ext, "cy"));
-          if (holder?.tagName === "wp:anchor") {
-            const f = readFloat(holder, rs, bodyIndex, bodyImages.length);
-            if (f) floats.push(f);
-          }
-          if (cx !== null && cy !== null && cx > 0 && cy > 0) {
-            bodyImages.push({ widthPt: cx / EMU_PER_PT, heightPt: cy / EMU_PER_PT, floating: holder?.tagName === "wp:anchor" });
-          } else bodyImages.push({ widthPt: 0, heightPt: 0, floating: false });
-        } else if (el.tagName === "v:imagedata") {
-          const style = el.parentElement?.getAttribute("style") ?? "";
-          const prop = (name: string) => new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`).exec(style)?.[1];
-          bodyImages.push({ widthPt: lengthPt(prop("width")) ?? 0, heightPt: lengthPt(prop("height")) ?? 0, floating: /position\s*:\s*absolute/.test(style) });
-        }
-      }
-    }
     // 本文の標準のフォント(文書の既定 → 標準スタイルの順で上書き)。行の高さ(「1行」の高さはフォントで決まる)に使う
     const stylesDoc = text("word/styles.xml");
     const defaultFonts: DocxFormatting["defaultFonts"] = { ascii: null, eastAsia: null };
@@ -1325,7 +1499,7 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
     const hasRenderedBreaks = bodyFmt.some((b) =>
       b.tag === "p" ? b.para.renderedBreaks.length > 0 : !!b.table?.rows.some((r) => r.renderedBreak)
     );
-    return { body: bodyFmt, defaultTabPt, evenAndOdd, headers, footers, refs, hasRenderedBreaks, savedPageCount, savedByWord, bodyImages, floats, defaultFonts };
+    return { body: bodyFmt, defaultTabPt, evenAndOdd, headers, footers, refs, hasRenderedBreaks, savedPageCount, savedByWord, bodyImages, floats, defaultFonts, rels, kinsoku };
   } catch {
     return EMPTY;
   }

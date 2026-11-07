@@ -1,0 +1,179 @@
+{
+ "title": "行の高さの自動の計算(折り返し・改行・文字の大きさ・回転・固定・非表示)",
+ "rows": [
+  {
+   "row": 1,
+   "words": [
+    "A1W1",
+    "A1W2"
+   ],
+   "lines": null,
+   "kind": "wrap"
+  },
+  {
+   "row": 2,
+   "words": [
+    "A2W1",
+    "A2W2",
+    "A2W3",
+    "A2W4"
+   ],
+   "lines": null,
+   "kind": "wrap"
+  },
+  {
+   "row": 3,
+   "words": [
+    "A3W1",
+    "A3W2",
+    "A3W3",
+    "A3W4",
+    "A3W5",
+    "A3W6"
+   ],
+   "lines": null,
+   "kind": "wrap"
+  },
+  {
+   "row": 4,
+   "words": [
+    "A4W1",
+    "A4W2",
+    "A4W3",
+    "A4W4",
+    "A4W5",
+    "A4W6",
+    "A4W7",
+    "A4W8"
+   ],
+   "lines": null,
+   "kind": "wrap"
+  },
+  {
+   "row": 5,
+   "words": [
+    "A5W1",
+    "A5W2",
+    "A5W3",
+    "A5W4",
+    "A5W5",
+    "A5W6",
+    "A5W7",
+    "A5W8",
+    "A5W9",
+    "A5W10"
+   ],
+   "lines": null,
+   "kind": "wrap"
+  },
+  {
+   "row": 6,
+   "words": [
+    "A6W1",
+    "A6W2",
+    "A6W3",
+    "A6W4",
+    "A6W5",
+    "A6W6",
+    "A6W7",
+    "A6W8",
+    "A6W9",
+    "A6W10",
+    "A6W11",
+    "A6W12"
+   ],
+   "lines": null,
+   "kind": "wrap"
+  },
+  {
+   "row": 7,
+   "words": [
+    "A7W1",
+    "A7W2",
+    "A7W3",
+    "A7W4",
+    "A7W5",
+    "A7W6",
+    "A7W7",
+    "A7W8",
+    "A7W9",
+    "A7W10",
+    "A7W11",
+    "A7W12",
+    "A7W13",
+    "A7W14"
+   ],
+   "lines": null,
+   "kind": "wrap"
+  },
+  {
+   "row": 8,
+   "words": [
+    "A8W1",
+    "A8W2",
+    "A8W3",
+    "A8W4",
+    "A8W5",
+    "A8W6",
+    "A8W7",
+    "A8W8",
+    "A8W9",
+    "A8W10",
+    "A8W11",
+    "A8W12",
+    "A8W13",
+    "A8W14",
+    "A8W15",
+    "A8W16"
+   ],
+   "lines": null,
+   "kind": "wrap"
+  },
+  {
+   "row": 9,
+   "words": [
+    "A9W1"
+   ],
+   "kind": "big",
+   "minBand": 20
+  },
+  {
+   "row": 10,
+   "words": [
+    "A10W1",
+    "A10W2",
+    "A10W3"
+   ],
+   "kind": "newline",
+   "distinctLines": 3
+  },
+  {
+   "row": 11,
+   "words": [
+    "A11W1A11W2"
+   ],
+   "kind": "nowrap",
+   "distinctLines": 1,
+   "band": null
+  },
+  {
+   "row": 12,
+   "words": [
+    "A12W1"
+   ],
+   "kind": "fixed",
+   "band": 40
+  },
+  {
+   "row": 13,
+   "words": [],
+   "kind": "rotated",
+   "minBand": 50
+  }
+ ],
+ "lastRow": 15,
+ "absent": [
+  "HIDDENROWMARK",
+  "R14"
+ ]
+}

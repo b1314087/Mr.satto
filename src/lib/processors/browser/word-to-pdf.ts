@@ -14,11 +14,12 @@ import {
   type DocxFormatting,
   type HeaderFooterFmt,
   type ParaFmt,
+  type ParaObject,
   type RunFmt,
   type TableFmt,
 } from "@/lib/word/docx-format";
 import { fontMetricsFor, isEastAsianChar } from "@/lib/fonts/office-font-metrics";
-import { layoutParagraph, type LayoutLine, type TabStopSpec } from "@/lib/word/word-layout";
+import { KINSOKU_LINE_END, KINSOKU_STANDARD_START, KINSOKU_STRICT_START, layoutParagraph, type BreakRules, type LayoutLine, type TabStopSpec } from "@/lib/word/word-layout";
 import type * as PdfLibTypes from "pdf-lib";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
@@ -218,8 +219,18 @@ interface TextRun {
   italic: boolean;
   underline: boolean;
   link?: string;
-  /** 段落の中の画像(text は画像の目印の文字 U+FFFC の1文字)。ordinal は本文の段落の中の画像の通し番号 */
-  image?: { dataUri: string; ordinal: number };
+  /**
+   * 段落の中の画像(text は画像の目印の文字 U+FFFC の1文字)。dataUri は画像のデータの鍵(data URI、または
+   * 文書の中のファイルのパス word/media/…)。ordinal は本文の段落の中の画像の通し番号(表の中などは -1)。
+   * w・h は文書に保存された大きさ(pt。分かるとき)
+   */
+  image?: InlineImageRef;
+}
+interface InlineImageRef {
+  dataUri: string;
+  ordinal: number;
+  w?: number;
+  h?: number;
 }
 interface ListMeta {
   ordered: boolean;
@@ -851,6 +862,76 @@ function htmlToBlocks(html: string, formatting: DocxFormatting | null): { blocks
 }
 
 // ---------------------------------------------------------------------------
+// OOXML(word/document.xml)を直接読んだ文書モデルから、描くかたまり(段落・表・改ページ)を作る
+// ---------------------------------------------------------------------------
+/**
+ * docx-format が word/*.xml から直接読んだ文書(段落・文字の書式・表・画像・改ページ)から、描くかたまりを作る。
+ * 以前は、mammoth で本文をHTMLにしてから、別に読んだ書式を「段落の通し番号の目印」で対応づけていた。その方式では、
+ * HTMLに変えるときに失われる情報(表の中の画像・入れ子の表・内容コントロール・段落スタイルの「段落の前で改ページ」など)が
+ * あり、段落の数が1つでも食い違うと、文書全体の書式を使えなくなっていた。直接読むことで、本文と書式は常に同じものになる。
+ * 読めない表があるなど、直接読んだ結果を使えないときは null(呼び出し側は、mammothによる読み取りに戻る)。
+ */
+function blocksFromOoxml(formatting: DocxFormatting): DocBlock[] | null {
+  if (formatting.body.length === 0) return null;
+  if (formatting.body.some((b) => b.tag === "tbl" && !b.table)) return null;
+  const blocks: DocBlock[] = [];
+  let ordinal = 0;
+  const imageOf = (o: ParaObject | undefined, ord: number): InlineImageRef | undefined => {
+    const rel = o?.rId ? formatting.rels[o.rId] : undefined;
+    if (!o || !rel || rel.external) return undefined;
+    return { dataUri: rel.target, ordinal: ord, ...(o.widthPt > 0 && o.heightPt > 0 ? { w: o.widthPt, h: o.heightPt } : {}) };
+  };
+  const linkOf = (rid: string | null): string | undefined => {
+    const rel = rid ? formatting.rels[rid] : undefined;
+    return rel && rel.external && /^https?:\/\//i.test(rel.target) ? rel.target : undefined;
+  };
+  formatting.body.forEach((b, bodyIndex) => {
+    if (b.tag === "tbl") {
+      blocks.push({ kind: "table", rows: [], fmt: b.table, bodyIndex });
+      return;
+    }
+    const para = b.para;
+    if (para.pageBreakBefore && blocks.length > 0 && blocks[blocks.length - 1].kind !== "pagebreak") blocks.push({ kind: "pagebreak" });
+    // 文字ごとの書式・リンク・画像
+    const chars: { ch: string; fmt: RunFmt; link?: string; image?: InlineImageRef }[] = [];
+    let objIndex = 0;
+    for (const r of para.runs) {
+      const link = linkOf(r.fmt.linkRid);
+      for (const ch of Array.from(r.text)) {
+        if (ch === OBJECT_CHAR) {
+          // 本文の段落の画像は、画像が読めなくても通し番号を進める(浮動配置の位置の情報と対応づけるため)
+          chars.push({ ch, fmt: r.fmt, link, image: imageOf(para.objects[objIndex++], ordinal) });
+          ordinal++;
+        } else chars.push({ ch, fmt: r.fmt, link });
+      }
+    }
+    const segment = (start: number, end: number): ParagraphBlock => {
+      const runs: TextRun[] = [];
+      for (const c of chars.slice(start, end)) {
+        const last = runs[runs.length - 1];
+        if (!c.image && last && !last.image && last.link === c.link) last.text += c.ch;
+        else runs.push({ text: c.ch, bold: false, italic: false, underline: false, ...(c.link ? { link: c.link } : {}), ...(c.image ? { image: c.image } : {}) });
+      }
+      return { kind: "paragraph", runs, heading: 0, fmt: para, charFmts: chars.slice(start, end).map((c) => c.fmt), bodyIndex, ...(start > 0 ? { contOffset: start } : {}) };
+    };
+    // 段落の途中の改ページ：前の部分・改ページ・続きの部分に分ける(改ページだけの段落は、改ページだけにする)
+    const breaks = [...new Set(para.pageBreaks)].filter((k) => k >= 0 && k <= chars.length).sort((x, y) => x - y);
+    if (breaks.length === 0) {
+      blocks.push(segment(0, chars.length));
+      return;
+    }
+    let start = 0;
+    for (const k of breaks) {
+      if (k > start) blocks.push(segment(start, k));
+      blocks.push({ kind: "pagebreak" });
+      start = k;
+    }
+    if (chars.length > start) blocks.push(segment(start, chars.length));
+  });
+  return blocks;
+}
+
+// ---------------------------------------------------------------------------
 // PDF描画
 // ---------------------------------------------------------------------------
 interface FlatChar {
@@ -868,7 +949,7 @@ interface FlatChar {
   fontAscii?: string | null;
   fontEastAsia?: string | null;
   /** 段落の中の画像(行の中に置く画像・浮動配置の画像の位置) */
-  image?: { dataUri: string; ordinal: number };
+  image?: InlineImageRef;
 }
 
 /** 空でない文字の並び（コードポイント単位）。書式つきの文字列との対応づけ（attachFormat）にも使う */
@@ -907,14 +988,29 @@ function toFlatChars(runs: TextRun[], charFmts: RunFmt[] | null | undefined, def
 }
 
 /** 書式つきの段落（runs）から、文字の並びを作る（ヘッダー/フッター・表のセル用）。ページ番号の目印は実際の番号に置き換える */
-function fmtParagraphChars(para: ParaFmt, defaults: { size: number; bold: boolean }, pageNo = 1, pageCount = 1): FlatChar[] {
+function fmtParagraphChars(
+  para: ParaFmt,
+  defaults: { size: number; bold: boolean },
+  pageNo = 1,
+  pageCount = 1,
+  res?: { image?: (o: ParaObject) => InlineImageRef | undefined; link?: (rid: string) => string | undefined }
+): FlatChar[] {
   const out: FlatChar[] = [];
+  let objIndex = 0;
   for (const run of para.runs) {
     const f = run.fmt;
+    const link = f.linkRid && res?.link ? res.link(f.linkRid) : undefined;
     for (const ch0 of Array.from(run.text)) {
       const text = ch0 === PAGE_NUMBER_CHAR ? String(pageNo) : ch0 === PAGE_COUNT_CHAR ? String(pageCount) : ch0;
+      let image: InlineImageRef | undefined;
+      if (ch0 === OBJECT_CHAR) {
+        const o = para.objects[objIndex++];
+        image = o && res?.image ? res.image(o) : undefined;
+      }
       for (const ch of Array.from(text)) {
         out.push({
+          ...(link ? { link } : {}),
+          ...(image ? { image } : {}),
           ch,
           bold: f.bold || defaults.bold,
           italic: f.italic,
@@ -990,6 +1086,14 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     const formatting = parseDocxFormatting(arrayBuffer);
     let formattingMatched = false;
 
+    // 本文は、word/document.xml を直接読んだ文書モデルから作る(blocksFromOoxml)。直接読めなかったときだけ、
+    // 以前の方式(mammothでHTMLにしてから書式を対応づける)に戻る
+    const direct = blocksFromOoxml(formatting);
+    let blocks: DocBlock[];
+    if (direct && direct.length > 0) {
+      blocks = direct;
+      formattingMatched = true;
+    } else {
     const mammoth = await import("mammoth");
     let html: string;
     try {
@@ -1018,8 +1122,12 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       );
     }
 
-    const { blocks, warnings: parseWarnings } = htmlToBlocks(html, formattingMatched ? formatting : null);
-    warnings.push(...parseWarnings);
+    const parsed = htmlToBlocks(html, formattingMatched ? formatting : null);
+    blocks = parsed.blocks;
+    warnings.push(...parsed.warnings);
+    warnings.push("文書の構造を直接読み取れなかったため、簡易的な読み取りで変換しました（書式の一部が反映されない場合があります）。");
+    }
+    const directModel = !!direct && direct.length > 0;
 
     if (blocks.length === 0) {
       throw new Error("このWord文書から変換できる内容が見つかりませんでした。");
@@ -1130,6 +1238,24 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       });
     }
 
+    // ---- 改行の決まり(禁則)：文書の設定(settings.xml)と段落の設定(w:kinsoku・w:wordWrap・w:overflowPunct)から決める ----
+    const ks = formatting.kinsoku;
+    const noLineStart = new Set(Array.from(ks.noLineStart ?? (ks.strict ? KINSOKU_STRICT_START : KINSOKU_STANDARD_START)));
+    const noLineEnd = new Set(Array.from(ks.noLineEnd ?? KINSOKU_LINE_END));
+    const breakRulesCache = new Map<string, BreakRules>();
+    function breakRulesOf(fmt: ParaFmt | null): BreakRules {
+      const kinsoku = fmt?.kinsoku ?? true;
+      const wordWrap = fmt?.wordWrap ?? true;
+      const overflowPunct = fmt?.overflowPunct ?? true;
+      const key = `${kinsoku}|${wordWrap}|${overflowPunct}`;
+      let r = breakRulesCache.get(key);
+      if (!r) {
+        r = { kinsoku, wordWrap, overflowPunct, noLineStart, noLineEnd };
+        breakRulesCache.set(key, r);
+      }
+      return r;
+    }
+
     interface PlacedLines {
       lines: LayoutLine[];
       heights: number[];
@@ -1146,7 +1272,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const lines = layoutParagraph(
         chars.map((c) => c.ch),
         widthsOf(chars),
-        { firstX: o.firstX, contX: o.contX, maxX: o.maxX, tabs: o.tabs, defaultTab: defaultTabPt, align: o.align }
+        { firstX: o.firstX, contX: o.contX, maxX: o.maxX, tabs: o.tabs, defaultTab: defaultTabPt, align: o.align, breaking: breakRulesOf(o.fmt) }
       );
       const spacing: DefaultParagraphSpacing = {
         lineRule: o.fmt?.lineRule ?? structure.defaultSpacing.lineRule,
@@ -1531,7 +1657,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     }
     interface NTable {
       grid: number[];
-      rows: { cells: NCell[]; heightPt: number | null }[];
+      rows: { cells: NCell[]; heightPt: number | null; cantSplit?: boolean; exactHeight?: boolean }[];
       borders: { top: BorderFmt | null; bottom: BorderFmt | null; left: BorderFmt | null; right: BorderFmt | null; insideH: BorderFmt | null; insideV: BorderFmt | null };
       indent: number;
       align: "left" | "center" | "right";
@@ -1551,6 +1677,8 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
           grid: f.gridPt,
           rows: f.rows.map((r) => ({
             heightPt: r.heightPt,
+            cantSplit: r.cantSplit,
+            exactHeight: r.heightRule === "exact" && r.heightPt !== null,
             cells: r.cells.map((c) => ({
               span: c.gridSpan,
               vMerge: c.vMerge,
@@ -1559,7 +1687,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
               borders: c.borders,
               paras: c.paragraphs.map((p) => {
                 const size = p.baseSizePt ?? BODY_SIZE;
-                return { chars: fmtParagraphChars(p, { size, bold: r.isHeader }), fmt: p, size };
+                return { chars: fmtParagraphChars(p, { size, bold: false }, 1, 1, directModel ? { image: cellImage, link: cellLink } : undefined), fmt: p, size };
               }),
             })),
           })),
@@ -1612,7 +1740,8 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const spanWidth = (col: number, span: number) => grid.slice(col, col + span).reduce((a, b) => a + b, 0);
 
       // 各セルの行の組み立て
-      interface CellLayout { col: number; span: number; cell: NCell; paras: { placed: PlacedLines; para: NPara }[]; need: number }
+      interface CellLine { pi: number; li: number; h: number; after: number }
+      interface CellLayout { col: number; span: number; cell: NCell; paras: { placed: PlacedLines; para: NPara }[]; need: number; lines: CellLine[] }
       const layouts: CellLayout[][] = t.rows.map((row) => {
         let col = 0;
         return row.cells.map((cell) => {
@@ -1635,7 +1764,13 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
           });
           let need = 0;
           for (const p of paras) need += p.placed.heights.reduce((a, b) => a + b, 0) + (t.fixedLineHeight === undefined ? Math.min(p.para.fmt?.afterPt ?? 0, 6) : 0);
-          const layout: CellLayout = { col, span, cell, paras, need: need + t.padY * 2 };
+          // セルの中の行を、上から順に並べたもの(行の途中でページを分けるときに使う)
+          const lines: CellLine[] = [];
+          paras.forEach((p, pi) => {
+            const n = p.placed.lines.length;
+            p.placed.heights.forEach((h, li) => lines.push({ pi, li, h, after: li === n - 1 && t.fixedLineHeight === undefined ? Math.min(p.para.fmt?.afterPt ?? 0, 6) : 0 }));
+          });
+          const layout: CellLayout = { col, span, cell, paras, need: need + t.padY * 2, lines };
           col += span;
           return layout;
         });
@@ -1643,6 +1778,8 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
 
       // 行の高さ（縦に結合したセルは、結合した行の合計で足りるようにする）
       const rowHeights = layouts.map((row, ri) => {
+        // 高さが「固定」(w:hRule="exact")の行は、中身に関係なくその高さ(はみ出す文字は描かない。Wordと同じ)
+        if (t.rows[ri].exactHeight) return Math.max(1, t.rows[ri].heightPt ?? 10);
         let h = t.rows[ri].heightPt ?? 0;
         for (const l of row) if (l.cell.vMerge === null) h = Math.max(h, l.need);
         return Math.max(h, 10);
@@ -1671,17 +1808,104 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         for (let hr = 0; hr < headerRows; hr++) drawRow(hr);
         repeating = false;
       };
+      const headerHeight = rowHeights.slice(0, headerRows).reduce((a, b) => a + b, 0);
+      /** 行の途中でページを分けられるか。「行の途中で改ページしない」(w:cantSplit)の行でも、1ページに入らない高さなら分ける(Wordと同じ) */
+      const splittable = (ri: number) => {
+        if (t.fixedLineHeight !== undefined || t.rows[ri].exactHeight) return false;
+        if (layouts[ri].some((l) => l.cell.vMerge !== null)) return false;
+        const fullRoom = pageHeight - marginTopEff - naturalLimit() - (ri >= headerRows ? headerHeight : 0);
+        return !t.rows[ri].cantSplit || rowHeights[ri] > fullRoom + 0.01;
+      };
+      /** セル c の、行 from から入るだけの行(高さ room の中)。戻り値は、次に描く行の番号 */
+      const fitLines = (l: CellLayout, from: number, room: number) => {
+        let used = t.padY * 2;
+        let k = from;
+        while (k < l.lines.length && used + l.lines[k].h <= room + 0.01) {
+          used += l.lines[k].h + l.lines[k].after;
+          k++;
+        }
+        return k;
+      };
+      const restNeed = (l: CellLayout, from: number) => t.padY * 2 + l.lines.slice(from).reduce((a, x) => a + x.h + x.after, 0);
       const drawRowWithPaging = (ri: number) => {
         const rowHeight = rowHeights[ri];
         // Wordが保存したとき、この行の前でページが変わった
         if (t.rowBreaks?.[ri] && savedBreaksAvailable && !atPageTop() && savedBreakConsistent(cursorY - naturalLimit(), rowHeight)) {
           newPage();
           if (ri >= headerRows) repeatHeader();
-        } else if (cursorY - rowHeight < naturalLimit() && !atPageTop()) {
+        }
+        if (cursorY - rowHeight >= naturalLimit() - 0.01) {
+          drawRow(ri);
+          return;
+        }
+        if (!splittable(ri)) {
+          // 分けられない行：次のページへ送る
+          if (!atPageTop()) {
+            overflowPage();
+            if (ri >= headerRows) repeatHeader();
+          }
+          drawRow(ri);
+          return;
+        }
+        // 行の途中でページを分ける：各セルの、ページに入るところまでの行を描き、残りを次のページに描く(Wordと同じ)
+        let pos = layouts[ri].map(() => 0);
+        let drawn = 0;
+        for (let guard = 0; guard < 500; guard++) {
+          const room = cursorY - naturalLimit();
+          const need = Math.max(...layouts[ri].map((l, c) => restNeed(l, pos[c])), rowHeight - drawn);
+          if (need <= room + 0.01) {
+            drawRowPart(ri, pos, null, need);
+            return;
+          }
+          let take = layouts[ri].map((l, c) => fitLines(l, pos[c], room));
+          if (take.every((k, c) => k === pos[c])) {
+            if (!atPageTop()) {
+              overflowPage();
+              if (ri >= headerRows) repeatHeader();
+              continue;
+            }
+            // ページの先頭でも1行も入らない(行が高すぎる)：各セル1行ずつ描いて進める
+            take = layouts[ri].map((l, c) => Math.min(l.lines.length, pos[c] + 1));
+          }
+          const partH = Math.max(...layouts[ri].map((l, c) => t.padY * 2 + l.lines.slice(pos[c], take[c]).reduce((a, x) => a + x.h + x.after, 0)));
+          drawRowPart(ri, pos, take, Math.min(partH, Math.max(room, partH)));
+          drawn += partH;
+          pos = take;
           overflowPage();
           if (ri >= headerRows) repeatHeader();
         }
-        drawRow(ri);
+      };
+      /** 行の一部(各セルの、行 from から to の手前まで。to が null なら最後まで)を、高さ h で描く */
+      const drawRowPart = (ri: number, from: number[], to: number[] | null, h: number) => {
+        const rowTop = cursorY;
+        const draws: (() => void)[] = [];
+        layouts[ri].forEach((l, c) => {
+          const x = colX(l.col);
+          const w = spanWidth(l.col, l.span);
+          if (l.cell.fill) page.drawRectangle({ x, y: rowTop - h, width: w, height: h, color: hexToRgb(l.cell.fill) });
+          draws.push(() => {
+            const lastCol = l.col + l.span >= grid.length;
+            const side = (own: BorderFmt | null | undefined, outer: BorderFmt | null, inner: BorderFmt | null, isEdge: boolean) => (own !== undefined ? own : isEdge ? outer : inner);
+            const top = side(l.cell.borders.top, t.borders.top, t.borders.insideH, ri === 0);
+            const bottom = side(l.cell.borders.bottom, t.borders.bottom, t.borders.insideH, ri >= lastRow);
+            const left = side(l.cell.borders.left, t.borders.left, t.borders.insideV, l.col === 0);
+            const right = side(l.cell.borders.right, t.borders.right, t.borders.insideV, lastCol);
+            if (top) drawBorderLine(x, rowTop, x + w, rowTop, top);
+            if (bottom) drawBorderLine(x, rowTop - h, x + w, rowTop - h, bottom);
+            if (left) drawBorderLine(x, rowTop, x, rowTop - h, left);
+            if (right) drawBorderLine(x + w, rowTop, x + w, rowTop - h, right);
+            let cy = rowTop - t.padY;
+            const end = to ? to[c] : l.lines.length;
+            for (let k = from[c]; k < end; k++) {
+              const ln = l.lines[k];
+              const p = l.paras[ln.pi];
+              paintLine(p.para.chars, p.placed.lines[ln.li], x + t.padX, cy, p.placed.sizes[ln.li], p.placed.extras[ln.li]);
+              cy -= ln.h + ln.after;
+            }
+          });
+        });
+        for (const d of draws) d();
+        cursorY = rowTop - h;
       };
       const drawRow = (ri: number) => {
         const rowHeight = rowHeights[ri];
@@ -1719,6 +1943,8 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
             let cy = rowTop - t.padY - offset;
             for (const p of l.paras) {
               p.placed.lines.forEach((line, i) => {
+                // 高さが固定の行：行の高さからはみ出す文字の行は描かない(Wordと同じ)
+                if (t.rows[ri].exactHeight && cy - p.placed.heights[i] < rowTop - h - 0.5) return;
                 paintLine(p.para.chars, line, x + t.padX, cy, p.placed.sizes[i], p.placed.extras[i]);
                 cy -= p.placed.heights[i];
               });
@@ -1865,7 +2091,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     const pageDrawn = new Map<PDFPage, boolean>();
     const sectionOf = (bodyIndex: number | undefined) => (bodyIndex === undefined ? null : structure.bodyChildren[bodyIndex]?.sectionIndex ?? null);
     const imageRunCount = blocks.reduce((n, b) => n + (b.kind === "paragraph" ? b.runs.filter((r) => r.image).length : 0), 0);
-    const imageSizesUsable = formattingMatched && imageRunCount === formatting.bodyImages.length;
+    const imageSizesUsable = directModel || (formattingMatched && imageRunCount === formatting.bodyImages.length);
 
     let paragraphCount = 0;
 
@@ -1874,15 +2100,44 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     const embeddedImages = new Map<string, PdfLibTypes.PDFImage>();
     flushFrontDrawsRef = (pg) => flushFrontDraws(pg);
     const imageByOrdinal = new Map<number, string>();
+    // 表のセルの中の画像(文書の中のファイルの参照)
+    const cellImage = (o: ParaObject): InlineImageRef | undefined => {
+      const rel = o.rId ? formatting.rels[o.rId] : undefined;
+      if (!rel || rel.external) return undefined;
+      return { dataUri: rel.target, ordinal: -1, ...(o.widthPt > 0 && o.heightPt > 0 ? { w: o.widthPt, h: o.heightPt } : {}) };
+    };
+    const cellLink = (rid: string): string | undefined => {
+      const rel = formatting.rels[rid];
+      return rel && rel.external && /^https?:\/\//i.test(rel.target) ? rel.target : undefined;
+    };
+    const imageKeys = new Set<string>();
+    for (const b of blocks) {
+      if (b.kind === "paragraph") for (const r of b.runs) if (r.image) imageKeys.add(r.image.dataUri);
+      if (b.kind === "table" && b.fmt && directModel)
+        for (const row of b.fmt.rows) for (const cell of row.cells) for (const p of cell.paragraphs) for (const o of p.objects) {
+          const ref = cellImage(o);
+          if (ref) imageKeys.add(ref.dataUri);
+        }
+    }
+    // 文書の中の画像のファイル(word/media/…)を、使うものだけ取り出す(ブラウザの中で。外には送らない)
+    const mediaFiles = new Map<string, Uint8Array>();
+    const wantedMedia = [...imageKeys].filter((k) => !k.startsWith("data:"));
+    if (wantedMedia.length > 0) {
+      try {
+        const wanted = new Set(wantedMedia);
+        const files = unzipSync(new Uint8Array(arrayBuffer), { filter: (info) => wanted.has(info.name) });
+        for (const [name, data] of Object.entries(files)) mediaFiles.set(name, data);
+      } catch {
+        warnings.push("画像の読み込みに失敗したため、画像を省略しました");
+      }
+    }
     for (const b of blocks) {
       if (b.kind !== "paragraph") continue;
-      for (const r of b.runs) {
-        if (!r.image) continue;
-        if (r.image.ordinal >= 0) imageByOrdinal.set(r.image.ordinal, r.image.dataUri);
-        if (embeddedImages.has(r.image.dataUri)) continue;
-        const img = await embedDataUri(r.image.dataUri);
-        if (img) embeddedImages.set(r.image.dataUri, img);
-      }
+      for (const r of b.runs) if (r.image && r.image.ordinal >= 0) imageByOrdinal.set(r.image.ordinal, r.image.dataUri);
+    }
+    for (const key of imageKeys) {
+      const img = await embedImageKey(key);
+      if (img) embeddedImages.set(key, img);
     }
     /** 浮動配置(wp:anchor)の画像の通し番号 → その位置・大きさ・折り返し */
     const floatByImage = new Map<number, FloatObject>();
@@ -1893,7 +2148,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       if (c.image.ordinal >= 0 && floatByImage.has(c.image.ordinal)) return null;
       const img = embeddedImages.get(c.image.dataUri);
       if (!img) return null;
-      const saved = imageSizesUsable && c.image.ordinal >= 0 ? formatting.bodyImages[c.image.ordinal] : undefined;
+      const saved = c.image.w && c.image.h ? { widthPt: c.image.w, heightPt: c.image.h } : imageSizesUsable && c.image.ordinal >= 0 ? formatting.bodyImages[c.image.ordinal] : undefined;
       let w = saved && saved.widthPt > 0 ? saved.widthPt : img.width * 0.75;
       let h = saved && saved.heightPt > 0 ? saved.heightPt : img.height * 0.75;
       // 本文の幅・高さに収まるように縮める(拡大はしない)
@@ -2001,6 +2256,30 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
           });
         }
       }
+    }
+
+    /** 画像(文書の中のファイルのパス、または data URI)を、PDFに埋め込む */
+    async function embedImageKey(key: string): Promise<PdfLibTypes.PDFImage | null> {
+      if (key.startsWith("data:")) return embedDataUri(key);
+      const bytes = mediaFiles.get(key);
+      if (!bytes) return null;
+      if (bytes.byteLength > MAX_IMAGE_BYTES) {
+        warnings.push("画像サイズが大きすぎるため省略しました");
+        return null;
+      }
+      // 画像の種類は、ファイルの中身(先頭のバイト)で見分ける
+      const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+      const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
+      try {
+        if (isPng) return await doc.embedPng(bytes);
+        if (isJpg) return await doc.embedJpg(bytes);
+      } catch {
+        warnings.push("破損している可能性のある画像を省略しました");
+        return null;
+      }
+      const ext = key.split(".").pop()?.toLowerCase() ?? "";
+      warnings.push(`対応していない画像形式(${ext || "不明"})のため省略しました`);
+      return null;
     }
 
     /** 画像のdata URIを、PDFに埋め込む */
