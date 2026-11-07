@@ -88,6 +88,33 @@ const PARAGRAPH_GAP = 6;
 const SINGLE_LINE_SPACING_FACTOR = 1.15;
 
 /**
+ * Wordの「1行」の高さは、フォントの字形の上下の高さ(アセント+ディセント+行間の余白)で決まる。
+ * 字形の寸法が確かに分かっているフォントだけ、その値(文字の大きさに対する倍率)を使う。分からないフォントは従来の近似(1.15)。
+ * Noto Sans/Serif CJK JP・Noto Sans/Serif JP：アセント1.160+ディセント0.288=1.448(Mr.Sattoが埋め込むフォントと同じ寸法)。
+ * Calibri：0.75+0.25+行間0.2207=1.2207(11ptで約13.4pt)。Arial・Times New Roman：約1.149。
+ */
+const LINE_FACTOR_BY_FONT: Record<string, number> = {
+  "noto sans cjk jp": 1.448,
+  "noto serif cjk jp": 1.448,
+  "noto sans jp": 1.448,
+  "noto serif jp": 1.448,
+  calibri: 1.2207,
+  "calibri light": 1.2207,
+  arial: 1.149,
+  "times new roman": 1.149,
+};
+
+/** 文書の標準のフォントから、「1行」の高さの倍率を決める。日本語用のフォントが分からないときは、近似(1.15)より小さくしない */
+function lineFactorForFonts(fonts: { ascii: string | null; eastAsia: string | null }): number {
+  const f = (name: string | null) => (name ? LINE_FACTOR_BY_FONT[name.trim().toLowerCase()] : undefined);
+  const ascii = f(fonts.ascii);
+  const ea = f(fonts.eastAsia);
+  if (ascii === undefined && ea === undefined) return SINGLE_LINE_SPACING_FACTOR;
+  if (ea === undefined && fonts.eastAsia) return Math.max(SINGLE_LINE_SPACING_FACTOR, ascii ?? 0);
+  return Math.max(ascii ?? 0, ea ?? 0);
+}
+
+/**
  * 実際の行の高さ(pt)を、文書既定の行間設定(DefaultParagraphSpacing)・
  * 描画するテキストのフォントサイズ・行グリッド線のピッチ(gridLinePitchPt)から
  * 計算する（外出先PC修正指示書§32-35、および「Excel通りになってない」調査の
@@ -108,21 +135,21 @@ const SINGLE_LINE_SPACING_FACTOR = 1.15;
  * （個々の段落のw:snapToGrid無効化までは追跡しない。ほとんどの文書では
  * 既定どおり全段落で有効なため、この近似で実用上は十分カバーできる）。
  */
-function resolveLineHeight(spacing: DefaultParagraphSpacing, size: number, gridLinePitchPt: number | null): number {
+function resolveLineHeight(spacing: DefaultParagraphSpacing, size: number, gridLinePitchPt: number | null, lineFactor = SINGLE_LINE_SPACING_FACTOR): number {
   if (spacing.lineRule === "exact" && spacing.lineValue !== null) {
     // exact指定は行グリッドより優先される(Word自体の挙動)
     return spacing.lineValue;
   }
   let natural: number;
   if (spacing.lineRule === "atLeast" && spacing.lineValue !== null) {
-    natural = Math.max(spacing.lineValue, size * SINGLE_LINE_SPACING_FACTOR);
+    natural = Math.max(spacing.lineValue, size * lineFactor);
   } else if (spacing.lineRule === "auto" && spacing.lineValue !== null) {
     const multiplier = spacing.lineValue / 240; // 240 = 1行(単一間隔)
-    natural = size * SINGLE_LINE_SPACING_FACTOR * multiplier;
+    natural = size * lineFactor * multiplier;
   } else {
     // 文書側から行間情報が全く取得できなかった場合: 従来の固定値(15pt)ではなく、
     // Wordの単一行間隔によりまだ近いフォントサイズ比例の値にフォールバックする
-    natural = size * SINGLE_LINE_SPACING_FACTOR;
+    natural = size * lineFactor;
   }
   if (gridLinePitchPt && gridLinePitchPt > 0) {
     return Math.ceil(natural / gridLinePitchPt) * gridLinePitchPt;
@@ -193,6 +220,13 @@ const PARA_ID_MARKER_SUFFIX = "\uE010";
 const HANGING_INDENT_MARKER_PREFIX = "MRSATTO_HANGING_INDENT:";
 const HANGING_INDENT_MARKER_SUFFIX = "";
 
+/**
+ * 1つのWordの段落を、途中の改ページ(w:br type="page")で分けたときの「続きの部分」の目印。
+ * 「MRSATTO_PARA_CONT:段落の通し番号:始まりの文字の位置」＋終わりの文字を、続きの部分の先頭に埋め込み、htmlToBlocksで取り除く。
+ */
+const PARA_CONT_MARKER_PREFIX = "MRSATTO_PARA_CONT:";
+const PARA_CONT_MARKER_SUFFIX = "\uE011";
+
 // ---------------------------------------------------------------------------
 // 内部ドキュメントモデル
 // ---------------------------------------------------------------------------
@@ -219,17 +253,28 @@ interface ParagraphBlock {
   fmt?: ParaFmt | null;
   /** 文字ごと（コードポイント単位）の書式。mammothの文字列と書式つきの文字列の長さが一致した場合のみ */
   charFmts?: RunFmt[] | null;
+  /** 本文の何番目の要素(段落・表)か（word/document.xmlの本文直下の w:p・w:tbl の通し番号）。分かる場合のみ */
+  bodyIndex?: number;
+  /**
+   * 同じWordの段落の続き（段落の途中の改ページ・画像の後ろの文字）のとき、その段落の文字の中の始まりの位置。
+   * 続きの部分には、段落の前の間隔と1行目の字下げを付けない
+   */
+  contOffset?: number;
 }
 interface TableBlock {
   kind: "table";
   rows: TextRun[][][]; // rows[row][col] = そのセルのruns
   /** word/document.xmlから読み取った、表の書式（セル結合・背景色・列幅など。読み取れた場合のみ） */
   fmt?: TableFmt | null;
+  bodyIndex?: number;
 }
 interface ImageBlock {
   kind: "image";
   dataUri: string;
   altText: string;
+  /** 本文の段落の中の画像の通し番号（表の中の画像は数えない）。word/document.xmlの画像の大きさと対応づける */
+  ordinal?: number;
+  bodyIndex?: number;
 }
 interface PageBreakBlock {
   kind: "pagebreak";
@@ -285,6 +330,89 @@ function markPageBreaks(node: unknown): unknown {
     return makePageBreakMarkerParagraph();
   }
   return next;
+}
+
+/** mammothの中間木の節の、文字の数（書式つきの文字列 ParaFmt.runs と同じ数え方：文字・タブ・改行を1文字） */
+function countNodeChars(node: unknown): number {
+  if (!node || typeof node !== "object") return 0;
+  const o = node as Record<string, unknown>;
+  if (o.type === "text" && typeof o.value === "string") {
+    if (o.value.startsWith(PARA_ID_MARKER_PREFIX) || o.value.startsWith(HANGING_INDENT_MARKER_PREFIX) || o.value === EMPTY_PARAGRAPH_MARKER) return 0;
+    return Array.from(o.value).length;
+  }
+  if (o.type === "tab") return 1;
+  if (o.type === "break") return o.breakType === "line" || !o.breakType ? 1 : 0;
+  if (Array.isArray(o.children)) return o.children.reduce((sum: number, c) => sum + countNodeChars(c), 0);
+  return 0;
+}
+
+const hasPageBreakNode = (node: unknown): boolean => {
+  if (!node || typeof node !== "object") return false;
+  const o = node as Record<string, unknown>;
+  if (o.type === "break" && o.breakType === "page") return true;
+  return Array.isArray(o.children) && o.children.some(hasPageBreakNode);
+};
+
+/** 節を、最初の改ページの前と後に分ける（runやハイパーリンクの中の改ページにも対応） */
+function splitAtFirstPageBreak(node: Record<string, unknown>): [Record<string, unknown>, Record<string, unknown>] | null {
+  const children = Array.isArray(node.children) ? node.children : [];
+  for (let i = 0; i < children.length; i++) {
+    const c = children[i] as Record<string, unknown>;
+    if (!c || typeof c !== "object") continue;
+    if (c.type === "break" && c.breakType === "page") {
+      return [{ ...node, children: children.slice(0, i) }, { ...node, children: children.slice(i + 1) }];
+    }
+    if (hasPageBreakNode(c)) {
+      const inner = splitAtFirstPageBreak(c);
+      if (!inner) return null;
+      return [{ ...node, children: [...children.slice(0, i), inner[0]] }, { ...node, children: [inner[1], ...children.slice(i + 1)] }];
+    }
+  }
+  return null;
+}
+
+/**
+ * 本文直下の段落の途中にある改ページ(w:br type="page")で、段落を「前の部分」「改ページの目印」「続きの部分」に分ける。
+ * 以前は改ページを、段落の中に入れた目印の段落に置き換えていたため、HTMLの段落の入れ子が壊れ、改ページの後ろの文字が消えていた。
+ * 続きの部分の先頭には、元の段落の通し番号と、続きの始まりの文字の位置を埋め込む（書式を正しく対応づけるため）。
+ * 表の中などにある改ページは、従来どおり目印の段落に置き換える(markPageBreaks)。
+ */
+function splitTopLevelPageBreaks(documentNode: unknown): unknown {
+  if (!documentNode || typeof documentNode !== "object") return documentNode;
+  const obj = documentNode as Record<string, unknown>;
+  if (!Array.isArray(obj.children)) return documentNode;
+  const out: unknown[] = [];
+  for (const child of obj.children) {
+    const c = child as Record<string, unknown>;
+    if (!c || typeof c !== "object" || c.type !== "paragraph" || !hasPageBreakNode(c)) {
+      out.push(child);
+      continue;
+    }
+    // 段落の通し番号(injectParaIdMarkersが先頭に入れた目印)
+    const firstRun = Array.isArray(c.children) ? (c.children[0] as Record<string, unknown> | undefined) : undefined;
+    const firstText = firstRun && Array.isArray(firstRun.children) ? (firstRun.children[0] as Record<string, unknown> | undefined) : undefined;
+    const idText = typeof firstText?.value === "string" ? firstText.value : "";
+    const paraId = idText.startsWith(PARA_ID_MARKER_PREFIX) ? parseInt(idText.slice(PARA_ID_MARKER_PREFIX.length), 10) : NaN;
+    let rest: Record<string, unknown> = c;
+    let offset = 0;
+    for (let guard = 0; guard < 500; guard++) {
+      const parts = splitAtFirstPageBreak(rest);
+      if (!parts) break;
+      const [before, after] = parts;
+      out.push(before);
+      out.push(makePageBreakMarkerParagraph());
+      offset += countNodeChars(before);
+      const marker = {
+        ...(makeEmptyParagraphMarkerRun() as Record<string, unknown>),
+        children: [{ type: "text", value: `${PARA_CONT_MARKER_PREFIX}${Number.isInteger(paraId) ? paraId : -1}:${offset}${PARA_CONT_MARKER_SUFFIX}` }],
+      };
+      const afterChildren = Array.isArray(after.children) ? after.children : [];
+      rest = { ...after, children: [marker, ...afterChildren] };
+    }
+    // 改ページの後ろに文字が無ければ、続きの部分は出さない(改ページだけの段落)
+    if (countNodeChars(rest) > 0) out.push(rest);
+  }
+  return { ...obj, children: out };
 }
 
 /**
@@ -551,27 +679,53 @@ function htmlToBlocks(html: string, formatting: DocxFormatting | null): { blocks
   const tableFmts = formatting ? formatting.body.flatMap((b) => (b.tag === "tbl" ? [b.table] : [])) : [];
   const htmlTableCount = Array.from(doc.body.querySelectorAll("table")).filter((t) => !t.closest("td, th")).length;
   const useTableFmts = formatting !== null && htmlTableCount === tableFmts.length;
+  /** 本文の要素のうち表だったものの通し番号（表の順） */
+  const tableBodyIndexes = formatting ? formatting.body.flatMap((b, i) => (b.tag === "tbl" ? [i] : [])) : [];
   let tableOrdinal = 0;
 
-  /** 段落の通し番号から、書式（段落全体・文字ごと）を段落ブロックに付ける */
-  function attachFormat(block: ParagraphBlock, id: number | null) {
-    if (!formatting || id === null) return;
+  /**
+   * 段落の通し番号から、書式（段落全体・文字ごと）を段落ブロックに付ける。
+   * offset：同じWordの段落の続きの部分（途中の改ページ・画像の後ろ）のとき、段落の文字の中の始まりの位置
+   */
+  function attachFormat(block: ParagraphBlock, id: number | null, offset = 0) {
+    if (id === null) return;
+    block.bodyIndex = id;
+    if (offset > 0) block.contOffset = offset;
+    if (!formatting) return;
     const entry = formatting.body[id];
     if (!entry || entry.tag !== "p") return;
     block.fmt = entry.para;
     const fmtChars: RunFmt[] = [];
-    let fmtText = "";
+    const fmtCodes: string[] = [];
     for (const r of entry.para.runs) {
       for (const ch of Array.from(r.text)) {
         fmtChars.push(r.fmt);
-        fmtText += ch;
+        fmtCodes.push(ch);
       }
     }
-    const blockText = flattenRuns(block.runs.filter((r) => r.text !== ""))
-      .map((c) => c.ch)
-      .join("");
-    if (fmtText === blockText) block.charFmts = fmtChars;
+    const blockCodes = flattenRuns(block.runs.filter((r) => r.text !== "")).map((c) => c.ch);
+    if (fmtCodes.slice(offset, offset + blockCodes.length).join("") === blockCodes.join("")) {
+      block.charFmts = fmtChars.slice(offset, offset + blockCodes.length);
+    }
   }
+
+  /** 続きの部分の目印（段落の通し番号と始まりの位置）を取り出して取り除く */
+  function extractContMarker(runs: TextRun[]): { runs: TextRun[]; id: number | null; offset: number } {
+    const first = runs[0];
+    if (!first || !first.text.startsWith(PARA_CONT_MARKER_PREFIX)) return { runs, id: null, offset: 0 };
+    const body = first.text.slice(PARA_CONT_MARKER_PREFIX.length);
+    const end = body.indexOf(PARA_CONT_MARKER_SUFFIX);
+    if (end === -1) return { runs, id: null, offset: 0 };
+    const [idText, offText] = body.slice(0, end).split(":");
+    const rest = body.slice(end + PARA_CONT_MARKER_SUFFIX.length);
+    const id = Number(idText);
+    return {
+      runs: rest === "" ? runs.slice(1) : [{ ...first, text: rest }, ...runs.slice(1)],
+      id: Number.isInteger(id) && id >= 0 ? id : null,
+      offset: Number(offText) || 0,
+    };
+  }
+  let imageOrdinal = 0;
 
   function walkListItems(listEl: Element, ordered: boolean, level: number) {
     let index = 0;
@@ -617,39 +771,61 @@ function htmlToBlocks(html: string, formatting: DocxFormatting | null): { blocks
         return;
       }
       if (tag === "p") {
-        const runs: TextRun[] = [];
-        let hasImage = false;
+        // 段落の中の画像は、画像の前の文字・画像・画像の後ろの文字に分ける。
+        // 以前は画像のある段落の文字をすべて捨てていた(画像と同じ段落の文字が消えていた)。
+        const segments: (TextRun[] | Element)[] = [[]];
         child.childNodes.forEach((c) => {
           if (c.nodeType === Node.ELEMENT_NODE && (c as Element).tagName.toLowerCase() === "img") {
-            hasImage = true;
-            const img = c as Element;
-            const src = img.getAttribute("src") || "";
+            segments.push(c as Element, []);
+          } else {
+            (segments[segments.length - 1] as TextRun[]).push(...extractRuns(c, { bold: false, italic: false, underline: false }));
+          }
+        });
+        let paraId: number | null = null;
+        let offset = 0;
+        let hangingIndentPt: number | null = null;
+        segments.forEach((seg, si) => {
+          if (!Array.isArray(seg)) {
+            const src = seg.getAttribute("src") || "";
             if (src.startsWith("data:image/")) {
-              blocks.push({ kind: "image", dataUri: src, altText: img.getAttribute("alt") || "" });
+              blocks.push({ kind: "image", dataUri: src, altText: seg.getAttribute("alt") || "", ordinal: imageOrdinal++, bodyIndex: paraId ?? undefined });
             } else {
               warnings.push("data URI形式でない画像を検出したため省略しました");
             }
-          } else {
-            runs.push(...extractRuns(c, { bold: false, italic: false, underline: false }));
+            return;
           }
-        });
-        if (!hasImage) {
-          const { runs: idStripped, id: paraId } = extractParaIdMarker(runs);
-          const { runs: strippedRuns, hangingIndentPt } = extractHangingIndentMarker(idStripped);
-          if (isPageBreakParagraph(strippedRuns)) {
+          let runs = seg;
+          if (si === 0) {
+            const cont = extractContMarker(runs);
+            if (cont.id !== null) {
+              runs = cont.runs;
+              paraId = cont.id;
+              offset = cont.offset;
+            } else {
+              const idRes = extractParaIdMarker(runs);
+              runs = idRes.runs;
+              paraId = idRes.id;
+            }
+            const hang = extractHangingIndentMarker(runs);
+            runs = hang.runs;
+            hangingIndentPt = hang.hangingIndentPt;
+          }
+          const hasText = runs.some((r) => r.text !== "");
+          if (si === 0 && isPageBreakParagraph(runs)) {
             blocks.push({ kind: "pagebreak" });
-          } else if (isEmptyParagraphMarker(strippedRuns)) {
+          } else if (si === 0 && segments.length === 1 && isEmptyParagraphMarker(runs)) {
             // 開発指示書C-2〜C-4: mammothが本来消してしまう空段落を、
             // markEmptyParagraphsで埋め込んだマーカーから実際の空段落(runs: [])へ戻す。
             const block: ParagraphBlock = { kind: "paragraph", runs: [], heading: 0 };
-            attachFormat(block, paraId);
+            attachFormat(block, paraId, offset);
             blocks.push(block);
-          } else {
-            const block: ParagraphBlock = { kind: "paragraph", runs: strippedRuns, heading: 0, hangingIndentPt };
-            attachFormat(block, paraId);
+          } else if (hasText) {
+            const block: ParagraphBlock = { kind: "paragraph", runs, heading: 0, hangingIndentPt };
+            attachFormat(block, paraId, offset);
             blocks.push(block);
           }
-        }
+          offset += flattenRuns(runs.filter((r) => r.text !== "" && !r.text.includes(EMPTY_PARAGRAPH_MARKER))).length;
+        });
         return;
       }
       if (tag === "ul" || tag === "ol") {
@@ -658,7 +834,10 @@ function htmlToBlocks(html: string, formatting: DocxFormatting | null): { blocks
       }
       if (tag === "table") {
         const tableBlock = extractTable(child);
-        if (useTableFmts) tableBlock.fmt = tableFmts[tableOrdinal] ?? null;
+        if (useTableFmts) {
+          tableBlock.fmt = tableFmts[tableOrdinal] ?? null;
+          tableBlock.bodyIndex = tableBodyIndexes[tableOrdinal];
+        }
         tableOrdinal += 1;
         blocks.push(tableBlock);
         return;
@@ -804,11 +983,6 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
 
     const warnings: string[] = [];
     const section = structure.sections[0] ?? null;
-    if (structure.sections.length > 1) {
-      warnings.push(
-        "この文書には複数のセクション（用紙設定が変わる区切り）が含まれています。現在の実装では最初のセクションの用紙設定（用紙サイズ・向き・余白）を文書全体に適用しており、2つ目以降のセクションで用紙設定が変わる場合は反映されません。"
-      );
-    }
 
     // 段落・文字・表・ヘッダー/フッターの書式（中央揃え・文字サイズ・色など）を、word/*.xmlから直接読む
     const formatting = parseDocxFormatting(arrayBuffer);
@@ -822,10 +996,12 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         {
           convertImage: mammoth.images.dataUri,
           transformDocument: ((documentNode: unknown) => {
-            const marked = markEmptyParagraphs(markPageBreaks(injectPageBreakBeforeMarkers(documentNode, structure.bodyChildren)));
+            // 1) 段落の前で改ページ・空の段落の目印 → 2) 段落の通し番号 → 3) 本文の段落の途中の改ページで段落を分ける
+            //    → 4) 残り(表の中など)の改ページを目印の段落に置き換える
+            const marked = markEmptyParagraphs(injectPageBreakBeforeMarkers(documentNode, structure.bodyChildren));
             const withIds = injectParaIdMarkers(marked, formatting.body.length);
             formattingMatched = withIds.ok;
-            return withIds.node;
+            return markPageBreaks(splitTopLevelPageBreaks(withIds.node));
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           }) as any,
         }
@@ -866,34 +1042,66 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
 
     // 用紙サイズ・余白(開発指示書C-3・C-4・C-8): DOCXの最初のセクションから取得できれば
     // それを使い、取得できなければ既定値(A4・56pt)にフォールバックする。
-    const pageWidth = section?.pageWidthPt ?? DEFAULT_PAGE_WIDTH;
-    const pageHeight = section?.pageHeightPt ?? DEFAULT_PAGE_HEIGHT;
-    const marginTop = section?.margins.top ?? DEFAULT_MARGIN;
-    const marginBottom = section?.margins.bottom ?? DEFAULT_MARGIN;
-    const marginLeft = section?.margins.left ?? DEFAULT_MARGIN;
-    const marginRight = section?.margins.right ?? DEFAULT_MARGIN;
-    const contentWidth = Math.max(50, pageWidth - marginLeft - marginRight);
+    // セクション(用紙設定の区切り)ごとに、用紙の大きさ・向き・余白を切り替える(下の applySection)
+    let pageWidth = section?.pageWidthPt ?? DEFAULT_PAGE_WIDTH;
+    let pageHeight = section?.pageHeightPt ?? DEFAULT_PAGE_HEIGHT;
+    let marginTop = section?.margins.top ?? DEFAULT_MARGIN;
+    let marginBottom = section?.margins.bottom ?? DEFAULT_MARGIN;
+    let marginLeft = section?.margins.left ?? DEFAULT_MARGIN;
+    let marginRight = section?.margins.right ?? DEFAULT_MARGIN;
+    let contentWidth = Math.max(50, pageWidth - marginLeft - marginRight);
     let bottomLimit = marginBottom;
     let marginTopEff = marginTop;
+    /** ヘッダー・フッターの高さの分(下で求める)。セクションを切り替えたときに、上下の余白を計算し直すのに使う */
+    let headerReserve = 0;
+    let footerReserve = 0;
 
     let page: PDFPage = doc.addPage([pageWidth, pageHeight]);
     let cursorY = pageHeight - marginTopEff;
+    /** ページごとの左の余白・本文の幅(ヘッダー/フッターをページごとの用紙で描くため) */
+    const pageGeom = new Map<PDFPage, { marginLeft: number; contentWidth: number }>();
+    pageGeom.set(page, { marginLeft, contentWidth });
 
     function newPage() {
       if (doc.getPageCount() >= MAX_PAGE_COUNT) {
         throw new Error(`変換できるページ数の上限は${MAX_PAGE_COUNT}ページです。`);
       }
       page = doc.addPage([pageWidth, pageHeight]);
+      pageGeom.set(page, { marginLeft, contentWidth });
       cursorY = pageHeight - marginTopEff;
     }
 
+    /** このページに、まだ何も置いていないか(ページの先頭か) */
+    const atPageTop = () => cursorY >= pageHeight - marginTopEff - 0.5;
+
+    // ---- Wordが保存した改ページの位置(w:lastRenderedPageBreak)に合わせる ----
+    // Microsoft Wordは保存のたびに、そのとき組んだページの境目を文書に記録する。この記録がある文書では、
+    // その位置で必ずページを変える(Mr.Sattoの行の組み方がWordとわずかに違っても、ページの中身がWordと同じになる)。
+    // 記録の位置より前でページの下に届いたときは、下の余白に少しはみ出して(フッターにかからない範囲で)同じページに収め、
+    // それでも入らないときだけ、自然にページを変える(そのときは警告を出す)。
+    const anchored = formattingMatched && formatting.hasRenderedBreaks;
+    let anchorOverflowCount = 0;
+    /** 自然にページを変える下の限界(ページの下端からの距離) */
+    const naturalLimit = () => {
+      if (!anchored) return bottomLimit;
+      const footerTop = footerReserve > 0 ? footerReserve + 4 : 0;
+      return Math.min(bottomLimit, Math.max(footerTop, marginBottom * 0.45));
+    };
+    /** 自然にページを変える(下に届いた)。記録に合わせている文書では、何回あったかを数える */
+    function overflowPage() {
+      if (anchored) anchorOverflowCount++;
+      newPage();
+    }
+
     function ensureSpace(height: number) {
-      if (cursorY - height < bottomLimit) newPage();
+      if (cursorY - height < naturalLimit() && !atPageTop()) overflowPage();
     }
 
     const INK = pdfLib().rgb(0.12, 0.12, 0.14);
     const defaultTabPt = formatting.defaultTabPt;
     const gridPitch = section?.docGridLinePitchPt ?? null;
+    /** 「1行」の高さの倍率(文書の標準のフォントで決まる) */
+    const lineFactor = formattingMatched ? lineFactorForFonts(formatting.defaultFonts) : SINGLE_LINE_SPACING_FACTOR;
 
     function drawSize(c: FlatChar): number {
       return c.script ? c.size * 0.65 : c.size;
@@ -939,8 +1147,8 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         if (o.fixedLineHeight !== undefined) h = o.fixedLineHeight;
         else if (o.legacyHeadingHeight) h = size + 6;
         else {
-          h = resolveLineHeight(spacing, size, gridPitch);
-          if (spacing.lineRule === "auto" && (spacing.lineValue ?? 240) > 240 && !gridPitch) extra = Math.max(0, h - size * SINGLE_LINE_SPACING_FACTOR);
+          h = resolveLineHeight(spacing, size, gridPitch, lineFactor);
+          if (spacing.lineRule === "auto" && (spacing.lineValue ?? 240) > 240 && !gridPitch) extra = Math.max(0, h - size * lineFactor);
         }
         heights.push(h);
         extras.push(extra);
@@ -987,6 +1195,11 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       }
     }
 
+    /** 改ページ時1行残して段落を区切らない、が有効か(段落・スタイルに指定が無ければ、Wordの既定どおり有効) */
+    function widowOn(fmt: ParaFmt | null): boolean {
+      return fmt ? fmt.widowControl !== false : false;
+    }
+
     function drawBorderLine(x1: number, y1: number, x2: number, y2: number, b: BorderFmt) {
       page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: Math.max(0.3, b.widthPt), color: hexToRgb(b.color, pdfLib().rgb(0, 0, 0)) });
     }
@@ -995,13 +1208,46 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       return (fmt?.tabs ?? []).map((t) => ({ pos: t.posPt, kind: t.kind }));
     }
 
-    function drawParagraph(block: ParagraphBlock, prevStyleId?: string | null, nextStyleId?: string | null) {
+    /** 段落の中の、Wordが記録した改ページの位置(この部分の文字の中の位置)。0は段落の先頭 */
+    function renderedBreaksOf(block: ParagraphBlock, length: number): number[] {
+      if (!anchored || !block.fmt) return [];
+      const start = block.contOffset ?? 0;
+      return block.fmt.renderedBreaks
+        .filter((k) => k >= start && (k < start + length || (length === 0 && k === start)))
+        .map((k) => k - start)
+        .filter((k) => k === 0 || !!block.charFmts); // 段落の途中の位置は、文字の対応がとれたときだけ使う
+    }
+
+    /** 段落の行を組んだ結果(高さの見積もり用。keepNextの判定に使う) */
+    function measureParagraph(block: ParagraphBlock): { heights: number[]; before: number; after: number } | null {
+      const fmt = block.fmt ?? null;
+      const isHeading = block.heading > 0;
+      const paraSize = fmt?.baseSizePt ?? (isHeading ? Math.max(20 - (block.heading - 1) * 2, 12) : BODY_SIZE);
+      const chars = toFlatChars(block.runs.filter((r) => r.text !== ""), block.charFmts, { size: paraSize, bold: isHeading });
+      const left = Math.max(0, fmt?.leftPt ?? 0);
+      const maxX = contentWidth - Math.max(0, fmt?.rightPt ?? 0);
+      if (maxX - left <= 10) return null;
+      const placed = placeParagraph(chars, { firstX: Math.max(0, left + (fmt?.firstLinePt ?? 0)), contX: left, maxX, align: fmt?.align ?? "left", tabs: tabSpecs(fmt), paraSize, fmt, legacyHeadingHeight: isHeading && !fmt });
+      return { heights: placed.heights, before: fmt?.beforePt ?? 0, after: fmt?.afterPt ?? 0 };
+    }
+
+    function drawParagraph(block: ParagraphBlock, prevStyleId?: string | null, nextStyleId?: string | null, keepWithNextHeight = 0) {
       const fmt = block.fmt ?? null;
       const isHeading = block.heading > 0;
       const headingSize = Math.max(20 - (block.heading - 1) * 2, 12);
       const paraSize = fmt?.baseSizePt ?? (isHeading ? headingSize : BODY_SIZE);
       const runs = block.runs.filter((r) => r.text !== "");
-      const chars = toFlatChars(runs, block.charFmts, { size: paraSize, bold: isHeading });
+      const isContinuation = (block.contOffset ?? 0) > 0;
+      let chars = toFlatChars(runs, block.charFmts, { size: paraSize, bold: isHeading });
+      // Wordが記録した改ページの位置：段落の先頭ならこの段落の前で、途中ならその文字の前でページを変える
+      const anchors = renderedBreaksOf(block, chars.length);
+      if (anchors.includes(0) && !atPageTop()) newPage();
+      const midAnchors = new Set<number>();
+      for (const k of anchors.filter((x) => x > 0).sort((a, b) => b - a)) {
+        // その文字の前に「行の終わり」を入れる(Wordでは、そこで行もページも変わっている)
+        chars = [...chars.slice(0, k), { ...chars[Math.max(0, k - 1)], ch: "\n" }, ...chars.slice(k)];
+        midAnchors.add(k);
+      }
 
       const listIndent = block.list ? 16 + block.list.level * 16 : 0;
       let firstX: number;
@@ -1014,6 +1260,8 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         firstX = listIndent;
         contX = block.hangingIndentPt ?? listIndent;
       }
+      // 同じ段落の続きの部分(途中の改ページ・画像の後ろ)は、1行目の字下げを付けない
+      if (isContinuation) firstX = contX;
       const maxX = contentWidth - Math.max(0, fmt?.rightPt ?? 0);
       if (maxX - Math.max(firstX, contX) <= 10) return;
 
@@ -1032,24 +1280,46 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       // 「同じスタイルの段落の間は間隔を空けない」（箇条書きなど）
       const sameAsPrev = !!fmt?.contextual && prevStyleId !== undefined && prevStyleId === fmt.styleId;
       const sameAsNext = !!fmt?.contextual && nextStyleId !== undefined && nextStyleId === fmt.styleId;
-      const before = sameAsPrev ? 0 : (fmt?.beforePt ?? 0);
+      const before = sameAsPrev || isContinuation ? 0 : (fmt?.beforePt ?? 0);
+      const totalHeight = placed.heights.reduce((a, b) => a + b, 0);
+      const limit = naturalLimit();
+      // Wordの段落の改ページの制御(Wordが記録した改ページの位置に合わせている文書では、記録の位置を優先するので使わない)
+      if (!anchored && !atPageTop()) {
+        const room = cursorY - before - limit;
+        const fullPage = topY - limit;
+        // 段落を分割しない(keepLines)：ページに収まらないが、1ページには収まる → 段落の前でページを変える
+        if (fmt?.keepLines && totalHeight > room + 0.01 && totalHeight <= fullPage) newPage();
+        // 次の段落と分離しない(keepNext)：この段落はページに入るが、次の段落の最初の行が同じページに入らない → 段落の前でページを変える
+        // (この段落自体がページに入らないときは、段落の後ろの部分が次の段落と同じページに行くので、何もしない)
+        else if (keepWithNextHeight > 0 && totalHeight <= room + 0.01 && totalHeight + keepWithNextHeight > room + 0.01 && totalHeight + keepWithNextHeight <= fullPage) newPage();
+        // 改ページ時1行残して段落を区切らない(widowControl)：1行目だけがこのページに残る → 段落の前でページを変える
+        else if (widowOn(fmt) && placed.lines.length >= 2 && placed.heights[0] <= room + 0.01 && placed.heights[0] + placed.heights[1] > room + 0.01) newPage();
+      }
       if (before > 0 && cursorY < topY - 0.5) cursorY -= before;
 
       // 改ページの位置を先に決める（枠線・背景色を、ページごとに正しい範囲へ描くため）
-      interface Chunk { start: number; end: number; newPage: boolean; top: number }
+      interface Chunk { start: number; end: number; newPage: boolean; top: number; natural: boolean }
       const chunks: Chunk[] = [];
       let y = cursorY;
-      let cur: Chunk = { start: 0, end: 0, newPage: false, top: y };
+      let cur: Chunk = { start: 0, end: 0, newPage: false, top: y, natural: false };
+      // 入れた「行の終わり」の文字の位置(元の位置 k は、それより前に入れた文字の数だけ後ろにずれている)
+      const insertedBreaks = new Set([...midAnchors].sort((a, b) => a - b).map((k, i) => k + i));
+      const startsAfterAnchor = (i: number) => {
+        const prevBreak = i > 0 ? placed.lines[i - 1].breakIndex : undefined;
+        return prevBreak !== undefined && insertedBreaks.has(prevBreak);
+      };
       placed.lines.forEach((_, i) => {
         const h = placed.heights[i];
-        if (y - h < bottomLimit && y < topY - 0.01) {
+        const forced = startsAfterAnchor(i);
+        if (forced || (y - h < limit && y < topY - 0.01)) {
           if (i > cur.start) {
             cur.end = i;
             chunks.push(cur);
-            cur = { start: i, end: i, newPage: true, top: topY };
+            cur = { start: i, end: i, newPage: true, top: topY, natural: !forced };
           } else {
             cur.newPage = true;
             cur.top = topY;
+            cur.natural = !forced;
           }
           y = topY;
         }
@@ -1057,10 +1327,32 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       });
       cur.end = placed.lines.length;
       chunks.push(cur);
+      // 改ページ時1行残して段落を区切らない(widowControl)：最後の1行だけが次のページに行く → 前のページの最後の1行も次のページへ
+      if (!anchored && widowOn(fmt)) {
+        for (let ci = 1; ci < chunks.length; ci++) {
+          const a = chunks[ci - 1];
+          const b = chunks[ci];
+          if (b.natural && b.end - b.start === 1 && a.end - a.start >= 3) {
+            a.end -= 1;
+            b.start -= 1;
+          } else if (b.natural && b.end - b.start === 1 && a.end - a.start === 2 && ci === 1 && !a.newPage) {
+            // 2行と1行に分かれる段落：前のページに1行だけ残すことにもなるので、段落ごと次のページへ
+            a.newPage = true;
+            a.natural = true;
+            a.top = topY;
+            a.end = b.end;
+            chunks.splice(1, 1);
+            break;
+          }
+        }
+      }
 
       const box = fmt && (fmt.fill || fmt.borders) ? fmt : null;
       chunks.forEach((chunk, ci) => {
-        if (chunk.newPage) newPage();
+        if (chunk.newPage) {
+          if (chunk.natural) overflowPage();
+          else newPage();
+        }
         const chunkHeight = placed.heights.slice(chunk.start, chunk.end).reduce((a, b) => a + b, 0);
         if (box) {
           const left = marginLeft + Math.max(0, Math.min(firstX, contX)) - 3;
@@ -1108,6 +1400,10 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       padX: number;
       padY: number;
       fixedLineHeight?: number;
+      /** 表の先頭から続く「タイトル行の繰り返し」(w:tblHeader)の行の数。表がページをまたぐとき、次のページの先頭にも描く */
+      headerRows?: number;
+      /** Wordが保存したとき、その行の前でページが変わったか */
+      rowBreaks?: boolean[];
     }
 
     function normalizeTable(block: TableBlock): NTable {
@@ -1133,7 +1429,11 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
           indent: f.indentPt,
           align: f.align,
           padX: Math.max(f.cellPadLeftPt, f.cellPadRightPt),
-          padY: 2,
+          // セルの上下の余白は、表の設定(w:tblCellMar)どおり(Wordの既定は0)。以前は常に2ptずつ足していたため、
+          // 行の多い表が1ページに入りきらず、表の途中の行が次のページへ送られていた
+          padY: Math.max(f.cellPadTopPt, f.cellPadBottomPt),
+          headerRows: f.rows.findIndex((r) => !r.isHeader) === -1 ? f.rows.length : f.rows.findIndex((r) => !r.isHeader),
+          rowBreaks: f.rows.map((r) => r.renderedBreak),
         };
       }
       // 書式を読めなかった表: 従来どおり、等幅の列・細い灰色の罫線・9ptの文字
@@ -1224,9 +1524,29 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       });
 
       const lastRow = layouts.length - 1;
-      for (let ri = 0; ri < layouts.length; ri++) {
+      const headerRows = Math.min(t.headerRows ?? 0, layouts.length);
+      /** ページの先頭に、タイトル行を繰り返して描く */
+      let repeating = false;
+      const repeatHeader = () => {
+        if (headerRows === 0 || repeating) return;
+        repeating = true;
+        for (let hr = 0; hr < headerRows; hr++) drawRow(hr);
+        repeating = false;
+      };
+      const drawRowWithPaging = (ri: number) => {
         const rowHeight = rowHeights[ri];
-        ensureSpace(rowHeight);
+        // Wordが保存したとき、この行の前でページが変わった
+        if (anchored && t.rowBreaks?.[ri] && !atPageTop()) {
+          newPage();
+          if (ri >= headerRows) repeatHeader();
+        } else if (cursorY - rowHeight < naturalLimit() && !atPageTop()) {
+          overflowPage();
+          if (ri >= headerRows) repeatHeader();
+        }
+        drawRow(ri);
+      };
+      const drawRow = (ri: number) => {
+        const rowHeight = rowHeights[ri];
         const rowTop = cursorY;
         const draws: (() => void)[] = [];
         for (const l of layouts[ri]) {
@@ -1270,8 +1590,11 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         }
         for (const d of draws) d();
         cursorY = rowTop - rowHeight;
-      }
-      cursorY -= PARAGRAPH_GAP;
+      };
+      // 表の最初の行の前でページが変わった記録 → 表の前でページを変える
+      if (anchored && t.rowBreaks?.[0] && !atPageTop()) newPage();
+      for (let ri = 0; ri < layouts.length; ri++) drawRowWithPaging(ri);
+      cursorY -= block.fmt ? 0 : PARAGRAPH_GAP;
     }
 
     async function drawImage(block: ImageBlock) {
@@ -1311,14 +1634,22 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       }
 
       const maxHeight = pageHeight - marginTopEff - bottomLimit;
-      let { width, height } = embedded.scaleToFit(contentWidth, maxHeight);
+      // 画像の大きさ：Wordの文書に保存されている大きさ(wp:extent)。分からないときは、画像の画素数(96dpi)。
+      // どちらも、本文の幅・高さに収まるように縮める(拡大はしない)。以前は小さい画像も本文の幅いっぱいに拡大していた
+      const saved = imageSizesUsable && block.ordinal !== undefined ? formatting.bodyImages[block.ordinal] : undefined;
+      let width = saved && saved.widthPt > 0 ? saved.widthPt : embedded.width * 0.75;
+      let height = saved && saved.heightPt > 0 ? saved.heightPt : embedded.height * 0.75;
+      if (saved?.floating) floatingImageCount++;
+      const shrink = Math.min(1, contentWidth / Math.max(1, width), maxHeight / Math.max(1, height));
+      width *= shrink;
+      height *= shrink;
       if (width <= 0 || height <= 0) {
         width = contentWidth;
         height = contentWidth * 0.5;
       }
       ensureSpace(height);
       page.drawImage(embedded, { x: marginLeft, y: cursorY - height, width, height });
-      cursorY -= height + PARAGRAPH_GAP;
+      cursorY -= height + (saved ? 0 : PARAGRAPH_GAP);
     }
 
     // ---- ヘッダー / フッター ----
@@ -1350,27 +1681,101 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     const footerKinds = (["default", "first", "even"] as const).map((k) => headerFooterParts(formatting.footers[k]));
     const maxHeaderH = Math.max(0, ...headerKinds.map((h) => hfMeasure(h, 1, 1).total));
     const maxFooterH = Math.max(0, ...footerKinds.map((f) => hfMeasure(f, 1, 1).total));
-    if (maxHeaderH > 0) marginTopEff = Math.max(marginTop, (refs?.headerDistancePt ?? 36) + maxHeaderH);
-    if (maxFooterH > 0) bottomLimit = Math.max(marginBottom, (refs?.footerDistancePt ?? 36) + maxFooterH);
+    headerReserve = maxHeaderH > 0 ? (refs?.headerDistancePt ?? 36) + maxHeaderH : 0;
+    footerReserve = maxFooterH > 0 ? (refs?.footerDistancePt ?? 36) + maxFooterH : 0;
+    if (maxHeaderH > 0) marginTopEff = Math.max(marginTop, headerReserve);
+    if (maxFooterH > 0) bottomLimit = Math.max(marginBottom, footerReserve);
     cursorY = pageHeight - marginTopEff;
+
+    // ---- セクション(用紙設定の区切り)の切り替え ----
+    // Wordの文書は、途中で用紙の大きさ・向き・余白を変えられる(セクション区切り)。区切りの種類が「次のページから」
+    // (既定)・「奇数/偶数ページから」なら新しいページから、「現在の位置から」なら同じページのまま余白だけ変える
+    // (用紙の大きさが変わるときは、Wordと同じく新しいページから)。以前は最初のセクションの設定を文書全体に使い、
+    // セクション区切りでページも変えていなかった。
+    let currentSection = 0;
+    function applySection(index: number) {
+      const sec = structure.sections[index];
+      if (!sec) return;
+      const sizeChanged = Math.abs(sec.pageWidthPt - pageWidth) > 0.5 || Math.abs(sec.pageHeightPt - pageHeight) > 0.5;
+      const breakPage = sec.startType !== "continuous" || sizeChanged;
+      pageWidth = sec.pageWidthPt;
+      pageHeight = sec.pageHeightPt;
+      marginTop = sec.margins.top;
+      marginBottom = sec.margins.bottom;
+      marginLeft = sec.margins.left;
+      marginRight = sec.margins.right;
+      contentWidth = Math.max(50, pageWidth - marginLeft - marginRight);
+      marginTopEff = headerReserve > 0 ? Math.max(marginTop, headerReserve) : marginTop;
+      bottomLimit = footerReserve > 0 ? Math.max(marginBottom, footerReserve) : marginBottom;
+      if (!breakPage) {
+        pageGeom.set(page, pageGeom.get(page) ?? { marginLeft, contentWidth });
+        return;
+      }
+      if (atPageTopOf(page)) {
+        // まだ何も描いていないページは、そのページの用紙を新しいセクションの用紙にする
+        page.setSize(pageWidth, pageHeight);
+        pageGeom.set(page, { marginLeft, contentWidth });
+        cursorY = pageHeight - marginTopEff;
+      } else newPage();
+      // 奇数/偶数ページから：ページ番号が合わないときは、白紙のページを1枚はさむ(Wordと同じ)
+      const n = doc.getPageCount();
+      if ((sec.startType === "oddPage" && n % 2 === 0) || (sec.startType === "evenPage" && n % 2 === 1)) newPage();
+    }
+    /** そのページに何も描いていないか(描いた位置は記録していないので、今のページで、書き始めの位置のままか) */
+    function atPageTopOf(pg: PDFPage) {
+      return pg === page && pageDrawn.get(pg) !== true && atPageTop();
+    }
+    const pageDrawn = new Map<PDFPage, boolean>();
+    const sectionOf = (bodyIndex: number | undefined) => (bodyIndex === undefined ? null : structure.bodyChildren[bodyIndex]?.sectionIndex ?? null);
+    const imageBlocksCount = blocks.filter((b) => b.kind === "image" && b.ordinal !== undefined).length;
+    const imageSizesUsable = formattingMatched && imageBlocksCount === formatting.bodyImages.length;
+    let floatingImageCount = 0;
 
     let paragraphCount = 0;
     let tableCount = 0;
     let imageCount = 0;
 
+    /** 「次の段落と分離しない」段落のあとに続けて同じページに置く必要がある高さ(次の段落の最初の行。続けて分離しない段落があれば足す) */
+    function keepNextHeight(bi: number): number {
+      let total = 0;
+      for (let j = bi + 1; j < Math.min(blocks.length, bi + 8); j++) {
+        const nb = blocks[j];
+        if (nb.kind === "pagebreak") return 0;
+        if (nb.kind === "image") return total + 40;
+        if (nb.kind === "table") return total + BODY_SIZE * SINGLE_LINE_SPACING_FACTOR + 4;
+        const m = measureParagraph(nb);
+        if (!m) return total;
+        if (nb.fmt?.keepNext) {
+          total += m.before + m.heights.reduce((a, b) => a + b, 0) + m.after;
+          continue;
+        }
+        // 次の段落の最初の行(改ページ時1行残さない設定なら、最初の2行)
+        const firstLines = m.heights.slice(0, widowOn(nb.fmt ?? null) && m.heights.length >= 2 ? 2 : 1).reduce((a, b) => a + b, 0);
+        return total + m.before + firstLines;
+      }
+      return total;
+    }
+
     let prevStyleId: string | null | undefined;
     for (let bi = 0; bi < blocks.length; bi++) {
       const block = blocks[bi];
+      // セクションが変わったら、用紙・余白を切り替える
+      const sec = block.kind === "pagebreak" ? null : sectionOf(block.bodyIndex);
+      if (sec !== null && sec > currentSection) {
+        for (let k = currentSection + 1; k <= sec; k++) applySection(k);
+        currentSection = sec;
+      }
       if (block.kind === "pagebreak") {
         newPage();
         prevStyleId = undefined;
         continue;
       }
+      pageDrawn.set(page, true);
       if (block.kind === "paragraph") {
         if (block.runs.some((r) => r.text.trim() !== "")) paragraphCount++;
         const next = blocks[bi + 1];
         const nextStyleId = next && next.kind === "paragraph" && next.fmt ? next.fmt.styleId : undefined;
-        drawParagraph(block, prevStyleId, nextStyleId);
+        drawParagraph(block, prevStyleId, nextStyleId, block.fmt?.keepNext && !anchored ? keepNextHeight(bi) : 0);
         prevStyleId = block.fmt ? block.fmt.styleId : undefined;
         continue;
       }
@@ -1399,6 +1804,12 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       };
       pages.forEach((pg, idx) => {
         page = pg;
+        const geom = pageGeom.get(pg);
+        if (geom) {
+          marginLeft = geom.marginLeft;
+          contentWidth = geom.contentWidth;
+        }
+        pageHeight = pg.getSize().height;
         const pageNo = idx + 1;
         const header = hfMeasure(pick(headerKinds, pageNo), pageNo, pageCount);
         let y = pageHeight - (refs?.headerDistancePt ?? 36);
@@ -1419,6 +1830,20 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
           y -= item.fmt.afterPt ?? 0;
         }
       });
+    }
+
+    if (anchored && anchorOverflowCount > 0) {
+      warnings.push(
+        `Wordが保存したときのページの区切りに合わせて変換しましたが、${anchorOverflowCount}か所で内容がページに入りきらず、Wordとは違う位置でページが変わっています（文字の幅や行の高さがWordと少し違うため）。`
+      );
+    }
+    if (formattingMatched && formatting.savedByWord && formatting.savedPageCount && formatting.savedPageCount !== doc.getPageCount()) {
+      warnings.push(`Wordで保存されたときのページ数は${formatting.savedPageCount}ページですが、PDFは${doc.getPageCount()}ページになりました。`);
+    }
+    if (floatingImageCount > 0) {
+      warnings.push(
+        `文字列の折り返しを設定した画像(浮動配置)が${floatingImageCount}個あります。画像は、置かれた段落の位置に、元の大きさで配置しました（文字を画像の横に回り込ませる配置は再現していません）。`
+      );
     }
 
     let bytes: Uint8Array;

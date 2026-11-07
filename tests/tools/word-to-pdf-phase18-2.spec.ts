@@ -115,13 +115,18 @@ test("見出し・太字/斜体/下線・表・画像が保持される(C-6/C-7/
   expect(pdf.text).toContain("RICH_CELL_B2");
 });
 
-test("複数セクション: 最初のセクションの用紙設定が適用され、警告が表示される(C-11)", async ({ page }) => {
+test("複数セクション: セクションごとの用紙設定で、セクション区切り(次のページから)で新しいページになる(C-11)", async ({ page }) => {
+  // 以前は最初のセクションの用紙設定を文書全体に使い、警告を出していた。今はセクションごとに用紙を切り替える
+  // (Wordと同じ)。1つ目のセクションはA4縦、2つ目はレターの横向き(docx-writerが横向きの幅・高さで書く：792×612pt)。
+  // 区切りの種類の指定が無いので「次のページから」。
   const { path, page: p } = await convertAndDownload(page, fixtures.wordMultiSectionDocx);
   const pdf = await extractPdfContent(path);
-  // 1つ目のセクション(A4縦)の設定が文書全体に適用されている
+  expect(pdf.pageCount).toBe(2);
   expect(pdf.pages[0].width).toBeCloseTo(595.28, 0);
   expect(pdf.pages[0].height).toBeCloseTo(841.89, 0);
-  expect(pdf.text).toContain("SECTION1_TEXT");
-  expect(pdf.text).toContain("SECTION2_TEXT");
-  await expect(p.getByText("複数のセクション", { exact: false })).toBeVisible();
+  expect(pdf.pages[0].text).toContain("SECTION1_TEXT");
+  expect(pdf.pages[1].width).toBeCloseTo(792, 0);
+  expect(pdf.pages[1].height).toBeCloseTo(612, 0);
+  expect(pdf.pages[1].text).toContain("SECTION2_TEXT");
+  await expect(p.getByText("複数のセクション", { exact: false })).toHaveCount(0);
 });

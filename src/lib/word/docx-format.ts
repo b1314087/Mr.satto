@@ -70,6 +70,18 @@ export interface ParaFmt {
   contextual: boolean;
   /** 文字ごとの書式つきの文字列（タブは \t、改行は \n） */
   runs: { text: string; fmt: RunFmt }[];
+  /** 次の段落と同じページに置く（w:keepNext。見出しによく付く） */
+  keepNext: boolean;
+  /** 段落の途中でページを分けない（w:keepLines） */
+  keepLines: boolean;
+  /** 改ページのとき1行だけを前後のページに残さない（w:widowControl）。文書に指定が無ければnull */
+  widowControl: boolean | null;
+  /**
+   * Wordが最後に保存したときに、ページの境目になった位置（w:lastRenderedPageBreak）。
+   * runs の文字の通し番号（その文字の前でページが変わった）。Microsoft Wordで保存した文書は、
+   * この位置が「Wordで印刷したときのページの境目」になっている。
+   */
+  renderedBreaks: number[];
 }
 
 export interface CellFmt {
@@ -86,6 +98,8 @@ export interface RowFmt {
   cells: CellFmt[];
   heightPt: number | null;
   isHeader: boolean;
+  /** Wordが最後に保存したとき、この行の前でページが変わった（行の中の段落に w:lastRenderedPageBreak がある） */
+  renderedBreak: boolean;
 }
 
 export interface TableBorders {
@@ -105,6 +119,9 @@ export interface TableFmt {
   align: "left" | "center" | "right";
   cellPadLeftPt: number;
   cellPadRightPt: number;
+  /** セルの上下の余白（w:tblCellMar の top/bottom。Wordの既定は0） */
+  cellPadTopPt: number;
+  cellPadBottomPt: number;
 }
 
 export interface HeaderFooterFmt {
@@ -130,6 +147,19 @@ export interface DocxFormatting {
   headers: Partial<Record<HeaderFooterKind, HeaderFooterFmt>>;
   footers: Partial<Record<HeaderFooterKind, HeaderFooterFmt>>;
   refs: SectionRefs | null;
+  /** 本文に、Wordが保存した改ページの位置（w:lastRenderedPageBreak）があるか */
+  hasRenderedBreaks: boolean;
+  /** docProps/app.xml の総ページ数（Wordなどが保存したときのページ数）。無ければnull */
+  savedPageCount: number | null;
+  /** docProps/app.xml の作成アプリが Microsoft Word か */
+  savedByWord: boolean;
+  /**
+   * 本文の段落(表の外)の中の画像の大きさ(文書の順)。浮動配置(wp:anchor、文字列の折り返しあり)か。
+   * mammothがHTMLに出す画像の順と同じ順なので、個数が一致するときだけ、順番で対応づける
+   */
+  bodyImages: { widthPt: number; heightPt: number; floating: boolean }[];
+  /** 本文の標準のフォント名(英数字用・日本語用)。テーマのフォント(minorHAnsi等)は、テーマの実際のフォント名にする。分からなければnull */
+  defaultFonts: { ascii: string | null; eastAsia: string | null };
 }
 
 /** ページ番号・総ページ数をヘッダー/フッターの文字列へ埋め込むための目印の文字 */
@@ -193,7 +223,7 @@ const HIGHLIGHT: Record<string, string> = {
 // 書式（部分指定）
 // ---------------------------------------------------------------------------
 type RunPartial = Partial<RunFmt>;
-type ParaPartial = Partial<Omit<ParaFmt, "runs" | "tabs" | "baseSizePt" | "styleId">> & { tabs?: TabStopFmt[]; tabClears?: number[] };
+type ParaPartial = Partial<Omit<ParaFmt, "runs" | "tabs" | "baseSizePt" | "styleId" | "renderedBreaks">> & { tabs?: TabStopFmt[]; tabClears?: number[] };
 
 function parseRPr(rPr: Element | null): RunPartial {
   const out: RunPartial = {};
@@ -295,6 +325,12 @@ function parsePPr(pPr: Element | null, sizeForChars: number): ParaPartial {
   }
   const ctx = onOff(kid(pPr, "w:contextualSpacing"));
   if (ctx !== null) out.contextual = ctx;
+  const keepNext = onOff(kid(pPr, "w:keepNext"));
+  if (keepNext !== null) out.keepNext = keepNext;
+  const keepLines = onOff(kid(pPr, "w:keepLines"));
+  if (keepLines !== null) out.keepLines = keepLines;
+  const widow = onOff(kid(pPr, "w:widowControl"));
+  if (widow !== null) out.widowControl = widow;
   const shd = kid(pPr, "w:shd");
   if (shd) {
     const fill = hex(shd.getAttribute("w:fill"));
@@ -493,8 +529,11 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
   const props = rs.paraProps(styleId, pPr, baseSize, tableStyleId);
 
   const runs: { text: string; fmt: RunFmt }[] = [];
+  const renderedBreaks: number[] = [];
+  let charCount = 0;
   const push = (text: string, fmt: RunFmt) => {
     if (text === "" || fmt.hidden) return;
+    charCount += Array.from(text).length;
     const last = runs[runs.length - 1];
     if (last && JSON.stringify(last.fmt) === JSON.stringify(fmt)) last.text += text;
     else runs.push({ text, fmt });
@@ -567,6 +606,9 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
         case "w:noBreakHyphen":
           push("-", fmt);
           break;
+        case "w:lastRenderedPageBreak":
+          if (renderedBreaks[renderedBreaks.length - 1] !== charCount) renderedBreaks.push(charCount);
+          break;
         default:
           break;
       }
@@ -625,6 +667,10 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
     styleId,
     contextual: props.contextual ?? false,
     runs,
+    keepNext: props.keepNext ?? false,
+    keepLines: props.keepLines ?? false,
+    widowControl: props.widowControl ?? null,
+    renderedBreaks,
   };
 }
 
@@ -644,6 +690,8 @@ function readTable(tbl: Element, rs: Resolver): TableFmt | null {
   const mar = kid(tblPr, "w:tblCellMar");
   const padL = (num(attr(kid(mar, "w:left") ?? kid(mar, "w:start"), "w:w")) ?? 108) / TWIPS_PER_PT;
   const padR = (num(attr(kid(mar, "w:right") ?? kid(mar, "w:end"), "w:w")) ?? 108) / TWIPS_PER_PT;
+  const padT = (num(attr(kid(mar, "w:top"), "w:w")) ?? 0) / TWIPS_PER_PT;
+  const padB = (num(attr(kid(mar, "w:bottom"), "w:w")) ?? 0) / TWIPS_PER_PT;
 
   const rows: RowFmt[] = [];
   for (const tr of kids(tbl, "w:tr")) {
@@ -683,7 +731,8 @@ function readTable(tbl: Element, rs: Resolver): TableFmt | null {
         borders: cellBorders,
       });
     }
-    rows.push({ cells, heightPt: h !== null ? h / TWIPS_PER_PT : null, isHeader: !!kid(trPr, "w:tblHeader") });
+    const renderedBreak = cells.some((c) => c.paragraphs.some((p) => p.renderedBreaks.length > 0));
+    rows.push({ cells, heightPt: h !== null ? h / TWIPS_PER_PT : null, isHeader: onOff(kid(trPr, "w:tblHeader")) === true, renderedBreak });
   }
   if (rows.length === 0) return null;
   return {
@@ -694,6 +743,8 @@ function readTable(tbl: Element, rs: Resolver): TableFmt | null {
     align: jc === "center" ? "center" : jc === "right" || jc === "end" ? "right" : "left",
     cellPadLeftPt: padL,
     cellPadRightPt: padR,
+    cellPadTopPt: padT,
+    cellPadBottomPt: padB,
   };
 }
 
@@ -724,7 +775,19 @@ function readSectionRefs(sectPr: Element): SectionRefs {
 // ---------------------------------------------------------------------------
 // 入口
 // ---------------------------------------------------------------------------
-const EMPTY: DocxFormatting = { body: [], defaultTabPt: DEFAULT_TAB_PT, evenAndOdd: false, headers: {}, footers: {}, refs: null };
+const EMPTY: DocxFormatting = {
+  body: [],
+  defaultTabPt: DEFAULT_TAB_PT,
+  evenAndOdd: false,
+  headers: {},
+  footers: {},
+  refs: null,
+  hasRenderedBreaks: false,
+  savedPageCount: null,
+  savedByWord: false,
+  bodyImages: [],
+  defaultFonts: { ascii: null, eastAsia: null },
+};
 
 /** DOCXから書式を読み取る。失敗した場合は空の結果（呼び出し側は従来の描画に戻る）。 */
 export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
@@ -735,6 +798,8 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
         info.name === "word/styles.xml" ||
         info.name === "word/settings.xml" ||
         info.name === "word/_rels/document.xml.rels" ||
+        info.name === "docProps/app.xml" ||
+        info.name === "word/theme/theme1.xml" ||
         /^word\/(header|footer)\d*\.xml$/.test(info.name),
     });
     const text = (name: string) => (entries[name] ? new TextDecoder("utf-8").decode(entries[name]) : null);
@@ -810,7 +875,86 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
         if (f) footers[k] = f;
       }
     }
-    return { body: bodyFmt, defaultTabPt, evenAndOdd, headers, footers, refs };
+    // Wordが保存したときの総ページ数・作成アプリ（docProps/app.xml）
+    let savedPageCount: number | null = null;
+    let savedByWord = false;
+    const appText = text("docProps/app.xml");
+    if (appText) {
+      const ad = parser.parseFromString(appText, "application/xml");
+      const pagesN = num(ad.getElementsByTagName("Pages")[0]?.textContent ?? null);
+      if (pagesN !== null && pagesN > 0) savedPageCount = pagesN;
+      savedByWord = /microsoft/i.test(ad.getElementsByTagName("Application")[0]?.textContent ?? "");
+    }
+    // 本文の段落の中の画像の大きさ（表の中の画像は数えない）
+    const EMU_PER_PT = 12700;
+    const bodyImages: DocxFormatting["bodyImages"] = [];
+    const lengthPt = (v: string | undefined): number | null => {
+      const m = v ? /^([\d.]+)(pt|in|cm|mm|px)?$/.exec(v.trim()) : null;
+      if (!m) return null;
+      const n = Number(m[1]);
+      const unit = m[2] ?? "px";
+      return unit === "pt" ? n : unit === "in" ? n * 72 : unit === "cm" ? (n * 72) / 2.54 : unit === "mm" ? (n * 72) / 25.4 : n * 0.75;
+    };
+    for (const child of Array.from(body.children)) {
+      if (child.tagName !== "w:p") continue;
+      const inFallback = (el: Element) => {
+        for (let a = el.parentElement; a && a !== child; a = a.parentElement) if (a.tagName === "mc:Fallback") return true;
+        return false;
+      };
+      for (const el of Array.from(child.getElementsByTagName("*"))) {
+        if ((el.tagName === "w:drawing" || el.tagName === "v:imagedata") && inFallback(el)) continue;
+        if (el.tagName === "w:drawing") {
+          if (el.getElementsByTagName("a:blip").length === 0) continue;
+          const holder = Array.from(el.children).find((c) => c.tagName === "wp:inline" || c.tagName === "wp:anchor");
+          const ext = holder ? kid(holder, "wp:extent") : null;
+          const cx = num(attr(ext, "cx"));
+          const cy = num(attr(ext, "cy"));
+          if (cx !== null && cy !== null && cx > 0 && cy > 0) {
+            bodyImages.push({ widthPt: cx / EMU_PER_PT, heightPt: cy / EMU_PER_PT, floating: holder?.tagName === "wp:anchor" });
+          } else bodyImages.push({ widthPt: 0, heightPt: 0, floating: false });
+        } else if (el.tagName === "v:imagedata") {
+          const style = el.parentElement?.getAttribute("style") ?? "";
+          const prop = (name: string) => new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`).exec(style)?.[1];
+          bodyImages.push({ widthPt: lengthPt(prop("width")) ?? 0, heightPt: lengthPt(prop("height")) ?? 0, floating: /position\s*:\s*absolute/.test(style) });
+        }
+      }
+    }
+    // 本文の標準のフォント(文書の既定 → 標準スタイルの順で上書き)。行の高さ(「1行」の高さはフォントで決まる)に使う
+    const stylesDoc = text("word/styles.xml");
+    const defaultFonts: DocxFormatting["defaultFonts"] = { ascii: null, eastAsia: null };
+    if (stylesDoc) {
+      const sd = parser.parseFromString(stylesDoc, "application/xml");
+      const themeText = text("word/theme/theme1.xml");
+      const theme = themeText ? parser.parseFromString(themeText, "application/xml") : null;
+      const themeFont = (kind: "minor" | "major", script: "latin" | "ea"): string | null => {
+        const fontEl = theme?.getElementsByTagName(kind === "minor" ? "a:minorFont" : "a:majorFont")[0];
+        if (!fontEl) return null;
+        if (script === "latin") return kid(fontEl, "a:latin")?.getAttribute("typeface") || null;
+        const ea = kid(fontEl, "a:ea")?.getAttribute("typeface");
+        if (ea) return ea;
+        return kids(fontEl, "a:font").find((f) => f.getAttribute("script") === "Jpan")?.getAttribute("typeface") || null;
+      };
+      const apply = (rPr: Element | null) => {
+        const rf = kid(rPr, "w:rFonts");
+        if (!rf) return;
+        const pick = (name: string, themeAttr: string, script: "latin" | "ea") => {
+          const direct = rf.getAttribute(name);
+          if (direct) return direct;
+          const t = rf.getAttribute(themeAttr);
+          return t ? themeFont(t.startsWith("major") ? "major" : "minor", script) : null;
+        };
+        defaultFonts.ascii = pick("w:ascii", "w:asciiTheme", "latin") ?? defaultFonts.ascii;
+        defaultFonts.eastAsia = pick("w:eastAsia", "w:eastAsiaTheme", "ea") ?? defaultFonts.eastAsia;
+      };
+      const dd = sd.getElementsByTagName("w:docDefaults")[0];
+      apply(kid(kid(dd ?? null, "w:rPrDefault"), "w:rPr"));
+      const normal = Array.from(sd.getElementsByTagName("w:style")).find((st) => st.getAttribute("w:type") === "paragraph" && st.getAttribute("w:default") === "1");
+      apply(kid(normal ?? null, "w:rPr"));
+    }
+    const hasRenderedBreaks = bodyFmt.some((b) =>
+      b.tag === "p" ? b.para.renderedBreaks.length > 0 : !!b.table?.rows.some((r) => r.renderedBreak)
+    );
+    return { body: bodyFmt, defaultTabPt, evenAndOdd, headers, footers, refs, hasRenderedBreaks, savedPageCount, savedByWord, bodyImages, defaultFonts };
   } catch {
     return EMPTY;
   }

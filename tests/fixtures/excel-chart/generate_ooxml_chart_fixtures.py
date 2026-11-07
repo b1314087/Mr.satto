@@ -375,6 +375,11 @@ class Sheet:
         self.header: str | None = None  # oddHeader(&L/&C/&R 形式)
         self.footer: str | None = None
         self.print_title_rows: str | None = None  # "$1:$1"
+        self.print_title_cols: str | None = None  # "$A:$A"
+        self.page_order: str | None = None  # "overThenDown"(左から右へ、次に下へ)
+        self.first_page_number: int | None = None  # 先頭ページの番号(useFirstPageNumber)
+        self.first_header: str | None = None  # 先頭ページだけのヘッダー(differentFirst)
+        self.print_gridlines = False
 
     def put(self, r: int, c: int, v, style: int = ST_GENERAL):
         self.cells[(r, c)] = v
@@ -531,7 +536,10 @@ class Book:
             scale_attr = f' scale="{sh.scale}"' if sh.scale else ""
             fit_attrs = sh.fit or sh.fit_attrs_without_flag
             fit_attr = f' fitToWidth="{fit_attrs[0]}" fitToHeight="{fit_attrs[1]}"' if fit_attrs else ""
-            setup = f'<pageSetup paperSize="{sh.paper}"{scale_attr}{fit_attr} orientation="{"landscape" if sh.landscape else "portrait"}"/>'
+            order_attr = f' pageOrder="{sh.page_order}"' if getattr(sh, "page_order", None) else ""
+            fpn = getattr(sh, "first_page_number", None)
+            fpn_attr = f' firstPageNumber="{fpn}" useFirstPageNumber="1"' if fpn else ""
+            setup = f'<pageSetup paperSize="{sh.paper}"{scale_attr}{fit_attr}{order_attr} orientation="{"landscape" if sh.landscape else "portrait"}"{fpn_attr}/>'
             breaks = ""
             if sh.row_breaks:
                 breaks = f'<rowBreaks count="{len(sh.row_breaks)}" manualBreakCount="{len(sh.row_breaks)}">' + "".join(f'<brk id="{b}" max="16383" man="1"/>' for b in sh.row_breaks) + "</rowBreaks>"
@@ -541,15 +549,28 @@ class Book:
             sheet_pr = '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' if sh.fit else ""
             merge_xml = (f'<mergeCells count="{len(sh.merges)}">' + "".join(f'<mergeCell ref="{m}"/>' for m in sh.merges) + "</mergeCells>") if sh.merges else ""
             print_opts = ""
-            if sh.h_center or sh.v_center:
-                print_opts = "<printOptions" + (' horizontalCentered="1"' if sh.h_center else "") + (' verticalCentered="1"' if sh.v_center else "") + "/>"
+            if sh.h_center or sh.v_center or getattr(sh, "print_gridlines", False):
+                print_opts = (
+                    "<printOptions"
+                    + (' horizontalCentered="1"' if sh.h_center else "")
+                    + (' verticalCentered="1"' if sh.v_center else "")
+                    + (' gridLines="1"' if getattr(sh, "print_gridlines", False) else "")
+                    + "/>"
+                )
             m = sh.margins or {"left": 0.7, "right": 0.7, "top": 0.75, "bottom": 0.75, "header": 0.3, "footer": 0.3}
             margins_xml = f'<pageMargins left="{m["left"]}" right="{m["right"]}" top="{m["top"]}" bottom="{m["bottom"]}" header="{m["header"]}" footer="{m["footer"]}"/>'
             if getattr(sh, "no_margins", False):
                 margins_xml = ""  # 余白の要素を書かない(Excel以外のソフトが作るファイルの例)
             hf_xml = ""
             if sh.header or sh.footer:
-                hf_xml = "<headerFooter>" + (f"<oddHeader>{escape(sh.header)}</oddHeader>" if sh.header else "") + (f"<oddFooter>{escape(sh.footer)}</oddFooter>" if sh.footer else "") + "</headerFooter>"
+                first_h = getattr(sh, "first_header", None)
+                hf_xml = (
+                    ("<headerFooter differentFirst=\"1\">" if first_h else "<headerFooter>")
+                    + (f"<oddHeader>{escape(sh.header)}</oddHeader>" if sh.header else "")
+                    + (f"<oddFooter>{escape(sh.footer)}</oddFooter>" if sh.footer else "")
+                    + (f"<firstHeader>{escape(first_h)}</firstHeader>" if first_h else "")
+                    + "</headerFooter>"
+                )
             files[f"xl/worksheets/sheet{si}.xml"] = (
                 '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
                 f'<worksheet xmlns="{NS_MAIN}" xmlns:r="{NS_R}">{sheet_pr}<dimension ref="A1:{cell_ref(maxr, maxc)}"/>'
@@ -580,9 +601,11 @@ class Book:
         )
         names = list(self.defined_names)
         for i, sh in enumerate(self.sheets):
-            if sh.print_title_rows:
+            title_cols = getattr(sh, "print_title_cols", None)
+            if sh.print_title_rows or title_cols:
                 q = f"'{sh.name}'" if re.search(r"[^A-Za-z0-9_]", sh.name) else sh.name
-                names.append(("_xlnm.Print_Titles", f"{q}!{sh.print_title_rows}", i))
+                parts = [f"{q}!{t}" for t in (title_cols, sh.print_title_rows) if t]
+                names.append(("_xlnm.Print_Titles", ",".join(parts), i))
         for i, sh in enumerate(self.sheets):
             if sh.print_area:
                 names.append(("_xlnm.Print_Area", sh.print_area, i))

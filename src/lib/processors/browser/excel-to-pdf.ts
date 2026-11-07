@@ -1231,7 +1231,10 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           const horizontal = align?.horizontal ?? "left";
           if (horizontal !== "left") continue;
           const text = cellDisplayText(row, r, lc).split("\n")[0];
-          const need = textWidth(font, text, fontSizeFor(r, lc)) + cellPadding * 2 + (align?.indent ?? 0) * defaultFontSize * 0.6;
+          // Excelのセルの左右の余白は2ピクセル程度(合わせて約3pt)。描画用の余白(cellPadding)で判定すると、
+          // 列の幅ぎりぎりの文字まで「はみ出す」と判定して、使われていない右の列まで印刷範囲を広げ、
+          // 「ページ数に合わせる」の倍率やページの境目がExcelとずれていた。
+          const need = textWidth(font, text, fontSizeFor(r, lc)) + 3 + (align?.indent ?? 0) * defaultFontSize * 0.6;
           let have = 0;
           let c = lc;
           // 最終列(値のある列)から右へ、はみ出す文字が収まるまでの列を数える
@@ -1876,16 +1879,22 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           if (blankGridPages.size === grid.colGroups.length * grid.rowGroups.length) blankGridPages.delete("0:0");
         }
 
+        // ページの順：既定は「下へ、次に右へ」。ページ設定の「右へ、次に下へ」(overThenDown)なら、横に並ぶページを先に出す
+        const pageOrderList: [number, number][] =
+          settings?.pageOrder === "overThenDown"
+            ? grid.rowGroups.flatMap((_, ri) => grid.colGroups.map((__, ci) => [ci, ri] as [number, number]))
+            : grid.colGroups.flatMap((_, ci) => grid.rowGroups.map((__, ri) => [ci, ri] as [number, number]));
+
         // グラフの確認用に、出力する各ページの範囲(シートの座標)と、PDFのページ番号を記録する(下のページの生成と同じ順・同じ省略)
         if (settings && settings.charts.length > 0) {
           const firstPageNo = (analyzeOnly ? analyzedPageCount : doc.getPageCount()) + 1;
           const checkPages: CheckPage[] = [];
-          grid.colGroups.forEach((colGroup, ci) =>
-            grid.rowGroups.forEach((rowGroup, ri) => {
-              if (blankGridPages.has(`${ci}:${ri}`)) return;
-              const cols = colGroup.map((i) => bodyCols[i]);
-              const rows = rowGroup.map((i) => bodyRows[i]);
-              if (cols.length === 0 || rows.length === 0) return;
+          for (const [ci, ri] of pageOrderList) {
+            {
+              if (blankGridPages.has(`${ci}:${ri}`)) continue;
+              const cols = grid.colGroups[ci].map((i) => bodyCols[i]);
+              const rows = grid.rowGroups[ri].map((i) => bodyRows[i]);
+              if (cols.length === 0 || rows.length === 0) continue;
               const x1 = colLeftSheet(cols[0]);
               const y1 = rowTopSheet(rows[0]);
               checkPages.push({
@@ -1897,8 +1906,8 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
                 x2: x1 + cols.reduce((sum, c) => sum + colWidthOf(c), 0),
                 y2: y1 + rows.reduce((sum, r) => sum + rowHeightOf(r), 0),
               });
-            })
-          );
+            }
+          }
           const lastCol = bodyCols[bodyCols.length - 1];
           const lastRow = bodyRows[bodyRows.length - 1];
           const colBreaks = new Set(settings.colBreaksAfter);
@@ -1923,8 +1932,10 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           analyzedPageCount += grid.colGroups.length * grid.rowGroups.length - blankGridPages.size;
           continue;
         }
-        for (const [ci, colGroup] of grid.colGroups.entries()) {
-          for (const [ri, rowGroup] of grid.rowGroups.entries()) {
+        for (const [ci, ri] of pageOrderList) {
+          const colGroup = grid.colGroups[ci];
+          const rowGroup = grid.rowGroups[ri];
+          {
             if (blankGridPages.has(`${ci}:${ri}`)) {
               skippedBlankPages++;
               continue;
@@ -1988,7 +1999,9 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
       const hfSize = (sec: HeaderFooterSections) =>
         Math.max(hfBaseSize, sec.sizes?.left ?? 0, sec.sizes?.center ?? 0, sec.sizes?.right ?? 0) * hfScale * 0.88;
       for (const { page, pageNo } of pendingHeaderFooter) {
-        const ctx = { pageInSheet: pageNo, totalPagesInSheet: totalPagesForSheet, sheetName: sheet.name };
+        // 先頭ページの番号の指定(ページ設定の「先頭ページ番号」)があれば、&P はその番号から数える
+        const shownPageNo = settings?.firstPageNumber != null ? settings.firstPageNumber + pageNo - 1 : pageNo;
+        const ctx = { pageInSheet: shownPageNo, totalPagesInSheet: totalPagesForSheet, sheetName: sheet.name };
         const header = sectionsFor("header", pageNo);
         if (header) {
           drawHeaderFooterSections(

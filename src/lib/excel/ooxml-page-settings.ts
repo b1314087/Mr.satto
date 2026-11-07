@@ -193,6 +193,13 @@ export interface SheetPageSettings {
    */
   fitToWidth: number | null;
   fitToHeight: number | null;
+  /**
+   * pageSetup@pageOrder：ページの順。"downThenOver"(既定)=下へ、次に右へ。"overThenDown"=右へ、次に下へ
+   * (Excelの「ページ設定→シート→ページの方向」)。
+   */
+  pageOrder: "downThenOver" | "overThenDown";
+  /** pageSetup@firstPageNumber(useFirstPageNumber="1"のときだけ)。ヘッダー/フッターの&P(ページ番号)の始まりの番号 */
+  firstPageNumber: number | null;
   /** pageSetup@scale（%）。fitToPageEnabledがtrueの場合は無視してfitToWidth/Heightを優先する（実際のExcelの優先順位） */
   scalePercent: number | null;
   /** インチ単位（OOXML標準） */
@@ -354,6 +361,8 @@ function emptySheetSettings(): SheetPageSettings {
     printTitleCols: null,
     blackAndWhite: false,
     printGridLines: false,
+    pageOrder: "downThenOver",
+    firstPageNumber: null,
     paperSize: null,
     paperSizeCode: null,
     orientation: null,
@@ -1339,6 +1348,9 @@ function parseSheetXml(
     result.fitToHeight = fitToHeightAttr !== null ? Number(fitToHeightAttr) : 1;
     const scaleAttr = pageSetup.getAttribute("scale");
     result.scalePercent = scaleAttr !== null ? Number(scaleAttr) : null;
+    result.pageOrder = pageSetup.getAttribute("pageOrder") === "overThenDown" ? "overThenDown" : "downThenOver";
+    const firstPageNumberAttr = Number(pageSetup.getAttribute("firstPageNumber"));
+    if (isTrueAttr(pageSetup.getAttribute("useFirstPageNumber")) && Number.isInteger(firstPageNumberAttr)) result.firstPageNumber = firstPageNumberAttr;
   }
 
   // printOptions(ページ内での中央配置)
@@ -1427,8 +1439,9 @@ function parseSheetXml(
           const runs = isEl ? parseRichRuns(isEl, parsedStyles.colorCtx) : null;
           if (runs) cellRich.set(key, runs);
         }
-        if (!sAttr) continue;
-        const style = cellStyles[Number(sAttr)];
+        // スタイル番号(s)が無いセルは、0番のスタイル(標準)で表示される(Excelは0番のときsを書かない)。
+        // 日本語のExcelの標準のスタイルは「上下中央揃え」なので、これを使わないと、高い行の文字が下に寄っていた。
+        const style = cellStyles[sAttr ? Number(sAttr) : 0];
         if (!style) continue;
         const { border } = style;
         if (border.top || border.bottom || border.left || border.right) {

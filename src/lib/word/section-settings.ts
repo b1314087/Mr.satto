@@ -43,6 +43,14 @@ export interface SectionSettings {
    * 倍数へ切り上げられる(Word自体の挙動)。取得できない・該当しない場合はnull。
    */
   docGridLinePitchPt: number | null;
+  /**
+   * このセクションの始まり方(w:type)。nextPage=次のページから(既定)、continuous=現在の位置から(改ページしない)、
+   * evenPage/oddPage=次の偶数/奇数ページから、nextColumn=次の段から(段組みは再現しないため、改ページとして扱う)
+   */
+  startType: "nextPage" | "continuous" | "evenPage" | "oddPage" | "nextColumn";
+  /** ヘッダー・フッターの位置(用紙の端からの距離、pt) */
+  headerDistancePt: number;
+  footerDistancePt: number;
 }
 
 /** 文書本文(w:body)の直下の子要素のうち、段落(w:p)・表(w:tbl)だけを対象に、
@@ -65,6 +73,8 @@ export interface BodyChildHint {
    * 認識せずインデント情報を読み捨ててしまうため、別途ここで取得する。
    */
   hangingIndentPt: number | null;
+  /** この要素が属するセクションの番号(sections の添字) */
+  sectionIndex: number;
 }
 
 /**
@@ -142,7 +152,14 @@ function parseSectPr(sectPrEl: Element): SectionSettings {
       ? twipsToPt(Number(linePitchAttr))
       : null;
 
+  const typeVal = sectPrEl.getElementsByTagName("w:type")[0]?.getAttribute("w:val");
+  const startType: SectionSettings["startType"] =
+    typeVal === "continuous" || typeVal === "evenPage" || typeVal === "oddPage" || typeVal === "nextColumn" ? typeVal : "nextPage";
+
   return {
+    startType,
+    headerDistancePt: marginAttr("w:header", 36),
+    footerDistancePt: marginAttr("w:footer", 36),
     pageWidthPt: twipsToPt(wTwips),
     pageHeightPt: twipsToPt(hTwips),
     orientation,
@@ -301,13 +318,15 @@ export function parseWordDocumentStructure(arrayBuffer: ArrayBuffer): WordDocume
     for (const child of Array.from(body.children)) {
       const tag = child.tagName;
       if (tag === "w:p") {
-        bodyChildren.push({ tag: "p", pageBreakBefore: hasPageBreakBefore(child), hangingIndentPt: parseHangingIndentPt(child) });
+        // セクションの番号：段落の中のsectPrは「その段落で終わるセクション」の設定なので、この段落はまだ今のセクションに属する
+        bodyChildren.push({ tag: "p", pageBreakBefore: hasPageBreakBefore(child), hangingIndentPt: parseHangingIndentPt(child), sectionIndex: sections.length });
         // 段落内に埋め込まれたw:sectPr(セクション区切り)があれば、そのセクションの設定を記録する
-        const pPr = child.getElementsByTagName("w:pPr")[0];
-        const embeddedSectPr = pPr?.getElementsByTagName("w:sectPr")[0];
+        // (段落自身のw:pPrの直下のものだけ。テキストボックスの中の段落などは見ない)
+        const pPr = Array.from(child.children).find((c) => c.tagName === "w:pPr");
+        const embeddedSectPr = pPr ? Array.from(pPr.children).find((c) => c.tagName === "w:sectPr") : undefined;
         if (embeddedSectPr) sections.push(parseSectPr(embeddedSectPr));
       } else if (tag === "w:tbl") {
-        bodyChildren.push({ tag: "tbl", pageBreakBefore: false, hangingIndentPt: null });
+        bodyChildren.push({ tag: "tbl", pageBreakBefore: false, hangingIndentPt: null, sectionIndex: sections.length });
       }
       // それ以外(bookmarkStart等)はmammoth側でも中間モデルへ現れないため、記録しない
       // （インデックスの対応関係を崩さないため、意図的に読み飛ばす）。

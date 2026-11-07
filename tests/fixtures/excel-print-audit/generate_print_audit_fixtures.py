@@ -204,34 +204,46 @@ class SheetModel:
         a, b = self.sh.print_title_rows.replace("$", "").split(":")
         return [r for r in range(int(a) - 1, int(b)) if r not in self.sh.hidden_rows]
 
+    def title_cols(self) -> list[int]:
+        t = getattr(self.sh, "print_title_cols", None)
+        if not t:
+            return []
+        a, b = t.replace("$", "").split(":")
+        c1, c2 = parse_cell(a + "1")[1], parse_cell(b + "1")[1]
+        return [c for c in range(c1, c2 + 1) if c not in self.sh.hidden_cols]
+
     def paginate(self, first_page_no: int):
         """出力するページの一覧と、文字ごとのページを返す"""
         pw, ph = self.paper()
         m = self.margins()
         cw = pw - (m["left"] + m["right"]) * 72
         ch = ph - (m["top"] + m["bottom"]) * 72
+        # 表の本体を印刷できる枠(紙の左上が原点、pt)。中央配置でも、この枠の中に収まる
+        box = [round(m["left"] * 72, 2), round(m["top"] * 72, 2), round(pw - m["right"] * 72, 2), round(ph - m["bottom"] * 72, 2)]
         titles = self.title_rows()
+        tcols = self.title_cols()
         title_h = sum(self.row_size(r) for r in titles)
+        title_w = sum(self.col_size(c) for c in tcols)
         pages = []
         marker_pages: dict[str, list[int]] = {}
         page_no = first_page_no
         for (r1, c1, r2, c2) in self.areas():
             rows = [r for r in range(r1, r2 + 1) if r not in self.sh.hidden_rows and r not in titles]
-            cols = [c for c in range(c1, c2 + 1) if c not in self.sh.hidden_cols]
+            cols = [c for c in range(c1, c2 + 1) if c not in self.sh.hidden_cols and c not in tcols]
             rs = [self.row_size(r) for r in rows]
             cs = [self.col_size(c) for c in cols]
             if self.sh.fit:
                 fw, fh = self.sh.fit
                 cands = [1.0]
                 if fw > 0:
-                    cands.append(fw * cw / sum(cs))
+                    # 毎ページに繰り返すタイトルの列も同じ倍率で縮む：fw×(cw − title×s) ≥ Σ列×s
+                    cands.append(fw * cw / (sum(cs) + fw * title_w))
                 if fh > 0:
-                    # 毎ページに繰り返すタイトルの行も同じ倍率で縮む：fh×(ch − title×s) ≥ Σ行×s
                     cands.append(fh * ch / (sum(rs) + fh * title_h))
                 scale = max(0.1, min(cands))
                 # Excelは列・行を途中で分けない。切れ目の都合で指定のページ数を超えるときは、収まるまで少しずつ縮小する(10%まで)
                 while scale > 0.1 and (
-                    (fw > 0 and len(group(cs, cw / scale, set())) > fw)
+                    (fw > 0 and len(group(cs, (cw - title_w * scale) / scale, set())) > fw)
                     or (fh > 0 and len(group(rs, (ch - title_h * scale) / scale, set())) > fh)
                 ):
                     scale = max(0.1, scale - 0.0005)
@@ -240,24 +252,28 @@ class SheetModel:
                 scale = (self.sh.scale or 100) / 100
                 rb = {rows.index(b - 1) for b in self.sh.row_breaks if (b - 1) in rows}
                 cb = {cols.index(b - 1) for b in self.sh.col_breaks if (b - 1) in cols}
-            col_groups = group(cs, cw / scale, cb)
+            col_groups = group(cs, (cw - title_w * scale) / scale, cb)
             row_groups = group(rs, (ch - title_h * scale) / scale, rb)
-            for cg in col_groups:
-                for rg in row_groups:
-                    pcols = {cols[i] for i in cg}
-                    prows = {rows[i] for i in rg}
-                    content = [t for (r, c), t in self.markers.items() if r in prows and c in pcols]
-                    draws = [d for d in self.drawings if any(r in prows for r in range(d[1], d[3])) and any(c in pcols for c in range(d[2], d[4]))]
-                    if not content and not draws:
-                        continue
-                    for t in content:
+            # ページの順：既定は「下へ、次に右へ」。pageOrder="overThenDown" は「右へ、次に下へ」
+            if getattr(self.sh, "page_order", None) == "overThenDown":
+                order = [(cg, rg) for rg in row_groups for cg in col_groups]
+            else:
+                order = [(cg, rg) for cg in col_groups for rg in row_groups]
+            for cg, rg in order:
+                pcols = {cols[i] for i in cg}
+                prows = {rows[i] for i in rg}
+                content = [t for (r, c), t in self.markers.items() if r in prows and c in pcols]
+                draws = [d for d in self.drawings if any(r in prows for r in range(d[1], d[3])) and any(c in pcols for c in range(d[2], d[4]))]
+                if not content and not draws:
+                    continue
+                for t in content:
+                    marker_pages.setdefault(t, []).append(page_no)
+                # 印刷タイトル(行・列・その交わり)は毎ページに繰り返す
+                for (r, c), t in self.markers.items():
+                    if (r in titles and (c in pcols or c in tcols)) or (c in tcols and r in prows):
                         marker_pages.setdefault(t, []).append(page_no)
-                    for r in titles:
-                        for c in pcols:
-                            if (r, c) in self.markers:
-                                marker_pages.setdefault(self.markers[(r, c)], []).append(page_no)
-                    pages.append({"pageNo": page_no, "width": round(pw, 2), "height": round(ph, 2), "scale": round(scale, 4), "drawings": [d[0] for d in draws]})
-                    page_no += 1
+                pages.append({"pageNo": page_no, "width": round(pw, 2), "height": round(ph, 2), "scale": round(scale, 4), "drawings": [d[0] for d in draws], "box": box})
+                page_no += 1
         printed = set(marker_pages)
         absent = sorted(t for t in self.markers.values() if t not in printed)
         return pages, marker_pages, absent

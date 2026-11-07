@@ -34,12 +34,19 @@ export interface LayoutLine {
   /** 明示的な改行（Shift+Enter）で終わった行 */
   explicitBreak: boolean;
   hasTab: boolean;
+  /** 改行の文字(\n)で終わった行のとき、その改行の文字の位置 */
+  breakIndex?: number;
 }
 
 /** 行頭に置いてはいけない文字（句読点・閉じ括弧・小さい仮名・長音） */
 const NO_LINE_START = new Set(Array.from("、。，．,.)）」』】〕〉》］｝!?！？:;：；ー々ゝゞ・ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ”’"));
 /** 行末に置いてはいけない文字（開き括弧） */
 const NO_LINE_END = new Set(Array.from("(（「『【〔〈《［｛“‘"));
+
+/** 英数字の単語を作る文字(この文字の間では行を折り返さない)。日本語の文字・空白・記号の一部は区切りになる */
+function isWordChar(ch: string): boolean {
+  return /^[A-Za-z0-9@#$%&*+=_\-.,'"/:;!?()[\]{}<>~^|\\\u00C0-\u024F]$/.test(ch);
+}
 
 function nextTabStop(x: number, tabs: TabStopSpec[], defaultTab: number): TabStopSpec {
   for (const t of tabs) if (t.pos > x + 0.01) return t;
@@ -56,9 +63,9 @@ export function layoutParagraph(chars: string[], widths: number[], p: LayoutPara
   let startX = p.firstX;
   let hasTab = false;
 
-  const closeLine = (explicitBreak: boolean) => {
+  const closeLine = (explicitBreak: boolean, breakIndex?: number) => {
     const endX = items.length > 0 ? items[items.length - 1].x + items[items.length - 1].width : startX;
-    lines.push({ items, startX, endX: Math.max(endX, startX), explicitBreak, hasTab });
+    lines.push({ items, startX, endX: Math.max(endX, startX), explicitBreak, hasTab, ...(breakIndex !== undefined ? { breakIndex } : {}) });
     items = [];
     hasTab = false;
     startX = p.contX;
@@ -77,7 +84,7 @@ export function layoutParagraph(chars: string[], widths: number[], p: LayoutPara
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i];
     if (ch === "\n") {
-      closeLine(true);
+      closeLine(true, i);
       continue;
     }
     if (ch === "\t") {
@@ -92,6 +99,27 @@ export function layoutParagraph(chars: string[], widths: number[], p: LayoutPara
       continue;
     }
     const w = widths[i];
+    // 行末の空白は、余白にはみ出しても次の行へ送らない(Wordと同じ)
+    if (ch === " " && x + w > p.maxX + 0.01) {
+      items.push({ index: i, x, width: 0 });
+      continue;
+    }
+    // 英数字の単語は、単語の途中では折り返さない(行の中に区切り(空白・日本語の文字)があれば、単語ごと次の行へ送る)
+    if (x + w > p.maxX + 0.01 && isWordChar(ch) && items.length > 0 && isWordChar(chars[items[items.length - 1].index])) {
+      let k = items.length - 1;
+      while (k >= 0 && isWordChar(chars[items[k].index])) k--;
+      if (k >= 0 && chars[items[k].index] !== "\t") {
+        const carried = items.splice(k + 1);
+        closeLine(false);
+        for (const it of carried) {
+          items.push({ index: it.index, x, width: it.width });
+          x += it.width;
+        }
+        items.push({ index: i, x, width: w });
+        x += w;
+        continue;
+      }
+    }
     if (x + w > p.maxX + 0.01 && items.some((it) => chars[it.index] !== "\t")) {
       // 行頭禁則: 句読点・閉じ括弧は行末にぶら下げる（次の行頭に置かない）
       const hangs = NO_LINE_START.has(ch) && x + w <= p.maxX + w * 1.2;
