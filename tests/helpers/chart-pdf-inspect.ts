@@ -57,6 +57,8 @@ export function render(pdf: string, pageNo = 1): Img {
   execFileSync("pdftoppm", ["-r", "72", "-f", String(pageNo), "-l", String(pageNo), pdf, path.join(dir, "p")], BIG);
   const file = fs.readdirSync(dir).find((f) => f.endsWith(".ppm"))!;
   const buf = fs.readFileSync(path.join(dir, file));
+  // 画像は読み込んだので、一時フォルダは消す(以前は残していて、テストのたびに数千個のフォルダが溜まっていた)
+  fs.rmSync(dir, { recursive: true, force: true });
   const m = buf.toString("latin1", 0, 30).match(/^P6\s+(\d+)\s+(\d+)\s+255\s/)!;
   return { w: Number(m[1]), h: Number(m[2]), data: buf.subarray(m[0].length) };
 }

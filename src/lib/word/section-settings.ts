@@ -52,6 +52,11 @@ export interface SectionSettings {
   /** ヘッダー・フッターの位置(用紙の端からの距離、pt) */
   headerDistancePt: number;
   footerDistancePt: number;
+  /**
+   * 段組み(w:cols)。count=段の数(既定1)、widths=段の幅(pt)・spaces=段と段の間隔(pt。段の数−1個)。
+   * 「段の幅をすべて同じにする」(w:equalWidth、既定)のときは、本文の幅と間隔(w:space)から計算する。separator=境界線(w:sep)
+   */
+  columns: { count: number; widths: number[] | null; spaces: number[]; space: number; separator: boolean };
 }
 
 /** 文書本文(w:body)の直下の子要素のうち、段落(w:p)・表(w:tbl)だけを対象に、
@@ -157,8 +162,26 @@ function parseSectPr(sectPrEl: Element): SectionSettings {
   const startType: SectionSettings["startType"] =
     typeVal === "continuous" || typeVal === "evenPage" || typeVal === "oddPage" || typeVal === "nextColumn" ? typeVal : "nextPage";
 
+  // 段組み
+  const colsEl = Array.from(sectPrEl.children).find((c) => c.tagName === "w:cols");
+  const num = Math.max(1, Math.min(45, Number(colsEl?.getAttribute("w:num") ?? 1) || 1));
+  const space = twipsToPt(Number(colsEl?.getAttribute("w:space") ?? 720) || 0);
+  const equal = (colsEl?.getAttribute("w:equalWidth") ?? "1") !== "0" && colsEl?.getAttribute("w:equalWidth") !== "false";
+  const colEls = colsEl ? Array.from(colsEl.children).filter((c) => c.tagName === "w:col") : [];
+  const columns: SectionSettings["columns"] =
+    !equal && colEls.length > 1
+      ? {
+          count: colEls.length,
+          widths: colEls.map((c) => twipsToPt(Number(c.getAttribute("w:w") ?? 0) || 0)),
+          spaces: colEls.slice(0, -1).map((c) => twipsToPt(Number(c.getAttribute("w:space") ?? 0) || 0)),
+          space,
+          separator: colsEl?.getAttribute("w:sep") === "1" || colsEl?.getAttribute("w:sep") === "true",
+        }
+      : { count: num, widths: null, spaces: Array(num - 1).fill(space), space, separator: colsEl?.getAttribute("w:sep") === "1" || colsEl?.getAttribute("w:sep") === "true" };
+
   return {
     startType,
+    columns,
     headerDistancePt: marginAttr("w:header", 36),
     footerDistancePt: marginAttr("w:footer", 36),
     pageWidthPt: twipsToPt(wTwips),

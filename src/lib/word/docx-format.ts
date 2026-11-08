@@ -116,8 +116,10 @@ export interface ParaFmt {
   directIndent: boolean;
   /** 段落の前で改ページ(w:pageBreakBefore。段落スタイルの指定も含む) */
   pageBreakBefore: boolean;
-  /** 段落の途中の改ページ・段区切り(w:br type="page"/"column")の位置(runs の文字の通し番号。その文字の前で改ページ) */
+  /** 段落の途中の改ページ(w:br type="page")の位置(runs の文字の通し番号。その文字の前で改ページ) */
   pageBreaks: number[];
+  /** 段落の途中の段区切り(w:br type="column")の位置(その文字の前で、次の段へ) */
+  columnBreaks: number[];
   /** 段落の中の画像(runs の OBJECT_CHAR の順) */
   objects: ParaObject[];
   /** 日本語の禁則処理を行うか(w:kinsoku。既定は行う) */
@@ -174,6 +176,15 @@ export interface TableFmt {
 
 export interface HeaderFooterFmt {
   paragraphs: ParaFmt[];
+  /** このヘッダー/フッターの部品の参照(r:id → 画像のファイルなど。word/_rels/header1.xml.rels など。本文の参照とは別) */
+  rels: Record<string, { target: string; external: boolean }>;
+}
+
+/** 1つのセクションのヘッダー・フッター(前のセクションから引き継いだものも含む) */
+export interface SectionHeaderFooter {
+  refs: SectionRefs;
+  headers: Partial<Record<HeaderFooterKind, HeaderFooterFmt>>;
+  footers: Partial<Record<HeaderFooterKind, HeaderFooterFmt>>;
 }
 
 export type HeaderFooterKind = "default" | "first" | "even";
@@ -195,6 +206,11 @@ export interface DocxFormatting {
   headers: Partial<Record<HeaderFooterKind, HeaderFooterFmt>>;
   footers: Partial<Record<HeaderFooterKind, HeaderFooterFmt>>;
   refs: SectionRefs | null;
+  /**
+   * セクションごとのヘッダー・フッター(本文の順。section-settings の sections と同じ並び)。
+   * セクションに、ある種類(既定・先頭ページ・偶数ページ)の指定が無いときは、前のセクションのものを引き継ぐ(OOXMLの決まり)
+   */
+  sectionHeaders: SectionHeaderFooter[];
   /** 本文に、Wordが保存した改ページの位置（w:lastRenderedPageBreak）があるか */
   hasRenderedBreaks: boolean;
   /** docProps/app.xml の総ページ数（Wordなどが保存したときのページ数）。無ければnull */
@@ -300,7 +316,7 @@ const HIGHLIGHT: Record<string, string> = {
 // 書式（部分指定）
 // ---------------------------------------------------------------------------
 type RunPartial = Partial<RunFmt>;
-type ParaPartial = Partial<Omit<ParaFmt, "runs" | "tabs" | "baseSizePt" | "styleId" | "renderedBreaks" | "numbering" | "directIndent" | "pageBreaks" | "objects">> & { tabs?: TabStopFmt[]; tabClears?: number[] };
+type ParaPartial = Partial<Omit<ParaFmt, "runs" | "tabs" | "baseSizePt" | "styleId" | "renderedBreaks" | "numbering" | "directIndent" | "pageBreaks" | "columnBreaks" | "objects">> & { tabs?: TabStopFmt[]; tabClears?: number[] };
 
 function parseRPr(rPr: Element | null): RunPartial {
   const out: RunPartial = {};
@@ -664,6 +680,7 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
   const runs: { text: string; fmt: RunFmt }[] = [];
   const renderedBreaks: number[] = [];
   const pageBreaks: number[] = [];
+  const columnBreaks: number[] = [];
   const objects: ParaObject[] = [];
   let charCount = 0;
   /** いま読んでいるハイパーリンクの参照(w:hyperlink の中のとき) */
@@ -748,8 +765,9 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
         case "w:br": {
           const type = c.getAttribute("w:type");
           if (type === "page" || type === "column") {
-            // 改ページ・段区切り(段組みは扱わないので、段区切りも改ページにする)：その位置を覚える
-            if (!fieldStack.some((f) => f.skip || f.phase === "instr") && pageBreaks[pageBreaks.length - 1] !== charCount) pageBreaks.push(charCount);
+            // 改ページ・段区切り：その位置を覚える
+            const list = type === "page" ? pageBreaks : columnBreaks;
+            if (!fieldStack.some((f) => f.skip || f.phase === "instr") && list[list.length - 1] !== charCount) list.push(charCount);
             break;
           }
           push("\n", fmt);
@@ -848,6 +866,7 @@ function readParagraph(pEl: Element, rs: Resolver, mode: FieldMode, tableStyleId
     directIndent: !!kid(pPr, "w:ind"),
     pageBreakBefore: props.pageBreakBefore ?? false,
     pageBreaks,
+    columnBreaks,
     objects,
     kinsoku: props.kinsoku ?? true,
     wordWrap: props.wordWrap ?? true,
@@ -987,6 +1006,7 @@ const EMPTY: DocxFormatting = {
   evenAndOdd: false,
   headers: {},
   footers: {},
+  sectionHeaders: [],
   refs: null,
   hasRenderedBreaks: false,
   savedPageCount: null,
@@ -1005,6 +1025,18 @@ const EMPTY: DocxFormatting = {
 
 /** 段落の中の画像の位置を表す文字(書式つきの文字列と、mammothの文字列の両方に同じ位置で入れる) */
 export const OBJECT_CHAR = "\uFFFC";
+
+/** 部品の中の参照(例 "media/image1.png"・"../media/a.png")を、パッケージの中のパス(例 "word/media/image1.png")にする */
+function resolvePartPath(dir: string, target: string): string {
+  if (target.startsWith("/")) return target.slice(1);
+  const parts = (dir + target).split("/");
+  const out: string[] = [];
+  for (const p of parts) {
+    if (p === "..") out.pop();
+    else if (p !== "." && p !== "") out.push(p);
+  }
+  return out.join("/");
+}
 
 /** 要素が、テキストボックスの中(w:txbxContent)にあるか(root より内側だけを見る) */
 function insideTextBox(el: Element, root: Element): boolean {
@@ -1080,6 +1112,12 @@ export interface FloatObject {
   v: { rel: FloatRelV; offsetPt: number | null; align: "top" | "center" | "bottom" | "inside" | "outside" | null };
   /** 文字列の折り返し：square/tight/through=横に回り込む、topAndBottom=上下、none=折り返さない(前面・背面) */
   wrap: "square" | "topAndBottom" | "none";
+  /** 折り返しの種類(OOXMLの要素の名前どおり)。tight=外周、through=内部 */
+  wrapKind: "square" | "tight" | "through" | "topAndBottom" | "none";
+  /** 文字を置く側(wp:wrapSquare/wrapTight/wrapThrough の wrapText)。bothSides=両側、left=左だけ、right=右だけ、largest=広い方だけ */
+  wrapSide: "bothSides" | "left" | "right" | "largest";
+  /** 外周・内部の折り返しの輪郭(wp:wrapPolygon。画像の大きさに対する割合 0〜1 の点の列)。無ければ null */
+  polygon: [number, number][] | null;
   /** 背面(文字の後ろ)に置くか */
   behind: boolean;
   /** 周りの文字との間隔(pt) */
@@ -1109,6 +1147,17 @@ function readFloat(anchor: Element, rs: Resolver, bodyIndex: number, imageOrdina
   const wrapEl = Array.from(anchor.children).find((c) => c.tagName.startsWith("wp:wrap"));
   const wrapName = wrapEl?.tagName ?? "wp:wrapNone";
   const wrap: FloatObject["wrap"] = wrapName === "wp:wrapTopAndBottom" ? "topAndBottom" : wrapName === "wp:wrapNone" ? "none" : "square";
+  const wrapKind: FloatObject["wrapKind"] =
+    wrapName === "wp:wrapTight" ? "tight" : wrapName === "wp:wrapThrough" ? "through" : wrapName === "wp:wrapTopAndBottom" ? "topAndBottom" : wrapName === "wp:wrapNone" ? "none" : "square";
+  const sideAttr = wrapEl?.getAttribute("wrapText");
+  const wrapSide: FloatObject["wrapSide"] = sideAttr === "left" || sideAttr === "right" || sideAttr === "largest" ? sideAttr : "bothSides";
+  // 輪郭：座標は 21600 を画像の幅・高さとする単位(DrawingMLの決まり)
+  const polyEl = wrapEl ? kid(wrapEl, "wp:wrapPolygon") : null;
+  const polygon: [number, number][] | null = polyEl
+    ? Array.from(polyEl.children)
+        .filter((c) => c.tagName === "wp:start" || c.tagName === "wp:lineTo")
+        .map((c) => [(num(c.getAttribute("x")) ?? 0) / 21600, (num(c.getAttribute("y")) ?? 0) / 21600] as [number, number])
+    : null;
   const wsp = anchor.getElementsByTagName("wps:wsp")[0] ?? null;
   const txbx = wsp ? wsp.getElementsByTagName("w:txbxContent")[0] ?? null : null;
   const blip = anchor.getElementsByTagName("a:blip")[0] ?? null;
@@ -1135,6 +1184,9 @@ function readFloat(anchor: Element, rs: Resolver, bodyIndex: number, imageOrdina
     h: { rel: mapRelH(relH), offsetPt: offH != null ? Number(offH) / EMU : null, align: alignH ?? null },
     v: { rel: mapRelV(relV), offsetPt: offV != null ? Number(offV) / EMU : null, align: alignV ?? null },
     wrap,
+    wrapKind,
+    wrapSide,
+    polygon: polygon && polygon.length >= 3 ? polygon : null,
     behind: anchor.getAttribute("behindDoc") === "1" || anchor.getAttribute("behindDoc") === "true",
     dist: { top: distOf("distT"), bottom: distOf("distB"), left: distOf("distL"), right: distOf("distR") },
     fill: kind === "image" ? null : solid(spPr),
@@ -1326,7 +1378,8 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
         info.name === "docProps/app.xml" ||
         info.name === "word/theme/theme1.xml" ||
         info.name === "word/numbering.xml" ||
-        /^word\/(header|footer)\d*\.xml$/.test(info.name),
+        /^word\/(header|footer)\d*\.xml$/.test(info.name) ||
+        /^word\/_rels\/(header|footer)\d*\.xml\.rels$/.test(info.name),
     });
     const text = (name: string) => (entries[name] ? new TextDecoder("utf-8").decode(entries[name]) : null);
     const docText = text("word/document.xml");
@@ -1402,34 +1455,75 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
       }
     }
 
-    // 最初のセクションの設定（段落内のsectPrが先にあればそれ、無ければ末尾のsectPr）
-    const firstSectPr =
-      Array.from(body.getElementsByTagName("w:sectPr")).find((s) => s.parentElement?.tagName === "w:pPr") ??
-      kids(body, "w:sectPr")[0] ??
-      null;
-    let refs: SectionRefs | null = null;
-    const headers: DocxFormatting["headers"] = {};
-    const footers: DocxFormatting["footers"] = {};
-    if (firstSectPr) {
-      refs = readSectionRefs(firstSectPr);
-      const load = (rid: string | undefined): HeaderFooterFmt | undefined => {
-        if (!rid) return undefined;
-        const target = rels[rid] && !rels[rid].external ? rels[rid].target : undefined;
-        const partText = target ? text(target) : null;
-        if (!partText) return undefined;
-        const pd = parser.parseFromString(partText, "application/xml");
-        if (pd.getElementsByTagName("parsererror").length > 0) return undefined;
-        const root = pd.documentElement;
-        const paragraphs = kids(root, "w:p").map((p) => readParagraph(p, rs, "placeholder"));
-        return paragraphs.length > 0 ? { paragraphs } : undefined;
-      };
-      for (const k of ["default", "first", "even"] as const) {
-        const h = load(refs.headers[k]);
-        if (h) headers[k] = h;
-        const f = load(refs.footers[k]);
-        if (f) footers[k] = f;
-      }
+    // セクションごとのヘッダー・フッター。セクションの設定(w:sectPr)は、セクションの最後の段落の w:pPr の中と、本文の最後にある
+    const sectPrs: Element[] = [];
+    for (const el of bodyEls) {
+      const sp = el.tagName === "w:p" ? kid(kid(el, "w:pPr"), "w:sectPr") : null;
+      if (sp) sectPrs.push(sp);
     }
+    const lastSectPr = kids(body, "w:sectPr")[0];
+    if (lastSectPr) sectPrs.push(lastSectPr);
+    const partCache = new Map<string, HeaderFooterFmt | null>();
+    const loadPart = (rid: string | undefined): HeaderFooterFmt | undefined => {
+      if (!rid) return undefined;
+      const target = rels[rid] && !rels[rid].external ? rels[rid].target : undefined;
+      if (!target) return undefined;
+      if (partCache.has(target)) return partCache.get(target) ?? undefined;
+      let result: HeaderFooterFmt | null = null;
+      const partText = text(target);
+      if (partText) {
+        const pd = parser.parseFromString(partText, "application/xml");
+        if (pd.getElementsByTagName("parsererror").length === 0) {
+          // 部品の参照(画像)：word/header1.xml → word/_rels/header1.xml.rels
+          const partRels: HeaderFooterFmt["rels"] = {};
+          const slash = target.lastIndexOf("/");
+          const dir = target.slice(0, slash + 1);
+          const relsText = text(`${dir}_rels/${target.slice(slash + 1)}.rels`);
+          if (relsText) {
+            const rd = parser.parseFromString(relsText, "application/xml");
+            for (const r of Array.from(rd.getElementsByTagName("Relationship"))) {
+              const id = r.getAttribute("Id");
+              const t = r.getAttribute("Target");
+              if (!id || !t) continue;
+              const external = r.getAttribute("TargetMode") === "External";
+              partRels[id] = { target: external ? t : resolvePartPath(dir, t), external };
+            }
+          }
+          const paragraphs: ParaFmt[] = [];
+          for (const el of blockElements(pd.documentElement)) {
+            if (el.tagName === "w:p") paragraphs.push(readParagraph(el, rs, "placeholder"));
+            else for (const tr of kids(el, "w:tr")) for (const tc of kids(tr, "w:tc")) for (const p2 of blockElements(tc)) if (p2.tagName === "w:p") paragraphs.push(readParagraph(p2, rs, "placeholder"));
+          }
+          if (paragraphs.length > 0) result = { paragraphs, rels: partRels };
+        }
+      }
+      partCache.set(target, result);
+      return result ?? undefined;
+    };
+    const sectionHeaders: SectionHeaderFooter[] = [];
+    let prevHF: SectionHeaderFooter | null = null;
+    for (const sp of sectPrs) {
+      const r = readSectionRefs(sp);
+      const cur: SectionHeaderFooter = { refs: r, headers: { ...(prevHF?.headers ?? {}) }, footers: { ...(prevHF?.footers ?? {}) } };
+      for (const k of ["default", "first", "even"] as const) {
+        // 指定のある種類は、そのセクションの部品にする(部品が空なら、その種類は無し)。指定の無い種類は、前のセクションのものを引き継ぐ
+        if (r.headers[k] !== undefined) {
+          const h = loadPart(r.headers[k]);
+          if (h) cur.headers[k] = h;
+          else delete cur.headers[k];
+        }
+        if (r.footers[k] !== undefined) {
+          const f = loadPart(r.footers[k]);
+          if (f) cur.footers[k] = f;
+          else delete cur.footers[k];
+        }
+      }
+      sectionHeaders.push(cur);
+      prevHF = cur;
+    }
+    const refs: SectionRefs | null = sectionHeaders[0]?.refs ?? null;
+    const headers: DocxFormatting["headers"] = sectionHeaders[0]?.headers ?? {};
+    const footers: DocxFormatting["footers"] = sectionHeaders[0]?.footers ?? {};
     // Wordが保存したときの総ページ数・作成アプリ（docProps/app.xml）
     let savedPageCount: number | null = null;
     let savedByWord = false;
@@ -1499,7 +1593,7 @@ export function parseDocxFormatting(arrayBuffer: ArrayBuffer): DocxFormatting {
     const hasRenderedBreaks = bodyFmt.some((b) =>
       b.tag === "p" ? b.para.renderedBreaks.length > 0 : !!b.table?.rows.some((r) => r.renderedBreak)
     );
-    return { body: bodyFmt, defaultTabPt, evenAndOdd, headers, footers, refs, hasRenderedBreaks, savedPageCount, savedByWord, bodyImages, floats, defaultFonts, rels, kinsoku };
+    return { body: bodyFmt, defaultTabPt, evenAndOdd, headers, footers, refs, sectionHeaders, hasRenderedBreaks, savedPageCount, savedByWord, bodyImages, floats, defaultFonts, rels, kinsoku };
   } catch {
     return EMPTY;
   }

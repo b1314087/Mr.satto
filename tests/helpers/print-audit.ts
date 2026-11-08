@@ -1,10 +1,9 @@
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { clickAndDownload, uploadFixture, waitForSuccess } from "./tool-runner";
 import { countPixels, pageSizes, pdfText, render, words, type Img, type Pred, type Word } from "./chart-pdf-inspect";
+import { scratchDir } from "./tmp";
 
 /**
  * Excel→PDFの印刷の再現性の監査(共通の道具)。
@@ -29,7 +28,7 @@ export interface Expect {
 
 /** Excelのファイル(絶対パス)をMr.SattoでPDFにして保存し、PDFのパスと画面の文字を返す */
 export async function convert(page: Page, file: string): Promise<{ pdf: string; screen: string }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlaudit-"));
+  const dir = scratchDir("xlaudit");
   await page.goto("/tools/excel-to-pdf");
   await uploadFixture(page, file);
   await page.getByRole("button", { name: "PDFに変換する" }).waitFor({ state: "visible", timeout: 30_000 });

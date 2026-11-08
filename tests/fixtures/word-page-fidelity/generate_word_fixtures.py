@@ -263,6 +263,8 @@ class Doc:
         if self.numbering:
             overrides.append('<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>')
         for k in self.parts:
+            if "/_rels/" in k:
+                continue
             kind = "header" if "header" in k else "footer"
             overrides.append(f'<Override PartName="/{k}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml"/>')
         ct = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'

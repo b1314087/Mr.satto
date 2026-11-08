@@ -9,8 +9,8 @@ Word→PDFの汎用性の検証用：乱数(シードを固定)で構造を変�
   - 文字を大きくすると、ページ数は減らない
   - 段落を足しても、前からあった内容は消えず、ページ数は減らない
   - 画像を大きくすると、ページ数は減らない
-文書の構造(段落の数・文字数・フォント・文字の大きさ・行間・段落の間隔・表・画像(行の中・浮動配置)・箇条書き・
-改ページ・セクション・用紙の向き)は、シードごとに乱数で決める。
+文書の構造(段落の数・文字数・フォント・文字の大きさ・行間・段落の間隔・表・縦に結合したセルの表・画像(行の中・
+浮動配置・輪郭の折り返し)・箇条書き・改ページ・セクション・段組み・用紙の向き・ヘッダーの画像)は、シードごとに乱数で決める。
 
 使い方:  python3 tests/fixtures/word-random/generate_random_word.py
 出力先:  tests/fixtures/static/word-random/*.docx と manifest.json(性質の組)。データはすべて架空。
@@ -26,6 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(HERE, "..", "word-page-fidelity"))
 import generate_word_fixtures as w  # noqa: E402
+
+sys.path.insert(0, os.path.join(HERE, "..", "word-ooxml-spec"))
+import generate_spec_word as sp  # noqa: E402  (縦に結合した表・段組み・ヘッダーの画像・輪郭の折り返しの部品)
 
 w.OUT = os.path.join(HERE, "..", "static", "word-random")
 OUT = w.OUT
@@ -54,7 +57,7 @@ def build(seed: int, *, margin_add: float = 0, size_mul: float = 1.0, extra_para
     """シードで決まる文書を作る。引数は性質の確認のための変化(余白を足す・文字を大きく・段落を足す・画像を大きく)"""
     rng = random.Random(seed)
     name = f"r{seed:03d}"
-    d = w.Doc(name, f"乱数の文書 {seed}", "D")
+    d = sp.HDoc(name, f"乱数の文書 {seed}", "D")
     d.numbering = True
     margins = tuple(rng.choice([54, 72, 90]) + margin_add for _ in range(4))
     landscape = rng.random() < 0.2
@@ -87,7 +90,7 @@ def build(seed: int, *, margin_add: float = 0, size_mul: float = 1.0, extra_para
             font = r2.choice(FONTS)
             d.p("", runs_xml=run_xml(mark() + " " + sentence(r2, r2.randint(2, 8)), font, 10.5 * size_mul), after=6)
             continue
-        kind = rng.choices(["para", "list", "table", "image", "float", "break", "section"], weights=[60, 8, 8, 6, 4, 3, 2])[0]
+        kind = rng.choices(["para", "list", "table", "image", "float", "break", "section", "vmerge", "columns", "tight"], weights=[60, 8, 8, 6, 4, 3, 2, 4, 2, 2])[0]
         font = rng.choice(FONTS)
         size = rng.choice([9, 10, 10.5, 11, 12, 14]) * size_mul
         if kind == "para":
@@ -126,13 +129,36 @@ def build(seed: int, *, margin_add: float = 0, size_mul: float = 1.0, extra_para
             d.p("", runs_xml=d.image_xml((rng.randint(0, 200), 120, 60), iw, iw, floating=True) + run_xml(mark() + " " + sentence(rng, rng.randint(4, 10)), font, size))
         elif kind == "break":
             d.page_break()
+        elif kind == "vmerge":
+            # 縦に結合したセル(1列目)を持つ表
+            rows_n = rng.randint(2, 10)
+            rows = []
+            for ri in range(rows_n):
+                first = sp.vm_cell(sp.para(run_xml(mark() + " " + sentence(rng, rng.randint(1, 6)), font, size)) if ri == 0 else "", "restart" if ri == 0 else "continue", 120)
+                rows.append([first, sp.vm_cell(sp.para(run_xml(mark() + " " + sentence(rng, rng.randint(0, 3)), font, size)), None, 140), sp.vm_cell(sp.para(run_xml(mark(), font, size)), None, 100)])
+            d.body.append(sp.vm_table(rows, [120, 140, 100]))
+        elif kind == "columns":
+            # 2段組みのセクション(段落を数個)
+            for _ in range(rng.randint(2, 6)):
+                d.p("", runs_xml=run_xml(mark() + " " + sentence(rng, rng.randint(2, 10)), font, size), after=6)
+            d.p("", runs_xml=run_xml(mark() + " 段組みの終わり", font, size), sect=sp.hf_sect(None, None, cols=2, brk=rng.choice([None, "continuous"])))
+        elif kind == "tight":
+            # 輪郭に沿った折り返し(三角形の輪郭)の浮動配置の画像
+            poly = '<wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon>'
+            iw = rng.choice([80, 120]) * image_mul
+            img = sp.anchor_image(d, (rng.randint(0, 200), 90, 90), iw, iw, 0, f'<wp:wrapTight wrapText="bothSides">{poly}</wp:wrapTight>')
+            d.p("", runs_xml=img + run_xml(mark() + " " + sentence(rng, rng.randint(6, 14)), font, size))
         elif kind == "section":
             d.p("", runs_xml=run_xml(mark() + " セクションの終わり", font, size), sect=w.sect_pr(margins=margins, landscape=landscape, brk=rng.choice([None, "continuous"])))
         if extra_images and kind == "para" and r_extra.random() < 0.5:
             # 画像を足す(段落の後ろに、行の中の画像の段落を1つ)
             for _ in range(extra_images):
                 d.p("", runs_xml=run_xml(mark_extra() + " ", font, size) + d.image_xml((r_extra.randint(0, 200), 60, 160), 90, 60))
-    d.final_sect = w.sect_pr(margins=margins, landscape=landscape)
+    # ヘッダーの画像(行の中の画像と、文字)：シードで決める(目印の文字はヘッダーに置かない。ページごとに出るため)
+    hdr = None
+    if random.Random(seed * 31).random() < 0.6:
+        hdr = d.hf_part("header", sp.para(run_xml("乱数の文書のヘッダー", "Calibri", 9)), [("logo", (200, 60, 60), 60 * image_mul, 20 * image_mul, False, (0, 0))])
+    d.final_sect = w.sect_pr(margins=margins, landscape=landscape, hdr=hdr)
     d.pages = None
     return d
 

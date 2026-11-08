@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { test as plainTest, expect as plainExpect } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
@@ -21,6 +20,7 @@ import {
 } from "@/lib/excel/merge-tables";
 import { classifyMergeFile } from "@/lib/processors/browser/excel-merge";
 import type { XlsxCellValue } from "@/lib/excel/xlsx-simple-io";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excelファイル結合（excel-merge）のテスト。
@@ -196,7 +196,7 @@ function writeXlsx(name: string, sheets: { name: string; rows: (string | number 
 }
 
 test.beforeAll(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "excel-merge-"));
+  dir = scratchDir("excel-merge");
   files.a = writeXlsx("list-a.xlsx", [
     { name: "名簿", rows: [["氏名", "部署", "年齢"], ["山田太郎", "営業", 30], ["佐藤花子", "総務", 41]] },
   ]);

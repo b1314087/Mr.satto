@@ -1,3 +1,4 @@
+import os from "node:os";
 import { defineConfig, devices } from "@playwright/test";
 
 /**
@@ -59,7 +60,10 @@ export default defineConfig({
   // 並列度を上げすぎるとルートの初回コンパイルが重なって不安定になる。
   // globalSetupでのルート事前ウォームアップと合わせて、ここでは並列度を抑える。
   retries: 1,
-  workers: process.env.CI ? 2 : 3,
+  // 並列の数は、パソコンのCPUの数を超えないようにする(上限3)。next dev とブラウザが同じCPUを使うため、
+  // CPUが2つの環境で3つ以上動かすと、PDFの変換・描画の時間が延びて、制限時間を超えたり、
+  // ブラウザが落ちたりしていた(Excel→PDF・Word→PDFの重いテストで確認)。
+  workers: process.env.CI ? 2 : Math.max(1, Math.min(3, os.cpus().length)),
   timeout: 60_000,
   expect: {
     timeout: 10_000,

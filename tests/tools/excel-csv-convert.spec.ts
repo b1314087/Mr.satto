@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { test as plainTest, expect as plainExpect } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
@@ -18,6 +17,7 @@ import { toolSeoContent } from "@/lib/seo/tool-content";
 import { AVAILABLE_TOOL_IDS } from "@/lib/tools/registry";
 import { EXCEL_CSV_MODES, EXCEL_CSV_TOOL_ID } from "@/lib/tools/excel-csv-modes";
 import sitemap from "@/app/sitemap";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel・CSV変換の総合ツール化（excel-csv-convert）のテスト。
@@ -63,7 +63,7 @@ async function switchMode(page: Page, mode: string) {
 
 // 注意: 日本語名の出力ファイル名のテストは、OSのロケールがUTF-8でない環境（LANG未設定のLinuxなど）では
 // Chromiumが名前を "download" に置き換えるため失敗する。実行時は LANG=C.UTF-8 を付ける。
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "excel-csv-"));
+const tmpDir = scratchDir("excel-csv");
 function tmpFile(name: string, content: string | Buffer): string {
   const p = path.join(tmpDir, name);
   fs.writeFileSync(p, content);

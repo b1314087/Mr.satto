@@ -2,10 +2,10 @@ import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool-runner";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel→PDF：グラフの再現（20種類のExcel）。
@@ -23,7 +23,7 @@ import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUpload
 const SRC = path.join(__dirname, "..", "fixtures", "static", "excel-chart");
 
 async function convert(page: Page, name: string): Promise<{ pdf: string; screen: string }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlchart-"));
+  const dir = scratchDir("xlchart");
   await page.goto("/tools/excel-to-pdf");
   await uploadFixture(page, path.join(SRC, name));
   await page.getByRole("button", { name: "PDFに変換する" }).waitFor({ state: "visible", timeout: 30_000 });
@@ -63,7 +63,7 @@ interface Img {
 }
 /** PDFの指定ページを72dpiの画像にする(1画素=1pt) */
 function render(pdf: string, pageNo = 1): Img {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlchart-img-"));
+  const dir = scratchDir("xlchart-img");
   execFileSync("pdftoppm", ["-r", "72", "-f", String(pageNo), "-l", String(pageNo), pdf, path.join(dir, "p")]);
   const file = fs.readdirSync(dir).find((f) => f.endsWith(".ppm"))!;
   const buf = fs.readFileSync(path.join(dir, file));

@@ -1,11 +1,10 @@
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool-runner";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { bars, components, countPixels, pageCount, pdfText, render, words, type Box, type Pred, type Word } from "../helpers/chart-pdf-inspect";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel→PDF：Excel本体が保存するファイルの構造(OOXML)をまねたExcelでの、グラフの互換性の検証(25種類)。
@@ -22,7 +21,7 @@ import { bars, components, countPixels, pageCount, pdfText, render, words, type 
 const SRC = path.join(__dirname, "..", "fixtures", "static", "excel-chart-ooxml");
 
 async function convert(page: Page, name: string, timeoutMs = 120_000): Promise<{ pdf: string; screen: string }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlooxml-"));
+  const dir = scratchDir("xlooxml");
   await page.goto("/tools/excel-to-pdf");
   await uploadFixture(page, path.join(SRC, name));
   await page.getByRole("button", { name: "PDFに変換する" }).waitFor({ state: "visible", timeout: 30_000 });

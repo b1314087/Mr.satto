@@ -4,8 +4,8 @@ import { extractPdfContent, getFillColorsUsed } from "../helpers/pdf-inspect";
 import { extractTextBoxes } from "../helpers/pdf-text-boxes";
 import { zipSync, strToU8 } from "fflate";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Word→PDF: 段落・文字・表・ヘッダー/フッターの書式（word/*.xmlから直接読む部分）のテスト。
@@ -40,7 +40,7 @@ function buildDocx(bodyXml: string, opts: { header?: string; footer?: string } =
 }
 
 async function convert(page: import("@playwright/test").Page, docx: Uint8Array, name: string) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "w2p-"));
+  const dir = scratchDir("w2p");
   const file = path.join(dir, `${name}.docx`);
   fs.writeFileSync(file, docx);
   await page.goto("/tools/word-to-pdf");

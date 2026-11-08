@@ -3,10 +3,10 @@ import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool
 import { strToU8, zipSync } from "fflate";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import zlib from "node:zlib";
 import path from "node:path";
 import type { Page } from "@playwright/test";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel→PDF: Excelの見た目の再現(書体・斜体・下線・回転・斜め罫線・リッチテキスト・印刷タイトル・
@@ -155,7 +155,7 @@ function makeRedPng(): Uint8Array {
 const RED_PNG = makeRedPng();
 
 async function convert(page: Page, xlsx: Uint8Array, opts: { keepAllSheets?: boolean } = {}): Promise<{ pdf: string; pageText: string }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlfid-"));
+  const dir = scratchDir("xlfid");
   const file = path.join(dir, "test.xlsx");
   fs.writeFileSync(file, xlsx);
   await page.goto("/tools/excel-to-pdf");
@@ -186,7 +186,7 @@ interface Img {
 }
 /** PDFの指定ページを72dpiのカラー画像にする(1画素=1pt) */
 function render(pdf: string, pageNo = 1): Img {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlimg-"));
+  const dir = scratchDir("xlimg");
   execFileSync("pdftoppm", ["-r", "72", "-f", String(pageNo), "-l", String(pageNo), pdf, path.join(dir, "p")]);
   const file = fs.readdirSync(dir).find((f) => f.endsWith(".ppm"))!;
   const buf = fs.readFileSync(path.join(dir, file));

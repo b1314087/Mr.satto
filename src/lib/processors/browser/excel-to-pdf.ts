@@ -568,19 +568,19 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
     // ---- 文字の幅は、セルのフォントの寸法で求める(src/lib/fonts/office-font-metrics.ts) ----
     // PDFに描く字形は同梱のNoto Sans JPだが、はみ出し・折り返し・「縮小して全体を表示」の判定は、Excelと同じく
     // セルのフォント(Calibri・MS Pゴシック・游ゴシック 等)の文字の幅で行う。寸法が分からない文字は、同梱のフォントの幅。
-    const metricsUnitWidth = (fontName: string | null | undefined, serif: boolean, ch: string): number => {
-      const w = fontName ? fontMetricsFor(fontName).widthPerPt(ch) : null;
+    const metricsUnitWidth = (fontName: string | null | undefined, serif: boolean, ch: string, bold = false): number => {
+      const w = fontName ? fontMetricsFor(fontName).widthPerPt(ch, bold) : null;
       return w ?? unitWidth(fontOf(serif), ch);
     };
     /** セルのフォントでの文字列の幅 */
-    const cellTextWidth = (fontName: string | null | undefined, serif: boolean, text: string, size: number): number => {
+    const cellTextWidth = (fontName: string | null | undefined, serif: boolean, text: string, size: number, bold = false): number => {
       let sum = 0;
-      for (const ch of Array.from(text)) sum += metricsUnitWidth(fontName, serif, ch);
+      for (const ch of Array.from(text)) sum += metricsUnitWidth(fontName, serif, ch, bold);
       return sum * size;
     };
     /** 文字1つの幅(sizeFactor = ページの縮小率×「縮小して全体を表示」の倍率) */
     const glyphWidth = (g: Glyph, sizeFactor: number): number =>
-      metricsUnitWidth(g.style.fontName, g.style.serif, g.ch) * g.style.fs * (g.style.vertAlign ? SCRIPT_SIZE_RATIO : 1) * sizeFactor;
+      metricsUnitWidth(g.style.fontName, g.style.serif, g.ch, g.style.bold) * g.style.fs * (g.style.vertAlign ? SCRIPT_SIZE_RATIO : 1) * sizeFactor;
     const lineWidthOf = (line: Glyph[], sizeFactor: number): number => line.reduce((sum, g) => sum + glyphWidth(g, sizeFactor), 0);
 
     // グラフの文字(chart-render.ts)。セルと同じフォントで、1文字ずつ描く(drawTextRobust)
@@ -799,7 +799,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
         const bx = x + advance * ux + shift * nx;
         const by = y + advance * uy + shift * ny;
         const color = style.color && !blackAndWhite ? pdfLib().rgb(...hexToRgb01(style.color)) : defaultColor;
-        const len = drawTextRobust(page, text, bx, by, size, color, f, style.bold, style.italic, angleDeg, (ch) => metricsUnitWidth(style.fontName, style.serif, ch) * size);
+        const len = drawTextRobust(page, text, bx, by, size, color, f, style.bold, style.italic, angleDeg, (ch) => metricsUnitWidth(style.fontName, style.serif, ch, style.bold) * size);
         if (style.underline || style.strike) {
           const thickness = Math.max(0.3, size * 0.06);
           const lineAt = (offset: number) => {
@@ -1167,8 +1167,9 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           height = defaultRowPt
             ? Math.max(defaultRowPt, needed)
             : Math.max(1, needed / lineHeightFor(defaultFontSize)) * lineHeightFor(defaultFontSize) + cellPadding * 2;
-          // Excelの行の高さの上限(409pt)
-          height = Math.min(height, 409);
+          // Excelの行の高さは、画面の点(96dpiで1点=0.75pt)の整数になる(保存される行の高さも0.75ptの倍数)。
+          // 計算した高さを、文字が欠けないよう0.75ptの倍数に切り上げる。上限は409pt
+          height = Math.min(Math.ceil(height / 0.75 - 1e-6) * 0.75, 409);
         }
         rowHeightCache.set(origRow, height);
         return height;
@@ -1262,7 +1263,7 @@ export class ExcelToPdfProcessor extends BrowserProcessor<ExcelToPdfInput, Excel
           // 列の幅ぎりぎりの文字まで「はみ出す」と判定して、使われていない右の列まで印刷範囲を広げ、
           // 「ページ数に合わせる」の倍率やページの境目がExcelとずれていた。
           const lcStyle = baseStyleOf(r, lc);
-          const need = cellTextWidth(lcStyle.fontName, lcStyle.serif, text, fontSizeFor(r, lc)) + 3 + (align?.indent ?? 0) * defaultFontSize * 0.6;
+          const need = cellTextWidth(lcStyle.fontName, lcStyle.serif, text, fontSizeFor(r, lc), lcStyle.bold) + 3 + (align?.indent ?? 0) * defaultFontSize * 0.6;
           let have = 0;
           let c = lc;
           // 最終列(値のある列)から右へ、はみ出す文字が収まるまでの列を数える

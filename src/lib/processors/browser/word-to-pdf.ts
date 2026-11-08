@@ -273,6 +273,8 @@ interface ImageBlock {
 }
 interface PageBreakBlock {
   kind: "pagebreak";
+  /** 段区切り(w:br type="column")。段組みのセクションでは次の段へ、段組みでなければ改ページ(Wordと同じ) */
+  column?: boolean;
 }
 type DocBlock = ParagraphBlock | TableBlock | ImageBlock | PageBreakBlock;
 
@@ -914,17 +916,22 @@ function blocksFromOoxml(formatting: DocxFormatting): DocBlock[] | null {
       }
       return { kind: "paragraph", runs, heading: 0, fmt: para, charFmts: chars.slice(start, end).map((c) => c.fmt), bodyIndex, ...(start > 0 ? { contOffset: start } : {}) };
     };
-    // 段落の途中の改ページ：前の部分・改ページ・続きの部分に分ける(改ページだけの段落は、改ページだけにする)
-    const breaks = [...new Set(para.pageBreaks)].filter((k) => k >= 0 && k <= chars.length).sort((x, y) => x - y);
+    // 段落の途中の改ページ・段区切り：前の部分・区切り・続きの部分に分ける(区切りだけの段落は、区切りだけにする)
+    const breaks = [
+      ...para.pageBreaks.map((k) => ({ k, column: false })),
+      ...(para.columnBreaks ?? []).map((k) => ({ k, column: true })),
+    ]
+      .filter((b) => b.k >= 0 && b.k <= chars.length)
+      .sort((x, y) => x.k - y.k);
     if (breaks.length === 0) {
       blocks.push(segment(0, chars.length));
       return;
     }
     let start = 0;
-    for (const k of breaks) {
-      if (k > start) blocks.push(segment(start, k));
-      blocks.push({ kind: "pagebreak" });
-      start = k;
+    for (const b of breaks) {
+      if (b.k > start) blocks.push(segment(start, b.k));
+      blocks.push(b.column ? { kind: "pagebreak", column: true } : { kind: "pagebreak" });
+      start = b.k;
     }
     if (chars.length > start) blocks.push(segment(start, chars.length));
   });
@@ -1169,17 +1176,83 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     let page: PDFPage = doc.addPage([pageWidth, pageHeight]);
     let cursorY = pageHeight - marginTopEff;
     /** ページごとの左の余白・本文の幅(ヘッダー/フッターをページごとの用紙で描くため) */
-    const pageGeom = new Map<PDFPage, { marginLeft: number; contentWidth: number }>();
-    pageGeom.set(page, { marginLeft, contentWidth });
+    /** ページごとの本文の左の余白・幅と、そのページが始まったときのセクション(ヘッダー・フッターを選ぶため) */
+    const pageGeom = new Map<PDFPage, { marginLeft: number; contentWidth: number; section: number }>();
+    let geomSection = 0;
+    pageGeom.set(page, { marginLeft, contentWidth, section: 0 });
+
+    // ---- 段組み(w:cols)：本文の幅を段に分け、段の下まで来たら次の段へ、最後の段の下まで来たら次のページへ ----
+    // marginLeft・contentWidth は「いま文字を置いている段」の左端・幅。secLeft・secWidth は、セクションの本文の左端・幅
+    let secLeft = marginLeft;
+    let secWidth = contentWidth;
+    let colWidths: number[] = [contentWidth];
+    let colSpaces: number[] = [];
+    let colIndex = 0;
+    /** このページ(またはセクションの始まり)の、段の上端 */
+    let colTop = cursorY;
+    let colSeparator = false;
+    /** 段組みのページで、いちばん下まで使った段の位置(段組みのセクションを終えるときに使う) */
+    let colLowest = Number.POSITIVE_INFINITY;
+    /** 段の境界線を引く場所(ページ・x・上端・下端) */
+    const separators: { page: PDFPage; x: number; top: number; bottom: number }[] = [];
+    function setupColumns(cols: { count: number; widths: number[] | null; spaces: number[]; space: number; separator: boolean } | undefined) {
+      secLeft = marginLeft;
+      secWidth = contentWidth;
+      const count = Math.max(1, cols?.count ?? 1);
+      if (count === 1 || !cols) {
+        colWidths = [secWidth];
+        colSpaces = [];
+        colSeparator = false;
+      } else {
+        colSpaces = Array.from({ length: count - 1 }, (_, i) => cols.spaces[i] ?? cols.space);
+        const totalSpace = colSpaces.reduce((a, b) => a + b, 0);
+        const widths = cols.widths && cols.widths.length === count ? cols.widths : Array(count).fill((secWidth - totalSpace) / count);
+        // 段の幅の合計が本文の幅を超えるときは、比例して縮める
+        const sum = widths.reduce((a: number, b: number) => a + b, 0) + totalSpace;
+        const k = sum > secWidth + 0.5 ? (secWidth - totalSpace) / Math.max(1, sum - totalSpace) : 1;
+        colWidths = widths.map((w: number) => Math.max(20, w * k));
+        colSeparator = cols.separator;
+      }
+      colIndex = 0;
+      colTop = cursorY;
+      colLowest = Number.POSITIVE_INFINITY;
+      marginLeft = secLeft;
+      contentWidth = colWidths[0];
+    }
+    const columnLeft = (k: number) => secLeft + colWidths.slice(0, k).reduce((a, b) => a + b, 0) + colSpaces.slice(0, k).reduce((a, b) => a + b, 0);
+    function enterColumn(k: number) {
+      if (k > colIndex) colLowest = Math.min(colLowest, cursorY);
+      colIndex = k;
+      marginLeft = columnLeft(k);
+      contentWidth = colWidths[k];
+      cursorY = colTop;
+    }
+    /** 段の境界線を、いまのページの、段の上端から下端まで引く(段組みのセクションを終えるとき・ページを変えるとき) */
+    function recordSeparators(bottom: number) {
+      if (!colSeparator || colWidths.length < 2) return;
+      for (let k = 1; k <= Math.min(colIndex, colWidths.length - 1); k++) separators.push({ page, x: columnLeft(k) - colSpaces[k - 1] / 2, top: colTop, bottom });
+    }
+    /** 次の段へ(最後の段なら、次のページへ) */
+    function nextColumnOrPage() {
+      if (colWidths.length > 1 && colIndex < colWidths.length - 1) enterColumn(colIndex + 1);
+      else newPage();
+    }
 
     function newPage() {
       if (doc.getPageCount() >= MAX_PAGE_COUNT) {
         throw new Error(`変換できるページ数の上限は${MAX_PAGE_COUNT}ページです。`);
       }
       flushFrontDrawsRef?.(page);
+      recordSeparators(bottomLimit);
       page = doc.addPage([pageWidth, pageHeight]);
-      pageGeom.set(page, { marginLeft, contentWidth });
+      pageGeom.set(page, { marginLeft: secLeft, contentWidth: secWidth, section: geomSection });
       cursorY = pageHeight - marginTopEff;
+      colTop = cursorY;
+      colLowest = Number.POSITIVE_INFINITY;
+      if (colWidths.length > 1) {
+        colIndex = 0;
+        enterColumn(0);
+      }
     }
 
     /** 前面の図形を描く関数(下で用意する。ページを変える前に、そのページの前面の図形を描く) */
@@ -1206,8 +1279,9 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     /** 自然にページを変える下の限界(ページの下端からの距離)。余白にははみ出さない */
     const naturalLimit = () => bottomLimit;
     /** 自然にページを変える(下に届いた) */
+    /** 内容が段・ページの下に入らないとき：段組みなら次の段へ、そうでなければ次のページへ */
     function overflowPage() {
-      newPage();
+      nextColumnOrPage();
     }
 
     function ensureSpace(height: number) {
@@ -1233,7 +1307,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       return chars.map((c) => {
         if (c.ch === "\t" || c.ch === "\n") return 0;
         if (c.ch === OBJECT_CHAR) return inlineImageBox(c)?.w ?? 0;
-        const w = metricsOfChar(c).widthPerPt(c.ch);
+        const w = metricsOfChar(c).widthPerPt(c.ch, c.bold);
         return w !== null ? w * drawSize(c) : font.widthOfTextAtSize(c.ch, drawSize(c));
       });
     }
@@ -1543,12 +1617,12 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         const room = cursorY - before - limit;
         const fullPage = topY - limit;
         // 段落を分割しない(keepLines)：ページに収まらないが、1ページには収まる → 段落の前でページを変える
-        if (fmt?.keepLines && totalHeight > room + 0.01 && totalHeight <= fullPage) newPage();
+        if (fmt?.keepLines && totalHeight > room + 0.01 && totalHeight <= fullPage) overflowPage();
         // 次の段落と分離しない(keepNext)：この段落はページに入るが、次の段落の最初の行が同じページに入らない → 段落の前でページを変える
         // (この段落自体がページに入らないときは、段落の後ろの部分が次の段落と同じページに行くので、何もしない)
-        else if (keepWithNextHeight > 0 && totalHeight <= room + 0.01 && totalHeight + keepWithNextHeight > room + 0.01 && totalHeight + keepWithNextHeight <= fullPage) newPage();
+        else if (keepWithNextHeight > 0 && totalHeight <= room + 0.01 && totalHeight + keepWithNextHeight > room + 0.01 && totalHeight + keepWithNextHeight <= fullPage) overflowPage();
         // 改ページ時1行残して段落を区切らない(widowControl)：1行目だけがこのページに残る → 段落の前でページを変える
-        else if (widowOn(fmt) && placed.lines.length >= 2 && placed.heights[0] <= room + 0.01 && placed.heights[0] + placed.heights[1] > room + 0.01) newPage();
+        else if (widowOn(fmt) && placed.lines.length >= 2 && placed.heights[0] <= room + 0.01 && placed.heights[0] + placed.heights[1] > room + 0.01) overflowPage();
       }
       if (before > 0 && cursorY < topY - 0.5) cursorY -= before;
 
@@ -1800,6 +1874,78 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
 
       const lastRow = layouts.length - 1;
       const headerRows = Math.min(t.headerRows ?? 0, layouts.length);
+
+      // ---- 縦に結合したセル(w:vMerge)：結合の範囲(開始の行〜最後の行)を、ページごとの「区間」に分けて描く ----
+      // 結合したセルの文字は、結合の範囲の行を描くあいだ、ページの中で使える高さに入るだけ描き、ページが変わったら
+      // 次のページの区間に続きを描く(以前は、結合したセルを、開始の行のページにまとめて描いていたため、範囲がページを
+      // またぐと、紙の下にはみ出していた)。
+      interface MergeGroup { l: CellLayout; r0: number; r1: number; pos: number; segTop: number | null; split: boolean }
+      const groups: MergeGroup[] = [];
+      layouts.forEach((row, ri) => {
+        for (const l of row) {
+          if (l.cell.vMerge !== "restart") continue;
+          let r1 = ri;
+          for (let r = ri + 1; r < layouts.length; r++) {
+            if (!layouts[r].find((x) => x.col === l.col && x.cell.vMerge === "continue")) break;
+            r1 = r;
+          }
+          groups.push({ l, r0: ri, r1, pos: 0, segTop: null, split: false });
+        }
+      });
+      const groupsAt = (ri: number) => groups.filter((g) => g.r0 <= ri && ri <= g.r1);
+      /** 結合したセルの、ページの中の区間(上端 g.segTop 〜 下端 bottom)を描く。final は結合の範囲の最後の区間 */
+      const flushGroup = (g: MergeGroup, bottom: number, final: boolean) => {
+        if (g.segTop === null) return;
+        const l = g.l;
+        const top = g.segTop;
+        const h = Math.max(0, top - bottom);
+        const x = colX(l.col);
+        const w = spanWidth(l.col, l.span);
+        if (l.cell.fill) page.drawRectangle({ x, y: bottom, width: w, height: h, color: hexToRgb(l.cell.fill) });
+        const lastCol = l.col + l.span >= grid.length;
+        const side = (own: BorderFmt | null | undefined, outer: BorderFmt | null, inner: BorderFmt | null, isEdge: boolean) => (own !== undefined ? own : isEdge ? outer : inner);
+        const tb = side(l.cell.borders.top, t.borders.top, t.borders.insideH, g.r0 === 0);
+        const bb = side(l.cell.borders.bottom, t.borders.bottom, t.borders.insideH, g.r1 >= lastRow);
+        const lb = side(l.cell.borders.left, t.borders.left, t.borders.insideV, l.col === 0);
+        const rb = side(l.cell.borders.right, t.borders.right, t.borders.insideV, lastCol);
+        if (tb) drawBorderLine(x, top, x + w, top, tb);
+        if (bb) drawBorderLine(x, bottom, x + w, bottom, bb);
+        if (lb) drawBorderLine(x, top, x, bottom, lb);
+        if (rb) drawBorderLine(x + w, top, x + w, bottom, rb);
+        // 文字：最後の区間は残りをすべて(行の高さは足りるようにしてある)、途中の区間は入るだけ
+        const end = final ? l.lines.length : fitLines(l, g.pos, h);
+        const restH = restNeed(l, g.pos) - t.padY * 2;
+        const offset = final && !g.split ? (l.cell.vAlign === "center" ? Math.max(0, (h - t.padY * 2 - restH) / 2) : l.cell.vAlign === "bottom" ? Math.max(0, h - t.padY * 2 - restH) : 0) : 0;
+        let cy = top - t.padY - offset;
+        for (let k = g.pos; k < end; k++) {
+          const ln = l.lines[k];
+          const p = l.paras[ln.pi];
+          paintLine(p.para.chars, p.placed.lines[ln.li], x + t.padX, cy, p.placed.sizes[ln.li], p.placed.extras[ln.li]);
+          cy -= ln.h + ln.after;
+        }
+        g.pos = end;
+        g.segTop = null;
+        if (!final) g.split = true;
+      };
+      /** ページを変える前に、結合したセルの、このページの区間を描く */
+      const flushGroupsForPageBreak = () => {
+        for (const g of groups) if (g.segTop !== null) flushGroup(g, cursorY, false);
+      };
+      /** 行 ri の高さ(結合の範囲の最後の行は、結合したセルの残りの文字が入るように、必要なら高くする) */
+      const effectiveRowHeight = (ri: number, rowTop: number) => {
+        let h = rowHeights[ri];
+        for (const g of groups) {
+          if (g.r1 !== ri) continue;
+          const segTop = g.segTop ?? rowTop;
+          h = Math.max(h, restNeed(g.l, g.pos) - (segTop - rowTop));
+        }
+        return h;
+      };
+      const tablePageBreak = (ri: number) => {
+        flushGroupsForPageBreak();
+        overflowPage();
+        if (ri >= headerRows) repeatHeader();
+      };
       /** ページの先頭に、タイトル行を繰り返して描く */
       let repeating = false;
       const repeatHeader = () => {
@@ -1812,7 +1958,6 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       /** 行の途中でページを分けられるか。「行の途中で改ページしない」(w:cantSplit)の行でも、1ページに入らない高さなら分ける(Wordと同じ) */
       const splittable = (ri: number) => {
         if (t.fixedLineHeight !== undefined || t.rows[ri].exactHeight) return false;
-        if (layouts[ri].some((l) => l.cell.vMerge !== null)) return false;
         const fullRoom = pageHeight - marginTopEff - naturalLimit() - (ri >= headerRows ? headerHeight : 0);
         return !t.rows[ri].cantSplit || rowHeights[ri] > fullRoom + 0.01;
       };
@@ -1827,59 +1972,67 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         return k;
       };
       const restNeed = (l: CellLayout, from: number) => t.padY * 2 + l.lines.slice(from).reduce((a, x) => a + x.h + x.after, 0);
+      /** 行の中の、結合していないセル(縦に結合したセルは、結合の区間として別に描く) */
+      const ownCells = (ri: number) => layouts[ri].map((l, c) => ({ l, c })).filter((x) => x.l.cell.vMerge === null);
       const drawRowWithPaging = (ri: number) => {
-        const rowHeight = rowHeights[ri];
         // Wordが保存したとき、この行の前でページが変わった
-        if (t.rowBreaks?.[ri] && savedBreaksAvailable && !atPageTop() && savedBreakConsistent(cursorY - naturalLimit(), rowHeight)) {
+        if (t.rowBreaks?.[ri] && savedBreaksAvailable && !atPageTop() && savedBreakConsistent(cursorY - naturalLimit(), rowHeights[ri])) {
+          flushGroupsForPageBreak();
           newPage();
           if (ri >= headerRows) repeatHeader();
         }
+        const rowHeight = effectiveRowHeight(ri, cursorY);
         if (cursorY - rowHeight >= naturalLimit() - 0.01) {
           drawRow(ri);
           return;
         }
         if (!splittable(ri)) {
           // 分けられない行：次のページへ送る
-          if (!atPageTop()) {
-            overflowPage();
-            if (ri >= headerRows) repeatHeader();
-          }
+          if (!atPageTop()) tablePageBreak(ri);
           drawRow(ri);
           return;
         }
-        // 行の途中でページを分ける：各セルの、ページに入るところまでの行を描き、残りを次のページに描く(Wordと同じ)
+        // 行の途中でページを分ける：各セルの、ページに入るところまでの行を描き、残りを次のページに描く(Wordと同じ)。
+        // 縦に結合したセルは、ページを変えるときに、その区間を描く(flushGroupsForPageBreak)
         let pos = layouts[ri].map(() => 0);
         let drawn = 0;
         for (let guard = 0; guard < 500; guard++) {
           const room = cursorY - naturalLimit();
-          const need = Math.max(...layouts[ri].map((l, c) => restNeed(l, pos[c])), rowHeight - drawn);
+          const own = ownCells(ri);
+          // 残りの高さ：このセルの残りの文字・行の高さの指定の残り・結合したセル(この行で終わるもの)の残りの文字
+          const groupNeed = Math.max(0, ...groupsAt(ri).filter((g) => g.r1 === ri).map((g) => restNeed(g.l, g.pos) - ((g.segTop ?? cursorY) - cursorY)));
+          const need = Math.max(...own.map(({ l, c }) => restNeed(l, pos[c])), rowHeights[ri] - drawn, groupNeed, 0);
           if (need <= room + 0.01) {
             drawRowPart(ri, pos, null, need);
+            for (const g of groupsAt(ri)) if (g.r1 === ri) flushGroup(g, cursorY, true);
             return;
           }
-          let take = layouts[ri].map((l, c) => fitLines(l, pos[c], room));
-          if (take.every((k, c) => k === pos[c])) {
+          let take = layouts[ri].map((l, c) => (l.cell.vMerge === null ? fitLines(l, pos[c], room) : pos[c]));
+          const groupProgress = groupsAt(ri).some((g) => fitLines(g.l, g.pos, (g.segTop ?? cursorY) - naturalLimit()) > g.pos);
+          if (own.every(({ c }) => take[c] === pos[c]) && !groupProgress) {
             if (!atPageTop()) {
-              overflowPage();
-              if (ri >= headerRows) repeatHeader();
+              tablePageBreak(ri);
               continue;
             }
             // ページの先頭でも1行も入らない(行が高すぎる)：各セル1行ずつ描いて進める
-            take = layouts[ri].map((l, c) => Math.min(l.lines.length, pos[c] + 1));
+            take = layouts[ri].map((l, c) => (l.cell.vMerge === null ? Math.min(l.lines.length, pos[c] + 1) : pos[c]));
           }
-          const partH = Math.max(...layouts[ri].map((l, c) => t.padY * 2 + l.lines.slice(pos[c], take[c]).reduce((a, x) => a + x.h + x.after, 0)));
-          drawRowPart(ri, pos, take, Math.min(partH, Math.max(room, partH)));
-          drawn += partH;
+          const partH = Math.max(0, ...own.map(({ l, c }) => t.padY * 2 + l.lines.slice(pos[c], take[c]).reduce((a, x) => a + x.h + x.after, 0)));
+          // 結合したセルの区間も、このページの下端まで使う
+          const partHeight = groupsAt(ri).length > 0 ? Math.max(partH, room) : partH;
+          drawRowPart(ri, pos, take, partHeight);
+          drawn += partHeight;
           pos = take;
-          overflowPage();
-          if (ri >= headerRows) repeatHeader();
+          tablePageBreak(ri);
         }
       };
       /** 行の一部(各セルの、行 from から to の手前まで。to が null なら最後まで)を、高さ h で描く */
       const drawRowPart = (ri: number, from: number[], to: number[] | null, h: number) => {
         const rowTop = cursorY;
         const draws: (() => void)[] = [];
+        for (const g of groupsAt(ri)) if (g.segTop === null) g.segTop = rowTop;
         layouts[ri].forEach((l, c) => {
+          if (l.cell.vMerge !== null) return;
           const x = colX(l.col);
           const w = spanWidth(l.col, l.span);
           if (l.cell.fill) page.drawRectangle({ x, y: rowTop - h, width: w, height: h, color: hexToRgb(l.cell.fill) });
@@ -1908,11 +2061,15 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         cursorY = rowTop - h;
       };
       const drawRow = (ri: number) => {
-        const rowHeight = rowHeights[ri];
         const rowTop = cursorY;
+        // 縦に結合したセル：結合の区間を始める(タイトル行を繰り返すときは、以前どおり、結合の範囲をまとめて描く)
+        const useGroups = !repeating;
+        const rowHeight = useGroups ? effectiveRowHeight(ri, rowTop) : rowHeights[ri];
+        if (useGroups) for (const g of groupsAt(ri)) if (g.segTop === null) g.segTop = rowTop;
         const draws: (() => void)[] = [];
         for (const l of layouts[ri]) {
           if (l.cell.vMerge === "continue") continue;
+          if (useGroups && l.cell.vMerge === "restart") continue;
           let spanRows = 1;
           if (l.cell.vMerge === "restart") {
             for (let r = ri + 1; r < layouts.length; r++) {
@@ -1954,6 +2111,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         }
         for (const d of draws) d();
         cursorY = rowTop - rowHeight;
+        if (useGroups) for (const g of groupsAt(ri)) if (g.r1 === ri) flushGroup(g, cursorY, true);
       };
       // 表の最初の行の前でページが変わった記録 → 表の前でページを変える
       if (t.rowBreaks?.[0] && savedBreaksAvailable && !atPageTop() && savedBreakConsistent(cursorY - naturalLimit(), rowHeights[0] ?? 0)) newPage();
@@ -2016,14 +2174,29 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     }
 
     // ---- ヘッダー / フッター ----
-    const headerFooterParts = (hf: HeaderFooterFmt | undefined) => (hf && hf.paragraphs.some((p) => p.runs.some((r) => r.text.trim() !== "")) ? hf : undefined);
+    // セクションごとのヘッダー・フッター(docx-format の sectionHeaders。前のセクションから引き継いだものを含む)。
+    // セクションの数が本文の構造と合わないときは、最初のセクションのものを、すべてのページに使う(以前の方式)
+    const hfSections =
+      formatting.sectionHeaders.length > 0 && formatting.sectionHeaders.length === structure.sections.length
+        ? formatting.sectionHeaders
+        : [{ refs: formatting.refs ?? { headers: {}, footers: {}, titlePg: false, headerDistancePt: 36, footerDistancePt: 36 }, headers: formatting.headers, footers: formatting.footers }];
+    const hfOfSection = (i: number) => hfSections[Math.min(i, hfSections.length - 1)];
+    /** ヘッダー・フッターの段落の中の画像(行の中に置く画像)：部品の参照(header1.xml.rels など)で、画像のファイルを決める */
+    const hfImage = (hf: HeaderFooterFmt) => (o: ParaObject): InlineImageRef | undefined => {
+      if (o.anchored) return undefined; // 浮動配置の画像は、行の中に置かない(別に描く)
+      const rel = o.rId ? hf.rels[o.rId] : undefined;
+      if (!rel || rel.external) return undefined;
+      return { dataUri: rel.target, ordinal: -1, ...(o.widthPt > 0 && o.heightPt > 0 ? { w: o.widthPt, h: o.heightPt } : {}) };
+    };
+    const headerFooterParts = (hf: HeaderFooterFmt | undefined) =>
+      hf && hf.paragraphs.some((p) => p.runs.some((r) => r.text.trim() !== "" && r.text.replace(new RegExp(OBJECT_CHAR, "g"), "").trim() !== "") || p.objects.length > 0) ? hf : undefined;
     const hfMeasure = (hf: HeaderFooterFmt | undefined, pageNo: number, pageCount: number) => {
       const out: { chars: FlatChar[]; placed: PlacedLines; fmt: ParaFmt }[] = [];
       let total = 0;
       if (!hf) return { out, total };
       for (const p of hf.paragraphs) {
         const size = p.baseSizePt ?? BODY_SIZE;
-        const chars = fmtParagraphChars(p, { size, bold: false }, pageNo, pageCount);
+        const chars = fmtParagraphChars(p, { size, bold: false }, pageNo, pageCount, { image: hfImage(hf) });
         const left = Math.max(0, p.leftPt ?? 0);
         const placed = placeParagraph(chars, {
           firstX: Math.max(0, left + (p.firstLinePt ?? 0)),
@@ -2039,16 +2212,21 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       }
       return { out, total };
     };
-    const refs = formatting.refs;
-    const headerKinds = (["default", "first", "even"] as const).map((k) => headerFooterParts(formatting.headers[k]));
-    const footerKinds = (["default", "first", "even"] as const).map((k) => headerFooterParts(formatting.footers[k]));
-    const maxHeaderH = Math.max(0, ...headerKinds.map((h) => hfMeasure(h, 1, 1).total));
-    const maxFooterH = Math.max(0, ...footerKinds.map((f) => hfMeasure(f, 1, 1).total));
-    headerReserve = maxHeaderH > 0 ? (refs?.headerDistancePt ?? 36) + maxHeaderH : 0;
-    footerReserve = maxFooterH > 0 ? (refs?.footerDistancePt ?? 36) + maxFooterH : 0;
-    if (maxHeaderH > 0) marginTopEff = Math.max(marginTop, headerReserve);
-    if (maxFooterH > 0) bottomLimit = Math.max(marginBottom, footerReserve);
-    cursorY = pageHeight - marginTopEff;
+    const kindsOf = (i: number) => {
+      const hf = hfOfSection(i);
+      return {
+        refs: hf.refs,
+        headers: (["default", "first", "even"] as const).map((k) => headerFooterParts(hf.headers[k])),
+        footers: (["default", "first", "even"] as const).map((k) => headerFooterParts(hf.footers[k])),
+      };
+    };
+    /** セクションの、ヘッダー・フッターが本文を押し下げる/押し上げる位置(ヘッダーの距離＋ヘッダーの高さ。無ければ0) */
+    function reservesOf(i: number): { header: number; footer: number } {
+      const k = kindsOf(i);
+      const maxH = Math.max(0, ...k.headers.map((h) => hfMeasure(h, 1, 1).total));
+      const maxF = Math.max(0, ...k.footers.map((f) => hfMeasure(f, 1, 1).total));
+      return { header: maxH > 0 ? k.refs.headerDistancePt + maxH : 0, footer: maxF > 0 ? k.refs.footerDistancePt + maxF : 0 };
+    }
 
     // ---- セクション(用紙設定の区切り)の切り替え ----
     // Wordの文書は、途中で用紙の大きさ・向き・余白を変えられる(セクション区切り)。区切りの種類が「次のページから」
@@ -2068,16 +2246,26 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       marginLeft = sec.margins.left;
       marginRight = sec.margins.right;
       contentWidth = Math.max(50, pageWidth - marginLeft - marginRight);
+      // 段組みのセクションを終える：次の内容は、いちばん下まで使った段の下から始める(段の高さをそろえる処理はしない)
+      if (colWidths.length > 1) {
+        const bottomY = Math.min(colLowest, cursorY);
+        recordSeparators(bottomY);
+        cursorY = bottomY;
+      }
+      ({ header: headerReserve, footer: footerReserve } = reservesOf(index));
       marginTopEff = headerReserve > 0 ? Math.max(marginTop, headerReserve) : marginTop;
       bottomLimit = footerReserve > 0 ? Math.max(marginBottom, footerReserve) : marginBottom;
+      setupColumns(sec.columns);
       if (!breakPage) {
-        pageGeom.set(page, pageGeom.get(page) ?? { marginLeft, contentWidth });
+        // 「現在の位置から」のセクション：ページのヘッダー・フッターは、ページが始まったときのセクションのまま(Wordと同じ)
+        pageGeom.set(page, pageGeom.get(page) ?? { marginLeft: secLeft, contentWidth: secWidth, section: geomSection });
         return;
       }
+      geomSection = index;
       if (atPageTopOf(page)) {
         // まだ何も描いていないページは、そのページの用紙を新しいセクションの用紙にする
         page.setSize(pageWidth, pageHeight);
-        pageGeom.set(page, { marginLeft, contentWidth });
+        pageGeom.set(page, { marginLeft: secLeft, contentWidth: secWidth, section: index });
         cursorY = pageHeight - marginTopEff;
       } else newPage();
       // 奇数/偶数ページから：ページ番号が合わないときは、白紙のページを1枚はさむ(Wordと同じ)
@@ -2119,6 +2307,14 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
           if (ref) imageKeys.add(ref.dataUri);
         }
     }
+    // ヘッダー・フッターの画像(行の中の画像・浮動配置の画像。部品ごとの参照で、画像のファイルを決める)
+    for (const sec of hfSections)
+      for (const hf of [...Object.values(sec.headers), ...Object.values(sec.footers)])
+        for (const p of hf?.paragraphs ?? [])
+          for (const o of p.objects) {
+            const rel = o.rId ? hf!.rels[o.rId] : undefined;
+            if (rel && !rel.external) imageKeys.add(rel.target);
+          }
     // 文書の中の画像のファイル(word/media/…)を、使うものだけ取り出す(ブラウザの中で。外には送らない)
     const mediaFiles = new Map<string, Uint8Array>();
     const wantedMedia = [...imageKeys].filter((k) => !k.startsWith("data:"));
@@ -2139,6 +2335,14 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       const img = await embedImageKey(key);
       if (img) embeddedImages.set(key, img);
     }
+
+    // 最初のセクションの、ヘッダー・フッターの高さの分だけ、本文の上下の位置を決める(画像の大きさも含めるため、画像を埋め込んだあと)
+    ({ header: headerReserve, footer: footerReserve } = reservesOf(0));
+    if (headerReserve > 0) marginTopEff = Math.max(marginTop, headerReserve);
+    if (footerReserve > 0) bottomLimit = Math.max(marginBottom, footerReserve);
+    cursorY = pageHeight - marginTopEff;
+    setupColumns(structure.sections[0]?.columns);
+
     /** 浮動配置(wp:anchor)の画像の通し番号 → その位置・大きさ・折り返し */
     const floatByImage = new Map<number, FloatObject>();
     if (imageSizesUsable) for (const f of formatting.floats) if (f.kind === "image" && f.imageOrdinal !== null) floatByImage.set(f.imageOrdinal, f);
@@ -2199,6 +2403,21 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       return { x, top };
     }
 
+    /**
+     * 画像を、ページの中身のいちばん下(文字の背面)に描く。ページの描画の命令の列の先頭に、画像を描く命令を入れる
+     * (ヘッダー/フッターは本文のあとに描くため、そのまま描くと本文の文字の上に重なってしまう)
+     */
+    function drawImageBehind(pg: PDFPage, img: PdfLibTypes.PDFImage, x: number, y: number, w: number, h: number) {
+      const lib = pdfLib();
+      const name = pg.node.newXObject("Image", img.ref);
+      const ops = [lib.pushGraphicsState(), ...lib.drawImage(name, { x, y, width: w, height: h, rotate: lib.degrees(0), xSkew: lib.degrees(0), ySkew: lib.degrees(0) }), lib.popGraphicsState()];
+      const ref = doc.context.register(doc.context.contentStream(ops));
+      pg.node.normalize();
+      const contents = pg.node.Contents();
+      if (contents instanceof lib.PDFArray) contents.insert(0, ref);
+      else pg.drawImage(img, { x, y, width: w, height: h });
+    }
+
     /** 浮動配置の画像・図形・テキストボックスを描く */
     function drawFloatObject(f: FloatObject, x: number, top: number) {
       const w = f.widthPt;
@@ -2236,6 +2455,64 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     }
 
     /** 段落に置かれた浮動配置を、いまのページに置く(位置を決めて描き、文字が回り込む領域を記録する) */
+    /**
+     * 浮動配置の物の、文字を置かない範囲。四角形の折り返しは、物の外接の四角形(＋周りの間隔)。
+     * 外周(tight)・内部(through)の折り返しで輪郭(wp:wrapPolygon)があるときは、物の高さを細い帯に分け、
+     * 帯ごとに輪郭の左右の端を求める(輪郭に沿って文字が近づく)。文字を置く側の指定(左だけ・右だけ・広い方だけ)にも従う。
+     */
+    function exclusionsOf(f: FloatObject, x: number, top: number): { x1: number; x2: number; top: number; bottom: number; band: boolean }[] {
+      const band = f.wrapKind === "topAndBottom";
+      const sideAdjust = (x1: number, x2: number): [number, number] => {
+        const colL = marginLeft;
+        const colR = marginLeft + contentWidth;
+        let side = f.wrapSide;
+        if (side === "largest") side = x1 - colL >= colR - x2 ? "left" : "right";
+        if (side === "left") return [x1, Math.max(x2, pageWidth)];
+        if (side === "right") return [Math.min(x1, 0), x2];
+        return [x1, x2];
+      };
+      const poly = (f.wrapKind === "tight" || f.wrapKind === "through") && f.polygon ? f.polygon : null;
+      if (!poly || band) {
+        const [x1, x2] = band ? [x - f.dist.left, x + f.widthPt + f.dist.right] : sideAdjust(x - f.dist.left, x + f.widthPt + f.dist.right);
+        return [{ x1, x2, top: top + f.dist.top, bottom: top - f.heightPt - f.dist.bottom, band }];
+      }
+      // 輪郭の、高さ y0〜y1(0〜1)の帯の中での左右の端(0〜1)
+      const extentIn = (y0: number, y1: number): [number, number] | null => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (let i = 0; i < poly.length; i++) {
+          const [ax, ay] = poly[i];
+          const [bx, by] = poly[(i + 1) % poly.length];
+          // 辺のうち、帯の中にある部分の端の点
+          const t0 = ay === by ? 0 : Math.max(0, Math.min(1, (y0 - ay) / (by - ay)));
+          const t1 = ay === by ? 1 : Math.max(0, Math.min(1, (y1 - ay) / (by - ay)));
+          for (const t of [t0, t1]) {
+            const py = ay + (by - ay) * t;
+            if (py < y0 - 1e-9 || py > y1 + 1e-9) continue;
+            const px = ax + (bx - ax) * t;
+            lo = Math.min(lo, px);
+            hi = Math.max(hi, px);
+          }
+          if (ay >= y0 && ay <= y1) {
+            lo = Math.min(lo, ax);
+            hi = Math.max(hi, ax);
+          }
+        }
+        return lo <= hi ? [lo, hi] : null;
+      };
+      const STRIPS = 16;
+      const out: { x1: number; x2: number; top: number; bottom: number; band: boolean }[] = [];
+      for (let i = 0; i < STRIPS; i++) {
+        const y0 = i / STRIPS;
+        const y1 = (i + 1) / STRIPS;
+        const e = extentIn(y0, y1);
+        if (!e) continue;
+        const [x1, x2] = sideAdjust(x + e[0] * f.widthPt - f.dist.left, x + e[1] * f.widthPt + f.dist.right);
+        out.push({ x1, x2, top: top - y0 * f.heightPt + (i === 0 ? f.dist.top : 0), bottom: top - y1 * f.heightPt - (i === STRIPS - 1 ? f.dist.bottom : 0), band: false });
+      }
+      return out;
+    }
+
     function placeFloats(bodyIndex: number | undefined, paraTopY: number, paraLeftX: number) {
       if (bodyIndex === undefined || !formattingMatched) return;
       for (const f of formatting.floats) {
@@ -2245,16 +2522,7 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         const pg = page;
         if (f.wrap === "none" && !f.behind) frontDraws.push({ page: pg, draw: () => drawFloatObject(f, x, top) });
         else drawFloatObject(f, x, top);
-        if (f.wrap !== "none") {
-          exclusions.push({
-            page: pg,
-            x1: x - f.dist.left,
-            x2: x + f.widthPt + f.dist.right,
-            top: top + f.dist.top,
-            bottom: top - f.heightPt - f.dist.bottom,
-            band: f.wrap === "topAndBottom",
-          });
-        }
+        if (f.wrap !== "none") for (const ex of exclusionsOf(f, x, top)) exclusions.push({ page: pg, ...ex });
       }
     }
 
@@ -2337,7 +2605,8 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
         currentSection = sec;
       }
       if (block.kind === "pagebreak") {
-        newPage();
+        if (block.column) nextColumnOrPage();
+        else newPage();
         prevStyleId = undefined;
         continue;
       }
@@ -2364,36 +2633,68 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
     }
 
     // ページごとにヘッダー/フッターを描く（ページ番号・総ページ数は、ここで実際の数に置き換える）
+    // どのヘッダー/フッターを使うか：そのページが始まったときのセクションの、先頭ページ用(そのセクションの最初のページで、
+    // w:titlePg があるとき)・偶数ページ用(w:evenAndOddHeaders があり、偶数ページのとき)・既定、の順に選ぶ(Wordと同じ)
     {
       const pages = doc.getPages();
       const pageCount = pages.length;
-      const pick = (kinds: (HeaderFooterFmt | undefined)[], pageNo: number) => {
-        const [dflt, first, even] = kinds;
-        if (refs?.titlePg && pageNo === 1) return first;
-        if (formatting.evenAndOdd && pageNo % 2 === 0) return even;
-        return dflt;
+      let prevSection = -1;
+      /** ヘッダー/フッターの段落の中の、浮動配置の画像を描く(文字の背面の画像は、ページの中身のいちばん下に描く) */
+      const drawHfFloats = (hf: HeaderFooterFmt, para: ParaFmt, paraTopY: number) => {
+        for (const o of para.objects) {
+          if (!o.anchored || !o.float || o.float.kind !== "image") continue;
+          const rel = o.rId ? hf.rels[o.rId] : undefined;
+          const img = rel && !rel.external ? embeddedImages.get(rel.target) : undefined;
+          if (!img) continue;
+          const { x, top } = floatPosition(o.float, paraTopY, marginLeft);
+          if (o.float.behind) drawImageBehind(page, img, x, top - o.float.heightPt, o.float.widthPt, o.float.heightPt);
+          else page.drawImage(img, { x, y: top - o.float.heightPt, width: o.float.widthPt, height: o.float.heightPt });
+        }
       };
       pages.forEach((pg, idx) => {
         page = pg;
         const geom = pageGeom.get(pg);
+        const si = geom?.section ?? 0;
+        const firstOfSection = si !== prevSection;
+        prevSection = si;
+        const sec = structure.sections[si];
+        if (sec) {
+          pageWidth = sec.pageWidthPt;
+          marginTop = sec.margins.top;
+          marginBottom = sec.margins.bottom;
+          marginLeft = sec.margins.left;
+          marginRight = sec.margins.right;
+        }
         if (geom) {
           marginLeft = geom.marginLeft;
           contentWidth = geom.contentWidth;
         }
         pageHeight = pg.getSize().height;
+        pageWidth = pg.getSize().width;
         const pageNo = idx + 1;
-        const header = hfMeasure(pick(headerKinds, pageNo), pageNo, pageCount);
-        let y = pageHeight - (refs?.headerDistancePt ?? 36);
+        const k = kindsOf(si);
+        const pick = (kinds: (HeaderFooterFmt | undefined)[]) => {
+          const [dflt, first, even] = kinds;
+          if (k.refs.titlePg && firstOfSection) return first;
+          if (formatting.evenAndOdd && pageNo % 2 === 0) return even;
+          return dflt;
+        };
+        const headerHf = pick(k.headers);
+        const header = hfMeasure(headerHf, pageNo, pageCount);
+        let y = pageHeight - k.refs.headerDistancePt;
         for (const item of header.out) {
+          if (headerHf) drawHfFloats(headerHf, item.fmt, y);
           item.placed.lines.forEach((line, i) => {
             paintLine(item.chars, line, marginLeft, y, item.placed.sizes[i], item.placed.extras[i]);
             y -= item.placed.heights[i];
           });
           y -= item.fmt.afterPt ?? 0;
         }
-        const footer = hfMeasure(pick(footerKinds, pageNo), pageNo, pageCount);
-        y = (refs?.footerDistancePt ?? 36) + footer.total;
+        const footerHf = pick(k.footers);
+        const footer = hfMeasure(footerHf, pageNo, pageCount);
+        y = k.refs.footerDistancePt + footer.total;
         for (const item of footer.out) {
+          if (footerHf) drawHfFloats(footerHf, item.fmt, y);
           item.placed.lines.forEach((line, i) => {
             paintLine(item.chars, line, marginLeft, y, item.placed.sizes[i], item.placed.extras[i]);
             y -= item.placed.heights[i];
@@ -2403,6 +2704,9 @@ export class WordToPdfProcessor extends BrowserProcessor<WordToPdfInput, WordToP
       });
     }
 
+    // 段の境界線(w:sep)
+    recordSeparators(Math.min(colLowest, cursorY));
+    for (const sp of separators) sp.page.drawLine({ start: { x: sp.x, y: sp.top }, end: { x: sp.x, y: sp.bottom }, thickness: 0.5, color: INK });
     // 文字の前面に置く図形を描く(まだ描いていないページの分)
     for (const pg of doc.getPages()) flushFrontDraws(pg);
     if (savedBreaksIgnored > 0) {

@@ -4,7 +4,7 @@ import path from "node:path";
 import { audit, convert, type WordExpect } from "../helpers/word-audit";
 
 /**
- * Word→PDF：OOXMLの仕様に沿った検証(12種類のDOCX)。
+ * Word→PDF：OOXMLの仕様に沿った検証(25種類のDOCX)。
  *
  * テスト用のDOCXと期待値は tests/fixtures/static/word-ooxml-spec/(tests/fixtures/word-ooxml-spec/generate_spec_word.py が作る)。
  * 期待値は、Mr.Sattoの変換結果ではなく、OOXMLの各要素の意味と、計算で決まるレイアウトから決めたもの:

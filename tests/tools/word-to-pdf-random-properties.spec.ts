@@ -1,10 +1,10 @@
 import { test, expect } from "../fixtures/premium-test";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { clickAndDownload, uploadFixture } from "../helpers/tool-runner";
 import { pageSizes, words, type Word } from "../helpers/chart-pdf-inspect";
 import { textLines } from "../helpers/word-audit";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Word→PDF：乱数で構造を変えた文書(6組×5)で、レイアウトの共通の処理が、特定の文書に依らず成り立つべき性質を確かめる。
@@ -26,7 +26,7 @@ const manifest: { seed: number; base: string; variants: { file: string; relation
 );
 
 async function convert(page: import("@playwright/test").Page, file: string): Promise<string> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wordrand-"));
+  const dir = scratchDir("wordrand");
   await page.goto("/tools/word-to-pdf");
   await uploadFixture(page, path.join(DIR, file));
   await page.getByRole("button", { name: "PDFに変換する" }).waitFor({ state: "visible", timeout: 30_000 });
@@ -83,30 +83,48 @@ function contentProblems(file: string, pdf: string): string[] {
   return problems;
 }
 
-test.describe.configure({ mode: "parallel" });
-
+/**
+ * 1つの組(元の文書と、その変化)を、1つの変換ごとに1つのテストにする(組の中は順に実行し、元の文書の結果を共有する)。
+ * 以前は1つのテストで8回変換していたため、並列で実行すると、1つのテストの時間が長くなり、制限時間を超えることがあった。
+ */
 for (const group of manifest) {
-  test(`乱数の文書 ${group.seed}：欠落・重複なし・2回変換して同じ・余白/文字/画像/段落を増やしてもページ数が減らない`, async ({ page }) => {
-    test.setTimeout(900_000);
-    const problems: string[] = [];
-    const base = await convert(page, group.base);
-    problems.push(...contentProblems(group.base, base));
-    const basePages = pageSizes(base).length;
-    const baseFound = markersOf(base);
-    const again = await convert(page, group.base);
+  test.describe(`乱数の文書 ${group.seed}`, () => {
+    test.describe.configure({ mode: "serial" });
+    let base = "";
+    let basePages = 0;
+    let baseFound = new Map<string, { page: number; w: Word }[]>();
     const sig = (pdf: string) => [...markersOf(pdf).entries()].map(([k, v]) => `${k}:${v.map((f) => `${f.page}/${f.w.x.toFixed(1)}/${f.w.y.toFixed(1)}`).join("|")}`).sort().join(",");
-    if (pageSizes(again).length !== basePages || sig(again) !== sig(base)) problems.push(`${group.base}: 2回の変換で結果が違う`);
+
+    test(`${group.base}：欠落・重複なし・禁則・英単語`, async ({ page }) => {
+      test.setTimeout(180_000);
+      base = await convert(page, group.base);
+      basePages = pageSizes(base).length;
+      baseFound = markersOf(base);
+      const problems = contentProblems(group.base, base);
+      expect(problems, problems.join("\n")).toEqual([]);
+    });
+
+    test(`${group.base}：2回変換して同じ`, async ({ page }) => {
+      test.setTimeout(180_000);
+      const again = await convert(page, group.base);
+      const problems = pageSizes(again).length !== basePages || sig(again) !== sig(base) ? [`${group.base}: 2回の変換で結果が違う`] : [];
+      expect(problems, problems.join("\n")).toEqual([]);
+    });
+
     for (const v of group.variants) {
-      const out = await convert(page, v.file);
-      problems.push(...contentProblems(v.file, out));
-      const pages = pageSizes(out).length;
-      if (v.relation.includes("pages>=base") && pages < basePages) problems.push(`${v.file}: ページ数が元(${basePages})より少ない(${pages})`);
-      if (v.relation.includes("keeps-base-markers")) {
-        const f = markersOf(out);
-        const lost = [...baseFound.keys()].filter((k) => !f.has(k));
-        if (lost.length) problems.push(`${v.file}: 段落を足したら、前からあった目印が ${lost.length}個消えた`);
-      }
+      test(`${v.file}：${v.relation}`, async ({ page }) => {
+        test.setTimeout(180_000);
+        const out = await convert(page, v.file);
+        const problems = contentProblems(v.file, out);
+        const pages = pageSizes(out).length;
+        if (v.relation.includes("pages>=base") && pages < basePages) problems.push(`${v.file}: ページ数が元(${basePages})より少ない(${pages})`);
+        if (v.relation.includes("keeps-base-markers")) {
+          const f = markersOf(out);
+          const lost = [...baseFound.keys()].filter((k) => !f.has(k));
+          if (lost.length) problems.push(`${v.file}: 内容を足したら、前からあった目印が ${lost.length}個消えた`);
+        }
+        expect(problems, problems.join("\n")).toEqual([]);
+      });
     }
-    expect(problems, problems.join("\n")).toEqual([]);
   });
 }

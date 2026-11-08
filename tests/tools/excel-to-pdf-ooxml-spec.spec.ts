@@ -13,6 +13,8 @@ import { convert } from "../helpers/print-audit";
  *  - 文字の行が多い行ほど高い・大きな文字の行は文字の大きさ以上・高さを保存した行はその高さ・回転した文字の行は文字の長さぶん
  *  - セル内改行(折り返す)は行が分かれ、折り返さないセルの改行は1行のまま・非表示の行は印刷しない
  *  - 長いシート：行を増やしても、ページ数は減らない
+ *  - フォント・文字の大きさ・字下げ・縦書きによる行の高さの関係(同じ内容は同じ高さ・大きな文字/行の高いフォントは低くならない)、
+ *    自動で決まる行の高さが0.75pt(96dpiの画面の1点)の倍数であること、非表示の列の文字を印刷しないこと
  * Microsoft Excelの行の高さの数値とは比べていない。
  */
 
@@ -31,6 +33,8 @@ interface SpecExpect {
   rows: RowSpec[];
   lastRow: number;
   absent: string[];
+  /** 行どうしの関係：equal=同じ高さ、greaterEq=[a, b] で a の行は b の行より低くない、multiple075=行の高さが0.75ptの倍数 */
+  checks?: { equal: [number, number][]; greaterEq: [number, number][]; multiple075: number[] };
 }
 
 function located(pdf: string): Map<string, { page: number; w: Word }[]> {
@@ -64,7 +68,11 @@ function checkRows(pdf: string, e: SpecExpect): string[] {
         problems.push(`${spec.words[i]} が、行の目印 R${spec.row} と違うページにある`);
         continue;
       }
-      if (w.w.y < marker.w.y - 1.5 || (bottom !== null && w.w.y2 > bottom + 2)) problems.push(`${spec.words[i]} が、行 ${spec.row} の範囲からはみ出している(行の高さが足りない)`);
+      // 文字の並ぶ線(ベースライン)が、行の範囲の中にあるか。pdftotext の文字の枠は、PDFに埋め込んだ Noto Sans JP の
+      // 高さ(アセント1.16・ディセント0.288、合計1.448)で決まるので、枠の下端から、ディセントの分を引いてベースラインを求める
+      const size = (w.w.y2 - w.w.y) / 1.448;
+      const baseline = w.w.y2 - 0.288 * size;
+      if (baseline < marker.w.y - 1 || (bottom !== null && baseline > bottom + 1)) problems.push(`${spec.words[i]} が、行 ${spec.row} の範囲からはみ出している(行の高さが足りない)`);
     }
     if (bottom !== null) {
       const band = bottom - marker.w.y;
@@ -83,6 +91,21 @@ function checkRows(pdf: string, e: SpecExpect): string[] {
     if (wraps[i].spec.words.length > wraps[i - 1].spec.words.length && wraps[i].band < wraps[i - 1].band - 0.5)
       problems.push(`行 ${wraps[i].spec.row} は、単語が多いのに、行 ${wraps[i - 1].spec.row} より低い`);
   }
+  const bandOf = new Map(bands.map((b) => [b.spec.row, b.band]));
+  for (const [a, b] of e.checks?.equal ?? []) {
+    const ha = bandOf.get(a);
+    const hb = bandOf.get(b);
+    if (ha !== undefined && hb !== undefined && Math.abs(ha - hb) > 0.05) problems.push(`行 ${a} と行 ${b} は同じ高さのはず(${ha.toFixed(2)} と ${hb.toFixed(2)})`);
+  }
+  for (const [a, b] of e.checks?.greaterEq ?? []) {
+    const ha = bandOf.get(a);
+    const hb = bandOf.get(b);
+    if (ha !== undefined && hb !== undefined && ha < hb - 0.05) problems.push(`行 ${a}(${ha.toFixed(2)}pt)が、行 ${b}(${hb.toFixed(2)}pt)より低い`);
+  }
+  for (const r of e.checks?.multiple075 ?? []) {
+    const h = bandOf.get(r);
+    if (h !== undefined && Math.abs(h / 0.75 - Math.round(h / 0.75)) > 0.05) problems.push(`行 ${r} の高さ ${h.toFixed(3)}pt が、0.75pt(画面の1点)の倍数でない`);
+  }
   const text = pdfText(pdf);
   for (const t of e.absent) if (text.includes(t)) problems.push(`${t} が出ている(出てはいけない)`);
   return problems;
@@ -96,6 +119,13 @@ test("e01 行の高さの自動の計算(折り返し・改行・文字の大き
   test.setTimeout(200_000);
   const { pdf } = await convert(page, path.join(DIR, "e01-auto-row-height.xlsx"));
   const problems = checkRows(pdf, load("e01-auto-row-height.xlsx"));
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("e03 フォント・大きさ・日本語・字下げ・縦書き・非表示の列：行の高さの関係と、0.75ptの倍数", async ({ page }) => {
+  test.setTimeout(200_000);
+  const { pdf } = await convert(page, path.join(DIR, "e03-fonts-indent-vertical.xlsx"));
+  const problems = checkRows(pdf, load("e03-fonts-indent-vertical.xlsx"));
   expect(problems, problems.join("\n")).toEqual([]);
 });
 

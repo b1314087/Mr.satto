@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { strToU8, zipSync } from "fflate";
 import { test as plainTest, expect as plainExpect, type Page } from "@playwright/test";
@@ -8,6 +7,7 @@ import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool
 import { extractPdfContent, getFillColorsUsed } from "../helpers/pdf-inspect";
 import { excelNumberFormatColor, excelTextFormatColor, formatExcelNumber } from "@/lib/excel/excel-number-format";
 import { parseHeaderFooterSections } from "@/lib/excel/ooxml-page-settings";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel→PDF：Excelの表示の決まりごと（機能単位の回帰テスト。特定のファイル専用の調整ではない）。
@@ -119,13 +119,14 @@ async function textItems(file: string): Promise<{ items: Item[]; height: number 
   for (const it of content.items as any[]) {
     if (typeof it.str !== "string" || it.str === "") continue;
     const t = it.transform as number[];
-    items.push({ str: it.str, x: t[4], y: t[5], size: Math.hypot(t[0], t[1]) });
+    // 文字の大きさは、縦の倍率(t[2], t[3])で測る。横の倍率(t[0])は、文字をフォントの幅に合わせて横に伸び縮みさせると変わるため
+    items.push({ str: it.str, x: t[4], y: t[5], size: Math.hypot(t[2], t[3]) });
   }
   return { items, height: page.getViewport({ scale: 1 }).height };
 }
 
 async function convert(page: Page, sheet = SHEET): Promise<string> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlrule-"));
+  const dir = scratchDir("xlrule");
   const file = path.join(dir, "rules.xlsx");
   fs.writeFileSync(file, buildXlsx(sheet));
   await page.goto("/tools/excel-to-pdf");

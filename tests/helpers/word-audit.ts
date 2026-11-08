@@ -1,9 +1,8 @@
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { clickAndDownload, uploadFixture } from "./tool-runner";
 import { components, countPixels, pageSizes, pdfText, render, words, type Img, type Pred, type Word } from "./chart-pdf-inspect";
+import { scratchDir } from "./tmp";
 
 /**
  * Word→PDFの検証の共通の道具：Mr.SattoでDOCXをPDFにする(convert)、期待値(*.expect.json)と比べる(audit)。
@@ -41,6 +40,12 @@ export interface WordExpect {
   dictWords?: string[];
   /** PDFのリンク(URI)に含まれるべきURL */
   linkUris?: string[];
+  /** 目印の右端の上限(pt)。回り込みの確認 */
+  maxX2?: Record<string, number>;
+  /** 目印の左の位置の並び：decreasing なら上から順に左へ寄り、最初と最後の差が minDrop pt 以上 */
+  xOrder?: { markers: string[]; decreasing: boolean; minDrop: number };
+  /** 画像(色)の左上の位置(pt。ページの左上から) */
+  imagePos?: Record<string, [number, number]>;
 }
 
 /** ページの文字を、行(下の位置がほぼ同じ語)ごとにまとめる(左から順) */
@@ -56,7 +61,7 @@ export function textLines(pageWords: Word[]): Word[][] {
 }
 
 export async function convert(page: import("@playwright/test").Page, file: string): Promise<{ pdf: string; screen: string }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wordfid-"));
+  const dir = scratchDir("wordfid");
   await page.goto("/tools/word-to-pdf");
   await uploadFixture(page, file);
   await page.getByRole("button", { name: "PDFに変換する" }).waitFor({ state: "visible", timeout: 30_000 });
@@ -203,6 +208,23 @@ export function audit(pdf: string, screen: string, e: WordExpect): string[] {
   if (e.linkUris && e.linkUris.length > 0) {
     const out = execFileSync("pdfinfo", ["-url", pdf]).toString();
     for (const u of e.linkUris) if (!out.includes(u)) problems.push(`リンク ${u} が無い`);
+  }
+  for (const [m, x2] of Object.entries(e.maxX2 ?? {})) {
+    const f = (found.get(m) ?? [])[0];
+    if (f && f.w.x2 > x2) problems.push(`${m} の右端：期待 ${x2}pt以下、実際 ${f.w.x2.toFixed(1)}pt`);
+  }
+  if (e.xOrder) {
+    const xs = e.xOrder.markers.map((m) => (found.get(m) ?? [])[0]?.w.x ?? NaN);
+    for (let i = 1; i < xs.length; i++) if (e.xOrder.decreasing && xs[i] > xs[i - 1] + 0.5) problems.push(`${e.xOrder.markers[i]} が、前の行より右にある(${xs[i - 1].toFixed(1)} → ${xs[i].toFixed(1)})`);
+    if (!(xs[0] - xs[xs.length - 1] >= e.xOrder.minDrop)) problems.push(`最初と最後の行の左の位置の差：期待 ${e.xOrder.minDrop}pt以上、実際 ${(xs[0] - xs[xs.length - 1]).toFixed(1)}pt`);
+  }
+  for (const [name, [px, py]] of Object.entries(e.imagePos ?? {})) {
+    const rgb = e.colors?.[name];
+    const pg = e.colorPages?.[name]?.[0];
+    const img = rgb && pg ? pageImgs[pg - 1] : undefined;
+    const big = img ? components(img, near(rgb!), 20).sort((a, b) => b.n - a.n)[0] : undefined;
+    if (!big) problems.push(`画像「${name}」の位置を測れない`);
+    else if (Math.abs(big.x0 - px) > 3 || Math.abs(big.y0 - py) > 3) problems.push(`画像「${name}」の位置：期待 (${px}, ${py})、実際 (${big.x0}, ${big.y0})`);
   }
   return [...problems, ...examples.map((x) => `  例：${x}`)];
 }

@@ -1,10 +1,9 @@
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool-runner";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { bars, pageCount, pdfText, render, words, type Pred, type Word } from "../helpers/chart-pdf-inspect";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel→PDF：グラフの分類の軸の項目名(目盛りの文字)の表示(14種類)。
@@ -19,7 +18,7 @@ import { bars, pageCount, pdfText, render, words, type Pred, type Word } from ".
 const SRC = path.join(__dirname, "..", "fixtures", "static", "excel-chart-labels");
 
 async function convert(page: Page, name: string, timeoutMs = 120_000): Promise<{ pdf: string; screen: string; ms: number }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xllabels-"));
+  const dir = scratchDir("xllabels");
   await page.goto("/tools/excel-to-pdf");
   await uploadFixture(page, path.join(SRC, name));
   await page.getByRole("button", { name: "PDFに変換する" }).waitFor({ state: "visible", timeout: 30_000 });

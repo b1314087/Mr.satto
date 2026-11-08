@@ -1,0 +1,141 @@
+{
+ "title": "フォント・大きさ・日本語・字下げ・縦書き・非表示の列",
+ "rows": [
+  {
+   "row": 1,
+   "words": [
+    "A1W1",
+    "A1W2",
+    "A1W3",
+    "A1W4",
+    "A1W5",
+    "A1W6"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 2,
+   "words": [
+    "A2W1",
+    "A2W2",
+    "A2W3",
+    "A2W4",
+    "A2W5",
+    "A2W6"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 3,
+   "words": [
+    "A3W1",
+    "A3W2",
+    "A3W3",
+    "A3W4",
+    "A3W5",
+    "A3W6"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 4,
+   "words": [
+    "B1W1"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 5,
+   "words": [
+    "B2W1"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 6,
+   "words": [
+    "B3W1"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 7,
+   "words": [
+    "B4W1"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 8,
+   "words": [
+    "B5W1"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 9,
+   "words": [
+    "J1W1",
+    "J1W2",
+    "J1W3"
+   ],
+   "kind": "wrap"
+  },
+  {
+   "row": 10,
+   "words": [],
+   "kind": "vertical",
+   "minBand": 52.800000000000004
+  }
+ ],
+ "lastRow": 11,
+ "absent": [
+  "HIDDENCOLMARK"
+ ],
+ "checks": {
+  "equal": [
+   [
+    1,
+    2
+   ]
+  ],
+  "greaterEq": [
+   [
+    3,
+    1
+   ],
+   [
+    5,
+    4
+   ],
+   [
+    6,
+    4
+   ],
+   [
+    7,
+    4
+   ],
+   [
+    4,
+    8
+   ],
+   [
+    9,
+    5
+   ]
+  ],
+  "multiple075": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10
+  ]
+ }
+}

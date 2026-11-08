@@ -3,8 +3,8 @@ import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool
 import { zipSync, strToU8 } from "fflate";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel→PDF: 最後の列にある長い文字列は、右隣の空き列にはみ出して最後まで印刷される。
@@ -35,14 +35,14 @@ function makeXlsx(): string {
         `</sheetData></worksheet>`
     ),
   };
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "xl-ovf-")), "overflow.xlsx");
+  const file = path.join(scratchDir("xl-ovf"), "overflow.xlsx");
   fs.writeFileSync(file, zipSync(files));
   return file;
 }
 
 /** PDFの1ページ目を72dpiのグレースケールにして、指定範囲(pt)の暗い画素の数を数える */
 function darkPixels(pdf: string, x0: number, y0: number, x1: number, y1: number): number {
-  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "xl-px-")), "p");
+  const out = path.join(scratchDir("xl-px"), "p");
   execFileSync("pdftoppm", ["-gray", "-r", "72", "-f", "1", "-l", "1", pdf, out]);
   const file = fs.readdirSync(path.dirname(out)).find((f) => f.endsWith(".pgm"))!;
   const buf = fs.readFileSync(path.join(path.dirname(out), file));
@@ -66,7 +66,7 @@ test("最後の列の長い文字列が、右隣の空き列にはみ出して�
   await button.click();
   await waitForSuccess(page, "完了");
   const download = await clickAndDownload(page, "PDFをダウンロード");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlpdf-"));
+  const dir = scratchDir("xlpdf");
   const pdf = path.join(dir, "out.pdf");
   await download.saveAs(pdf);
 

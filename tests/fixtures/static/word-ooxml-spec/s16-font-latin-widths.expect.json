@@ -1,0 +1,79 @@
+{
+ "title": "英数字の幅(Calibri・Century・メイリオ・游明朝で、1行に入る単語の数)",
+ "how": "A",
+ "pages": 1,
+ "markers": {
+  "FCALS": [
+   1
+  ],
+  "FCALA": [
+   1
+  ],
+  "FCALBMARKERWIDE": [
+   1
+  ],
+  "FCENS": [
+   1
+  ],
+  "FCENA": [
+   1
+  ],
+  "FCENBMARKERWIDE": [
+   1
+  ],
+  "FMEIS": [
+   1
+  ],
+  "FMEIA": [
+   1
+  ],
+  "FMEIBMARKERWIDE": [
+   1
+  ],
+  "FYUMS": [
+   1
+  ],
+  "FYUMA": [
+   1
+  ],
+  "FYUMBMARKERWIDE": [
+   1
+  ]
+ },
+ "xRange": {
+  "FCALBMARKERWIDE": [
+   71.5,
+   73.5
+  ],
+  "FCENBMARKERWIDE": [
+   71.5,
+   73.5
+  ],
+  "FMEIBMARKERWIDE": [
+   71.5,
+   73.5
+  ],
+  "FYUMBMARKERWIDE": [
+   71.5,
+   73.5
+  ]
+ },
+ "sameLine": [
+  [
+   "FCALS",
+   "FCALA"
+  ],
+  [
+   "FCENS",
+   "FCENA"
+  ],
+  [
+   "FMEIS",
+   "FMEIA"
+  ],
+  [
+   "FYUMS",
+   "FYUMA"
+  ]
+ ]
+}

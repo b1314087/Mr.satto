@@ -18,6 +18,7 @@ Word→PDF：OOXMLの仕様に沿った検証用のDOCX(WordprocessingMLを直�
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from xml.sax.saxutils import escape
@@ -238,9 +239,301 @@ def s11():
     return d
 
 
+# ───────────── フォントの寸法(実際のOfficeのフォントの数値と、GDIの1行の高さの決まり) ─────────────
+MEASURED = {f["key"]: f for f in json.load(open(os.path.join(HERE, "..", "..", "..", "scripts", "fonts", "office-measured-metrics.json"), encoding="utf-8"))}
+
+
+def gdi_line(key: str) -> float:
+    """1行の高さ(倍率)：usWinAscent + usWinDescent + max(0, hhea.lineGap − ((win) − (hhea.asc + hhea.desc)))(OpenTypeの仕様 OS/2)"""
+    f = MEASURED[key]
+    win = f["win"][0] + f["win"][1]
+    return (win + max(0, f["hhea"][2] - (win - (f["hhea"][0] + f["hhea"][1])))) / 1000
+
+
+def latin_width(key: str, text: str, size: float) -> float:
+    f = MEASURED[key]
+    return sum(f["latin"][ord(c) - 0x20] if 0x20 <= ord(c) <= 0x7E else f["fullWidth"] for c in text) / 1000 * size
+
+
+def font_lines_case(name: str, key: str, font: str, size: float):
+    """1行の高さを固定しない(1行＝フォントの1行の高さ)段落を並べる。1ページの行の数 = floor(697.9 / (倍率 × 大きさ))"""
+    d = w.Doc(name, f"フォントの1行の高さ({font} {size}pt。倍率 {gdi_line(key):.4f})", "B")
+    lh = gdi_line(key) * size
+    per_page = int(697.9 // lh)
+    n = per_page + 6
+    rpr = f'<w:rFonts w:ascii="{font}" w:eastAsia="{font}" w:hAnsi="{font}"/><w:sz w:val="{round(size * 2)}"/>'
+    for i in range(1, n + 1):
+        t = f"{name[:3].upper()}L{i:02d}"
+        d.mark(t, 1 if i <= per_page else 2)
+        d.body.append(para(run(t, rpr), '<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="left"/>'))
+    d.pages = 2
+    return d
+
+
+def s13():
+    return font_lines_case("s13-font-meiryo-lines", "meiryo", "メイリオ", 10.5)
+
+
+def s14():
+    return font_lines_case("s14-font-yugothic-lines", "yuGothic", "游ゴシック", 10.5)
+
+
+def s15():
+    return font_lines_case("s15-font-msmincho-lines", "msMincho", "ＭＳ 明朝", 12)
+
+
+def s16():
+    """英数字の幅：1行目に入る単語の数を、フォントの文字の幅(Officeのフォントの数値)から計算する"""
+    d = w.Doc("s16-font-latin-widths", "英数字の幅(Calibri・Century・メイリオ・游明朝で、1行に入る単語の数)", "A")
+    xr = {}
+    same = []
+    for key, font in [("calibri", "Calibri"), ("century", "Century"), ("meiryo", "メイリオ"), ("yuMincho", "游明朝")]:
+        size = 10.5
+        tag = key[:3].upper()
+        start, last_fit, first_next = f"F{tag}S", f"F{tag}A", f"F{tag}BMARKERWIDE"
+        n = 0
+        # 「先頭の目印＋単語n個＋1行目の最後の目印」が本文の幅(451.3pt)に入る、いちばん大きいn
+        while latin_width(key, " ".join([start] + ["layout"] * (n + 1) + [last_fit]), size) <= 451.3:
+            n += 1
+        assert latin_width(key, " ".join([start] + ["layout"] * n + [last_fit, first_next]), size) > 451.3
+        rpr = f'<w:rFonts w:ascii="{font}" w:eastAsia="{font}" w:hAnsi="{font}"/><w:sz w:val="21"/>'
+        d.body.append(para(run(" ".join([start] + ["layout"] * n + [last_fit, first_next, "layout"]), rpr), '<w:jc w:val="left"/>'))
+        for t in (start, last_fit, first_next):
+            d.mark(t, 1)
+        xr[first_next] = [71.5, 73.5]
+        same.append([start, last_fit])
+    d.extra["xRange"] = xr
+    d.extra["sameLine"] = same
+    d.pages = 1
+    return d
+
+
+# ───────────── ヘッダー・フッターの画像 ─────────────
+class HDoc(w.Doc):
+    def hf_part(self, kind: str, xml_paras: str, images: list[tuple[str, tuple, float, float, bool, tuple]]) -> str:
+        """画像を含むヘッダー/フッターの部品。images: (目印の名前, 色, 幅, 高さ, 浮動配置か, (x, y)ページの左上からの位置)"""
+        n = len([k for k in self.parts if k.startswith(f"word/{kind}") and k.endswith(".xml")]) + 1
+        part = f"{kind}{n}.xml"
+        rels = []
+        runs = ""
+        for i, (name, rgb, wpt, hpt, floating, pos) in enumerate(images):
+            idx = len(self.media) + 1
+            self.media.append((f"image{idx}.png", w.png_bytes(40, 20, rgb)))
+            rid = f"rIdH{i + 1}"
+            rels.append(f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image{idx}.png"/>')
+            cx, cy = round(wpt * EMU), round(hpt * EMU)
+            graphic = (
+                f'<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+                f'<pic:nvPicPr><pic:cNvPr id="{100 + idx}" name="{name}"/><pic:cNvPicPr/></pic:nvPicPr>'
+                f'<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+                f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
+            )
+            if floating:
+                runs += (
+                    f'<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">'
+                    f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{round(pos[0] * EMU)}</wp:posOffset></wp:positionH>'
+                    f'<wp:positionV relativeFrom="page"><wp:posOffset>{round(pos[1] * EMU)}</wp:posOffset></wp:positionV><wp:extent cx="{cx}" cy="{cy}"/>'
+                    f'<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="{100 + idx}" name="{name}"/>{graphic}</wp:anchor></w:drawing></w:r>'
+                )
+            else:
+                runs += f'<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{100 + idx}" name="{name}"/>{graphic}</wp:inline></w:drawing></w:r>'
+        tag = "w:hdr" if kind == "header" else "w:ftr"
+        self.parts[f"word/{part}"] = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<{tag} {w.NS}><w:p>{runs}</w:p>{xml_paras}</{tag}>'
+        self.parts[f"word/_rels/{part}.rels"] = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + "".join(rels) + "</Relationships>"
+        rid = f"rId{kind.capitalize()}{n}"
+        self.rels.append((rid, f"http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}", part))
+        return rid
+
+
+def hf_sect(headers: dict | None = None, footers: dict | None = None, title_pg=False, cols: int = 1, brk: str | None = None) -> str:
+    refs = "".join(f'<w:headerReference w:type="{k}" r:id="{v}"/>' for k, v in (headers or {}).items())
+    refs += "".join(f'<w:footerReference w:type="{k}" r:id="{v}"/>' for k, v in (footers or {}).items())
+    return (
+        f'<w:sectPr>{refs}{"<w:type w:val=" + chr(34) + brk + chr(34) + "/>" if brk else ""}'
+        f'<w:pgSz w:w="{round(595.3 * TW)}" w:h="{round(841.9 * TW)}"/>'
+        f'<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+        f'{"<w:cols w:num=" + chr(34) + str(cols) + chr(34) + " w:space=" + chr(34) + "720" + chr(34) + "/>" if cols > 1 else "<w:cols w:space=" + chr(34) + "720" + chr(34) + "/>"}'
+        f'{"<w:titlePg/>" if title_pg else ""}</w:sectPr>'
+    )
+
+
+RED, GREEN, BLUE, ORANGE, PURPLE, TEAL = (220, 30, 30), (30, 160, 60), (40, 70, 220), (240, 140, 20), (140, 40, 170), (20, 150, 150)
+
+
+def pages_body(d: w.Doc, prefix: str, n: int):
+    for i in range(1, n + 1):
+        if i > 1:
+            d.body.append('<w:p><w:r><w:br w:type="page"/></w:r></w:p>')
+        d.body.append(para(run(d.mark(f"{prefix}P{i}", i))))
+
+
+def s17():
+    d = HDoc("s17-header-footer-images", "ヘッダーのロゴ画像・フッターの画像(文字と一緒)・すべてのページ", "A")
+    h = d.hf_part("header", para(run("S17ヘッダー")), [("logo", RED, 80, 30, False, (0, 0))])
+    f = d.hf_part("footer", para(run("S17フッター")), [("foot", GREEN, 60, 20, False, (0, 0))])
+    pages_body(d, "S17", 3)
+    d.final_sect = hf_sect({"default": h}, {"default": f})
+    d.extra.update({"colors": {"red": list(RED), "green": list(GREEN)}, "colorPages": {"red": [1, 2, 3], "green": [1, 2, 3]}, "imageSize": {"red": [80, 30], "green": [60, 20]}, "texts": ["S17ヘッダー", "S17フッター"]})
+    d.pages = 3
+    return d
+
+
+def s18():
+    d = HDoc("s18-header-first-even", "先頭ページだけ違うヘッダー(w:titlePg)・奇数/偶数ページで違うヘッダー(w:evenAndOddHeaders)", "A")
+    d.settings_extra = "<w:evenAndOddHeaders/>"
+    first = d.hf_part("header", "", [("first", ORANGE, 70, 25, False, (0, 0))])
+    dflt = d.hf_part("header", "", [("odd", RED, 70, 25, False, (0, 0))])
+    even = d.hf_part("header", "", [("even", BLUE, 70, 25, False, (0, 0))])
+    pages_body(d, "S18", 4)
+    d.final_sect = hf_sect({"first": first, "default": dflt, "even": even}, None, title_pg=True)
+    d.extra.update({"colors": {"orange": list(ORANGE), "red": list(RED), "blue": list(BLUE)}, "colorPages": {"orange": [1], "red": [3], "blue": [2, 4]}})
+    d.pages = 4
+    return d
+
+
+def s19():
+    d = HDoc("s19-header-per-section", "セクションごとに違うヘッダーの画像(指定の無いセクションは前のセクションを引き継ぐ)", "A")
+    h1 = d.hf_part("header", "", [("sec1", RED, 70, 25, False, (0, 0))])
+    h2 = d.hf_part("header", "", [("sec2", PURPLE, 70, 25, False, (0, 0))])
+    d.body.append(para(run(d.mark("S19P1", 1)), hf_sect({"default": h1}, None)))
+    d.body.append(para(run(d.mark("S19P2", 2)), hf_sect({"default": h2}, None)))
+    d.body.append(para(run(d.mark("S19P3", 3))))
+    d.final_sect = hf_sect(None, None)  # 指定なし → 2つ目のセクションのヘッダーを引き継ぐ
+    d.extra.update({"colors": {"red": list(RED), "purple": list(PURPLE)}, "colorPages": {"red": [1], "purple": [2, 3]}})
+    d.pages = 3
+    return d
+
+
+def s20():
+    d = HDoc("s20-header-floating-images", "ヘッダーの浮動配置の画像(ページの位置で置く・文字の背面)と、複数の画像", "A")
+    h = d.hf_part("header", para(run("S20ヘッダー")), [("float", TEAL, 100, 40, True, (400, 30)), ("inline", RED, 50, 20, False, (0, 0))])
+    pages_body(d, "S20", 2)
+    d.final_sect = hf_sect({"default": h}, None)
+    d.extra.update({"colors": {"teal": list(TEAL), "red": list(RED)}, "colorPages": {"teal": [1, 2], "red": [1, 2]}, "imageSize": {"teal": [100, 40]}, "imagePos": {"teal": [400, 30]}})
+    d.pages = 2
+    return d
+
+
+# ───────────── 縦に結合したセル(1行20pt) ─────────────
+def vm_cell(xml: str, vmerge: str | None, width: float, span: int = 1) -> str:
+    pr = f'<w:tcW w:w="{round(width * TW)}" w:type="dxa"/>' + (f'<w:gridSpan w:val="{span}"/>' if span > 1 else "") + (f'<w:vMerge w:val="restart"/>' if vmerge == "restart" else "<w:vMerge/>" if vmerge == "continue" else "")
+    return f"<w:tc><w:tcPr>{pr}</w:tcPr>{xml or '<w:p/>'}</w:tc>"
+
+
+def vm_table(rows: list[list[str]], widths: list[float], header_rows: int = 0) -> str:
+    grid = "".join(f'<w:gridCol w:w="{round(x * TW)}"/>' for x in widths)
+    borders = "".join(f'<w:{s_} w:val="single" w:sz="4" w:space="0" w:color="000000"/>' for s_ in ("top", "left", "bottom", "right", "insideH", "insideV"))
+    trs = "".join(f"<w:tr>{'<w:trPr><w:tblHeader/></w:trPr>' if i < header_rows else ''}{''.join(r)}</w:tr>" for i, r in enumerate(rows))
+    return (
+        f'<w:tbl><w:tblPr><w:tblW w:w="{round(sum(widths) * TW)}" w:type="dxa"/><w:tblBorders>{borders}</w:tblBorders><w:tblLayout w:type="fixed"/>'
+        f'<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr>'
+        f"<w:tblGrid>{grid}</w:tblGrid>{trs}</w:tbl>"
+    )
+
+
+def s21():
+    d = w.Doc("s21-vmerge-long-text", "縦に結合したセルの長い文字が、ページをまたぐ(結合の範囲の最後の行を分ける)", "B")
+    merged = marks(d, "S21M", 1, 60, lambda i: 1 if i <= 34 else 2)
+    rows = []
+    for r in range(6):
+        own = marks(d, f"S21R{r + 1}L", 1, 5, 1)
+        rows.append([vm_cell(lines_para(merged) if r == 0 else "", "restart" if r == 0 else "continue", 150), vm_cell(lines_para(own), None, 200)])
+    d.body.append(vm_table(rows, [150, 200]))
+    d.pages = 2
+    return d
+
+
+def s22():
+    d = w.Doc("s22-vmerge-header-boundary", "縦に結合したセル(2列・隣り合う結合)・タイトル行の繰り返し・結合の範囲がページの境目にかかる", "B")
+    rows = [[vm_cell(lines_para(["S22H"]), None, 100), vm_cell(lines_para(["見出し"]), None, 200), vm_cell(lines_para(["見出し2"]), None, 100)]]
+    d.markers["S22H"] = [1, 2]
+    for r in range(1, 41):
+        page_ = 1 if r <= 33 else 2  # 1ページ目はタイトル行20pt + 33行
+        c0 = vm_cell(lines_para([d.mark("S22MG1", 1)]) if r == 1 else "", "restart" if r == 1 else "continue", 100) if r <= 40 else None
+        c2 = vm_cell(lines_para([d.mark("S22MG2", 1)]) if r == 30 else "", ("restart" if r == 30 else "continue") if r >= 30 else None, 100)
+        rows.append([c0, vm_cell(lines_para([d.mark(f"S22R{r:02d}", page_)]), None, 200), c2])
+    d.body.append(vm_table(rows, [100, 200, 100], header_rows=1))
+    d.pages = 2
+    return d
+
+
+# ───────────── 段組み ─────────────
+def s23():
+    d = w.Doc("s23-columns", "2段組み(1段に34行・段区切り・段組みの後の1段のセクション・段の中の画像)", "B")
+    col_w = (451.3 - 36) / 2
+    for i in range(1, 61):
+        t = d.mark(f"S23L{i:02d}", 1)
+        d.body.append(para(run(t), EXACT20 + '<w:jc w:val="left"/>'))
+    # 段区切り：次の文字は次の段(2段目は60−34=26行使用中 → 段区切りで次のページの1段目)
+    d.body.append(para(run("S23BRK") + '<w:r><w:br w:type="column"/></w:r>' + run(d.mark("S23AFTERCOL", 2)), EXACT20 + '<w:jc w:val="left"/>'))
+    d.mark("S23BRK", 1)
+    # 段の幅より広い画像は、段の幅に縮める
+    d.body.append(para(d.image_xml((30, 160, 60), 300, 150)))
+    d.body.append(para(run(d.mark("S23END", 2)), EXACT20 + hf_sect(None, None, cols=2)))
+    d.body.append(para(run(d.mark("S23ONECOL", 2)), '<w:jc w:val="left"/>'))
+    d.final_sect = hf_sect(None, None, cols=1, brk="continuous")
+    d.extra.update({
+        "xRange": {"S23L01": [71.5, 74], "S23L34": [71.5, 74], "S23L35": [72 + col_w + 36 - 0.5, 72 + col_w + 36 + 2], "S23L60": [72 + col_w + 36 - 0.5, 72 + col_w + 36 + 2], "S23AFTERCOL": [71.5, 74]},
+        "colors": {"green": [30, 160, 60]}, "colorPages": {"green": [2]}, "imageSize": {"green": [round(col_w), round(col_w / 2)]},
+    })
+    d.pages = 2
+    return d
+
+
+# ───────────── 画像の回り込み ─────────────
+def anchor_image(d: w.Doc, rgb, w_pt, h_pt, x_pt, wrap_xml: str) -> str:
+    idx = len(d.media) + 1
+    rid = f"rIdImg{idx}"
+    d.media.append((f"image{idx}.png", w.png_bytes(40, 40, rgb)))
+    d.rels.append((rid, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", f"media/image{idx}.png"))
+    cx, cy = round(w_pt * EMU), round(h_pt * EMU)
+    return (
+        f'<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
+        f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{round(x_pt * EMU)}</wp:posOffset></wp:positionH>'
+        f'<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<wp:effectExtent l="0" t="0" r="0" b="0"/>{wrap_xml}<wp:docPr id="{200 + idx}" name="画像{idx}"/>'
+        f'<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="{200 + idx}" name="画像{idx}"/><pic:cNvPicPr/></pic:nvPicPr>'
+        f'<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
+        f"</wp:anchor></w:drawing></w:r>"
+    )
+
+
+def s24():
+    d = w.Doc("s24-wrap-tight-polygon", "外周の折り返し(輪郭 wp:wrapPolygon の三角形)：下に行くほど文字が左に寄る", "A")
+    # 左上の三角形(左上・左下・右上)：上の行は画像の右端の右、下の行ほど左から始まる
+    poly = '<wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon>'
+    img = anchor_image(d, (200, 40, 40), 200, 200, 0, f'<wp:wrapTight wrapText="bothSides">{poly}</wp:wrapTight>')
+    d.body.append(para(img + run(d.mark("S24T01", 1)), EXACT20 + '<w:jc w:val="left"/>'))
+    for i in range(2, 11):
+        d.body.append(para(run(d.mark(f"S24T{i:02d}", 1)), EXACT20 + '<w:jc w:val="left"/>'))
+    d.extra["xOrder"] = {"markers": [f"S24T{i:02d}" for i in range(1, 11)], "decreasing": True, "minDrop": 100}
+    d.pages = 1
+    return d
+
+
+def s25():
+    d = w.Doc("s25-wrap-sides-multi", "折り返しの側(右だけ)と、左右の2つの画像の間の文字", "A")
+    # 1つ目：中央の画像、文字は右側だけ
+    img = anchor_image(d, (200, 40, 40), 100, 100, 150, '<wp:wrapSquare wrapText="right"/>')
+    d.body.append(para(img + run(d.mark("S25R01", 1)), EXACT20 + '<w:jc w:val="left"/>'))
+    for i in range(2, 5):
+        d.body.append(para(run(d.mark(f"S25R{i:02d}", 1)), EXACT20 + '<w:jc w:val="left"/>'))
+    d.body.append(para("", '<w:spacing w:before="0" w:after="0" w:line="2400" w:lineRule="exact"/>'))
+    # 2つ目：左右の画像。文字は2つの画像の間
+    l_img = anchor_image(d, (40, 40, 200), 100, 100, 0, '<wp:wrapSquare wrapText="bothSides"/>')
+    r_img = anchor_image(d, (40, 160, 40), 100, 100, 351.3, '<wp:wrapSquare wrapText="bothSides"/>')
+    d.body.append(para(l_img + r_img + run(d.mark("S25M01", 1)), EXACT20 + '<w:jc w:val="left"/>'))
+    for i in range(2, 5):
+        d.body.append(para(run(d.mark(f"S25M{i:02d}", 1)), EXACT20 + '<w:jc w:val="left"/>'))
+    d.extra["minX"] = {**{f"S25R{i:02d}": 72 + 250 - 0.5 for i in range(1, 5)}, **{f"S25M{i:02d}": 72 + 100 - 0.5 for i in range(1, 5)}}
+    d.extra["maxX2"] = {f"S25M{i:02d}": 72 + 351.3 + 0.5 for i in range(1, 5)}
+    d.pages = 1
+    return d
+
+
 def main():
     os.makedirs(w.OUT, exist_ok=True)
-    cases = [s01, s02, s03, s04, s05, s06, s07, s08, s09, s10, s11, s12]
+    cases = [s01, s02, s03, s04, s05, s06, s07, s08, s09, s10, s11, s12, s13, s14, s15, s16, s17, s18, s19, s20, s21, s22, s23, s24, s25]
     for f in cases:
         d = f()
         d.save()

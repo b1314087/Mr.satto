@@ -3,8 +3,8 @@ import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool
 import { fixtures } from "../fixtures/paths";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel→PDF: 背景色つきの結合セル・縮小して全体を表示・均等割り付け・数値の表示書式。
@@ -16,7 +16,7 @@ const XLSX = path.join(fixtures.dir.static, "excel-merge-fill-shrink.xlsx");
 
 /** PDFの1ページ目を72dpiのグレースケールにして、指定範囲(pt)の暗い画素の数を数える */
 function darkPixels(pdf: string, x0: number, y0: number, x1: number, y1: number): number {
-  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "xl-")), "p");
+  const out = path.join(scratchDir("xl"), "p");
   execFileSync("pdftoppm", ["-gray", "-r", "72", "-f", "1", "-l", "1", pdf, out]);
   const file = fs.readdirSync(path.dirname(out)).find((f) => f.endsWith(".pgm"))!;
   const buf = fs.readFileSync(path.join(path.dirname(out), file));
@@ -46,7 +46,7 @@ test("背景色つきの結合セルの文字・金額の桁区切り・縮小�
   await page.getByRole("button", { name: "PDFに変換する" }).click();
   await waitForSuccess(page, "完了");
   const download = await clickAndDownload(page, "PDFをダウンロード");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlpdf-"));
+  const dir = scratchDir("xlpdf");
   const pdf = path.join(dir, "out.pdf");
   await download.saveAs(pdf);
 

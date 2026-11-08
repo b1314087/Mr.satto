@@ -1,11 +1,10 @@
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool-runner";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { countPixels, pageCount, render } from "../helpers/chart-pdf-inspect";
 import { NetworkRecorder, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
+import { scratchDir } from "../helpers/tmp";
 
 /**
  * Excel→PDF：変換の前の「グラフのページ境界チェック」(16種類のExcel)。
@@ -36,7 +35,7 @@ async function issueRows(page: Page): Promise<string[]> {
   return (await page.getByTestId("chart-page-issue").allInnerTexts()).map((t) => t.replace(/\s+/g, " "));
 }
 async function convert(page: Page): Promise<string> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "xlpagecheck-"));
+  const dir = scratchDir("xlpagecheck");
   await page.getByRole("button", { name: "PDFに変換する" }).click();
   await waitForSuccess(page, "完了", 120_000);
   const download = await clickAndDownload(page, "PDFをダウンロード");
