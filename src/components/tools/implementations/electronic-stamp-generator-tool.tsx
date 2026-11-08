@@ -14,13 +14,17 @@ import { closePdfDocument } from "@/lib/pdf/pdfjs-client";
 import {
   STAMP_COLORS,
   STAMP_LIMITS,
+  STAMP_QR_MIN_SIZE_PX,
   StampExportProcessor,
+  appendStampQr,
   autoTrimTransparentMargins,
+  canPlaceStampQr,
   cropCanvasRegion,
   generateStampCanvas,
   loadCustomStampFont,
   loadStampImageToCanvas,
   loadStampPdf,
+  generateStampSerial,
   removeLightBackground,
   renderStampPdfPage,
   resizeCanvasByScale,
@@ -43,6 +47,11 @@ import { SliderField } from "@/components/common/slider-field";
  * 「文字から作る」「印鑑を取り込む」の2モードを持つ。処理はすべて
  * ブラウザのCanvas上で完結し、画像・PDFの中身をサーバーへ送信したり、
  * localStorage/sessionStorage/IndexedDBへ保存したりすることは一切ない。
+ *
+ * 固有番号とQRコード：「印影画像を生成する」を押したときに、ランダムな固有番号を1つ発行し、その番号だけを
+ * 入れたQRコードと番号を印影に入れる(electronic-stamp.ts の generateStampSerial)。完成した画像(Blob)を
+ * そのまま保持するので、同じ印影を何度ダウンロードしても番号は変わらない。もう一度生成すると新しい番号になる。
+ * 編集中のプレビューには、番号を発行する前なので、QRコードの置き場所だけを示す。
  */
 
 type Mode = "text" | "import";
@@ -92,6 +101,8 @@ export function ElectronicStampGeneratorTool() {
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImageProcessorOutput | null>(null);
+  /** 完成した印影の固有番号(QRコードを入れないときは null) */
+  const [serial, setSerial] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -106,11 +117,13 @@ export function ElectronicStampGeneratorTool() {
     setError(null);
   }
 
-  async function handleExport(canvas: HTMLCanvasElement) {
+  async function handleExport(canvas: HTMLCanvasElement, issuedSerial: string | null) {
     setStatus("processing");
     setError(null);
     try {
       const output = await new StampExportProcessor().process({ canvas });
+      if (result) URL.revokeObjectURL(result.url);
+      setSerial(issuedSerial);
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -176,9 +189,17 @@ export function ElectronicStampGeneratorTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px（透明PNG）
           </p>
+          {serial && (
+            <p className="text-sm text-neutral-700 dark:text-neutral-200">
+              固有番号：<span data-testid="stamp-serial" className="font-mono font-semibold">{serial}</span>
+              <span className="mt-1 block text-xs text-neutral-500 dark:text-neutral-400">
+                QRコードには、この番号だけが入っています（名前などは入っていません）。番号はこのブラウザの中で作り、どこにも送信・保存していません。
+              </span>
+            </p>
+          )}
           <RewardedDownloadGate
             label="PNGをダウンロード"
-            onDownload={() => downloadBlob(result.blob, `electronic-stamp.${extToSuffix()}`)}
+            onDownload={() => downloadBlob(result.blob, serial ? `electronic-stamp-${serial}.${extToSuffix()}` : `electronic-stamp.${extToSuffix()}`)}
           />
         </ResultPopup>
       )}
@@ -194,7 +215,7 @@ function TextStampPanel({
   onExport,
   status,
 }: {
-  onExport: (canvas: HTMLCanvasElement) => void | Promise<void>;
+  onExport: (canvas: HTMLCanvasElement, serial: string | null) => void | Promise<void>;
   status: ProcessingState;
 }) {
   const [text, setText] = useState("印");
@@ -207,6 +228,7 @@ function TextStampPanel({
   const [color, setColor] = useState<StampColorId>("red");
   const [offsetXPct, setOffsetXPct] = useState(0);
   const [offsetYPct, setOffsetYPct] = useState(0);
+  const [withQr, setWithQr] = useState(true);
 
   const previewRef = useRef<HTMLCanvasElement>(null);
   const latestCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -271,6 +293,8 @@ function TextStampPanel({
       offsetYPct,
       fontFamily: customFont?.cssFontFamily,
       fontWeight: boldText ? "bold" : "normal",
+      // 編集中は番号を発行しない(QRコードの置き場所だけを示す)
+      ...(withQr ? { qr: { serial: null } } : {}),
     });
     latestCanvasRef.current = generated;
     target.width = generated.width;
@@ -293,7 +317,31 @@ function TextStampPanel({
     offsetYPct,
     customFont,
     boldText,
+    withQr,
   ]);
+
+  const qrFits = canPlaceStampQr({ sizePx, shape, borderWidthRatio });
+
+  /** 「印影画像を生成する」：固有番号を発行し、その番号のQRコードを入れた印影を作る */
+  function exportWithSerial() {
+    const issued = withQr && qrFits ? generateStampSerial() : null;
+    const canvas = generateStampCanvas({
+      text: text.trim() || "印",
+      shape,
+      layout,
+      sizePx,
+      fontScale,
+      borderWidthRatio,
+      paddingRatio,
+      color,
+      offsetXPct,
+      offsetYPct,
+      fontFamily: customFont?.cssFontFamily,
+      fontWeight: boldText ? "bold" : "normal",
+      ...(issued ? { qr: { serial: issued } } : {}),
+    });
+    void onExport(canvas, issued);
+  }
 
   const textTooLong = Array.from(text).length > STAMP_LIMITS.maxTextLength;
 
@@ -406,6 +454,13 @@ function TextStampPanel({
           />
         </label>
 
+        <QrOption checked={withQr} onChange={setWithQr} />
+        {withQr && !qrFits && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            この大きさでは、QRコードを入れる場所が足りません。印影サイズを{STAMP_QR_MIN_SIZE_PX}px以上にするか、枠を細くしてください（このまま生成すると、QRコードの無い印影になります）。
+          </p>
+        )}
+
         <SliderField
           label="文字サイズ"
           value={Math.round(fontScale * 100)}
@@ -507,9 +562,7 @@ function TextStampPanel({
         <button
           type="button"
           disabled={status === "processing" || text.trim() === "" || textTooLong} aria-busy={status === "processing" || undefined}
-          onClick={() => {
-            if (latestCanvasRef.current) void onExport(latestCanvasRef.current);
-          }}
+          onClick={exportWithSerial}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           印影画像を生成する
@@ -527,7 +580,7 @@ function ImportStampPanel({
   onExport,
   status,
 }: {
-  onExport: (canvas: HTMLCanvasElement) => void | Promise<void>;
+  onExport: (canvas: HTMLCanvasElement, serial: string | null) => void | Promise<void>;
   status: ProcessingState;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -563,6 +616,7 @@ function ImportStampPanel({
   const [thresholdPercent, setThresholdPercent] = useState(55);
   const [autoTrimEnabled, setAutoTrimEnabled] = useState(true);
   const [scalePercent, setScalePercent] = useState(100);
+  const [withQr, setWithQr] = useState(true);
   const [trimMessage, setTrimMessage] = useState<string | null>(null);
   const finalPreviewRef = useRef<HTMLCanvasElement>(null);
   const finalCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -911,6 +965,7 @@ function ImportStampPanel({
               余白を自動的にトリミングする
             </label>
             {trimMessage && <p className="text-xs text-amber-700 dark:text-amber-400">{trimMessage}</p>}
+            <QrOption checked={withQr} onChange={setWithQr} note="取り込んだ印影には、印影の下に番号とQRコードを並べます。" />
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">出力サイズ</legend>
               <div className="flex gap-2">
@@ -940,7 +995,11 @@ function ImportStampPanel({
                 type="button"
                 disabled={status === "processing"} aria-busy={status === "processing" || undefined}
                 onClick={() => {
-                  if (finalCanvasRef.current) void onExport(finalCanvasRef.current);
+                  const finalCanvas = finalCanvasRef.current;
+                  if (!finalCanvas) return;
+                  // 取り込んだ印影は形が決まっていないため、印影の下に番号とQRコードを並べる
+                  const issued = withQr ? generateStampSerial() : null;
+                  void onExport(issued ? appendStampQr(finalCanvas, issued, STAMP_COLORS.black) : finalCanvas, issued);
                 }}
                 className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
@@ -950,6 +1009,22 @@ function ImportStampPanel({
           </div>
         </PreviewSplitLayout>
       )}
+    </div>
+  );
+}
+
+/** 固有番号とQRコードを入れるかの選択(文字から作る・取り込むの両方で使う) */
+function QrOption({ checked, onChange, note }: { checked: boolean; onChange: (v: boolean) => void; note?: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        固有番号とQRコードを入れる
+      </label>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        生成するたびに、ランダムな固有番号（例：MS-7K9P-2XQ8-4D6A）を発行し、その番号だけを入れたQRコードを印影に入れます。
+        {note ? ` ${note}` : ""}
+      </p>
     </div>
   );
 }

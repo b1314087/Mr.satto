@@ -1,3 +1,4 @@
+import { create as createQr } from "qrcode";
 import { BrowserProcessor, type ImageProcessorOutput } from "../types";
 import { canvasToBlob, toOutput, type CropRegion } from "./image";
 import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
@@ -175,6 +176,187 @@ export interface StampTextGenerateInput {
   fontFamily?: string;
   /** 文字の太さ。未指定時は"bold"（カスタムフォント使用時は、書体本来の形を崩す合成太字を避けるため"normal"を推奨） */
   fontWeight?: "normal" | "bold";
+  /**
+   * 固有番号のQRコードを印影の中に入れる。serial に固有番号を渡すと、その番号のQRコードと番号を描く。
+   * serial が null のときは、番号を発行する前の編集中のプレビュー用に、QRコードの置き場所だけを描く。
+   * 未指定なら、従来どおりQRコードの無い印影
+   */
+  qr?: { serial: string | null };
+}
+
+// ---------------------------------------------------------------------------
+// 固有番号とQRコード
+// ---------------------------------------------------------------------------
+//
+// 印影ごとに、ランダムな固有番号(例 MS-7K9P-2XQ8-4D6A)を1つ発行し、その番号だけをQRコードにして印影に入れる。
+// ・番号の生成・QRコードの生成・画像の作成は、すべてブラウザの中で行う(サーバー・データベース・外部APIは使わない)。
+// ・乱数は、暗号学的に安全な乱数(crypto.getRandomValues)を使う。
+// ・使う文字は、見間違えやすい文字(0とO、1とIとL)を除いた英大文字と数字の31種類。12文字で 31^12 ≒ 7.9×10^17 通り
+//   (約59ビット)。全員の印影を突き合わせることはできないため重複しないことは保証できないが、例えば100万個の
+//   番号を発行しても、どこかで同じ番号が出る確率は約0.00006%(10^12 / (2×7.9×10^17))。
+// ・同じページ(タブ)の中では、発行した番号をメモリに覚えておき、同じ番号を2回発行しない(保存はしない。
+//   ページを閉じると消える)。
+// ・QRコードに入れるのは番号の文字列だけ(氏名・文字・色・日時などは入れない)。
+
+/** 固有番号に使う文字(0・1・I・L・O を除く) */
+export const STAMP_SERIAL_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+/** 固有番号の形式 */
+export const STAMP_SERIAL_PATTERN = /^MS-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
+/** このページの中で発行した番号(重複を避けるため。保存はしない) */
+const issuedSerials = new Set<string>();
+
+/**
+ * 固有番号を1つ発行する。randomBytes は暗号学的に安全な乱数で配列を埋める関数(既定は crypto.getRandomValues)。
+ * 31種類の文字を偏りなく選ぶため、248以上の値は捨てて引き直す(256を31で割った余りによる偏りを無くす)。
+ */
+export function generateStampSerial(randomBytes: (a: Uint8Array) => Uint8Array = (a) => crypto.getRandomValues(a)): string {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const chars: string[] = [];
+    while (chars.length < 12) {
+      const buf = randomBytes(new Uint8Array(32));
+      for (const b of buf) {
+        if (b >= 248) continue; // 248 = 31 × 8
+        chars.push(STAMP_SERIAL_ALPHABET[b % 31]);
+        if (chars.length === 12) break;
+      }
+    }
+    const serial = `MS-${chars.slice(0, 4).join("")}-${chars.slice(4, 8).join("")}-${chars.slice(8, 12).join("")}`;
+    if (!issuedSerials.has(serial)) {
+      issuedSerials.add(serial);
+      return serial;
+    }
+  }
+  throw new Error("固有番号を発行できませんでした。");
+}
+
+/** QRコードの模様(固有番号だけを入れる。誤り訂正のレベルM)。true が黒いマス */
+export function stampQrModules(serial: string): boolean[][] {
+  const qr = createQr(serial, { errorCorrectionLevel: "M" });
+  const n = qr.modules.size;
+  return Array.from({ length: n }, (_, r) => Array.from({ length: n }, (_, c) => !!qr.modules.get(r, c)));
+}
+
+/** QRコードの周りの余白(マスの数。QRコードの規格の4マス) */
+const QR_QUIET_MODULES = 4;
+/** 番号の文字のフォント */
+const SERIAL_FONT_FAMILY = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace';
+
+/**
+ * QRコード(白い余白の四角の中に、印影と同じ色のマス)を描く。位置・マスの大きさは整数のpxにそろえる(ぼやけないように)。
+ * 白い四角は、背景が透明でも読み取れるよう、QRコードの明暗の差を確保するためのもの
+ */
+function drawQr(ctx: CanvasRenderingContext2D, serial: string, x: number, y: number, modulePx: number, color: string) {
+  const modules = stampQrModules(serial);
+  const n = modules.length;
+  const side = (n + QR_QUIET_MODULES * 2) * modulePx;
+  const ox = Math.round(x);
+  const oy = Math.round(y);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(ox, oy, side, side);
+  ctx.fillStyle = color;
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++)
+      if (modules[r][c]) ctx.fillRect(ox + (c + QR_QUIET_MODULES) * modulePx, oy + (r + QR_QUIET_MODULES) * modulePx, modulePx, modulePx);
+}
+
+/** 番号を発行する前のプレビュー用：QRコードの置き場所だけを描く(読み取れる模様は描かない) */
+function drawQrPlaceholder(ctx: CanvasRenderingContext2D, x: number, y: number, side: number) {
+  ctx.save();
+  ctx.strokeStyle = "#9ca3af";
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, side - 1, side - 1);
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = `${Math.max(9, Math.round(side * 0.2))}px ${SERIAL_FONT_FAMILY}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("QR", x + side / 2, y + side / 2);
+  ctx.restore();
+}
+
+/** QRコードのマスの大きさ(px)：印影の大きさに合わせる(最低2px。読み取れる大きさ) */
+function qrModulePx(size: number): number {
+  return Math.max(2, Math.floor((size * 0.2) / (21 + QR_QUIET_MODULES * 2)));
+}
+
+/** 固有番号のQRコードを入れるのに必要な印影の大きさ(1辺のpx)。これより小さいと、文字の場所が足りない */
+export const STAMP_QR_MIN_SIZE_PX = 200;
+
+/**
+ * 文字から作る印影の、QRコード・番号・文字の配置。丸印は円の内側の下に、角印は枠の内側の下にQRコードを置き、
+ * その上に番号、残りの上の部分に文字を置く(文字・枠とは重ならない)。入らないときは null
+ */
+function stampQrLayout(size: number, shape: StampShape, borderWidth: number) {
+  if (size < STAMP_QR_MIN_SIZE_PX) return null;
+  const m = qrModulePx(size);
+  const side = (21 + QR_QUIET_MODULES * 2) * m;
+  const half = side / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const gap = Math.max(2, size * 0.015);
+  const serialPx = Math.min(14, Math.max(7, Math.round(size * 0.034)));
+  if (shape === "round") {
+    const radius = size / 2 - borderWidth / 2 - 2;
+    const ri = radius - borderWidth / 2 - gap;
+    if (ri <= half * 1.5) return null;
+    const qrCenterY = cy + Math.sqrt(ri * ri - half * half) - half;
+    const qrTop = qrCenterY - half;
+    const serialY = qrTop - serialPx * 0.75;
+    const serialHalfChord = Math.sqrt(Math.max(0, ri * ri - (serialY - serialPx / 2 - cy) ** 2));
+    const textTop = cy - ri * 0.8;
+    const textBottom = serialY - serialPx * 0.9;
+    const reach = Math.max(Math.abs(textTop - cy), Math.abs(textBottom - cy));
+    const textWidth = 2 * Math.sqrt(Math.max(0, ri * ri - reach * reach));
+    return { m, qrX: cx - half, qrY: qrTop, side, serialY, serialPx, serialMaxWidth: serialHalfChord * 2 * 0.92, textCy: (textTop + textBottom) / 2, textBox: Math.min(textBottom - textTop, textWidth) };
+  }
+  const hh = size / 2 - borderWidth / 2 - 2 - borderWidth / 2 - gap;
+  if (hh * 2 <= side * 2) return null;
+  const qrTop = cy + hh - side;
+  const serialY = qrTop - serialPx * 0.75;
+  const textTop = cy - hh;
+  const textBottom = serialY - serialPx * 0.9;
+  return { m, qrX: cx - half, qrY: qrTop, side, serialY, serialPx, serialMaxWidth: hh * 2 * 0.92, textCy: (textTop + textBottom) / 2, textBox: Math.min(textBottom - textTop, hh * 2) };
+}
+
+/** 番号の文字を、幅に収まる大きさで描く(serial が null なら、番号の置き場所を灰色の点で示す) */
+function drawSerialText(ctx: CanvasRenderingContext2D, serial: string | null, cx: number, cy: number, startPx: number, maxWidth: number, color: string) {
+  const text = serial ?? "MS-····-····-····";
+  const px = fitFontSize(ctx, text, startPx, maxWidth, "bold", SERIAL_FONT_FAMILY);
+  ctx.save();
+  ctx.font = `bold ${px}px ${SERIAL_FONT_FAMILY}`;
+  ctx.fillStyle = serial ? color : "#9ca3af";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, cx, cy);
+  ctx.restore();
+}
+
+/** 文字から作る印影に、QRコードを入れられるか(印影の大きさ・形・枠の太さで決まる) */
+export function canPlaceStampQr(input: Pick<StampTextGenerateInput, "sizePx" | "shape" | "borderWidthRatio">): boolean {
+  const size = Math.min(STAMP_LIMITS.maxStampSizePx, Math.max(STAMP_LIMITS.minStampSizePx, Math.round(input.sizePx)));
+  const borderWidth = Math.max(2, size * Math.min(Math.max(input.borderWidthRatio, 0.01), 0.12));
+  return stampQrLayout(size, input.shape, borderWidth) !== null;
+}
+
+/**
+ * 取り込んだ印影(形が決まっていない画像)に、固有番号とQRコードを付ける。印影の中の空いている場所は分からないため、
+ * 印影には重ねず、印影の下に番号とQRコードを並べた画像にする(背景は透明のまま)
+ */
+export function appendStampQr(source: HTMLCanvasElement, serial: string, color = STAMP_COLORS.red): HTMLCanvasElement {
+  const base = Math.max(source.width, source.height);
+  const m = Math.min(8, Math.max(2, Math.round(base / 150)));
+  const side = (21 + QR_QUIET_MODULES * 2) * m;
+  const serialPx = Math.min(16, Math.max(9, Math.round(side * 0.16)));
+  const gap = Math.max(4, Math.round(side * 0.08));
+  const width = Math.max(source.width, side, Math.ceil(serialPx * 0.62 * serial.length) + 4);
+  const height = source.height + gap + serialPx + gap + side;
+  const canvas = createCanvas(width, height);
+  const ctx = get2dContext(canvas);
+  ctx.drawImage(source, Math.round((width - source.width) / 2), 0);
+  drawSerialText(ctx, serial, width / 2, source.height + gap + serialPx / 2, serialPx, width - 4, color);
+  drawQr(ctx, serial, (width - side) / 2, source.height + gap + serialPx + gap, m, color);
+  return canvas;
 }
 
 function splitIntoColumns(chars: string[]): string[][] {
@@ -296,11 +478,22 @@ export function generateStampCanvas(input: StampTextGenerateInput): HTMLCanvasEl
     innerBoxSize = half * 2 * (1 - Math.min(Math.max(input.paddingRatio, 0), 0.4));
   }
 
+  // 固有番号のQRコード：枠の内側の下にQRコード、その上に番号、残りの上の部分に文字を置く
+  const qrLayout = input.qr ? stampQrLayout(size, input.shape, borderWidth) : null;
+  let textCy = cy;
+  if (input.qr && qrLayout) {
+    if (input.qr.serial) drawQr(ctx, input.qr.serial, qrLayout.qrX, qrLayout.qrY, qrLayout.m, color);
+    else drawQrPlaceholder(ctx, qrLayout.qrX, qrLayout.qrY, qrLayout.side);
+    drawSerialText(ctx, input.qr.serial, cx, qrLayout.serialY, qrLayout.serialPx, qrLayout.serialMaxWidth, color);
+    textCy = qrLayout.textCy;
+    innerBoxSize = qrLayout.textBox * (1 - Math.min(Math.max(input.paddingRatio, 0), 0.4));
+  }
+
   drawStampText(ctx, {
     text: input.text.trim(),
     layout: input.layout,
     cx,
-    cy,
+    cy: textCy,
     innerBoxSize: Math.max(1, innerBoxSize),
     fontScale: Math.min(Math.max(input.fontScale, 0.4), 2),
     offsetXPct: input.offsetXPct,
