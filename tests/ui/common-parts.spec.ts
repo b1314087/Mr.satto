@@ -203,8 +203,8 @@ test.describe("ファイル選択欄（CSV重複削除で確認）", () => {
     await expect(page.locator("li", { has: page.getByText("photo.png") })).toHaveCount(0);
   });
 
-  test("複数ファイル対応のツール（CSV結合）: 入力欄が multiple で、複数のファイルを選べる", async ({ page }) => {
-    await gotoTool(page, "csv-merge");
+  test("複数ファイル対応のツール（Excel・CSV結合）: 入力欄が multiple で、複数のファイルを選べる", async ({ page }) => {
+    await gotoTool(page, "excel-merge");
     await expect(dropzone(page).locator('input[type="file"]')).toHaveAttribute("multiple", "");
     await uploadFixture(page, [fixtures.csv, fixtures.csvForMerge]);
     await expect(page.getByText("sample.csv", { exact: true })).toBeVisible();

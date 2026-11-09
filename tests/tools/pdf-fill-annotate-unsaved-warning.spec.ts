@@ -26,7 +26,7 @@ const OBJECT_LIST = '[data-testid="pdf-annotate-object-list"]';
 test.use({ viewport: { width: 1280, height: 1400 } });
 
 async function openToolWithPdf(page: Page) {
-  await page.goto("/tools/pdf-fill-annotate");
+  await page.goto("/tools/pdf-fix");
   await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS));
 }
 
@@ -214,7 +214,7 @@ plainTest.describe("PDF記入・注釈: Freeプランの広告確認と保存状
 
   plainTest("広告の確認画面を出しただけ・取りやめたときは、未保存のまま", async ({ page }) => {
     const dialog = page.getByTestId("download-gate-dialog");
-    await page.goto("/tools/pdf-fill-annotate");
+    await page.goto("/tools/pdf-fix");
     await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS));
     await addText(page, 60, 80);
     await page.getByRole("button", { name: "PDFを書き出す" }).click();
@@ -232,7 +232,7 @@ plainTest.describe("PDF記入・注釈: Freeプランの広告確認と保存状
   plainTest("広告の確認を済ませて、保存の処理が実行されたら、保存済みになる", async ({ page, context, baseURL }) => {
     const dialog = page.getByTestId("download-gate-dialog");
     await setDevAdOutcome(context, "granted", baseURL!);
-    await page.goto("/tools/pdf-fill-annotate");
+    await page.goto("/tools/pdf-fix");
     await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS));
     await addText(page, 60, 80);
     await page.getByRole("button", { name: "PDFを書き出す" }).click();

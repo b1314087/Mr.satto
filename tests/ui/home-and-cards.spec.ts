@@ -254,12 +254,12 @@ test.describe("ツールカード", () => {
     await page.goto("/tools/image");
     const cards = main(page).locator('a[href^="/tools/"][aria-label]');
     await expect(cards.getByText("通常", { exact: true })).toHaveCount(0);
-    // 画像カテゴリでAIが入っているのは背景透過だけ（端末内で動くAIモデル）
+    // 工程2：背景透過のAIモードを削除したため、画像カテゴリにAIが入っているツールは無い
     const aiTools = getListedTools().filter((t) => t.category === "image" && t.hasAi && t.status === "available");
-    expect(aiTools.map((t) => t.id)).toEqual(["background-remover"]);
-    await expect(cards.getByText("AI実装", { exact: true })).toHaveCount(1);
-    await expect(main(page).locator('a[href="/tools/background-remover"]').getByText("AI実装", { exact: true })).toHaveCount(1);
-    await expect(main(page).locator('a[href="/tools/image-resize"]').getByText("AI実装", { exact: true })).toHaveCount(0);
+    expect(aiTools.map((t) => t.id)).toEqual([]);
+    await expect(cards.getByText("AI実装", { exact: true })).toHaveCount(0);
+    await expect(main(page).locator('a[href="/tools/background-remover"]')).toHaveCount(1);
+    await expect(main(page).locator('a[href="/tools/background-remover"]').getByText("AI実装", { exact: true })).toHaveCount(0);
 
     // 年度カレンダー（外部AIの補助つき）は、課金が有効な本番設定では「AI実装」が出る
     await page.goto("/tools/generator");

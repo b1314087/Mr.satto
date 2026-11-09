@@ -388,8 +388,9 @@ const toolDefinitions: Tool[] = [
   },
   {
     // 工程12：PDFの修正（記入・注釈・白消し・ページ番号・透かし）を1つの画面にまとめた入口。
-    // 各機能の中身は既存ツール（pdf-fill-annotate / pdf-add-page-numbers / pdf-watermark）の画面を再利用し、
-    // 既存の個別URLはそのまま維持する。
+    // 各機能の中身は既存ツール（PDF記入・注釈 / pdf-add-page-numbers / pdf-watermark）の画面を再利用する。
+    // 工程2：PDF記入・注釈（旧 pdf-fill-annotate）の独立したページは廃止し、旧URLはこのツールへ転送する
+    // （記入・注釈・白消しは、このツールの最初に開く機能としてそのまま使える）。ページ番号追加・透かしの個別URLは維持。
     id: "pdf-fix",
     name: "PDF修正",
     category: "pdf",
@@ -408,6 +409,13 @@ const toolDefinitions: Tool[] = [
       "誤字訂正",
       "PDF記入",
       "PDF注釈",
+      "PDF記入・注釈",
+      "PDFに書き込み",
+      "PDFに文字を入力",
+      "PDFにチェックを入れる",
+      "PDFに手書き",
+      "PDFに画像を追加",
+      "PDFに印鑑を押す",
       "ページ番号",
       "透かし",
       "fix pdf",
@@ -620,27 +628,6 @@ const toolDefinitions: Tool[] = [
     relatedToolIds: ["pdf-fix"],
   },
   {
-    id: "pdf-fill-annotate",
-    name: "PDF記入・注釈",
-    category: "pdf",
-    description: "PDFに文字・チェック・図形・手書き・画像・印影を追加して、その場でダウンロードします",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: [
-      "PDF記入",
-      "PDFに書き込み",
-      "PDFに文字を入力",
-      "PDFにチェックを入れる",
-      "PDFに手書き",
-      "PDFに画像を追加",
-      "PDFに印鑑を押す",
-      "PDF編集",
-      "PDFを編集する",
-    ],
-    relatedToolIds: ["pdf-fix"],
-  },
-  {
     // pdf-libは暗号化の書き込みに対応していないため、Web Crypto APIを使い
     // PDF 2.0標準(V5/R6, AES-256)の暗号化を src/lib/pdf/encrypt.ts で自前実装している。
     // 暗号化後のファイルはqpdfで検証済みで、画面上でもPDF.jsで開き直して確認する。
@@ -803,22 +790,13 @@ const toolDefinitions: Tool[] = [
     mergedInto: "excel-csv-convert",
   },
   {
-    id: "csv-merge",
-    name: "CSV結合",
-    category: "csv-excel",
-    description: "複数のCSVファイルを1つに結合します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["結合", "マージ"],
-    relatedToolIds: ["excel-merge"],
-  },
-  {
+    // 工程2：CSV結合（旧 csv-merge）を統合し、名前を「Excel・CSV結合」に変更した（URLは /tools/excel-merge のまま）。
+    // 画面で「Excelファイルを結合」「CSVファイルを結合」を切り替える。旧 /tools/csv-merge は ?mode=csv へ転送する。
     id: "excel-merge",
-    name: "Excelファイル結合",
+    name: "Excel・CSV結合",
     category: "csv-excel",
     description:
-      "複数のExcel・CSVファイルを、見出しの名前で列を揃えて1つの表にまとめます。名簿や台帳の統合に使えます。出力はExcelまたはCSVです",
+      "複数のExcelファイル、または複数のCSVファイルを1つにまとめます。Excelは見出しの名前で列を揃えて結合し、CSVは選んだ順につなぎます。どちらを結合するかは画面で切り替えられます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
@@ -835,8 +813,11 @@ const toolDefinitions: Tool[] = [
       "名簿",
       "台帳",
       "csv",
+      "CSV結合",
+      "CSVをまとめる",
+      "Excelファイル結合",
     ],
-    relatedToolIds: ["csv-merge", "csv-dedupe"],
+    relatedToolIds: ["csv-dedupe"],
   },
   {
     id: "csv-dedupe",
@@ -950,17 +931,6 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["置換", "削除", "検索", "excel"],
-  },
-  {
-    // 次工程・軽量便利ツール一括追加（Tool 7）
-    id: "excel-merge-center",
-    name: "Excel横セル結合・中央揃え",
-    category: "csv-excel",
-    description: "指定した範囲のセルを横方向に結合し、中央揃えを設定します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["セル結合", "中央揃え", "excel", "merge"],
   },
   {
     // 次工程・軽量便利ツール一括追加（Tool 8）
@@ -1454,14 +1424,25 @@ const toolDefinitions: Tool[] = [
     featured: true,
   },
   {
+    // 工程2：表示名を「PDF差し込み印刷」に変更した（URL・機能は変えていない。旧名で探す人のため、旧名もキーワードに残す）
     id: "form-to-individual-pdfs",
-    name: "フォーム回答から個別PDFを一括作成",
+    name: "PDF差し込み印刷",
     category: "pdf",
-    description: "Googleフォーム・Microsoft Formsの回答データをPDFテンプレートに差し込み、個別PDFを一括生成します",
+    description: "Googleフォーム・Microsoft Formsの回答データ（CSV・Excel）をPDFテンプレートに差し込み、1人ずつの個別PDFを一括生成します",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["フォーム", "google forms", "microsoft forms", "個別pdf", "一括作成", "差し込み"],
+    keywords: [
+      "差し込み印刷",
+      "PDF差し込み印刷",
+      "フォーム",
+      "google forms",
+      "microsoft forms",
+      "個別pdf",
+      "一括作成",
+      "差し込み",
+      "フォーム回答から個別PDFを一括作成",
+    ],
   },
 
   // ------------------------------------------------------------------
@@ -1481,12 +1462,12 @@ const toolDefinitions: Tool[] = [
     id: "background-remover",
     name: "背景透過（背景除去）",
     category: "image",
-    hasAi: "local",
-    description: "AIが画像の背景を自動で透明にします。画像は端末の外へ送信されません",
+    // 工程2：AIで背景を判定するモードは削除した（色を指定して消す方式だけを残す）
+    description: "白や単色の背景など、指定した色に近い部分を透明にします。画像は端末の外へ送信されません",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["背景除去", "透過", "ai"],
+    keywords: ["背景除去", "透過"],
   },
   {
     id: "electronic-stamp-generator",

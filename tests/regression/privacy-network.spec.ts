@@ -60,7 +60,7 @@ test("pdf-fill-annotate操作中、PDF・入力したテキスト・画像が自
   // Phase 15: テキスト・チェック・手書き・画像すべてを配置し、書き出し・ダウンロードまで
   // 一連の操作を行っている間、フィクスチャ内容がネットワークへ一切送信されないことを確認する。
   const recorder = new NetworkRecorder(page);
-  await page.goto("/tools/pdf-fill-annotate");
+  await page.goto("/tools/pdf-fix");
 
   const marker = "PRIVACY-CHECK-9f3a1";
   await uploadWhenReady(page, fixtures.singlePagePdf, page.locator('[data-testid="pdf-annotate-canvas"]'));
@@ -114,7 +114,7 @@ test("pdf-fill-annotate(Phase17: 図形・回転・複製・印影)操作中、�
   // 印影としての取り込み、という新しい操作を一通り行い、書き出し・ダウンロードまでの間、
   // フィクスチャ内容（印影画像データ）がネットワークへ一切送信されないことを確認する。
   const recorder = new NetworkRecorder(page);
-  await page.goto("/tools/pdf-fill-annotate");
+  await page.goto("/tools/pdf-fix");
 
   await uploadWhenReady(page, fixtures.singlePagePdf, page.locator('[data-testid="pdf-annotate-canvas"]'));
 

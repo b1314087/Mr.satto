@@ -14,7 +14,7 @@ async function uploadFixture(page: Page, files: string | string[]) {
 
 /**
  * CSV/Excelカテゴリの代表E2E（Phase 14 優先度1位）:
- * csv-format / csv-to-excel / excel-to-csv / csv-merge
+ * csv-format / csv-to-excel / excel-to-csv / csv-merge（工程2で Excel・CSV結合 に統合）
  */
 
 test("csv-format: テキストエリアにCSVを入力して整形し、コピー可能になる", async ({ page }) => {
@@ -55,8 +55,14 @@ test("excel-to-csv: Excelをアップロードしてcsvに変換しダウンロ�
   expect(outContent).toContain("テスト商品A");
 });
 
-test("csv-merge: 複数CSVを結合してダウンロードできる", async ({ page }) => {
-  await page.goto("/tools/csv-merge");
+test("Excel・CSV結合「CSVファイルを結合」（旧 csv-merge）: 複数CSVを結合してダウンロードできる", async ({ page }) => {
+  await page.goto("/tools/excel-merge");
+  // 画面の準備（hydration）が終わってから切り替える（準備前の操作は無視されることがあるため）
+  await expect(async () => {
+    await page.getByTestId("excel-csv-merge-mode-csv").click();
+    await expect(page.getByTestId("excel-csv-merge-mode-csv")).toHaveAttribute("aria-pressed", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+  await expect(page.getByText("CSVをドラッグ&ドロップ（複数可）")).toBeVisible();
   await uploadFixture(page, [fixtures.csv, fixtures.csvForMerge]);
 
   await page.getByRole("button", { name: /件のCSVを結合する$/ }).click();

@@ -200,19 +200,7 @@ test.describe("excel-replace", () => {
   });
 });
 
-// ------------------------------------------------------------------
-// Tool 7: Excel横セル結合・中央揃え
-// ------------------------------------------------------------------
-test.describe("excel-merge-center", () => {
-  test("指定範囲のセルを結合できる", async ({ page }) => {
-    await page.goto("/tools/excel-merge-center");
-    await uploadFixture(page, fixtures.xlsx);
-    await page.getByRole("button", { name: "実行する" }).click();
-    await waitForSuccess(page, "処理が完了しました");
-    const download = await clickAndDownload(page, "Excelファイルをダウンロード");
-    await assertDownloadedFile(download, { format: "zip", minBytes: 10 });
-  });
-});
+// Tool 7: Excel横セル結合・中央揃え は工程2で削除した（tests/tools/removed-tools-step2.spec.ts で確認）
 
 // ------------------------------------------------------------------
 // Tool 8: Excel日付一括変更

@@ -25,7 +25,7 @@ const OBJECT_LIST = '[data-testid="pdf-annotate-object-list"]';
 test.use({ viewport: { width: 1280, height: 1400 } });
 
 async function openToolWithPdf(page: Page, fixturePath: string) {
-  await page.goto("/tools/pdf-fill-annotate");
+  await page.goto("/tools/pdf-fix");
   // ファイル入力欄のhydration完了を待ってから選択し、canvasの表示まで待つ（tests/helpers/tool-ready.ts）
   await uploadWhenReady(page, fixturePath, page.locator(CANVAS));
 }

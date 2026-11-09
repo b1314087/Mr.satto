@@ -99,9 +99,8 @@ async function repair(page: Page) {
 test.describe("予期しないエラーの画面（工程27）", () => {
   test("ページの表示中にエラーが起きても、ヘッダーとフッターは残り、再試行できる案内が出る。「もう一度試す」で元に戻る", async ({ page }) => {
     await installReactHook(page);
-    await page.goto("/tools/pdf-fill-annotate");
-    await expect(page.getByRole("heading", { name: "PDF記入・注釈" })).toBeVisible();
-    await expect(page.getByTestId("pdf-fix-modes")).toHaveCount(0);
+    await page.goto("/tools/pdf-fix");
+    await expect(page.getByRole("heading", { level: 1, name: "PDF修正" })).toBeVisible();
 
     await breakBoundary(page, "Error");
 
@@ -123,7 +122,7 @@ test.describe("予期しないエラーの画面（工程27）", () => {
     // 原因が取り除かれた状態で「もう一度試す」と、元の画面に戻る
     await repair(page);
     await alert.getByRole("button", { name: "もう一度試す" }).click();
-    await expect(page.getByRole("heading", { name: "PDF記入・注釈" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "PDF修正" })).toBeVisible({ timeout: 20_000 });
     await expect(alert).toHaveCount(0);
   });
 

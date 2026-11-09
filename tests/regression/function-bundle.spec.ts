@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "@playwright/test";
@@ -89,42 +88,25 @@ test.describe("サーバー関数への sharp 同梱の除外", () => {
   });
 });
 
-test.describe("背景除去(onnxruntime-web)のWASMを、ビルドで二重に出力しない設定", () => {
-  const ALIAS_KEY = "onnxruntime-web/wasm";
-  const ALIAS_TARGET = "./node_modules/onnxruntime-web/dist/ort.wasm.min.mjs";
-  const md5 = (rel: string) => crypto.createHash("md5").update(fs.readFileSync(path.join(ROOT, rel))).digest("hex");
-
-  test("next.config.ts: turbopack.resolveAlias が、外部WASM版(ort.wasm.min.mjs)だけを指している", () => {
-    const code = stripComments(read("next.config.ts"));
-    const block = code.match(/turbopack:\s*\{\s*resolveAlias:\s*\{([\s\S]*?)\}\s*,?\s*\}/);
-    expect(block, "turbopack.resolveAlias の設定が見つからない").toBeTruthy();
-    const entries = [...block![1].matchAll(/"([^"]+)"\s*:\s*"([^"]+)"/g)].map((m) => [m[1], m[2]]);
-    expect(entries).toEqual([[ALIAS_KEY, ALIAS_TARGET]]);
-    expect(fs.existsSync(path.join(ROOT, ALIAS_TARGET)), "alias の参照先が存在しない").toBe(true);
-  });
-
-  test("onnxruntime-web: 公式の外部WASM条件が、alias の参照先と同じファイルを指している（更新時の検知）", () => {
-    const pkg = JSON.parse(read("node_modules/onnxruntime-web/package.json")) as {
-      exports: Record<string, { import?: Record<string, string> }>;
-    };
-    const extern = pkg.exports["./wasm"]?.import?.["onnxruntime-web-use-extern-wasm"];
-    expect(extern, "公式の外部WASM条件が見つからない（onnxruntime-web の構成が変わった）").toBeTruthy();
-    expect(path.posix.normalize(`node_modules/onnxruntime-web/${extern}`)).toBe(path.posix.normalize(ALIAS_TARGET));
-  });
-
-  test("public/ort/ の実行ファイルが、インストール済み onnxruntime-web の dist と完全に一致している", () => {
-    for (const f of ["ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]) {
-      expect(md5(`public/ort/${f}`), `${f} が onnxruntime-web の版と一致しない。更新したら public/ort/ も差し替えること`).toBe(
-        md5(`node_modules/onnxruntime-web/dist/${f}`)
-      );
+test.describe("背景除去のAIモード削除（工程2）：AIの実行ファイル・モデルを配布しない", () => {
+  test("onnxruntime-web を依存関係に持たず、public/ort・public/models も置いていない。設定・コードにも参照が残っていない", () => {
+    const pkg = JSON.parse(read("package.json")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    expect(pkg.dependencies?.["onnxruntime-web"]).toBeUndefined();
+    expect(pkg.devDependencies?.["onnxruntime-web"]).toBeUndefined();
+    expect(read("package-lock.json")).not.toContain('"node_modules/onnxruntime-web"');
+    expect(fs.existsSync(path.join(ROOT, "public/ort"))).toBe(false);
+    expect(fs.existsSync(path.join(ROOT, "public/models"))).toBe(false);
+    expect(stripComments(read("next.config.ts"))).not.toContain("onnxruntime");
+    for (const f of [
+      "src/lib/processors/browser/background-remove.ts",
+      "src/lib/processors/browser/background-remove-client.ts",
+      "src/lib/processors/browser/background-remove.worker.ts",
+      "src/components/tools/implementations/background-remover-tool.tsx",
+    ]) {
+      const code = stripComments(read(f));
+      expect(code, f).not.toContain("onnxruntime");
+      expect(code, f).not.toContain("/models/");
+      expect(code, f).not.toContain("/ort/");
     }
-  });
-
-  test("背景除去は onnxruntime-web/wasm を読み込み、wasmPaths で /ort/ を指定している", () => {
-    const code = stripComments(read("src/lib/processors/browser/background-remove.ts"));
-    expect(code).toContain('import("onnxruntime-web/wasm")');
-    expect(code).toContain('ORT_BASE_URL = "/ort/"');
-    expect(code).toContain("ort-wasm-simd-threaded.mjs");
-    expect(code).toContain("ort-wasm-simd-threaded.wasm");
   });
 });

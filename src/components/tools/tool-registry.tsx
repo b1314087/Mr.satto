@@ -164,12 +164,9 @@ const ExcelCsvConvertTool = dynamic(() =>
   import("./implementations/excel-csv-convert-tool").then((m) => m.ExcelCsvConvertTool),
   { loading: ToolLoading }
 );
-const CsvMergeTool = dynamic(() =>
-  import("./implementations/csv-merge-tool").then((m) => m.CsvMergeTool),
-  { loading: ToolLoading }
-);
-const ExcelMergeTool = dynamic(() =>
-  import("./implementations/excel-merge-tool").then((m) => m.ExcelMergeTool),
+// 工程2：CSV結合を統合した「Excel・CSV結合」（Excelファイル結合・CSV結合の画面を切り替えて使う）
+const ExcelCsvMergeTool = dynamic(() =>
+  import("./implementations/excel-csv-merge-tool").then((m) => m.ExcelCsvMergeTool),
   { loading: ToolLoading }
 );
 const CsvDedupeTool = dynamic(() =>
@@ -369,10 +366,6 @@ const FormToIndividualPdfsTool = dynamic(() =>
   import("./implementations/form-to-individual-pdfs-tool").then((m) => m.FormToIndividualPdfsTool),
   { loading: ToolLoading }
 );
-const PdfFillAnnotateTool = dynamic(() =>
-  import("./implementations/pdf-fill-annotate-tool").then((m) => m.PdfFillAnnotateTool),
-  { loading: ToolLoading }
-);
 const ElectronicStampGeneratorTool = dynamic(() =>
   import("./implementations/electronic-stamp-generator-tool").then((m) => m.ElectronicStampGeneratorTool),
   { loading: ToolLoading }
@@ -401,10 +394,6 @@ const ExcelBlankRemoveTool = dynamic(() =>
 );
 const ExcelReplaceTool = dynamic(() =>
   import("./implementations/excel-replace-tool").then((m) => m.ExcelReplaceTool),
-  { loading: ToolLoading }
-);
-const ExcelMergeCenterTool = dynamic(() =>
-  import("./implementations/excel-merge-center-tool").then((m) => m.ExcelMergeCenterTool),
   { loading: ToolLoading }
 );
 const ExcelDateShiftTool = dynamic(() =>
@@ -545,10 +534,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelCsvConvertTool initialMode="csv-to-excel" />;
     case "excel-to-csv":
       return <ExcelCsvConvertTool initialMode="excel-to-csv" />;
-    case "csv-merge":
-      return <CsvMergeTool />;
     case "excel-merge":
-      return <ExcelMergeTool />;
+      return <ExcelCsvMergeTool />;
     case "csv-dedupe":
       return <CsvDedupeTool />;
     case "csv-replace":
@@ -656,8 +643,6 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <FilledPdfToExcelTool />;
     case "form-to-individual-pdfs":
       return <FormToIndividualPdfsTool />;
-    case "pdf-fill-annotate":
-      return <PdfFillAnnotateTool />;
     case "electronic-stamp-generator":
       return <ElectronicStampGeneratorTool />;
     case "date-weekday-tool":
@@ -672,8 +657,6 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelBlankRemoveTool />;
     case "excel-replace":
       return <ExcelReplaceTool />;
-    case "excel-merge-center":
-      return <ExcelMergeCenterTool />;
     case "excel-date-shift":
       return <ExcelDateShiftTool />;
     case "word-paragraph-cleanup":

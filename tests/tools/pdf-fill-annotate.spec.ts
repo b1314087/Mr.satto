@@ -8,6 +8,7 @@ import { checkBasicAccessibility, checkKeyboardFocusable } from "../helpers/a11y
 
 /**
  * PDF記入・注釈（Phase 15）のE2Eテスト。
+ * 工程2で独立したページを廃止したため、PDF修正（/tools/pdf-fix。最初に「記入・注釈・白消し」が選ばれている）で確かめる。
  *
  * 開発指示書が求める最低限19シナリオ（ツールページ表示～モバイル表示まで）に加え、
  * 「ダウンロードイベントが発火しただけ」を成功にしない方針に沿って、生成された
@@ -28,7 +29,7 @@ const OBJECT_LIST = '[data-testid="pdf-annotate-object-list"]';
 test.use({ viewport: { width: 1280, height: 1400 } });
 
 async function openToolWithPdf(page: Page, fixturePath: string) {
-  await page.goto("/tools/pdf-fill-annotate");
+  await page.goto("/tools/pdf-fix");
   // ファイル入力欄のhydration完了を待ってから選択し、canvasの表示まで待つ（tests/helpers/tool-ready.ts）
   await uploadWhenReady(page, fixturePath, page.locator(CANVAS));
 }
@@ -61,12 +62,13 @@ async function exportAndDownload(page: Page) {
   return path;
 }
 
-// (1) ツールページ表示
-test("ツールページが表示される", async ({ page }) => {
-  const response = await page.goto("/tools/pdf-fill-annotate");
+// (1) ツールページ表示（工程2：PDF記入・注釈の独立したページは廃止し、PDF修正の「記入・注釈・白消し」で使う）
+test("ツールページが表示される（PDF修正の「記入・注釈・白消し」が最初に選ばれている）", async ({ page }) => {
+  const response = await page.goto("/tools/pdf-fix");
   expect(response?.status()).toBe(200);
   await expect(page.locator("body")).not.toContainText("Application error");
-  await expect(page.getByRole("heading", { name: "PDF記入・注釈" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "PDF修正" })).toBeVisible();
+  await expect(page.getByTestId("pdf-fix-mode-annotate")).toHaveAttribute("aria-pressed", "true");
 });
 
 // (2)(3) PDFアップロード・単一ページ表示

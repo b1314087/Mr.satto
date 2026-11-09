@@ -30,13 +30,12 @@ const CASES: [string, Input][] = [
   // 画像
   ...(["image-sns-size", "image-crop", "image-batch-convert", "image-format-convert", "image-rotate-flip", "image-to-pdf", "image-flip", "image-grayscale", "image-metadata-remove", "image-layout", "image-passport-photo", "image-padding-text", "image-tile-split", "image-mosaic", "image-resize", "image-compress", "image-rotate"] as const).map((id) => [id, img] as [string, Input]),
   ["image-merge", { kind: "file", files: [fixtures.png, fixtures.jpg] }],
-  ["csv-merge", { kind: "file", files: [fixtures.csv, fixtures.csvForMerge] }],
   ["excel-merge", { kind: "file", files: [fixtures.csv, fixtures.csvForMerge] }],
   ["csv-format", { kind: "text", text: "a, b ,c\n 1,2 ,3\n\n4,5,6" }],
   ["excel-label", { kind: "text", text: "山田太郎\n佐藤花子" }],
   // 表
   ...(["csv-to-excel", "csv-dedupe", "csv-replace", "csv-column-editor", "csv-to-json", "csv-json-convert"] as const).map((id) => [id, csv] as [string, Input]),
-  ...(["excel-to-csv", "excel-csv-convert", "excel-transpose", "excel-blank-remove", "excel-replace", "excel-merge-center", "excel-date-shift", "excel-to-pdf"] as const).map((id) => [id, xlsx] as [string, Input]),
+  ...(["excel-to-csv", "excel-csv-convert", "excel-transpose", "excel-blank-remove", "excel-replace", "excel-date-shift", "excel-to-pdf"] as const).map((id) => [id, xlsx] as [string, Input]),
   // 文書
   ...(["word-paragraph-cleanup", "word-to-pdf"] as const).map((id) => [id, docx] as [string, Input]),
   // Excel・Word比較は、ファイルAを選ぶと「選んだファイル」の確認が出る

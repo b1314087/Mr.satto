@@ -81,15 +81,16 @@ test.describe("L1: PDFツールのページ数上限の説明", () => {
 });
 
 test.describe("L2・L3: title・名称の整合", () => {
-  test("PDF記入・注釈のtitleは、画面上のツール名で始まり、PDF編集と区別できる", () => {
-    const tool = tools.find((t) => t.id === "pdf-fill-annotate")!;
-    expect(tool.name).toBe("PDF記入・注釈");
-    const title = toolSeoContent["pdf-fill-annotate"].metaTitle;
-    expect(title.startsWith("PDF記入・注釈｜")).toBe(true);
+  test("PDF修正（工程2でPDF記入・注釈を統合）のtitleは、画面上のツール名で始まり、PDF編集と区別できる", () => {
+    const tool = tools.find((t) => t.id === "pdf-fix")!;
+    expect(tool.name).toBe("PDF修正");
+    const title = toolSeoContent["pdf-fix"].metaTitle;
+    expect(title.startsWith("PDF修正｜")).toBe(true);
     expect(title.startsWith("PDF編集")).toBe(false);
     expect(toolSeoContent["pdf-edit"].metaTitle.startsWith("PDF編集｜")).toBe(true);
-    // 説明文も、記入・注釈の機能を説明している
-    expect(toolSeoContent["pdf-fill-annotate"].metaDescription).toMatch(/書き込み|入力/);
+    // 説明文も、文字入れ（記入・注釈）の機能を説明している
+    expect(toolSeoContent["pdf-fix"].metaDescription).toMatch(/文字/);
+    expect(tools.find((t) => t.id === "pdf-fill-annotate")).toBeUndefined();
   });
 
   test("SNSサイズ変換: 画面上の名称とtitleが一致する", () => {
@@ -178,16 +179,15 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
     // 新プロジェクト工程8: 領収書・レシートから会計CSV作成（receipt-accounting-csv）から、文字認識（ocr）とPDF→Excelを案内
     // 新プロジェクト工程4: PDF黒塗り・墨消し（pdf-redact）と、白消しがあるPDF修正（pdf-fix）を互いに案内
     // 新プロジェクト工程3: Excelファイル結合（excel-merge）と、近い用途のCSV結合（csv-merge）を互いに案内
+    //   → 工程2: CSV結合は Excel・CSV結合（excel-merge）に統合。PDF記入・注釈は PDF修正に統合
     // 新規ツール：動画字幕追加（video-subtitle）から、近い用途の動画変換・動画モザイクを案内
     // 内部リンク改善の工程: Google未登録だった重要ページ（PDF→Excel・PDF→Word・PDF編集・画像圧縮）に、使う場面が近いツールを案内
     expect(withPins.map((t) => t.id).sort()).toEqual([
-      "csv-merge",
       "excel-merge",
       "excel-to-pdf",
       "image-compress",
       "pdf-add-page-numbers",
       "pdf-edit",
-      "pdf-fill-annotate",
       "pdf-fix",
       "pdf-redact",
       "pdf-to-excel",

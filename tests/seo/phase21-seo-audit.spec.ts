@@ -16,11 +16,11 @@ import sitemap from "@/app/sitemap";
  * robots/sitemap）と重複しない範囲でカバーする。
  *
  * 代表ページ: Home, /tools, 画像/PDF/CSV・Excel/動画の各カテゴリページ、
- * filled-pdf-to-excel, pdf-fill-annotate, electronic-stamp-generator, pricing。
+ * filled-pdf-to-excel, pdf-fix（工程2で pdf-fill-annotate から差し替え）, electronic-stamp-generator, pricing。
  */
 
 const REPRESENTATIVE_CATEGORY_PAGES = ["image", "pdf", "csv-excel", "video"] as const;
-const REPRESENTATIVE_TOOL_PAGES = ["filled-pdf-to-excel", "pdf-fill-annotate", "electronic-stamp-generator"] as const;
+const REPRESENTATIVE_TOOL_PAGES = ["filled-pdf-to-excel", "pdf-fix", "electronic-stamp-generator"] as const;
 
 interface JsonLdBlock {
   "@type"?: string;
@@ -202,18 +202,18 @@ test.describe("Phase 21: 内部リンク(関連ツール・カテゴリ導線)",
     });
   }
 
-  test("pdf-fill-annotate(以前は関連ツールに一切出てこなかったツール)が、実際にいずれかのPDFツールページからリンクされる", async ({
+  test("pdf-fix(工程2でPDF記入・注釈を統合した先)が、実際にいずれかのPDFツールページからリンクされる", async ({
     page,
   }) => {
-    // Phase 21で修正した円環選定ロジックを使い、pdf-fill-annotateを関連ツールとして
+    // 関連ツールの選定ロジックを使い、pdf-fixを関連ツールとして
     // 表示するはずのツールを実データから特定し、実際にブラウザで確認する
     // （ハードコードした特定のツールIDに依存せず、データが変わっても追従する）。
     const available = tools.filter((t) => t.status === "available" && hasImplementation(t.id));
-    const host = available.find((t) => getRelatedTools(t).related.some((r) => r.id === "pdf-fill-annotate"));
-    expect(host, "pdf-fill-annotateを関連ツールに含むツールが見つかりません").toBeTruthy();
+    const host = available.find((t) => getRelatedTools(t).related.some((r) => r.id === "pdf-fix"));
+    expect(host, "pdf-fixを関連ツールに含むツールが見つかりません").toBeTruthy();
 
     await page.goto(`/tools/${host!.id}`);
-    await expect(page.locator('a[href="/tools/pdf-fill-annotate"]')).toBeVisible();
+    await expect(page.locator('main a[href="/tools/pdf-fix"]').first()).toBeVisible();
   });
 
   for (const categoryId of REPRESENTATIVE_CATEGORY_PAGES) {
@@ -233,7 +233,7 @@ test.describe("Phase 21: OGP画像(ページ固有の動的生成)", () => {
   const ogPages = [
     { path: "/", label: "Home" },
     { path: "/tools/pdf", label: "category:pdf" },
-    { path: "/tools/pdf-fill-annotate", label: "tool:pdf-fill-annotate" },
+    { path: "/tools/pdf-fix", label: "tool:pdf-fix" },
   ];
 
   for (const { path, label } of ogPages) {

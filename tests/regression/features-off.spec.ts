@@ -89,7 +89,7 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     await expect(cards.filter({ hasText: "プレミアム" })).toHaveCount(0);
   });
 
-  test("カテゴリ別一覧: 課金オフの間は、外部AIの補助つきツール（年度カレンダー）に「AI実装」を出さない。端末内AI（背景透過）は出す", async ({ page }) => {
+  test("カテゴリ別一覧: 課金オフの間は、外部AIの補助つきツール（年度カレンダー）に「AI実装」を出さない。背景透過（工程2でAIモードを削除）にも出ない", async ({ page }) => {
     await page.goto("/tools/generator");
     const calendar = page.locator('a[href="/tools/fiscal-calendar"]');
     await expect(calendar).toBeVisible();
@@ -100,7 +100,8 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
       await expect(page.locator(`a[href="/tools/${id}"]`).getByText("AI実装", { exact: true }), id).toHaveCount(0);
     }
     await page.goto("/tools/image");
-    await expect(page.locator('a[href="/tools/background-remover"]').getByText("AI実装", { exact: true })).toHaveCount(1);
+    await expect(page.locator('a[href="/tools/background-remover"]').first()).toBeVisible();
+    await expect(page.locator('a[href="/tools/background-remover"]').getByText("AI実装", { exact: true })).toHaveCount(0);
   });
 
   test("サイトの主なページに、料金プラン・広告に触れた文言が一つも残っていない", async ({ request }) => {

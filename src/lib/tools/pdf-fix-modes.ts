@@ -1,8 +1,10 @@
 /**
  * 「PDF修正」総合ツールの機能（モード）の定義（工程12）。
  *
- * PDF修正は、既存のPDF関連ツールを1つの画面にまとめた入口。各機能の中身は既存ツールの画面をそのまま使い、
- * 個別URL（/tools/pdf-fill-annotate など）も維持する。
+ * PDF修正は、既存のPDF関連ツールを1つの画面にまとめた入口。各機能の中身は既存ツールの画面をそのまま使う。
+ * ページ番号・透かしは個別URL（/tools/pdf-add-page-numbers など）も維持する。
+ * 記入・注釈・白消し（旧 PDF記入・注釈）は、工程2で独立したページを廃止した（旧URLはPDF修正へ転送する）ため、
+ * 対応する個別ツールを持たない。
  * 画面（クライアント）から読むため、重いツール一覧データ（data.ts）には依存させず、ここに軽い定数として持つ。
  * data.ts のツールIDとの一致は tests/tools/pdf-fix.spec.ts で検証している。
  */
@@ -16,10 +18,10 @@ export interface PdfFixModeInfo {
   mode: PdfFixMode;
   /** 切り替えボタンの表示名 */
   label: string;
-  /** この機能に対応する既存ツール（個別URLは /tools/<toolId> のまま維持する） */
-  toolId: string;
-  /** 既存ツールの名前 */
-  pageName: string;
+  /** この機能に対応する既存ツール（個別URLは /tools/<toolId> のまま維持する）。個別ページを廃止した機能には無い */
+  toolId?: string;
+  /** 既存ツールの名前（toolId があるときだけ） */
+  pageName?: string;
   /** 機能の説明（1文） */
   description: string;
 }
@@ -28,8 +30,6 @@ export const PDF_FIX_MODES: PdfFixModeInfo[] = [
   {
     mode: "annotate",
     label: "記入・注釈・白消し",
-    toolId: "pdf-fill-annotate",
-    pageName: "PDF記入・注釈",
     description: "文字・チェック・図形・手書き・画像・印影を追加できます。白消しで文字を隠して、上から書き直すこともできます。",
   },
   {

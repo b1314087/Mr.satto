@@ -19,7 +19,7 @@ import { SliderField } from "@/components/common/slider-field";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /**
- * フォーム回答から個別PDFを一括作成（Phase 11 ツール②）。
+ * PDF差し込み印刷（旧名：フォーム回答から個別PDFを一括作成。Phase 11 ツール②。工程2で表示名を変更）。
  *
  * Template / Field / Mapping / Render という共通の帳票エンジン
  * （src/lib/forms/）を使い、次の手順で個別PDFをまとめて生成する:

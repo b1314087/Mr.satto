@@ -34,7 +34,7 @@ export const categorySeoContent: Record<CategoryId, CategorySeoContent> = {
   pdf: {
     metaTitle: "PDFツール一覧｜結合・分割・圧縮・変換・抽出",
     metaDescription:
-      "PDFの結合・分割・圧縮・画像変換・テキスト抽出・OCR・フォーム回答からの個別PDF一括作成など、PDF編集に使える無料ツールの一覧です。ブラウザ内処理でファイルの送信・保存は行われません。",
+      "PDFの結合・分割・圧縮・画像変換・テキスト抽出・OCR・PDF差し込み印刷など、PDF編集に使える無料ツールの一覧です。ブラウザ内処理でファイルの送信・保存は行われません。",
     intro:
       "PDFの結合・分割・圧縮・画像変換・文字の読み取りなどを、目的別に選べます。OCRなど一部の高度な機能はプレミアムプラン専用です。",
   },

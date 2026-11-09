@@ -48,10 +48,14 @@ plainTest.describe("PDF修正: ツール登録・SEO・既存URLの維持", () =
     plainExpect(PDF_FIX_TOOL_PATH).toBe("/tools/pdf-fix");
     plainExpect(AVAILABLE_TOOL_IDS).toContain(PDF_FIX_TOOL_ID);
 
-    // 各機能に対応する既存ツールは、統合されず、独立したページとして残る（URL・SEO・一覧の変更なし）
+    // ページ番号・透かしの既存ツールは、統合されず、独立したページとして残る（URL・SEO・一覧の変更なし）。
+    // 記入・注釈・白消し（旧 PDF記入・注釈）は、工程2で独立したページを廃止した（対応する個別ツールを持たない）
     const listed = new Set(getListedTools().map((t) => t.id));
     plainExpect(listed.has(PDF_FIX_TOOL_ID)).toBe(true);
+    plainExpect(PDF_FIX_MODES.find((m) => m.mode === "annotate")?.toolId).toBeUndefined();
+    plainExpect(getToolById("pdf-fill-annotate")).toBeUndefined();
     for (const m of PDF_FIX_MODES) {
+      if (!m.toolId) continue;
       const t = getToolById(m.toolId);
       plainExpect(t?.name, m.toolId).toBe(m.pageName);
       plainExpect(t?.status, m.toolId).toBe("available");
@@ -77,25 +81,30 @@ plainTest.describe("PDF修正: ツール登録・SEO・既存URLの維持", () =
       plainExpect(all, id).not.toContain("PDF修正で開く");
       plainExpect(all, id).not.toContain("ダウンロードせずに");
     }
-    // 既存ツールのSEOにも、白消しの注意と案内が入っている
-    plainExpect(JSON.stringify(toolSeoContent["pdf-fill-annotate"].faq)).toContain("白消し");
+    // 既存ツールのSEOにも、PDF修正の案内が入っている
     plainExpect(JSON.stringify(toolSeoContent["pdf-edit"].faq)).toContain("PDF修正");
+    // 工程2：PDF記入・注釈のSEO情報は削除し、PDF修正のFAQで、統合したことと主な機能を案内する
+    plainExpect((toolSeoContent as Record<string, unknown>)["pdf-fill-annotate"]).toBeUndefined();
+    plainExpect(faqText).toContain("以前の「PDF記入・注釈」のページ");
+    plainExpect(faqText).toContain("文字化け");
+    plainExpect(faqText).toContain("電子署名");
     // 既存のタイトルは変えていない
-    plainExpect(toolSeoContent["pdf-fill-annotate"].metaTitle.startsWith("PDF記入・注釈")).toBe(true);
     plainExpect(toolSeoContent["pdf-add-page-numbers"].metaTitle.startsWith("PDFページ番号追加")).toBe(true);
     plainExpect(toolSeoContent["pdf-edit"].metaTitle.startsWith("PDF編集")).toBe(true);
   });
 
   plainTest("sitemapに /tools/pdf-fix と既存のPDFツールが含まれる", async () => {
     const urls = (await sitemap()).map((e) => e.url);
-    for (const id of [PDF_FIX_TOOL_ID, "pdf-fill-annotate", "pdf-add-page-numbers", "pdf-watermark", "pdf-edit"]) {
+    for (const id of [PDF_FIX_TOOL_ID, "pdf-add-page-numbers", "pdf-watermark", "pdf-edit"]) {
       plainExpect(urls, id).toContain(`${siteConfig.url}/tools/${id}`);
     }
+    // 独立したページを廃止したPDF記入・注釈は、sitemapに載せない
+    plainExpect(urls).not.toContain(`${siteConfig.url}/tools/pdf-fill-annotate`);
   });
 
   plainTest("関連ツール：既存ツール⇄PDF修正が相互にリンクされる", () => {
     const ids = (id: string) => getRelatedTools(getToolById(id)!).related.map((t) => t.id);
-    for (const id of ["pdf-edit", "pdf-fill-annotate", "pdf-add-page-numbers", "pdf-watermark"]) {
+    for (const id of ["pdf-edit", "pdf-add-page-numbers", "pdf-watermark"]) {
       plainExpect(ids(id), `${id}の関連ツール`).toContain(PDF_FIX_TOOL_ID);
       // 指定したツールは先頭に出る
       plainExpect(ids(id)[0], `${id}の関連ツールの先頭`).toBe(PDF_FIX_TOOL_ID);
@@ -205,11 +214,11 @@ test.describe("PDF修正: 画面と機能", () => {
     await expect(page.getByTestId("pdf-fix-mode-description")).toContainText("透かし");
   });
 
-  test("既存の個別URL（PDF記入・注釈 / ページ番号追加）は、これまでどおり単独で開ける", async ({ page }) => {
+  test("旧PDF記入・注釈のURLはPDF修正(記入・注釈・白消し)へ転送され、ページ番号追加の個別URLはこれまでどおり単独で開ける", async ({ page }) => {
     await page.goto("/tools/pdf-fill-annotate");
+    await expect(page).toHaveURL(/\/tools\/pdf-fix$/);
+    await expect(modeButton(page, "annotate")).toHaveAttribute("aria-pressed", "true");
     await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS), { readyTimeoutMs: 25_000 });
-    // 統合画面の切り替えは出ない
-    await expect(page.getByTestId("pdf-fix-modes")).toHaveCount(0);
     await page.goto("/tools/pdf-add-page-numbers");
     await expect(page.getByTestId("pdf-fix-modes")).toHaveCount(0);
     await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible();

@@ -1,13 +1,13 @@
 import { WorkerCanceledError, WorkerChannel, WorkerUnavailableError } from "@/lib/workers/worker-channel";
-import { modelInputFrom, renderRemovedPng, runMaskModel, type RemoveRenderOptions } from "./background-remove";
+import { renderRemovedPng, type RemoveRenderOptions } from "./background-remove";
 import type { BgRemoveRequest } from "./background-remove.worker";
 
 /**
- * 背景除去の「推論」と「書き出し」を、できれば Worker で、使えなければ従来どおり画面側で行う（ロードマップC 工程3）。
- * - AIのモデルは Worker の中に読み込んだまま、同じページの中で使い回す（1枚ごとに約19MBを読み直さないため）。
- *   画面を離れるとき（dispose）に Worker を終了させ、モデルのメモリも解放する。
- * - 書き出しを止めると、Worker ごと終了させる（AIの計算・全画素の計算は途中で止められないため）。次の依頼では作り直す。
+ * 背景除去の「書き出し」（元の解像度での全画素の計算・PNG化）を、できれば Worker で、使えなければ従来どおり画面側で行う（ロードマップC 工程3）。
+ * - 画面を離れるとき（dispose）に Worker を終了させる。
+ * - 書き出しを止めると、Worker ごと終了させる（全画素の計算は途中で止められないため）。次の依頼では作り直す。
  * - Worker が使えないと分かったら、それ以降は画面側で行う（結果は同じ。同じ関数を使っている）。
+ * （AIによる背景の判定は、工程2で削除した）
  */
 
 export type RemoveEngineKind = "worker" | "main";
@@ -31,32 +31,6 @@ export class BgRemoveEngine {
       () => new Worker(new URL("./background-remove.worker.ts", import.meta.url), { type: "module", name: "mrsatto-bg-remove" })
     );
     return this.channel;
-  }
-
-  /** 画像からAIマスク（320×320）を推論する */
-  async predict(source: CanvasImageSource, signal?: AbortSignal): Promise<Uint8ClampedArray> {
-    const input = modelInputFrom(source);
-    if (this.workerUsable) {
-      try {
-        const mask = await this.getChannel().request<Uint8ClampedArray>({ type: "predict", input }, { transfer: [input.buffer], signal });
-        this.lastEngine = "worker";
-        return mask;
-      } catch (e) {
-        if (!(e instanceof WorkerUnavailableError)) throw e;
-        this.workerUsable = false;
-        // input は Worker に渡して使えなくなっている可能性があるので、作り直す
-        return this.predictOnMain(source, signal);
-      }
-    }
-    return this.predictOnMain(source, signal);
-  }
-
-  private async predictOnMain(source: CanvasImageSource, signal?: AbortSignal) {
-    if (signal?.aborted) throw new WorkerCanceledError();
-    const mask = await runMaskModel(modelInputFrom(source));
-    if (signal?.aborted) throw new WorkerCanceledError();
-    this.lastEngine = "main";
-    return mask;
   }
 
   /** 元の解像度で背景を透明にした PNG を作る */
@@ -84,7 +58,7 @@ export class BgRemoveEngine {
     return blob;
   }
 
-  /** 使い終わったら呼ぶ（Worker と、その中のAIのモデルを解放する） */
+  /** 使い終わったら呼ぶ（Worker を終了させる） */
   dispose() {
     this.channel?.dispose();
     this.channel = null;

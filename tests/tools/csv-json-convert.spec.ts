@@ -116,7 +116,7 @@ plainTest.describe("CSV・JSON変換の統合: 登録と一覧・検索・SEO", 
 
   plainTest("検索「CSV」「JSON」: 他のツールのヒットは従来どおり残る", () => {
     const csv = searchTools(getListedTools(), "CSV").map((t) => t.id);
-    for (const id of ["csv-format", "csv-merge", "csv-dedupe", "csv-replace", "excel-csv-convert"]) plainExpect(csv, id).toContain(id);
+    for (const id of ["csv-format", "excel-merge", "csv-dedupe", "csv-replace", "excel-csv-convert"]) plainExpect(csv, id).toContain(id);
     const json = searchTools(getListedTools(), "JSON").map((t) => t.id);
     plainExpect(json).toContain(HUB);
   });
@@ -125,14 +125,14 @@ plainTest.describe("CSV・JSON変換の統合: 登録と一覧・検索・SEO", 
     const ids = new Set(getListedTools().map((t) => t.id));
     plainExpect(ids.has(HUB)).toBe(true);
     for (const m of MEMBERS) plainExpect(ids.has(m), `${m}が一覧に残っている`).toBe(false);
-    for (const id of ["csv-format", "csv-merge", "csv-dedupe", "csv-replace", "excel-csv-convert", "excel-transpose", "excel-replace", "excel-to-pdf"]) {
+    for (const id of ["csv-format", "excel-merge", "csv-dedupe", "csv-replace", "excel-csv-convert", "excel-transpose", "excel-replace", "excel-to-pdf"]) {
       plainExpect(ids.has(id), `${id}が一覧から消えている`).toBe(true);
     }
     plainExpect(getListedTools().length).toBe(tools.filter((t) => !t.mergedInto).length);
   });
 
   plainTest("関連ツール・おすすめに、統合済みの旧ツールは出ない", () => {
-    for (const id of [HUB, ...MEMBERS, "csv-format", "csv-merge", "csv-replace", "excel-csv-convert"]) {
+    for (const id of [HUB, ...MEMBERS, "csv-format", "excel-merge", "csv-replace", "excel-csv-convert"]) {
       const { related } = getRelatedTools(getToolById(id)!);
       plainExpect(related.filter((t) => t.mergedInto).map((t) => t.id), `${id}の関連ツール`).toEqual([]);
     }
@@ -172,7 +172,7 @@ test.describe("CSV・JSON変換の統合: 一覧・カテゴリ・旧URL", () =>
       await page.goto(url);
       await expect(card(page, HUB), `${url}: 総合ツール`).toHaveCount(1);
       for (const m of MEMBERS) await expect(card(page, m), `${url}: ${m}`).toHaveCount(0);
-      await expect(card(page, "csv-merge"), `${url}: CSV結合`).toHaveCount(1);
+      await expect(card(page, "excel-merge"), `${url}: Excel・CSV結合`).toHaveCount(1);
     }
   });
 

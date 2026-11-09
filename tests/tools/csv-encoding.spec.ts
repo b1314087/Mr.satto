@@ -199,13 +199,15 @@ test("文字列置換：文字コードを合わない方に選ぶと「文字�
   await expect(page.getByText("営業部").first()).toBeVisible();
 });
 
-test("CSV結合：UTF-8（BOM付き）とShift_JISのCSVを、それぞれの文字コードで読んで結合できる", async ({ page }) => {
-  await page.goto("/tools/csv-merge");
+test("Excel・CSV結合「CSVファイルを結合」（旧 CSV結合）：UTF-8（BOM付き）とShift_JISのCSVを、それぞれの文字コードで読んで結合できる", async ({ page }) => {
+  // 旧 CSV結合のアドレスからの転送先（?mode=csv）では、「CSVファイルを結合」が選ばれた状態で開く
+  await page.goto("/tools/excel-merge?mode=csv");
+  await expect(page.getByTestId("excel-csv-merge-mode-csv")).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
   await upload(page, [writeTemp("a.csv", withBom(utf8("氏名,点数\n山田,80\n"))), writeTemp("b.csv", encodeSjis("氏名,点数\n髙橋,90\n"))]);
   await expect(page.getByTestId("csv-encoding")).toHaveCount(2);
   await expect(page.locator('[data-testid="csv-encoding"][data-file-name="a.csv"]')).toHaveAttribute("data-encoding", "utf-8-bom");
   await expect(page.locator('[data-testid="csv-encoding"][data-file-name="b.csv"]')).toHaveAttribute("data-encoding", "shift_jis");
-  await page.getByRole("button", { name: /結合/ }).first().click();
+  await page.getByRole("button", { name: /件のCSVを結合する$/ }).click();
   await waitForSuccess(page, "完了");
   const dl = await clickAndDownload(page, "ダウンロード");
   const out = fs.readFileSync((await assertDownloadedFile(dl, { minBytes: 1 })).path, "utf8");

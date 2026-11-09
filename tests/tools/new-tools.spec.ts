@@ -77,7 +77,8 @@ test.describe("背景透過", () => {
 
   test("色指定: 四隅の色(青)が透明になり、白い四角は残る。PNGで保存できる", async ({ page }) => {
     await open(page);
-    await page.getByRole("button", { name: /色を指定して消す/ }).click();
+    // 工程2：AIのモードは削除したため、切り替えずに最初から色指定で動く
+    await expect(page.getByRole("button", { name: /AIで自動/ })).toHaveCount(0);
     await expect.poll(async () => await pixelAlpha(page, 0.02, 0.02), { timeout: 10_000 }).toBe(0);
     expect(await pixelAlpha(page, 0.5, 0.5)).toBe(255);
 

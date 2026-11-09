@@ -55,11 +55,11 @@ function pngPixels(file: string): Buffer {
   return execFileSync("ffmpeg", ["-v", "error", "-i", file, "-f", "rawvideo", "-pix_fmt", "rgba", "-"], { maxBuffer: 64 * 1024 * 1024 });
 }
 
-async function removeBackground(page: Page, mode: "ai" | "color"): Promise<{ file: string; engine: string | null }> {
+// 工程2：AIで背景を判定するモードは削除した（色を指定して消す方式だけ）
+async function removeBackground(page: Page, mode: "color"): Promise<{ file: string; engine: string | null }> {
   await page.goto("/tools/background-remover");
   await uploadFixture(page, photo);
   await expect(page.getByTestId("bg-preview")).toBeVisible({ timeout: 30_000 });
-  if (mode === "color") await page.getByRole("button", { name: /色を指定して消す/ }).click();
   const run = page.getByRole("button", { name: "背景を透明にする" });
   await expect(run).toBeEnabled({ timeout: 120_000 });
   await run.click();
@@ -73,8 +73,8 @@ async function removeBackground(page: Page, mode: "ai" | "color"): Promise<{ fil
 test.describe("背景除去（Worker）", () => {
   test.setTimeout(240_000);
 
-  for (const mode of ["ai", "color"] as const) {
-    test(`${mode === "ai" ? "AI" : "色指定"}：Worker で処理した結果が、画面側で処理した結果と画素まで同じ`, async ({ page, browser, baseURL }) => {
+  for (const mode of ["color"] as const) {
+    test(`色指定：Worker で処理した結果が、画面側で処理した結果と画素まで同じ`, async ({ page, browser, baseURL }) => {
       const w = await removeBackground(page, mode);
       expect(w.engine).toBe("worker");
 
@@ -91,16 +91,14 @@ test.describe("背景除去（Worker）", () => {
       const b = pngPixels(m.file);
       expect(a.length).toBe(1600 * 1000 * 4);
       expect(a.equals(b)).toBe(true);
-      // 透明な所・半透明な所・不透明な所が、どれもある（切り抜きが効いている）
-      let clear = 0, half = 0, solid = 0;
+      // 透明な所・不透明な所が、どちらもある（切り抜きが効いている）
+      let clear = 0, solid = 0;
       for (let i = 3; i < a.length; i += 4) {
         if (a[i] === 0) clear++;
         else if (a[i] === 255) solid++;
-        else half++;
       }
       expect(clear).toBeGreaterThan(1000);
       expect(solid).toBeGreaterThan(1000);
-      if (mode === "ai") expect(half).toBeGreaterThan(100);
     });
   }
 
@@ -112,13 +110,13 @@ test.describe("背景除去（Worker）", () => {
     await expect(page.getByTestId("bg-preview")).toBeVisible({ timeout: 30_000 });
     const run = page.getByRole("button", { name: "背景を透明にする" });
     await expect(run).toBeEnabled({ timeout: 120_000 });
-    const before = appWorkers(page);
-    expect(before).toBe(1); // プレビュー用の推論で作った、背景除去の Worker（AIのモデルを持っている）
+    // AIの推論は無くなったため、実行する前は背景除去の Worker を作っていない
+    expect(appWorkers(page)).toBe(0);
     await run.click();
     await page.getByRole("button", { name: "キャンセル" }).click({ timeout: 10_000 });
     await expect(page.getByTestId("bg-canceled")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("result-popup")).toHaveCount(0);
-    // AIのモデルを持っていた Worker も含めて終了している（プレビュー用の推論で作った Worker の数より増えない）
+    // 書き出しの Worker は終了している
     await expect.poll(() => appWorkers(page), { timeout: 10_000 }).toBe(0);
     // キャンセルのあとも、もう一度実行できる
     await run.click();
