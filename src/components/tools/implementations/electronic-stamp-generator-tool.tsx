@@ -26,6 +26,10 @@ import {
   loadStampImageToCanvas,
   loadStampPdf,
   generateStampSerial,
+  STAMP_AUTH_CODE_MAX_LENGTH,
+  validateStampAuthCode,
+  validateStampCreatedDate,
+  type StampQrInfo,
   removeLightBackground,
   renderStampPdfPage,
   resizeCanvasByScale,
@@ -50,10 +54,13 @@ import { SliderField } from "@/components/common/slider-field";
  * ブラウザのCanvas上で完結し、画像・PDFの中身をサーバーへ送信したり、
  * localStorage/sessionStorage/IndexedDBへ保存したりすることは一切ない。
  *
- * 固有番号とQRコード：「印影画像を生成する」を押したときに、ランダムな固有番号を1つ発行し、その番号だけを
- * 入れたQRコードと番号を印影に入れる(electronic-stamp.ts の generateStampSerial)。完成した画像(Blob)を
- * そのまま保持するので、同じ印影を何度ダウンロードしても番号は変わらない。もう一度生成すると新しい番号になる。
- * 編集中のプレビューには、番号を発行する前なので、QRコードの置き場所だけを示す。
+ * 固有番号とQRコード：「印影画像を生成する」を押したときに、ランダムな固有番号を1つ発行し、その番号と、
+ * 入力された場合の印鑑作成日・認証コードを入れたQRコードを印影の隅に入れる(electronic-stamp.ts の
+ * generateStampSerial・buildStampQrPayload)。番号・作成日・認証コードは印影には表示しない。完成した画像(Blob)を
+ * そのまま保持するので、同じ印影を何度ダウンロードしても番号・作成日・認証コードは変わらない。もう一度生成すると
+ * 新しい番号になる(入力を変えたり、画面が描き直されたりしただけでは、番号は発行しない)。
+ * 編集中のプレビューには、番号を発行する前なので、QRコードの置き場所(本物と同じ大きさ)だけを示す。
+ * QRコードの情報はだれでもコピー・編集できるため、印影の複製防止や本人であることの証明にはならない。
  */
 
 type Mode = "text" | "import";
@@ -105,6 +112,8 @@ export function ElectronicStampGeneratorTool() {
   const [result, setResult] = useState<ImageProcessorOutput | null>(null);
   /** 完成した印影の固有番号(QRコードを入れないときは null) */
   const [serial, setSerial] = useState<string | null>(null);
+  /** 完成した印影のQRコードに入れた情報(QRコードを入れないときは null) */
+  const [qrInfo, setQrInfo] = useState<StampQrInfo | null>(null);
 
   useEffect(() => {
     return () => {
@@ -119,13 +128,15 @@ export function ElectronicStampGeneratorTool() {
     setError(null);
   }
 
-  async function handleExport(canvas: HTMLCanvasElement, issuedSerial: string | null) {
+  async function handleExport(canvas: HTMLCanvasElement, info: StampQrInfo | null) {
+    const issuedSerial = info?.serial ?? null;
     setStatus("processing");
     setError(null);
     try {
       const output = await new StampExportProcessor().process({ canvas });
       if (result) URL.revokeObjectURL(result.url);
       setSerial(issuedSerial);
+      setQrInfo(info);
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -191,13 +202,30 @@ export function ElectronicStampGeneratorTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px（透明PNG）
           </p>
-          {serial && (
-            <p className="text-sm text-neutral-700 dark:text-neutral-200">
-              固有番号：<span data-testid="stamp-serial" className="font-mono font-semibold">{serial}</span>
+          {serial && qrInfo && (
+            <div className="text-sm text-neutral-700 dark:text-neutral-200" data-testid="stamp-qr-contents">
+              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">QRコードに入っている情報</p>
+              <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                <dt>固有番号</dt>
+                <dd data-testid="stamp-serial" className="font-mono font-semibold">{serial}</dd>
+                {qrInfo.createdDate && (
+                  <>
+                    <dt>印鑑作成日</dt>
+                    <dd data-testid="stamp-qr-created-date" className="font-mono">{qrInfo.createdDate}</dd>
+                  </>
+                )}
+                {qrInfo.authCode && (
+                  <>
+                    <dt>認証コード</dt>
+                    <dd data-testid="stamp-qr-auth-code" className="font-mono">{qrInfo.authCode}</dd>
+                  </>
+                )}
+              </dl>
               <span className="mt-1 block text-xs text-neutral-500 dark:text-neutral-400">
-                QRコードには、この番号だけが入っています（名前などは入っていません）。番号はこのブラウザの中で作り、どこにも送信・保存していません。
+                QRコードには、上の情報だけが入っています（名前などは入っていません）。番号はこのブラウザの中で作り、どこにも送信・保存していません。
+                QRコードの情報はだれでもコピー・編集できるため、印影の複製を防いだり、作成者本人であることを証明したりするものではありません。
               </span>
-            </p>
+            </div>
           )}
           <RewardedDownloadGate
             label="PNGをダウンロード"
@@ -217,7 +245,7 @@ function TextStampPanel({
   onExport,
   status,
 }: {
-  onExport: (canvas: HTMLCanvasElement, serial: string | null) => void | Promise<void>;
+  onExport: (canvas: HTMLCanvasElement, info: StampQrInfo | null) => void | Promise<void>;
   status: ProcessingState;
 }) {
   const [text, setText] = useState("印");
@@ -233,6 +261,11 @@ function TextStampPanel({
   const [withQr, setWithQr] = useState(true);
   /** QRコードを置く隅(丸印は円の外側、角印は枠の内側) */
   const [qrCorner, setQrCorner] = useState<StampQrCorner>("bottom-right");
+  /** QRコードに入れる、任意の印鑑作成日・認証コード(入力されたそのまま) */
+  const [createdDate, setCreatedDate] = useState("");
+  const [authCode, setAuthCode] = useState("");
+  // 未入力の項目はQRコードに入れない(空のときは渡さない)
+  const qrOptional = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
 
   const previewRef = useRef<HTMLCanvasElement>(null);
   const latestCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -298,7 +331,9 @@ function TextStampPanel({
       fontFamily: customFont?.cssFontFamily,
       fontWeight: boldText ? "bold" : "normal",
       // 編集中は番号を発行しない(QRコードの置き場所だけを示す)
-      ...(withQr ? { qr: { serial: null, corner: qrCorner } } : {}),
+      ...(withQr
+        ? { qr: { serial: null, corner: qrCorner, ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) } }
+        : {}),
     });
     latestCanvasRef.current = generated;
     target.width = generated.width;
@@ -323,14 +358,19 @@ function TextStampPanel({
     boldText,
     withQr,
     qrCorner,
+    createdDate,
+    authCode,
   ]);
 
-  const qrFits = canPlaceStampQr({ sizePx, shape, borderWidthRatio });
-  const qrMinSize = withQr && !qrFits ? stampQrMinSizePx({ shape, borderWidthRatio }) : null;
+  const qrFits = canPlaceStampQr({ sizePx, shape, borderWidthRatio, ...qrOptional });
+  const qrMinSize = withQr && !qrFits ? stampQrMinSizePx({ shape, borderWidthRatio, ...qrOptional }) : null;
+  const qrInputError = withQr ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
 
   /** 「印影画像を生成する」：固有番号を発行し、その番号のQRコードを入れた印影を作る */
   function exportWithSerial() {
+    if (qrInputError) return;
     const issued = withQr && qrFits ? generateStampSerial() : null;
+    const info: StampQrInfo | null = issued ? { serial: issued, ...qrOptional } : null;
     const canvas = generateStampCanvas({
       text: text.trim() || "印",
       shape,
@@ -344,9 +384,9 @@ function TextStampPanel({
       offsetYPct,
       fontFamily: customFont?.cssFontFamily,
       fontWeight: boldText ? "bold" : "normal",
-      ...(issued ? { qr: { serial: issued, corner: qrCorner } } : {}),
+      ...(info ? { qr: { ...info, corner: qrCorner } } : {}),
     });
-    void onExport(canvas, issued);
+    void onExport(canvas, info);
   }
 
   const textTooLong = Array.from(text).length > STAMP_LIMITS.maxTextLength;
@@ -462,6 +502,9 @@ function TextStampPanel({
 
         <QrOption checked={withQr} onChange={setWithQr} />
         {withQr && (
+          <QrInfoFields createdDate={createdDate} onCreatedDate={setCreatedDate} authCode={authCode} onAuthCode={setAuthCode} />
+        )}
+        {withQr && (
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">QRコードの位置</span>
             <div className="flex flex-wrap gap-2" role="group" aria-label="QRコードの位置">
@@ -480,7 +523,7 @@ function TextStampPanel({
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               {shape === "round"
-                ? "丸印では、円の外側の隅に置きます（QRコードと重ならないよう、円が少し小さくなることがあります）。"
+                ? "丸印では、円の外側の隅に置きます（円の大きさは変えず、QRコードの分だけ画像が大きくなります）。"
                 : "角印では、枠の内側の隅に置き、文字はQRコードと重ならない大きさで中央に置きます。"}
             </p>
           </div>
@@ -593,7 +636,7 @@ function TextStampPanel({
 
         <button
           type="button"
-          disabled={status === "processing" || text.trim() === "" || textTooLong} aria-busy={status === "processing" || undefined}
+          disabled={status === "processing" || text.trim() === "" || textTooLong || !!qrInputError} aria-busy={status === "processing" || undefined}
           onClick={exportWithSerial}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
@@ -612,7 +655,7 @@ function ImportStampPanel({
   onExport,
   status,
 }: {
-  onExport: (canvas: HTMLCanvasElement, serial: string | null) => void | Promise<void>;
+  onExport: (canvas: HTMLCanvasElement, info: StampQrInfo | null) => void | Promise<void>;
   status: ProcessingState;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -649,6 +692,9 @@ function ImportStampPanel({
   const [autoTrimEnabled, setAutoTrimEnabled] = useState(true);
   const [scalePercent, setScalePercent] = useState(100);
   const [withQr, setWithQr] = useState(true);
+  const [createdDate, setCreatedDate] = useState("");
+  const [authCode, setAuthCode] = useState("");
+  const qrInputError = withQr ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
   const [trimMessage, setTrimMessage] = useState<string | null>(null);
   const finalPreviewRef = useRef<HTMLCanvasElement>(null);
   const finalCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -997,7 +1043,8 @@ function ImportStampPanel({
               余白を自動的にトリミングする
             </label>
             {trimMessage && <p className="text-xs text-amber-700 dark:text-amber-400">{trimMessage}</p>}
-            <QrOption checked={withQr} onChange={setWithQr} note="取り込んだ印影には、印影の下に番号とQRコードを並べます。" />
+            <QrOption checked={withQr} onChange={setWithQr} note="取り込んだ印影には、印影の下にQRコードを並べます。" />
+            {withQr && <QrInfoFields createdDate={createdDate} onCreatedDate={setCreatedDate} authCode={authCode} onAuthCode={setAuthCode} />}
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">出力サイズ</legend>
               <div className="flex gap-2">
@@ -1025,13 +1072,16 @@ function ImportStampPanel({
               </button>
               <button
                 type="button"
-                disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+                disabled={status === "processing" || !!qrInputError} aria-busy={status === "processing" || undefined}
                 onClick={() => {
                   const finalCanvas = finalCanvasRef.current;
-                  if (!finalCanvas) return;
-                  // 取り込んだ印影は形が決まっていないため、印影の下に番号とQRコードを並べる
+                  if (!finalCanvas || qrInputError) return;
+                  // 取り込んだ印影は形が決まっていないため、印影の下にQRコードを並べる
                   const issued = withQr ? generateStampSerial() : null;
-                  void onExport(issued ? appendStampQr(finalCanvas, issued, STAMP_COLORS.black) : finalCanvas, issued);
+                  const info: StampQrInfo | null = issued
+                    ? { serial: issued, ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) }
+                    : null;
+                  void onExport(info ? appendStampQr(finalCanvas, info, STAMP_COLORS.black) : finalCanvas, info);
                 }}
                 className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
@@ -1054,9 +1104,72 @@ function QrOption({ checked, onChange, note }: { checked: boolean; onChange: (v:
         固有番号とQRコードを入れる
       </label>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        生成するたびに、ランダムな固有番号（例：MS-7K9P-2XQ8-4D6A）を発行し、その番号だけを入れたQRコードを印影に入れます。
+        生成するたびに、ランダムな固有番号（例：MS-7K9P-2XQ8-4D6A）を発行し、その番号（と、入力した場合は印鑑作成日・認証コード）を入れたQRコードを印影に入れます。番号・作成日・認証コードは印影には表示しません。
+        番号はこのブラウザの中で作るため、ほかの人が作った印影の番号と重ならないことまでは保証できません（重なる可能性はきわめて低い番号です）。
         {note ? ` ${note}` : ""}
       </p>
+    </div>
+  );
+}
+
+/** QRコードに入れる任意の項目(印鑑作成日・認証コード)の入力欄(文字から作る・取り込むの両方で使う) */
+function QrInfoFields({
+  createdDate,
+  onCreatedDate,
+  authCode,
+  onAuthCode,
+}: {
+  createdDate: string;
+  onCreatedDate: (v: string) => void;
+  authCode: string;
+  onAuthCode: (v: string) => void;
+}) {
+  const dateError = validateStampCreatedDate(createdDate);
+  const codeError = validateStampAuthCode(authCode);
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
+      <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
+        <span>
+          印鑑作成日<span className="ml-1 text-xs text-neutral-500">（任意）</span>
+        </span>
+        <span className="flex items-center gap-2">
+          <input
+            type="date"
+            data-testid="stamp-created-date"
+            value={createdDate}
+            onChange={(e) => onCreatedDate(e.target.value)}
+            className="w-fit rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm dark:border-neutral-600 dark:bg-neutral-900"
+          />
+          {createdDate && (
+            <button type="button" onClick={() => onCreatedDate("")} className="text-xs text-blue-600 underline dark:text-blue-400">
+              日付を消す
+            </button>
+          )}
+        </span>
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+          入力した日付を、そのままQRコードに入れます（今日の日付などで置き換えません）。空欄なら、日付は入れません。
+        </span>
+        {dateError && <span className="text-xs text-red-600 dark:text-red-400">{dateError}</span>}
+      </label>
+      <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
+        <span>
+          認証コード<span className="ml-1 text-xs text-neutral-500">（任意）</span>
+        </span>
+        <input
+          type="text"
+          data-testid="stamp-auth-code"
+          value={authCode}
+          onChange={(e) => onAuthCode(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          className="w-full max-w-xs rounded-lg border border-neutral-300 bg-white px-3 py-1.5 font-mono text-sm dark:border-neutral-600 dark:bg-neutral-900"
+        />
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+          自由に決めたコードを、そのままQRコードに入れます（印影には表示しません）。半角の英数字と記号、{STAMP_AUTH_CODE_MAX_LENGTH}文字まで。空欄なら入れません。
+          このコードは、本人確認や暗号による認証の仕組みではありません。
+        </span>
+        {codeError && <span className="text-xs text-red-600 dark:text-red-400">{codeError}</span>}
+      </label>
     </div>
   );
 }

@@ -179,10 +179,25 @@ export interface StampTextGenerateInput {
   /**
    * 固有番号のQRコードを、印影の四隅のどこか(corner。未指定なら右下)に入れる。
    * 丸印は円の外側の四隅に、角印は枠の内側の四隅に置く(角印の文字は中央に、QRコードと重ならない大きさで置く)。
-   * serial に固有番号を渡すと、その番号のQRコードを描く。serial が null のときは、番号を発行する前の
-   * 編集中のプレビュー用に、QRコードの置き場所だけを描く。未指定なら、従来どおりQRコードの無い印影
+   * 丸印は円の大きさを変えず、QRコードが入るだけ画像を大きくする(印影の大きさは「印影サイズ」のまま)。
+   * serial に固有番号を渡すと、その番号(と、入力されていれば印鑑作成日・認証コード)のQRコードを描く。
+   * serial が null のときは、番号を発行する前の編集中のプレビュー用に、QRコードの置き場所(同じ大きさ)だけを描く。
+   * 未指定なら、従来どおりQRコードの無い印影
    */
-  qr?: { serial: string | null; corner?: StampQrCorner };
+  qr?: { serial: string | null; corner?: StampQrCorner } & StampQrOptionalInfo;
+}
+
+/** QRコードに入れる、利用者が任意で入力する情報(未入力の項目は入れない) */
+export interface StampQrOptionalInfo {
+  /** 印鑑作成日(YYYY-MM-DD。利用者が入力した日付そのまま) */
+  createdDate?: string;
+  /** 認証コード(利用者が入力した文字そのまま。印影には表示しない) */
+  authCode?: string;
+}
+
+/** QRコードに入れる情報 */
+export interface StampQrInfo extends StampQrOptionalInfo {
+  serial: string;
 }
 
 /** QRコードを置く隅 */
@@ -207,7 +222,11 @@ export const STAMP_QR_CORNERS: { id: StampQrCorner; label: string }[] = [
 //   番号を発行しても、どこかで同じ番号が出る確率は約0.00006%(10^12 / (2×7.9×10^17))。
 // ・同じページ(タブ)の中では、発行した番号をメモリに覚えておき、同じ番号を2回発行しない(保存はしない。
 //   ページを閉じると消える)。
-// ・QRコードに入れるのは番号の文字列だけ(氏名・文字・色・日時などは入れない)。
+// ・QRコードに入れるのは、固有番号と、利用者が入力した場合の印鑑作成日・認証コードだけ(氏名・印影の文字・色・
+//   生成した日時などは入れない)。読み取ったときに項目が分かるよう、「項目名: 値」を1行ずつ並べた文字列にする
+//   (buildStampQrPayload)。未入力の項目の行は入れない。
+// ・QRコードの情報は、だれでもコピー・編集できる。QRコードは、印影の複製・改ざんを防いだり、作成者本人であることを
+//   証明したりするものではない(画面にも、そう誤解させる表示はしない)。
 
 /** 固有番号に使う文字(0・1・I・L・O を除く) */
 export const STAMP_SERIAL_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -240,11 +259,82 @@ export function generateStampSerial(randomBytes: (a: Uint8Array) => Uint8Array =
   throw new Error("固有番号を発行できませんでした。");
 }
 
-/** QRコードの模様(固有番号だけを入れる。誤り訂正のレベルM)。true が黒いマス */
-export function stampQrModules(serial: string): boolean[][] {
-  const qr = createQr(serial, { errorCorrectionLevel: "M" });
+/** 認証コードの最大の文字数 */
+export const STAMP_AUTH_CODE_MAX_LENGTH = 20;
+/** 認証コードに使える文字：半角の英数字と記号(空白・改行・全角の文字は使えない) */
+const STAMP_AUTH_CODE_PATTERN = /^[\x21-\x7E]+$/;
+/** 印鑑作成日の形式(日付の入力欄が返す形式) */
+const STAMP_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 認証コードの入力の確認。使えないときは理由、使えるとき(未入力を含む)は null。
+ * 入力された文字は変えずにそのまま使うため、使えない文字は取り除かずに、理由を返す。
+ * 改行を使えないのは、QRコードの中の別の項目の行に見せかけられないようにするため
+ */
+export function validateStampAuthCode(code: string): string | null {
+  if (code === "") return null;
+  if (Array.from(code).length > STAMP_AUTH_CODE_MAX_LENGTH) return `認証コードは${STAMP_AUTH_CODE_MAX_LENGTH}文字までです。`;
+  if (!STAMP_AUTH_CODE_PATTERN.test(code)) return "認証コードには、半角の英数字と記号だけを使えます（空白・全角の文字は使えません）。";
+  return null;
+}
+
+/** 印鑑作成日の入力の確認。使えないときは理由、使えるとき(未入力を含む)は null */
+export function validateStampCreatedDate(date: string): string | null {
+  if (date === "") return null;
+  if (!STAMP_DATE_PATTERN.test(date)) return "印鑑作成日は、年-月-日（例：2026-11-09）の形で入力してください。";
+  const [y, m, d] = date.split("-").map(Number);
+  const check = new Date(Date.UTC(y, m - 1, d));
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== m - 1 || check.getUTCDate() !== d) return "印鑑作成日が、存在しない日付です。";
+  return null;
+}
+
+const QR_LABEL_SERIAL = "固有番号";
+const QR_LABEL_DATE = "印鑑作成日";
+const QR_LABEL_AUTH = "認証コード";
+
+/**
+ * QRコードに入れる文字列。「固有番号: …」の行は必ず入れ、印鑑作成日・認証コードは入力されているときだけ行を足す。
+ * 値は入力されたそのまま(補ったり、変えたりしない)
+ */
+export function buildStampQrPayload(info: StampQrInfo): string {
+  const lines = [`${QR_LABEL_SERIAL}: ${info.serial}`];
+  if (info.createdDate) lines.push(`${QR_LABEL_DATE}: ${info.createdDate}`);
+  if (info.authCode) lines.push(`${QR_LABEL_AUTH}: ${info.authCode}`);
+  return lines.join("\n");
+}
+
+/** QRコードから読み取った文字列を、項目に分ける(この形式でなければ null)。読み取った内容の表示・テスト用 */
+export function parseStampQrPayload(text: string): StampQrInfo | null {
+  const info: Partial<StampQrInfo> = {};
+  for (const line of text.split("\n")) {
+    const at = line.indexOf(": ");
+    if (at < 0) return null;
+    const label = line.slice(0, at);
+    const value = line.slice(at + 2);
+    if (label === QR_LABEL_SERIAL && info.serial === undefined) info.serial = value;
+    else if (label === QR_LABEL_DATE && info.createdDate === undefined) info.createdDate = value;
+    else if (label === QR_LABEL_AUTH && info.authCode === undefined) info.authCode = value;
+    else return null;
+  }
+  return info.serial ? (info as StampQrInfo) : null;
+}
+
+/** 番号を発行する前に、QRコードの大きさ(型番)を決めるために使う番号(固有番号と同じ文字数) */
+const PLACEHOLDER_SERIAL = "MS-0000-0000-0000";
+
+/**
+ * QRコードの模様。text をそのままUTF-8のバイト列として入れる(1つの「8ビットバイト」の区切りにまとめ、
+ * 情報が増えても、なるべく小さい型番に収める)。誤り訂正のレベルM。true が黒いマス
+ */
+export function stampQrModules(text: string): boolean[][] {
+  const qr = createQr([{ data: new TextEncoder().encode(text), mode: "byte" }], { errorCorrectionLevel: "M" });
   const n = qr.modules.size;
   return Array.from({ length: n }, (_, r) => Array.from({ length: n }, (_, c) => !!qr.modules.get(r, c)));
+}
+
+/** QRコードの1辺のマスの数(番号を発行する前でも、入力された任意の項目から決まる) */
+function stampQrModuleCount(optional: StampQrOptionalInfo): number {
+  return stampQrModules(buildStampQrPayload({ serial: PLACEHOLDER_SERIAL, ...optional })).length;
 }
 
 /** QRコードの周りの余白(マスの数。QRコードの規格の4マス) */
@@ -256,8 +346,8 @@ const SERIAL_FONT_FAMILY = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, "Li
  * QRコード(白い余白の四角の中に、印影と同じ色のマス)を描く。位置・マスの大きさは整数のpxにそろえる(ぼやけないように)。
  * 白い四角は、背景が透明でも読み取れるよう、QRコードの明暗の差を確保するためのもの(取り込んだ印影の下に並べるとき)
  */
-function drawQr(ctx: CanvasRenderingContext2D, serial: string, x: number, y: number, modulePx: number, color: string) {
-  const modules = stampQrModules(serial);
+function drawQr(ctx: CanvasRenderingContext2D, payload: string, x: number, y: number, modulePx: number, color: string) {
+  const modules = stampQrModules(payload);
   const n = modules.length;
   const side = (n + QR_QUIET_MODULES * 2) * modulePx;
   const ox = Math.round(x);
@@ -290,43 +380,45 @@ function drawQrPlaceholder(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.restore();
 }
 
-/** QRコード(固有番号の17文字・レベルM)のマスの数 */
-const QR_MODULES = 21;
+/** QRコードのマスの大きさを決めるときの基準のマスの数(いちばん小さいQRコードの1辺) */
+const QR_BASE_MODULES = 21;
 /** 四隅に置くQRコードの周りの余白(マスの数)。画像の端・枠・文字とのあいだに、この幅の何も描かない部分を残す */
 const CORNER_QUIET_MODULES = 2;
 
-/** 四隅のQRコードのマスの大きさ(px)：QRコードの1辺が印影の約14%になる大きさ(最低2px) */
+/**
+ * 四隅のQRコードのマスの大きさ(px)：いちばん小さいQRコード(21マス)の1辺が印影の約14%になる大きさ(最低2px)。
+ * 印鑑作成日・認証コードを入れて情報が増えると、マスの数が増え、マスの大きさはそのままでQRコードが大きくなる
+ */
 function cornerModulePx(size: number): number {
-  return Math.max(2, Math.round((size * 0.14) / QR_MODULES));
+  return Math.max(2, Math.round((size * 0.14) / QR_BASE_MODULES));
 }
 
-/** 丸印の円の外側の半径が、印影の大きさの何割まで小さくなってよいか(これより小さくなる大きさでは、QRコードを入れない) */
-const ROUND_MIN_OUTER_RATIO = 0.4;
-/** 角印の文字の場所(中央の正方形)が、印影の大きさの何割まで小さくなってよいか */
-const SQUARE_MIN_TEXT_RATIO = 0.3;
+/** 角印の文字の場所(中央の正方形)が、印影の大きさの何割まで小さくなってよいか(これより小さくなるなら、QRコードを入れない) */
+const SQUARE_MIN_TEXT_RATIO = 0.25;
 
 /**
- * 四隅のQRコードの配置。
- * - 丸印：円の外側の隅にQRコードを置く。QRコードの内側の角と円のあいだに余白(2マス)が残るよう、必要なら円を少し小さくする
- * - 角印：枠の内側の隅にQRコードを置き、文字は中央に、QRコードと余白に重ならない大きさの正方形に収める
+ * 四隅のQRコードの配置(n はQRコードの1辺のマスの数)。
+ * - 丸印：円の外側の隅にQRコードを置く。円の大きさは変えず、QRコードの内側の角と円のあいだ・画像の端とのあいだに
+ *   余白(2マス)が残るだけ、画像(canvasSize)を大きくする。円の中心は画像の中心
+ * - 角印：枠の内側の隅にQRコードを置き、文字は中央に、QRコードと余白に重ならない大きさの正方形に収める。画像の大きさは変えない
  * 入らないときは null
  */
-function stampQrCornerLayout(size: number, shape: StampShape, borderWidth: number, corner: StampQrCorner) {
+function stampQrCornerLayout(size: number, shape: StampShape, borderWidth: number, corner: StampQrCorner, n: number) {
   const m = cornerModulePx(size);
-  const qrSide = QR_MODULES * m;
+  const qrSide = n * m;
   const quiet = CORNER_QUIET_MODULES * m;
-  const cx = size / 2;
   const right = corner.endsWith("right");
   const bottom = corner.startsWith("bottom");
   if (shape === "round") {
-    // 画像の端から余白を空けて隅に置く。QRコードの内側の角から円の中心までの距離から、余白を引いたものが円の外側の半径の上限
-    const qrX = right ? size - quiet - qrSide : quiet;
-    const qrY = bottom ? size - quiet - qrSide : quiet;
-    const reach = Math.SQRT2 * (cx - quiet - qrSide);
-    const outer = Math.min(size / 2 - 2, reach - quiet);
-    if (outer < size * ROUND_MIN_OUTER_RATIO) return null;
-    return { m, qrX, qrY, radius: outer - borderWidth / 2, textBox: null as number | null };
+    // 円の外側の半径 outer に対し、QRコードの内側の角から中心までの距離が outer + 余白 以上になる、画像の半分の大きさ
+    const outer = size / 2 - 2;
+    const half = Math.max(size / 2, (outer + quiet) / Math.SQRT2 + quiet + qrSide);
+    const canvasSize = Math.ceil(half * 2);
+    const qrX = right ? canvasSize - quiet - qrSide : quiet;
+    const qrY = bottom ? canvasSize - quiet - qrSide : quiet;
+    return { m, n, qrX, qrY, canvasSize, textBox: null as number | null };
   }
+  const cx = size / 2;
   const half = size / 2 - borderWidth / 2 - 2;
   const inner = half - borderWidth / 2;
   const far = inner - quiet;
@@ -334,31 +426,24 @@ function stampQrCornerLayout(size: number, shape: StampShape, borderWidth: numbe
   const qrY = Math.round(bottom ? cx + far - qrSide : cx - far);
   const textBox = 2 * (far - qrSide - quiet);
   if (textBox < size * SQUARE_MIN_TEXT_RATIO) return null;
-  return { m, qrX, qrY, radius: null as number | null, textBox };
+  return { m, n, qrX, qrY, canvasSize: size, textBox };
 }
 
-/** 番号の文字を、幅に収まる大きさで描く(serial が null なら、番号の置き場所を灰色の点で示す) */
-function drawSerialText(ctx: CanvasRenderingContext2D, serial: string | null, cx: number, cy: number, startPx: number, maxWidth: number, color: string) {
-  const text = serial ?? "MS-····-····-····";
-  const px = fitFontSize(ctx, text, startPx, maxWidth, "bold", SERIAL_FONT_FAMILY);
-  ctx.save();
-  ctx.font = `bold ${px}px ${SERIAL_FONT_FAMILY}`;
-  ctx.fillStyle = serial ? color : "#9ca3af";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, cx, cy);
-  ctx.restore();
-}
+type QrPlaceInput = Pick<StampTextGenerateInput, "sizePx" | "shape" | "borderWidthRatio"> & StampQrOptionalInfo;
 
-/** 文字から作る印影に、QRコードを入れられるか(印影の大きさ・形・枠の太さで決まる。どの隅でも同じ) */
-export function canPlaceStampQr(input: Pick<StampTextGenerateInput, "sizePx" | "shape" | "borderWidthRatio">): boolean {
+/**
+ * 文字から作る印影に、QRコードを入れられるか(印影の大きさ・形・枠の太さと、QRコードに入れる情報の量で決まる。
+ * どの隅でも同じ)。丸印は画像を大きくして入れるので、いつでも入る
+ */
+export function canPlaceStampQr(input: QrPlaceInput): boolean {
   const size = Math.min(STAMP_LIMITS.maxStampSizePx, Math.max(STAMP_LIMITS.minStampSizePx, Math.round(input.sizePx)));
   const borderWidth = Math.max(2, size * Math.min(Math.max(input.borderWidthRatio, 0.01), 0.12));
-  return stampQrCornerLayout(size, input.shape, borderWidth, "bottom-right") !== null;
+  const n = stampQrModuleCount({ createdDate: input.createdDate, authCode: input.authCode });
+  return stampQrCornerLayout(size, input.shape, borderWidth, "bottom-right", n) !== null;
 }
 
 /** QRコードを入れるのに必要な、いちばん小さい印影の大きさ(px、10px刻み)。最大の大きさでも入らなければ null */
-export function stampQrMinSizePx(input: Pick<StampTextGenerateInput, "shape" | "borderWidthRatio">): number | null {
+export function stampQrMinSizePx(input: Omit<QrPlaceInput, "sizePx">): number | null {
   for (let s = STAMP_LIMITS.minStampSizePx; s <= STAMP_LIMITS.maxStampSizePx; s += 10) {
     if (canPlaceStampQr({ ...input, sizePx: s })) return s;
   }
@@ -369,19 +454,19 @@ export function stampQrMinSizePx(input: Pick<StampTextGenerateInput, "shape" | "
  * 取り込んだ印影(形が決まっていない画像)に、固有番号とQRコードを付ける。印影の中の空いている場所は分からないため、
  * 印影には重ねず、印影の下に番号とQRコードを並べた画像にする(背景は透明のまま)
  */
-export function appendStampQr(source: HTMLCanvasElement, serial: string, color = STAMP_COLORS.red): HTMLCanvasElement {
+export function appendStampQr(source: HTMLCanvasElement, info: StampQrInfo, color = STAMP_COLORS.red): HTMLCanvasElement {
+  const payload = buildStampQrPayload(info);
+  const n = stampQrModules(payload).length;
   const base = Math.max(source.width, source.height);
   const m = Math.min(8, Math.max(2, Math.round(base / 150)));
-  const side = (21 + QR_QUIET_MODULES * 2) * m;
-  const serialPx = Math.min(16, Math.max(9, Math.round(side * 0.16)));
+  const side = (n + QR_QUIET_MODULES * 2) * m;
   const gap = Math.max(4, Math.round(side * 0.08));
-  const width = Math.max(source.width, side, Math.ceil(serialPx * 0.62 * serial.length) + 4);
-  const height = source.height + gap + serialPx + gap + side;
+  const width = Math.max(source.width, side);
+  const height = source.height + gap + side;
   const canvas = createCanvas(width, height);
   const ctx = get2dContext(canvas);
   ctx.drawImage(source, Math.round((width - source.width) / 2), 0);
-  drawSerialText(ctx, serial, width / 2, source.height + gap + serialPx / 2, serialPx, width - 4, color);
-  drawQr(ctx, serial, (width - side) / 2, source.height + gap + serialPx + gap, m, color);
+  drawQr(ctx, payload, (width - side) / 2, source.height + gap, m, color);
   return canvas;
 }
 
@@ -478,25 +563,32 @@ export function generateStampCanvas(input: StampTextGenerateInput): HTMLCanvasEl
     STAMP_LIMITS.maxStampSizePx,
     Math.max(STAMP_LIMITS.minStampSizePx, Math.round(input.sizePx))
   );
-  const canvas = createCanvas(size, size);
-  const ctx = get2dContext(canvas);
-  ctx.clearRect(0, 0, size, size);
-
   const color = STAMP_COLORS[input.color] ?? STAMP_COLORS.red;
   const borderWidth = Math.max(2, size * Math.min(Math.max(input.borderWidthRatio, 0.01), 0.12));
-  const cx = size / 2;
-  const cy = size / 2;
+
+  // 固有番号のQRコードを四隅に置くときの配置(入らないときは、QRコードの無い印影)。
+  // 番号の発行前(プレビュー)も、入力された任意の項目から、本物と同じ大きさのQRコードの場所を決める
+  const optional = { createdDate: input.qr?.createdDate, authCode: input.qr?.authCode };
+  const qrPayload = input.qr?.serial ? buildStampQrPayload({ serial: input.qr.serial, ...optional }) : null;
+  const qrModules = qrPayload ? stampQrModules(qrPayload) : null;
+  const qrLayout = input.qr
+    ? stampQrCornerLayout(size, input.shape, borderWidth, input.qr.corner ?? "bottom-right", qrModules?.length ?? stampQrModuleCount(optional))
+    : null;
+
+  // 丸印でQRコードを入れるときは、円の大きさを変えずに画像を大きくする(円は画像の中央)
+  const canvasSize = qrLayout?.canvasSize ?? size;
+  const canvas = createCanvas(canvasSize, canvasSize);
+  const ctx = get2dContext(canvas);
+  ctx.clearRect(0, 0, canvasSize, canvasSize);
+  const cx = canvasSize / 2;
+  const cy = canvasSize / 2;
 
   ctx.strokeStyle = color;
   ctx.lineWidth = borderWidth;
 
-  // 固有番号のQRコードを四隅に置くときの配置(入らないときは、QRコードの無い印影)
-  const qrLayout = input.qr ? stampQrCornerLayout(size, input.shape, borderWidth, input.qr.corner ?? "bottom-right") : null;
-
   let innerBoxSize: number;
   if (input.shape === "round") {
-    // QRコードを円の外側の隅に置くときは、QRコードと重ならないよう、円を少し小さくすることがある
-    const radius = qrLayout?.radius ?? size / 2 - borderWidth / 2 - 2;
+    const radius = size / 2 - borderWidth / 2 - 2;
     ctx.beginPath();
     ctx.arc(cx, cy, Math.max(1, radius), 0, Math.PI * 2);
     ctx.stroke();
@@ -510,8 +602,8 @@ export function generateStampCanvas(input: StampTextGenerateInput): HTMLCanvasEl
 
   // 固有番号のQRコード(白い四角は使わず、薄いマスは透明のまま)。角印は、文字をQRコードと重ならない中央の正方形に収める
   if (input.qr && qrLayout) {
-    if (input.qr.serial) drawQrModules(ctx, stampQrModules(input.qr.serial), qrLayout.qrX, qrLayout.qrY, qrLayout.m, color);
-    else drawQrPlaceholder(ctx, qrLayout.qrX, qrLayout.qrY, QR_MODULES * qrLayout.m);
+    if (qrModules) drawQrModules(ctx, qrModules, qrLayout.qrX, qrLayout.qrY, qrLayout.m, color);
+    else drawQrPlaceholder(ctx, qrLayout.qrX, qrLayout.qrY, qrLayout.n * qrLayout.m);
     if (qrLayout.textBox !== null) innerBoxSize = Math.min(innerBoxSize, qrLayout.textBox * (1 - Math.min(Math.max(input.paddingRatio, 0), 0.4)));
   }
 
