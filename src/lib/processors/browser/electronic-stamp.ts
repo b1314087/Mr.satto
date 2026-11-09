@@ -2,6 +2,8 @@ import { create as createQr } from "qrcode";
 import { BrowserProcessor, type ImageProcessorOutput } from "../types";
 import { canvasToBlob, toOutput, type CropRegion } from "./image";
 import { loadPdfDocument } from "@/lib/pdf/pdfjs-client";
+import { loadPdfDoc } from "./pdf";
+import { pdfLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
  * 電子印鑑生成（印影画像の作成・取り込み）Processor（Phase 16）。
@@ -320,7 +322,7 @@ export function parseStampQrPayload(text: string): StampQrInfo | null {
 }
 
 /** 番号を発行する前に、QRコードの大きさ(型番)を決めるために使う番号(固有番号と同じ文字数) */
-const PLACEHOLDER_SERIAL = "MS-0000-0000-0000";
+export const STAMP_QR_PLACEHOLDER_SERIAL = "MS-0000-0000-0000";
 
 /**
  * QRコードの模様。text をそのままUTF-8のバイト列として入れる(1つの「8ビットバイト」の区切りにまとめ、
@@ -334,7 +336,7 @@ export function stampQrModules(text: string): boolean[][] {
 
 /** QRコードの1辺のマスの数(番号を発行する前でも、入力された任意の項目から決まる) */
 function stampQrModuleCount(optional: StampQrOptionalInfo): number {
-  return stampQrModules(buildStampQrPayload({ serial: PLACEHOLDER_SERIAL, ...optional })).length;
+  return stampQrModules(buildStampQrPayload({ serial: STAMP_QR_PLACEHOLDER_SERIAL, ...optional })).length;
 }
 
 /** QRコードの周りの余白(マスの数。QRコードの規格の4マス) */
@@ -622,6 +624,86 @@ export function generateStampCanvas(input: StampTextGenerateInput): HTMLCanvasEl
   });
 
   return canvas;
+}
+
+// ---------------------------------------------------------------------------
+// 固有番号とQRコードを入れた印影を、PDFに押す
+// ---------------------------------------------------------------------------
+//
+// 固有番号とQRコードを入れる印影は、利用者が選んだPDFに押して、PDFとして出力する(印影だけのPNGは出さない)。
+// PDFはブラウザの中で読み込んで書き換え、サーバーには送らない。
+
+/** PDFに押す印影の大きさ(印影の幅、mm) */
+export const STAMP_PDF_SIZE_MM = { min: 10, max: 60, default: 24 } as const;
+
+/**
+ * PDFに押す位置。xRatio・yRatio は0〜1で、印影(QRコードを含む画像全体)の左端・上端が、
+ * ページの左端・上端(0)からページの右端・下端にちょうど収まる位置(1)までのどこにあるか。
+ * widthMm は印影(丸印の円・角印の枠・取り込んだ印影)の幅
+ */
+export interface StampPdfPlacement {
+  pageIndex: number;
+  xRatio: number;
+  yRatio: number;
+  widthMm: number;
+}
+
+/** ページの見た目の大きさ(pt。回転を反映した、表示されるときの幅・高さ) */
+export interface StampPdfPageBox {
+  width: number;
+  height: number;
+}
+
+/**
+ * ページの見た目の座標(左上が原点、pt)で、画像を置く四角形。
+ * imageWidthRatio は「画像の幅 ÷ 印影の幅」(丸印のQRコードの分・取り込んだ印影の下のQRコードの分、画像が大きい)。
+ * 画像がページより大きいときは、ページに収まるまで小さくする
+ */
+export function stampPdfRect(page: StampPdfPageBox, placement: StampPdfPlacement, imageWidthRatio: number, imageAspect: number) {
+  let w = ((placement.widthMm * 72) / 25.4) * imageWidthRatio;
+  let h = w * imageAspect;
+  const fit = Math.min(1, page.width / w, page.height / h);
+  w *= fit;
+  h *= fit;
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  return { x: clamp(placement.xRatio) * (page.width - w), y: clamp(placement.yRatio) * (page.height - h), w, h };
+}
+
+/**
+ * PDFの1ページに、印影の画像を押した新しいPDFを作る(元のPDFは変えない)。
+ * ページの回転(/Rotate 0・90・180・270)と、表示される範囲(CropBox)を反映し、見た目のとおりの位置・向きに押す
+ */
+export async function stampImageOntoPdf(
+  file: File,
+  stamp: HTMLCanvasElement,
+  placement: StampPdfPlacement,
+  imageWidthRatio: number
+): Promise<{ blob: Blob; pageCount: number }> {
+  const doc = await loadPdfDoc(file);
+  const pageCount = doc.getPageCount();
+  if (placement.pageIndex < 0 || placement.pageIndex >= pageCount) throw new Error("押すページが、PDFのページの範囲を超えています。");
+  const page = doc.getPage(placement.pageIndex);
+  const crop = page.getCropBox();
+  const rotation = (((page.getRotation().angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+  const swapped = rotation === 90 || rotation === 270;
+  const box = { width: swapped ? crop.height : crop.width, height: swapped ? crop.width : crop.height };
+  const { x: u, y: v, w, h } = stampPdfRect(box, placement, imageWidthRatio, stamp.height / stamp.width);
+
+  const pngBlob = await canvasToBlob(stamp, "image/png");
+  const image = await doc.embedPng(new Uint8Array(await pngBlob.arrayBuffer()));
+  // 見た目の座標(u, v：左上から)を、回転する前のページの座標(左下が原点)に直し、画像も同じだけ回して置く
+  const { x: x0, y: y0, width: cw, height: ch } = crop;
+  const at =
+    rotation === 0
+      ? { x: x0 + u, y: y0 + ch - v - h }
+      : rotation === 90
+        ? { x: x0 + v + h, y: y0 + u }
+        : rotation === 180
+          ? { x: x0 + cw - u, y: y0 + v + h }
+          : { x: x0 + cw - v - h, y: y0 + ch - u };
+  page.drawImage(image, { x: at.x, y: at.y, width: w, height: h, rotate: pdfLib().degrees(rotation) });
+  const bytes = await doc.save();
+  return { blob: new Blob([new Uint8Array(bytes)], { type: "application/pdf" }), pageCount };
 }
 
 // ---------------------------------------------------------------------------

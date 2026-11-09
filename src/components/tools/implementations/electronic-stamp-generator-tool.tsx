@@ -1,7 +1,7 @@
 "use client";
 
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -27,6 +27,11 @@ import {
   loadStampPdf,
   generateStampSerial,
   STAMP_AUTH_CODE_MAX_LENGTH,
+  STAMP_PDF_SIZE_MM,
+  STAMP_QR_PLACEHOLDER_SERIAL,
+  stampImageOntoPdf,
+  stampPdfRect,
+  type StampPdfPageBox,
   validateStampAuthCode,
   validateStampCreatedDate,
   type StampQrInfo,
@@ -61,9 +66,32 @@ import { SliderField } from "@/components/common/slider-field";
  * 新しい番号になる(入力を変えたり、画面が描き直されたりしただけでは、番号は発行しない)。
  * 編集中のプレビューには、番号を発行する前なので、QRコードの置き場所(本物と同じ大きさ)だけを示す。
  * QRコードの情報はだれでもコピー・編集できるため、印影の複製防止や本人であることの証明にはならない。
+ *
+ * 固有番号とQRコードを入れる印影は、押印するPDFを選んだときだけ作れる。印影は、選んだページの、横(X)・縦(Y)の
+ * バーで決めた位置に押し、PDFとして出力する(印影だけのPNGは出さない)。PDFもブラウザの中だけで読み込み・書き換える。
  */
 
 type Mode = "text" | "import";
+
+/** 作った印影の出力：印影のPNG、または、印影を押したPDF(固有番号とQRコードを入れるとき) */
+type StampExport =
+  | { kind: "png"; canvas: HTMLCanvasElement }
+  | { kind: "pdf"; blob: Blob; stamp: HTMLCanvasElement; pageNumber: number; pageCount: number };
+
+/** 押印するPDFと、押す位置(xPct・yPct は0〜100：ページの左端・上端から、右端・下端にちょうど収まる位置まで) */
+interface StampPdfTargetValue {
+  file: File;
+  pageCount: number;
+  pageIndex: number;
+  xPct: number;
+  yPct: number;
+  widthMm: number;
+}
+
+/** 完成した結果(PNG、または印影を押したPDF) */
+type StampResult =
+  | ({ kind: "png" } & ImageProcessorOutput)
+  | { kind: "pdf"; blob: Blob; url: string; previewUrl: string; width: number; height: number; pageNumber: number; pageCount: number };
 type ImportStep = "select" | "crop" | "adjust";
 
 interface Box {
@@ -109,7 +137,7 @@ export function ElectronicStampGeneratorTool() {
   const [mode, setMode] = useState<Mode>("text");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ImageProcessorOutput | null>(null);
+  const [result, setResult] = useState<StampResult | null>(null);
   /** 完成した印影の固有番号(QRコードを入れないときは null) */
   const [serial, setSerial] = useState<string | null>(null);
   /** 完成した印影のQRコードに入れた情報(QRコードを入れないときは null) */
@@ -128,19 +156,32 @@ export function ElectronicStampGeneratorTool() {
     setError(null);
   }
 
-  async function handleExport(canvas: HTMLCanvasElement, info: StampQrInfo | null) {
+  async function handleExport(exported: StampExport | Promise<StampExport>, info: StampQrInfo | null) {
     const issuedSerial = info?.serial ?? null;
     setStatus("processing");
     setError(null);
     try {
-      const output = await new StampExportProcessor().process({ canvas });
+      const done = await exported;
+      const output: StampResult =
+        done.kind === "png"
+          ? { kind: "png", ...(await new StampExportProcessor().process({ canvas: done.canvas })) }
+          : {
+              kind: "pdf",
+              blob: done.blob,
+              url: URL.createObjectURL(done.blob),
+              previewUrl: done.stamp.toDataURL("image/png"),
+              width: done.stamp.width,
+              height: done.stamp.height,
+              pageNumber: done.pageNumber,
+              pageCount: done.pageCount,
+            };
       if (result) URL.revokeObjectURL(result.url);
       setSerial(issuedSerial);
       setQrInfo(info);
       setResult(output);
       setStatus("success");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "印影画像の生成に失敗しました");
+      setError(e instanceof Error ? e.message : "印影の生成に失敗しました");
       setStatus("error");
     }
   }
@@ -197,10 +238,16 @@ export function ElectronicStampGeneratorTool() {
         <ResultPopup>
           <div className="rounded-lg border border-neutral-200 p-2 dark:border-neutral-700" style={CHECKER_STYLE}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={result.url} alt="生成された印影画像のプレビュー" className="max-h-56 max-w-full object-contain" />
+            <img
+              src={result.kind === "pdf" ? result.previewUrl : result.url}
+              alt="生成された印影画像のプレビュー"
+              className="max-h-56 max-w-full object-contain"
+            />
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            {result.width} × {result.height}px（透明PNG）
+          <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="stamp-result-summary">
+            {result.kind === "pdf"
+              ? `この印影を、PDF（全${result.pageCount}ページ）の${result.pageNumber}ページ目に押しました。`
+              : `${result.width} × ${result.height}px（透明PNG）`}
           </p>
           {serial && qrInfo && (
             <div className="text-sm text-neutral-700 dark:text-neutral-200" data-testid="stamp-qr-contents">
@@ -228,8 +275,17 @@ export function ElectronicStampGeneratorTool() {
             </div>
           )}
           <RewardedDownloadGate
-            label="PNGをダウンロード"
-            onDownload={() => downloadBlob(result.blob, serial ? `electronic-stamp-${serial}.${extToSuffix()}` : `electronic-stamp.${extToSuffix()}`)}
+            label={result.kind === "pdf" ? "PDFをダウンロード" : "PNGをダウンロード"}
+            onDownload={() =>
+              downloadBlob(
+                result.blob,
+                result.kind === "pdf"
+                  ? `electronic-stamp-${serial ?? "stamped"}.pdf`
+                  : serial
+                    ? `electronic-stamp-${serial}.${extToSuffix()}`
+                    : `electronic-stamp.${extToSuffix()}`
+              )
+            }
           />
         </ResultPopup>
       )}
@@ -245,7 +301,7 @@ function TextStampPanel({
   onExport,
   status,
 }: {
-  onExport: (canvas: HTMLCanvasElement, info: StampQrInfo | null) => void | Promise<void>;
+  onExport: (exported: StampExport | Promise<StampExport>, info: StampQrInfo | null) => void | Promise<void>;
   status: ProcessingState;
 }) {
   const [text, setText] = useState("印");
@@ -258,12 +314,14 @@ function TextStampPanel({
   const [color, setColor] = useState<StampColorId>("red");
   const [offsetXPct, setOffsetXPct] = useState(0);
   const [offsetYPct, setOffsetYPct] = useState(0);
-  const [withQr, setWithQr] = useState(true);
+  const [withQr, setWithQr] = useState(false);
   /** QRコードを置く隅(丸印は円の外側、角印は枠の内側) */
   const [qrCorner, setQrCorner] = useState<StampQrCorner>("bottom-right");
   /** QRコードに入れる、任意の印鑑作成日・認証コード(入力されたそのまま) */
   const [createdDate, setCreatedDate] = useState("");
   const [authCode, setAuthCode] = useState("");
+  /** 固有番号とQRコードを入れるときに押印するPDFと、押す位置 */
+  const [target, setTarget] = useState<StampPdfTargetValue | null>(null);
   // 未入力の項目はQRコードに入れない(空のときは渡さない)
   const qrOptional = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
 
@@ -367,26 +425,67 @@ function TextStampPanel({
   const qrInputError = withQr ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
 
   /** 「印影画像を生成する」：固有番号を発行し、その番号のQRコードを入れた印影を作る */
+  const stampBase = {
+    text: text.trim() || "印",
+    shape,
+    layout,
+    sizePx,
+    fontScale,
+    borderWidthRatio,
+    paddingRatio,
+    color,
+    offsetXPct,
+    offsetYPct,
+    fontFamily: customFont?.cssFontFamily,
+    fontWeight: boldText ? ("bold" as const) : ("normal" as const),
+  };
+  /** 「印影サイズ」(円・枠の大きさ)。丸印でQRコードを入れると、画像はこれより大きい */
+  const stampSizePx = Math.min(STAMP_LIMITS.maxStampSizePx, Math.max(STAMP_LIMITS.minStampSizePx, Math.round(sizePx)));
+  // PDFの上の位置を見せるための印影(番号を発行する前なので、QRコードの置き場所だけ)。PDFを選んだあと(ブラウザの中)だけ作る
+  const hasTarget = target !== null;
+  const fontFamily = customFont?.cssFontFamily;
+  const placementStamp = useMemo(
+    () =>
+      withQr && hasTarget
+        ? generateStampCanvas({
+            text: text.trim() || "印",
+            shape,
+            layout,
+            sizePx,
+            fontScale,
+            borderWidthRatio,
+            paddingRatio,
+            color,
+            offsetXPct,
+            offsetYPct,
+            fontFamily,
+            fontWeight: boldText ? "bold" : "normal",
+            qr: { serial: null, corner: qrCorner, ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) },
+          })
+        : null,
+    [withQr, hasTarget, text, shape, layout, sizePx, fontScale, borderWidthRatio, paddingRatio, color, offsetXPct, offsetYPct, fontFamily, boldText, qrCorner, createdDate, authCode]
+  );
+  const missingPdf = withQr && !target;
+
+  /** 「生成する」：QRコードなしなら印影のPNG。QRコードを入れるなら、番号を発行し、その印影を選んだPDFに押す */
   function exportWithSerial() {
-    if (qrInputError) return;
-    const issued = withQr && qrFits ? generateStampSerial() : null;
-    const info: StampQrInfo | null = issued ? { serial: issued, ...qrOptional } : null;
-    const canvas = generateStampCanvas({
-      text: text.trim() || "印",
-      shape,
-      layout,
-      sizePx,
-      fontScale,
-      borderWidthRatio,
-      paddingRatio,
-      color,
-      offsetXPct,
-      offsetYPct,
-      fontFamily: customFont?.cssFontFamily,
-      fontWeight: boldText ? "bold" : "normal",
-      ...(info ? { qr: { ...info, corner: qrCorner } } : {}),
-    });
-    void onExport(canvas, info);
+    if (!withQr) {
+      void onExport({ kind: "png", canvas: generateStampCanvas(stampBase) }, null);
+      return;
+    }
+    if (qrInputError || !qrFits || !target) return;
+    const info: StampQrInfo = { serial: generateStampSerial(), ...qrOptional };
+    const canvas = generateStampCanvas({ ...stampBase, qr: { ...info, corner: qrCorner } });
+    const placed = target;
+    void onExport(
+      stampImageOntoPdf(
+        placed.file,
+        canvas,
+        { pageIndex: placed.pageIndex, xRatio: placed.xPct / 100, yRatio: placed.yPct / 100, widthMm: placed.widthMm },
+        canvas.width / stampSizePx
+      ).then(({ blob, pageCount }) => ({ kind: "pdf" as const, blob, stamp: canvas, pageNumber: placed.pageIndex + 1, pageCount })),
+      info
+    );
   }
 
   const textTooLong = Array.from(text).length > STAMP_LIMITS.maxTextLength;
@@ -500,7 +599,13 @@ function TextStampPanel({
           />
         </label>
 
-        <QrOption checked={withQr} onChange={setWithQr} />
+        <QrOption
+          checked={withQr}
+          onChange={(v) => {
+            setWithQr(v);
+            // チェックを外したら、選んでいたPDFも外す(もう一度チェックしたら、選び直す)
+            if (!v) setTarget(null);
+          }} />
         {withQr && (
           <QrInfoFields createdDate={createdDate} onCreatedDate={setCreatedDate} authCode={authCode} onAuthCode={setAuthCode} />
         )}
@@ -532,9 +637,10 @@ function TextStampPanel({
           <p className="text-xs text-amber-700 dark:text-amber-400">
             この大きさでは、QRコードを入れる場所が足りません。
             {qrMinSize !== null ? `印影サイズを${qrMinSize}px以上にするか、枠を細くしてください` : "枠を細くしてください"}
-            （このまま生成すると、QRコードの無い印影になります）。
+            （QRコードを入れない場合は、「固有番号とQRコードを入れる」のチェックを外してください）。
           </p>
         )}
+        {withQr && <StampPdfTarget value={target} onChange={setTarget} stamp={placementStamp} imageWidthRatio={placementStamp ? placementStamp.width / stampSizePx : 1} />}
 
         <SliderField
           label="文字サイズ"
@@ -636,7 +742,8 @@ function TextStampPanel({
 
         <button
           type="button"
-          disabled={status === "processing" || text.trim() === "" || textTooLong || !!qrInputError} aria-busy={status === "processing" || undefined}
+          disabled={status === "processing" || text.trim() === "" || textTooLong || !!qrInputError || missingPdf || (withQr && !qrFits)}
+          aria-busy={status === "processing" || undefined}
           onClick={exportWithSerial}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
@@ -655,7 +762,7 @@ function ImportStampPanel({
   onExport,
   status,
 }: {
-  onExport: (canvas: HTMLCanvasElement, info: StampQrInfo | null) => void | Promise<void>;
+  onExport: (exported: StampExport | Promise<StampExport>, info: StampQrInfo | null) => void | Promise<void>;
   status: ProcessingState;
 }) {
   const [file, setFile] = useState<File | null>(null);
@@ -691,10 +798,28 @@ function ImportStampPanel({
   const [thresholdPercent, setThresholdPercent] = useState(55);
   const [autoTrimEnabled, setAutoTrimEnabled] = useState(true);
   const [scalePercent, setScalePercent] = useState(100);
-  const [withQr, setWithQr] = useState(true);
+  const [withQr, setWithQr] = useState(false);
   const [createdDate, setCreatedDate] = useState("");
   const [authCode, setAuthCode] = useState("");
   const qrInputError = withQr ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
+  /** 固有番号とQRコードを入れるときに押印するPDFと、押す位置 */
+  const [target, setTarget] = useState<StampPdfTargetValue | null>(null);
+  /** 調整後の印影(PDFの上の位置を見せるため。finalCanvasRef と同じもの) */
+  const [finalCanvas, setFinalCanvas] = useState<HTMLCanvasElement | null>(null);
+  const optionalInfo = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
+  // PDFの上の位置を見せるための印影(実在しない番号のQRコードで、本物と同じ大きさ)
+  const hasTarget = target !== null;
+  const placementStamp = useMemo(
+    () =>
+      withQr && hasTarget && finalCanvas
+        ? appendStampQr(
+            finalCanvas,
+            { serial: STAMP_QR_PLACEHOLDER_SERIAL, ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) },
+            STAMP_COLORS.black
+          )
+        : null,
+    [withQr, hasTarget, finalCanvas, createdDate, authCode]
+  );
   const [trimMessage, setTrimMessage] = useState<string | null>(null);
   const finalPreviewRef = useRef<HTMLCanvasElement>(null);
   const finalCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -882,6 +1007,7 @@ function ImportStampPanel({
         working = resizeCanvasByScale(working, scalePercent);
       }
       finalCanvasRef.current = working;
+      setFinalCanvas(working);
       setTrimMessage(trimmedNote);
       target.width = working.width;
       target.height = working.height;
@@ -1043,8 +1169,22 @@ function ImportStampPanel({
               余白を自動的にトリミングする
             </label>
             {trimMessage && <p className="text-xs text-amber-700 dark:text-amber-400">{trimMessage}</p>}
-            <QrOption checked={withQr} onChange={setWithQr} note="取り込んだ印影には、印影の下にQRコードを並べます。" />
+            <QrOption
+          checked={withQr}
+          onChange={(v) => {
+            setWithQr(v);
+            // チェックを外したら、選んでいたPDFも外す(もう一度チェックしたら、選び直す)
+            if (!v) setTarget(null);
+          }} note="取り込んだ印影には、印影の下にQRコードを並べます。" />
             {withQr && <QrInfoFields createdDate={createdDate} onCreatedDate={setCreatedDate} authCode={authCode} onAuthCode={setAuthCode} />}
+            {withQr && (
+              <StampPdfTarget
+                value={target}
+                onChange={setTarget}
+                stamp={placementStamp}
+                imageWidthRatio={placementStamp && finalCanvas ? placementStamp.width / finalCanvas.width : 1}
+              />
+            )}
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">出力サイズ</legend>
               <div className="flex gap-2">
@@ -1072,16 +1212,29 @@ function ImportStampPanel({
               </button>
               <button
                 type="button"
-                disabled={status === "processing" || !!qrInputError} aria-busy={status === "processing" || undefined}
+                disabled={status === "processing" || !!qrInputError || (withQr && !target)}
+                aria-busy={status === "processing" || undefined}
                 onClick={() => {
-                  const finalCanvas = finalCanvasRef.current;
-                  if (!finalCanvas || qrInputError) return;
-                  // 取り込んだ印影は形が決まっていないため、印影の下にQRコードを並べる
-                  const issued = withQr ? generateStampSerial() : null;
-                  const info: StampQrInfo | null = issued
-                    ? { serial: issued, ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) }
-                    : null;
-                  void onExport(info ? appendStampQr(finalCanvas, info, STAMP_COLORS.black) : finalCanvas, info);
+                  const source = finalCanvasRef.current;
+                  if (!source || qrInputError) return;
+                  if (!withQr) {
+                    void onExport({ kind: "png", canvas: source }, null);
+                    return;
+                  }
+                  if (!target) return;
+                  // 取り込んだ印影は形が決まっていないため、印影の下にQRコードを並べ、選んだPDFに押す
+                  const info: StampQrInfo = { serial: generateStampSerial(), ...optionalInfo };
+                  const stamp = appendStampQr(source, info, STAMP_COLORS.black);
+                  const placed = target;
+                  void onExport(
+                    stampImageOntoPdf(
+                      placed.file,
+                      stamp,
+                      { pageIndex: placed.pageIndex, xRatio: placed.xPct / 100, yRatio: placed.yPct / 100, widthMm: placed.widthMm },
+                      stamp.width / source.width
+                    ).then(({ blob, pageCount }) => ({ kind: "pdf" as const, blob, stamp, pageNumber: placed.pageIndex + 1, pageCount })),
+                    info
+                  );
                 }}
                 className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
@@ -1170,6 +1323,190 @@ function QrInfoFields({
         </span>
         {codeError && <span className="text-xs text-red-600 dark:text-red-400">{codeError}</span>}
       </label>
+    </div>
+  );
+}
+
+/**
+ * 押印するPDFの選択と、押す位置(固有番号とQRコードを入れるとき)。
+ * 横(X)・縦(Y)のバーは、印影の左端・上端を、ページの左端・上端(0%)から、右端・下端にちょうど収まる位置(100%)まで動かす。
+ * PDFはブラウザの中だけで読み込み、選んだページの上に印影を重ねて、押す位置を見せる
+ */
+function StampPdfTarget({
+  value,
+  onChange,
+  stamp,
+  imageWidthRatio,
+}: {
+  value: StampPdfTargetValue | null;
+  onChange: (v: StampPdfTargetValue | null) => void;
+  stamp: HTMLCanvasElement | null;
+  imageWidthRatio: number;
+}) {
+  const pdfRef = useRef<Awaited<ReturnType<typeof loadStampPdf>> | null>(null);
+  const viewRef = useRef<HTMLCanvasElement>(null);
+  const [page, setPage] = useState<{ canvas: HTMLCanvasElement; box: StampPdfPageBox } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pdfRef.current) void closePdfDocument(pdfRef.current);
+    };
+  }, []);
+
+  async function showPage(pdf: Awaited<ReturnType<typeof loadStampPdf>>, index: number) {
+    const p = await pdf.getPage(index + 1);
+    const viewport = p.getViewport({ scale: 1 });
+    const canvas = await renderStampPdfPage(pdf, index + 1, 700);
+    setPage({ canvas, box: { width: viewport.width, height: viewport.height } });
+  }
+
+  async function pick(file: File) {
+    setLoadError(null);
+    setLoading(true);
+    try {
+      const previous = pdfRef.current;
+      pdfRef.current = null;
+      if (previous) void closePdfDocument(previous);
+      const pdf = await loadStampPdf(file);
+      pdfRef.current = pdf;
+      await showPage(pdf, 0);
+      onChange({
+        file,
+        pageCount: pdf.numPages,
+        pageIndex: 0,
+        xPct: value?.xPct ?? 85,
+        yPct: value?.yPct ?? 10,
+        widthMm: value?.widthMm ?? STAMP_PDF_SIZE_MM.default,
+      });
+    } catch (e) {
+      setPage(null);
+      onChange(null);
+      setLoadError(e instanceof Error && /パスワード|password/i.test(e.message) ? "パスワード保護されたPDFには押せません。" : "このPDFを読み込めませんでした。");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function changePage(index: number) {
+    if (!pdfRef.current || !value) return;
+    onChange({ ...value, pageIndex: index });
+    await showPage(pdfRef.current, index);
+  }
+
+  // 選んだページの上に、印影を重ねて描く(押す位置の確認用)
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !page) return;
+    view.width = page.canvas.width;
+    view.height = page.canvas.height;
+    const ctx = view.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, view.width, view.height);
+    ctx.drawImage(page.canvas, 0, 0);
+    if (!stamp || !value) return;
+    const rect = stampPdfRect(
+      page.box,
+      { pageIndex: value.pageIndex, xRatio: value.xPct / 100, yRatio: value.yPct / 100, widthMm: value.widthMm },
+      imageWidthRatio,
+      stamp.height / stamp.width
+    );
+    const k = view.width / page.box.width;
+    ctx.drawImage(stamp, rect.x * k, rect.y * k, rect.w * k, rect.h * k);
+  }, [page, stamp, value, imageWidthRatio]);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700" data-testid="stamp-pdf-target">
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          押印するPDF<span className="ml-1 text-xs text-red-600 dark:text-red-400">（必須）</span>
+        </span>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          固有番号とQRコードを入れた印影は、PDFに押して出力します。PDFはこのブラウザの中だけで読み込み、どこにも送信しません。
+        </p>
+        <label className="w-fit cursor-pointer rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+          {value ? "別のPDFを選ぶ" : "PDFを選ぶ"}
+          <input
+            type="file"
+            accept="application/pdf,.pdf"
+            className="sr-only"
+            data-testid="stamp-target-pdf-input"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void pick(f);
+            }}
+          />
+        </label>
+        {loading && <span className="text-xs text-neutral-500">PDFを読み込んでいます…</span>}
+        {loadError && <span className="text-xs text-red-600 dark:text-red-400">{loadError}</span>}
+        {value && (
+          <span className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="stamp-target-pdf-name">
+            {value.file.name}（全{value.pageCount}ページ）
+          </span>
+        )}
+        {!value && !loading && (
+          <span className="text-xs text-amber-700 dark:text-amber-400">PDFを選ぶと、印影を生成できるようになります。</span>
+        )}
+      </div>
+      {value && (
+        <>
+          {value.pageCount > 1 && (
+            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+              押すページ
+              <select
+                data-testid="stamp-target-page"
+                value={value.pageIndex}
+                onChange={(e) => void changePage(Number(e.target.value))}
+                className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm dark:border-neutral-600 dark:bg-neutral-900"
+              >
+                {Array.from({ length: value.pageCount }, (_, i) => (
+                  <option key={i} value={i}>
+                    {i + 1}ページ目
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <SliderField
+            label="横の位置（X）"
+            ariaLabel="印影の横の位置（X）"
+            value={value.xPct}
+            min={0}
+            max={100}
+            step={1}
+            unit="%"
+            hint="0%で左端、100%で右端"
+            onChange={(v) => onChange({ ...value, xPct: v })}
+          />
+          <SliderField
+            label="縦の位置（Y）"
+            ariaLabel="印影の縦の位置（Y）"
+            value={value.yPct}
+            min={0}
+            max={100}
+            step={1}
+            unit="%"
+            hint="0%で上端、100%で下端"
+            onChange={(v) => onChange({ ...value, yPct: v })}
+          />
+          <SliderField
+            label="PDF上の印影の大きさ"
+            ariaLabel="PDF上の印影の大きさ"
+            value={value.widthMm}
+            min={STAMP_PDF_SIZE_MM.min}
+            max={STAMP_PDF_SIZE_MM.max}
+            step={1}
+            unit="mm"
+            hint="丸印は円の直径、角印は枠の幅、取り込んだ印影は印影の幅"
+            onChange={(v) => onChange({ ...value, widthMm: v })}
+          />
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-900">
+            <canvas ref={viewRef} aria-label="PDFの上の印影の位置" className="h-auto w-full" />
+          </div>
+        </>
+      )}
     </div>
   );
 }

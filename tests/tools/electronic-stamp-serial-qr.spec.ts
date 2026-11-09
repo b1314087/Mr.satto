@@ -1,10 +1,14 @@
 import { test, expect } from "../fixtures/premium-test";
 import { test as plainTest, expect as plainExpect, type Page } from "@playwright/test";
 import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { PDFDocument, degrees, rgb } from "pdf-lib";
 import { fixtures } from "../fixtures/paths";
 import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
 import { decodePng, countTransparentPixels, type DecodedPng } from "../helpers/png-inspect";
 import { decodeQrFile, qrCorners, qrDecoders } from "../helpers/qr-decode";
+import { scratchDir } from "../helpers/tmp";
 import {
   STAMP_QR_CORNERS,
   STAMP_SERIAL_ALPHABET,
@@ -18,25 +22,24 @@ import {
   validateStampCreatedDate,
   stampQrMinSizePx,
   stampQrModules,
-  type StampQrCorner,
   type StampQrOptionalInfo,
 } from "@/lib/processors/browser/electronic-stamp";
 
 /**
- * 電子印鑑：固有番号・印鑑作成日・認証コードとQRコードのテスト。
+ * 電子印鑑：固有番号・印鑑作成日・認証コードとQRコード、PDFへの押印のテスト。
  *
  * 確かめること:
  *  - 固有番号の形式(MS-XXXX-XXXX-XXXX、見間違えやすい 0・1・I・L・O を使わない)・重複しない・暗号学的に安全な乱数を使う
  *  - QRコードに入れる文字列：「固有番号: …」の行は必ず、印鑑作成日・認証コードは入力したときだけ、入力どおりに入る
  *    (未入力の項目の行は入らない・ほかの情報は入らない)。認証コード・日付の入力の確認
- *  - 新しく生成すると新しい番号、同じ印影を何度ダウンロードしても同じ番号(同じ画像)。入力を変えただけでは番号は変わらない
- *  - 文字から作る印影：QRコードを、丸印は円の外側の四隅(円の大きさは変えず、画像を大きくする)、角印は枠の内側の四隅の、
- *    選んだ隅に置く(白い四角は使わない)。ダウンロードした画像を、独立した2つの読み取りライブラリ(OpenCV・ZXing。
- *    入っている環境だけ)で読み取り、入れた文字列と一致すること・QRコードが選んだ隅にあることを確かめる
- *  - 取り込んだ印影：下にQRコード(白い四角)を並べ、その模様が入れた文字列のQRコードと同じ
- *  - QRコードを入れない設定(番号・作成日・認証コードの欄を出さず、番号を発行しない)・小さすぎる印影・角印
+ *  - 固有番号とQRコードを入れるときは、押印するPDFを選ばないと生成できない。印影は選んだページの、横(X)・縦(Y)の
+ *    バーで決めた位置・大きさ(mm)に押し、PDFとして出力する(印影だけのPNGは出さない)。ページの回転(/Rotate)も反映する
+ *  - 出力したPDFのページを画像にして、独立した2つの読み取りライブラリ(OpenCV・ZXing。入っている環境だけ)で読み取り、
+ *    入れた文字列と一致すること・QRコードが選んだ隅(丸印は円の外側、角印は枠の内側)にあることを確かめる
+ *  - 新しく生成すると新しい番号、同じPDFを何度ダウンロードしても同じ。入力を変えただけでは番号は変わらない
+ *  - QRコードを入れない設定(既定)：PDFは不要で、従来どおり印影のPNGを出す(番号を発行しない)
+ *  - 取り込んだ印影：下にQRコードを並べた印影を、選んだPDFに押す
  *  - 生成・ダウンロードのあいだに、通信が起きない・ブラウザに保存しない
- * 電子印鑑の出力はPNGだけ(PDFは取り込むときの入力だけで、PDFの出力は無い)。
  */
 
 const TOOL_URL = "/tools/electronic-stamp-generator";
@@ -130,7 +133,7 @@ plainTest("QRコードの配置：丸印はいつでも入る。角印は、入�
 });
 
 // ---------------------------------------------------------------------------
-// 画像の中のQRコードを調べる
+// 押印するPDF・出力したPDFを調べる
 // ---------------------------------------------------------------------------
 
 const px = (png: DecodedPng, x: number, y: number) => {
@@ -139,90 +142,103 @@ const px = (png: DecodedPng, x: number, y: number) => {
 };
 const isWhite = (p: { r: number; g: number; b: number; a: number }) => p.a === 255 && p.r >= 250 && p.g >= 250 && p.b >= 250;
 
-/** 画像の中のQRコードの白い四角(余白を含む)を探す：いちばん下の白い画素の行から、四角の左右の端を求める */
-function findQrBox(png: DecodedPng): { x: number; y: number; side: number } | null {
-  for (let y = png.height - 1; y >= 0; y--) {
-    let x0 = -1;
-    let x1 = -1;
-    for (let x = 0; x < png.width; x++) {
-      if (isWhite(px(png, x, y))) {
-        if (x0 < 0) x0 = x;
-        x1 = x;
-      }
-    }
-    if (x0 >= 0) {
-      const side = x1 - x0 + 1;
-      return { x: x0, y: y - side + 1, side };
-    }
-  }
-  return null;
+/** 画像の中のQRコードの白い四角を探す(QRコードの無い印影に、白い四角が無いことの確認用) */
+function hasWhiteBox(png: DecodedPng): boolean {
+  for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) if (isWhite(px(png, x, y))) return true;
+  return false;
 }
 
-/** QRコード(1辺 n マス)の模様を、画像から読み取る(マスの中心の画素の明るさ) */
-function readQrModules(png: DecodedPng, n: number): boolean[][] | null {
-  const box = findQrBox(png);
-  if (!box) return null;
-  const total = n + 8; // n マス + 余白4マス×2
-  const m = box.side / total;
-  if (Math.abs(m - Math.round(m)) > 0.01) return null; // マスの大きさは整数のpx
-  const out: boolean[][] = [];
-  for (let r = 0; r < n; r++) {
-    const row: boolean[] = [];
-    for (let c = 0; c < n; c++) {
-      const p = px(png, Math.floor(box.x + (c + 4.5) * m), Math.floor(box.y + (r + 4.5) * m));
-      const lightness = (Math.max(p.r, p.g, p.b) + Math.min(p.r, p.g, p.b)) / 2;
-      row.push(p.a > 128 && lightness < 180);
-    }
-    out.push(row);
+const A4 = { w: 595.28, h: 841.89 };
+
+/** 押印するPDFを作る(テストの中で作る。pages は各ページの大きさ・回転) */
+async function makePdf(name: string, pages: { w: number; h: number; rotate?: number }[]): Promise<string> {
+  const doc = await PDFDocument.create();
+  for (const p of pages) {
+    const page = doc.addPage([p.w, p.h]);
+    // 白い背景の上に、薄い灰色の線(文書の代わり)
+    page.drawRectangle({ x: 36, y: 36, width: p.w - 72, height: p.h - 72, borderWidth: 0.5, borderColor: rgb(0.7, 0.7, 0.7) });
+    if (p.rotate) page.setRotation(degrees(p.rotate));
   }
-  return out;
+  const file = path.join(scratchDir("stamp-target-pdf"), name);
+  fs.writeFileSync(file, await doc.save());
+  return file;
 }
 
-/** 文字から作る印影：QRコードから入れた文字列(payload)だけを読み取れ、選んだ隅(画像の外側の30%の範囲)にあり、白い四角が無い */
-function expectCornerQr(file: string, payload: string, corner: StampQrCorner) {
-  const png = decodePng(file);
-  let white = 0;
-  for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) if (isWhite(px(png, x, y))) white++;
-  expect(white, "白い四角がある").toBe(0);
-  const decoders = qrDecoders();
-  if (!decoders.opencv) return;
-  const [r] = decodeQrFile(file);
-  expect(r.opencv, "OpenCVで読み取れない").toBe(payload);
-  if (r.zxing !== null) expect(r.zxing, "ZXingで読み取れない").toBe(payload);
-  const pts = qrCorners(file);
+/** PDFの1ページを画像(PNG)にする(dpi はインチあたりの点の数)。表示される向き(回転を反映)で描かれる */
+function renderPdfPage(pdf: string, pageNo: number, dpi = 300): string {
+  const dir = scratchDir("stamp-rendered");
+  const base = path.join(dir, `p${pageNo}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+  execFileSync("pdftoppm", ["-png", "-r", String(dpi), "-f", String(pageNo), "-l", String(pageNo), "-singlefile", pdf, base]);
+  return `${base}.png`;
+}
+
+/** 出力したPDFのページの見た目の大きさ(pt。回転を反映) */
+async function visiblePageBox(pdf: string, pageNo: number) {
+  const doc = await PDFDocument.load(fs.readFileSync(pdf));
+  const page = doc.getPage(pageNo - 1);
+  const { width, height } = page.getCropBox();
+  const r = page.getRotation().angle % 180 !== 0;
+  return { width: r ? height : width, height: r ? width : height, pageCount: doc.getPageCount() };
+}
+
+interface PlacedCheck {
+  payload: string;
+  pageNo: number;
+  xPct: number;
+  yPct: number;
+  widthMm: number;
+}
+
+/**
+ * 出力したPDFの指定ページを画像にして、QRコードを読み取り、入れた文字列だけが取れること・QRコードが押した印影の範囲の、
+ * 選んだ隅にあること・正しい向き(上下・左右が逆でない)であることを確かめる
+ */
+async function expectStampedQr(pdf: string, c: PlacedCheck) {
+  const dpi = 300;
+  const png = renderPdfPage(pdf, c.pageNo, dpi);
+  if (!qrDecoders().opencv) return;
+  const [r] = decodeQrFile(png);
+  expect(r.opencv, "OpenCVで読み取れない").toBe(c.payload);
+  if (r.zxing !== null) expect(r.zxing, "ZXingで読み取れない").toBe(c.payload);
+  const pts = qrCorners(png);
   expect(pts, "QRコードの位置が見つからない").not.toBeNull();
-  const cx = pts!.reduce((a, p) => a + p[0], 0) / 4 / png.width;
-  const cy = pts!.reduce((a, p) => a + p[1], 0) / 4 / png.height;
-  expect(corner.endsWith("right") ? cx > 0.7 : cx < 0.3, `QRコードが${corner}にない(x=${cx.toFixed(2)})`).toBe(true);
-  expect(corner.startsWith("bottom") ? cy > 0.7 : cy < 0.3, `QRコードが${corner}にない(y=${cy.toFixed(2)})`).toBe(true);
+  const k = dpi / 72;
+  const box = await visiblePageBox(pdf, c.pageNo);
+  const qx = pts!.reduce((a, p) => a + p[0], 0) / 4 / k;
+  const qy = pts!.reduce((a, p) => a + p[1], 0) / 4 / k;
+  // 印影の幅(widthMm)を基準に、画像は最大でその1.4倍。X・Yのバーの割合から、印影の左上の位置の範囲を確かめる
+  const wMin = (c.widthMm * 72) / 25.4;
+  const wMax = wMin * 1.4;
+  const xLo = (c.xPct / 100) * (box.width - wMax);
+  const xHi = (c.xPct / 100) * (box.width - wMin) + wMax;
+  const yLo = (c.yPct / 100) * (box.height - wMax * 1.3);
+  const yHi = (c.yPct / 100) * (box.height - wMin) + wMax * 1.3;
+  expect(qx >= xLo - 2 && qx <= xHi + 2, `QRコードの横の位置 ${qx.toFixed(0)}pt が、押した位置(${xLo.toFixed(0)}〜${xHi.toFixed(0)}pt)にない`).toBe(true);
+  expect(qy >= yLo - 2 && qy <= yHi + 2, `QRコードの縦の位置 ${qy.toFixed(0)}pt が、押した位置(${yLo.toFixed(0)}〜${yHi.toFixed(0)}pt)にない`).toBe(true);
+  // 向き：OpenCV が返すQRコードの角は、QRコードの左上から時計回り。正しい向きなら、1つ目の角が左上にある
+  const [p0] = pts!;
+  const cx = qx * k;
+  const cy = qy * k;
+  expect(p0[0] < cx && p0[1] < cy, "QRコードの向きが正しくない(回転している)").toBe(true);
 }
 
-/** 取り込んだ印影：下の白い四角のQRコードの模様が、payload を入れたQRコードと同じで、読み取ると payload だけ */
-function expectBelowQr(file: string, payload: string) {
-  const png = decodePng(file);
-  const expected = stampQrModules(payload);
-  const modules = readQrModules(png, expected.length);
-  expect(modules, "画像の中にQRコードが見つからない").not.toBeNull();
-  expect(JSON.stringify(modules)).toBe(JSON.stringify(expected));
-  if (qrDecoders().opencv) {
-    const [r] = decodeQrFile(file);
-    expect(r.opencv).toBe(payload);
-    if (r.zxing !== null) expect(r.zxing).toBe(payload);
-  }
+async function enableQr(page: Page) {
+  // 画面の準備(読み込み直後)が終わる前に押すと、チェックだけが付いて欄が出ないことがあるので、欄が出るまで押し直す
+  await expect(async () => {
+    const box = page.getByLabel("固有番号とQRコードを入れる");
+    if (await box.isChecked()) await box.uncheck();
+    await box.check();
+    await expect(page.getByTestId("stamp-pdf-target")).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
 }
 
-/** 画像の中央の行で、いちばん左といちばん右の不透明な画素のあいだの幅(丸印の円の外側の直径) */
-function centerRowSpan(png: DecodedPng): number {
-  const y = Math.floor(png.height / 2);
-  let x0 = -1;
-  let x1 = -1;
-  for (let x = 0; x < png.width; x++) {
-    if (px(png, x, y).a > 128) {
-      if (x0 < 0) x0 = x;
-      x1 = x;
-    }
-  }
-  return x0 < 0 ? 0 : x1 - x0 + 1;
+async function attachPdf(page: Page, file: string) {
+  await page.getByTestId("stamp-target-pdf-input").setInputFiles(file);
+  await expect(page.getByTestId("stamp-target-pdf-name")).toContainText(path.basename(file));
+}
+
+async function setSlider(page: Page, label: string, value: number) {
+  await page.getByRole("slider", { name: label }).fill(String(value));
 }
 
 async function fillQrInfo(page: Page, opt: StampQrOptionalInfo) {
@@ -236,81 +252,105 @@ async function generate(page: Page) {
   return (await page.getByTestId("stamp-serial").textContent())?.trim() ?? "";
 }
 
+async function downloadPdf(page: Page) {
+  const d = await clickAndDownload(page, "PDFをダウンロード");
+  const { path: file } = await assertDownloadedFile(d, { format: "pdf", minBytes: 100 });
+  return { file, name: d.suggestedFilename() };
+}
+
 // ---------------------------------------------------------------------------
 // 文字から作る印影
 // ---------------------------------------------------------------------------
 
-test.describe("固有番号とQRコード：文字から作る印影", () => {
-  test("生成すると番号が発行され、ダウンロードした画像のQRコードに番号だけが入っている", async ({ page }) => {
+test.describe("固有番号とQRコード：文字から作る印影をPDFに押す", () => {
+  test("QRコードを入れるときはPDFを選ばないと生成できず、選ぶと、選んだ位置に押したPDFを出力する(番号だけのQRコード)", async ({ page }) => {
+    const src = await makePdf("one-page.pdf", [A4]);
     await page.goto(TOOL_URL);
     await page.locator("#stamp-text-input").fill("山田");
+    await enableQr(page);
+    const button = page.getByRole("button", { name: "印影画像を生成する", exact: true });
+    await expect(button).toBeDisabled();
+    await expect(page.getByText("PDFを選ぶと、印影を生成できるようになります", { exact: false })).toBeVisible();
+    await attachPdf(page, src);
+    await expect(button).toBeEnabled();
+    // 位置の確認用に、PDFのページの上に印影を重ねて表示する
+    await expect(page.locator('canvas[aria-label="PDFの上の印影の位置"]')).toBeVisible();
+    await setSlider(page, "PDF上の印影の大きさ", 50);
     await expect(page.getByTestId("stamp-serial")).toHaveCount(0); // 生成する前は番号を発行しない
     const serial = await generate(page);
     expect(serial).toMatch(STAMP_SERIAL_PATTERN);
-    const download = await clickAndDownload(page, "PNGをダウンロード");
-    expect(download.suggestedFilename()).toBe(`electronic-stamp-${serial}.png`);
-    const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 100 });
-    const png = decodePng(path);
-    // 丸印は、円の大きさ(印影サイズ300px)を変えずに、隅のQRコードの分だけ画像が大きくなる
-    expect(png.width).toBe(png.height);
-    expect(png.width).toBeGreaterThan(300);
-    expect(Math.abs(centerRowSpan(png) - 296)).toBeLessThanOrEqual(2);
-    expect(countTransparentPixels(png)).toBeGreaterThan(0); // 背景は透明のまま
-    expectCornerQr(path, buildStampQrPayload({ serial }), "bottom-right"); // 既定は右下。作成日・認証コードの行は無い
-    // 氏名などは入れない：読み取った文字列は「固有番号: …」の1行だけ(上で確認)
+    await expect(page.getByTestId("stamp-result-summary")).toHaveText("この印影を、PDF（全1ページ）の1ページ目に押しました。");
+    // QRコードを入れた印影は、PNGでは出さない
+    await expect(page.getByRole("button", { name: "PNGをダウンロード" })).toHaveCount(0);
+    const { file, name } = await downloadPdf(page);
+    expect(name).toBe(`electronic-stamp-${serial}.pdf`);
+    const box = await visiblePageBox(file, 1);
+    expect(box.pageCount).toBe(1);
+    expect(Math.round(box.width)).toBe(595); // ページの大きさは変わらない
+    // 既定の位置は右上(横85%・縦10%)。読み取ると「固有番号: …」の1行だけ
+    await expectStampedQr(file, { payload: buildStampQrPayload({ serial }), pageNo: 1, xPct: 85, yPct: 10, widthMm: 50 });
     expect(serial).not.toContain("山田");
   });
 
-  test("同じ印影の再ダウンロードでは番号も画像も同じ、もう一度生成すると新しい番号", async ({ page }) => {
+  test("X・Yのバーで位置を、ページの選択で押すページを変えられ、見た目の位置・向きどおりに押す(回転したページ・横向きのページ)", async ({ page }) => {
+    test.setTimeout(180_000);
+    const src = await makePdf("three-pages.pdf", [A4, { w: A4.h, h: A4.w }, { ...A4, rotate: 90 }]);
     await page.goto(TOOL_URL);
-    const serial1 = await generate(page);
-    const d1 = await clickAndDownload(page, "PNGをダウンロード");
-    const f1 = await d1.path();
-    const d2 = await clickAndDownload(page, "PNGをダウンロード");
-    const f2 = await d2.path();
-    expect(d2.suggestedFilename()).toBe(d1.suggestedFilename());
-    expect(fs.readFileSync(f2!).equals(fs.readFileSync(f1!))).toBe(true);
-    await page.keyboard.press("Escape").catch(() => undefined);
-    const closeButton = page.getByRole("button", { name: /閉じる/ }).first();
-    if (await closeButton.isVisible().catch(() => false)) await closeButton.click();
-    const serial2 = await generate(page);
-    expect(serial2).toMatch(STAMP_SERIAL_PATTERN);
-    expect(serial2).not.toBe(serial1);
-  });
-
-  test("角印・最大の大きさ・青でも、QRコードに番号だけが入っている", async ({ page }) => {
-    await page.goto(TOOL_URL);
-    await page.locator("#stamp-text-input").fill("承認");
-    await page.getByRole("button", { name: "角印", exact: true }).click();
-    await page.getByRole("button", { name: /青/ }).click();
-    await page.getByLabel(/印影サイズ/).fill("600");
-    const serial = await generate(page);
-    const { path } = await assertDownloadedFile(await clickAndDownload(page, "PNGをダウンロード"), { format: "png", minBytes: 100 });
-    expect(decodePng(path).width).toBe(600); // 角印は画像の大きさが変わらない
-    expectCornerQr(path, buildStampQrPayload({ serial }), "bottom-right");
-  });
-
-  for (const shape of ["round", "square"] as const) {
-    test(`${shape === "round" ? "丸印は円の外側" : "角印は枠の内側"}の、選んだ隅にQRコードを置く(4つの隅・朱色と黒)`, async ({ page }) => {
-      test.setTimeout(120_000);
-      await page.goto(TOOL_URL);
-      await page.locator("#stamp-text-input").fill("佐藤");
-      if (shape === "square") await page.getByRole("button", { name: "角印", exact: true }).click();
-      const preview = page.locator('canvas[aria-label="印影のプレビュー"]');
-      const previews = new Set<string>();
-      for (const [i, c] of STAMP_QR_CORNERS.entries()) {
-        await page.getByRole("button", { name: i % 2 ? /黒/ : /朱色/ }).click();
-        await page.getByTestId(`qr-corner-${c.id}`).click();
-        await expect(page.getByTestId(`qr-corner-${c.id}`)).toHaveAttribute("aria-pressed", "true");
-        previews.add(await preview.evaluate((el: HTMLCanvasElement) => el.toDataURL()));
-        const serial = await generate(page);
-        const { path } = await assertDownloadedFile(await clickAndDownload(page, "PNGをダウンロード"), { format: "png", minBytes: 100 });
-        expectCornerQr(path, buildStampQrPayload({ serial }), c.id);
-        await page.keyboard.press("Escape");
+    await page.locator("#stamp-text-input").fill("佐藤");
+    await enableQr(page);
+    await attachPdf(page, src);
+    await setSlider(page, "PDF上の印影の大きさ", 50);
+    const cases = [
+      { pageIndex: 0, x: 0, y: 100 },
+      { pageIndex: 1, x: 100, y: 0 },
+      { pageIndex: 2, x: 20, y: 70 },
+    ];
+    for (const c of cases) {
+      await page.getByTestId("stamp-target-page").selectOption(String(c.pageIndex));
+      await setSlider(page, "印影の横の位置（X）", c.x);
+      await setSlider(page, "印影の縦の位置（Y）", c.y);
+      const serial = await generate(page);
+      await expect(page.getByTestId("stamp-result-summary")).toContainText(`${c.pageIndex + 1}ページ目`);
+      const { file } = await downloadPdf(page);
+      expect((await visiblePageBox(file, 1)).pageCount).toBe(3);
+      await expectStampedQr(file, { payload: buildStampQrPayload({ serial }), pageNo: c.pageIndex + 1, xPct: c.x, yPct: c.y, widthMm: 50 });
+      // ほかのページには押さない
+      if (qrDecoders().opencv) {
+        for (let p = 1; p <= 3; p++) if (p !== c.pageIndex + 1) expect(decodeQrFile(renderPdfPage(file, p, 150))[0].opencv).toBe("");
       }
-      expect(previews.size, "隅を変えてもプレビューが変わらない").toBe(4);
-    });
-  }
+      await page.keyboard.press("Escape");
+    }
+  });
+
+  test("PDF上の印影の大きさ(mm)：丸印は円の直径が指定した大きさになる(QRコードは円の外側)", async ({ page }) => {
+    const src = await makePdf("size.pdf", [A4]);
+    await page.goto(TOOL_URL);
+    await enableQr(page);
+    await attachPdf(page, src);
+    await setSlider(page, "PDF上の印影の大きさ", 40);
+    await setSlider(page, "印影の横の位置（X）", 50);
+    await setSlider(page, "印影の縦の位置（Y）", 50);
+    await generate(page);
+    const { file } = await downloadPdf(page);
+    // ページの中央の行で、朱色の画素の左端〜右端(円の外側の直径)を測る。QRコードは円の外側の隅なので、中央の行には無い
+    const dpi = 200;
+    const png = decodePng(renderPdfPage(file, 1, dpi));
+    let best = 0;
+    for (let y = Math.floor(png.height * 0.4); y < png.height * 0.6; y += 2) {
+      let x0 = -1;
+      let x1 = -1;
+      for (let x = 0; x < png.width; x++) {
+        const p = px(png, x, y);
+        if (p.r > 140 && p.g < 110 && p.b < 110) {
+          if (x0 < 0) x0 = x;
+          x1 = x;
+        }
+      }
+      if (x0 >= 0) best = Math.max(best, x1 - x0 + 1);
+    }
+    const mm = (best / dpi) * 25.4;
+    expect(Math.abs(mm - 40), `円の直径 ${mm.toFixed(1)}mm`).toBeLessThanOrEqual(1);
+  });
 
   const combos: { label: string; opt: StampQrOptionalInfo }[] = [
     { label: "固有番号のみ", opt: {} },
@@ -319,14 +359,25 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
     { label: "固有番号＋作成日＋認証コード(20文字・記号)", opt: { createdDate: "1999-01-31", authCode: "Zz9-_.~!@#$%^&*()+=A" } },
   ];
   for (const shape of ["round", "square"] as const) {
-    test(`QRコードに入れる情報の組み合わせ(${shape === "round" ? "丸印" : "角印"})：読み取った内容が入力どおり・未入力の項目は入らない・完成画面に表示`, async ({ page }) => {
-      test.setTimeout(120_000);
+    test(`QRコードに入れる情報の組み合わせ・4つの隅(${shape === "round" ? "丸印" : "角印"})：読み取った内容が入力どおり・未入力の項目は入らない`, async ({ page }) => {
+      test.setTimeout(180_000);
+      const src = await makePdf(`combos-${shape}.pdf`, [A4]);
       await page.goto(TOOL_URL);
       await page.locator("#stamp-text-input").fill("鈴木");
       if (shape === "square") await page.getByRole("button", { name: "角印", exact: true }).click();
+      await enableQr(page);
+      await attachPdf(page, src);
+      await setSlider(page, "PDF上の印影の大きさ", 50);
+      const previews = new Set<string>();
       for (const [i, { label, opt }] of combos.entries()) {
+        const corner = STAMP_QR_CORNERS[i].id;
+        await page.getByRole("button", { name: i % 2 ? /黒/ : /朱色/ }).click();
         await fillQrInfo(page, opt);
-        await page.getByTestId(`qr-corner-${STAMP_QR_CORNERS[i].id}`).click();
+        await page.getByTestId(`qr-corner-${corner}`).click();
+        await expect(page.getByTestId(`qr-corner-${corner}`)).toHaveAttribute("aria-pressed", "true");
+        previews.add(await page.locator('canvas[aria-label="印影のプレビュー"]').evaluate((el: HTMLCanvasElement) => el.toDataURL()));
+        await setSlider(page, "印影の横の位置（X）", 50);
+        await setSlider(page, "印影の縦の位置（Y）", 50);
         const serial = await generate(page);
         expect(serial, label).toMatch(STAMP_SERIAL_PATTERN);
         // 完成画面：入力した項目だけを表示
@@ -335,33 +386,53 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
         if (opt.createdDate) await expect(page.getByTestId("stamp-qr-created-date")).toHaveText(opt.createdDate);
         if (opt.authCode) await expect(page.getByTestId("stamp-qr-auth-code")).toHaveText(opt.authCode);
         await expect(page.getByTestId("stamp-qr-contents")).not.toContainText("認証済み");
-        const { path } = await assertDownloadedFile(await clickAndDownload(page, "PNGをダウンロード"), { format: "png", minBytes: 100 });
+        const { file } = await downloadPdf(page);
         const payload = buildStampQrPayload({ serial, ...opt });
-        expectCornerQr(path, payload, STAMP_QR_CORNERS[i].id);
-        if (qrDecoders().opencv) expect(parseStampQrPayload(decodeQrFile(path)[0].opencv!)).toEqual({ serial, ...opt });
-        // 認証コード・番号は印影に文字として出さない(画像の中に文字は描いていない：確認は読み取り結果と、下の画面の文字で)
+        await expectStampedQr(file, { payload, pageNo: 1, xPct: 50, yPct: 50, widthMm: 50 });
+        if (qrDecoders().opencv) {
+          const png = renderPdfPage(file, 1, 300);
+          expect(parseStampQrPayload(decodeQrFile(png)[0].opencv!)).toEqual({ serial, ...opt });
+          // QRコードは、ページの中央に押した印影の、選んだ隅の側にある
+          const pts = qrCorners(png)!;
+          const img = decodePng(png);
+          const cx = pts.reduce((a, p) => a + p[0], 0) / 4 / img.width;
+          const cy = pts.reduce((a, p) => a + p[1], 0) / 4 / img.height;
+          expect(corner.endsWith("right") ? cx > 0.5 : cx < 0.5, `${corner}：横`).toBe(true);
+          expect(corner.startsWith("bottom") ? cy > 0.5 : cy < 0.5, `${corner}：縦`).toBe(true);
+        }
         await page.keyboard.press("Escape");
       }
+      expect(previews.size, "隅・色を変えてもプレビューが変わらない").toBe(4);
     });
   }
 
-  test("入力を変えても番号は変わらない(再ダウンロードも同じ)・もう一度生成すると新しい番号と新しい入力", async ({ page }) => {
+  test("入力を変えても番号は変わらない(再ダウンロードも同じPDF)・もう一度生成すると新しい番号と新しい入力", async ({ page }) => {
+    const src = await makePdf("keep.pdf", [A4]);
     await page.goto(TOOL_URL);
+    await enableQr(page);
+    await attachPdf(page, src);
+    await setSlider(page, "PDF上の印影の大きさ", 50);
     await fillQrInfo(page, { createdDate: "2026-11-09", authCode: "FIRST" });
     const serial = await generate(page);
-    const first = await clickAndDownload(page, "PNGをダウンロード");
-    const f1 = (await first.path())!;
+    const first = await downloadPdf(page);
     await page.keyboard.press("Escape");
-    // 入力・設定を変える(画面は描き直されるが、完成した印影と番号はそのまま)
+    // 入力・設定・位置を変える(画面は描き直されるが、完成したPDFと番号はそのまま)
     await fillQrInfo(page, { createdDate: "2027-01-01", authCode: "SECOND" });
     await page.getByTestId("qr-corner-top-left").click();
+    await setSlider(page, "印影の横の位置（X）", 10);
     await page.getByRole("button", { name: "結果を表示する" }).click();
     await expect(page.getByTestId("stamp-serial")).toHaveText(serial);
     await expect(page.getByTestId("stamp-qr-auth-code")).toHaveText("FIRST");
-    const again = await clickAndDownload(page, "PNGをダウンロード");
-    expect(again.suggestedFilename()).toBe(first.suggestedFilename());
-    expect(fs.readFileSync((await again.path())!).equals(fs.readFileSync(f1))).toBe(true);
-    if (qrDecoders().opencv) expect(decodeQrFile(f1)[0].opencv).toBe(buildStampQrPayload({ serial, createdDate: "2026-11-09", authCode: "FIRST" }));
+    const again = await downloadPdf(page);
+    expect(again.name).toBe(first.name);
+    expect(fs.readFileSync(again.file).equals(fs.readFileSync(first.file))).toBe(true);
+    await expectStampedQr(first.file, {
+      payload: buildStampQrPayload({ serial, createdDate: "2026-11-09", authCode: "FIRST" }),
+      pageNo: 1,
+      xPct: 85,
+      yPct: 10,
+      widthMm: 50,
+    });
     await page.keyboard.press("Escape");
     const serial2 = await generate(page);
     expect(serial2).not.toBe(serial);
@@ -370,7 +441,10 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
   });
 
   test("使えない認証コードは理由を出し、生成できない(入力を勝手に直さない)", async ({ page }) => {
+    const src = await makePdf("validate.pdf", [A4]);
     await page.goto(TOOL_URL);
+    await enableQr(page);
+    await attachPdf(page, src);
     const button = page.getByRole("button", { name: "印影画像を生成する", exact: true });
     for (const bad of ["AB C", "全角", "A".repeat(21)]) {
       await page.getByTestId("stamp-auth-code").fill(bad);
@@ -382,33 +456,36 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
     await expect(button).toBeEnabled();
   });
 
-  test("QRコードを入れない設定では、番号を発行せず、従来どおりの印影になる", async ({ page }) => {
+  test("QRコードを入れない設定(既定)では、PDFは不要で、番号を発行せず、従来どおり印影のPNGになる", async ({ page }) => {
     await page.goto(TOOL_URL);
-    await fillQrInfo(page, { createdDate: "2026-11-09", authCode: "ABC" });
-    await page.getByLabel("固有番号とQRコードを入れる").uncheck();
-    // 番号・作成日・認証コードの欄は出さない
+    await expect(page.getByLabel("固有番号とQRコードを入れる")).not.toBeChecked();
+    // 番号・作成日・認証コード・押印するPDFの欄は出さない
     await expect(page.getByTestId("stamp-created-date")).toHaveCount(0);
     await expect(page.getByTestId("stamp-auth-code")).toHaveCount(0);
+    await expect(page.getByTestId("stamp-pdf-target")).toHaveCount(0);
     await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
     await waitForSuccess(page, "印影画像が完成しました");
     await expect(page.getByTestId("stamp-serial")).toHaveCount(0);
+    await expect(page.getByTestId("stamp-qr-contents")).toHaveCount(0);
     const download = await clickAndDownload(page, "PNGをダウンロード");
     expect(download.suggestedFilename()).toBe("electronic-stamp.png");
-    const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 100 });
-    expect(findQrBox(decodePng(path))).toBeNull();
-    expect(decodePng(path).width).toBe(300); // QRコードを入れないときは、丸印でも画像は印影サイズのまま
-    await expect(page.getByTestId("stamp-qr-contents")).toHaveCount(0);
-    if (qrDecoders().opencv) expect(decodeQrFile(path)[0].opencv).toBe("");
+    const { path: file } = await assertDownloadedFile(download, { format: "png", minBytes: 100 });
+    const png = decodePng(file);
+    expect(png.width).toBe(300); // QRコードを入れないときは、丸印でも画像は印影サイズのまま
+    expect(countTransparentPixels(png)).toBeGreaterThan(0);
+    expect(hasWhiteBox(png)).toBe(false);
+    if (qrDecoders().opencv) expect(decodeQrFile(file)[0].opencv).toBe("");
   });
 
-  test("小さすぎる印影では注意を出し、QRコードの無い印影にする", async ({ page }) => {
+  test("小さすぎる角印では注意を出し、QRコードを入れて生成はできない", async ({ page }) => {
+    const src = await makePdf("small.pdf", [A4]);
     await page.goto(TOOL_URL);
     await page.getByRole("button", { name: "角印", exact: true }).click();
     await page.getByLabel(/印影サイズ/).fill("150");
+    await enableQr(page);
+    await attachPdf(page, src);
     await expect(page.getByText("QRコードを入れる場所が足りません", { exact: false })).toBeVisible();
-    await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
-    await waitForSuccess(page, "印影画像が完成しました");
-    await expect(page.getByTestId("stamp-serial")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "印影画像を生成する", exact: true })).toBeDisabled();
   });
 });
 
@@ -416,24 +493,39 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
 // 取り込んだ印影
 // ---------------------------------------------------------------------------
 
-test("固有番号とQRコード：取り込んだ印影には、下にQRコード(番号・作成日・認証コード)を並べる", async ({ page }) => {
+test("固有番号とQRコード：取り込んだ印影の下にQRコードを並べ、選んだPDFに押す", async ({ page }) => {
+  const src = await makePdf("import-target.pdf", [A4, A4]);
   await page.goto(TOOL_URL);
   await page.getByRole("button", { name: "印鑑を取り込む", exact: true }).click();
   await uploadFixture(page, fixtures.stampPng);
   await page.getByRole("button", { name: "切り抜く", exact: true }).click();
   await expect(page.locator('[data-testid="stamp-final-preview"]')).toBeVisible({ timeout: 15_000 });
+  await enableQr(page);
+  await expect(page.getByRole("button", { name: "印影画像を生成する", exact: true })).toBeDisabled();
+  await attachPdf(page, src);
+  await page.getByTestId("stamp-target-page").selectOption("1");
+  await setSlider(page, "PDF上の印影の大きさ", 50);
+  await setSlider(page, "印影の横の位置（X）", 30);
+  await setSlider(page, "印影の縦の位置（Y）", 40);
   await fillQrInfo(page, { createdDate: "2026-11-09", authCode: "IMPORT-1" });
   const serial = await generate(page);
   expect(serial).toMatch(STAMP_SERIAL_PATTERN);
-  const { path } = await assertDownloadedFile(await clickAndDownload(page, "PNGをダウンロード"), { format: "png", minBytes: 100 });
-  expectBelowQr(path, buildStampQrPayload({ serial, createdDate: "2026-11-09", authCode: "IMPORT-1" }));
+  const { file } = await downloadPdf(page);
+  await expectStampedQr(file, {
+    payload: buildStampQrPayload({ serial, createdDate: "2026-11-09", authCode: "IMPORT-1" }),
+    pageNo: 2,
+    xPct: 30,
+    yPct: 40,
+    widthMm: 50,
+  });
 });
 
 // ---------------------------------------------------------------------------
 // プライバシー・乱数
 // ---------------------------------------------------------------------------
 
-test("固有番号とQRコード：生成・ダウンロードのあいだに通信が起きず、ブラウザに保存せず、暗号学的に安全な乱数を使う", async ({ page }) => {
+test("固有番号とQRコード：PDFの読み込み・生成・ダウンロードのあいだに通信が起きず、ブラウザに保存せず、暗号学的に安全な乱数を使う", async ({ page }) => {
+  const src = await makePdf("private.pdf", [A4]);
   await page.addInitScript(() => {
     const original = crypto.getRandomValues.bind(crypto);
     (window as unknown as { __rv: number }).__rv = 0;
@@ -444,6 +536,7 @@ test("固有番号とQRコード：生成・ダウンロードのあいだに通
   });
   await page.goto(TOOL_URL);
   await page.locator("#stamp-text-input").fill("佐藤");
+  await enableQr(page);
   await fillQrInfo(page, { createdDate: "2026-11-09", authCode: "PRIVATE-77" });
   await page.waitForLoadState("networkidle");
   const requests: string[] = [];
@@ -451,13 +544,15 @@ test("固有番号とQRコード：生成・ダウンロードのあいだに通
   page.on("request", (r) => {
     if (!/^(blob|data):/.test(r.url())) requests.push(`${r.method()} ${r.url()}`);
   });
+  await attachPdf(page, src);
   const before = await page.evaluate(() => (window as unknown as { __rv: number }).__rv);
   const serial = await generate(page);
   const after = await page.evaluate(() => (window as unknown as { __rv: number }).__rv);
   expect(after).toBeGreaterThan(before); // 番号の発行で crypto.getRandomValues を使った
-  await clickAndDownload(page, "PNGをダウンロード");
+  await downloadPdf(page);
   await page.waitForTimeout(500);
-  // 画像を作る・番号を発行する・ダウンロードする処理で、通信は起きない(広告などの外部の通信も含めて、何も送らない)
+  // PDFを読み込む・番号を発行する・押す・ダウンロードする処理で、外部への通信は起きない。
+  // (PDFの読み込みに使う、このサイトの中の部品(pdf.js の worker など)の取得だけは、同じサイトからの GET として許す)
   const offending = requests.filter(
     (r) => !r.startsWith("GET ") || !new URL(r.slice(4)).hostname.match(/^(localhost|127\.0\.0\.1)$/) || r.includes(serial) || r.includes("PRIVATE-77")
   );
