@@ -5,7 +5,17 @@ import fs from "node:fs";
 import { fixtures } from "../fixtures/paths";
 import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
 import { decodePng, countTransparentPixels, type DecodedPng } from "../helpers/png-inspect";
-import { STAMP_SERIAL_ALPHABET, STAMP_SERIAL_PATTERN, generateStampSerial, stampQrModules } from "@/lib/processors/browser/electronic-stamp";
+import { decodeQrFile, qrCorners, qrDecoders } from "../helpers/qr-decode";
+import {
+  STAMP_QR_CORNERS,
+  STAMP_SERIAL_ALPHABET,
+  STAMP_SERIAL_PATTERN,
+  canPlaceStampQr,
+  generateStampSerial,
+  stampQrMinSizePx,
+  stampQrModules,
+  type StampQrCorner,
+} from "@/lib/processors/browser/electronic-stamp";
 
 /**
  * 電子印鑑：固有番号とQRコードのテスト。
@@ -13,12 +23,12 @@ import { STAMP_SERIAL_ALPHABET, STAMP_SERIAL_PATTERN, generateStampSerial, stamp
  * 確かめること:
  *  - 固有番号の形式(MS-XXXX-XXXX-XXXX、見間違えやすい 0・1・I・L・O を使わない)・重複しない・暗号学的に安全な乱数を使う
  *  - 新しく生成すると新しい番号、同じ印影を何度ダウンロードしても同じ番号(同じ画像)
- *  - ダウンロードした画像のQRコードの模様が、番号だけを入れたQRコードと同じ(独立したQRコードの読み取り
- *    (OpenCV)が使える環境では、実際に読み取って、番号だけが取れることも確かめる)
- *  - QRコードを入れない設定・小さすぎる印影・角印・取り込んだ印影
+ *  - 文字から作る印影：QRコードを、丸印は円の外側の四隅、角印は枠の内側の四隅の、選んだ隅に置く(白い四角は使わない)。
+ *    ダウンロードした画像を、独立した2つの読み取りライブラリ(OpenCV・ZXing。入っている環境だけ)で読み取り、
+ *    番号だけが取れること・QRコードが選んだ隅にあることを確かめる
+ *  - 取り込んだ印影：下に番号とQRコード(白い四角)を並べ、その模様が番号だけを入れたQRコードと同じ
+ *  - QRコードを入れない設定・小さすぎる印影・角印
  *  - 生成・ダウンロードのあいだに、通信が起きない・ブラウザに保存しない
- * 文字から作る印影のQRコードの模様を画像から直接読むテストは、「従来の配置」(白い四角の中のQRコード)を選んで確かめる。
- * ①〜③のデザインは tests/tools/electronic-stamp-qr-design.spec.ts。
  */
 
 const TOOL_URL = "/tools/electronic-stamp-generator";
@@ -60,6 +70,17 @@ plainTest("QRコード：番号だけを入れると 21×21 マス(バージョ�
   plainExpect(a.length).toBe(21);
   plainExpect(a.every((row) => row.length === 21)).toBe(true);
   plainExpect(JSON.stringify(a)).not.toBe(JSON.stringify(b));
+});
+
+plainTest("QRコードの配置：大きな印影には入り、小さすぎる印影には入らない(必要な大きさを返す)", () => {
+  for (const shape of ["round", "square"] as const) {
+    plainExpect(canPlaceStampQr({ sizePx: 600, shape, borderWidthRatio: 0.05 })).toBe(true);
+    plainExpect(canPlaceStampQr({ sizePx: 120, shape, borderWidthRatio: 0.05 })).toBe(false);
+    const min = stampQrMinSizePx({ shape, borderWidthRatio: 0.05 })!;
+    plainExpect(min).toBeLessThanOrEqual(300); // 既定の300pxでは入る
+    plainExpect(canPlaceStampQr({ sizePx: min, shape, borderWidthRatio: 0.05 })).toBe(true);
+    plainExpect(canPlaceStampQr({ sizePx: min - 10, shape, borderWidthRatio: 0.05 })).toBe(false);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -132,6 +153,25 @@ function decodeWithOpenCv(file: string): string | null {
   return execFileSync("python3", ["-c", script, file]).toString().trim();
 }
 
+/** 文字から作る印影：QRコードが番号だけを読み取れ、選んだ隅(画像の外側の30%の範囲)にあり、白い四角が無い */
+function expectCornerQr(file: string, serial: string, corner: StampQrCorner) {
+  const png = decodePng(file);
+  let white = 0;
+  for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) if (isWhite(px(png, x, y))) white++;
+  expect(white, "白い四角がある").toBe(0);
+  const decoders = qrDecoders();
+  if (!decoders.opencv) return;
+  const [r] = decodeQrFile(file);
+  expect(r.opencv, "OpenCVで読み取れない").toBe(serial);
+  if (r.zxing !== null) expect(r.zxing, "ZXingで読み取れない").toBe(serial);
+  const pts = qrCorners(file);
+  expect(pts, "QRコードの位置が見つからない").not.toBeNull();
+  const cx = pts!.reduce((a, p) => a + p[0], 0) / 4 / png.width;
+  const cy = pts!.reduce((a, p) => a + p[1], 0) / 4 / png.height;
+  expect(corner.endsWith("right") ? cx > 0.7 : cx < 0.3, `QRコードが${corner}にない(x=${cx.toFixed(2)})`).toBe(true);
+  expect(corner.startsWith("bottom") ? cy > 0.7 : cy < 0.3, `QRコードが${corner}にない(y=${cy.toFixed(2)})`).toBe(true);
+}
+
 function expectQrIsSerialOnly(file: string, serial: string) {
   const png = decodePng(file);
   const modules = readQrModules(png);
@@ -155,7 +195,6 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
   test("生成すると番号が発行され、ダウンロードした画像のQRコードに番号だけが入っている", async ({ page }) => {
     await page.goto(TOOL_URL);
     await page.locator("#stamp-text-input").fill("山田");
-    await page.getByTestId("qr-design-standard").click();
     await expect(page.getByTestId("stamp-serial")).toHaveCount(0); // 生成する前は番号を発行しない
     const serial = await generate(page);
     expect(serial).toMatch(STAMP_SERIAL_PATTERN);
@@ -166,7 +205,7 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
     expect(png.width).toBe(300); // 既定の大きさは変わらない
     expect(png.height).toBe(300);
     expect(countTransparentPixels(png)).toBeGreaterThan(0); // 背景は透明のまま
-    expectQrIsSerialOnly(path, serial);
+    expectCornerQr(path, serial, "bottom-right"); // 既定は右下
     // 氏名などは入れない：QRコードの模様は、番号だけを入れたものと同じ(上で確認)。番号の文字列にも氏名は無い
     expect(serial).not.toContain("山田");
   });
@@ -194,12 +233,33 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
     await page.getByRole("button", { name: "角印", exact: true }).click();
     await page.getByRole("button", { name: /青/ }).click();
     await page.getByLabel(/印影サイズ/).fill("600");
-    await page.getByTestId("qr-design-standard").click();
     const serial = await generate(page);
     const { path } = await assertDownloadedFile(await clickAndDownload(page, "PNGをダウンロード"), { format: "png", minBytes: 100 });
     expect(decodePng(path).width).toBe(600);
-    expectQrIsSerialOnly(path, serial);
+    expectCornerQr(path, serial, "bottom-right");
   });
+
+  for (const shape of ["round", "square"] as const) {
+    test(`${shape === "round" ? "丸印は円の外側" : "角印は枠の内側"}の、選んだ隅にQRコードを置く(4つの隅・朱色と黒)`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.goto(TOOL_URL);
+      await page.locator("#stamp-text-input").fill("佐藤");
+      if (shape === "square") await page.getByRole("button", { name: "角印", exact: true }).click();
+      const preview = page.locator('canvas[aria-label="印影のプレビュー"]');
+      const previews = new Set<string>();
+      for (const [i, c] of STAMP_QR_CORNERS.entries()) {
+        await page.getByRole("button", { name: i % 2 ? /黒/ : /朱色/ }).click();
+        await page.getByTestId(`qr-corner-${c.id}`).click();
+        await expect(page.getByTestId(`qr-corner-${c.id}`)).toHaveAttribute("aria-pressed", "true");
+        previews.add(await preview.evaluate((el: HTMLCanvasElement) => el.toDataURL()));
+        const serial = await generate(page);
+        const { path } = await assertDownloadedFile(await clickAndDownload(page, "PNGをダウンロード"), { format: "png", minBytes: 100 });
+        expectCornerQr(path, serial, c.id);
+        await page.keyboard.press("Escape");
+      }
+      expect(previews.size, "隅を変えてもプレビューが変わらない").toBe(4);
+    });
+  }
 
   test("QRコードを入れない設定では、番号を発行せず、従来どおりの印影になる", async ({ page }) => {
     await page.goto(TOOL_URL);
@@ -211,6 +271,7 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
     expect(download.suggestedFilename()).toBe("electronic-stamp.png");
     const { path } = await assertDownloadedFile(download, { format: "png", minBytes: 100 });
     expect(findQrBox(decodePng(path))).toBeNull();
+    if (qrDecoders().opencv) expect(decodeQrFile(path)[0].opencv).toBe("");
   });
 
   test("小さすぎる印影では注意を出し、QRコードの無い印影にする", async ({ page }) => {
