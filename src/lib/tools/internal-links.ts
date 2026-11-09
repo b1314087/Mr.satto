@@ -32,7 +32,8 @@ export const POPULAR_TOOL_IDS: readonly string[] = [
   "estimate-generator",
   "video-compress",
   "video-h264",
-  "ocr",
+  // 工程4：OCRはPDF→テキスト（OCR対応）に統合した
+  "pdf-to-text",
 ];
 
 /**
@@ -46,5 +47,5 @@ export const CATEGORY_CROSS_LINKS: Partial<Record<CategoryId, readonly string[]>
   pdf: ["pdf-to-excel", "pdf-to-word", "pdf-to-image", "filled-pdf-to-excel"],
   "csv-excel": ["excel-to-pdf", "excel-label", "office-compare"],
   word: ["word-to-pdf", "office-compare"],
-  image: ["image-to-pdf", "ocr"],
+  image: ["image-to-pdf", "pdf-to-text"],
 };

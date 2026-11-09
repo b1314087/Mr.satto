@@ -19,6 +19,7 @@ import { PDF_TO_WORD_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { groupIntoLines } from "@/lib/pdf/table-reconstruction";
 import { extractFilledRects, extractVerticalRules, type FilledRect, type VerticalRule } from "@/lib/pdf/ruling-lines";
 import { buildDocxBlob, type DocxPageSetup } from "./pdf-to-word-docx";
+import { detectTextColumns } from "@/lib/pdf/text-columns";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 
 /**
@@ -35,6 +36,10 @@ import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguag
  *   - 用紙サイズ・向き・余白（元のPDFに合わせる）
  *
  * DOCX生成には `docx` パッケージを利用する（pdf-to-word-docx.ts）。
+ *
+ * 工程4：段組み（2段・3段）を検出し（src/lib/pdf/text-columns.ts）、段ごとに左→右の順で読むようにした
+ * （左右の段の文が混ざらない）。本文がほぼ全ページ同じ段数のときは、Wordの段組みにする。
+ * 段組みの判定ができない文書は、これまでどおり1段として変換する。
  *
  * スキャンPDF対応（§27-28）: 以前は文字レイヤーが無いページ（紙をスキャンした
  * 画像PDF）に遭遇すると、そのページに限らずファイル全体を「未対応」として
@@ -264,13 +269,22 @@ export class PdfToWordProcessor extends BrowserProcessor<PdfToWordInput, PdfToWo
       const contentRight = extents.length > 0 ? Math.max(...extents.map((e) => e.right)) : undefined;
 
       const allBlocks: DocumentBlock[] = [];
+      const columnCounts: { count: number; gutter: number }[] = [];
       for (let i = 0; i < pages.length; i++) {
         const p = pages[i];
-        const blocks = reconstructParagraphs(
-          filteredByPage[i],
-          p.fromTextLayer ? { contentLeft, contentRight, verticalRules: p.rules, fillRects: p.fills } : {}
-        );
-        const withImages = insertImages(blocks, p.images, p.view, contentLeft, contentRight);
+        // 工程4：段組みのページは、段ごとに（左の段→右の段）段落を組み立てる
+        const layout = p.fromTextLayer ? detectTextColumns(filteredByPage[i]) : null;
+        if (layout) columnCounts.push({ count: layout.columnCount, gutter: layout.gutterPt });
+        let withImages: DocumentBlock[];
+        if (layout && layout.columnCount > 1) {
+          withImages = buildColumnBlocks(layout.segments, p, contentLeft, contentRight);
+        } else {
+          const blocks = reconstructParagraphs(
+            filteredByPage[i],
+            p.fromTextLayer ? { contentLeft, contentRight, verticalRules: p.rules, fillRects: p.fills } : {}
+          );
+          withImages = insertImages(blocks, p.images, p.view, contentLeft, contentRight);
+        }
         if (i > 0 && withImages.length > 0 && allBlocks.length > 0) {
           // ページの区切りが分かるよう、空段落を1つはさむ。ページが続けて文章で埋まっている文書は、
           // 編集しやすさを優先して改ページを入れない。ただし、前のページが途中（下が大きく空いている）で
@@ -302,6 +316,16 @@ export class PdfToWordProcessor extends BrowserProcessor<PdfToWordInput, PdfToWo
       // 用紙サイズ・余白は、最初のページに合わせる
       const first = pages[0];
       const pageSetup = buildPageSetup(first, filteredByPage[0], contentLeft, contentRight);
+      // 本文のページの8割以上が同じ段数（2段以上）なら、Wordの段組みにする
+      if (columnCounts.length > 0) {
+        const counts = new Map<number, number>();
+        for (const c of columnCounts) counts.set(c.count, (counts.get(c.count) ?? 0) + 1);
+        const [best, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+        if (best >= 2 && n / columnCounts.length >= 0.8) {
+          const gutters = columnCounts.filter((c) => c.count === best).map((c) => c.gutter);
+          pageSetup.columns = { count: best, spacePt: clamp(gutters.reduce((a, b) => a + b, 0) / gutters.length, 6, 72) };
+        }
+      }
 
       let blob: Blob;
       try {
@@ -355,6 +379,45 @@ function buildPageSetup(
   setup.marginTopPt = clamp(y1 - topY, MIN_MARGIN_PT, MAX_MARGIN_PT);
   setup.marginBottomPt = clamp(bottomY - y0, MIN_MARGIN_PT, MAX_MARGIN_PT);
   return setup;
+}
+
+/**
+ * 段組みのページ：段ごと（読む順番のまとまりごと）に段落を組み立て、画像はその画像が置かれた段に差し込む。
+ * 段の中の中央揃え・字下げは、その段の左右の端を基準にする（段をまたぐ見出しは、本文全体の左右の端を基準にする）
+ */
+function buildColumnBlocks(
+  segments: { items: PositionedTextItem[]; spanning: boolean }[],
+  page: PageData,
+  contentLeft: number | undefined,
+  contentRight: number | undefined
+): DocumentBlock[] {
+  const out: DocumentBlock[] = [];
+  const placed = new Set<ExtractedImage>();
+  const ranges = segments.map((seg) => {
+    const ext = textExtent(seg.items);
+    const ys = seg.items.filter((it) => it.str.trim() !== "").map((it) => it.y);
+    return { ext, minY: ys.length ? Math.min(...ys) : 0, maxY: ys.length ? Math.max(...ys) : 0 };
+  });
+  segments.forEach((seg, si) => {
+    const { ext, minY, maxY } = ranges[si];
+    const left = seg.spanning || !ext ? contentLeft : ext.left;
+    const right = seg.spanning || !ext ? contentRight : ext.right;
+    const blocks = reconstructParagraphs(seg.items, { contentLeft: left, contentRight: right, verticalRules: page.rules, fillRects: page.fills });
+    // この段の左右・上下の範囲に中心がある画像を、この段に入れる（どの段にも入らない画像は、ページの最後に入れる）
+    const imgs = seg.spanning || !ext
+      ? []
+      : page.images.filter((img) => {
+          if (placed.has(img)) return false;
+          const cx = page.view[0] + img.x + img.width / 2;
+          const cy = img.top - img.height / 2;
+          return cx >= ext.left && cx <= ext.right && cy <= maxY + img.height && cy >= minY - img.height;
+        });
+    imgs.forEach((img) => placed.add(img));
+    out.push(...insertImages(blocks, imgs, page.view, left, right));
+  });
+  const rest = page.images.filter((img) => !placed.has(img));
+  if (rest.length > 0) out.push(...insertImages([], rest, page.view, contentLeft, contentRight));
+  return out;
 }
 
 /** 画像を、位置（上からの順）に合わせて本文のブロックの間へ差し込む */

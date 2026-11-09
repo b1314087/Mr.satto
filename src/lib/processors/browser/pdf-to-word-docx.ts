@@ -18,6 +18,8 @@ export interface DocxPageSetup {
   marginRightPt: number;
   marginTopPt: number;
   marginBottomPt: number;
+  /** 段組み（工程4）。元のPDFの本文がほぼ全ページ同じ段数のとき、Wordの段組みにする */
+  columns?: { count: number; spacePt: number };
 }
 
 export interface DocxBuildInput {
@@ -341,6 +343,9 @@ export async function buildDocxBlob(input: DocxBuildInput): Promise<Blob> {
               footer: 360,
             },
           },
+          ...(page.columns && page.columns.count >= 2
+            ? { column: { count: page.columns.count, space: pt2tw(page.columns.spacePt), equalWidth: true } }
+            : {}),
         },
         headers: header ? { default: header } : undefined,
         footers: footer ? { default: footer } : undefined,

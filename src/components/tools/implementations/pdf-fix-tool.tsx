@@ -135,6 +135,16 @@ export function PdfFixTool() {
             PDF黒塗り・墨消し
           </Link>
           を使ってください。
+          <span className="mt-2 block" data-testid="pdf-fix-redaction-methods">
+            <span className="block">
+              <span className="font-semibold">黒塗り（見た目だけ）＝この画面：</span>
+              黒い四角形を重ねて見た目を隠します。元の文字・画像のデータはPDFの中に残ります（墨消しではありません）。
+            </span>
+            <span className="block">
+              <span className="font-semibold">墨消し（元のデータごと削除）＝PDF黒塗り・墨消し：</span>
+              範囲を指定したページを画像にして黒を焼き込み、元の文字・画像のデータを残さない新しいPDFを作ります。
+            </span>
+          </span>
         </p>
       )}
 

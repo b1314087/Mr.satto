@@ -55,10 +55,10 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "pdf-password-protect": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 100 } },
   "image-to-pdf": { role: "convert", receive: { kinds: IMAGES, maxFiles: MULTI, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
   "pdf-to-image": { role: "convert", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["png", "jpeg", "zip"] } },
-  "pdf-to-text": { role: "convert", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 100 }, send: { kinds: ["txt"] } },
+  // 工程4：OCRを統合し、画像も受け取る（旧 ocr の設定は削除）
+  "pdf-to-text": { role: "convert", receive: { kinds: ["pdf", ...IMAGES], maxFiles: 1, maxFileSizeMB: 100 }, send: { kinds: ["txt"] } },
   "pdf-to-word": { role: "convert", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["docx"] } },
   "pdf-to-excel": { role: "convert", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
-  ocr: { role: "convert", receive: { kinds: ["pdf", ...IMAGES], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["txt"] } },
   "word-to-pdf": { role: "convert", receive: { kinds: ["docx"], maxFiles: 1, maxFileSizeMB: 30 }, send: { kinds: ["pdf"] } },
   "excel-to-pdf": { role: "convert", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 30 }, send: { kinds: ["pdf"] } },
 

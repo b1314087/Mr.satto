@@ -11,6 +11,10 @@ import {
   ImageLayoutRenderProcessor,
   computeGridCells,
   computeAutoGridShape,
+  computeFitCanvas,
+  findOverflowingItems,
+  LAYOUT_TEXT_FONT_FAMILY,
+  LAYOUT_TEXT_LINE_HEIGHT,
   type ImageLayoutItem,
   type ImageLayoutOutputFormat,
 } from "@/lib/processors/browser/image-layout";
@@ -28,6 +32,17 @@ import { SliderField } from "@/components/common/slider-field";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /**
+ * 画像ホワイトボード（工程4で「画像レイアウト」から改称・拡張。URL /tools/image-layout は変えない）。
+ *
+ * 工程4で追加したこと:
+ * - キャンバスの外にはみ出した画像・文字を見つけて知らせ、「キャンバスを広げて全体を収める」で、
+ *   切らずに書き出せるようにした（キャンバスの外の部分も、画面の上で見えて、つかめる）。
+ * - 書き出しの解像度（自動：配置した画像の元の解像度を落とさない倍率／2倍／3倍／4倍）と、書き出す画像の大きさの表示。
+ * - 文字の折り返し・書体・行の高さを、画面の表示と書き出しでそろえた。
+ * - Delete・Backspaceキーで、選んだアイテムを削除できる（入力欄にいるときは除く）。
+ *
+ * 以下は、もとの「画像レイアウト」の説明。
+ *
  * 画像レイアウトツール（Mr.Satto 次工程フェーズの中心ツール）。
  *
  * 複数の画像・テキストを1つのキャンバスへ自由配置し、PNG/JPEG/PDFとして
@@ -109,6 +124,8 @@ export function ImageLayoutTool() {
   const [gridWarning, setGridWarning] = useState<string | null>(null);
 
   const [outputFormat, setOutputFormat] = useState<ImageLayoutOutputFormat>("png");
+  /** 書き出しの倍率（工程4）。"auto" は配置した画像の元の解像度を落とさない倍率 */
+  const [exportScale, setExportScale] = useState<"auto" | 2 | 3 | 4>("auto");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImageProcessorOutput | PdfProcessorOutput | null>(null);
@@ -159,6 +176,39 @@ export function ImageLayoutTool() {
   }, []);
 
   const selectedItem = useMemo(() => items.find((i) => i.id === selectedId) ?? null, [items, selectedId]);
+  /** キャンバスからはみ出しているアイテム（書き出すと、はみ出した部分が切れる） */
+  const overflowing = useMemo(() => findOverflowingItems(items, canvasWidthPx, canvasHeightPx), [items, canvasWidthPx, canvasHeightPx]);
+
+  // 選んだアイテムを Delete・Backspace キーで削除する（文字の入力中は、入力のためのキーとして扱う）
+  useEffect(() => {
+    if (!selectedId) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      e.preventDefault();
+      setItems((prev) => prev.filter((it) => it.id !== selectedId));
+      setSelectedId(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedId]);
+
+  /** すべてのアイテムが収まるように、キャンバスを広げる（左・上にはみ出したぶんは、全体を右・下へずらす） */
+  function fitCanvasToItems() {
+    const fit = computeFitCanvas(items, canvasWidthPx, canvasHeightPx);
+    if (fit.width * fit.height > 36_000_000) {
+      setError("広げたキャンバスが大きすぎます。はみ出している画像を小さくするか、キャンバスの中へ戻してください。");
+      return;
+    }
+    setPaperMode("custom");
+    setCanvasWidthPx(fit.width);
+    setCanvasHeightPx(fit.height);
+    if (fit.shiftX !== 0 || fit.shiftY !== 0) {
+      setItems((prev) => prev.map((it) => ({ ...it, x: it.x + fit.shiftX, y: it.y + fit.shiftY })));
+    }
+    setResult(null);
+  }
 
   function nextZIndex(): number {
     return items.reduce((max, i) => Math.max(max, i.zIndex), 0) + 1;
@@ -166,34 +216,30 @@ export function ImageLayoutTool() {
 
   function handleFilesAdded(newFiles: File[]) {
     if (newFiles.length === 0) return;
-    setFiles((prev) => {
-      const startIndex = prev.length;
-      const urls = newFiles.map((f) => URL.createObjectURL(f));
-      setFileUrls((prevUrls) => [...prevUrls, ...urls]);
-
-      setItems((prevItems) => {
-        const added: ImageLayoutItem[] = newFiles.map((_file, i) => {
-          const order = prevItems.length + i;
-          const offset = (order % 6) * 24;
-          return {
-            id: `item-${nextItemIdRef.current++}`,
-            kind: "image",
-            x: 40 + offset,
-            y: 40 + offset,
-            width: DEFAULT_ITEM_SIZE,
-            height: DEFAULT_ITEM_SIZE,
-            rotation: 0,
-            zIndex: prevItems.reduce((max, it) => Math.max(max, it.zIndex), 0) + i + 1,
-            fit: "contain",
-            imageIndex: startIndex + i,
-          };
-        });
-        if (added.length > 0) setSelectedId(added[added.length - 1].id);
-        return [...prevItems, ...added];
-      });
-
-      return [...prev, ...newFiles];
+    // 工程4：状態の更新の中で別の状態を更新しない（開発時のReactが更新を2回試すと、画像が2枚ずつ増えていたため）
+    const startIndex = files.length;
+    const urls = newFiles.map((f) => URL.createObjectURL(f));
+    const maxZ = items.reduce((max, it) => Math.max(max, it.zIndex), 0);
+    const added: ImageLayoutItem[] = newFiles.map((_file, i) => {
+      const order = items.length + i;
+      const offset = (order % 6) * 24;
+      return {
+        id: `item-${nextItemIdRef.current++}`,
+        kind: "image",
+        x: 40 + offset,
+        y: 40 + offset,
+        width: DEFAULT_ITEM_SIZE,
+        height: DEFAULT_ITEM_SIZE,
+        rotation: 0,
+        zIndex: maxZ + i + 1,
+        fit: "contain",
+        imageIndex: startIndex + i,
+      };
     });
+    setFiles((prev) => [...prev, ...newFiles]);
+    setFileUrls((prev) => [...prev, ...urls]);
+    setItems((prev) => [...prev, ...added]);
+    setSelectedId(added[added.length - 1].id);
     setResult(null);
     setError(null);
     setStatus("idle");
@@ -445,6 +491,7 @@ export function ImageLayoutTool() {
         items,
         format: outputFormat,
         pdfPageSizePt,
+        scale: exportScale,
       });
       setResult(output);
       setStatus("success");
@@ -454,7 +501,7 @@ export function ImageLayoutTool() {
     }
   }
 
-  const downloadName = `image-layout.${EXT_BY_FORMAT[outputFormat]}`;
+  const downloadName = `image-whiteboard.${EXT_BY_FORMAT[outputFormat]}`;
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
@@ -514,6 +561,8 @@ export function ImageLayoutTool() {
         </div>
 
         <PreviewFullscreenFrame>
+        {/* キャンバスの外にはみ出したアイテムも見えて、つかめるように、周りに余白をとる（書き出されるのは枠の中だけ） */}
+        <div className="overflow-hidden rounded-lg bg-neutral-100 p-6 dark:bg-neutral-900" data-testid="whiteboard-stage">
         <div
           ref={canvasRef}
           data-testid="tool-preview"
@@ -521,7 +570,7 @@ export function ImageLayoutTool() {
           onPointerUp={onCanvasPointerUp}
           onPointerCancel={onCanvasPointerUp}
           onPointerDown={() => setSelectedId(null)}
-          className="relative w-full touch-none select-none overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700"
+          className="relative w-full touch-none select-none overflow-visible border border-neutral-300 shadow-sm dark:border-neutral-600"
           style={{
             aspectRatio: `${canvasWidthPx} / ${canvasHeightPx}`,
             backgroundColor: backgroundColor === "transparent" ? undefined : backgroundColor,
@@ -562,7 +611,10 @@ export function ImageLayoutTool() {
                   <div
                     className="pointer-events-none flex h-full w-full items-start justify-start overflow-hidden whitespace-pre-wrap break-words"
                     style={{
-                      fontSize: Math.max(8, (item.fontSize ?? 24) * displayScale),
+                      // 書き出しと同じ書体・行の高さ（src/lib/processors/browser/image-layout.ts）
+                      fontSize: Math.max(1, (item.fontSize ?? 24) * displayScale),
+                      lineHeight: LAYOUT_TEXT_LINE_HEIGHT,
+                      fontFamily: LAYOUT_TEXT_FONT_FAMILY,
                       color: item.color ?? "#111111",
                       fontWeight: item.fontWeight === "bold" ? 700 : 400,
                     }}
@@ -600,7 +652,28 @@ export function ImageLayoutTool() {
             );
           })}
         </div>
+        </div>
         </PreviewFullscreenFrame>
+
+        {overflowing.length > 0 && (
+          <div
+            data-testid="whiteboard-overflow-warning"
+            data-count={overflowing.length}
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200"
+          >
+            <span>
+              {overflowing.length}個の画像・文字が、キャンバスの外にはみ出しています。このまま書き出すと、はみ出した部分は切れます。
+            </span>
+            <button
+              type="button"
+              data-testid="whiteboard-fit-canvas"
+              onClick={fitCanvasToItems}
+              className="rounded-md bg-amber-600 px-2.5 py-1 font-semibold text-white hover:bg-amber-700"
+            >
+              キャンバスを広げて全体を収める
+            </button>
+          </div>
+        )}
 
         {selectedItem?.kind === "image" && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-700">
@@ -844,6 +917,28 @@ export function ImageLayoutTool() {
               </button>
             ))}
           </div>
+          <label className="flex items-center justify-between gap-2 text-sm">
+            書き出しの解像度
+            <select
+              aria-label="書き出しの解像度"
+              data-testid="whiteboard-export-scale"
+              value={String(exportScale)}
+              onChange={(e) => setExportScale(e.target.value === "auto" ? "auto" : (Number(e.target.value) as 2 | 3 | 4))}
+              className="rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            >
+              <option value="auto">自動（画像の元の解像度に合わせる）</option>
+              <option value="2">2倍</option>
+              <option value="3">3倍</option>
+              <option value="4">4倍</option>
+            </select>
+          </label>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="whiteboard-export-note">
+            {exportScale === "auto"
+              ? `キャンバス（${Math.round(canvasWidthPx)}×${Math.round(canvasHeightPx)}）の2〜4倍の大きさで書き出します。配置した画像は、元の解像度を落とさない大きさにします。`
+              : `書き出す画像の大きさ：${Math.round(canvasWidthPx * exportScale)}×${Math.round(canvasHeightPx * exportScale)}px`}
+            {outputFormat === "jpeg" && " JPEGは透明にできないため、透明な部分は白になります。"}
+            {outputFormat === "png" && backgroundColor === "transparent" && " 背景は透明のまま書き出します。"}
+          </p>
           <button
             type="button"
             onClick={handleConvert}
@@ -857,7 +952,7 @@ export function ImageLayoutTool() {
 
           {result && (
             <ResultPopup>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="whiteboard-result-size">
                 {isPdfOutput(result) ? `PDF ${result.pageCount}ページ` : `${result.width} × ${result.height}px`} ・{" "}
                 {formatBytes(result.sizeBytes)}
               </p>

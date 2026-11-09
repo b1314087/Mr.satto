@@ -29,7 +29,7 @@ import {
   type TextAlign,
   type TextAnnotationObject,
 } from "@/lib/pdf-annotate/types";
-import { rotatePointAround } from "@/lib/pdf-annotate/geometry";
+import { clampMoveDelta, rotatePointAround } from "@/lib/pdf-annotate/geometry";
 import { saveBlob, stripExtension } from "@/lib/utils/format";
 import { runWithDownloadAccess } from "@/lib/download/download-gate";
 import { useUnsavedChangesWarning } from "./shared/use-unsaved-changes-warning";
@@ -41,7 +41,15 @@ import {
   WHITEOUT_NOTICE,
   isWhiteoutObject,
   whiteoutInsertIndex,
+  BLACKOUT_COLOR,
+  BLACKOUT_DEFAULT_HEIGHT,
+  BLACKOUT_DEFAULT_WIDTH,
+  BLACKOUT_NOTICE,
+  TRUE_REDACTION_TOOL_NAME,
+  TRUE_REDACTION_TOOL_PATH,
+  isBlackoutObject,
 } from "@/lib/pdf-annotate/whiteout";
+import Link from "next/link";
 import { SliderField } from "@/components/common/slider-field";
 
 /**
@@ -61,7 +69,7 @@ import { SliderField } from "@/components/common/slider-field";
  * 生成物を保存することは一切行わない。
  */
 
-type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape" | "whiteout";
+type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape" | "whiteout" | "blackout";
 type ColorChoice = "black" | "red" | "blue";
 
 interface PageInfo {
@@ -91,6 +99,10 @@ function fallbackPreviewWidth(): number {
 const ZOOM_LEVELS = [50, 75, 100, 125, 150, 200] as const;
 const ROTATE_STEP_DEG = 15;
 const MARK_STYLE_LABELS: Record<CheckboxMarkStyle, string> = { check: "レ点", cross: "×", circle: "○" };
+/** 画面に表示するチェックのマーク（書き出しのPDFでは、文字ではなく線・円で描く） */
+const MARK_STYLE_GLYPHS: Record<CheckboxMarkStyle, string> = { check: "✓", cross: "×", circle: "○" };
+/** つまみで大きさを変えるときの最小の大きさ(pt) */
+const MIN_RESIZE_PT = 6;
 const ALIGN_LABELS: Record<TextAlign, string> = { left: "左揃え", center: "中央揃え", right: "右揃え" };
 const SHAPE_KIND_LABELS: Record<ShapeKind, string> = { rectangle: "矩形", circle: "円・楕円", line: "直線" };
 
@@ -140,6 +152,22 @@ function lineBounds(obj: LineShapeObject) {
     maxY: Math.max(obj.y1, obj.y2) + pad,
   };
 }
+/**
+ * 移動のときに、オブジェクトがページの外へ出ないようにするための範囲（PDFの座標、回転前の見た目の大きさ）。
+ * テキストの幅は、画面の表示と同じ見積もり（文字数×文字サイズ）を使う
+ */
+function objectBoundsForClamp(obj: AnnotationObject): { minX: number; maxX: number; minY: number; maxY: number } {
+  if (obj.type === "ink") return inkBounds(obj);
+  if (obj.type === "shape" && obj.shapeKind === "line") return lineBounds(obj);
+  if (obj.type === "text") {
+    const longest = Math.max(1, ...obj.text.split("\n").map((l) => l.length));
+    const width = obj.width ?? Math.max(20, longest * obj.fontSize * 0.62);
+    return { minX: obj.x, maxX: obj.x + width, minY: obj.y - obj.fontSize * 0.3, maxY: obj.y + obj.fontSize };
+  }
+  if (obj.type === "checkbox") return { minX: obj.x, maxX: obj.x + obj.size, minY: obj.y, maxY: obj.y + obj.size };
+  return { minX: obj.x, maxX: obj.x + obj.width, minY: obj.y, maxY: obj.y + obj.height };
+}
+
 function normalizeRotation(deg: number): number {
   const r = deg % 360;
   return r < 0 ? r + 360 : r;
@@ -221,6 +249,16 @@ export function PdfFillAnnotateTool({
   // --- チェック配置の既定値 ---
   const [checkboxSize, setCheckboxSize] = useState(16);
   const [checkboxMarkStyle, setCheckboxMarkStyle] = useState<CheckboxMarkStyle>("check");
+  /** 工程4：枠を付けるか（オフのときはマークだけを、チェックした状態で置く） */
+  const [checkboxFrame, setCheckboxFrame] = useState(true);
+  /** 工程4：つまみをドラッグして大きさを変えている最中の状態 */
+  const resizeState = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    original: AnnotationObject;
+    snapshot: AnnotationObject[];
+  } | null>(null);
 
   // --- 図形配置の既定値（Phase 17） ---
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
@@ -640,8 +678,10 @@ export function PdfFillAnnotateTool({
         x: Math.max(0, pdfX),
         y: Math.max(0, pdfY),
         size,
-        checked: false,
+        // 枠なし（マークだけ）は、印を付けるために置くので、最初からチェックした状態にする
+        checked: !checkboxFrame,
         markStyle: checkboxMarkStyle,
+        frame: checkboxFrame,
       };
       commit([...objects, obj]);
       setActiveObjectId(obj.id);
@@ -697,6 +737,30 @@ export function PdfFillAnnotateTool({
       commit([...objects.slice(0, at), obj, ...objects.slice(at)]);
       setActiveObjectId(obj.id);
       setMode("select");
+    } else if (mode === "blackout") {
+      // 黒塗り（見た目だけ。工程4）：真っ黒で塗りつぶした矩形を、いちばん手前に置く。
+      // 見た目を隠すだけで、元の文字・画像のデータは消えない（本当の墨消しは「PDF黒塗り・墨消し」ツール）。
+      if (atObjectLimit()) return;
+      const width = BLACKOUT_DEFAULT_WIDTH;
+      const height = BLACKOUT_DEFAULT_HEIGHT;
+      const centerY = screenToPdfY(clickY, 0, currentPageInfo.height, pageRenderScale);
+      const obj: RectangleShapeObject = {
+        id: createAnnotationId("shape"),
+        type: "shape",
+        shapeKind: "rectangle",
+        page: selectedPage,
+        x: Math.min(Math.max(0, pdfX - width / 2), Math.max(0, currentPageInfo.width - width)),
+        y: Math.min(Math.max(0, centerY - height / 2), Math.max(0, currentPageInfo.height - height)),
+        width,
+        height,
+        rotation: 0,
+        color: BLACKOUT_COLOR,
+        strokeWidth: 1,
+        fill: true,
+      };
+      commit([...objects, obj]);
+      setActiveObjectId(obj.id);
+      setMode("select");
     } else if (mode === "shape") {
       if (atObjectLimit()) return;
       const color = COLOR_CHOICES[shapeColorChoice];
@@ -749,7 +813,13 @@ export function PdfFillAnnotateTool({
   // 3. 選択・ドラッグ移動（テキスト・チェック・画像・手書き共通）
   // ---------------------------------------------------------------------
   function handleObjectPointerDown(e: React.PointerEvent<HTMLDivElement>, obj: AnnotationObject) {
-    if (mode !== "select") return;
+    // 工程4：配置用のモード（テキスト・チェック・図形など）のままでも、置いたものをつかんで動かせるようにする。
+    // つかんだら「選択・移動」に切り替える。手書き中と、画像・印影を置こうとしている間は、従来どおり（置く・描く操作を優先）
+    if (mode === "ink") return;
+    if ((mode === "image" || mode === "stamp") && pendingImage) return;
+    // 白消しの上には、テキストなどを置けるようにする（白消し→書き直しのため。従来どおり）
+    if (mode !== "select" && isWhiteoutObject(obj) && (mode === "text" || mode === "checkbox")) return;
+    if (mode !== "select") setMode("select");
     e.stopPropagation();
     (e.target as Element).setPointerCapture(e.pointerId);
     setActiveObjectId(obj.id);
@@ -765,8 +835,14 @@ export function PdfFillAnnotateTool({
   function handleObjectPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     const drag = dragState.current;
     if (!drag) return;
-    const dxPdf = (e.clientX - drag.startX) / pageRenderScale;
-    const dyPdf = -(e.clientY - drag.startY) / pageRenderScale;
+    // 工程4：ページの外へ出ないように、ずらす量を抑える（位置ずれ・書き出し時の見切れを防ぐ）
+    const page = currentPageInfo ?? { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY };
+    const { dx: dxPdf, dy: dyPdf } = clampMoveDelta(
+      objectBoundsForClamp(drag.original),
+      (e.clientX - drag.startX) / pageRenderScale,
+      -(e.clientY - drag.startY) / pageRenderScale,
+      page
+    );
     setObjects((prev) =>
       prev.map((o) => {
         if (o.id !== drag.id) return o;
@@ -783,13 +859,13 @@ export function PdfFillAnnotateTool({
           original.shapeKind !== "line" &&
           o.shapeKind !== "line"
         ) {
-          return { ...o, x: Math.max(0, original.x + dxPdf), y: Math.max(0, original.y + dyPdf) } as ShapeAnnotationObject;
+          return { ...o, x: original.x + dxPdf, y: original.y + dyPdf } as ShapeAnnotationObject;
         }
         if (
           (original.type === "text" || original.type === "checkbox" || original.type === "image") &&
           (o.type === "text" || o.type === "checkbox" || o.type === "image")
         ) {
-          return { ...o, x: Math.max(0, original.x + dxPdf), y: Math.max(0, original.y + dyPdf) } as AnnotationObject;
+          return { ...o, x: original.x + dxPdf, y: original.y + dyPdf } as AnnotationObject;
         }
         return o;
       })
@@ -813,6 +889,89 @@ export function PdfFillAnnotateTool({
     if (totalMove >= 4) {
       pushHistory(drag.snapshot);
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // 3-2. つまみで大きさを変える（工程4。チェック・画像/印影・矩形/円）
+  // ---------------------------------------------------------------------
+  function handleResizePointerDown(e: React.PointerEvent<HTMLElement>, obj: AnnotationObject) {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    if (mode !== "select") setMode("select");
+    setActiveObjectId(obj.id);
+    resizeState.current = { id: obj.id, startX: e.clientX, startY: e.clientY, original: obj, snapshot: objects };
+  }
+
+  function handleResizePointerMove(e: React.PointerEvent<HTMLElement>) {
+    const rs = resizeState.current;
+    if (!rs || !currentPageInfo) return;
+    e.stopPropagation();
+    const page = currentPageInfo;
+    const scale = pageRenderScale;
+    const sdx = e.clientX - rs.startX;
+    const sdy = e.clientY - rs.startY;
+    const o = rs.original;
+    if (o.type === "checkbox") {
+      const grow = Math.max(sdx, sdy) / scale;
+      // 左上を動かさずに大きくする（PDFの座標は左下が原点なので、上端 y+size を保つ）
+      const top = o.y + o.size;
+      const size = Math.min(Math.max(MIN_RESIZE_PT, o.size + grow), 200, top, page.width - o.x);
+      patchObjectLive(o.id, { size, y: top - size });
+      return;
+    }
+    if (o.type !== "image" && !(o.type === "shape" && o.shapeKind !== "line")) return;
+    const rotation = o.type === "image" ? (o.rotation ?? 0) : o.rotation;
+    // 画面では rotate(-rotation) で表示しているので、画面の動きを、回す前の向きの動きに直す
+    const th = (-rotation * Math.PI) / 180;
+    const lx = (Math.cos(th) * sdx + Math.sin(th) * sdy) / scale;
+    const ly = (-Math.sin(th) * sdx + Math.cos(th) * sdy) / scale;
+    let w = Math.max(MIN_RESIZE_PT, o.width + lx);
+    let h = Math.max(MIN_RESIZE_PT, o.height + ly);
+    if (o.type === "image" && o.aspectLocked !== false) {
+      // 縦横比を保つ（大きく動かした方に合わせる）
+      if (Math.abs(lx) * o.height >= Math.abs(ly) * o.width) h = w / o.aspectRatio;
+      else w = h * o.aspectRatio;
+    }
+    w = Math.min(w, page.width * 2);
+    h = Math.min(h, page.height * 2);
+    // 回す前の左上の角（画面の見た目で固定する点）を動かさないように、中心をずらす
+    const cx = o.x + o.width / 2;
+    const cy = o.y + o.height / 2;
+    const r = (rotation * Math.PI) / 180;
+    // 左上の角の見た目の位置（PDFの座標。反時計回りが正）
+    const rot = (vx: number, vy: number) => ({ x: vx * Math.cos(r) - vy * Math.sin(r), y: vx * Math.sin(r) + vy * Math.cos(r) });
+    const a = rot(-o.width / 2, o.height / 2);
+    const anchor = { x: cx + a.x, y: cy + a.y };
+    const b = rot(w / 2, -h / 2);
+    const ncx = anchor.x + b.x;
+    const ncy = anchor.y + b.y;
+    patchObjectLive(o.id, { width: w, height: h, x: ncx - w / 2, y: ncy - h / 2 });
+  }
+
+  function handleResizePointerUp(e: React.PointerEvent<HTMLElement>) {
+    const rs = resizeState.current;
+    resizeState.current = null;
+    if (!rs) return;
+    e.stopPropagation();
+    if (Math.hypot(e.clientX - rs.startX, e.clientY - rs.startY) >= 2) pushHistory(rs.snapshot);
+  }
+
+  /** 選んでいるオブジェクトの右下に出す、大きさを変えるつまみ */
+  function resizeHandle(obj: AnnotationObject) {
+    if (activeObjectId !== obj.id) return null;
+    return (
+      <span
+        role="presentation"
+        data-testid="pdf-annotate-resize-handle"
+        onPointerDown={(e) => handleResizePointerDown(e, obj)}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={handleResizePointerUp}
+        onClick={(e) => e.stopPropagation()}
+        className="absolute -bottom-2 -right-2 h-4 w-4 cursor-nwse-resize rounded-sm border-2 border-white bg-blue-600 shadow"
+        style={{ touchAction: "none" }}
+      />
+    );
   }
 
   function handleObjectInertClick(e: React.MouseEvent) {
@@ -969,6 +1128,7 @@ export function PdfFillAnnotateTool({
     { value: "checkbox", label: "チェック" },
     { value: "shape", label: "図形" },
     { value: "whiteout", label: "白消し" },
+    { value: "blackout", label: "黒塗り（見た目だけ）" },
     { value: "ink", label: "手書き" },
     { value: "image", label: "画像" },
     { value: "stamp", label: "印影" },
@@ -1220,6 +1380,19 @@ export function PdfFillAnnotateTool({
                   ))}
                 </select>
               </label>
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  data-testid="pdf-annotate-checkbox-frame"
+                  checked={checkboxFrame}
+                  onChange={(e) => setCheckboxFrame(e.target.checked)}
+                />
+                枠を付ける
+              </label>
+              <span className="w-full text-neutral-500 dark:text-neutral-400">
+                枠を外すと、マーク（レ点・×・○）だけを置きます。PDFにもともとあるチェック欄に印を付けるときに使います。
+                置いたあとは、ドラッグで位置を、右下のつまみで大きさを調整できます。
+              </span>
             </div>
           )}
 
@@ -1231,6 +1404,24 @@ export function PdfFillAnnotateTool({
               <span>書き直すときは、白消しの上に「テキスト」で入力します。</span>
               <span className="font-semibold">{WHITEOUT_NOTICE.title}</span>
               <span>{WHITEOUT_NOTICE.body}</span>
+            </div>
+          )}
+
+          {mode === "blackout" && (
+            <div
+              data-testid="pdf-blackout-panel"
+              className="flex flex-col gap-1 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900 dark:border-red-800 dark:bg-red-950/20 dark:text-red-200"
+            >
+              <span>隠したい場所をクリックすると、黒い四角形を置きます。ドラッグで位置を、右下のつまみで大きさを調整できます。</span>
+              <span className="font-semibold">{BLACKOUT_NOTICE.title}</span>
+              <span>{BLACKOUT_NOTICE.body}</span>
+              <span>
+                個人情報などを元のデータごと消す（墨消し）には、
+                <Link href={TRUE_REDACTION_TOOL_PATH} className="font-semibold underline" data-testid="pdf-blackout-redact-link">
+                  {TRUE_REDACTION_TOOL_NAME}
+                </Link>
+                を使ってください。
+              </span>
             </div>
           )}
 
@@ -1461,7 +1652,7 @@ export function PdfFillAnnotateTool({
                         fontSize: Math.max(8, obj.fontSize * pageRenderScale),
                         fontWeight: obj.bold ? 700 : 400,
                         color: cssColor(obj.color),
-                        cursor: mode === "select" ? "move" : "default",
+                        cursor: mode === "ink" ? "default" : "move",
                         touchAction: "none",
                       }}
                     >
@@ -1478,19 +1669,29 @@ export function PdfFillAnnotateTool({
                       onPointerMove={handleObjectPointerMove}
                       onPointerUp={handleObjectPointerUp}
                       onClick={handleObjectInertClick}
-                      className={`absolute flex items-center justify-center border-2 bg-white/60 dark:bg-black/30 ${
-                        isActive ? "border-blue-500" : "border-neutral-500"
+                      data-testid="pdf-annotate-checkbox-object"
+                      data-frame={obj.frame === false ? "false" : "true"}
+                      className={`absolute flex items-center justify-center ${
+                        obj.frame === false
+                          ? isActive
+                            ? "outline outline-2 outline-blue-500"
+                            : "outline outline-1 outline-dashed outline-neutral-400/60"
+                          : `border-2 bg-white/60 dark:bg-black/30 ${isActive ? "border-blue-500" : "border-neutral-500"}`
                       }`}
                       style={{
                         left: pdfToScreenX(obj.x, pageRenderScale),
                         top: pdfToScreenY(obj.y, obj.size, currentPageInfo.height, pageRenderScale),
                         width: size,
                         height: size,
-                        cursor: mode === "select" ? "pointer" : "default",
+                        fontSize: Math.max(8, size * 0.8),
+                        lineHeight: 1,
+                        color: "rgb(26, 102, 217)",
+                        cursor: "move",
                         touchAction: "none",
                       }}
                     >
-                      {obj.checked && <span aria-hidden="true">✓</span>}
+                      {obj.checked && <span aria-hidden="true">{MARK_STYLE_GLYPHS[obj.markStyle ?? "check"]}</span>}
+                      {resizeHandle(obj)}
                     </div>
                   );
                 }
@@ -1513,12 +1714,13 @@ export function PdfFillAnnotateTool({
                         width: w,
                         height: h,
                         transform: rotation ? `rotate(${-rotation}deg)` : undefined,
-                        cursor: mode === "select" ? "move" : "default",
+                        cursor: mode === "image" || mode === "stamp" ? "default" : "move",
                         touchAction: "none",
                       }}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={obj.previewUrl} alt="配置した画像" className="h-full w-full object-contain" draggable={false} />
+                      {resizeHandle(obj)}
                     </div>
                   );
                 }
@@ -1582,7 +1784,7 @@ export function PdfFillAnnotateTool({
                       onPointerUp={handleObjectPointerUp}
                       onClick={handleObjectInertClick}
                       className={isActive ? "absolute outline outline-2 outline-blue-500" : "absolute"}
-                      style={{ left, top, width, height, cursor: mode === "select" ? "move" : "default", touchAction: "none" }}
+                      style={{ left, top, width, height, cursor: mode === "ink" ? "default" : "move", touchAction: "none" }}
                     >
                       <svg width={width} height={height} style={{ overflow: "visible" }} aria-hidden="true">
                         <line
@@ -1608,6 +1810,7 @@ export function PdfFillAnnotateTool({
                     onPointerUp={handleObjectPointerUp}
                     // 白消しの上にも、テキストなどを配置できるようにする（白消し→書き直しのため）。選択モードでは従来どおり
                     onClick={isWhiteoutObject(obj) && mode !== "select" ? undefined : handleObjectInertClick}
+                    data-testid={isBlackoutObject(obj) ? "pdf-blackout-object" : isWhiteoutObject(obj) ? "pdf-whiteout-object" : undefined}
                     className={`absolute ${isActive ? "outline outline-2 outline-blue-500" : ""} ${
                       obj.shapeKind === "circle" ? "rounded-full" : ""
                     }`}
@@ -1619,10 +1822,12 @@ export function PdfFillAnnotateTool({
                       border: `${Math.max(1, obj.strokeWidth * pageRenderScale)}px solid ${cssColor(obj.color)}`,
                       backgroundColor: obj.fill ? cssColor(obj.color) : "transparent",
                       transform: obj.rotation ? `rotate(${-obj.rotation}deg)` : undefined,
-                      cursor: mode === "select" ? "move" : "default",
+                      cursor: mode === "ink" ? "default" : "move",
                       touchAction: "none",
                     }}
-                  />
+                  >
+                    {resizeHandle(obj)}
+                  </div>
                 );
               })}
             </div>
@@ -1652,6 +1857,15 @@ export function PdfFillAnnotateTool({
                         className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
                       >
                         白消し
+                      </span>
+                    )}
+                    {isBlackoutObject(obj) && (
+                      <span
+                        data-testid="pdf-blackout-badge"
+                        className="rounded bg-red-100 px-1.5 py-0.5 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+                        title={BLACKOUT_NOTICE.body}
+                      >
+                        黒塗り（見た目だけ・元データは残る）
                       </span>
                     )}
 
@@ -1750,6 +1964,14 @@ export function PdfFillAnnotateTool({
                               </option>
                             ))}
                           </select>
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={obj.frame !== false}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { frame: e.target.checked })}
+                          />
+                          枠
                         </label>
                       </>
                     )}
@@ -1951,6 +2173,20 @@ export function PdfFillAnnotateTool({
             >
               白消しを含んでいます。{WHITEOUT_NOTICE.title}
               {WHITEOUT_NOTICE.body}
+            </p>
+          )}
+          {objects.some(isBlackoutObject) && (
+            <p
+              data-testid="pdf-blackout-export-notice"
+              className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900 dark:border-red-800 dark:bg-red-950/20 dark:text-red-200"
+            >
+              黒塗り（見た目だけ）を含んでいます。{BLACKOUT_NOTICE.title}
+              {BLACKOUT_NOTICE.body}
+              元のデータごと消す必要があるときは、
+              <Link href={TRUE_REDACTION_TOOL_PATH} className="font-semibold underline">
+                {TRUE_REDACTION_TOOL_NAME}
+              </Link>
+              を使ってください。
             </p>
           )}
           <button

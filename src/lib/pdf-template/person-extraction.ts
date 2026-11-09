@@ -9,6 +9,7 @@ import {
   closePdfDocument,
 } from "@/lib/pdf/pdfjs-client";
 import type { OcrLanguageOption } from "@/lib/ocr/tesseract-client";
+import { getFormFieldItems, FORM_CHECKED_MARK, FORM_UNCHECKED_MARK } from "@/lib/pdf/form-fields";
 import { extractFieldValue, cropFieldCanvas, type FieldExtractionMethod } from "./field-extraction";
 import { extractCheckboxValue, computeDarkPixelRatio, CHECKBOX_CHECKED_VALUE, CHECKBOX_UNCHECKED_VALUE } from "./checkbox-detection";
 import { PERSON_VALID_MIN_RATIO, type Template, type TemplateField } from "./types";
@@ -109,6 +110,22 @@ export interface ExtractPersonsFromFileResult {
  * ページ番号をテンプレートのページ数で周期的に割り当てて適用する
  * （開発指示書12章：同一レイアウトの複数ページへの適用）。
  */
+/** 枠の中に、入力フォームのチェックボックス（☑／☐）があれば、そのチェックの有無（なければ null） */
+function formCheckboxInRegion(
+  formItems: readonly PositionedTextItem[],
+  field: { x: number; y: number; width: number; height: number }
+): boolean | null {
+  for (const it of formItems) {
+    if (it.str !== FORM_CHECKED_MARK && it.str !== FORM_UNCHECKED_MARK) continue;
+    const cx = it.x + it.width / 2;
+    const cy = it.y + it.fontHeight / 2;
+    if (cx >= field.x && cx <= field.x + field.width && cy >= field.y && cy <= field.y + field.height) {
+      return it.str === FORM_CHECKED_MARK;
+    }
+  }
+  return null;
+}
+
 export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions): Promise<ExtractPersonsFromFileResult> {
   const { file, template, language, fileIndex = 0, onPageProgress } = opts;
   const pdf = await loadPdfDocument(file);
@@ -135,7 +152,9 @@ export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions
       }
 
       const pageHeightPt = page.getViewport({ scale: 1 }).height;
-      const textItems: PositionedTextItem[] = await getPositionedTextItems(page);
+      // 工程4：入力フォーム（AcroForm）に記入したPDFは、入力欄の値も文字情報と同じように使う
+      const formItems = await getFormFieldItems(page);
+      const textItems: PositionedTextItem[] = [...(await getPositionedTextItems(page)), ...formItems];
       const hasText = pageHasText(textItems);
       const getOcrPage = makeLazyOcrPage(page, () => {
         usedOcr = true;
@@ -151,6 +170,18 @@ export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions
         const values: PersonFieldValue[] = [];
         for (const field of sortedFields) {
           if (field.type === "checkbox") {
+            // 工程4：枠の中に入力フォームのチェックボックスがあれば、その状態をそのまま使う（画像からの判定より確か）
+            const formMark = formCheckboxInRegion(formItems, field);
+            if (formMark !== null) {
+              values.push({
+                fieldIndex: field.fieldIndex,
+                label: field.label.trim() || `項目${field.fieldIndex}`,
+                value: formMark ? CHECKBOX_CHECKED_VALUE : CHECKBOX_UNCHECKED_VALUE,
+                method: "checkbox",
+                confidence: null,
+              });
+              continue;
+            }
             // checkboxはOCR文字認識に頼らず、黒画素割合ベースのルールベース判定を使う
             // （開発指示書A-19）。テキストレイヤーの有無に関わらず必ずページ描画→
             // 枠だけのcropを経由する（extractFieldValueのtext-layer優先パスは通らない）。

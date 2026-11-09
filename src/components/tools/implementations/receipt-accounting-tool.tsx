@@ -31,13 +31,30 @@ import {
   type ReceiptFieldKey,
   type TextLine,
 } from "@/lib/accounting/receipt-types";
-import { duplicateKeys, validateRow } from "@/lib/accounting/receipt-validate";
+import { duplicateKeys, parseAmountInput, validateRow } from "@/lib/accounting/receipt-validate";
+import {
+  RECEIPT_DETAIL_TEXT_MAX,
+  TAX_CATEGORY_SUGGESTIONS,
+  TAX_RATE_OPTIONS,
+  checkReceiptDetails,
+  extractReceiptDetails,
+  type ReceiptDetailValues,
+} from "@/lib/accounting/receipt-details";
+import { buildJournalCsvBlob, buildJournalXlsxBlob, type JournalRecord } from "@/lib/accounting/journal-export";
+import { downloadBlob } from "@/lib/utils/format";
 import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { ReceiptReadError, readReceiptFile, type ReadDocument } from "@/lib/processors/browser/receipt-ocr";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /**
+ * 工程4で追加したこと:
+ * - 税率・消費税額・登録番号・品目を読み取る（読み取れないものは空欄で「不明」と表示し、推測で埋めない）。
+ * - 行ごとに、摘要・税区分・借方勘定科目・貸方勘定科目を入力できる（初期値なし。自動で決めない・確認済みにしない）。
+ * - 合計金額と消費税額が合わないとき・登録番号の形が違うとき・税区分と税率が合わないときに注意を出す。
+ * - 「明細・仕訳CSV」と、同じ内容のExcel（.xlsx）を出力できる（読み取り元のファイル名の列つき）。
+ * - 入力した内容・設定は保存しない（画面を閉じると消える。これまでどおり）。
+ *
  * 領収書・レシートから会計CSV作成（工程8）。
  * 画像・PDFを読み込み、日付・取引先・合計金額を抽出して、利用者が確認・修正した行だけを汎用CSVに出力する。
  * すべてブラウザの中で処理する。ファイル・読み取った内容は、サーバーへ送らず、端末にも保存しない。
@@ -57,9 +74,26 @@ interface DocRow {
   confirmed: boolean;
   /** 確認済みにしようとして、検証に通らなかったときのエラー */
   attemptErrors: string[] | null;
+  /** 工程4：詳しい項目（税率・税額・登録番号・品目・摘要・税区分・勘定科目） */
+  details: ReceiptDetailValues;
+  /** 自動で入れた詳しい項目（「自動読み取り」か「修正済み」かを示す） */
+  autoDetails: ReceiptDetailValues;
 }
 
-type CsvFormat = "generic" | "freee";
+type CsvFormat = "generic" | "journal" | "freee";
+
+/** 詳しい項目のうち、読み取るもの（ラベルと入力の種類） */
+const DETAIL_READ_FIELDS: { key: "taxAmount" | "registrationNumber" | "items"; label: string; placeholder: string }[] = [
+  { key: "taxAmount", label: "消費税額", placeholder: "例：100" },
+  { key: "registrationNumber", label: "登録番号", placeholder: "例：T1234567890123" },
+  { key: "items", label: "品目", placeholder: "例：コピー用紙、ボールペン" },
+];
+/** 詳しい項目のうち、利用者が入力するもの */
+const DETAIL_INPUT_FIELDS: { key: "memo" | "debitAccount" | "creditAccount"; label: string; placeholder: string }[] = [
+  { key: "memo", label: "摘要", placeholder: "例：事務用品の購入" },
+  { key: "debitAccount", label: "借方勘定科目", placeholder: "例：消耗品費" },
+  { key: "creditAccount", label: "貸方勘定科目", placeholder: "例：現金" },
+];
 
 type JobStatus = "queued" | "reading" | "done" | "error";
 
@@ -169,6 +203,7 @@ export function ReceiptAccountingTool() {
       if (item.generation !== generationRef.current) return; // 「すべて消去」のあとに届いた結果は捨てる
       const extraction = extractReceipt(doc.lines);
       const values = initialValues(extraction);
+      const details = extractReceiptDetails(doc.lines, values.total ? parseAmountInput(values.total) : null);
       const label = doc.pageNumber !== null ? `${fileName}（${doc.pageNumber}/${doc.pageCount}ページ）` : fileName;
       const row: DocRow = {
         id: nextId("d"),
@@ -181,6 +216,8 @@ export function ReceiptAccountingTool() {
         values,
         confirmed: false,
         attemptErrors: null,
+        details,
+        autoDetails: details,
       };
       commitDocs((prev) => [...prev, row]);
       setJobs((prev) => prev.map((j) => (j.id === item.jobId ? { ...j, documents: j.documents + 1 } : j)));
@@ -337,6 +374,13 @@ export function ReceiptAccountingTool() {
     commitDocs((prev) => prev.map((d) => (d.id === id ? { ...d, values: { ...d.values, [key]: value }, confirmed: false, attemptErrors: null } : d)));
   }
 
+  function editDetail(id: string, key: keyof ReceiptDetailValues, value: string) {
+    // 詳しい項目を変えたときも、確認済みを外す（変更前の内容で確認したことにしない）
+    commitDocs((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, details: { ...d.details, [key]: value.slice(0, RECEIPT_DETAIL_TEXT_MAX) }, confirmed: false, attemptErrors: null } : d)),
+    );
+  }
+
   function toggleConfirm(id: string) {
     const today = todayIso();
     commitDocs((prev) =>
@@ -365,6 +409,7 @@ export function ReceiptAccountingTool() {
   const exportPlan = useMemo(() => {
     const records: CsvRecord[] = [];
     const entries: { id: string; label: string; record: CsvRecord }[] = [];
+    const journal: JournalRecord[] = [];
     const problems: string[] = [];
     for (const d of docs) {
       if (!d.confirmed) continue;
@@ -372,9 +417,10 @@ export function ReceiptAccountingTool() {
       if (result.normalized) {
         records.push(result.normalized);
         entries.push({ id: d.id, label: d.label, record: result.normalized });
+        journal.push({ ...result.normalized, details: d.details, source: d.label });
       } else problems.push(`「${d.label}」：${result.errors.join(" ")}`);
     }
-    return { records, entries, problems };
+    return { records, entries, journal, problems };
   }, [docs, today]);
 
   // freee向けCSV：共通の設定と、確認済みの各行の勘定科目・税区分が、CSVに出せる状態かを調べる
@@ -395,7 +441,9 @@ export function ReceiptAccountingTool() {
   const signature =
     format === "freee"
       ? JSON.stringify({ f: "freee", records: exportPlan.records, settings: freeeSettings, rows: exportPlan.entries.map((e) => freeeOverrides[e.id] ?? null) })
-      : JSON.stringify(exportPlan.records);
+      : format === "journal"
+        ? JSON.stringify({ f: "journal", records: exportPlan.journal })
+        : JSON.stringify(exportPlan.records);
   const needsExport = docs.length > 0 && (unconfirmedCount > 0 || exportedSignature !== signature);
   useUnsavedChangesWarning(needsExport);
 
@@ -419,6 +467,8 @@ export function ReceiptAccountingTool() {
         return;
       }
       blob = buildFreeeCsvBlob(freeePlan.records, freeeSettings);
+    } else if (format === "journal") {
+      blob = buildJournalCsvBlob(exportPlan.journal);
     } else {
       blob = buildGenericCsvBlob(exportPlan.records);
     }
@@ -428,7 +478,34 @@ export function ReceiptAccountingTool() {
     }
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-    void csvExport.download(blob, format === "freee" ? `receipts-freee-${stamp}.csv` : `receipts-${stamp}.csv`);
+    void csvExport.download(
+      blob,
+      format === "freee" ? `receipts-freee-${stamp}.csv` : format === "journal" ? `receipts-journal-${stamp}.csv` : `receipts-${stamp}.csv`,
+    );
+    setExportedSignature(signature);
+  }
+
+  /** 明細・仕訳の内容を、Excel（.xlsx）で保存する（工程4） */
+  async function exportXlsx() {
+    setExportError(null);
+    if (exportPlan.problems.length > 0) {
+      setExportError("確認済みの行に、入力の不備があります。該当の行を直してください。");
+      return;
+    }
+    let blob: Blob | null = null;
+    try {
+      blob = await buildJournalXlsxBlob(exportPlan.journal);
+    } catch {
+      setExportError("Excelファイルの作成に失敗しました。");
+      return;
+    }
+    if (!blob) {
+      setExportError("確認済みのデータがありません。");
+      return;
+    }
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    downloadBlob(blob, `receipts-journal-${stamp}.xlsx`);
     setExportedSignature(signature);
   }
 
@@ -671,11 +748,18 @@ export function ReceiptAccountingTool() {
                       </div>
                     </div>
 
+                    <ReceiptDetailsEditor row={row} onEdit={(key, value) => editDetail(row.id, key, value)} />
+
                     {row.method === "text-layer" && (
                       <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                         PDFに文字情報があっても、正しく読み取れているとは限りません。画像と見比べて確認してください。
                       </p>
                     )}
+                    {checkReceiptDetails(row.details, live.normalized?.total ?? null).map((w) => (
+                      <p key={w} data-testid="receipt-detail-warning" className="text-xs text-amber-700 dark:text-amber-300">
+                        注意：{w}
+                      </p>
+                    ))}
                     {live.warnings.map((w) => (
                       <p key={w} data-testid="receipt-warning" className="text-xs text-amber-700 dark:text-amber-300">
                         注意：{w}
@@ -757,6 +841,22 @@ export function ReceiptAccountingTool() {
             <input
               type="radio"
               name="receipt-format"
+              data-testid="receipt-format-journal"
+              checked={format === "journal"}
+              onChange={() => setFormat("journal")}
+              className="mt-1"
+            />
+            <span>
+              明細・仕訳CSV／Excel（税率・税額・登録番号・品目・摘要・税区分・勘定科目つき）
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                会計ソフトの仕訳の取り込みで、列を対応付けて使える一覧の形です。CSVと、同じ内容のExcel（.xlsx）を保存できます。
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-100">
+            <input
+              type="radio"
+              name="receipt-format"
               data-testid="receipt-format-freee"
               checked={format === "freee"}
               onChange={() => setFormat("freee")}
@@ -772,7 +872,13 @@ export function ReceiptAccountingTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">形式を切り替えても、入力した内容は消えません。</p>
         </fieldset>
 
-        {format === "generic" ? (
+        {format === "journal" ? (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="journal-explain">
+            確認済みにした行だけを、日付・取引先・合計金額（税込）・税率・消費税額・登録番号・品目・摘要・税区分・借方勘定科目・貸方勘定科目・読み取り元（ファイル名）の列で保存します。
+            不明な項目は空欄で出します。税区分・勘定科目は、各行に入力した内容をそのまま出し、このツールが推測して入れることはありません。
+            特定の会計ソフト専用の形式ではなく、会計ソフトへの取り込みを保証するものではありません。会計・税務の助言ではありません。
+          </p>
+        ) : format === "generic" ? (
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             確認済みにした行だけを、日付・取引先・合計金額のCSV（UTF-8・Excelで開けます）として保存します。書類に書かれた合計金額をそのまま出力し、税込・税抜は区別しません。勘定科目・税区分は含みません。
             特定の会計ソフト専用の形式ではなく、会計ソフトへの取り込みを保証するものではありません。会計・税務の助言ではなく、電子帳簿保存法に対応した保存の仕組みでもありません。
@@ -887,6 +993,34 @@ export function ReceiptAccountingTool() {
           <p data-testid="receipt-export-empty" className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
             確認済みのデータがありません。上の一覧で、内容を確かめた行の「確認済みにする」を押すと、ここに出力内容が表示されます。
           </p>
+        ) : format === "journal" ? (
+          <div className="overflow-x-auto" data-testid="journal-export-preview">
+            <table className="w-full min-w-[40rem] border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-neutral-200 dark:border-neutral-800">
+                  {["日付", "取引先", "合計金額", "税率", "消費税額", "登録番号", "税区分", "借方", "貸方", "読み取り元"].map((h) => (
+                    <th key={h} className="px-2 py-1 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {exportPlan.journal.map((r, i) => (
+                  <tr key={i} className="border-b border-neutral-100 dark:border-neutral-900" data-testid="journal-row">
+                    <td className="px-2 py-1">{formatDateSlash(r.date)}</td>
+                    <td className="px-2 py-1">{r.vendor}</td>
+                    <td className="px-2 py-1 text-right">{r.total.toLocaleString("ja-JP")}</td>
+                    <td className="px-2 py-1">{TAX_RATE_OPTIONS.find((o) => o.value === r.details.taxRate)?.label ?? ""}</td>
+                    <td className="px-2 py-1 text-right">{r.details.taxAmount}</td>
+                    <td className="px-2 py-1">{r.details.registrationNumber}</td>
+                    <td className="px-2 py-1">{r.details.taxCategory}</td>
+                    <td className="px-2 py-1">{r.details.debitAccount}</td>
+                    <td className="px-2 py-1">{r.details.creditAccount}</td>
+                    <td className="px-2 py-1 break-all">{r.source}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : format === "generic" ? (
           <div className="overflow-x-auto" data-testid="receipt-export-preview">
             <table className="w-full min-w-[20rem] border-collapse text-left text-xs">
@@ -1001,7 +1135,112 @@ export function ReceiptAccountingTool() {
             disabled={exportPlan.records.length === 0 || exportPlan.problems.length > 0 || freeeBlocked}
           />
         </div>
+        {format === "journal" && (
+          <div data-testid="journal-xlsx">
+            <RewardedDownloadGate
+              onDownload={() => void exportXlsx()}
+              label="Excelをダウンロード"
+              disabled={exportPlan.records.length === 0 || exportPlan.problems.length > 0}
+            />
+          </div>
+        )}
       </section>
     </div>
+  );
+}
+
+/**
+ * 詳しい項目の確認・入力（工程4）。読み取った項目（税率・消費税額・登録番号・品目）は、読み取れないとき「不明」と表示する。
+ * 摘要・税区分・勘定科目は、利用者が行ごとに入力する（初期値なし）。
+ */
+function ReceiptDetailsEditor({
+  row,
+  onEdit,
+}: {
+  row: DocRow;
+  onEdit: (key: keyof ReceiptDetailValues, value: string) => void;
+}) {
+  const listId = `receipt-taxcat-${row.id}`;
+  const readState = (key: keyof ReceiptDetailValues) => {
+    const current = row.details[key];
+    if (current.trim() === "") return row.autoDetails[key].trim() === "" ? "不明（読み取れませんでした）" : "未入力";
+    return current === row.autoDetails[key] ? "自動読み取り" : "入力・修正済み";
+  };
+  return (
+    <details className="rounded-lg border border-neutral-200 p-2 text-xs dark:border-neutral-800" data-testid="receipt-details" open>
+      <summary className="cursor-pointer select-none font-medium text-neutral-700 dark:text-neutral-200">
+        税・登録番号・品目・仕訳の入力（明細・仕訳CSV／Excelに出力されます）
+      </summary>
+      <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <label className="flex flex-col gap-1 text-neutral-500 dark:text-neutral-400">
+          税率
+          <select
+            data-testid="receipt-tax-rate"
+            aria-label={`${row.label}の税率`}
+            value={row.details.taxRate}
+            onChange={(e) => onEdit("taxRate", e.target.value)}
+            className={inputClass}
+          >
+            {TAX_RATE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-[11px]" data-testid="receipt-detail-source-taxRate">{readState("taxRate")}</span>
+        </label>
+        {DETAIL_READ_FIELDS.map((f) => (
+          <label key={f.key} className="flex flex-col gap-1 text-neutral-500 dark:text-neutral-400">
+            {f.label}
+            <input
+              type="text"
+              inputMode={f.key === "taxAmount" ? "numeric" : "text"}
+              data-testid={`receipt-${f.key}`}
+              aria-label={`${row.label}の${f.label}`}
+              value={row.details[f.key]}
+              placeholder={f.placeholder}
+              onChange={(e) => onEdit(f.key, e.target.value)}
+              className={inputClass}
+            />
+            <span className="text-[11px]" data-testid={`receipt-detail-source-${f.key}`}>{readState(f.key)}</span>
+          </label>
+        ))}
+        <label className="flex flex-col gap-1 text-neutral-500 dark:text-neutral-400">
+          税区分（行ごとに選ぶ・入力。初期値なし）
+          <input
+            type="text"
+            list={listId}
+            data-testid="receipt-tax-category"
+            aria-label={`${row.label}の税区分`}
+            value={row.details.taxCategory}
+            placeholder="選ぶか、会計ソフトの名前を入力"
+            onChange={(e) => onEdit("taxCategory", e.target.value)}
+            className={inputClass}
+          />
+          <datalist id={listId}>
+            {TAX_CATEGORY_SUGGESTIONS.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </label>
+        {DETAIL_INPUT_FIELDS.map((f) => (
+          <label key={f.key} className="flex flex-col gap-1 text-neutral-500 dark:text-neutral-400">
+            {f.label}
+            <input
+              type="text"
+              data-testid={`receipt-${f.key}`}
+              aria-label={`${row.label}の${f.label}`}
+              value={row.details[f.key]}
+              placeholder={f.placeholder}
+              onChange={(e) => onEdit(f.key, e.target.value)}
+              className={inputClass}
+            />
+          </label>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+        税区分・勘定科目は、書類の内容から自動で決めません。お使いの会計ソフトに登録されている名前を入力してください。入力した内容は保存されません（画面を閉じると消えます）。
+      </p>
+    </details>
   );
 }

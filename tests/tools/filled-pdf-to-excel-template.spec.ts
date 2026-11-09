@@ -297,8 +297,9 @@ test.describe("Excel出力", () => {
     const { headers, rows } = await readXlsxSheet(path);
     expect(headers).toEqual(["氏名", "生年月日", "住所"]);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toEqual(["山田太郎", "1990/01/01", "大阪府大阪市北区1-2-3"]);
-    expect(rows[1]).toEqual(["佐藤花子", "1992/05/20", "京都府京都市中京区4-5-6"]);
+    // 工程4：日付として確かな値は、Excelの日付のセル（表示は yyyy/mm/dd）として出力する
+    expect(rows[0]).toEqual(["山田太郎", new Date(Date.UTC(1990, 0, 1)), "大阪府大阪市北区1-2-3"]);
+    expect(rows[1]).toEqual(["佐藤花子", new Date(Date.UTC(1992, 4, 20)), "京都府京都市中京区4-5-6"]);
   });
 
   test("複数の記入済みPDFをまとめて1つのExcelに出力できる", async ({ page }) => {

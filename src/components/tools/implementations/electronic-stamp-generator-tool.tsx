@@ -30,7 +30,8 @@ import {
   STAMP_PDF_SIZE_MM,
   STAMP_QR_PLACEHOLDER_SERIAL,
   stampImageOntoPdf,
-  stampPdfRect,
+  stampPdfDrawRect,
+  STAMP_PDF_ROTATION_DEG,
   type StampPdfPageBox,
   validateStampAuthCode,
   validateStampCreatedDate,
@@ -47,6 +48,7 @@ import {
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
+import { usePremiumFeature } from "@/lib/plans/use-premium-feature";
 
 /**
  * 電子印鑑生成ツール（Phase 16）。
@@ -76,22 +78,71 @@ type Mode = "text" | "import";
 /** 作った印影の出力：印影のPNG、または、印影を押したPDF(固有番号とQRコードを入れるとき) */
 type StampExport =
   | { kind: "png"; canvas: HTMLCanvasElement }
-  | { kind: "pdf"; blob: Blob; stamp: HTMLCanvasElement; pageNumber: number; pageCount: number };
+  | { kind: "pdf"; blob: Blob; stamp: HTMLCanvasElement; pageNumbers: number[]; pageCount: number };
 
-/** 押印するPDFと、押す位置(xPct・yPct は0〜100：ページの左端・上端から、右端・下端にちょうど収まる位置まで) */
-interface StampPdfTargetValue {
-  file: File;
-  pageCount: number;
+/** 1つのページに押す位置(xPct・yPct は0〜100：ページの左端・上端から、右端・下端にちょうど収まる位置まで)・大きさ・角度 */
+interface StampPdfPagePlacement {
   pageIndex: number;
   xPct: number;
   yPct: number;
   widthMm: number;
+  /** 角度(度。時計回りが正)。複数ページ押印(プレミアム)のときだけ変えられる */
+  rotationDeg: number;
+}
+
+/**
+ * 押印するPDFと、押すページ・位置。
+ * 通常は1ページだけ(placements は1つ)。プレミアムの複数ページ押印(工程4)では、ページごとに押す・押さないと、
+ * 位置・大きさ・角度を決める(placements はページの順)。activePage は、いま設定しているページ
+ */
+interface StampPdfTargetValue {
+  file: File;
+  pageCount: number;
+  placements: StampPdfPagePlacement[];
+  activePage: number;
+}
+
+function newPagePlacement(pageIndex: number): StampPdfPagePlacement {
+  return { pageIndex, xPct: 85, yPct: 10, widthMm: STAMP_PDF_SIZE_MM.default, rotationDeg: 0 };
+}
+
+/**
+ * 選んだPDFに印影を押す。2ページ以上に押すとき(プレミアムの複数ページ押印)は、押す直前にサーバーでもプランを確かめる
+ */
+async function stampOntoTarget(
+  target: StampPdfTargetValue,
+  stamp: HTMLCanvasElement,
+  imageWidthRatio: number,
+  confirmPremium: () => Promise<boolean>
+): Promise<StampExport> {
+  if (target.placements.length === 0) throw new Error("印影を押すページを選んでください。");
+  if (target.placements.length > 1 && !(await confirmPremium())) {
+    throw new Error("複数のページへの押印はプレミアムプランの機能です。1ページだけを選んで押してください。");
+  }
+  const { blob, pageCount, pageIndexes } = await stampImageOntoPdf(
+    target.file,
+    stamp,
+    target.placements.map((p) => ({
+      pageIndex: p.pageIndex,
+      xRatio: p.xPct / 100,
+      yRatio: p.yPct / 100,
+      widthMm: p.widthMm,
+      rotationDeg: p.rotationDeg,
+    })),
+    imageWidthRatio
+  );
+  return { kind: "pdf", blob, stamp, pageNumbers: pageIndexes.map((i) => i + 1), pageCount };
+}
+
+/** 押したページの一覧を、読みやすい文字にする(例：1・3・5ページ目) */
+function formatPageNumbers(pages: readonly number[]): string {
+  return `${pages.join("・")}ページ目`;
 }
 
 /** 完成した結果(PNG、または印影を押したPDF) */
 type StampResult =
   | ({ kind: "png" } & ImageProcessorOutput)
-  | { kind: "pdf"; blob: Blob; url: string; previewUrl: string; width: number; height: number; pageNumber: number; pageCount: number };
+  | { kind: "pdf"; blob: Blob; url: string; previewUrl: string; width: number; height: number; pageNumbers: number[]; pageCount: number };
 type ImportStep = "select" | "crop" | "adjust";
 
 interface Box {
@@ -172,7 +223,7 @@ export function ElectronicStampGeneratorTool() {
               previewUrl: done.stamp.toDataURL("image/png"),
               width: done.stamp.width,
               height: done.stamp.height,
-              pageNumber: done.pageNumber,
+              pageNumbers: done.pageNumbers,
               pageCount: done.pageCount,
             };
       if (result) URL.revokeObjectURL(result.url);
@@ -246,7 +297,7 @@ export function ElectronicStampGeneratorTool() {
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="stamp-result-summary">
             {result.kind === "pdf"
-              ? `この印影を、PDF（全${result.pageCount}ページ）の${result.pageNumber}ページ目に押しました。`
+              ? `この印影を、PDF（全${result.pageCount}ページ）の${formatPageNumbers(result.pageNumbers)}に押しました。`
               : `${result.width} × ${result.height}px（透明PNG）`}
           </p>
           {serial && qrInfo && (
@@ -322,6 +373,8 @@ function TextStampPanel({
   const [authCode, setAuthCode] = useState("");
   /** 固有番号とQRコードを入れるときに押印するPDFと、押す位置 */
   const [target, setTarget] = useState<StampPdfTargetValue | null>(null);
+  /** 複数ページ押印(プレミアムの機能)を使えるか */
+  const premium = usePremiumFeature();
   // 未入力の項目はQRコードに入れない(空のときは渡さない)
   const qrOptional = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
 
@@ -465,7 +518,7 @@ function TextStampPanel({
         : null,
     [withQr, hasTarget, text, shape, layout, sizePx, fontScale, borderWidthRatio, paddingRatio, color, offsetXPct, offsetYPct, fontFamily, boldText, qrCorner, createdDate, authCode]
   );
-  const missingPdf = withQr && !target;
+  const missingPdf = withQr && (!target || target.placements.length === 0);
 
   /** 「生成する」：QRコードなしなら印影のPNG。QRコードを入れるなら、番号を発行し、その印影を選んだPDFに押す */
   function exportWithSerial() {
@@ -476,16 +529,7 @@ function TextStampPanel({
     if (qrInputError || !qrFits || !target) return;
     const info: StampQrInfo = { serial: generateStampSerial(), ...qrOptional };
     const canvas = generateStampCanvas({ ...stampBase, qr: { ...info, corner: qrCorner } });
-    const placed = target;
-    void onExport(
-      stampImageOntoPdf(
-        placed.file,
-        canvas,
-        { pageIndex: placed.pageIndex, xRatio: placed.xPct / 100, yRatio: placed.yPct / 100, widthMm: placed.widthMm },
-        canvas.width / stampSizePx
-      ).then(({ blob, pageCount }) => ({ kind: "pdf" as const, blob, stamp: canvas, pageNumber: placed.pageIndex + 1, pageCount })),
-      info
-    );
+    void onExport(stampOntoTarget(target, canvas, canvas.width / stampSizePx, premium.confirm), info);
   }
 
   const textTooLong = Array.from(text).length > STAMP_LIMITS.maxTextLength;
@@ -640,7 +684,15 @@ function TextStampPanel({
             （QRコードを入れない場合は、「固有番号とQRコードを入れる」のチェックを外してください）。
           </p>
         )}
-        {withQr && <StampPdfTarget value={target} onChange={setTarget} stamp={placementStamp} imageWidthRatio={placementStamp ? placementStamp.width / stampSizePx : 1} />}
+        {withQr && (
+          <StampPdfTarget
+            value={target}
+            onChange={setTarget}
+            stamp={placementStamp}
+            imageWidthRatio={placementStamp ? placementStamp.width / stampSizePx : 1}
+            multiPage={premium.allowed}
+          />
+        )}
 
         <SliderField
           label="文字サイズ"
@@ -804,6 +856,8 @@ function ImportStampPanel({
   const qrInputError = withQr ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
   /** 固有番号とQRコードを入れるときに押印するPDFと、押す位置 */
   const [target, setTarget] = useState<StampPdfTargetValue | null>(null);
+  /** 複数ページ押印(プレミアムの機能)を使えるか */
+  const premium = usePremiumFeature();
   /** 調整後の印影(PDFの上の位置を見せるため。finalCanvasRef と同じもの) */
   const [finalCanvas, setFinalCanvas] = useState<HTMLCanvasElement | null>(null);
   const optionalInfo = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
@@ -1183,6 +1237,7 @@ function ImportStampPanel({
                 onChange={setTarget}
                 stamp={placementStamp}
                 imageWidthRatio={placementStamp && finalCanvas ? placementStamp.width / finalCanvas.width : 1}
+                multiPage={premium.allowed}
               />
             )}
             <fieldset className="flex flex-col gap-2">
@@ -1212,7 +1267,7 @@ function ImportStampPanel({
               </button>
               <button
                 type="button"
-                disabled={status === "processing" || !!qrInputError || (withQr && !target)}
+                disabled={status === "processing" || !!qrInputError || (withQr && (!target || target.placements.length === 0))}
                 aria-busy={status === "processing" || undefined}
                 onClick={() => {
                   const source = finalCanvasRef.current;
@@ -1225,16 +1280,7 @@ function ImportStampPanel({
                   // 取り込んだ印影は形が決まっていないため、印影の下にQRコードを並べ、選んだPDFに押す
                   const info: StampQrInfo = { serial: generateStampSerial(), ...optionalInfo };
                   const stamp = appendStampQr(source, info, STAMP_COLORS.black);
-                  const placed = target;
-                  void onExport(
-                    stampImageOntoPdf(
-                      placed.file,
-                      stamp,
-                      { pageIndex: placed.pageIndex, xRatio: placed.xPct / 100, yRatio: placed.yPct / 100, widthMm: placed.widthMm },
-                      stamp.width / source.width
-                    ).then(({ blob, pageCount }) => ({ kind: "pdf" as const, blob, stamp, pageNumber: placed.pageIndex + 1, pageCount })),
-                    info
-                  );
+                  void onExport(stampOntoTarget(target, stamp, stamp.width / source.width, premium.confirm), info);
                 }}
                 className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
@@ -1327,30 +1373,45 @@ function QrInfoFields({
   );
 }
 
+/** ページ一覧の小さな画像を作るページ数の上限(これより後ろのページは、番号だけで選ぶ。大きなPDFでメモリを使いすぎないため) */
+const STAMP_THUMBNAIL_MAX_PAGES = 60;
+
 /**
  * 押印するPDFの選択と、押す位置(固有番号とQRコードを入れるとき)。
  * 横(X)・縦(Y)のバーは、印影の左端・上端を、ページの左端・上端(0%)から、右端・下端にちょうど収まる位置(100%)まで動かす。
- * PDFはブラウザの中だけで読み込み、選んだページの上に印影を重ねて、押す位置を見せる
+ * PDFはブラウザの中だけで読み込み、選んだページの上に印影を重ねて、押す位置を見せる。
+ *
+ * multiPage(プレミアムの複数ページ押印。工程4)のときは、ページの一覧を見ながら、ページごとに押す・押さないを選び、
+ * ページごとに位置・大きさ・角度を決める。そうでないときは、これまでどおり1ページだけに押す。
+ * (すべてのページへ同じ位置でまとめて押すような一括設定はない)
  */
 function StampPdfTarget({
   value,
   onChange,
   stamp,
   imageWidthRatio,
+  multiPage = false,
 }: {
   value: StampPdfTargetValue | null;
   onChange: (v: StampPdfTargetValue | null) => void;
   stamp: HTMLCanvasElement | null;
   imageWidthRatio: number;
+  multiPage?: boolean;
 }) {
   const pdfRef = useRef<Awaited<ReturnType<typeof loadStampPdf>> | null>(null);
   const viewRef = useRef<HTMLCanvasElement>(null);
-  const [page, setPage] = useState<{ canvas: HTMLCanvasElement; box: StampPdfPageBox } | null>(null);
+  const [page, setPage] = useState<{ index: number; canvas: HTMLCanvasElement; box: StampPdfPageBox } | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** ページ一覧の小さな画像(複数ページ押印のときだけ作る) */
+  const [thumbs, setThumbs] = useState<{ url: string; box: StampPdfPageBox }[]>([]);
+  const thumbJobRef = useRef(0);
+  /** 複数ページに押す（プレミアム）を選んでいるか。選ばないときは、これまでどおり1ページだけに押す */
+  const [multiMode, setMultiMode] = useState(false);
 
   useEffect(() => {
     return () => {
+      thumbJobRef.current += 1;
       if (pdfRef.current) void closePdfDocument(pdfRef.current);
     };
   }, []);
@@ -1359,7 +1420,22 @@ function StampPdfTarget({
     const p = await pdf.getPage(index + 1);
     const viewport = p.getViewport({ scale: 1 });
     const canvas = await renderStampPdfPage(pdf, index + 1, 700);
-    setPage({ canvas, box: { width: viewport.width, height: viewport.height } });
+    setPage({ index, canvas, box: { width: viewport.width, height: viewport.height } });
+  }
+
+  async function makeThumbs(pdf: Awaited<ReturnType<typeof loadStampPdf>>) {
+    const job = ++thumbJobRef.current;
+    setThumbs([]);
+    const list: { url: string; box: StampPdfPageBox }[] = [];
+    const n = Math.min(pdf.numPages, STAMP_THUMBNAIL_MAX_PAGES);
+    for (let i = 0; i < n; i++) {
+      const p = await pdf.getPage(i + 1);
+      const viewport = p.getViewport({ scale: 1 });
+      const canvas = await renderStampPdfPage(pdf, i + 1, 120);
+      if (job !== thumbJobRef.current) return;
+      list.push({ url: canvas.toDataURL("image/jpeg", 0.7), box: { width: viewport.width, height: viewport.height } });
+      setThumbs([...list]);
+    }
   }
 
   async function pick(file: File) {
@@ -1368,18 +1444,21 @@ function StampPdfTarget({
     try {
       const previous = pdfRef.current;
       pdfRef.current = null;
+      thumbJobRef.current += 1;
+      setThumbs([]);
       if (previous) void closePdfDocument(previous);
       const pdf = await loadStampPdf(file);
       pdfRef.current = pdf;
       await showPage(pdf, 0);
+      // 前のPDFで決めた位置・大きさは、最初のページの初めの値として引き継ぐ(これまでどおり)
+      const first = value?.placements.find((p) => p.pageIndex === value.activePage) ?? value?.placements[0];
       onChange({
         file,
         pageCount: pdf.numPages,
-        pageIndex: 0,
-        xPct: value?.xPct ?? 85,
-        yPct: value?.yPct ?? 10,
-        widthMm: value?.widthMm ?? STAMP_PDF_SIZE_MM.default,
+        placements: [{ ...(first ?? newPagePlacement(0)), pageIndex: 0, rotationDeg: multiPage && multiMode ? (first?.rotationDeg ?? 0) : 0 }],
+        activePage: 0,
       });
+      if (multiPage && multiMode && pdf.numPages > 1) void makeThumbs(pdf);
     } catch (e) {
       setPage(null);
       onChange(null);
@@ -1389,13 +1468,50 @@ function StampPdfTarget({
     }
   }
 
-  async function changePage(index: number) {
+  /** 1ページだけに押すとき：押すページを変える(位置・大きさはそのまま) */
+  async function changeSinglePage(index: number) {
     if (!pdfRef.current || !value) return;
-    onChange({ ...value, pageIndex: index });
+    const current = value.placements[0] ?? newPagePlacement(index);
+    onChange({ ...value, placements: [{ ...current, pageIndex: index }], activePage: index });
     await showPage(pdfRef.current, index);
   }
 
-  // 選んだページの上に、印影を重ねて描く(押す位置の確認用)
+  /** 複数ページ押印：設定するページを選ぶ */
+  async function selectPage(index: number) {
+    if (!pdfRef.current || !value) return;
+    onChange({ ...value, activePage: index });
+    await showPage(pdfRef.current, index);
+  }
+
+  /** 複数ページ押印：そのページに押す・押さないを切り替える */
+  function togglePage(index: number, on: boolean) {
+    if (!value) return;
+    const others = value.placements.filter((p) => p.pageIndex !== index);
+    const placements = on ? [...others, newPagePlacement(index)].sort((a, b) => a.pageIndex - b.pageIndex) : others;
+    onChange({ ...value, placements });
+  }
+
+  const active = value?.placements.find((p) => p.pageIndex === value.activePage) ?? null;
+
+  /** 複数ページに押す（プレミアム）の切り替え。やめるときは、いま設定しているページ（なければ最初のページ）だけに戻す */
+  function toggleMultiMode(on: boolean) {
+    setMultiMode(on);
+    if (!value) return;
+    if (on) {
+      if (pdfRef.current && thumbs.length === 0) void makeThumbs(pdfRef.current);
+      return;
+    }
+    const keep = active ?? value.placements[0] ?? newPagePlacement(value.activePage);
+    onChange({ ...value, placements: [{ ...keep, rotationDeg: 0 }], activePage: keep.pageIndex });
+    if (pdfRef.current) void showPage(pdfRef.current, keep.pageIndex);
+  }
+
+  function updateActive(patch: Partial<StampPdfPagePlacement>) {
+    if (!value || !active) return;
+    onChange({ ...value, placements: value.placements.map((p) => (p.pageIndex === active.pageIndex ? { ...p, ...patch } : p)) });
+  }
+
+  // 選んだページの上に、印影を重ねて描く(押す位置の確認用。PDFに押すときと同じ計算で描く)
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !page) return;
@@ -1406,15 +1522,20 @@ function StampPdfTarget({
     ctx.clearRect(0, 0, view.width, view.height);
     ctx.drawImage(page.canvas, 0, 0);
     if (!stamp || !value) return;
-    const rect = stampPdfRect(
+    const placed = value.placements.find((p) => p.pageIndex === page.index);
+    if (!placed) return;
+    const rect = stampPdfDrawRect(
       page.box,
-      { pageIndex: value.pageIndex, xRatio: value.xPct / 100, yRatio: value.yPct / 100, widthMm: value.widthMm },
+      { pageIndex: placed.pageIndex, xRatio: placed.xPct / 100, yRatio: placed.yPct / 100, widthMm: placed.widthMm, rotationDeg: placed.rotationDeg },
       imageWidthRatio,
-      stamp.height / stamp.width
+      stamp
     );
     const k = view.width / page.box.width;
-    ctx.drawImage(stamp, rect.x * k, rect.y * k, rect.w * k, rect.h * k);
+    ctx.drawImage(rect.image, rect.x * k, rect.y * k, rect.w * k, rect.h * k);
   }, [page, stamp, value, imageWidthRatio]);
+
+  const isMulti = multiPage && multiMode && !!value && value.pageCount > 1;
+  const stampedPages = value ? value.placements.map((p) => p.pageIndex + 1) : [];
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700" data-testid="stamp-pdf-target">
@@ -1449,16 +1570,32 @@ function StampPdfTarget({
         {!value && !loading && (
           <span className="text-xs text-amber-700 dark:text-amber-400">PDFを選ぶと、印影を生成できるようになります。</span>
         )}
+        {!multiPage && value && value.pageCount > 1 && (
+          <span className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="stamp-multipage-premium-note">
+            複数のページに、ページごとの位置で押す機能は、プレミアムプランでご利用いただけます。
+          </span>
+        )}
+        {multiPage && value && value.pageCount > 1 && (
+          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            <input
+              type="checkbox"
+              data-testid="stamp-multipage-toggle"
+              checked={multiMode}
+              onChange={(e) => toggleMultiMode(e.target.checked)}
+            />
+            複数のページに押す（プレミアム）
+          </label>
+        )}
       </div>
-      {value && (
+      {value && !isMulti && (
         <>
           {value.pageCount > 1 && (
             <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
               押すページ
               <select
                 data-testid="stamp-target-page"
-                value={value.pageIndex}
-                onChange={(e) => void changePage(Number(e.target.value))}
+                value={value.placements[0]?.pageIndex ?? 0}
+                onChange={(e) => void changeSinglePage(Number(e.target.value))}
                 className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm dark:border-neutral-600 dark:bg-neutral-900"
               >
                 {Array.from({ length: value.pageCount }, (_, i) => (
@@ -1469,43 +1606,123 @@ function StampPdfTarget({
               </select>
             </label>
           )}
+        </>
+      )}
+      {value && isMulti && (
+        <div className="flex flex-col gap-2" data-testid="stamp-multipage">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">押すページ（プレミアム：複数ページ押印）</span>
+            <span className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="stamp-multipage-summary">
+              {stampedPages.length > 0 ? `${stampedPages.length}ページに押します（${formatPageNumbers(stampedPages)}）` : "押すページが選ばれていません"}
+            </span>
+          </div>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            ページを押すと、そのページの位置・大きさ・角度を下で設定できます。チェックを入れたページにだけ押します。
+          </p>
+          <ul className="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4" data-testid="stamp-page-list">
+            {Array.from({ length: value.pageCount }, (_, i) => {
+              const placed = value.placements.find((p) => p.pageIndex === i);
+              const thumb = thumbs[i];
+              const isActive = value.activePage === i;
+              return (
+                <li
+                  key={i}
+                  data-testid={`stamp-page-${i + 1}`}
+                  data-stamped={placed ? "true" : "false"}
+                  className={`flex flex-col gap-1 rounded-lg border p-1 ${
+                    isActive ? "border-blue-500 ring-2 ring-blue-300" : "border-neutral-200 dark:border-neutral-700"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void selectPage(i)}
+                    aria-pressed={isActive}
+                    aria-label={`${i + 1}ページ目を設定する`}
+                    data-testid={`stamp-page-select-${i + 1}`}
+                    className="relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded bg-neutral-100 dark:bg-neutral-800"
+                  >
+                    {thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumb.url} alt="" className="max-h-full max-w-full object-contain" />
+                    ) : (
+                      <span className="text-xs text-neutral-500">{i + 1}</span>
+                    )}
+                    {placed && (
+                      <span className="absolute right-1 top-1 rounded bg-red-600 px-1 text-[10px] font-semibold text-white">押印</span>
+                    )}
+                  </button>
+                  <label className="flex items-center gap-1 text-xs text-neutral-700 dark:text-neutral-200">
+                    <input
+                      type="checkbox"
+                      checked={!!placed}
+                      data-testid={`stamp-page-toggle-${i + 1}`}
+                      onChange={(e) => togglePage(i, e.target.checked)}
+                    />
+                    {i + 1}ページ目に押す
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs font-medium text-neutral-700 dark:text-neutral-200" data-testid="stamp-active-page">
+            設定中：{value.activePage + 1}ページ目{active ? "" : "（このページには押しません。チェックを入れると設定できます）"}
+          </p>
+        </div>
+      )}
+      {value && active && (
+        <>
           <SliderField
             label="横の位置（X）"
             ariaLabel="印影の横の位置（X）"
-            value={value.xPct}
+            value={active.xPct}
             min={0}
             max={100}
             step={1}
             unit="%"
             hint="0%で左端、100%で右端"
-            onChange={(v) => onChange({ ...value, xPct: v })}
+            onChange={(v) => updateActive({ xPct: v })}
           />
           <SliderField
             label="縦の位置（Y）"
             ariaLabel="印影の縦の位置（Y）"
-            value={value.yPct}
+            value={active.yPct}
             min={0}
             max={100}
             step={1}
             unit="%"
             hint="0%で上端、100%で下端"
-            onChange={(v) => onChange({ ...value, yPct: v })}
+            onChange={(v) => updateActive({ yPct: v })}
           />
           <SliderField
             label="PDF上の印影の大きさ"
             ariaLabel="PDF上の印影の大きさ"
-            value={value.widthMm}
+            value={active.widthMm}
             min={STAMP_PDF_SIZE_MM.min}
             max={STAMP_PDF_SIZE_MM.max}
             step={1}
             unit="mm"
             hint="丸印は円の直径、角印は枠の幅、取り込んだ印影は印影の幅"
-            onChange={(v) => onChange({ ...value, widthMm: v })}
+            onChange={(v) => updateActive({ widthMm: v })}
           />
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-900">
-            <canvas ref={viewRef} aria-label="PDFの上の印影の位置" className="h-auto w-full" />
-          </div>
+          {isMulti && (
+            <SliderField
+              label="印影の角度"
+              ariaLabel="印影の角度"
+              value={active.rotationDeg}
+              min={STAMP_PDF_ROTATION_DEG.min}
+              max={STAMP_PDF_ROTATION_DEG.max}
+              step={1}
+              unit="°"
+              hint="プラスで時計回り、マイナスで反時計回り"
+              onChange={(v) => updateActive({ rotationDeg: v })}
+            />
+          )}
         </>
+      )}
+      {value && (
+        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-900">
+          <canvas ref={viewRef} aria-label="PDFの上の印影の位置" className="h-auto w-full" />
+        </div>
       )}
     </div>
   );

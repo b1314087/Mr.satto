@@ -1,7 +1,8 @@
 import { BrowserProcessor, type NamedFileOutput } from "../types";
 import { canvasToBlob } from "./image";
 import { stripExtension } from "@/lib/utils/format";
-import { loadPdfDocument, closePdfDocument } from "@/lib/pdf/pdfjs-client";
+import { loadPdfDocument, closePdfDocument, getPositionedTextItems } from "@/lib/pdf/pdfjs-client";
+import { pageTextFromItems } from "@/lib/pdf/page-text";
 
 /**
  * PDF→画像 Processor（Phase 2-A）。
@@ -128,21 +129,8 @@ export class PdfToTextProcessor extends BrowserProcessor<PdfToTextInput, PdfToTe
       try {
         for (let pageNumber = 1; pageNumber <= Math.min(pdf.numPages, maxPages ?? pdf.numPages); pageNumber++) {
           const page = await pdf.getPage(pageNumber);
-          const textContent = await page.getTextContent();
-
-          let raw = "";
-          for (const item of textContent.items) {
-            if ("str" in item) {
-              raw += item.str;
-              raw += item.hasEOL ? "\n" : " ";
-            }
-          }
-          // 連続する空白・過剰な空行を整理して読みやすくする
-          const text = raw
-            .replace(/[ \t]+/g, " ")
-            .replace(/ *\n */g, "\n")
-            .replace(/\n{3,}/g, "\n\n")
-            .trim();
+          // 工程4：改行・段落を残し、日本語の文字の間に余計な空白を入れない（src/lib/pdf/page-text.ts）
+          const text = pageTextFromItems(await getPositionedTextItems(page));
 
           pages.push({ pageNumber, text });
         }

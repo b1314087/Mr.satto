@@ -36,6 +36,20 @@ export interface FormToIndividualPdfsInput {
   /** ファイル名に使う場合の列名（filenameStrategy: "name"のとき使用） */
   filenameColumn?: string | null;
   onProgress?: (info: { current: number; total: number }) => void;
+  /** true を返すと、次の行に進む前に処理を打ち切る（工程4） */
+  isCancelled?: () => boolean;
+}
+
+/** 1件ごとの結果（工程4：生成したPDFの一覧として画面で確認できるようにする） */
+export interface FormPdfResultEntry {
+  /** データの何件目か（1始まり） */
+  rowNumber: number;
+  /** ZIPの中のファイル名（重複しない名前に直したあと） */
+  fileName: string;
+  /** 写真の識別子があるのに、写真が見つからなかったか */
+  missingPhoto: boolean;
+  /** 列を対応付けた項目のうち、値が空だった項目の数 */
+  emptyFieldCount: number;
 }
 
 export interface FormToIndividualPdfsOutput {
@@ -43,6 +57,29 @@ export interface FormToIndividualPdfsOutput {
   sizeBytes: number;
   personCount: number;
   missingPhotoCount: number;
+  /** 1件ごとの結果（工程4） */
+  entries: FormPdfResultEntry[];
+}
+
+/**
+ * ファイル名の重複を、大文字・小文字の違いも同じ名前として避ける（工程4）。
+ * Windows・Mac は「Yamada.pdf」と「yamada.pdf」を同じファイルとして扱うため、ZIPを展開したときに上書きされないようにする
+ */
+export function dedupeFileNamesIgnoreCase(names: readonly string[]): string[] {
+  const used = new Set<string>();
+  return names.map((name) => {
+    const dot = name.lastIndexOf(".");
+    const base = dot <= 0 ? name : name.slice(0, dot);
+    const ext = dot <= 0 ? "" : name.slice(dot);
+    let candidate = name;
+    let n = 2;
+    while (used.has(candidate.toLowerCase())) {
+      candidate = `${base}_${n}${ext}`;
+      n += 1;
+    }
+    used.add(candidate.toLowerCase());
+    return candidate;
+  });
 }
 
 function getColumnIndex(headers: string[], columnName: string | null | undefined): number {
@@ -64,6 +101,7 @@ export class FormToIndividualPdfsProcessor extends BrowserProcessor<
     filenameStrategy,
     filenameColumn,
     onProgress,
+    isCancelled,
   }: FormToIndividualPdfsInput): Promise<FormToIndividualPdfsOutput> {
     if (table.rows.length === 0) {
       throw new Error("データ行がありません。CSV・Excelファイルの中身をご確認ください。");
@@ -86,27 +124,38 @@ export class FormToIndividualPdfsProcessor extends BrowserProcessor<
 
     const zipNames: string[] = [];
     const zipBlobs: Blob[] = [];
+    const entryInfo: { rowNumber: number; missingPhoto: boolean; emptyFieldCount: number }[] = [];
     let missingPhotoCount = 0;
     const total = table.rows.length;
     const digits = String(total).length;
 
     for (let i = 0; i < total; i++) {
+      if (isCancelled?.()) throw new Error("一括生成を中断しました。");
+      // 大量のデータでも画面が固まらないよう、ときどき画面の更新に処理を譲る
+      if (i > 0 && i % 10 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       const row = table.rows[i];
 
       const textValues: Record<string, string> = {};
+      let emptyFieldCount = 0;
       for (const field of textFields) {
         const idx = fieldColumnIndex.get(field.id) ?? -1;
         textValues[field.id] = idx >= 0 ? row[idx] ?? "" : "";
+        if (idx >= 0 && textValues[field.id].trim() === "") emptyFieldCount += 1;
       }
 
       const photoValues: Record<string, File | null> = {};
+      let missingPhoto = false;
       for (const field of photoFields) {
         const idx = photoColumnIndexByField.get(field.id) ?? -1;
         const identifier = idx >= 0 ? row[idx] ?? "" : "";
         const photo = identifier ? resolvePhotoForIdentifier(identifier, photoLookup) : null;
         photoValues[field.id] = photo;
-        if (identifier && !photo) missingPhotoCount += 1;
+        if (identifier && !photo) {
+          missingPhotoCount += 1;
+          missingPhoto = true;
+        }
       }
+      entryInfo.push({ rowNumber: i + 1, missingPhoto, emptyFieldCount });
 
       let pdfBytes: Uint8Array;
       try {
@@ -128,7 +177,7 @@ export class FormToIndividualPdfsProcessor extends BrowserProcessor<
       onProgress?.({ current: i + 1, total });
     }
 
-    const dedupedNames = dedupeFileNames(zipNames);
+    const dedupedNames = dedupeFileNamesIgnoreCase(dedupeFileNames(zipNames));
     const zipBlob = await createZip(dedupedNames.map((name, i) => ({ name, blob: zipBlobs[i] })));
 
     return {
@@ -136,6 +185,7 @@ export class FormToIndividualPdfsProcessor extends BrowserProcessor<
       sizeBytes: zipBlob.size,
       personCount: total,
       missingPhotoCount,
+      entries: entryInfo.map((e, i) => ({ ...e, fileName: dedupedNames[i] })),
     };
   }
 }

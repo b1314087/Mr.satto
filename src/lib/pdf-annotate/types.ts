@@ -85,6 +85,11 @@ export interface CheckboxAnnotationObject extends AnnotationObjectBase {
   checked: boolean;
   /** チェックのマーク種別。未指定時はcheck（レ点）扱い（Phase 15互換） */
   markStyle?: CheckboxMarkStyle;
+  /**
+   * 四角い枠を描くか（未指定時は true。工程4）。false のときはマークだけを描く
+   * （PDFにもともとあるチェック欄に、レ点・×・○だけを付けるとき）。
+   */
+  frame?: boolean;
 }
 
 export interface InkPoint {

@@ -282,6 +282,9 @@ const nextConfig: NextConfig = {
       { source: "/tools/image-resize", destination: "/tools/image-compress?mode=resize", permanent: true },
       { source: "/tools/image-sns-size", destination: "/tools/image-crop?mode=sns", permanent: true },
       { source: "/tools/image-passport-photo", destination: "/tools/image-crop?mode=passport", permanent: true },
+      // 工程4で統合したツール（同じく308で恒久的に転送する）。
+      // - OCR → PDF→テキスト（OCR対応）。文字情報のないページ・画像ファイルは、統合先でOCRで読み取る
+      { source: "/tools/ocr", destination: "/tools/pdf-to-text", permanent: true },
       // 「指定KBまで圧縮」は「画像圧縮」に統合した（画面で「目標サイズ(KB)を指定して圧縮」を選べる）。
       // 旧アドレスは、統合先で目標サイズの指定を最初から選んだ状態（?mode=size）へ恒久的に転送する。
       {

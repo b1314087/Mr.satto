@@ -42,3 +42,41 @@ export function whiteoutInsertIndex(objects: AnnotationObject[]): number {
   const firstNonWhiteout = objects.findIndex((o) => !isWhiteoutObject(o));
   return firstNonWhiteout === -1 ? objects.length : firstNonWhiteout;
 }
+
+// ---------------------------------------------------------------------------
+// 黒塗り（見た目だけ）（工程4）
+// ---------------------------------------------------------------------------
+//
+// PDF修正の「黒塗り（見た目だけ）」は、黒い塗りつぶしの四角形を重ねて、見た目を隠すだけの機能（方式A）。
+// 元の文字・画像のデータはPDFの中に残る。元のデータごと取り除く本当の黒塗り（墨消し。方式B）は、
+// 別のツール「PDF黒塗り・墨消し」（/tools/pdf-redact。ページを画像にして黒を焼き込む）が行う。
+// 画面では、この2つを必ず区別して表示し、方式Aを「墨消し」「完全に削除」「復元できない」と表現しないこと。
+
+/** 黒塗り（見た目だけ）に使う色（真っ黒。図形の「黒」（わずかに青みのある黒）とは別の色にして区別する） */
+export const BLACKOUT_COLOR: AnnotationColor = { r: 0, g: 0, b: 0 };
+
+/** クリックで置く黒塗り（見た目だけ）の初期サイズ（pt） */
+export const BLACKOUT_DEFAULT_WIDTH = 160;
+export const BLACKOUT_DEFAULT_HEIGHT = 24;
+
+/** 本当の黒塗り（墨消し）を行うツール */
+export const TRUE_REDACTION_TOOL_PATH = "/tools/pdf-redact";
+export const TRUE_REDACTION_TOOL_NAME = "PDF黒塗り・墨消し";
+
+/** 黒塗り（見た目だけ）の注意書き（画面に必ず表示する） */
+export const BLACKOUT_NOTICE = {
+  title: "黒塗り（見た目だけ）は、黒い四角形を重ねて見た目を隠す機能です。",
+  body: "元の文字・画像のデータはPDFの中に残るため、コピー・検索・文字抽出や、四角形を取り除く編集で読み取れることがあります。墨消し（元のデータの削除）ではありません。",
+} as const;
+
+/** 黒塗り（見た目だけ。真っ黒で塗りつぶした矩形）か */
+export function isBlackoutObject(obj: AnnotationObject): obj is RectangleShapeObject {
+  return (
+    obj.type === "shape" &&
+    obj.shapeKind === "rectangle" &&
+    obj.fill &&
+    obj.color.r === BLACKOUT_COLOR.r &&
+    obj.color.g === BLACKOUT_COLOR.g &&
+    obj.color.b === BLACKOUT_COLOR.b
+  );
+}

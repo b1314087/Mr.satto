@@ -242,14 +242,18 @@ const toolDefinitions: Tool[] = [
     keywords: ["透かし", "watermark", "ロゴ", "CONFIDENTIAL"],
   },
   {
+    // 工程4：「画像レイアウト」から「画像ホワイトボード」に改称（URLは /tools/image-layout のまま。旧名は検索キーワードに残す）
     id: "image-layout",
-    name: "画像レイアウト",
+    name: "画像ホワイトボード",
     category: "image",
-    description: "複数の画像・文字を自由配置し、結合・グリッド配置してPNG/JPEG/PDFに書き出します",
+    description: "複数の画像・文字をホワイトボードのように自由に配置（移動・拡大縮小・回転・重ね順）し、1枚の画像（PNG/JPEG）やPDFに書き出します",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
     keywords: [
+      "画像レイアウト",
+      "ホワイトボード",
+      "画像 配置",
       "画像結合",
       "コラージュ",
       "collage",
@@ -528,14 +532,17 @@ const toolDefinitions: Tool[] = [
     keywords: ["pdf化"],
   },
   {
+    // 工程4：OCR（旧 ocr）を統合した。文字情報のあるページはそのまま取り出し、画像のページ・画像ファイルはOCRで読み取る。
+    // 旧URL /tools/ocr は、このページへ308で転送する。OCRの部分は、旧OCRと同じ条件（もとはプレミアム限定。
+    // 運用スイッチ ALL_TOOLS_STANDARD がオンの間はスタンダード扱い）で、画面の中で出し分ける（src/lib/plans/premium-feature.ts）
     id: "pdf-to-text",
-    name: "PDF→テキスト",
+    name: "PDF→テキスト（OCR対応）",
     category: "pdf",
-    description: "PDFからテキストを抽出します",
+    description: "PDFからテキストを抽出します。スキャンした画像のページや画像ファイルは、OCRで文字を読み取ります",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["text", "抽出", "テキスト化"],
+    keywords: ["text", "抽出", "テキスト化", "OCR", "文字認識", "スキャン", "画像 文字 読み取り", "画像 テキスト化"],
   },
   {
     id: "pdf-to-excel",
@@ -548,7 +555,7 @@ const toolDefinitions: Tool[] = [
     hasAi: "cloud",
     keywords: ["excel", "表"],
     // 内部リンク改善：所属は「Excel・CSV」だが、PDFの変換・読み取りのツールと使い分けることが多い
-    relatedToolIds: ["pdf-to-word", "filled-pdf-to-excel", "ocr", "pdf-edit"],
+    relatedToolIds: ["pdf-to-word", "filled-pdf-to-excel", "pdf-to-text", "pdf-edit"],
   },
   {
     id: "pdf-to-word",
@@ -560,7 +567,7 @@ const toolDefinitions: Tool[] = [
     processor: "browser",
     keywords: ["word", "文書"],
     // 内部リンク改善：所属は「Word」だが、PDFの変換・読み取りのツールと使い分けることが多い
-    relatedToolIds: ["pdf-to-excel", "word-to-pdf", "pdf-to-text", "ocr"],
+    relatedToolIds: ["pdf-to-excel", "word-to-pdf", "pdf-to-text"],
   },
   {
     id: "word-to-pdf",
@@ -584,16 +591,6 @@ const toolDefinitions: Tool[] = [
     processor: "browser",
     keywords: ["excel", "xlsx", "表", "変換"],
     relatedToolIds: ["pptx-invert"],
-  },
-  {
-    id: "ocr",
-    name: "OCR",
-    category: "pdf",
-    description: "画像やスキャンしたPDFから文字を読み取ります",
-    status: "available",
-    requiredPlan: "premium",
-    processor: "browser",
-    keywords: ["文字認識", "スキャン", "OCR"],
   },
   {
     id: "pdf-extract-pages",
@@ -1373,7 +1370,7 @@ const toolDefinitions: Tool[] = [
       "receipt csv",
       "receipt ocr",
     ],
-    relatedToolIds: ["ocr", "pdf-to-excel"],
+    relatedToolIds: ["pdf-to-text", "pdf-to-excel"],
   },
   {
     // Phase 11: この2ツールは料金・利用制限の仕組みがページ数ベース・
@@ -1626,6 +1623,16 @@ const toolDefinitions: Tool[] = [
     relatedToolIds: ["word-to-pdf", "excel-to-pdf"],
   },
 ];
+
+/**
+ * 運用スイッチ（ALL_TOOLS_STANDARD）を反映した「実際に必要なプラン」。
+ * 工程4：統合で、元はプレミアム限定のツールだった機能（例：旧OCR）がスタンダードのツールの中の一部の機能になったとき、
+ * その機能も、元のツールと同じ条件（スイッチがオンの間はスタンダード扱い）で使えるようにするために使う
+ * （src/lib/plans/premium-feature.ts）。
+ */
+export function effectiveRequiredPlan(requiredPlan: Tool["requiredPlan"]): Tool["requiredPlan"] {
+  return ALL_TOOLS_STANDARD ? "standard" : requiredPlan;
+}
 
 // ツール間のファイル受け渡しの設定（工程16）は src/lib/handoff/config.ts の1か所で決め、ここで各ツールに付ける
 export const tools: Tool[] = (

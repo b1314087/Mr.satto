@@ -91,7 +91,8 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
 
   test("工程9で指摘された16ツール: 無料で使えるのに「プレミアム専用」と案内しない（説明文・本文のFAQ・構造化データ）", async ({ request }) => {
     const ids = [
-      "pdf-to-excel", "pdf-to-word", "word-to-pdf", "excel-to-pdf", "ocr",
+      // 工程4：OCRは PDF→テキスト（OCR対応）に統合した（/tools/ocr は308で転送）
+      "pdf-to-excel", "pdf-to-word", "word-to-pdf", "excel-to-pdf",
       "video-convert", "video-compress", "video-resize", "video-frame-rate", "video-h264", "video-thumbnail", "video-metadata-remove",
       "estimate-generator", "quote-order-generator", "invoice-generator", "order-generator",
     ];

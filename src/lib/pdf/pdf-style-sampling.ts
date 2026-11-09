@@ -228,26 +228,29 @@ const MAX_PAGE_COVERAGE = 0.8;
  * ページの描画命令から画像の置かれた範囲を求め、ページ画像（scale倍）から切り出す。
  * 回転したページ・拡大縮小が極端なものは対象外。
  */
-export async function extractPageImages(
-  page: PdfjsPage,
-  rendered: { canvas: HTMLCanvasElement; scale: number }
-): Promise<ExtractedImage[]> {
+/** ページの描画命令から求めた、画像の置かれた範囲(PDFのページ座標。y は下から上) */
+export interface PageImageBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * ページの描画命令から、画像が置かれた範囲を求める(切り出しはしない)。
+ * PDF→Word の画像の取り出しと、PDF→テキストの「文字と画像が混在したページ」の判定(工程4)で共通に使う。
+ * 描画命令を読めないときは空の配列を返す
+ */
+export async function getPageImageBoxes(page: PdfjsPage): Promise<PageImageBox[]> {
   const pdfjs = await getPdfjs();
   const OPS = pdfjs.OPS;
-  const rotate = (page as unknown as { rotate?: number }).rotate ?? 0;
-  if (rotate % 360 !== 0) return [];
-
   let opList: { fnArray: number[]; argsArray: unknown[] };
   try {
     opList = await page.getOperatorList();
   } catch {
     return [];
   }
-
-  const view = page.view; // [x0, y0, x1, y1]
-  const pageW = view[2] - view[0];
-  const pageH = view[3] - view[1];
-  const boxes: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  const boxes: PageImageBox[] = [];
   let ctm: Matrix = [1, 0, 0, 1, 0, 0];
   const stack: Matrix[] = [];
 
@@ -282,6 +285,20 @@ export async function extractPageImages(
       boxes.push({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) });
     }
   }
+  return boxes;
+}
+
+export async function extractPageImages(
+  page: PdfjsPage,
+  rendered: { canvas: HTMLCanvasElement; scale: number }
+): Promise<ExtractedImage[]> {
+  const rotate = (page as unknown as { rotate?: number }).rotate ?? 0;
+  if (rotate % 360 !== 0) return [];
+
+  const view = page.view; // [x0, y0, x1, y1]
+  const pageW = view[2] - view[0];
+  const pageH = view[3] - view[1];
+  const boxes = await getPageImageBoxes(page);
 
   const seen = new Set<string>();
   const images: ExtractedImage[] = [];

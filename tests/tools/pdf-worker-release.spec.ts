@@ -95,14 +95,14 @@ test.describe("pdf.js の作業用スレッドを残さない", () => {
     await waitNoPdfWorker(page);
   });
 
-  test("OCR：処理の途中で中断しても、作業用スレッドが残らない", async ({ page }) => {
-    await page.goto("/tools/ocr");
+  test("OCR（工程4でPDF→テキストに統合）：処理の途中で中断しても、作業用スレッドが残らない", async ({ page }) => {
+    await page.goto("/tools/pdf-to-text");
     await uploadFixture(page, fixtures.templateFilledScannedPdf);
     await waitNoPdfWorker(page);
-    await page.getByRole("button", { name: "文字を読み取る", exact: true }).click();
+    await page.getByRole("button", { name: "テキストを抽出する", exact: true }).click();
     await expect.poll(() => pdfWorkers(page), { timeout: 30_000 }).toBeGreaterThan(0);
     await page.getByRole("button", { name: "中断する" }).dispatchEvent("click");
-    await expect(page.getByRole("button", { name: "文字を読み取る", exact: true })).toBeEnabled({ timeout: 120_000 });
+    await expect(page.getByRole("button", { name: "テキストを抽出する", exact: true })).toBeEnabled({ timeout: 120_000 });
     await waitNoPdfWorker(page);
   });
 });

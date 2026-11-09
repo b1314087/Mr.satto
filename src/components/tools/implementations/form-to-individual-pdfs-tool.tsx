@@ -12,8 +12,16 @@ import { autoMapColumns } from "@/lib/forms/column-mapping";
 import { buildPhotoLookup, type PhotoLookupEntry } from "@/lib/forms/photo-matching";
 import { renderPersonPdf } from "@/lib/forms/template-renderer";
 import { createEmptyField, type ColumnMapping, type FieldDefinition, type ParsedTable, type TemplatePageInfo } from "@/lib/forms/types";
-import { FormToIndividualPdfsProcessor, type FilenameStrategy } from "@/lib/processors/browser/form-to-individual-pdfs";
-import { readCsvFile } from "@/lib/utils/csv";
+import { FormToIndividualPdfsProcessor, type FilenameStrategy, type FormPdfResultEntry } from "@/lib/processors/browser/form-to-individual-pdfs";
+import {
+  buildFormDataTable,
+  guessHeaderRowIndex,
+  parsePastedTable,
+  readFormDataFile,
+  FORM_DATA_HEADER_ROW_CANDIDATES,
+  FORM_DATA_LARGE_ROW_COUNT,
+  type FormDataSource,
+} from "@/lib/forms/data-source";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
@@ -83,8 +91,14 @@ export function FormToIndividualPdfsTool() {
     null
   );
 
-  // --- データ(CSV/Excel) ---
+  // --- データ(CSV/Excel・タブ区切り・貼り付け。工程4でデータソースを拡張) ---
   const [table, setTable] = useState<ParsedTable | null>(null);
+  /** 読み込んだデータ（シート・見出しの行を選び直すときに使う） */
+  const [dataSource, setDataSource] = useState<FormDataSource | null>(null);
+  const [sheetIndex, setSheetIndex] = useState(0);
+  const [headerRowIndex, setHeaderRowIndex] = useState(0);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const [mapping, setMapping] = useState<ColumnMapping>({});
   const [photoColumnMapping, setPhotoColumnMapping] = useState<Record<string, string | null>>({});
 
@@ -105,9 +119,13 @@ export function FormToIndividualPdfsTool() {
   // --- 一括生成 ---
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [progressLabel, setProgressLabel] = useState("");
-  const [generatedZip, setGeneratedZip] = useState<{ blob: Blob; personCount: number; missingPhotoCount: number } | null>(
-    null
-  );
+  const [generatedZip, setGeneratedZip] = useState<{
+    blob: Blob;
+    personCount: number;
+    missingPhotoCount: number;
+    entries: FormPdfResultEntry[];
+  } | null>(null);
+  const cancelGenerateRef = useRef(false);
 
   const textFields = fields.filter((f) => f.dataType === "text");
   const photoFields = fields.filter((f) => f.dataType === "photo");
@@ -245,42 +263,56 @@ export function FormToIndividualPdfsTool() {
     if (!file) return;
     setDataFile(file);
     setError(null);
-
     try {
-      let headers: string[];
-      let rows: string[][];
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".csv")) {
-        const parsed = await readCsvFile(file);
-        if (parsed.length === 0) throw new Error("CSVにデータがありません");
-        [headers, ...rows] = parsed;
-      } else {
-        const { default: readXlsxFile } = await import("read-excel-file/universal");
-        let sheetsData: { sheet: string; data: unknown[][] }[];
-        try {
-          sheetsData = await readXlsxFile(file);
-        } catch {
-          throw new Error("Excelファイルの読み込みに失敗しました。破損しているか、対応していない形式(.xls等)の可能性があります。");
-        }
-        const firstSheetRows = sheetsData[0]?.data ?? [];
-        if (firstSheetRows.length === 0) throw new Error("Excelファイルにデータがありません");
-        const stringRows = firstSheetRows.map((row) => row.map((cell) => (cell === null || cell === undefined ? "" : String(cell))));
-        [headers, ...rows] = stringRows;
-      }
-
-      const cleanedRows = rows.filter((row) => row.some((cell) => cell.trim() !== ""));
-      if (cleanedRows.length === 0) throw new Error("有効なデータ行が見つかりませんでした");
-
-      const parsedTable: ParsedTable = { headers, rows: cleanedRows };
-      setTable(parsedTable);
-      setMapping(autoMapColumns(textFields, headers));
-      setPhotoColumnMapping(autoMapColumns(photoFields, headers));
-      setMappingConfirmed(false);
-      setPreviewRowIndex(0);
-      setStep("mapping");
+      const source = await readFormDataFile(file);
+      // 最初は、データのある最初のシートを使う
+      const firstWithData = Math.max(0, source.sheets.findIndex((sh) => sh.rows.some((r) => r.some((c) => c.trim() !== ""))));
+      applyDataSource(source, firstWithData, guessHeaderRowIndex(source.sheets[firstWithData]?.rows ?? []));
     } catch (e) {
       setError(e instanceof Error ? e.message : "CSV・Excelファイルの読み込みに失敗しました");
     }
+  }
+
+  /** 貼り付けた表（表計算ソフトなどからコピーしたもの）を読み込む */
+  function handlePasteApply() {
+    setError(null);
+    const rows = parsePastedTable(pasteText);
+    if (rows.length === 0 || rows.every((r) => r.every((c) => c.trim() === ""))) {
+      setError("貼り付けた内容に、表のデータが見つかりませんでした。");
+      return;
+    }
+    setDataFile(null);
+    const source: FormDataSource = { kind: "paste", sheets: [{ name: "貼り付けたデータ", rows }] };
+    applyDataSource(source, 0, guessHeaderRowIndex(rows));
+  }
+
+  /** 読み込んだデータから、選んだシート・見出しの行で、差し込みに使う表を作る */
+  function applyDataSource(source: FormDataSource, nextSheet: number, nextHeaderRow: number) {
+    setDataSource(source);
+    setSheetIndex(nextSheet);
+    setHeaderRowIndex(nextHeaderRow);
+    const rows = source.sheets[nextSheet]?.rows ?? [];
+    if (rows.length === 0) {
+      setTable(null);
+      setError("選んだシートにデータがありません。");
+      return;
+    }
+    const built = buildFormDataTable(rows, nextHeaderRow);
+    if (built.rows.length === 0) {
+      setTable(null);
+      setError("有効なデータ行が見つかりませんでした。見出しの行を確認してください。");
+      return;
+    }
+    setError(null);
+    const parsedTable: ParsedTable = { headers: built.headers, rows: built.rows };
+    setTable(parsedTable);
+    setMapping(autoMapColumns(textFields, built.headers));
+    setPhotoColumnMapping(autoMapColumns(photoFields, built.headers));
+    setFilenameColumn(null);
+    setMappingConfirmed(false);
+    setPreviewRowIndex(0);
+    setGeneratedZip(null);
+    setStep("mapping");
   }
 
   // ---------------------------------------------------------------------
@@ -346,6 +378,7 @@ export function FormToIndividualPdfsTool() {
     setStatus("processing");
     setGeneratedZip(null);
     setProgressLabel("準備中...");
+    cancelGenerateRef.current = false;
 
     try {
       const output = await new FormToIndividualPdfsProcessor().process({
@@ -358,8 +391,14 @@ export function FormToIndividualPdfsTool() {
         filenameStrategy,
         filenameColumn,
         onProgress: (info) => setProgressLabel(`PDFを生成中 ${info.current} / ${info.total}人`),
+        isCancelled: () => cancelGenerateRef.current,
       });
-      setGeneratedZip({ blob: output.zipBlob, personCount: output.personCount, missingPhotoCount: output.missingPhotoCount });
+      setGeneratedZip({
+        blob: output.zipBlob,
+        personCount: output.personCount,
+        missingPhotoCount: output.missingPhotoCount,
+        entries: output.entries,
+      });
       setStatus("success");
     } catch (e) {
       setError(e instanceof Error ? e.message : "処理に失敗しました");
@@ -606,17 +645,99 @@ export function FormToIndividualPdfsTool() {
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">3. 回答データ（CSV・Excel）をアップロード</h2>
           <FileDropzone
-            accept=".csv,.xlsx"
+            accept=".csv,.xlsx,.tsv,.txt"
             maxSizeMB={20}
             label="CSV・Excelファイルをドラッグ&ドロップ"
-            hint="Googleフォームの回答CSV、またはMicrosoft Formsの回答Excelファイル"
+            hint="Googleフォームの回答CSV、Microsoft Formsの回答Excel、タブ区切りのテキスト（.tsv・.txt）"
             onFilesSelected={handleDataFileSelect}
             onError={setError}
           />
           <CsvEncodingControl files={[dataFile]} onChange={(f) => void handleDataFileSelect([f])} />
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              data-testid="form-data-paste-toggle"
+              aria-expanded={pasteOpen}
+              onClick={() => setPasteOpen((v) => !v)}
+              className="w-fit text-xs text-blue-600 underline dark:text-blue-400"
+            >
+              {pasteOpen ? "貼り付けの入力欄を閉じる" : "表計算ソフトからコピーした表を貼り付けて使う"}
+            </button>
+            {pasteOpen && (
+              <div className="flex flex-col gap-2">
+                <textarea
+                  data-testid="form-data-paste"
+                  aria-label="貼り付ける表"
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  rows={5}
+                  placeholder={"Excel・Googleスプレッドシートなどで、見出しの行を含めて表を選んでコピーし、ここに貼り付けます。\n例：氏名\t住所\t電話番号"}
+                  className="w-full rounded-md border border-neutral-300 bg-white p-2 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900"
+                />
+                <button
+                  type="button"
+                  data-testid="form-data-paste-apply"
+                  onClick={handlePasteApply}
+                  disabled={pasteText.trim() === ""}
+                  className="w-fit rounded-lg bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+                >
+                  貼り付けた表を読み込む
+                </button>
+              </div>
+            )}
+          </div>
+          {dataSource && (
+            <div className="flex flex-wrap items-center gap-3 text-xs" data-testid="form-data-source-options">
+              {dataSource.sheets.length > 1 && (
+                <label className="flex items-center gap-1">
+                  シート
+                  <select
+                    data-testid="form-data-sheet"
+                    value={sheetIndex}
+                    onChange={(e) => {
+                      const next = Number(e.target.value);
+                      applyDataSource(dataSource, next, guessHeaderRowIndex(dataSource.sheets[next]?.rows ?? []));
+                    }}
+                    className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                  >
+                    {dataSource.sheets.map((sh, i) => (
+                      <option key={i} value={i}>
+                        {sh.name}（{sh.rows.length}行）
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="flex items-center gap-1">
+                見出しの行
+                <select
+                  data-testid="form-data-header-row"
+                  value={headerRowIndex}
+                  onChange={(e) => applyDataSource(dataSource, sheetIndex, Number(e.target.value))}
+                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  {Array.from(
+                    { length: Math.min(FORM_DATA_HEADER_ROW_CANDIDATES, Math.max(1, dataSource.sheets[sheetIndex]?.rows.length ?? 1)) },
+                    (_, i) => (
+                      <option key={i} value={i}>
+                        {i + 1}行目
+                      </option>
+                    )
+                  )}
+                </select>
+              </label>
+              <span className="text-neutral-500 dark:text-neutral-400">表の上にタイトルなどの行があるときは、見出し（列名）の行を選び直してください。</span>
+            </div>
+          )}
           {table && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="form-data-summary">
               {table.rows.length}件のデータ行を読み込みました（列: {table.headers.join(", ")}）
+            </p>
+          )}
+          {table && table.rows.length > FORM_DATA_LARGE_ROW_COUNT && (
+            <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="form-data-large-warning">
+              データが{table.rows.length}件あります。すべてブラウザの中で作るため、一括生成に時間がかかり、端末のメモリを多く使います。
+              うまくいかないときは、データを分けて作成してください。
             </p>
           )}
         </section>
@@ -841,6 +962,16 @@ export function FormToIndividualPdfsTool() {
           >
             一括生成してZIPを作成する
           </button>
+          {status === "processing" && (
+            <button
+              type="button"
+              data-testid="form-generate-cancel"
+              onClick={() => (cancelGenerateRef.current = true)}
+              className="w-fit rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-600 hover:border-red-400 hover:text-red-600 dark:border-neutral-700 dark:text-neutral-300"
+            >
+              中断する
+            </button>
+          )}
 
           <ProcessingStatus state={status} processingLabel={progressLabel || "処理中..."} successLabel="全員分のPDF生成が完了しました" />
 
@@ -854,11 +985,55 @@ export function FormToIndividualPdfsTool() {
                   写真の識別子が一致しなかった行が{generatedZip.missingPhotoCount}件あります（該当ページの写真欄は空欄です）。
                 </p>
               )}
+              <FormPdfResultList entries={generatedZip.entries} />
               <RewardedDownloadGate onDownload={handleDownloadZip} label="ZIPをダウンロード" />
             </ResultPopup>
           )}
         </section>
       )}
     </div>
+  );
+}
+
+/** 一覧に出す件数の上限（それより多いときは、問題のある行を先に出す） */
+const RESULT_LIST_MAX = 100;
+
+/**
+ * 生成したPDFの一覧（工程4：結果の確認）。ZIPの中のファイル名と、写真が見つからなかった行・空欄になった項目を示す。
+ */
+function FormPdfResultList({ entries }: { entries: FormPdfResultEntry[] }) {
+  const problems = entries.filter((e) => e.missingPhoto || e.emptyFieldCount > 0);
+  const shown = (problems.length > 0 ? [...problems, ...entries.filter((e) => !problems.includes(e))] : entries).slice(0, RESULT_LIST_MAX);
+  return (
+    <details className="w-full text-xs" data-testid="form-result-list" open={problems.length > 0}>
+      <summary className="cursor-pointer select-none text-neutral-600 dark:text-neutral-300">
+        生成したPDFの一覧（{entries.length}件{problems.length > 0 ? `・確認が必要な行 ${problems.length}件` : ""}）
+      </summary>
+      <div className="mt-2 max-h-60 overflow-y-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="border-b border-neutral-200 dark:border-neutral-800">
+              <th className="py-1 pr-2">件目</th>
+              <th className="py-1 pr-2">ファイル名</th>
+              <th className="py-1">確認</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((e) => (
+              <tr key={e.rowNumber} className="border-b border-neutral-100 dark:border-neutral-900" data-testid="form-result-row">
+                <td className="py-1 pr-2">{e.rowNumber}</td>
+                <td className="py-1 pr-2 break-all" data-testid="form-result-name">{e.fileName}</td>
+                <td className="py-1 text-amber-700 dark:text-amber-400">
+                  {[e.missingPhoto ? "写真が見つかりません" : "", e.emptyFieldCount > 0 ? `空欄の項目 ${e.emptyFieldCount}` : ""].filter(Boolean).join("・")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {entries.length > RESULT_LIST_MAX && (
+          <p className="mt-1 text-neutral-500">ほか{entries.length - RESULT_LIST_MAX}件（すべてZIPに入っています）</p>
+        )}
+      </div>
+    </details>
   );
 }

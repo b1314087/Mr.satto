@@ -1,6 +1,9 @@
 import { BrowserProcessor } from "../types";
 import { closePdfDocument, loadPdfDocument, getPositionedTextItems, pageHasText, type PositionedTextItem } from "@/lib/pdf/pdfjs-client";
-import { reconstructTable, tryParseNumberCell, tryParseDateCell } from "@/lib/pdf/table-reconstruction";
+import { reconstructTable, groupIntoLines, computeColumnBreaksAcrossPages, type ReconstructedTable } from "@/lib/pdf/table-reconstruction";
+import { toExcelWriteCell, type ExcelWriteCell } from "@/lib/pdf/cell-value";
+import { getFormFieldItems } from "@/lib/pdf/form-fields";
+import type { SheetData } from "write-excel-file/universal";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 
 /**
@@ -26,6 +29,15 @@ import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguag
  * 複雑な帳票・手書き文字の癖等により、100%正確な項目化を保証するものではない
  * （OCR自体の精度に依存する。開発指示書の「完全に構造化できると言い切らない」
  * 方針を踏まえ、UI側でもその旨を案内する）。
+ *
+ * 工程4での精度の改善（AIは使わない。座標と表記のルールだけで行う）:
+ * - 入力フォーム（AcroForm）の値を読む：入力欄・チェックボックス・ラジオボタン・選択欄に記入したPDFは、記入内容が
+ *   文字情報に入らないため、注釈から値を取り出して表に入れる（src/lib/pdf/form-fields.ts。チェックは ☑／☐）。
+ * - 値の型：全角数字・金額（¥・円・後ろの「-」）・マイナス（−・△・▲・括弧）・小数の桁・割合・和暦の日付を、
+ *   確かな表記だけ数値・日付にし、表示形式で元の見た目を保つ（src/lib/pdf/cell-value.ts）。空欄は空欄のまま。
+ * - 結合セル：表の推定で見つかった横方向の結合（列をまたぐ項目）を、Excelでも結合する。
+ * - 複数ページの表：同じファイルの各ページが同じ列数の表のときは、全ページで列の区切りをそろえ、
+ *   2ページ目以降に繰り返される見出しの行は省いて、1つの表として続ける。
  *
  * 複数ファイル対応（開発指示書5章）：「3ページまで」はファイル数ではなく
  * 選択した全ファイルの合計ページ数を指す（例: 2ページのPDF + 1ページのPDF = 3ページ）。
@@ -82,16 +94,30 @@ export interface FilledPdfToExcelOutput {
   previewRows: string[][];
 }
 
-type ExcelCell = string | number | { value: Date; type: DateConstructor; format: string };
+type ExcelCell = ExcelWriteCell | { value: string | number | Date; type?: unknown; format?: string; columnSpan: number };
 
-function toExcelCell(text: string): ExcelCell {
-  const trimmed = text.trim();
-  if (trimmed === "") return "";
-  const num = tryParseNumberCell(trimmed);
-  if (num !== null) return num;
-  const date = tryParseDateCell(trimmed);
-  if (date !== null) return { value: date, type: Date, format: "yyyy-mm-dd" };
-  return trimmed;
+/** 表の1行を、Excelの行にする（横方向の結合は columnSpan にし、結合で隠れるセルは null にする） */
+export function tableRowToExcelRow(table: Pick<ReconstructedTable, "columnSpans">, rowIndex: number, row: string[]): ExcelCell[] {
+  const cells: ExcelCell[] = row.map((text) => toExcelWriteCell(text));
+  for (const span of table.columnSpans) {
+    if (span.row !== rowIndex || span.span < 2) continue;
+    const width = Math.min(span.span, cells.length - span.col);
+    if (width < 2) continue;
+    // 結合する範囲の、ほかのセルに文字があるときは結合しない（読み取った文字を消さない）
+    if (row.slice(span.col + 1, span.col + width).some((t) => t.trim() !== "")) continue;
+    const head = cells[span.col];
+    const base = head === null || head === "" ? { value: "" } : typeof head === "object" ? head : { value: head };
+    cells[span.col] = { ...base, columnSpan: width } as ExcelCell;
+    for (let c = span.col + 1; c < span.col + width; c++) cells[c] = null;
+  }
+  return cells;
+}
+
+/** 見出しの行が同じか（前後の空白・全角半角の空白の違いは無視する） */
+function sameRow(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  if (!a || !b) return false;
+  const norm = (r: readonly string[]) => r.map((t) => t.replace(/\s+/g, "")).join("\u0001");
+  return norm(a) === norm(b) && a.some((t) => t.trim() !== "");
 }
 
 export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcelInput, FilledPdfToExcelOutput> {
@@ -144,6 +170,8 @@ export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcel
           sheetRows.push([`--- ${file.name} ---`]);
         }
 
+        // まず、すべてのページの文字（文字情報・入力欄の値、なければOCR）を集める
+        const pageItems: { pageNumber: number; items: PositionedTextItem[]; method: "text-layer" | "ocr"; confidence: number | null }[] = [];
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
           let page;
           try {
@@ -152,7 +180,8 @@ export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcel
             throw new Error(`${file.name} の${pageNumber}ページ目の読み込みに失敗しました`);
           }
 
-          const textItems = await getPositionedTextItems(page);
+          // 工程4：入力フォームの値（入力欄・チェックボックス・選択欄）も、文字情報と一緒に使う
+          const textItems = [...(await getPositionedTextItems(page)), ...(await getFormFieldItems(page))];
           let items: PositionedTextItem[];
           let method: "text-layer" | "ocr";
           let confidence: number | null = null;
@@ -206,23 +235,44 @@ export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcel
             confidence = result.confidence;
             items = ocrWordsToPositionedTextItems(result.words);
           }
+          pageItems.push({ pageNumber, items, method, confidence });
+        }
 
-          const table = reconstructTable(items);
+        // 複数ページの表：文字情報のページがどれも同じ列数の表なら、全ページで列の区切りをそろえる
+        const independent = pageItems.map((p) => reconstructTable(p.items));
+        const textPages = pageItems.filter((p) => p.method === "text-layer");
+        const textTables = independent.filter((_, i) => pageItems[i].method === "text-layer" && independent[i].rows.length > 0);
+        let sharedBreaks: number[] | undefined;
+        if (textPages.length >= 2 && textTables.length === textPages.length && textTables.every((t) => t.columnCount === textTables[0].columnCount && t.columnCount >= 2)) {
+          const breaks = computeColumnBreaksAcrossPages(textPages.map((p) => groupIntoLines(p.items)));
+          if (breaks.length + 1 === textTables[0].columnCount) sharedBreaks = breaks;
+        }
+
+        let previousHeader: string[] | undefined;
+        for (let i = 0; i < pageItems.length; i++) {
+          const { pageNumber, items, method, confidence } = pageItems[i];
+          const table = sharedBreaks && method === "text-layer" ? reconstructTable(items, sharedBreaks) : independent[i];
           if (table.rows.length === 0) {
             pages.push({ fileName: file.name, pageNumber, rowCount: 0, columnCount: 0, method, confidence });
             continue;
           }
 
-          if (sheetRows.length > 0) {
+          // 2ページ目以降で、前のページと同じ見出しの行が繰り返されているときは、続きの表として見出しを省く
+          const continued = !!sharedBreaks && sameRow(table.rows[0], previousHeader);
+          const startRow = continued ? 1 : 0;
+          if (sheetRows.length > 0 && !continued) {
             sheetRows.push(new Array(Math.max(table.columnCount, 1)).fill(""));
           }
-          for (const row of table.rows) {
-            sheetRows.push(row.map(toExcelCell));
+          for (let r = startRow; r < table.rows.length; r++) {
+            const row = table.rows[r];
+            sheetRows.push(tableRowToExcelRow(table, r, row));
             if (previewRows.length < PREVIEW_ROW_LIMIT) previewRows.push(row);
           }
+          if (!continued) previousHeader = table.rows[0];
 
-          pages.push({ fileName: file.name, pageNumber, rowCount: table.rows.length, columnCount: table.columnCount, method, confidence });
-          totalRowCount += table.rows.length;
+          const rowCount = table.rows.length - startRow;
+          pages.push({ fileName: file.name, pageNumber, rowCount, columnCount: table.columnCount, method, confidence });
+          totalRowCount += rowCount;
         }
       }
 
@@ -235,7 +285,7 @@ export class FilledPdfToExcelProcessor extends BrowserProcessor<FilledPdfToExcel
       const { default: writeXlsxFile } = await import("write-excel-file/universal");
       let blob: Blob;
       try {
-        blob = await writeXlsxFile(sheetRows).toBlob();
+        blob = await writeXlsxFile(sheetRows as unknown as SheetData).toBlob();
       } catch {
         throw new Error("Excelファイルの生成に失敗しました");
       }

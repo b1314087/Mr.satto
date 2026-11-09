@@ -646,6 +646,59 @@ export interface StampPdfPlacement {
   xRatio: number;
   yRatio: number;
   widthMm: number;
+  /** 印影の角度(度。画面の見た目で時計回りが正。省略時は0。工程4：複数ページ押印で、ページごとに決める) */
+  rotationDeg?: number;
+}
+
+/** PDFに押す印影の角度の範囲(度) */
+export const STAMP_PDF_ROTATION_DEG = { min: -180, max: 180, default: 0 } as const;
+
+/**
+ * 印影の画像を、見た目で時計回りに deg 度回した画像を作る(回した印影がちょうど収まる大きさ)。
+ * 0度のときは、元の画像をそのまま返す
+ */
+export function rotateStampCanvas(stamp: HTMLCanvasElement, deg: number): HTMLCanvasElement {
+  const r = ((deg % 360) + 360) % 360;
+  if (r === 0) return stamp;
+  const rad = (r * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  const w = Math.max(1, Math.ceil(stamp.width * cos + stamp.height * sin));
+  const h = Math.max(1, Math.ceil(stamp.width * sin + stamp.height * cos));
+  const out = createCanvas(w, h);
+  const ctx = get2dContext(out);
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(rad);
+  ctx.drawImage(stamp, -stamp.width / 2, -stamp.height / 2);
+  return out;
+}
+
+/**
+ * 角度を反映して、ページの見た目の座標(左上が原点、pt)で、画像を置く四角形と、置く画像を返す。
+ * 位置(xRatio・yRatio)と大きさ(widthMm)は、回す前の印影で決め、その中心を軸に回す
+ * (回した印影がページの端から少しはみ出すときは、ページの中に収まるようにずらす)
+ */
+export function stampPdfDrawRect(
+  page: StampPdfPageBox,
+  placement: StampPdfPlacement,
+  imageWidthRatio: number,
+  stamp: HTMLCanvasElement
+): { image: HTMLCanvasElement; x: number; y: number; w: number; h: number } {
+  const base = stampPdfRect(page, placement, imageWidthRatio, stamp.height / stamp.width);
+  const deg = placement.rotationDeg ?? 0;
+  const image = rotateStampCanvas(stamp, deg);
+  if (image === stamp) return { image, ...base };
+  const k = base.w / stamp.width;
+  let w = image.width * k;
+  let h = image.height * k;
+  const fit = Math.min(1, page.width / w, page.height / h);
+  w *= fit;
+  h *= fit;
+  const cx = base.x + base.w / 2;
+  const cy = base.y + base.h / 2;
+  const x = Math.min(Math.max(0, cx - w / 2), Math.max(0, page.width - w));
+  const y = Math.min(Math.max(0, cy - h / 2), Math.max(0, page.height - h));
+  return { image, x, y, w, h };
 }
 
 /** ページの見た目の大きさ(pt。回転を反映した、表示されるときの幅・高さ) */
@@ -670,40 +723,57 @@ export function stampPdfRect(page: StampPdfPageBox, placement: StampPdfPlacement
 }
 
 /**
- * PDFの1ページに、印影の画像を押した新しいPDFを作る(元のPDFは変えない)。
+ * PDFに印影の画像を押した新しいPDFを作る(元のPDFは変えない)。
+ * placement を配列で渡すと、複数のページ(工程4：プレミアムの複数ページ押印)に、ページごとの位置・大きさ・角度で押す。
  * ページの回転(/Rotate 0・90・180・270)と、表示される範囲(CropBox)を反映し、見た目のとおりの位置・向きに押す
  */
 export async function stampImageOntoPdf(
   file: File,
   stamp: HTMLCanvasElement,
-  placement: StampPdfPlacement,
+  placement: StampPdfPlacement | readonly StampPdfPlacement[],
   imageWidthRatio: number
-): Promise<{ blob: Blob; pageCount: number }> {
+): Promise<{ blob: Blob; pageCount: number; pageIndexes: number[] }> {
+  const placements = Array.isArray(placement) ? [...placement] : [placement as StampPdfPlacement];
+  if (placements.length === 0) throw new Error("押すページが選ばれていません。");
   const doc = await loadPdfDoc(file);
   const pageCount = doc.getPageCount();
-  if (placement.pageIndex < 0 || placement.pageIndex >= pageCount) throw new Error("押すページが、PDFのページの範囲を超えています。");
-  const page = doc.getPage(placement.pageIndex);
-  const crop = page.getCropBox();
-  const rotation = (((page.getRotation().angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
-  const swapped = rotation === 90 || rotation === 270;
-  const box = { width: swapped ? crop.height : crop.width, height: swapped ? crop.width : crop.height };
-  const { x: u, y: v, w, h } = stampPdfRect(box, placement, imageWidthRatio, stamp.height / stamp.width);
-
-  const pngBlob = await canvasToBlob(stamp, "image/png");
-  const image = await doc.embedPng(new Uint8Array(await pngBlob.arrayBuffer()));
-  // 見た目の座標(u, v：左上から)を、回転する前のページの座標(左下が原点)に直し、画像も同じだけ回して置く
-  const { x: x0, y: y0, width: cw, height: ch } = crop;
-  const at =
-    rotation === 0
-      ? { x: x0 + u, y: y0 + ch - v - h }
-      : rotation === 90
-        ? { x: x0 + v + h, y: y0 + u }
-        : rotation === 180
-          ? { x: x0 + cw - u, y: y0 + v + h }
-          : { x: x0 + cw - v - h, y: y0 + ch - u };
-  page.drawImage(image, { x: at.x, y: at.y, width: w, height: h, rotate: pdfLib().degrees(rotation) });
+  for (const p of placements) {
+    if (p.pageIndex < 0 || p.pageIndex >= pageCount) throw new Error("押すページが、PDFのページの範囲を超えています。");
+  }
+  // 同じ角度の印影は、PDFの中で1つの画像を使い回す(ファイルを大きくしない)
+  const embedded = new Map<number, Awaited<ReturnType<typeof doc.embedPng>>>();
+  for (const placed of placements) {
+    const page = doc.getPage(placed.pageIndex);
+    const crop = page.getCropBox();
+    const rotation = (((page.getRotation().angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+    const swapped = rotation === 90 || rotation === 270;
+    const box = { width: swapped ? crop.height : crop.width, height: swapped ? crop.width : crop.height };
+    const { image: drawn, x: u, y: v, w, h } = stampPdfDrawRect(box, placed, imageWidthRatio, stamp);
+    const key = Math.round(((((placed.rotationDeg ?? 0) % 360) + 360) % 360) * 100);
+    let image = embedded.get(key);
+    if (!image) {
+      const pngBlob = await canvasToBlob(drawn, "image/png");
+      image = await doc.embedPng(new Uint8Array(await pngBlob.arrayBuffer()));
+      embedded.set(key, image);
+    }
+    // 見た目の座標(u, v：左上から)を、回転する前のページの座標(左下が原点)に直し、画像も同じだけ回して置く
+    const { x: x0, y: y0, width: cw, height: ch } = crop;
+    const at =
+      rotation === 0
+        ? { x: x0 + u, y: y0 + ch - v - h }
+        : rotation === 90
+          ? { x: x0 + v + h, y: y0 + u }
+          : rotation === 180
+            ? { x: x0 + cw - u, y: y0 + v + h }
+            : { x: x0 + cw - v - h, y: y0 + ch - u };
+    page.drawImage(image, { x: at.x, y: at.y, width: w, height: h, rotate: pdfLib().degrees(rotation) });
+  }
   const bytes = await doc.save();
-  return { blob: new Blob([new Uint8Array(bytes)], { type: "application/pdf" }), pageCount };
+  return {
+    blob: new Blob([new Uint8Array(bytes)], { type: "application/pdf" }),
+    pageCount,
+    pageIndexes: placements.map((p) => p.pageIndex).sort((a, b) => a - b),
+  };
 }
 
 // ---------------------------------------------------------------------------

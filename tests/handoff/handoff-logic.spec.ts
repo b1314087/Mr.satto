@@ -188,7 +188,6 @@ test.describe("設定の整合", () => {
     "pdf-to-text": "pdf-to-text-tool.tsx",
     "pdf-to-word": "pdf-to-word-tool.tsx",
     "pdf-to-excel": "pdf-to-excel-tool.tsx",
-    ocr: "ocr-tool.tsx",
     "word-to-pdf": "word-to-pdf-tool.tsx",
     "excel-to-pdf": "excel-to-pdf-tool.tsx",
     "excel-csv-convert": "excel-to-csv-tool.tsx",

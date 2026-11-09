@@ -67,12 +67,127 @@ export interface ImageLayoutRenderInput {
   /** PDF出力時のページサイズ(pt)。省略時はcanvasのpx値をそのままpt数として扱う
    * （image-to-pdf.tsの"fit"モードと同じ、既存の考え方を踏襲した近似） */
   pdfPageSizePt?: { width: number; height: number };
+  /**
+   * 書き出しの倍率（工程4）。数値ならその倍率。"auto"（省略時の既定）は、配置した画像の元の解像度を落とさない倍率
+   * （2倍〜4倍の範囲。キャンバスが大きすぎるときは、上限の画素数に収まるまで下げる）。
+   */
+  scale?: number | "auto";
+}
+
+/** 画面の表示・書き出しの両方で使う、テキストの書体と行の高さ（表示と書き出しの見た目をそろえる） */
+export const LAYOUT_TEXT_FONT_FAMILY = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif';
+export const LAYOUT_TEXT_LINE_HEIGHT = 1.3;
+
+/** 書き出しの倍率の範囲（"auto" のとき） */
+export const EXPORT_SCALE_RANGE = { min: 2, max: 4 } as const;
+
+/**
+ * 回転を反映した、アイテムの見た目の外枠（キャンバスの座標）。
+ * はみ出しの確認（キャンバスの外にある部分は書き出すと切れる）に使う
+ */
+export function rotatedItemBounds(item: Pick<ImageLayoutItem, "x" | "y" | "width" | "height" | "rotation">) {
+  const r = (item.rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(r));
+  const sin = Math.abs(Math.sin(r));
+  const w = item.width * cos + item.height * sin;
+  const h = item.width * sin + item.height * cos;
+  const cx = item.x + item.width / 2;
+  const cy = item.y + item.height / 2;
+  return { minX: cx - w / 2, minY: cy - h / 2, maxX: cx + w / 2, maxY: cy + h / 2 };
+}
+
+/** キャンバスからはみ出しているアイテム（1px未満のはみ出しは数えない） */
+export function findOverflowingItems(items: readonly ImageLayoutItem[], canvasWidth: number, canvasHeight: number): ImageLayoutItem[] {
+  const eps = 1;
+  return items.filter((it) => {
+    const b = rotatedItemBounds(it);
+    return b.minX < -eps || b.minY < -eps || b.maxX > canvasWidth + eps || b.maxY > canvasHeight + eps;
+  });
+}
+
+/**
+ * すべてのアイテムが収まるように、キャンバスを広げる大きさと、アイテムをずらす量を求める
+ * （左・上にはみ出しているときは、そのぶんアイテム全体を右・下へずらす。もとのキャンバスより小さくはしない）
+ */
+export function computeFitCanvas(items: readonly ImageLayoutItem[], canvasWidth: number, canvasHeight: number) {
+  let minX = 0;
+  let minY = 0;
+  let maxX = canvasWidth;
+  let maxY = canvasHeight;
+  for (const it of items) {
+    const b = rotatedItemBounds(it);
+    minX = Math.min(minX, b.minX);
+    minY = Math.min(minY, b.minY);
+    maxX = Math.max(maxX, b.maxX);
+    maxY = Math.max(maxY, b.maxY);
+  }
+  const shiftX = Math.max(0, Math.ceil(-minX));
+  const shiftY = Math.max(0, Math.ceil(-minY));
+  return { width: Math.ceil(maxX - minX), height: Math.ceil(maxY - minY), shiftX, shiftY };
+}
+
+/**
+ * "auto" の書き出し倍率：配置した画像を、元の画素数より粗くしない倍率（2〜4倍）。
+ * 画素数の上限（MAX_CANVAS_PIXELS）を超えるときは、上限に収まるまで下げる
+ */
+export function computeAutoExportScale(
+  items: readonly ImageLayoutItem[],
+  naturalSizes: ReadonlyMap<number, { width: number; height: number }>,
+  canvasWidth: number,
+  canvasHeight: number
+): number {
+  let need: number = EXPORT_SCALE_RANGE.min;
+  for (const it of items) {
+    if (it.kind !== "image" || it.imageIndex === undefined) continue;
+    const n = naturalSizes.get(it.imageIndex);
+    if (!n || it.width <= 0 || it.height <= 0) continue;
+    // 比率維持（contain）では短い辺が枠に合うので、画像が枠に収まるときの倍率で考える
+    const fitScale = it.fit === "cover" ? Math.max(it.width / n.width, it.height / n.height) : Math.min(it.width / n.width, it.height / n.height);
+    if (fitScale > 0) need = Math.max(need, 1 / fitScale);
+  }
+  const capped = Math.min(EXPORT_SCALE_RANGE.max, need);
+  const byPixels = Math.sqrt(MAX_CANVAS_PIXELS / Math.max(1, canvasWidth * canvasHeight));
+  return Math.max(0.25, Math.min(capped, byPixels));
+}
+
+/**
+ * テキストを、枠の幅で折り返した行に分ける（画面の表示と同じく、改行で行を分け、幅を超えたら次の行へ送る）。
+ * 英単語の途中では、できるだけ切らない
+ */
+export function wrapTextLines(text: string, maxWidth: number, measure: (s: string) => number): string[] {
+  const out: string[] = [];
+  for (const raw of text.split("\n")) {
+    if (raw === "") {
+      out.push("");
+      continue;
+    }
+    let line = "";
+    const tokens = raw.match(/[A-Za-z0-9.,!?'"()\-]+|\s+|./gu) ?? [];
+    for (const tok of tokens) {
+      const candidate = line + tok;
+      if (line !== "" && measure(candidate) > maxWidth) {
+        out.push(line.replace(/\s+$/, ""));
+        line = /^\s+$/.test(tok) ? "" : tok;
+        // 1語が枠より長いときは、文字単位で切る
+        while (measure(line) > maxWidth && line.length > 1) {
+          let cut = line.length - 1;
+          while (cut > 1 && measure(line.slice(0, cut)) > maxWidth) cut--;
+          out.push(line.slice(0, cut));
+          line = line.slice(cut);
+        }
+      } else {
+        line = candidate;
+      }
+    }
+    out.push(line);
+  }
+  return out;
 }
 
 /** 画面表示解像度に対する書き出し倍率。印刷・保存時の品質確保のため2倍でレンダリングする */
 const EXPORT_SCALE = 2;
 
-const MAX_CANVAS_PIXELS = 40_000_000; // 書き出し時（EXPORT_SCALE適用後）の上限。過大なキャンバスでのブラウザ停止を防ぐ
+export const MAX_CANVAS_PIXELS = 40_000_000; // 書き出し時（EXPORT_SCALE適用後）の上限。過大なキャンバスでのブラウザ停止を防ぐ
 
 async function drawItemsToCanvas(
   files: File[],
@@ -165,14 +280,22 @@ async function drawItemsToCanvas(
     } else if (item.kind === "text") {
       const fontSize = Math.max(1, (item.fontSize ?? 24) * scale);
       const weight = item.fontWeight === "bold" ? "bold " : "";
-      ctx.font = `${weight}${fontSize}px "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif`;
+      ctx.font = `${weight}${fontSize}px ${LAYOUT_TEXT_FONT_FAMILY}`;
       ctx.fillStyle = item.color ?? "#111111";
       ctx.textBaseline = "top";
       ctx.textAlign = "left";
-      const lines = (item.text ?? "").split("\n");
+      // 工程4：画面の表示と同じく、枠の幅で折り返し、枠の外は描かない（表示と書き出しの見た目をそろえる）
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, w, h);
+      ctx.clip();
+      const lineHeight = fontSize * LAYOUT_TEXT_LINE_HEIGHT;
+      const lines = wrapTextLines(item.text ?? "", w, (t) => ctx.measureText(t).width);
       lines.forEach((line, i) => {
-        ctx.fillText(line, 0, i * fontSize * 1.3);
+        // 行の高さの中で、文字を上下の中央に置く（CSSの line-height と同じ）
+        ctx.fillText(line, 0, i * lineHeight + (lineHeight - fontSize) / 2);
       });
+      ctx.restore();
     }
 
     ctx.restore();
@@ -191,7 +314,24 @@ export class ImageLayoutRenderProcessor extends BrowserProcessor<
       throw new Error("配置された画像・文字がありません。画像を追加するか、文字を配置してください。");
     }
 
-    const canvas = await drawItemsToCanvas(input.files, input.canvas, input.items, EXPORT_SCALE);
+    let scale = typeof input.scale === "number" ? input.scale : EXPORT_SCALE;
+    if (input.scale === undefined || input.scale === "auto") {
+      // 配置した画像の元の大きさを調べ、元の解像度を落とさない倍率にする
+      const sizes = new Map<number, { width: number; height: number }>();
+      for (const it of input.items) {
+        if (it.kind !== "image" || it.imageIndex === undefined || sizes.has(it.imageIndex)) continue;
+        const file = input.files[it.imageIndex];
+        if (!file) continue;
+        try {
+          const img = await loadImage(file);
+          sizes.set(it.imageIndex, { width: img.naturalWidth, height: img.naturalHeight });
+        } catch {
+          // 読み込めない画像は、描くときにエラーを出す
+        }
+      }
+      scale = computeAutoExportScale(input.items, sizes, input.canvas.widthPx, input.canvas.heightPx);
+    }
+    const canvas = await drawItemsToCanvas(input.files, input.canvas, input.items, scale);
 
     if (input.format === "pdf") {
       const pngBlob = await canvasToBlob(canvas, "image/png");

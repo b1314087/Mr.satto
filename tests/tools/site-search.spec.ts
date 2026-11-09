@@ -99,8 +99,11 @@ test.describe("検索の仕組み: 作業目的からの検索", () => {
     });
   }
 
-  test("「PDFの文字を取り出したい」では OCR も出る", () => {
-    expect(ids("PDFの文字を取り出したい")).toContain("ocr");
+  test("「PDFの文字を取り出したい」「OCR」「文字認識」では、OCRを統合した PDF→テキスト（OCR対応）が出る（工程4）", () => {
+    expect(ids("PDFの文字を取り出したい")).toContain("pdf-to-text");
+    expect(ids("OCR")).toContain("pdf-to-text");
+    expect(ids("文字認識")).toContain("pdf-to-text");
+    expect(ids("OCR")).not.toContain("ocr");
   });
 
   test("「容量を減らす」で、画像・動画・PDFの圧縮ツールが出る", () => {
@@ -138,7 +141,7 @@ test.describe("検索の仕組み: 関連性", () => {
 
   test("1語だけの検索（例:「PDF」）は、その言葉を含むツールを従来どおりすべて出す", () => {
     const r = ids("PDF");
-    for (const id of ["ocr", "image-to-pdf", "word-to-pdf", "pdf-to-excel"]) expect(r).toContain(id);
+    for (const id of ["pdf-to-text", "image-to-pdf", "word-to-pdf", "pdf-to-excel"]) expect(r).toContain(id);
   });
 
   test("従来の空白区切りの検索（「画像 圧縮」「PDF 結合」「QR」）が同じように使える", () => {

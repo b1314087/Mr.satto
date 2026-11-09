@@ -90,3 +90,48 @@ export function rectPivotForCenterRotation(
     y: centerY - rotatedHalfY,
   };
 }
+
+// ---------------------------------------------------------------------------
+// 工程4：ページの回転（/Rotate）・表示範囲（CropBox）を反映した座標の変換
+// ---------------------------------------------------------------------------
+//
+// 画面は、pdf.js で「見た目のとおり」（ページの回転を反映し、CropBox の範囲だけ）にページを描き、
+// 注釈もその見た目の座標（左下が原点・上が正、単位pt）で持つ。
+// PDFに書き出すときは、ページ本来の座標（回転する前・MediaBox の原点）に直す必要がある。
+// 直さないと、回転したページや、原点が(0,0)でないページで、注釈の位置・向きがずれる。
+
+/** 見た目の座標(X, Y)を、ページ本来の座標へ移す行列 [a, b, c, d, e, f]（x' = aX + cY + e、y' = bX + dY + f） */
+export type PdfMatrix = [number, number, number, number, number, number];
+
+export function displayToPageMatrix(
+  rotation: number,
+  crop: { x: number; y: number; width: number; height: number }
+): PdfMatrix {
+  const r = (((Math.round(rotation / 90) * 90) % 360) + 360) % 360;
+  const { x: x0, y: y0, width: cw, height: ch } = crop;
+  if (r === 90) return [0, 1, -1, 0, x0 + cw, y0];
+  if (r === 180) return [-1, 0, 0, -1, x0 + cw, y0 + ch];
+  if (r === 270) return [0, -1, 1, 0, x0, y0 + ch];
+  return [1, 0, 0, 1, x0, y0];
+}
+
+export function isIdentityMatrix(m: PdfMatrix): boolean {
+  return m[0] === 1 && m[1] === 0 && m[2] === 0 && m[3] === 1 && m[4] === 0 && m[5] === 0;
+}
+
+/**
+ * 移動のとき、ずらす量(dx, dy)を、オブジェクトがページの中に収まる範囲に抑える（工程4）。
+ * もともとページからはみ出している部分は、それ以上はみ出させない（ページの中へ戻す向きには動かせる）。
+ */
+export function clampMoveDelta(
+  b: { minX: number; maxX: number; minY: number; maxY: number },
+  dx: number,
+  dy: number,
+  page: { width: number; height: number }
+): { dx: number; dy: number } {
+  const lowX = Math.min(0, -b.minX);
+  const highX = Math.max(0, page.width - b.maxX);
+  const lowY = Math.min(0, -b.minY);
+  const highY = Math.max(0, page.height - b.maxY);
+  return { dx: Math.min(highX, Math.max(lowX, dx)), dy: Math.min(highY, Math.max(lowY, dy)) };
+}

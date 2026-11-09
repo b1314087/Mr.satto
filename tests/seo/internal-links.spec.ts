@@ -111,8 +111,9 @@ test.describe("カテゴリページの追加のリンク", () => {
 
 test.describe("関連ツール", () => {
   const cases: [string, string[]][] = [
-    ["pdf-to-excel", ["pdf-to-word", "filled-pdf-to-excel", "ocr", "pdf-edit"]],
-    ["pdf-to-word", ["pdf-to-excel", "word-to-pdf", "pdf-to-text", "ocr"]],
+    // 工程4：OCRは PDF→テキスト（OCR対応）に統合した
+    ["pdf-to-excel", ["pdf-to-word", "filled-pdf-to-excel", "pdf-to-text", "pdf-edit"]],
+    ["pdf-to-word", ["pdf-to-excel", "word-to-pdf", "pdf-to-text"]],
     ["pdf-edit", ["pdf-fix", "pdf-compress", "pdf-to-word", "pdf-to-excel"]],
     // 工程3：画像リサイズは統合先そのもの（image-compress）になったため、関連ツールの指定から外した（残りの枠は自動で選ばれる）
     ["image-compress", ["image-format-convert", "image-metadata-remove", "image-crop"]],

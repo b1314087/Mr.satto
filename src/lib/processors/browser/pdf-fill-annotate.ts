@@ -1,4 +1,4 @@
-import type { PDFFont, PDFPage } from "pdf-lib";
+import type { PDFDocument, PDFFont, PDFPage } from "pdf-lib";
 
 import { BrowserProcessor, type PdfProcessorOutput } from "../types";
 import { loadPdfDoc, finalizePdf } from "./pdf";
@@ -9,7 +9,7 @@ import {
   type AnnotationObject,
   type ShapeAnnotationObject,
 } from "@/lib/pdf-annotate/types";
-import { rectPivotForCenterRotation } from "@/lib/pdf-annotate/geometry";
+import { displayToPageMatrix, isIdentityMatrix, rectPivotForCenterRotation } from "@/lib/pdf-annotate/geometry";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 
 /**
@@ -101,17 +101,21 @@ function drawCheckbox(
   y: number,
   size: number,
   checked: boolean,
-  markStyle: "check" | "cross" | "circle" = "check"
+  markStyle: "check" | "cross" | "circle" = "check",
+  frame = true
 ) {
   const borderWidth = Math.max(1, size * 0.06);
-  page.drawRectangle({
-    x,
-    y,
-    width: size,
-    height: size,
-    borderColor: pdfLib().rgb(0.25, 0.25, 0.28),
-    borderWidth,
-  });
+  // 工程4：枠なし（マークだけ）のときは、四角い枠を描かない
+  if (frame) {
+    page.drawRectangle({
+      x,
+      y,
+      width: size,
+      height: size,
+      borderColor: pdfLib().rgb(0.25, 0.25, 0.28),
+      borderWidth,
+    });
+  }
   if (!checked) return;
   const pad = size * 0.2;
   const thickness = Math.max(1.5, size * 0.12);
@@ -256,54 +260,53 @@ export class PdfFillAnnotateProcessor extends BrowserProcessor<PdfFillAnnotateIn
     for (const obj of objects) {
       if (!Number.isInteger(obj.page) || obj.page < 1 || obj.page > pageCount) continue;
       const page = doc.getPage(obj.page - 1);
-
-      if (obj.type === "text") {
-        const text = obj.text.trim();
-        if (text === "" || !font) continue;
-        try {
-          drawTextObject(page, font, obj);
-        } catch {
-          // 1件の描画失敗で全体を止めない（他の注釈は正常に書き出す）
-          continue;
-        }
-      } else if (obj.type === "checkbox") {
-        try {
-          drawCheckbox(page, obj.x, obj.y, obj.size, obj.checked, obj.markStyle ?? "check");
-        } catch {
-          continue;
-        }
-      } else if (obj.type === "ink") {
-        try {
-          drawInkStroke(page, obj);
-        } catch {
-          continue;
-        }
-      } else if (obj.type === "image") {
-        try {
-          const image =
-            obj.mimeType === "image/png" ? await doc.embedPng(obj.bytes) : await doc.embedJpg(obj.bytes);
-          const rotation = obj.rotation ?? 0;
-          const pivot = rectPivotForCenterRotation(obj.x, obj.y, obj.width, obj.height, rotation);
-          page.drawImage(image, {
-            x: pivot.x,
-            y: pivot.y,
-            width: obj.width,
-            height: obj.height,
-            rotate: pdfLib().degrees(rotation),
-          });
-        } catch {
-          // 1枚の画像埋め込み失敗で全体を止めない（他人の写真云々ではなく単純に破損データ対策）
-          continue;
-        }
-      } else if (obj.type === "shape") {
-        try {
-          drawShape(page, obj);
-        } catch {
-          continue;
-        }
+      // 工程4：注釈は画面の見た目（ページの回転・CropBox を反映）の座標で持っているので、ページ本来の座標へ直してから描く
+      const crop = page.getCropBox();
+      const matrix = displayToPageMatrix(page.getRotation().angle, crop);
+      const transformed = !isIdentityMatrix(matrix);
+      if (transformed) {
+        page.pushOperators(pdfLib().pushGraphicsState(), pdfLib().concatTransformationMatrix(...matrix));
+      }
+      try {
+        await drawObject(doc, page, font, obj);
+      } finally {
+        if (transformed) page.pushOperators(pdfLib().popGraphicsState());
       }
     }
 
     return finalizePdf(doc);
+  }
+}
+
+/**
+ * 1つの注釈を描く（ページの座標への変換は、呼び出し側で済ませておく）。
+ * 1件の描画に失敗しても全体は止めない（他の注釈は正常に書き出す）。
+ */
+async function drawObject(doc: PDFDocument, page: PDFPage, font: PDFFont | null, obj: AnnotationObject): Promise<void> {
+  try {
+    if (obj.type === "text") {
+      if (obj.text.trim() === "" || !font) return;
+      drawTextObject(page, font, obj);
+    } else if (obj.type === "checkbox") {
+      drawCheckbox(page, obj.x, obj.y, obj.size, obj.checked, obj.markStyle ?? "check", obj.frame !== false);
+    } else if (obj.type === "ink") {
+      drawInkStroke(page, obj);
+    } else if (obj.type === "image") {
+      // 1枚の画像の埋め込みに失敗しても、全体は止めない（破損データ対策）
+      const image = obj.mimeType === "image/png" ? await doc.embedPng(obj.bytes) : await doc.embedJpg(obj.bytes);
+      const rotation = obj.rotation ?? 0;
+      const pivot = rectPivotForCenterRotation(obj.x, obj.y, obj.width, obj.height, rotation);
+      page.drawImage(image, {
+        x: pivot.x,
+        y: pivot.y,
+        width: obj.width,
+        height: obj.height,
+        rotate: pdfLib().degrees(rotation),
+      });
+    } else if (obj.type === "shape") {
+      drawShape(page, obj);
+    }
+  } catch {
+    // 何もしない
   }
 }

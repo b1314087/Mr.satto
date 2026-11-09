@@ -169,15 +169,16 @@ test("料金区分バッジ: 実装済みツールカードに通常/プレミ�
   const standardCard = main.getByRole("link", { name: "画像リサイズ" });
   await expect(standardCard.getByText("通常", { exact: true })).toBeVisible();
 
-  // ocr のバッジは、ツール一覧データ（src/lib/tools/data.ts）の requiredPlan に従う。
+  // PDF→Excel（元はプレミアム限定）のバッジは、ツール一覧データ（src/lib/tools/data.ts）の requiredPlan に従う。
   // 全ツールを一時的にスタンダード扱いにするスイッチ(ALL_TOOLS_STANDARD)が入っている間は
   // スタンダード、スイッチを外して元のプレミアム限定に戻したときはプレミアムが表示される。
-  const ocrTool = tools.find((t) => t.id === "ocr");
-  expect(ocrTool, "ocr がツール一覧にない").toBeTruthy();
-  const expectedBadge = ocrTool!.requiredPlan === "premium" ? "プレミアム" : "通常";
-  await main.getByRole("searchbox", { name: "ツールを検索" }).fill("OCR");
-  const ocrCard = main.getByRole("link", { name: "OCR" });
-  await expect(ocrCard.getByText(expectedBadge, { exact: true })).toBeVisible();
+  // （工程4：以前はOCRで確かめていたが、OCRはPDF→テキスト（OCR対応）に統合したため、PDF→Excelで確かめる）
+  const premiumTool = tools.find((t) => t.id === "pdf-to-excel");
+  expect(premiumTool, "pdf-to-excel がツール一覧にない").toBeTruthy();
+  const expectedBadge = premiumTool!.requiredPlan === "premium" ? "プレミアム" : "通常";
+  await main.getByRole("searchbox", { name: "ツールを検索" }).fill("PDF→Excel");
+  const premiumCard = main.getByRole("link", { name: "PDF→Excel", exact: true });
+  await expect(premiumCard.getByText(expectedBadge, { exact: true })).toBeVisible();
 });
 
 test("検索キーワードが外部ドメイン（Analytics等）へ送信されない", async ({ page, baseURL }) => {

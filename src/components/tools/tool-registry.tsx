@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { OcrTool } from "./implementations/ocr-tool";
+import { PdfToTextTool } from "./implementations/pdf-to-text-tool";
 import { ToolLoading } from "./tool-loading";
 
 /**
@@ -37,6 +37,10 @@ import { ToolLoading } from "./tool-loading";
  * 安全性の優先順位（Simple→Fast→Safe→...）に反する。そのため、OCRのみ
  * 既存の静的import（Phase 6.5までと同じ動作）に戻し、他の43ツール分
  * でのみ動的分割の効果を得る、という最小限の対応とした。
+ *
+ * 工程4：OCRはPDF→テキスト（PdfToTextTool）に統合した（旧 /tools/ocr は /tools/pdf-to-text へ308で転送）。
+ * 統合後の PdfToTextTool がOCR（tesseract.js）を使うため、上の理由により、OcrTool に代わって
+ * PdfToTextTool を静的importにしている。
  */
 const ImageCanvasTool = dynamic(() =>
   import("./implementations/image-canvas-tool").then((m) => m.ImageCanvasTool),
@@ -176,10 +180,6 @@ const CsvReplaceTool = dynamic(() =>
 );
 const PdfCompressTool = dynamic(() =>
   import("./implementations/pdf-compress-tool").then((m) => m.PdfCompressTool),
-  { loading: ToolLoading }
-);
-const PdfToTextTool = dynamic(() =>
-  import("./implementations/pdf-to-text-tool").then((m) => m.PdfToTextTool),
   { loading: ToolLoading }
 );
 const EstimateGeneratorTool = dynamic(() =>
@@ -525,8 +525,6 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <InvoiceGeneratorTool />;
     case "order-generator":
       return <OrderGeneratorTool />;
-    case "ocr":
-      return <OcrTool />;
     case "pdf-to-excel":
       return <PdfToExcelTool />;
     case "pdf-to-word":

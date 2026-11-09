@@ -31,7 +31,7 @@ export const PDF_FIX_MODES: PdfFixModeInfo[] = [
     label: "記入・注釈・白消し",
     formerName: "PDF記入・注釈",
     formerToolId: "pdf-fill-annotate",
-    description: "文字・チェック・図形・手書き・画像・印影を追加できます。白消しで文字を隠して、上から書き直すこともできます。",
+    description: "文字・チェック・図形・手書き・画像・印影を追加できます。白消しで文字を隠して、上から書き直すこともできます。黒塗り（見た目だけ）も置けます。",
   },
   {
     mode: "page-numbers",

@@ -61,7 +61,8 @@ test.describe("SEO文: 本番相当（課金オン・広告オフ・プレミア
 
   test("工程9で指摘された16ツールのメタディスクリプションとFAQは、無料で使える案内になる", () => {
     const ids = [
-      "pdf-to-excel", "pdf-to-word", "word-to-pdf", "excel-to-pdf", "ocr",
+      // 工程4：OCRは PDF→テキスト（OCR対応。もとから無料のツール）に統合したため、この一覧から外した
+      "pdf-to-excel", "pdf-to-word", "word-to-pdf", "excel-to-pdf",
       "video-convert", "video-compress", "video-resize", "video-frame-rate", "video-h264", "video-thumbnail", "video-metadata-remove",
       "estimate-generator", "quote-order-generator", "invoice-generator", "order-generator",
     ];
@@ -94,9 +95,10 @@ test.describe("SEO文: 本番相当（課金オン・広告オフ・プレミア
 test.describe("SEO文: 設定が変わったときの復活・既存の切り替え", () => {
   test("特定のツールがプレミアム限定になれば、その説明は元の文言のまま復活する（他のツールは無料の案内のまま）", () => {
     const ctx: CopyContext = { ...PRODUCTION, premiumOnly: true };
-    const ocr = adaptToolSeoContentWith(toolSeoContent["ocr"], ctx);
-    expect(ocr.metaDescription).toContain("プレミアムプランで利用できます。");
-    expect(ocr.faq.find((f) => f.question === "無料プランでも使えますか？")?.answer).toBe("このツールはプレミアムプラン専用の機能です。");
+    // 工程4：以前はOCRで確かめていたが、OCRはPDF→テキスト（OCR対応）に統合したため、PDF→Wordで確かめる
+    const word = adaptToolSeoContentWith(toolSeoContent["pdf-to-word"], ctx);
+    expect(word.metaDescription).toContain("プレミアムプランで利用できます。");
+    expect(word.faq.find((f) => f.question === "無料プランでも使えますか？")?.answer).toBe("このツールはプレミアムプラン専用の機能です。");
     // プレミアム専用の案内に、提供していないStandardは出さない
     const pdfToExcel = adaptToolSeoContentWith(toolSeoContent["pdf-to-excel"], ctx);
     const a = pdfToExcel.faq.find((f) => f.question === "無料プランでも使えますか？")?.answer ?? "";

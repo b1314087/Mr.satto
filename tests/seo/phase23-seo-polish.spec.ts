@@ -42,7 +42,7 @@ test.describe("L1: PDFツールのページ数上限の説明", () => {
     expect(ocr).toMatch(/pdf\.numPages > MAX_OCR_PAGES/);
   });
 
-  test("PDF→Word・PDF→Excel・OCR: 操作説明とFAQに、実際の上限が書かれている", () => {
+  test("PDF→Word・PDF→Excel・PDF→テキスト（OCR）: 操作説明とFAQに、実際の上限が書かれている", () => {
     const word = toolSeoContent["pdf-to-word"];
     expect(word.howTo[0]).toContain(`${PDF_TO_WORD_MAX_PAGES}ページまで`);
     expect(word.faq.find((f) => f.question === "PDFのページ数に制限はありますか？")?.answer).toContain(`${PDF_TO_WORD_MAX_PAGES}ページまで`);
@@ -55,26 +55,28 @@ test.describe("L1: PDFツールのページ数上限の説明", () => {
     // 既存のスキャン画像のFAQの数字も、同じ定数から作られている
     expect(excel.faq.find((f) => f.question.startsWith("スキャンした画像"))?.answer).toContain(`最大${PDF_TO_EXCEL_MAX_OCR_PAGES}ページ`);
 
-    const ocr = toolSeoContent["ocr"];
-    expect(ocr.howTo[0]).toContain(`PDFは${OCR_MAX_PAGES}ページまで`);
+    // 工程4：OCRは PDF→テキスト（OCR対応）に統合した。OCRのページ数の上限の説明は、統合先に移した
+    const ocr = toolSeoContent["pdf-to-text"];
+    expect(ocr.howTo[0]).toContain(`OCRで読み取るPDFは${OCR_MAX_PAGES}ページまで`);
     const ocrAnswer = ocr.faq.find((f) => f.question === "PDFのページ数に制限はありますか？")?.answer ?? "";
     expect(ocrAnswer).toContain(`${OCR_MAX_PAGES}ページまで`);
     expect(ocrAnswer).not.toContain("あまりにページ数の多い");
   });
 
   test("本番相当の表示（FAQ・FAQPage構造化データ）でも、上限の説明が残る。ファイルサイズ上限とは別に書かれている", () => {
-    for (const id of ["pdf-to-word", "pdf-to-excel", "ocr"]) {
+    for (const id of ["pdf-to-word", "pdf-to-excel", "pdf-to-text"]) {
       const adapted = adaptToolSeoContentWith(toolSeoContent[id], PRODUCTION);
       const json = JSON.stringify(buildFaqPage(adapted.faq));
       expect(json, id).toContain("ページまで");
-      expect(adapted.howTo[0], id).toContain("上限50MB");
+      // 工程4：PDF→テキスト（OCR対応）はPDF→テキストの上限（100MB）を引き継いだ
+      expect(adapted.howTo[0], id).toContain(id === "pdf-to-text" ? "上限100MB" : "上限50MB");
     }
     // 現在の設定で実際に出る説明（getToolSeoContent）でも同じ
     expect(getToolSeoContent("pdf-to-word")?.faq.map((f) => f.question)).toContain("PDFのページ数に制限はありますか？");
   });
 
   test("説明文（description）には制限を詰め込まない", () => {
-    for (const id of ["pdf-to-word", "pdf-to-excel", "ocr"]) {
+    for (const id of ["pdf-to-word", "pdf-to-excel", "pdf-to-text"]) {
       expect(toolSeoContent[id].metaDescription, id).not.toMatch(/ページまで|\d+ページ/);
     }
   });

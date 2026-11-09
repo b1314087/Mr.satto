@@ -1,4 +1,6 @@
 import type { PersonRecord } from "./person-extraction";
+import { toExcelWriteCell } from "@/lib/pdf/cell-value";
+import type { SheetData } from "write-excel-file/universal";
 
 /**
  * テンプレートモードのExcel出力（開発指示書20〜22章）。
@@ -42,9 +44,12 @@ export function buildSheetRows(records: PersonRecord[]): string[][] {
  */
 export async function exportPersonsToExcel(records: PersonRecord[]): Promise<Blob> {
   const rows = buildSheetRows(records);
+  // 工程4：見出しの行は文字のまま、値の行は、確かな表記だけ数値・日付にする（金額・マイナス・小数の桁・和暦など。
+  // src/lib/pdf/cell-value.ts）。チェックの「TRUE」・空欄・文字は、そのまま
+  const typed = rows.map((row, i) => (i === 0 ? row : row.map((v) => toExcelWriteCell(v))));
   const { default: writeXlsxFile } = await import("write-excel-file/universal");
   try {
-    return await writeXlsxFile(rows).toBlob();
+    return await writeXlsxFile(typed as unknown as SheetData).toBlob();
   } catch {
     throw new Error("Excelファイルの生成に失敗しました");
   }
