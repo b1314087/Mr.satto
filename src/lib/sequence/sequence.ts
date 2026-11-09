@@ -33,7 +33,7 @@ export const SEQUENCE_WIDTHS: { value: SequenceWidth; label: string }[] = [
 /** テンプレートの初期値（全角スペース区切り） */
 export const DEFAULT_TEMPLATE = "第{n}回　{item}";
 /** 画面に出す、テンプレートの入力例 */
-export const TEMPLATE_EXAMPLES: string[] = ["第{n}回　{item}", "{n}回目　{item}", "{n}. {item}", "{item}（第{n}回）", "【{n}】{item}", "{n}　{item}"];
+export const TEMPLATE_EXAMPLES: string[] = ["{item}{n}", "第{n}回　{item}", "{n}回目　{item}", "{n}. {item}", "{item}（第{n}回）", "【{n}】{item}", "{n}　{item}"];
 
 export const TEMPLATE_NUMBER_TOKEN = "{n}";
 export const TEMPLATE_ITEM_TOKEN = "{item}";

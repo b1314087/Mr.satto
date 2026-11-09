@@ -1666,7 +1666,7 @@ const toolDefinitions: Tool[] = [
     id: "sequence-generator",
     name: "連番・項目一括生成",
     category: "generator",
-    description: "「第１回 英語」のような連番付きの項目を一括で作ります。1つの項目の連番も、複数の項目を入力順に項目ごとの連番にすることもでき、結果は編集してExcelへそのまま貼り付けられます",
+    description: "「会議1・会議2・会議3」「第１回 会議」のような連番付きの項目を一括で作ります。1つの項目の連番も、複数の項目を入力順に項目ごとの連番にすることもでき、結果は編集してExcelへそのまま貼り付けられます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",

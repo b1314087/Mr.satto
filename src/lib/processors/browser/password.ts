@@ -31,6 +31,18 @@ export function uniqueChars(text: string): string[] {
   return Array.from(new Set(Array.from(text).filter((ch) => !/\s/.test(ch))));
 }
 
+/**
+ * パスワードの強度(0〜4)。使える文字の種類の数 poolSize と長さから、総当たりで試す組み合わせの数(ビット数
+ * = 長さ × log2(文字の種類の数))を出して決める。文字種をいくつ選んだかではなく、実際の組み合わせの数で判断する
+ * (たとえば、4文字なら文字種を4つ選んでも弱く、数字だけでも十分に長ければ強い)。
+ * 目安：28ビット未満=とても弱い、28〜=弱い、45〜=普通、70〜=強い、100〜=とても強い
+ */
+export function estimatePasswordStrength(length: number, poolSize: number): number {
+  if (poolSize < 2 || length <= 0) return 0;
+  const bits = length * Math.log2(poolSize);
+  return bits >= 100 ? 4 : bits >= 70 ? 3 : bits >= 45 ? 2 : bits >= 28 ? 1 : 0;
+}
+
 /** 0以上max未満の乱数。偏りが出ないよう、範囲外の値は引き直す */
 function randomInt(max: number): number {
   const limit = Math.floor(0x100000000 / max) * max;
@@ -58,9 +70,7 @@ export class PasswordGenerateProcessor extends BrowserProcessor<
     if (custom.length >= 2) {
       const chars = Array.from({ length }, () => custom[randomInt(custom.length)]);
       // 指定した文字の種類が少ないほど推測されやすいため、総当たりの組み合わせ数(ビット数)から強度を出す
-      const bits = length * Math.log2(custom.length);
-      const strength = bits >= 100 ? 4 : bits >= 70 ? 3 : bits >= 45 ? 2 : bits >= 28 ? 1 : 0;
-      return { password: chars.join(""), strength };
+      return { password: chars.join(""), strength: estimatePasswordStrength(length, custom.length) };
     }
 
     const pools = (Object.keys(CHAR_SETS) as (keyof typeof CHAR_SETS)[]).filter(
@@ -72,28 +82,17 @@ export class PasswordGenerateProcessor extends BrowserProcessor<
     }
 
     const allChars = pools.map((key) => CHAR_SETS[key]).join("");
-    const passwordChars = Array.from({ length }, () => allChars[randomInt(allChars.length)]);
-
-    // 選択した全ての文字種が最低1文字は含まれるようにする(置き換える位置は重ならないよう並べ替えてから決める)
-    const positions = Array.from({ length }, (_, i) => i);
-    for (let i = positions.length - 1; i > 0; i--) {
-      const j = randomInt(i + 1);
-      [positions[i], positions[j]] = [positions[j], positions[i]];
+    // 選んだ全ての文字種が最低1文字は含まれるようにする。足りない文字種の文字を後から差し込むと、その文字種の文字が
+    // 出やすくなる(1文字ごとの確率が偏る)ため、全体を一様に作り直す(棄却法)。こうすると「選んだ文字種がすべて入る
+    // パスワード」の中から、どれも同じ確率で選ばれる。いちばん厳しい4文字・文字種4つでも、平均20回ほどで決まる
+    let password = "";
+    for (let attempt = 0; ; attempt++) {
+      if (attempt >= 100_000) throw new Error("パスワードを生成できませんでした。もう一度お試しください");
+      password = Array.from({ length }, () => allChars[randomInt(allChars.length)]).join("");
+      if (pools.every((key) => Array.from(password).some((ch) => CHAR_SETS[key].includes(ch)))) break;
     }
-    pools.forEach((key, i) => {
-      if (i < positions.length) {
-        const set = CHAR_SETS[key];
-        passwordChars[positions[i]] = set[randomInt(set.length)];
-      }
-    });
-    const password = passwordChars.join("");
 
-    let strength = 0;
-    if (length >= 8) strength++;
-    if (length >= 12) strength++;
-    if (pools.length >= 3) strength++;
-    if (pools.length === 4) strength++;
-
-    return { password, strength };
+    // 強度は、文字種の数ではなく、使える文字の種類の数と長さ(組み合わせの数)から出す(文字を直接指定したときと同じ基準)
+    return { password, strength: estimatePasswordStrength(length, allChars.length) };
   }
 }

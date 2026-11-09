@@ -29,17 +29,29 @@ async function goMultiple(page: Page, text: string) {
 }
 
 test.describe("連番・項目一括生成: 画面", () => {
-  test("初期表示（単一項目）: 英語 / 1〜10 / 第○回 / 全角で10行が出る", async ({ page }) => {
+  test("初期表示（単一項目）: 会議 / 1〜10 / 第○回 / 全角で10行が出る", async ({ page }) => {
     await open(page);
     await expect(page.getByTestId("seq-mode-single")).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("seq-template")).toHaveValue(`第{n}回${SP}{item}`);
     await expect(page.getByTestId("seq-width-full")).toHaveAttribute("aria-pressed", "true");
     const got = await lines(page);
     expect(got).toHaveLength(10);
-    expect(got[0]).toBe(`第１回${SP}英語`);
-    expect(got[9]).toBe(`第１０回${SP}英語`);
+    expect(got[0]).toBe(`第１回${SP}会議`);
+    expect(got[9]).toBe(`第１０回${SP}会議`);
     await expect(page.getByTestId("seq-count")).toHaveText("10行");
     await expect(page.getByTestId("tool-preview")).toBeVisible();
+  });
+
+  test("使用例「会議1〜会議5」：例のボタン「{item}{n}」と半角の数字・1〜5で、会議1・会議2…会議5が出る", async ({ page }) => {
+    await open(page);
+    await expect(page.getByTestId("seq-item")).toHaveValue("会議");
+    await expect(page.getByTestId("seq-item")).toHaveAttribute("placeholder", "例: 会議");
+    await page.getByTestId("seq-template-example-0").click();
+    await page.getByTestId("seq-width-half").click();
+    await page.getByTestId("seq-end").fill("5");
+    expect(await lines(page)).toEqual(["会議1", "会議2", "会議3", "会議4", "会議5"]);
+    await page.getByTestId("seq-mode-multiple").click();
+    await expect(page.getByTestId("seq-multi-input")).toHaveAttribute("placeholder", "会議\n会議\n研修\n会議\n面談\n研修");
   });
 
   test("単一項目: 項目名・開始・終了が反映される（全角の数字も可）", async ({ page }) => {
@@ -65,11 +77,14 @@ test.describe("連番・項目一括生成: 画面", () => {
     // 同じ記号が複数あれば、すべて置き換える（項目名は変換されない）
     await page.getByTestId("seq-template").fill("{n}/{n} {item}{item}");
     expect(await lines(page)).toEqual(["１/１ 英語英語", "２/２ 英語英語", "１/１ 国語国語", "３/３ 英語英語"]);
-    // 例のボタンで、テンプレートが入る
+    // 例のボタンで、テンプレートが入る(最初の例は「{item}{n}」：会議1・会議2…のように、項目名の後ろに番号)
     await page.getByTestId("seq-template-example-0").click();
+    await expect(page.getByTestId("seq-template")).toHaveValue("{item}{n}");
+    expect((await lines(page))[0]).toBe("英語１");
+    await expect(page.getByTestId("seq-template-example-0")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("seq-template-example-1").click();
     await expect(page.getByTestId("seq-template")).toHaveValue(`第{n}回${SP}{item}`);
     expect((await lines(page))[0]).toBe(`第１回${SP}英語`);
-    await expect(page.getByTestId("seq-template-example-0")).toHaveAttribute("aria-pressed", "true");
   });
 
   test("片方・両方の記号がないテンプレートは使え、補足の案内が出る。不正な表記は直し方を案内する", async ({ page }) => {
@@ -98,7 +113,7 @@ test.describe("連番・項目一括生成: 画面", () => {
     // 直すと、すぐ結果に戻る
     await page.getByTestId("seq-template").fill("{n}-{item}");
     await expect(page.getByTestId("seq-template-error")).toHaveCount(0);
-    expect(await lines(page)).toEqual(["１-英語", "２-英語"]);
+    expect(await lines(page)).toEqual(["１-会議", "２-会議"]);
   });
 
   test("複数項目: 指示書の例どおりに、入力順・項目ごとの連番が出る。空行は無視する", async ({ page }) => {
@@ -143,7 +158,7 @@ test.describe("連番・項目一括生成: 画面", () => {
     await page.getByTestId("seq-copy").click();
     await expect(page.getByTestId("seq-copy")).toHaveText("コピーしました");
     const clip = await page.evaluate(() => navigator.clipboard.readText());
-    expect(clip).toBe([`第１回${SP}英語`, `第２回${SP}英語`, `第３回${SP}英語`].join("\n"));
+    expect(clip).toBe([`第１回${SP}会議`, `第２回${SP}会議`, `第３回${SP}会議`].join("\n"));
   });
 
   test("手動編集: 編集した結果がそのままコピーされ、入力や設定を変えても勝手に上書きされない。作り直しで元に戻せる", async ({ page, context }) => {
@@ -164,7 +179,7 @@ test.describe("連番・項目一括生成: 画面", () => {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(edited);
     // 単一項目に切り替えても、そちらの結果には影響しない（テンプレートは共通）。戻ると編集は残っている
     await page.getByTestId("seq-mode-single").click();
-    expect((await lines(page))[0]).toBe(`１回目${SP}英語`);
+    expect((await lines(page))[0]).toBe(`１回目${SP}会議`);
     await expect(page.getByTestId("seq-edited-note")).toHaveCount(0);
     await page.getByTestId("seq-mode-multiple").click();
     await expect(result(page)).toHaveValue(edited);

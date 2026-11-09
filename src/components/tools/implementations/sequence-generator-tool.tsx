@@ -53,7 +53,7 @@ export function SequenceGeneratorTool() {
   const [width, setWidth] = useState<SequenceWidth>("full");
 
   // モードA（単一項目）
-  const [item, setItem] = useState("英語");
+  const [item, setItem] = useState("会議");
   const [start, setStart] = useState("1");
   const [end, setEnd] = useState("10");
   // モードB（複数項目）
@@ -222,7 +222,7 @@ export function SequenceGeneratorTool() {
                 type="text"
                 value={item}
                 onChange={(e) => setItem(e.target.value)}
-                placeholder="例: 英語"
+                placeholder="例: 会議"
                 className={fieldClass}
               />
             </label>
@@ -265,7 +265,7 @@ export function SequenceGeneratorTool() {
                 onChange={(e) => setMultiText(e.target.value)}
                 rows={8}
                 wrap="off"
-                placeholder={"英語\n英語\n国語\n英語\n数学\n国語"}
+                placeholder={"会議\n会議\n研修\n会議\n面談\n研修"}
                 className={`${fieldClass} font-mono`}
               />
             </label>
