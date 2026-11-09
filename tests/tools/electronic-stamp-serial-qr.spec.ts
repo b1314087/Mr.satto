@@ -17,6 +17,8 @@ import { STAMP_SERIAL_ALPHABET, STAMP_SERIAL_PATTERN, generateStampSerial, stamp
  *    (OpenCV)が使える環境では、実際に読み取って、番号だけが取れることも確かめる)
  *  - QRコードを入れない設定・小さすぎる印影・角印・取り込んだ印影
  *  - 生成・ダウンロードのあいだに、通信が起きない・ブラウザに保存しない
+ * 文字から作る印影のQRコードの模様を画像から直接読むテストは、「従来の配置」(白い四角の中のQRコード)を選んで確かめる。
+ * ①〜③のデザインは tests/tools/electronic-stamp-qr-design.spec.ts。
  */
 
 const TOOL_URL = "/tools/electronic-stamp-generator";
@@ -153,6 +155,7 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
   test("生成すると番号が発行され、ダウンロードした画像のQRコードに番号だけが入っている", async ({ page }) => {
     await page.goto(TOOL_URL);
     await page.locator("#stamp-text-input").fill("山田");
+    await page.getByTestId("qr-design-standard").click();
     await expect(page.getByTestId("stamp-serial")).toHaveCount(0); // 生成する前は番号を発行しない
     const serial = await generate(page);
     expect(serial).toMatch(STAMP_SERIAL_PATTERN);
@@ -191,6 +194,7 @@ test.describe("固有番号とQRコード：文字から作る印影", () => {
     await page.getByRole("button", { name: "角印", exact: true }).click();
     await page.getByRole("button", { name: /青/ }).click();
     await page.getByLabel(/印影サイズ/).fill("600");
+    await page.getByTestId("qr-design-standard").click();
     const serial = await generate(page);
     const { path } = await assertDownloadedFile(await clickAndDownload(page, "PNGをダウンロード"), { format: "png", minBytes: 100 });
     expect(decodePng(path).width).toBe(600);

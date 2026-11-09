@@ -1,7 +1,7 @@
 "use client";
 
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
@@ -12,13 +12,17 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { closePdfDocument } from "@/lib/pdf/pdfjs-client";
 import {
+  IMPORTED_STAMP_DESIGN_UNAVAILABLE,
   STAMP_COLORS,
   STAMP_LIMITS,
-  STAMP_QR_MIN_SIZE_PX,
+  STAMP_QR_DESIGNS,
   StampExportProcessor,
   appendStampQr,
   autoTrimTransparentMargins,
+  canEmbedStampQrInImage,
   canPlaceStampQr,
+  embedStampQrInImage,
+  stampQrMinSizePx,
   cropCanvasRegion,
   generateStampCanvas,
   loadCustomStampFont,
@@ -30,6 +34,7 @@ import {
   resizeCanvasByScale,
   unloadCustomStampFont,
   type StampColorId,
+  type StampQrDesign,
   type StampShape,
   type StampTextLayout,
 } from "@/lib/processors/browser/electronic-stamp";
@@ -51,8 +56,19 @@ import { SliderField } from "@/components/common/slider-field";
  * 固有番号とQRコード：「印影画像を生成する」を押したときに、ランダムな固有番号を1つ発行し、その番号だけを
  * 入れたQRコードと番号を印影に入れる(electronic-stamp.ts の generateStampSerial)。完成した画像(Blob)を
  * そのまま保持するので、同じ印影を何度ダウンロードしても番号は変わらない。もう一度生成すると新しい番号になる。
- * 編集中のプレビューには、番号を発行する前なので、QRコードの置き場所だけを示す。
+ * 編集中のプレビューには、番号を発行する前なので、従来の配置ではQRコードの置き場所だけを、①〜③のデザインでは
+ * 実在しない番号(STAMP_QR_PREVIEW_SERIAL)のQRコードで見た目を示す。
+ *
+ * QRコードのデザイン：編集画面で選んだデザインはプレビューに出る。生成したあと、完成のポップアップでデザインを
+ * 切り替えると、生成したときの設定と同じ固有番号のまま、印影を描き直す(番号は発行し直さない)。
  */
+
+/** 生成した印影を、同じ固有番号のまま、別のデザインで描き直すための関数 */
+interface StampRerender {
+  render: (design: StampQrDesign) => HTMLCanvasElement | null;
+  fits: (design: StampQrDesign) => boolean;
+  designs: StampQrDesign[];
+}
 
 type Mode = "text" | "import";
 type ImportStep = "select" | "crop" | "adjust";
@@ -103,6 +119,11 @@ export function ElectronicStampGeneratorTool() {
   const [result, setResult] = useState<ImageProcessorOutput | null>(null);
   /** 完成した印影の固有番号(QRコードを入れないときは null) */
   const [serial, setSerial] = useState<string | null>(null);
+  /** QRコードのデザイン(文字から作る・取り込むで別々に覚える) */
+  const [textDesign, setTextDesign] = useState<StampQrDesign>("inText");
+  const [importDesign, setImportDesign] = useState<StampQrDesign>("standard");
+  /** 完成した印影を、同じ番号のまま描き直す関数(番号を入れた印影のときだけ) */
+  const [rerender, setRerender] = useState<StampRerender | null>(null);
 
   useEffect(() => {
     return () => {
@@ -112,17 +133,19 @@ export function ElectronicStampGeneratorTool() {
 
   function resetResult() {
     if (result) URL.revokeObjectURL(result.url);
+    setRerender(null);
     setResult(null);
     setStatus("idle");
     setError(null);
   }
 
-  async function handleExport(canvas: HTMLCanvasElement, issuedSerial: string | null) {
+  async function handleExport(canvas: HTMLCanvasElement, issuedSerial: string | null, nextRerender?: StampRerender) {
     setStatus("processing");
     setError(null);
     try {
       const output = await new StampExportProcessor().process({ canvas });
       if (result) URL.revokeObjectURL(result.url);
+      setRerender(issuedSerial && nextRerender ? nextRerender : null);
       setSerial(issuedSerial);
       setResult(output);
       setStatus("success");
@@ -131,6 +154,21 @@ export function ElectronicStampGeneratorTool() {
       setStatus("error");
     }
   }
+
+  /**
+   * デザインを切り替える。完成のポップアップから切り替えたとき(redraw)は、完成した印影を、同じ番号のまま描き直す。
+   * 編集画面での切り替えは、プレビュー(これから生成する印影)だけを変える
+   */
+  function changeDesign(target: Mode, design: StampQrDesign, redraw = false) {
+    if (target === "text") setTextDesign(design);
+    else setImportDesign(design);
+    if (!redraw) return;
+    if (target !== mode || !result || !serial || !rerender || !rerender.fits(design)) return;
+    const canvas = rerender.render(design);
+    if (canvas) void handleExport(canvas, serial, rerender);
+  }
+
+  const currentDesign = mode === "text" ? textDesign : importDesign;
 
   return (
     <div className="flex flex-col gap-6">
@@ -172,9 +210,9 @@ export function ElectronicStampGeneratorTool() {
       </p>
 
       {mode === "text" ? (
-        <TextStampPanel onExport={handleExport} status={status} />
+        <TextStampPanel onExport={handleExport} status={status} design={textDesign} onDesignChange={(d) => changeDesign("text", d)} />
       ) : (
-        <ImportStampPanel onExport={handleExport} status={status} />
+        <ImportStampPanel onExport={handleExport} status={status} design={importDesign} onDesignChange={(d) => changeDesign("import", d)} />
       )}
 
       <ProcessingStatus state={status} processingLabel="生成中..." successLabel="印影画像が完成しました" />
@@ -197,6 +235,32 @@ export function ElectronicStampGeneratorTool() {
               </span>
             </p>
           )}
+          {serial && rerender && rerender.designs.length > 1 && (
+            <fieldset className="flex flex-col gap-1.5" data-testid="result-qr-design">
+              <legend className="mb-1 text-xs font-medium text-neutral-700 dark:text-neutral-200">
+                QRコードのデザインを変える（固有番号はそのまま）
+              </legend>
+              <div className="flex flex-wrap gap-1.5">
+                {rerender.designs.map((id) => {
+                  const fits = rerender.fits(id);
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      data-testid={`result-qr-design-${id}`}
+                      aria-pressed={currentDesign === id}
+                      disabled={!fits || status === "processing"}
+                      title={fits ? undefined : "この印影の大きさでは入りません"}
+                      onClick={() => changeDesign(mode, id, true)}
+                      className={`rounded-lg px-2.5 py-1 text-xs ${currentDesign === id ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"} disabled:opacity-40`}
+                    >
+                      {designLabel(id, mode)}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
           <RewardedDownloadGate
             label="PNGをダウンロード"
             onDownload={() => downloadBlob(result.blob, serial ? `electronic-stamp-${serial}.${extToSuffix()}` : `electronic-stamp.${extToSuffix()}`)}
@@ -214,9 +278,13 @@ export function ElectronicStampGeneratorTool() {
 function TextStampPanel({
   onExport,
   status,
+  design,
+  onDesignChange,
 }: {
-  onExport: (canvas: HTMLCanvasElement, serial: string | null) => void | Promise<void>;
+  onExport: (canvas: HTMLCanvasElement, serial: string | null, rerender?: StampRerender) => void | Promise<void>;
   status: ProcessingState;
+  design: StampQrDesign;
+  onDesignChange: (design: StampQrDesign) => void;
 }) {
   const [text, setText] = useState("印");
   const [shape, setShape] = useState<StampShape>("round");
@@ -293,8 +361,8 @@ function TextStampPanel({
       offsetYPct,
       fontFamily: customFont?.cssFontFamily,
       fontWeight: boldText ? "bold" : "normal",
-      // 編集中は番号を発行しない(QRコードの置き場所だけを示す)
-      ...(withQr ? { qr: { serial: null } } : {}),
+      // 編集中は番号を発行しない(従来の配置は置き場所だけ、①〜③は実在しない番号で見た目を示す)
+      ...(withQr ? { qr: { serial: null, design } } : {}),
     });
     latestCanvasRef.current = generated;
     target.width = generated.width;
@@ -318,15 +386,20 @@ function TextStampPanel({
     customFont,
     boldText,
     withQr,
+    design,
   ]);
 
-  const qrFits = canPlaceStampQr({ sizePx, shape, borderWidthRatio });
+  const stampText = text.trim() || "印";
+  const fitsFor = (d: StampQrDesign) => canPlaceStampQr({ sizePx, shape, borderWidthRatio, text: stampText, layout, design: d });
+  const qrFits = fitsFor(design);
+  const qrMinSize = withQr && !qrFits ? stampQrMinSizePx({ sizePx, shape, borderWidthRatio, text: stampText, layout, design }) : null;
 
-  /** 「印影画像を生成する」：固有番号を発行し、その番号のQRコードを入れた印影を作る */
-  function exportWithSerial() {
-    const issued = withQr && qrFits ? generateStampSerial() : null;
-    const canvas = generateStampCanvas({
-      text: text.trim() || "印",
+  // デザインの選択肢の見本(今の設定の印影を、各デザインで描いたもの。実在しない番号で描く)。
+  // Canvasはブラウザでしか作れないため、見本の表示部品が、表示したあとで描く(thumb は描く関数)
+  const designThumbs = useMemo(() => {
+    if (!withQr) return null;
+    const base = {
+      text: stampText,
       shape,
       layout,
       sizePx,
@@ -337,10 +410,47 @@ function TextStampPanel({
       offsetXPct,
       offsetYPct,
       fontFamily: customFont?.cssFontFamily,
-      fontWeight: boldText ? "bold" : "normal",
-      ...(issued ? { qr: { serial: issued } } : {}),
-    });
-    void onExport(canvas, issued);
+      fontWeight: boldText ? ("bold" as const) : ("normal" as const),
+    };
+    return Object.fromEntries(
+      STAMP_QR_DESIGNS.map((d) => [
+        d.id,
+        canPlaceStampQr({ sizePx, shape, borderWidthRatio, text: stampText, layout, design: d.id })
+          ? () => generateStampCanvas({ ...base, qr: { serial: null, design: d.id } })
+          : null,
+      ])
+    ) as Record<StampQrDesign, (() => HTMLCanvasElement) | null>;
+  }, [withQr, stampText, shape, layout, sizePx, fontScale, borderWidthRatio, paddingRatio, color, offsetXPct, offsetYPct, customFont, boldText]);
+
+  /** 「印影画像を生成する」：固有番号を発行し、その番号のQRコードを入れた印影を作る */
+  function exportWithSerial() {
+    const issued = withQr && qrFits ? generateStampSerial() : null;
+    // 生成したときの設定を覚えておき、あとでデザインだけを変えて、同じ番号のまま描き直せるようにする
+    const snapshot = {
+      text: stampText,
+      shape,
+      layout,
+      sizePx,
+      fontScale,
+      borderWidthRatio,
+      paddingRatio,
+      color,
+      offsetXPct,
+      offsetYPct,
+      fontFamily: customFont?.cssFontFamily,
+      fontWeight: boldText ? ("bold" as const) : ("normal" as const),
+    };
+    const canvas = generateStampCanvas({ ...snapshot, ...(issued ? { qr: { serial: issued, design } } : {}) });
+    const fits = (d: StampQrDesign) =>
+      canPlaceStampQr({ sizePx: snapshot.sizePx, shape: snapshot.shape, borderWidthRatio: snapshot.borderWidthRatio, text: snapshot.text, layout: snapshot.layout, design: d });
+    const rerender: StampRerender | undefined = issued
+      ? {
+          designs: STAMP_QR_DESIGNS.map((d) => d.id),
+          fits,
+          render: (d) => (fits(d) ? generateStampCanvas({ ...snapshot, qr: { serial: issued, design: d } }) : null),
+        }
+      : undefined;
+    void onExport(canvas, issued, rerender);
   }
 
   const textTooLong = Array.from(text).length > STAMP_LIMITS.maxTextLength;
@@ -455,9 +565,24 @@ function TextStampPanel({
         </label>
 
         <QrOption checked={withQr} onChange={setWithQr} />
+        {withQr && designThumbs && (
+          <QrDesignPicker
+            value={design}
+            onChange={onDesignChange}
+            choices={STAMP_QR_DESIGNS.map((d) => ({
+              ...d,
+              thumb: designThumbs[d.id],
+              note: designThumbs[d.id] ? undefined : "この大きさ・文字数では入りません",
+            }))}
+          />
+        )}
         {withQr && !qrFits && (
           <p className="text-xs text-amber-700 dark:text-amber-400">
-            この大きさでは、QRコードを入れる場所が足りません。印影サイズを{STAMP_QR_MIN_SIZE_PX}px以上にするか、枠を細くしてください（このまま生成すると、QRコードの無い印影になります）。
+            この大きさでは、QRコードを入れる場所が足りません。
+            {qrMinSize !== null
+              ? `印影サイズを${qrMinSize}px以上にするか、枠を細くするか、別のデザインを選んでください`
+              : "文字数を減らすか、別のデザインを選んでください"}
+            （このまま生成すると、QRコードの無い印影になります）。
           </p>
         )}
 
@@ -579,9 +704,13 @@ function TextStampPanel({
 function ImportStampPanel({
   onExport,
   status,
+  design,
+  onDesignChange,
 }: {
-  onExport: (canvas: HTMLCanvasElement, serial: string | null) => void | Promise<void>;
+  onExport: (canvas: HTMLCanvasElement, serial: string | null, rerender?: StampRerender) => void | Promise<void>;
   status: ProcessingState;
+  design: StampQrDesign;
+  onDesignChange: (design: StampQrDesign) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [step, setStep] = useState<ImportStep>("select");
@@ -617,6 +746,8 @@ function ImportStampPanel({
   const [autoTrimEnabled, setAutoTrimEnabled] = useState(true);
   const [scalePercent, setScalePercent] = useState(100);
   const [withQr, setWithQr] = useState(true);
+  /** 調整後の印影(デザインの見本を描くため。finalCanvasRef と同じもの) */
+  const [finalCanvas, setFinalCanvas] = useState<HTMLCanvasElement | null>(null);
   const [trimMessage, setTrimMessage] = useState<string | null>(null);
   const finalPreviewRef = useRef<HTMLCanvasElement>(null);
   const finalCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -804,19 +935,52 @@ function ImportStampPanel({
         working = resizeCanvasByScale(working, scalePercent);
       }
       finalCanvasRef.current = working;
+      setFinalCanvas(working);
       setTrimMessage(trimmedNote);
-      target.width = working.width;
-      target.height = working.height;
+      // ①を選んでいるときは、プレビューにも①の見た目を出す(実在しない番号で描く)
+      const shown = withQr && design === "inText" ? (embedStampQrInImage(working, null) ?? working) : working;
+      target.width = shown.width;
+      target.height = shown.height;
       const ctx = target.getContext("2d");
       if (ctx) {
         ctx.clearRect(0, 0, target.width, target.height);
-        ctx.drawImage(working, 0, 0);
+        ctx.drawImage(shown, 0, 0);
       }
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "この画像では背景を完全に透明化できない場合があります。");
     }
-  }, [step, removalEnabled, thresholdPercent, autoTrimEnabled, scalePercent]);
+  }, [step, removalEnabled, thresholdPercent, autoTrimEnabled, scalePercent, withQr, design]);
+
+  // デザインの選択肢：①は印影の色・大きさで使えるかが決まる。②③は取り込んだ印影では使えない(理由を出す)
+  const importChoices = useMemo(() => {
+    if (step !== "adjust" || !finalCanvas || !withQr) return null;
+    const embed = canEmbedStampQrInImage(finalCanvas);
+    return STAMP_QR_DESIGNS.map((d) => {
+      if (d.id === "inText") {
+        return embed.ok
+          ? { ...d, description: IMPORTED_IN_TEXT_DESCRIPTION, thumb: () => embedStampQrInImage(finalCanvas, null) }
+          : { ...d, thumb: null, disabledReason: embed.reason };
+      }
+      if (d.id === "standard") return { ...d, label: designLabel("standard", "import"), description: "これまでどおり、印影には重ねず、印影の下に番号とQRコード（白い四角）を並べます。", thumb: null };
+      return { ...d, thumb: null, disabledReason: IMPORTED_STAMP_DESIGN_UNAVAILABLE[d.id] };
+    });
+  }, [finalCanvas, step, withQr]);
+
+  // 選んでいた①が使えない画像になったら、従来の配置に戻す
+  const inTextUnavailable = !!importChoices?.find((c) => c.id === "inText" && "disabledReason" in c && c.disabledReason);
+  useEffect(() => {
+    if (inTextUnavailable && design === "inText") onDesignChange("standard");
+  }, [inTextUnavailable, design, onDesignChange]);
+
+  /** 取り込んだ印影に、選んだデザインで固有番号とQRコードを入れる(①が使えなければ従来の配置) */
+  function composeImported(source: HTMLCanvasElement, issued: string, d: StampQrDesign): HTMLCanvasElement {
+    if (d === "inText") {
+      const embedded = embedStampQrInImage(source, issued);
+      if (embedded) return embedded;
+    }
+    return appendStampQr(source, issued, STAMP_COLORS.black);
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -965,7 +1129,8 @@ function ImportStampPanel({
               余白を自動的にトリミングする
             </label>
             {trimMessage && <p className="text-xs text-amber-700 dark:text-amber-400">{trimMessage}</p>}
-            <QrOption checked={withQr} onChange={setWithQr} note="取り込んだ印影には、印影の下に番号とQRコードを並べます。" />
+            <QrOption checked={withQr} onChange={setWithQr} note="取り込んだ印影には、①（印影の線に組み込む）か、従来の配置（印影の下に並べる）を選べます。" />
+            {importChoices && <QrDesignPicker value={design} onChange={onDesignChange} choices={importChoices} />}
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">出力サイズ</legend>
               <div className="flex gap-2">
@@ -997,9 +1162,20 @@ function ImportStampPanel({
                 onClick={() => {
                   const finalCanvas = finalCanvasRef.current;
                   if (!finalCanvas) return;
-                  // 取り込んだ印影は形が決まっていないため、印影の下に番号とQRコードを並べる
+                  // 取り込んだ印影は文字の位置が分からないため、①(印影の線に組み込む)か、印影の下に並べる
                   const issued = withQr ? generateStampSerial() : null;
-                  void onExport(issued ? appendStampQr(finalCanvas, issued, STAMP_COLORS.black) : finalCanvas, issued);
+                  if (!issued) {
+                    void onExport(finalCanvas, null);
+                    return;
+                  }
+                  const embedOk = canEmbedStampQrInImage(finalCanvas).ok;
+                  const fits = (d: StampQrDesign) => d === "standard" || (d === "inText" && embedOk);
+                  const rerender: StampRerender = {
+                    designs: embedOk ? ["inText", "standard"] : ["standard"],
+                    fits,
+                    render: (d) => (fits(d) ? composeImported(finalCanvas, issued, d) : null),
+                  };
+                  void onExport(composeImported(finalCanvas, issued, fits(design) ? design : "standard"), issued, rerender);
                 }}
                 className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
@@ -1027,4 +1203,92 @@ function QrOption({ checked, onChange, note }: { checked: boolean; onChange: (v:
       </p>
     </div>
   );
+}
+
+/** 取り込んだ印影で①を選んだときの説明 */
+const IMPORTED_IN_TEXT_DESCRIPTION =
+  "印影全体にQRコードを重ね、印影の線の部分を濃いマスと薄い色にします（文字の位置は判別せず、印影の線をそのまま使います）。印影は少し薄く見えます。";
+
+/** デザインの名前(取り込んだ印影の従来の配置は「印影の下に並べる」) */
+function designLabel(id: StampQrDesign, mode: Mode): string {
+  if (id === "standard" && mode === "import") return "従来の配置（印影の下に並べる）";
+  return STAMP_QR_DESIGNS.find((d) => d.id === id)?.label ?? id;
+}
+
+interface QrDesignChoice {
+  id: StampQrDesign;
+  label: string;
+  description: string;
+  /** 見本を描く関数(無ければ、見本の代わりに短い説明を出す) */
+  thumb: (() => HTMLCanvasElement | null) | null;
+  /** 選べない理由(取り込んだ印影の②③など) */
+  disabledReason?: string;
+  /** 選べるが、今の設定では入らないときの注意 */
+  note?: string;
+}
+
+/** 「QRコードのデザイン」の選択肢(見本つき) */
+function QrDesignPicker({ choices, value, onChange }: { choices: QrDesignChoice[]; value: StampQrDesign; onChange: (d: StampQrDesign) => void }) {
+  const selected = choices.find((c) => c.id === value);
+  return (
+    <fieldset className="flex flex-col gap-2" data-testid="qr-design-picker">
+      <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">QRコードのデザイン</legend>
+      <div className="grid grid-cols-2 gap-2">
+        {choices.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            data-testid={`qr-design-${c.id}`}
+            aria-pressed={value === c.id}
+            disabled={!!c.disabledReason}
+            onClick={() => onChange(c.id)}
+            className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 ${
+              value === c.id
+                ? "border-blue-600 bg-blue-50 ring-2 ring-blue-600/30 dark:bg-blue-950/30"
+                : "border-neutral-200 dark:border-neutral-700"
+            }`}
+          >
+            <span className="flex h-24 w-24 items-center justify-center rounded" style={CHECKER_STYLE}>
+              {c.thumb ? (
+                <CanvasThumb draw={c.thumb} />
+              ) : (
+                <span className="px-1 text-center text-[10px] leading-tight text-neutral-500">
+                  {c.disabledReason ? "使用できません" : c.note ?? "印影の下に並べます"}
+                </span>
+              )}
+            </span>
+            <span className="text-center font-medium leading-snug text-neutral-800 dark:text-neutral-100">{c.label}</span>
+          </button>
+        ))}
+      </div>
+      {selected && <p className="text-xs text-neutral-600 dark:text-neutral-300">{selected.description}</p>}
+      {choices
+        .filter((c) => c.disabledReason)
+        .map((c) => (
+          <p key={c.id} className="text-xs text-neutral-500 dark:text-neutral-400" data-testid={`qr-design-reason-${c.id}`}>
+            {c.label}：{c.disabledReason}
+          </p>
+        ))}
+    </fieldset>
+  );
+}
+
+/** 見本の印影を、96px四方に縮めて表示する(画面の解像度に合わせて2倍で描く)。表示したあとで draw を呼んで描く */
+function CanvasThumb({ draw }: { draw: () => HTMLCanvasElement | null }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const target = ref.current;
+    const canvas = draw();
+    if (!target || !canvas) return;
+    const ctx = target.getContext("2d");
+    if (!ctx) return;
+    const scale = Math.min(target.width / canvas.width, target.height / canvas.height);
+    const w = canvas.width * scale;
+    const h = canvas.height * scale;
+    ctx.clearRect(0, 0, target.width, target.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(canvas, (target.width - w) / 2, (target.height - h) / 2, w, h);
+  }, [draw]);
+  return <canvas ref={ref} width={192} height={192} aria-hidden="true" className="h-24 w-24" />;
 }
