@@ -287,30 +287,3 @@ test.describe("word-paragraph-cleanup", () => {
   });
 });
 
-// ------------------------------------------------------------------
-// Tool 10: Word番号振り直し
-// ------------------------------------------------------------------
-test.describe("word-renumber", () => {
-  test("番号付きテキスト: 「1.2.3.」から「①②③」に変換でき、本文段落は対象外になる", async ({ page }) => {
-    await page.goto("/tools/word-renumber");
-    await uploadFixture(page, fixtures.wordNumberedDocx);
-    // 既定: 変換前=1.2.3. 変換後=①②③（コンポーネントの初期値のまま）
-    await page.getByRole("button", { name: "番号を振り直す" }).click();
-    await waitForSuccess(page, "変換が完了しました");
-    // 番号付き段落3つが変換され、番号のない本文2段落は対象外(skipped)になる
-    await expect(page.getByText(/変換した行: 3/)).toBeVisible();
-    await expect(page.getByText(/対象外だった行: 2/)).toBeVisible();
-    const download = await clickAndDownload(page, "Wordファイルをダウンロード");
-    await assertDownloadedFile(download, { format: "zip", minBytes: 10 });
-  });
-
-  test("変換先を「(1)(2)(3)」に変更できる", async ({ page }) => {
-    await page.goto("/tools/word-renumber");
-    await uploadFixture(page, fixtures.wordNumberedDocx);
-    const pickers = page.getByRole("button", { name: "(1)(2)(3)" });
-    await pickers.nth(1).click(); // 2つ目のFormatPicker(変換後)
-    await page.getByRole("button", { name: "番号を振り直す" }).click();
-    await waitForSuccess(page, "変換が完了しました");
-    await expect(page.getByText(/変換した行: 3/)).toBeVisible();
-  });
-});

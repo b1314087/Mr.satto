@@ -1,7 +1,7 @@
 import { unzipSync, zipSync, type Zippable } from "fflate";
 
 /**
- * Word段落整理（Tool 9）・Word番号振り直し（Tool 10）が共通で使う、
+ * Word段落整理（Tool 9）などが使う（Word番号振り直し（Tool 10）は工程1で削除）、
  * .docx（OOXML）を直接編集するための最小限のユーティリティ。
  *
  * 既存依存の docx（新規Documentの組み立て専用・書き込み専用）も

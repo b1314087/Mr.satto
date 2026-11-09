@@ -147,6 +147,5 @@ export const fixtures = {
   xlsxDates: path.join(GENERATED_DIR, "xlsx-dates.xlsx"),
   wordNormalDocx: path.join(GENERATED_DIR, "word-normal.docx"),
   wordMultiParagraphDocx: path.join(GENERATED_DIR, "word-multi-paragraph.docx"),
-  wordNumberedDocx: path.join(GENERATED_DIR, "word-numbered.docx"),
   wordJapaneseDocx: path.join(GENERATED_DIR, "word-japanese.docx"),
 };

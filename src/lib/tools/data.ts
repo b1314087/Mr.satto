@@ -983,7 +983,7 @@ const toolDefinitions: Tool[] = [
     id: "audio-convert",
     name: "音声形式変換",
     category: "audio",
-    description: "音声をMP3・WAV・M4A・OGG・FLACに変換します（M4A→MP3も対応）",
+    description: "音声をMP3・WAV・M4A・OGGに変換します（M4A→MP3も対応）。FLACなどの読み込みにも対応しています",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
@@ -1468,17 +1468,6 @@ const toolDefinitions: Tool[] = [
   // クリエイター
   // ------------------------------------------------------------------
   {
-    id: "color-palette-generator",
-    name: "配色パレット生成",
-    category: "generator",
-    description: "ベースカラーから調和の取れた配色パレットを作成します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["color", "配色", "パレット", "デザイン"],
-    featured: true,
-  },
-  {
     id: "gradient-generator",
     name: "グラデーション生成",
     category: "generator",
@@ -1628,17 +1617,6 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["word", "段落整理", "空白行削除", "スペース変換"],
-  },
-  {
-    // 次工程・軽量便利ツール一括追加（Tool 10）
-    id: "word-renumber",
-    name: "Word番号振り直し",
-    category: "word",
-    description: "「1.2.3.」「(1)(2)(3)」「①②③」「ア イ ウ」などの番号表記をまとめて変換します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["word", "番号振り直し", "採番", "リスト", "丸数字", "番号変換"],
   },
   {
     // 次工程・印刷帳票4ツール追加フェーズ

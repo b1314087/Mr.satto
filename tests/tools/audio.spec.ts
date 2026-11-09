@@ -89,6 +89,48 @@ test("audio-convert: WAV→FLAC に変換できる", async ({ page }) => {
   expect(probe(path).codec).toBe("flac");
 });
 
+test("audio-convert: FLACで書き出せないブラウザでは、選択肢に出さず、その理由(読み込みはできる)を表示する", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/tools/audio-convert");
+  await uploadAndWait(page, fixtures.audioWav);
+  await expect(page.locator("label", { hasText: /^WAV$/ })).toBeVisible({ timeout: 15_000 });
+  const flacWritable = await page.evaluate(async () => {
+    try {
+      return typeof AudioEncoder !== "undefined" && (await AudioEncoder.isConfigSupported({ codec: "flac", sampleRate: 48000, numberOfChannels: 2 })).supported === true;
+    } catch {
+      return false;
+    }
+  });
+  const flac = page.locator("label", { hasText: /^FLAC$/ });
+  const note = page.getByTestId("audio-unwritable-note");
+  if (flacWritable) {
+    await expect(flac).toHaveCount(1);
+  } else {
+    await expect(flac).toHaveCount(0);
+    await expect(note).toContainText("FLAC");
+    await expect(note).toContainText("読み込みはできます");
+  }
+});
+
+test("audio-convert: FLACのファイルを読み込んで、MP3に変換できる", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const flacPath = testInfo.outputPath("input.flac");
+  try {
+    execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-ac", "2", flacPath]);
+  } catch {
+    test.skip(true, "FLACのフィクスチャを作れない環境(ffmpegが無い)");
+  }
+  await page.goto("/tools/audio-convert");
+  await uploadAndWait(page, flacPath);
+  await page.locator("label", { hasText: /^MP3$/ }).click();
+  await page.getByRole("button", { name: "変換する" }).click();
+  await waitForSuccess(page, "変換が完了しました", 60_000);
+  const download = await clickAndDownload(page, "ダウンロード");
+  expect(download.suggestedFilename()).toMatch(/\.mp3$/);
+  const { path } = await assertDownloadedFile(download, { minBytes: 1000 });
+  expect(probe(path).codec).toBe("mp3");
+});
+
 test("audio-convert: M4A→MP3 に変換できる（ブラウザがAACを読める場合）", async ({ page }) => {
   test.setTimeout(90_000);
   test.skip(!fs.existsSync(fixtures.audioM4a), "M4Aフィクスチャを作成できない環境");

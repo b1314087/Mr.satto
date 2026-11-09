@@ -32,7 +32,8 @@ import { useAudioJob } from "@/lib/audio/use-audio-job";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
 /**
- * 音声形式変換。MP3 / WAV / M4A（AAC） / OGG（Opus） / FLAC の相互変換。
+ * 音声形式変換。MP3 / WAV / M4A（AAC） / OGG（Opus） / FLAC などを読み込み、MP3 / WAV / M4A / OGG に変換する
+ * （FLACでの書き出しは、ブラウザ(WebCodecs)が対応している場合だけ選択肢に出る。現在の主なブラウザは未対応）。
  * M4A→MP3 などもここで行う。すべてブラウザ内で処理する。
  */
 export function AudioConvertTool() {

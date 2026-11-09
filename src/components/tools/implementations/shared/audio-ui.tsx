@@ -177,6 +177,9 @@ export function AudioFormatPicker({
   const options = AUDIO_OUTPUT_OPTIONS.filter(
     (o) => (!onlyLossy || o.lossy) && writableKinds !== null && writableKinds.includes(o.kind)
   );
+  // このブラウザでは書き出せない形式(選択肢に出していない形式)。FLACは、現在の主なブラウザでは書き出せない
+  const unwritable =
+    writableKinds === null ? [] : AUDIO_OUTPUT_OPTIONS.filter((o) => (!onlyLossy || o.lossy) && !writableKinds.includes(o.kind));
   const originalInfo = sourceCodec ? resolveOriginalKind(sourceCodec) : null;
   const originalDisabled = sourceCodec !== undefined && sourceCodec !== null && !originalInfo;
 
@@ -223,6 +226,12 @@ export function AudioFormatPicker({
       )}
       {value === "original" && (
         <p className="text-xs text-neutral-500 dark:text-neutral-400">音質は変わらず、速く済みます。</p>
+      )}
+      {unwritable.length > 0 && (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="audio-unwritable-note">
+          {unwritable.map((o) => o.label).join("・")}
+          での書き出しは、お使いのブラウザが対応していないため、選択肢に表示していません（{unwritable.map((o) => o.label).join("・")}のファイルの読み込みはできます）。
+        </p>
       )}
     </fieldset>
   );

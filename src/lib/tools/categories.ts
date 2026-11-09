@@ -52,7 +52,7 @@ export const categories: Category[] = [
   {
     id: "generator",
     name: "生成ツール",
-    description: "見積書・請求書などの書類、二次元コード、パスワード、配色パレットなどを新規生成するツール",
+    description: "見積書・請求書などの書類、二次元コード、パスワード、電子印鑑などを新規生成するツール",
     icon: "🛠️",
   },
   {

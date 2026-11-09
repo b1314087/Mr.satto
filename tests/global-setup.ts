@@ -1365,7 +1365,7 @@ async function generateLightweightToolsFixtures() {
     { dateFormat: "yyyy-mm-dd" }
   ).toFile(fixtures.xlsxDates);
 
-  // Word段落整理(Tool 9)・Word番号振り直し(Tool 10)用フィクスチャ
+  // Word段落整理(Tool 9)用フィクスチャ
   function writeDocx(path: string, spec: DocxDocumentSpec) {
     fs.writeFileSync(path, buildMinimalDocx(spec));
   }
@@ -1381,18 +1381,6 @@ async function generateLightweightToolsFixtures() {
       { kind: "paragraph", runs: [{ text: "1つ目の段落です。" }] },
       { kind: "paragraph", runs: [{ text: "2つ目の段落です。" }] },
       { kind: "paragraph", runs: [{ text: "3つ目の段落です。" }] },
-    ],
-  });
-
-  // 番号振り直し(Tool 10)用: 先頭に "1." "2." "3." の番号が付いた段落と、
-  // 番号を持たない本文段落を混在させる(本文段落は変換対象外であることの確認用)。
-  writeDocx(fixtures.wordNumberedDocx, {
-    blocks: [
-      { kind: "paragraph", runs: [{ text: "見出し（番号なし本文）" }] },
-      { kind: "paragraph", runs: [{ text: "1. りんご" }] },
-      { kind: "paragraph", runs: [{ text: "2. みかん" }] },
-      { kind: "paragraph", runs: [{ text: "3. ぶどう" }] },
-      { kind: "paragraph", runs: [{ text: "補足の本文段落です。" }] },
     ],
   });
 

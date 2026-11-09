@@ -34,7 +34,7 @@ test.describe("書類作成ツール: 生成ツールへの集約（登録）", 
   });
 
   test("もとから生成ツールだったツールは、そのまま生成ツールに残る", () => {
-    for (const id of ["qr-generator", "password-generator", "color-palette-generator", "gradient-generator", "electronic-stamp-generator", "fiscal-calendar", "sequence-generator", "business-card-qr"]) {
+    for (const id of ["qr-generator", "password-generator", "gradient-generator", "electronic-stamp-generator", "fiscal-calendar", "sequence-generator", "business-card-qr"]) {
       expect(getToolById(id)?.category, id).toBe("generator");
     }
   });

@@ -167,9 +167,9 @@ const TEXT_RULES: TextRule[] = [
   { from: "OCRなど一部の高度な機能はプレミアムプラン専用です。", resolve: (ctx) => (notPremiumOnly(ctx) ? "" : undefined) },
   { from: "PDFの表をExcelに変換する機能はプレミアムプラン専用です。", resolve: (ctx) => (notPremiumOnly(ctx) ? "" : undefined) },
   {
-    from: "PDF→Word変換はプレミアムプラン専用、Word段落整理・番号振り直しは無料でご利用いただけます。",
+    from: "PDF→Word変換はプレミアムプラン専用、Word段落整理は無料でご利用いただけます。",
     resolve: (ctx) =>
-      notPremiumOnly(ctx) ? "PDF→Word変換も、Word段落整理・番号振り直しも、会員登録なしで無料でご利用いただけます。" : undefined,
+      notPremiumOnly(ctx) ? "PDF→Word変換も、Word段落整理も、会員登録なしで無料でご利用いただけます。" : undefined,
   },
   {
     from: "動画ツールはプレミアムプラン専用です。",

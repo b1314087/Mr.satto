@@ -20,7 +20,7 @@ import type { NextConfig } from "next";
  *     （node_modules/next-themes/dist/index.js を確認済み）。nonceを使わない
  *     静的CSPの下ではこのscriptにnonceを付与できないため、'unsafe-inline' なしでは
  *     テーマ切り替え機能自体が壊れる。
- *   - style-src: color-palette-tool / image-crop-tool / pomodoro-timer-tool /
+ *   - style-src: image-crop-tool / pomodoro-timer-tool /
  *     ad-slot.tsx が実行時に計算した値（色・座標・進捗率など、ユーザー入力の
  *     HTML文字列ではない）をReactの style={{...}} で描画しており、これはHTML上は
  *     インラインstyle属性になる。nonceを使わない静的CSPではこれらにもnonceを
@@ -264,6 +264,20 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      // 工程1で削除したツール。旧アドレスは404にせず、関連するページへ恒久的に転送する(308。Next.js の permanent。
+      // 検索エンジンは301と同じ恒久的な転送として扱う)。
+      // - 配色パレット生成：色を選んでカラーコードを使うツールとして最も近い「グラデーション生成」へ
+      // - Word番号振り直し：同じ働きのツールが無いため、特定のツールへ寄せず、Wordツールの一覧へ
+      {
+        source: "/tools/color-palette-generator",
+        destination: "/tools/gradient-generator",
+        permanent: true,
+      },
+      {
+        source: "/tools/word-renumber",
+        destination: "/tools/word",
+        permanent: true,
+      },
       // 「指定KBまで圧縮」は「画像圧縮」に統合した（画面で「目標サイズ(KB)を指定して圧縮」を選べる）。
       // 旧アドレスは、統合先で目標サイズの指定を最初から選んだ状態（?mode=size）へ恒久的に転送する。
       {

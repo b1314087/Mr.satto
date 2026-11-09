@@ -81,7 +81,6 @@ test.describe("検索の仕組み: 作業目的からの検索", () => {
     ["mp4 h264", "video-h264"],
     ["MP4をH.264にしたい", "video-h264"],
     ["Excelの日付をまとめて変更したい", "excel-date-shift"],
-    ["Wordで丸数字を入力したい", "word-renumber"],
     ["写真を切り抜きたい", "image-crop"],
     // 動画編集 工程4
     ["動画 サムネイル 複数", "video-thumbnail"],

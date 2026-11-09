@@ -76,7 +76,6 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "excel-merge-center": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-date-shift": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "word-paragraph-cleanup": { role: "edit", receive: { kinds: ["docx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["docx"] } },
-  "word-renumber": { role: "edit", receive: { kinds: ["docx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["docx"] } },
   "pptx-invert": { role: "edit", receive: { kinds: ["pptx"], maxFiles: 1, maxFileSizeMB: 150 }, send: { kinds: ["pptx"] } },
 
   // ---------------- 調べる・まとめる ----------------

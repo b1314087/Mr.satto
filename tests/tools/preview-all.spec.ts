@@ -38,7 +38,7 @@ const CASES: [string, Input][] = [
   ...(["csv-to-excel", "csv-dedupe", "csv-replace", "csv-column-editor", "csv-to-json", "csv-json-convert"] as const).map((id) => [id, csv] as [string, Input]),
   ...(["excel-to-csv", "excel-csv-convert", "excel-transpose", "excel-blank-remove", "excel-replace", "excel-merge-center", "excel-date-shift", "excel-to-pdf"] as const).map((id) => [id, xlsx] as [string, Input]),
   // 文書
-  ...(["word-paragraph-cleanup", "word-renumber", "word-to-pdf"] as const).map((id) => [id, docx] as [string, Input]),
+  ...(["word-paragraph-cleanup", "word-to-pdf"] as const).map((id) => [id, docx] as [string, Input]),
   // Excel・Word比較は、ファイルAを選ぶと「選んだファイル」の確認が出る
   ["office-compare", docx],
   // ファイル
@@ -76,7 +76,6 @@ const CASES: [string, Input][] = [
   ["fiscal-calendar", none],
   ["sequence-generator", none],
   ["time-calculator", none],
-  ["color-palette-generator", none],
   ["estimate-generator", none],
   ["quote-order-generator", none],
   ["invoice-generator", none],

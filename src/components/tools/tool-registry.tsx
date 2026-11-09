@@ -86,10 +86,6 @@ const PdfPasswordProtectTool = dynamic(() =>
   import("./implementations/pdf-password-protect-tool").then((m) => m.PdfPasswordProtectTool),
   { loading: ToolLoading }
 );
-const ColorPaletteTool = dynamic(() =>
-  import("./implementations/color-palette-tool").then((m) => m.ColorPaletteTool),
-  { loading: ToolLoading }
-);
 const ImageSnsSizeTool = dynamic(() =>
   import("./implementations/image-sns-size-tool").then((m) => m.ImageSnsSizeTool),
   { loading: ToolLoading }
@@ -419,10 +415,6 @@ const WordParagraphCleanupTool = dynamic(() =>
   import("./implementations/word-paragraph-cleanup-tool").then((m) => m.WordParagraphCleanupTool),
   { loading: ToolLoading }
 );
-const WordRenumberTool = dynamic(() =>
-  import("./implementations/word-renumber-tool").then((m) => m.WordRenumberTool),
-  { loading: ToolLoading }
-);
 
 // 次工程・印刷帳票4ツール追加フェーズ
 const ExcelLabelTool = dynamic(() =>
@@ -505,8 +497,6 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <BackgroundRemoverTool />;
     case "pdf-password-protect":
       return <PdfPasswordProtectTool />;
-    case "color-palette-generator":
-      return <ColorPaletteTool />;
     case "image-sns-size":
       return <ImageSnsSizeTool />;
     case "image-crop":
@@ -688,8 +678,6 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelDateShiftTool />;
     case "word-paragraph-cleanup":
       return <WordParagraphCleanupTool />;
-    case "word-renumber":
-      return <WordRenumberTool />;
     case "excel-label":
       return <ExcelLabelTool />;
     case "envelope-address":

@@ -204,7 +204,6 @@ test.describe("設定の整合", () => {
     "excel-merge-center": "excel-merge-center-tool.tsx",
     "excel-date-shift": "excel-date-shift-tool.tsx",
     "word-paragraph-cleanup": "word-paragraph-cleanup-tool.tsx",
-    "word-renumber": "word-renumber-tool.tsx",
     "pptx-invert": "pptx-invert-tool.tsx",
     "file-hash": "file-hash-tool.tsx",
     "file-zip": "file-zip-tool.tsx",
