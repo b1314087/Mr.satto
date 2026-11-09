@@ -214,13 +214,13 @@ const hasFocusIndicator = (locator: ReturnType<Page["locator"]>) =>
 
 test.describe("C. 画像プレビュー（開発モード）", () => {
   test("ファイル選択直後にサムネイルが表示される（壊れた画像にならない）", async ({ page }) => {
-    await gotoTool(page, "image-resize");
+    await gotoTool(page, "image-compress?mode=resize");
     await uploadFixture(page, fixtures.png);
     await expectImageLoaded(thumb(page, "sample.png"));
   });
 
   test("ファイルを替えると新しいプレビューに切り替わり、古い画像は表示されず、古いURLは解放される", async ({ page }) => {
-    await gotoTool(page, "image-resize");
+    await gotoTool(page, "image-compress?mode=resize");
     await uploadFixture(page, fixtures.png);
     const first = thumb(page, "sample.png");
     await expectImageLoaded(first);
@@ -239,7 +239,7 @@ test.describe("C. 画像プレビュー（開発モード）", () => {
   });
 
   test("選択を解除（×）するとプレビューが消え、URLが解放される", async ({ page }) => {
-    await gotoTool(page, "image-resize");
+    await gotoTool(page, "image-compress?mode=resize");
     await uploadFixture(page, fixtures.png);
     const img = thumb(page, "sample.png");
     await expectImageLoaded(img);
@@ -252,7 +252,7 @@ test.describe("C. 画像プレビュー（開発モード）", () => {
   test("別のページへ移動してもURLの解放で例外が出ない（コンソールエラーなし）", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    await gotoTool(page, "image-resize");
+    await gotoTool(page, "image-compress?mode=resize");
     await uploadFixture(page, fixtures.png);
     await expectImageLoaded(thumb(page, "sample.png"));
     await page.getByRole("link", { name: /ツール一覧|すべてのツール/ }).first().click().catch(() => page.goto("/tools"));

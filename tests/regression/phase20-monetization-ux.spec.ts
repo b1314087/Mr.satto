@@ -15,7 +15,7 @@ const premiumTool = tools.find((t) => t.status === "available" && t.requiredPlan
 const PREMIUM_SKIP_REASON = "ALL_TOOLS_STANDARD が true のため、プレミアム限定ツールが存在しない";
 
 async function processFixtureImage(page: Page) {
-  await page.goto("/tools/image-resize");
+  await page.goto("/tools/image-compress?mode=resize");
   await uploadFixture(page, fixtures.png);
   await page.getByRole("button", { name: "リサイズする" }).click();
   await waitForSuccess(page, "完了");
@@ -50,7 +50,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
   });
 
   test("Standard対象ツールは広告なしで開け、ダウンロード時に広告を見る案内が1画面で分かる", async ({ page }) => {
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
 
     // ツール本体は広告なしで使える（入口の広告ボタンは無い）
     await expect(page.locator('input[type="file"]')).toBeAttached();
@@ -157,7 +157,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
 test.describe("Standard: 対象ツールに広告なしでアクセスできる", () => {
   test("Standardプランでは、Standard対象ツールへ広告なしで直接アクセスできる", async ({ page, context, baseURL }) => {
     await setDevPlanOverride(context, "standard", baseURL!);
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
 
     await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
     await expect(page.locator('input[type="file"]')).toBeAttached();
@@ -183,7 +183,7 @@ test.describe("Standard: 対象ツールに広告なしでアクセスできる"
     baseURL,
   }) => {
     await setDevPlanOverride(context, "standard", baseURL!);
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await uploadFixture(page, fixtures.png);
     await page.getByRole("button", { name: "リサイズする" }).click();
     await waitForSuccess(page, "完了");
@@ -211,7 +211,7 @@ test.describe("Premium: Premium対象ツールに広告なしでアクセスで�
     baseURL,
   }) => {
     await setDevPlanOverride(context, "premium", baseURL!);
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
 
     await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
     await expect(page.locator('input[type="file"]')).toBeAttached();
@@ -264,7 +264,7 @@ test.describe("AdSlot: 広告未配信でもレイアウトが崩れず、アク
     // （下の「Standard/Premiumではフッター広告が表示されない」テスト参照）、
     // 「広告枠が表示されている状態でのプレースホルダー表示」を確認するこの
     // テストはFreeで行う。
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
 
     // フッター広告は準備中プレースホルダーとして、役割とラベルを持って表示される
     const footerAd = page.locator('[data-ad-placement="footer"]');
@@ -289,19 +289,19 @@ test.describe("フッター広告: 広告なしプランには表示されない
   });
 
   test("Freeではフッター広告(プレースホルダー)が表示される", async ({ page }) => {
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await expect(page.locator('[data-ad-placement="footer"]')).toBeVisible();
   });
 
   test("Standardではフッター広告が表示されない", async ({ page, context, baseURL }) => {
     await setDevPlanOverride(context, "standard", baseURL!);
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await expect(page.locator('[data-ad-placement="footer"]')).toBeHidden();
   });
 
   test("Premiumではフッター広告が表示されない", async ({ page, context, baseURL }) => {
     await setDevPlanOverride(context, "premium", baseURL!);
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await expect(page.locator('[data-ad-placement="footer"]')).toBeHidden();
   });
 });

@@ -62,12 +62,13 @@ baseTest.describe("一括処理の仕組み", () => {
     expect(text).toContain(`最大${BATCH_LIMITS["image-format-convert"]}枚`);
     expect(text).toContain(`最大${BATCH_LIMITS["background-remover"]}枚`);
     expect(text).toContain(`最大${BATCH_LIMITS["pdf-compress"]}個のPDF`);
+    // 工程3：画像リサイズは画像圧縮に統合した（「画像リサイズ・圧縮」。上限は画像圧縮の設定を使う）
     expect(BATCH_LIMITS["image-compress"]).toBe(30);
-    expect(BATCH_LIMITS["image-resize"]).toBe(30);
+    expect("image-resize" in BATCH_LIMITS).toBe(false);
   });
 
   baseTest("課金オフの間は、説明文からプレミアムの話がなくなる（だれでも一括処理を使えるため）", () => {
-    for (const id of ["image-format-convert", "image-batch-convert", "background-remover", "image-padding-text", "image-compress", "image-resize", "pdf-compress"]) {
+    for (const id of ["image-format-convert", "image-batch-convert", "background-remover", "image-padding-text", "image-compress", "pdf-compress"]) {
       const content = getToolSeoContent(id)!;
       const off = adaptToolSeoContentWith(content, { billing: false, ads: false, premiumOnly: false, standardOffered: false });
       const all = [off.metaTitle, off.metaDescription, off.lead, ...off.howTo, ...off.faq.flatMap((f) => [f.question, f.answer])].join("\n");
@@ -108,7 +109,7 @@ for (const plan of ["free", "standard"] as const) {
 
     baseTest("1枚だけ選んだときは、案内を出さずにこれまでどおり処理できる", async ({ page, baseURL }) => {
       await asPlan(page, plan, baseURL);
-      await page.goto("/tools/image-resize");
+      await page.goto("/tools/image-compress?mode=resize");
       await uploadFixture(page, fixtures.png);
       await expect(page.getByTestId("batch-notice")).toHaveCount(0);
       await page.getByRole("button", { name: "リサイズする", exact: true }).click();
@@ -213,7 +214,7 @@ premiumTest.describe("プレミアム: 一括処理", () => {
   });
 
   premiumTest("画像リサイズ: 縦横比を固定すると、指定した幅に合わせて画像ごとに高さが決まる", async ({ page }) => {
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     // sample.png は 64×64、landscape.jpg は 300×200
     await uploadFixture(page, [fixtures.png, fixtures.landscapeJpg]);
     await expect(page.getByTestId("batch-resize-note")).toContainText("画像ごとに高さを自動で決めます");

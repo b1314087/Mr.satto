@@ -9,7 +9,7 @@ import { waitForFileInputHydrated } from "../helpers/tool-ready";
  */
 test("画像リサイズ: ファイルを選ぶ前は枠がカードの幅いっぱい（余白つき）に広がり、選んだあとは左右2列になる（PC幅）", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/tools/image-resize");
+  await page.goto("/tools/image-compress?mode=resize");
   await waitForFileInputHydrated(page);
   const widths = () =>
     page.evaluate(() => {

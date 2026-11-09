@@ -10,7 +10,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { ImageAdjustProcessor, applyBrightnessContrast, loadImage } from "@/lib/processors/browser/image";
+import { ImageAdjustProcessor, applyImageAdjust, loadImage } from "@/lib/processors/browser/image";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useObjectUrl } from "@/lib/utils/use-object-url";
@@ -25,7 +25,10 @@ const EXT_BY_MIME: Record<string, string> = {
 const PREVIEW_MAX_SIDE = 640;
 
 /**
- * 画像の明るさ・コントラスト調整。
+ * 画像の色調補正（明るさ・コントラスト・グレースケール）。
+ * 工程3で、画像グレースケール（旧 image-grayscale）をこのツールに統合した。グレースケール・明るさ・コントラストは
+ * それぞれ独立して使え、組み合わせることもできる（計算はグレースケール→明るさ・コントラストの順。applyImageAdjust）。
+ * 旧「画像グレースケール」のアドレスからの転送（?mode=grayscale）では、グレースケールを最初から選んでおく。
  *
  * - スライダーを動かすと、縮小したプレビュー画像に即座に反映される(元画像と並べて比較できる)。
  *   プレビューは縮小画像に同じ計算(applyBrightnessContrast)を適用しているだけで、
@@ -40,6 +43,15 @@ export function ImageAdjustTool() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [brightness, setBrightness] = useState(0);
   const [contrast, setContrast] = useState(0);
+  const [grayscale, setGrayscale] = useState(false);
+
+  // 旧「画像グレースケール」のアドレスから転送されてきたとき（?mode=grayscale）は、グレースケールを最初から選んでおく
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("mode") === "grayscale") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setGrayscale(true);
+    }
+  }, []);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [progressLabel, setProgressLabel] = useState("");
@@ -94,13 +106,13 @@ export function ImageAdjustTool() {
     if (!previewReady || !base || !canvas) return;
     const frame = requestAnimationFrame(() => {
       const adjusted = new ImageData(new Uint8ClampedArray(base.data), base.width, base.height);
-      applyBrightnessContrast(adjusted.data, brightness, contrast);
+      applyImageAdjust(adjusted.data, brightness, contrast, grayscale);
       canvas.width = base.width;
       canvas.height = base.height;
       canvas.getContext("2d")?.putImageData(adjusted, 0, 0);
     });
     return () => cancelAnimationFrame(frame);
-  }, [previewReady, brightness, contrast]);
+  }, [previewReady, brightness, contrast, grayscale]);
 
   function addFiles(newFiles: File[]) {
     setFiles(batch.pick(files, newFiles, "append"));
@@ -127,7 +139,7 @@ export function ImageAdjustTool() {
       for (let i = 0; i < files.length; i++) {
         setProgressLabel(files.length > 1 ? `処理中 ${i + 1} / ${files.length}` : "処理中...");
         const file = files[i];
-        const output = await new ImageAdjustProcessor().process({ file, brightness, contrast });
+        const output = await new ImageAdjustProcessor().process({ file, brightness, contrast, grayscale });
         const ext = EXT_BY_MIME[output.mimeType] ?? "png";
         const base = `${stripExtension(file.name)}-adjusted`;
         const count = usedNames.get(base) ?? 0;
@@ -153,7 +165,7 @@ export function ImageAdjustTool() {
     }
   }
 
-  const changed = brightness !== 0 || contrast !== 0;
+  const changed = brightness !== 0 || contrast !== 0 || grayscale;
 
   return (
     <div className="flex flex-col gap-6">
@@ -195,7 +207,7 @@ export function ImageAdjustTool() {
       )}
 
       {selectedFile && (
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+        <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
           {previewError && <ErrorMessage message={previewError} />}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -227,6 +239,15 @@ export function ImageAdjustTool() {
 
       {files.length > 0 && (
         <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <label className="flex items-center gap-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+            <input
+              type="checkbox"
+              checked={grayscale}
+              onChange={(e) => setGrayscale(e.target.checked)}
+              data-testid="adjust-grayscale"
+            />
+            グレースケール（白黒）にする
+          </label>
           <SliderField
             label="明るさ"
             value={brightness}

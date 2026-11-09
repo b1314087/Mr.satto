@@ -54,7 +54,7 @@ plainTest.describe("PDF編集: ツール登録と一覧・検索・SEO", () => {
     const ids = new Set(getListedTools().map((t) => t.id));
     plainExpect(ids.has(PDF_EDIT_TOOL_ID)).toBe(true);
     for (const id of OLD_IDS) plainExpect(ids.has(id), `${id}が一覧に残っている`).toBe(false);
-    for (const id of ["pdf-compress", "pdf-to-text", "image-to-pdf", "pdf-add-page-numbers"]) {
+    for (const id of ["pdf-compress", "pdf-to-text", "image-to-pdf", "pdf-fix"]) {
       plainExpect(ids.has(id), `${id}が一覧から消えている`).toBe(true);
     }
     // 統合済み以外のツールは1つも減っていない（画像ツールなど、他の統合済みツールも一覧からは外れている）

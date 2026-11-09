@@ -9,8 +9,10 @@ import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile }
  */
 
 test("passport-photo: ページが表示され、画像をアップロードするとサイズ選択・トリミングUIが出る", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
-  await expect(page.getByRole("heading", { name: "証明写真サイズ変換" })).toBeVisible();
+  await page.goto("/tools/image-crop?mode=passport");
+  // 工程3：証明写真サイズ変換は「画像トリミング（SNSサイズ・証明写真）」に統合した（証明写真を選んだ状態で開く）
+  await expect(page.getByRole("heading", { name: "画像トリミング（SNSサイズ・証明写真）" })).toBeVisible();
+  await expect(page.getByTestId("image-trim-mode-passport")).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
 
   await uploadFixture(page, [fixtures.jpg]);
 
@@ -20,7 +22,7 @@ test("passport-photo: ページが表示され、画像をアップロードす�
 });
 
 test("passport-photo: プリセットサイズを切り替えられる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   const preset30x40 = page.getByRole("button", { name: "30×40mm" });
@@ -29,7 +31,7 @@ test("passport-photo: プリセットサイズを切り替えられる", async (
 });
 
 test("passport-photo: カスタムサイズを指定できる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   await page.getByRole("button", { name: "カスタム" }).click();
@@ -42,7 +44,7 @@ test("passport-photo: カスタムサイズを指定できる", async ({ page })
 });
 
 test("passport-photo: トリミング枠をドラッグして移動できる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   const box = page.locator(".cursor-move");
@@ -61,7 +63,7 @@ test("passport-photo: トリミング枠をドラッグして移動できる", a
 });
 
 test("passport-photo: 拡大/縮小ボタンでズームできる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   const box = page.locator(".cursor-move");
@@ -78,7 +80,7 @@ test("passport-photo: 拡大/縮小ボタンでズームできる", async ({ pag
 });
 
 test("passport-photo: JPEGで証明写真を書き出せる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   await page.getByRole("button", { name: "画像を書き出す" }).click();
@@ -89,7 +91,7 @@ test("passport-photo: JPEGで証明写真を書き出せる", async ({ page }) =
 });
 
 test("passport-photo: PNGで証明写真を書き出せる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   await page.getByRole("button", { name: "PNG", exact: true }).click();
@@ -101,7 +103,7 @@ test("passport-photo: PNGで証明写真を書き出せる", async ({ page }) =>
 });
 
 test("passport-photo: 横長写真でも証明写真比率にトリミングしてA4にPDF配置できる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.landscapeJpg]);
 
   await page.getByRole("button", { name: "PDFを書き出す" }).click();
@@ -112,7 +114,7 @@ test("passport-photo: 横長写真でも証明写真比率にトリミングし�
 });
 
 test("passport-photo: 用紙・余白を変更すると最大枚数の表示が更新される", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   const marginInput = page.getByLabel(/余白 \(mm\)/);
@@ -122,19 +124,19 @@ test("passport-photo: 用紙・余白を変更すると最大枚数の表示が�
 });
 
 test("passport-photo: 未対応ファイル（txt）はエラー表示になる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.txt]);
   await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("passport-photo: 破損した画像ファイルはエラー表示になる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.corruptedImage]);
   await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toBeVisible();
 });
 
 test("passport-photo: 不正なカスタムサイズ（0mm）はエラー表示になり、出力ボタンが無効", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   await page.getByRole("button", { name: "カスタム" }).click();
@@ -145,7 +147,7 @@ test("passport-photo: 不正なカスタムサイズ（0mm）はエラー表示�
 });
 
 test("passport-photo: 極端に大きいカスタムサイズはエラー表示になる", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   await page.getByRole("button", { name: "カスタム" }).click();
@@ -155,14 +157,14 @@ test("passport-photo: 極端に大きいカスタムサイズはエラー表示�
 });
 
 test("passport-photo: ファイル未選択時は出力操作が表示されない", async ({ page }) => {
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await expect(page.getByRole("button", { name: "画像を書き出す" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "PDFを書き出す" })).toHaveCount(0);
 });
 
 test("passport-photo: モバイル幅(375px)でも横スクロールが発生せず主要要素が操作できる", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
-  await page.goto("/tools/image-passport-photo");
+  await page.goto("/tools/image-crop?mode=passport");
   await uploadFixture(page, [fixtures.jpg]);
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);

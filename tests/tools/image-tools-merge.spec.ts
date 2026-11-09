@@ -75,14 +75,15 @@ plainTest.describe("画像ツールの統合: 登録と一覧・検索・SEO", (
     const ids = new Set(getListedTools().map((t) => t.id));
     for (const h of ALL_HUBS) plainExpect(ids.has(h), `${h}が一覧に無い`).toBe(true);
     for (const m of ALL_MEMBERS) plainExpect(ids.has(m), `${m}が一覧に残っている`).toBe(false);
-    for (const id of ["image-resize", "image-compress", "image-crop", "image-sns-size", "pdf-to-image", "image-to-pdf"]) {
+    // 工程3：画像リサイズ・SNSサイズ変換は、画像リサイズ・圧縮／画像トリミングに統合した
+    for (const id of ["image-compress", "image-crop", "pdf-to-image", "image-to-pdf"]) {
       plainExpect(ids.has(id), `${id}が一覧から消えている`).toBe(true);
     }
     plainExpect(getListedTools().length).toBe(tools.filter((t) => !t.mergedInto).length);
   });
 
   plainTest("関連ツールのカードに、統合済みの旧ツールは出ない（総合ページ・旧ページとも）", () => {
-    for (const id of [...ALL_HUBS, ...ALL_MEMBERS, "image-resize", "image-crop"]) {
+    for (const id of [...ALL_HUBS, ...ALL_MEMBERS, "image-compress", "image-crop"]) {
       const { related } = getRelatedTools(getToolById(id)!);
       plainExpect(related.filter((t) => t.mergedInto).map((t) => t.id), `${id}の関連ツール`).toEqual([]);
     }
@@ -118,7 +119,7 @@ test.describe("画像ツールの統合: 一覧・カテゴリ・旧URL", () => 
     await page.goto("/tools?category=image");
     for (const h of ALL_HUBS) await expect(hubCard(page, h), `${h}のカード`).toHaveCount(1);
     for (const m of ALL_MEMBERS) await expect(hubCard(page, m), `${m}のカード`).toHaveCount(0);
-    await expect(hubCard(page, "image-resize")).toHaveCount(1);
+    await expect(hubCard(page, "image-compress")).toHaveCount(1);
     await expect(hubCard(page, "image-crop")).toHaveCount(1);
   });
 

@@ -52,9 +52,9 @@ test.describe("検索の仕組み: 表記ゆれ", () => {
     expect(top("h264")).toBe("video-h264");
   });
 
-  test("「白黒」「モノクロ」「グレースケール」で画像のモノクロ化ツールが最上位になる", () => {
+  test("「白黒」「モノクロ」「グレースケール」で画像のモノクロ化ツール（工程3で色調補正に統合）が最上位になる", () => {
     for (const q of ["白黒", "モノクロ", "グレースケール", "白黒にする"]) {
-      expect(top(q), q).toBe("image-grayscale");
+      expect(top(q), q).toBe("image-adjust");
     }
   });
 });
@@ -72,9 +72,10 @@ test.describe("検索の仕組み: 作業目的からの検索", () => {
     ["PDFの向きを直したい", "pdf-edit"],
     ["PDFの文字を取り出したい", "pdf-to-text"],
     ["画像を軽くしたい", "image-compress"],
-    ["画像の大きさを変えたい", "image-resize"],
-    ["画像を白黒に", "image-grayscale"],
-    ["画像を白黒にしたい", "image-grayscale"],
+    // 工程3：画像リサイズ・画像グレースケールは、画像リサイズ・圧縮／画像色調補正に統合した
+    ["画像の大きさを変えたい", "image-compress"],
+    ["画像を白黒に", "image-adjust"],
+    ["画像を白黒にしたい", "image-adjust"],
     ["動画を軽くする", "video-compress"],
     ["動画を軽くしたい", "video-compress"],
     ["動画の形式を変えたい", "video-convert"],

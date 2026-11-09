@@ -64,7 +64,7 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
       expect(xml).not.toContain(`${path}</loc>`);
     }
     // ツールのページは残る
-    expect(xml).toContain("/tools/image-resize</loc>");
+    expect(xml).toContain("/tools/image-compress</loc>");
   });
 
   test("決済（checkout）と決済管理（portal）のAPIは404を返す", async ({ request }) => {
@@ -151,7 +151,7 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
   });
 
   test("ツールページに広告の枠・ダウンロード時の広告の案内が出ない", async ({ page }) => {
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await expect(page.locator('input[type="file"]')).toBeAttached();
     await expect(page.getByTestId("download-ad-notice")).toHaveCount(0);
     await expect(page.locator("[data-ad-placement]")).toHaveCount(0);
@@ -159,7 +159,7 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
   });
 
   test("広告の確認画面なしで、処理済みファイルをそのままダウンロードできる", async ({ page }) => {
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await uploadFixture(page, fixtures.png);
     await page.getByRole("button", { name: "リサイズする" }).click();
     await waitForSuccess(page, "完了");
@@ -178,7 +178,7 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
       if (url.includes("googlesyndication.com") || url.includes("doubleclick.net")) adRequests.push(url);
     });
     await page.goto("/");
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     expect(adRequests).toEqual([]);
   });
 

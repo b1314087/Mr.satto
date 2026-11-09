@@ -114,11 +114,13 @@ test.describe("関連ツール", () => {
     ["pdf-to-excel", ["pdf-to-word", "filled-pdf-to-excel", "ocr", "pdf-edit"]],
     ["pdf-to-word", ["pdf-to-excel", "word-to-pdf", "pdf-to-text", "ocr"]],
     ["pdf-edit", ["pdf-fix", "pdf-compress", "pdf-to-word", "pdf-to-excel"]],
-    ["image-compress", ["image-resize", "image-format-convert", "image-metadata-remove", "image-crop"]],
+    // 工程3：画像リサイズは統合先そのもの（image-compress）になったため、関連ツールの指定から外した（残りの枠は自動で選ばれる）
+    ["image-compress", ["image-format-convert", "image-metadata-remove", "image-crop"]],
   ];
   for (const [id, expected] of cases) {
     test(`${id}: 使う場面が近いツールが関連ツールに出る`, async ({ page }) => {
-      expect(getRelatedTools(getToolById(id)!).related.map((t) => t.id)).toEqual(expected);
+      // 指定した関連ツールが、指定した順で先頭に出る
+      expect(getRelatedTools(getToolById(id)!).related.map((t) => t.id).slice(0, expected.length)).toEqual(expected);
       await page.goto(`/tools/${id}`);
       for (const r of expected) await expect(page.locator(`main a[href="/tools/${r}"][aria-label]`), r).toBeVisible();
     });

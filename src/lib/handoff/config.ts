@@ -28,7 +28,6 @@ const MULTI = 20;
 
 export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   // ---------------- 画像 ----------------
-  "image-resize": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-resize"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
   "image-compress": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-compress"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
   "image-format-convert": {
     role: "convert",
@@ -37,11 +36,11 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   },
   "image-crop": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
   "image-rotate-flip": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
-  "image-grayscale": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
+  // 工程3：画像グレースケールは、色調補正（image-adjust）に統合した（受け取りも統合先で行う。複数枚の一括処理に対応）
+  "image-adjust": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-adjust"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
   "image-metadata-remove": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
   "image-watermark": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
   "image-mosaic": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
-  "image-sns-size": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
 
   // ---------------- PDF ----------------
   // PDF編集は、開いた直後が「結合」（複数のPDFが前提）のため、受け取りは設定しない。結果の送り出しだけ行う
@@ -68,7 +67,8 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "excel-csv-convert": { role: "convert", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["csv", "xlsx"] } },
   "csv-dedupe": { role: "edit", receive: { kinds: ["csv"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["csv"] } },
   "csv-replace": { role: "edit", receive: { kinds: ["csv"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["csv"] } },
-  "csv-column-editor": { role: "edit", receive: { kinds: ["csv"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["csv"] } },
+  // 工程3：Excel（.xlsx）にも対応した（受け取り・送り出しとも、CSVとExcel）
+  "csv-column-editor": { role: "edit", receive: { kinds: ["csv", "xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["csv", "xlsx"] } },
   "excel-transpose": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-blank-remove": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-replace": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },

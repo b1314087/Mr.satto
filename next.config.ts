@@ -271,6 +271,17 @@ const nextConfig: NextConfig = {
         destination: "/tools/csv-excel",
         permanent: true,
       },
+      // 工程3で統合したツール（同じく308で恒久的に転送する）。統合先では、?mode= でその機能を選んだ状態で開く。
+      // - PDFページ番号追加・PDF透かし → PDF修正（ページ番号・透かし）
+      // - 画像グレースケール → 画像色調補正（グレースケールを選んだ状態）
+      // - 画像リサイズ → 画像リサイズ・圧縮（サイズの変更だけを選んだ状態）
+      // - SNSサイズ変換・証明写真サイズ変換 → 画像トリミング（SNSサイズ・証明写真）
+      { source: "/tools/pdf-add-page-numbers", destination: "/tools/pdf-fix?mode=page-numbers", permanent: true },
+      { source: "/tools/pdf-watermark", destination: "/tools/pdf-fix?mode=watermark", permanent: true },
+      { source: "/tools/image-grayscale", destination: "/tools/image-adjust?mode=grayscale", permanent: true },
+      { source: "/tools/image-resize", destination: "/tools/image-compress?mode=resize", permanent: true },
+      { source: "/tools/image-sns-size", destination: "/tools/image-crop?mode=sns", permanent: true },
+      { source: "/tools/image-passport-photo", destination: "/tools/image-crop?mode=passport", permanent: true },
       // 「指定KBまで圧縮」は「画像圧縮」に統合した（画面で「目標サイズ(KB)を指定して圧縮」を選べる）。
       // 旧アドレスは、統合先で目標サイズの指定を最初から選んだ状態（?mode=size）へ恒久的に転送する。
       {

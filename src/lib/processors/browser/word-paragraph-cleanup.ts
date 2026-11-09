@@ -10,6 +10,7 @@ import {
   isParagraphBlank,
   getParagraphText,
 } from "@/lib/word/docx-text-ops";
+import { applyColumns, type ColumnSettings } from "@/lib/word/columns";
 
 /**
  * Word段落整理（次工程・軽量便利ツール一括追加 Tool 9）。
@@ -32,6 +33,8 @@ export interface ParagraphCleanupOptions {
 export interface WordParagraphCleanupInput {
   file: File;
   options: ParagraphCleanupOptions;
+  /** 段組みの変更（工程3。省略時は段組みを変えない＝従来どおり） */
+  columns?: ColumnSettings | null;
 }
 
 export interface WordParagraphCleanupOutput {
@@ -39,6 +42,8 @@ export interface WordParagraphCleanupOutput {
   beforeText: string;
   afterText: string;
   removedParagraphCount: number;
+  /** 段組みを変えたときの結果（変えないときは null） */
+  columns: { sectionsChanged: number; columnBreaksInserted: number } | null;
 }
 
 function normalizeTextRun(text: string, options: ParagraphCleanupOptions): string {
@@ -135,12 +140,15 @@ export class WordParagraphCleanupProcessor extends BrowserProcessor<
   async process(input: WordParagraphCleanupInput): Promise<WordParagraphCleanupOutput> {
     const pkg = await loadDocxPackage(input.file);
     const doc = parseDocumentXml(pkg.documentXmlText);
+    // 段組みの範囲・段区切りは、整理の前の段落の番号で指定する（画面の段落の一覧と同じ番号）
+    const originalParagraphs = getTopLevelParagraphs(getBodyElement(doc));
 
     const { beforeText, afterText, removedParagraphCount } = applyParagraphCleanup(doc, input.options);
+    const columns = input.columns ? applyColumns(doc, input.columns, originalParagraphs) : null;
 
     const newXml = serializeDocumentXml(doc, pkg.xmlDeclaration);
     const blob = buildDocxBlob(pkg, newXml);
 
-    return { blob, beforeText, afterText, removedParagraphCount };
+    return { blob, beforeText, afterText, removedParagraphCount, columns };
   }
 }

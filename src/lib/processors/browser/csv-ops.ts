@@ -216,6 +216,26 @@ export interface CsvColumnEditInput {
   renames?: Record<number, string>;
   /** 1行目をヘッダー（列名）として扱うか。trueの場合、renameは1行目にのみ適用される */
   hasHeader: boolean;
+  /**
+   * 対象にする行の範囲（1始まり・両端を含む。工程3で追加）。範囲外の行は出力に含めない。
+   * 省略時はすべての行（従来どおり）。見出しは、範囲の最初の行になる。
+   */
+  rowStart?: number;
+  rowEnd?: number;
+}
+
+/**
+ * 対象にする行の範囲だけを取り出す（1始まり・両端を含む。省略時はすべて。CSV・Excelの列編集で共通に使う）。
+ * 範囲が正しくないときは日本語のエラーを throw する。
+ */
+export function sliceRowRange<T>(rows: T[], rowStart?: number, rowEnd?: number): T[] {
+  if (rowStart === undefined && rowEnd === undefined) return rows;
+  const start = rowStart ?? 1;
+  const end = Math.min(rowEnd ?? rows.length, rows.length);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || start > end) {
+    throw new Error(`対象にする行の範囲が正しくありません（1〜${rows.length}行目の間で、開始行が終了行以下になるように指定してください）`);
+  }
+  return rows.slice(start - 1, end);
 }
 
 export interface CsvColumnEditOutput {
@@ -272,6 +292,8 @@ export class CsvColumnEditProcessor extends BrowserProcessor<
     columnOrder,
     renames,
     hasHeader,
+    rowStart,
+    rowEnd,
   }: CsvColumnEditInput): Promise<CsvColumnEditOutput> {
     if (columnOrder.length === 0) {
       throw new Error("残す列を1つ以上選択してください");
@@ -282,7 +304,7 @@ export class CsvColumnEditProcessor extends BrowserProcessor<
       throw new Error("CSVの内容が空です。ファイルを確認してください。");
     }
 
-    const resultRows = editCsvColumnRows(rows, columnOrder, renames, hasHeader);
+    const resultRows = editCsvColumnRows(sliceRowRange(rows, rowStart, rowEnd), columnOrder, renames, hasHeader);
 
     const blob = csvRowsToBlob(resultRows);
     return { blob, rowCount: resultRows.length, columnCount: columnOrder.length };

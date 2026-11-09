@@ -11,7 +11,7 @@ import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile }
  */
 
 test("image-resize: 画像を入力してリサイズし、PNGをダウンロードできる", async ({ page }) => {
-  await page.goto("/tools/image-resize");
+  await page.goto("/tools/image-compress?mode=resize");
   await uploadFixture(page, fixtures.png);
 
   await page.getByRole("button", { name: "リサイズする" }).click();

@@ -163,7 +163,12 @@ const STOPWORDS = new Set(
 
 function stripSuffix(token: string): string {
   for (const suffix of SUFFIXES) {
-    if (token.length > suffix.length && token.endsWith(suffix)) return token.slice(0, -suffix.length);
+    if (token.length > suffix.length && token.endsWith(suffix)) {
+      const stripped = token.slice(0, -suffix.length);
+      // 「したい」から「たい」を取って「し」だけが残るような、ひらがな1文字の語は作らない
+      // （「画像を白黒にしたい」で「し」が検索語になり、説明文に「し」を含むかどうかで結果が変わっていたため。工程3）
+      return /^[ぁ-ゟ]$/.test(stripped) ? token : stripped;
+    }
   }
   return token;
 }

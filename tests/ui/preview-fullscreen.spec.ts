@@ -10,7 +10,7 @@ import { uploadFixture } from "../helpers/tool-runner";
 
 test("大きく表示：画面いっぱいに広がり、小さいプレビューは自動で拡大。－・＋・画面に合わせるで倍率を変えられ、閉じると元に戻る", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/tools/pdf-watermark");
+  await page.goto("/tools/pdf-fix?mode=watermark");
   await uploadFixture(page, fixtures.multiPagePdf);
   const preview = page.getByTestId("tool-preview").first();
   await expect(preview).toBeVisible({ timeout: 30_000 });

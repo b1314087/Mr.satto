@@ -69,7 +69,7 @@ const png = () => file(fixtures.png, "sample.png", "image/png");
 
 test.describe("全画面のドロップ：共通のファイル選択欄（1つだけ）", () => {
   test("通常はオーバーレイを出さず、ドラッグ中だけ出す。欄の外に落とした画像が読み込まれ、表示は消える。続けて処理・ダウンロードできる", async ({ page }) => {
-    await openTool(page, "image-resize");
+    await openTool(page, "image-compress?mode=resize");
     await expect(overlay(page)).toHaveCount(0);
 
     expect(await dragOn(page, ["dragenter", "dragover"], [png()])).toEqual([true, true]);
@@ -153,7 +153,7 @@ test.describe("全画面のドロップ：表示が残らないこと・通常�
   });
 
   test("ボタン・入力欄・リンクは通常どおり使える（オーバーレイは通常時に存在しない）", async ({ page }) => {
-    await openTool(page, "image-resize");
+    await openTool(page, "image-compress?mode=resize");
     await expect(overlay(page)).toHaveCount(0);
     // ファイル選択欄（クリックで選ぶ）も、これまでどおり
     await page.locator('input[type="file"]').first().setInputFiles(fixtures.png);
@@ -161,9 +161,9 @@ test.describe("全画面のドロップ：表示が残らないこと・通常�
     const width = page.getByRole("spinbutton").first();
     await width.fill("32");
     await expect(width).toHaveValue("32");
-    // ツール間の移動
-    await page.locator('main a[href="/tools/image-compress"]').first().click();
-    await expect(page).toHaveURL(/\/tools\/image-compress$/);
+    // ツール間の移動（工程3：画像リサイズは画像リサイズ・圧縮に統合したため、関連ツールの画像形式変換へ移る）
+    await page.locator('main a[href="/tools/image-format-convert"]').first().click();
+    await expect(page).toHaveURL(/\/tools\/image-format-convert$/);
   });
 
   test("ページを移ると受付をやめる：ファイル選択欄のないページでは、ドラッグに反応しない", async ({ page }) => {

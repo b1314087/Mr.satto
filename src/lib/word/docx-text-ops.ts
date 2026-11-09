@@ -100,12 +100,20 @@ export function getParagraphText(pEl: Element): string {
  * 段落が「空白行」かどうかを判定する。
  * テキストが空（または空白のみ）で、かつ図形(w:drawing)や画像(w:pict)を
  * 含まない場合にのみ「空白」とみなす（画像だけの段落を誤って削除しないため）。
+ * セクション区切り（段落設定の中の w:sectPr）を持つ段落も「空白」としない（工程3）。
+ * この段落を消すと、そこで終わるセクションの設定（用紙・余白・段組みなど）が失われ、レイアウトが変わるため。
+ * 段区切り・改ページ（w:br）だけの段落も、同じ理由で「空白」としない。
  */
 export function isParagraphBlank(pEl: Element): boolean {
   const text = getParagraphText(pEl).trim();
   if (text !== "") return false;
   if (pEl.getElementsByTagName("w:drawing").length > 0) return false;
   if (pEl.getElementsByTagName("w:pict").length > 0) return false;
+  if (pEl.getElementsByTagName("w:sectPr").length > 0) return false;
+  for (const br of Array.from(pEl.getElementsByTagName("w:br"))) {
+    const type = br.getAttribute("w:type");
+    if (type === "column" || type === "page") return false;
+  }
   return true;
 }
 

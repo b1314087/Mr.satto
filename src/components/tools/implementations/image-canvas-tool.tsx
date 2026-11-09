@@ -21,29 +21,36 @@ import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-not
 import { BatchResultList, type BatchResultRow } from "@/components/common/batch-result-list";
 import { runBatchSequentially, type BatchItem } from "@/lib/batch/run-batch";
 
-type ImageMode = "resize" | "compress" | "compress-to-size";
-
-interface ImageToolSpec {
-  mode: ImageMode;
-  actionLabel: string;
-}
-
-const SPEC_COMPRESS: ImageToolSpec = { mode: "compress", actionLabel: "圧縮する" };
-const SPEC_COMPRESS_TO_SIZE: ImageToolSpec = { mode: "compress-to-size", actionLabel: "圧縮する" };
-
-const IMAGE_TOOL_CONFIG: Record<string, ImageToolSpec> = {
-  "image-resize": { mode: "resize", actionLabel: "リサイズする" },
-  // 画像圧縮は、画面の切り替えで「画質を指定」と「目標サイズ(KB)を指定」を選べる（下の compressKind）
-  "image-compress": SPEC_COMPRESS,
-};
+/**
+ * 画像リサイズ・圧縮（工程3で、画像リサイズ（旧 image-resize）と画像圧縮（image-compress）を1つにまとめた）。
+ * 「サイズを変更する」と「圧縮する」を、それぞれ独立して選べる（どちらか一方だけ・両方）。
+ * - サイズだけ：従来の画像リサイズと同じ処理（ImageResizeProcessor。形式は元のまま）
+ * - 圧縮だけ：従来の画像圧縮と同じ処理（画質指定 ImageCompressProcessor／目標サイズ指定 ImageCompressToSizeProcessor）
+ * - 両方：指定した大きさで描いた1枚の画像を、そのまま圧縮する（いったん書き出して読み直すことはしない。メモリを2重に使わない）
+ * 旧「画像リサイズ」のアドレスからの転送（?mode=resize）では「サイズを変更する」だけを選んだ状態で、
+ * 旧「指定KBまで圧縮」からの転送（?mode=size）では「目標サイズ(KB)を指定して圧縮」を選んだ状態で開く。
+ */
 
 /** 画像圧縮の2つのやり方 */
 type CompressKind = "quality" | "size";
 
+/** どの処理を行うか（リサイズ・圧縮のそれぞれを使うか、圧縮のやり方） */
+interface ImageRunPlan {
+  resize: boolean;
+  compress: boolean;
+  compressKind: CompressKind;
+}
+
+/** 実行ボタンの文言（処理の組み合わせに合わせる） */
+function actionLabelOf(plan: ImageRunPlan): string {
+  if (plan.resize && plan.compress) return "リサイズして圧縮する";
+  return plan.resize ? "リサイズする" : "圧縮する";
+}
+
 /** 目標サイズに届かなかったときの案内（届いたときは null） */
 function missedTargetMessage(output: ImageProcessorOutput, targetKB: number): string | null {
   if (output.sizeBytes <= targetKB * 1024) return null;
-  return `目標の${targetKB}KBまで小さくできませんでした（現在 ${formatBytes(output.sizeBytes)}）。先に「画像リサイズ」で縦横のサイズを小さくしてから、もう一度お試しください。`;
+  return `目標の${targetKB}KBまで小さくできませんでした（現在 ${formatBytes(output.sizeBytes)}）。「サイズを変更する」で縦横のサイズも小さくしてから、もう一度お試しください。`;
 }
 
 const EXT_BY_MIME: Record<string, string> = {
@@ -63,19 +70,12 @@ interface ImageRunSettings {
  * 実行ボタンとライブプレビューで共通に使う処理。
  * プレビューも実際のProcessorで同じ設定を処理するため、プレビューどおりの結果が書き出される。
  */
-async function runImageProcessor(
-  spec: ImageToolSpec,
-  file: File,
-  s: ImageRunSettings
-): Promise<ImageProcessorOutput> {
-  switch (spec.mode) {
-    case "resize":
-      return new ImageResizeProcessor().process({ file, width: s.width, height: s.height });
-    case "compress":
-      return new ImageCompressProcessor().process({ file, quality: s.quality / 100 });
-    case "compress-to-size":
-      return new ImageCompressToSizeProcessor().process({ file, targetKB: s.targetKB });
-  }
+async function runImageProcessor(plan: ImageRunPlan, file: File, s: ImageRunSettings): Promise<ImageProcessorOutput> {
+  if (!plan.compress) return new ImageResizeProcessor().process({ file, width: s.width, height: s.height });
+  const size = plan.resize ? { width: s.width, height: s.height } : {};
+  return plan.compressKind === "size"
+    ? new ImageCompressToSizeProcessor().process({ file, targetKB: s.targetKB, ...size })
+    : new ImageCompressProcessor().process({ file, quality: s.quality / 100, ...size });
 }
 
 /** 画像の縦横のピクセル数を調べる（一括リサイズで、画像ごとに縦横比を保つために使う） */
@@ -100,16 +100,19 @@ const PREVIEW_MAX_PIXELS = 40_000_000;
 /** 設定変更後、プレビューを再計算するまでの待ち時間(ms) */
 const PREVIEW_DEBOUNCE_MS = 250;
 
-export function ImageCanvasTool({ toolId }: { toolId: string }) {
+export function ImageCanvasTool() {
   const [compressKind, setCompressKind] = useState<CompressKind>("quality");
-  const isCompress = toolId === "image-compress";
-  const spec = isCompress && compressKind === "size" ? SPEC_COMPRESS_TO_SIZE : IMAGE_TOOL_CONFIG[toolId];
+  const [useResize, setUseResize] = useState(false);
+  const [useCompress, setUseCompress] = useState(true);
+  const plan: ImageRunPlan = { resize: useResize, compress: useCompress, compressKind };
+  const hasAction = useResize || useCompress;
+  const actionLabel = actionLabelOf(plan);
   // 選んだ画像。2枚以上のとき（プレミアムプランの一括処理）は、設定を全部の画像にまとめて適用する。
   // プレビュー・縦横の初期値は1枚目の画像で表示する。
   const [files, setFiles] = useState<File[]>([]);
   const file = files[0] ?? null;
   const isBatch = files.length > 1;
-  const batch = useBatchSelection(toolId === "image-resize" ? "image-resize" : "image-compress");
+  const batch = useBatchSelection("image-compress");
   const [batchItems, setBatchItems] = useState<BatchItem<BatchImageResult>[]>([]);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [width, setWidth] = useState(800);
@@ -128,44 +131,43 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
 
   const originalUrl = useObjectUrl(file);
 
-  // 古い「指定KBまで圧縮」のアドレスから転送されてきたとき（?mode=size）は、目標サイズの指定を最初から選んでおく
+  // 旧アドレスから転送されてきたとき：画像リサイズ（?mode=resize）はサイズの変更だけ、
+  // 指定KBまで圧縮（?mode=size）は目標サイズの指定を、最初から選んでおく
   useEffect(() => {
-    if (toolId !== "image-compress") return;
-    if (new URLSearchParams(window.location.search).get("mode") === "size") {
+    const mode = new URLSearchParams(window.location.search).get("mode");
+    if (mode === "resize") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUseResize(true);
+      setUseCompress(false);
+    } else if (mode === "size") {
       setCompressKind("size");
     }
-  }, [toolId]);
+  }, []);
 
   // 設定が処理可能な値かどうか(リサイズの幅・高さ、目標KB)
-  const settingsValid =
-    spec?.mode === "resize"
-      ? Number.isFinite(width) && Number.isFinite(height) && width >= 1 && height >= 1
-      : spec?.mode === "compress-to-size"
-        ? Number.isFinite(targetKB) && targetKB >= 1
-        : true;
-  const tooLarge = spec?.mode === "resize" && settingsValid && Math.round(width) * Math.round(height) > PREVIEW_MAX_PIXELS;
+  const resizeValid = !useResize || (Number.isFinite(width) && Number.isFinite(height) && width >= 1 && height >= 1);
+  const targetValid = !(useCompress && compressKind === "size") || (Number.isFinite(targetKB) && targetKB >= 1);
+  const settingsValid = hasAction && resizeValid && targetValid;
+  const tooLarge = useResize && settingsValid && Math.round(width) * Math.round(height) > PREVIEW_MAX_PIXELS;
   // プレビューが「どのファイル・どの設定」の結果かを識別するキー
-  const previewKey = !file || !spec
+  const previewKey = !file
     ? ""
     : [
-        toolId,
-        spec.mode,
+        useResize ? `resize:${Math.round(width)}x${Math.round(height)}` : "",
+        useCompress ? (compressKind === "size" ? `size:${targetKB}` : `quality:${quality}`) : "",
         file.name,
         file.size,
         file.lastModified,
-        spec.mode === "resize" ? `${Math.round(width)}x${Math.round(height)}` : "",
-        spec.mode === "compress" ? quality : "",
-        spec.mode === "compress-to-size" ? targetKB : "",
       ].join("|");
 
   // 設定を変えるたびに、実際のProcessorで処理した結果をプレビューとして更新する
   useEffect(() => {
-    if (!file || !spec || !settingsValid || tooLarge) return;
+    if (!file || !settingsValid || tooLarge) return;
     let cancelled = false;
+    const runPlan: ImageRunPlan = { resize: useResize, compress: useCompress, compressKind };
     const timer = setTimeout(async () => {
       try {
-        const output = await runImageProcessor(spec, file, { width, height, quality, targetKB });
+        const output = await runImageProcessor(runPlan, file, { width, height, quality, targetKB });
         if (cancelled) {
           URL.revokeObjectURL(output.url);
           return;
@@ -182,7 +184,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [file, spec, settingsValid, tooLarge, width, height, quality, targetKB, previewKey]);
+  }, [file, useResize, useCompress, compressKind, settingsValid, tooLarge, width, height, quality, targetKB, previewKey]);
 
   // プレビュー用Object URLは、差し替わる時・アンマウント時に解放する
   const previewOutput = preview?.output ?? null;
@@ -228,10 +230,6 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     };
   }, [result]);
 
-  if (!spec) {
-    return <ErrorMessage message="このツールの設定が見つかりませんでした" />;
-  }
-
   function handleWidthChange(next: number) {
     setWidth(next);
     if (lockAspect && naturalSize) {
@@ -249,7 +247,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
   /** 一括処理：同じ設定を、選んだ全部の画像に1枚ずつ順番に適用する */
   async function handleRunBatch() {
     if (!(await batch.confirmBatch(files.length))) return;
-    const runSpec = spec;
+    const runPlan = plan;
     const settings = { width, height, quality, targetKB };
     const keepAspect = lockAspect;
     setStatus("processing");
@@ -259,7 +257,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
       files,
       async (target) => {
         let size = { width: settings.width, height: settings.height };
-        if (runSpec.mode === "resize" && keepAspect) {
+        if (runPlan.resize && keepAspect) {
           // 縦横比を固定しているときは、指定した幅に合わせて、画像ごとに高さを決める
           const natural = await readImageSize(target);
           size = {
@@ -267,10 +265,10 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
             height: Math.max(1, Math.round((settings.width * natural.height) / natural.width)),
           };
         }
-        const output = await runImageProcessor(runSpec, target, { ...settings, ...size });
+        const output = await runImageProcessor(runPlan, target, { ...settings, ...size });
         // 一覧ではプレビュー画像を出さないため、URLはすぐに解放する（メモリを使い続けない）
         URL.revokeObjectURL(output.url);
-        const missed = runSpec.mode === "compress-to-size" ? missedTargetMessage(output, settings.targetKB) : null;
+        const missed = runPlan.compress && runPlan.compressKind === "size" ? missedTargetMessage(output, settings.targetKB) : null;
         return {
           blob: output.blob,
           outputName: replaceExtension(target.name, EXT_BY_MIME[output.mimeType] ?? "png"),
@@ -294,9 +292,9 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
     setStatus("processing");
     setError(null);
     try {
-      const output = await runImageProcessor(spec, file, { width, height, quality, targetKB });
+      const output = await runImageProcessor(plan, file, { width, height, quality, targetKB });
       setResult(output);
-      setResultTargetKB(spec.mode === "compress-to-size" ? targetKB : null);
+      setResultTargetKB(useCompress && compressKind === "size" ? targetKB : null);
       setStatus("success");
     } catch (e) {
       setError(e instanceof Error ? e.message : "処理に失敗しました");
@@ -323,7 +321,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
               指定サイズが大きすぎるため、プレビューは表示できません（書き出しは実行できます）。
             </p>
           )}
-          {spec.mode === "compress-to-size" && shownPreview && !previewStale && missedTargetMessage(shownPreview.output, targetKB) && (
+          {useCompress && compressKind === "size" && shownPreview && !previewStale && missedTargetMessage(shownPreview.output, targetKB) && (
             <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="compress-target-missed">
               {missedTargetMessage(shownPreview.output, targetKB)}
             </p>
@@ -367,7 +365,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
                 />
               ) : (
                 <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-neutral-300 text-xs text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-                  {tooLarge || shownError ? "プレビューなし" : "プレビューを作成中..."}
+                  {tooLarge || shownError || !hasAction ? "プレビューなし" : "プレビューを作成中..."}
                 </div>
               )}
             </figure>
@@ -375,7 +373,51 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         </div>
       ) : null}
     >
-      {isCompress && (
+      <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800" data-testid="image-ops">
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">行う処理（どちらか一方だけ・両方を選べます）</p>
+        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-neutral-700 dark:text-neutral-200">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={useResize}
+              data-testid="image-op-resize"
+              onChange={(e) => {
+                setUseResize(e.target.checked);
+                setResult(null);
+                setBatchItems([]);
+                setStatus("idle");
+                setError(null);
+              }}
+            />
+            サイズを変更する（幅・高さ）
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={useCompress}
+              data-testid="image-op-compress"
+              onChange={(e) => {
+                setUseCompress(e.target.checked);
+                setResult(null);
+                setBatchItems([]);
+                setStatus("idle");
+                setError(null);
+              }}
+            />
+            圧縮する（容量を小さくする）
+          </label>
+        </div>
+        {!hasAction && (
+          <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="image-op-none">
+            「サイズを変更する」「圧縮する」の、少なくとも一方を選んでください。
+          </p>
+        )}
+        {useResize && useCompress && (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">指定したサイズに変更してから圧縮します。</p>
+        )}
+      </div>
+
+      {useCompress && (
         <div role="radiogroup" aria-label="圧縮のしかた" className="flex flex-wrap gap-2" data-testid="compress-kind">
           {(
             [
@@ -434,7 +476,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         />
       )}
 
-      {file && spec.mode === "resize" && (
+      {file && useResize && (
         <div className="flex flex-wrap items-end gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <label className="flex flex-col gap-1 text-sm">
             幅 (px)
@@ -474,7 +516,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         </div>
       )}
 
-      {file && spec.mode === "compress" && (
+      {file && useCompress && compressKind === "quality" && (
         <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <label className="flex items-center justify-between text-sm">
             <span>画質: {quality}%</span>
@@ -489,7 +531,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         </div>
       )}
 
-      {file && spec.mode === "compress-to-size" && (
+      {file && useCompress && compressKind === "size" && (
         <label className="flex flex-col gap-1 rounded-xl border border-neutral-200 p-4 text-sm dark:border-neutral-800">
           目標サイズ (KB)
           <input
@@ -508,10 +550,10 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+          disabled={status === "processing" || !settingsValid} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
-          {isBatch ? `${files.length}枚をまとめて${spec.actionLabel}` : spec.actionLabel}
+          {isBatch ? `${files.length}枚をまとめて${actionLabel}` : actionLabel}
         </button>
       )}
 
@@ -529,7 +571,7 @@ export function ImageCanvasTool({ toolId }: { toolId: string }) {
       {batchItems.length > 0 && (
         <BatchResultList
           rows={toBatchRows(batchItems)}
-          zipName={`${stripExtension(batchItems[0].file.name) || "images"}-${spec.mode === "resize" ? "resized" : "compressed"}.zip`}
+          zipName={`${stripExtension(batchItems[0].file.name) || "images"}-${useResize && !useCompress ? "resized" : "compressed"}.zip`}
         />
       )}
 

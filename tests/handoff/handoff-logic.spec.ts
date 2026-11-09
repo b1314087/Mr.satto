@@ -150,7 +150,7 @@ test.describe("設定の整合", () => {
     const targets = getHandoffTargets();
     const png: HandoffFileInfo = { name: "qrcode.png", kind: "png", size: 2000 };
     const fromQr = findHandoffTargets({ toolId: "qr-generator", send: TOOL_HANDOFF["qr-generator"].send }, [png], targets, "premium").map((t) => t.id);
-    expect(fromQr).toEqual(expect.arrayContaining(["image-resize", "image-format-convert", "image-to-pdf", "file-zip"]));
+    expect(fromQr).toEqual(expect.arrayContaining(["image-compress", "image-format-convert", "image-to-pdf", "file-zip"]));
     expect(fromQr.some((id) => getToolById(id)!.handoff!.role === "generate")).toBe(false);
     expect(fromQr).not.toContain("pdf-compress");
 
@@ -158,7 +158,7 @@ test.describe("設定の整合", () => {
     expect(fromPdfEdit).toEqual(expect.arrayContaining(["pdf-fix", "pdf-compress", "pdf-to-image"]));
     expect(fromPdfEdit).not.toContain("pdf-edit");
     expect(fromPdfEdit).not.toContain("quote-order-generator");
-    expect(fromPdfEdit).not.toContain("image-resize");
+    expect(fromPdfEdit).not.toContain("image-compress");
 
     // ZIPは展開せず、ZIPを受け取るツールにだけ渡す
     const zip: HandoffFileInfo = { name: "pages.zip", kind: "zip", size: 5000 };
@@ -168,16 +168,14 @@ test.describe("設定の整合", () => {
 
   // 受け取りの設定と、受け取るツールの実際のファイル選択欄（形式・上限・複数可否）を照合する
   const IMPLEMENTATION_FILE: Record<string, string> = {
-    "image-resize": "image-canvas-tool.tsx",
     "image-compress": "image-canvas-tool.tsx",
     "image-format-convert": "image-format-convert-tool.tsx",
     "image-crop": "image-crop-tool.tsx",
     "image-rotate-flip": "image-rotate-flip-tool.tsx",
-    "image-grayscale": "image-grayscale-tool.tsx",
+    "image-adjust": "image-adjust-tool.tsx",
     "image-metadata-remove": "image-metadata-remove-tool.tsx",
     "image-watermark": "image-watermark-tool.tsx",
     "image-mosaic": "image-mosaic-tool.tsx",
-    "image-sns-size": "image-sns-size-tool.tsx",
     "pdf-fix": "pdf-fill-annotate-tool.tsx",
     "pdf-redact": "pdf-redact-tool.tsx",
     "pdf-compress": "pdf-compress-tool.tsx",

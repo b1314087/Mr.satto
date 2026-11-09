@@ -25,7 +25,8 @@ export const POPULAR_TOOL_IDS: readonly string[] = [
   "pdf-edit",
   "pdf-compress",
   "image-compress",
-  "image-resize",
+  // 工程3：画像リサイズは「画像リサイズ・圧縮」（image-compress）に統合したため、代わりに統合した「画像トリミング」を並べる
+  "image-crop",
   "image-format-convert",
   "excel-csv-convert",
   "estimate-generator",

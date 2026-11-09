@@ -68,7 +68,7 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
   });
 
   test("通常のツールは、ログインも広告もなしで使える（無料のまま）", async ({ page }) => {
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await expect(page.locator('input[type="file"]')).toBeAttached();
     await expect(page.getByTestId("download-ad-notice")).toHaveCount(0);
     await expect(page.locator("[data-ad-placement]")).toHaveCount(0);

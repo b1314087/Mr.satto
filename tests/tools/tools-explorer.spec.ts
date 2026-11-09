@@ -58,8 +58,8 @@ test("キーワード検索: 複数語（画像 圧縮）でAND検索できる",
   const main = page.locator("main");
   await main.getByRole("searchbox", { name: "ツールを検索" }).fill("画像 圧縮");
 
-  // 「画像圧縮」はどちらの語も名前に含むため必ずヒットする
-  await expect(main.getByRole("heading", { name: "画像圧縮", exact: true })).toBeVisible();
+  // 「画像リサイズ・圧縮」（工程3で画像圧縮と画像リサイズを統合）はどちらの語も名前に含むため必ずヒットする
+  await expect(main.getByRole("heading", { name: "画像リサイズ・圧縮", exact: true })).toBeVisible();
 
   // 単語ごとの一致ではなく「両方」を満たすツールのみに絞られていること
   // （動画圧縮は「圧縮」は満たすが「画像」は満たさないため出ない）

@@ -254,7 +254,7 @@ test.describe("広告確認ダイアログ", () => {
   });
 
   async function openGate(page: Page) {
-    await gotoTool(page, "image-resize");
+    await gotoTool(page, "image-compress?mode=resize");
     await uploadFixture(page, fixtures.png);
     await page.getByRole("button", { name: "リサイズする" }).click();
     await waitForSuccess(page, "完了");
@@ -393,7 +393,7 @@ for (const scheme of ["light", "dark"] as const) {
     test("広告確認ダイアログの文字・ボタンが読める（見出し・説明・主ボタン・副ボタン）", async ({ page, context, baseURL }) => {
       await clearDevOverrides(context);
       await setDevAdOutcome(context, "granted", baseURL!);
-      await gotoTool(page, "image-resize");
+      await gotoTool(page, "image-compress?mode=resize");
       await uploadFixture(page, fixtures.png);
       await page.getByRole("button", { name: "リサイズする" }).click();
       await waitForSuccess(page, "完了");

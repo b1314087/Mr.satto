@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PdfFillAnnotateTool } from "./pdf-fill-annotate-tool";
 import { PdfAddPageNumbersTool } from "./pdf-add-page-numbers-tool";
 import { PdfWatermarkTool } from "./pdf-watermark-tool";
-import { PDF_FIX_MODES, getPdfFixMode, type PdfFixMode } from "@/lib/tools/pdf-fix-modes";
+import { PDF_FIX_MODES, getPdfFixMode, parsePdfFixMode, type PdfFixMode } from "@/lib/tools/pdf-fix-modes";
 import { WHITEOUT_NOTICE } from "@/lib/pdf-annotate/whiteout";
 
 /**
@@ -18,6 +18,8 @@ import { WHITEOUT_NOTICE } from "@/lib/pdf-annotate/whiteout";
  *   （切り替えると配置したものが消えるため。確認で「編集を続ける」を選べば、編集中の状態はそのまま残る）。
  * - 他のツールからPDFを直接受け取る個別の連携（旧：PDF編集の「この結果をPDF修正で開く」）は工程15で撤去した。
  *   ツール間の受け渡しは、今後すべてのツールで共通の仕組みとして作り直す。
+ * - 旧「PDFページ番号追加」「PDF透かし」のアドレスからの転送（?mode=page-numbers / ?mode=watermark。工程3）では、
+ *   その機能を選んだ状態で開く。
  * 処理はすべてブラウザ内で行い、PDFは送信・保存しない。
  */
 
@@ -36,6 +38,13 @@ export function PdfFixTool() {
   // どの機能でも使う、選択中のPDF（機能を切り替えても引き継ぐ）
   const [sharedFile, setSharedFile] = useState<File | null>(null);
   const info = getPdfFixMode(mode);
+
+  // 旧URLから転送されてきたとき（?mode=page-numbers など）は、その機能を最初から選んでおく
+  useEffect(() => {
+    const fromUrl = parsePdfFixMode(new URLSearchParams(window.location.search).get("mode"));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (fromUrl) setMode(fromUrl);
+  }, []);
   const singleFileProps = { initialFile: sharedFile, onFileChange: setSharedFile };
 
   // 編集が残っているのは「記入・注釈」を開いている間だけ。それ以外・編集なしのときは、確認なしで切り替える

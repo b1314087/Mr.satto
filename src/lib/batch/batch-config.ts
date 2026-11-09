@@ -20,13 +20,13 @@ import { featureFlags } from "@/lib/config/features";
  */
 export const BATCH_LIMITS = {
   // 画像（1枚あたりの処理が軽く、結果も小さい）
+  // 工程3：画像リサイズは画像圧縮に統合した（「画像リサイズ・圧縮」。この設定を使う）
   "image-compress": 30,
-  "image-resize": 30,
   // JPG変換・PNG変換・WebP変換・画像一括変換のページも、この設定を使う（同じ画面のため）
   "image-format-convert": 30,
   "image-adjust": 30,
   "image-padding-text": 30,
-  // 端末の中でAIモデルを動かすため、1枚ごとの処理が重い
+  // 元の解像度で全画素を計算するため、1枚ごとの処理が重い（工程2でAIのモードは削除した）
   "background-remover": 10,
   // PDF（1ファイルが大きく、処理にも時間がかかる）
   "pdf-compress": 10,

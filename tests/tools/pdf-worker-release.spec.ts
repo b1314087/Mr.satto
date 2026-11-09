@@ -132,7 +132,7 @@ async function loadedPdfLibParts(page: Page): Promise<string[]> {
 test.describe("PDFを作る部品は、ページを開いた時点では読み込まない", () => {
   test.setTimeout(120_000);
 
-  for (const tool of ["seating-chart", "pdf-merge", "invoice-generator", "pdf-add-page-numbers"]) {
+  for (const tool of ["seating-chart", "pdf-merge", "invoice-generator", "pdf-fix?mode=page-numbers"]) {
     test(`${tool}：ページを開いただけでは pdf-lib・fontkit を読み込まない`, async ({ page }) => {
       await page.goto(`/tools/${tool}`);
       await page.waitForTimeout(2500);

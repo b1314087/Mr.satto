@@ -97,15 +97,26 @@ export interface ImageCompressInput {
   /** 0〜1 */
   quality: number;
   mimeType?: string;
+  /** 指定したときは、この大きさにリサイズしてから圧縮する（工程3：リサイズと圧縮を同時に行うとき。省略時は元の大きさ） */
+  width?: number;
+  height?: number;
+}
+
+/** リサイズと圧縮を同時に行うときの、書き出す大きさ（指定が無ければ元の大きさ） */
+function outputSize(img: HTMLImageElement, width?: number, height?: number): { width: number; height: number } {
+  if (width === undefined || height === undefined) return { width: img.naturalWidth, height: img.naturalHeight };
+  if (!(width > 0) || !(height > 0)) throw new Error("幅と高さは1以上を指定してください");
+  return { width: Math.round(width), height: Math.round(height) };
 }
 
 export class ImageCompressProcessor extends BrowserProcessor<
   ImageCompressInput,
   ImageProcessorOutput
 > {
-  async process({ file, quality, mimeType }: ImageCompressInput) {
+  async process({ file, quality, mimeType, width, height }: ImageCompressInput) {
     const img = await loadImage(file);
-    const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
+    const size = outputSize(img, width, height);
+    const canvas = drawToCanvas(img, size.width, size.height);
     const outType = mimeType ?? (file.type === "image/png" ? "image/png" : "image/jpeg");
     const blob = await canvasToBlob(canvas, outType, Math.min(Math.max(quality, 0.01), 1));
     return toOutput(blob, canvas.width, canvas.height);
@@ -119,16 +130,20 @@ export interface ImageCompressToSizeInput {
   file: File;
   targetKB: number;
   mimeType?: string;
+  /** 指定したときは、この大きさにリサイズしてから圧縮する（工程3。省略時は元の大きさ） */
+  width?: number;
+  height?: number;
 }
 
 export class ImageCompressToSizeProcessor extends BrowserProcessor<
   ImageCompressToSizeInput,
   ImageProcessorOutput
 > {
-  async process({ file, targetKB, mimeType }: ImageCompressToSizeInput) {
+  async process({ file, targetKB, mimeType, width, height }: ImageCompressToSizeInput) {
     if (targetKB <= 0) throw new Error("目標サイズは1KB以上を指定してください");
     const img = await loadImage(file);
-    const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight);
+    const size = outputSize(img, width, height);
+    const canvas = drawToCanvas(img, size.width, size.height);
     const outType =
       mimeType ?? (file.type === "image/png" ? "image/jpeg" : file.type || "image/jpeg");
     const targetBytes = targetKB * 1024;
@@ -404,6 +419,8 @@ export interface ImageAdjustInput {
   brightness: number;
   /** -100〜100 */
   contrast: number;
+  /** グレースケール（白黒）にするか（工程3でグレースケール変換を統合。省略時はしない＝従来どおり） */
+  grayscale?: boolean;
 }
 
 function clampByte(value: number): number {
@@ -433,8 +450,18 @@ export function applyBrightnessContrast(data: Uint8ClampedArray, brightness: num
   }
 }
 
+/**
+ * 色調補正（グレースケール→明るさ・コントラストの順）をRGBA配列へ適用する（プレビューと書き出しで共通）。
+ * グレースケールにしないときは、従来の明るさ・コントラスト調整とまったく同じ計算になる。
+ * 明るさ・コントラストが0のときは値が変わらないため、グレースケールだけのときは従来のグレースケール変換と同じ結果になる。
+ */
+export function applyImageAdjust(data: Uint8ClampedArray, brightness: number, contrast: number, grayscale: boolean): void {
+  if (grayscale) applyGrayscale(data);
+  if (brightness !== 0 || contrast !== 0) applyBrightnessContrast(data, brightness, contrast);
+}
+
 export class ImageAdjustProcessor extends BrowserProcessor<ImageAdjustInput, ImageProcessorOutput> {
-  async process({ file, brightness, contrast }: ImageAdjustInput) {
+  async process({ file, brightness, contrast, grayscale = false }: ImageAdjustInput) {
     if (!isValidAdjustValue(brightness) || !isValidAdjustValue(contrast)) {
       throw new Error("明るさ・コントラストは-100〜100の範囲で指定してください");
     }
@@ -444,7 +471,7 @@ export class ImageAdjustProcessor extends BrowserProcessor<ImageAdjustInput, Ima
     if (!ctx) throw new Error("Canvasの初期化に失敗しました");
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    applyBrightnessContrast(imageData.data, brightness, contrast);
+    applyImageAdjust(imageData.data, brightness, contrast, grayscale);
     ctx.putImageData(imageData, 0, 0);
 
     const outType = file.type || "image/png";

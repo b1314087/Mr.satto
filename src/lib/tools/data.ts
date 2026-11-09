@@ -21,28 +21,36 @@ const toolDefinitions: Tool[] = [
   // 画像
   // ------------------------------------------------------------------
   {
-    id: "image-resize",
-    name: "画像リサイズ",
-    category: "image",
-    description: "画像の縦横サイズを指定してリサイズします",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["resize", "サイズ変更", "縮小", "拡大"],
-    featured: true,
-  },
-  {
+    // 工程3：画像リサイズ（旧 image-resize）を統合した。リサイズ・圧縮をそれぞれ単独でも、両方同時にも使える。
+    // 旧URL /tools/image-resize は ?mode=resize（サイズの変更だけを選んだ状態）へ転送する（URLは /tools/image-compress のまま）
     id: "image-compress",
-    name: "画像圧縮",
+    name: "画像リサイズ・圧縮",
     category: "image",
-    description: "画質を指定して、または目標のファイルサイズ(KB)を指定して、画像のファイルサイズを小さくします",
+    description:
+      "画像の縦横サイズの変更（リサイズ）と、ファイルサイズを小さくする圧縮（画質指定・目標KB指定）を、それぞれ単独でも同時にも行えます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["compress", "軽量化", "容量", "kb", "容量指定", "指定KB", "指定KBまで圧縮", "サイズ指定", "目標サイズ"],
+    keywords: [
+      "compress",
+      "軽量化",
+      "容量",
+      "kb",
+      "容量指定",
+      "指定KB",
+      "指定KBまで圧縮",
+      "サイズ指定",
+      "目標サイズ",
+      "画像圧縮",
+      "画像リサイズ",
+      "resize",
+      "サイズ変更",
+      "縮小",
+      "拡大",
+    ],
     featured: true,
-    // 内部リンク改善：画像を軽くしたい人が続けて使いやすいツール
-    relatedToolIds: ["image-resize", "image-format-convert", "image-metadata-remove", "image-crop"],
+    // 内部リンク改善：画像を軽くしたい人が続けて使いやすいツール（工程3：統合した画像リサイズの代わりに、関連の画像ツールを案内）
+    relatedToolIds: ["image-format-convert", "image-metadata-remove", "image-crop"],
   },
   {
     id: "image-format-convert",
@@ -116,24 +124,36 @@ const toolDefinitions: Tool[] = [
     keywords: ["image", "画像化", "pdf", "jpeg", "jpg", "png", "PDF→JPEG", "PDF→JPG", "PDF→PNG"],
   },
   {
-    id: "image-sns-size",
-    name: "SNSサイズ変換",
-    category: "image",
-    description: "Instagram・X(Twitter)など各SNSの推奨サイズに変換します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["sns", "instagram", "twitter", "x"],
-  },
-  {
+    // 工程3：SNSサイズ変換（旧 image-sns-size）・証明写真サイズ変換（旧 image-passport-photo）を統合した。
+    // 画面で目的（SNSサイズ／自由トリミング／証明写真）を選ぶ。旧URLは ?mode=sns / ?mode=passport へ転送する（URLは /tools/image-crop のまま）
     id: "image-crop",
-    name: "画像トリミング",
+    name: "画像トリミング（SNSサイズ・証明写真）",
     category: "image",
-    description: "画像の必要な部分だけを切り抜きます",
+    description: "画像の必要な部分の切り抜き、SNS向けの大きさへの調整、証明写真サイズへのトリミング（A4用紙へのまとめ印刷も）を、目的を選んで行えます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["crop", "切り抜き", "トリミング"],
+    keywords: [
+      "crop",
+      "切り抜き",
+      "トリミング",
+      "画像トリミング",
+      "sns",
+      "instagram",
+      "twitter",
+      "x",
+      "SNSサイズ",
+      "SNSサイズ変換",
+      "証明写真",
+      "証明写真 サイズ",
+      "証明写真サイズ変換",
+      "履歴書 写真",
+      "写真 トリミング",
+      "パスポートサイズ",
+      "id photo",
+      "passport photo",
+      "A4 印刷",
+    ],
   },
   {
     id: "image-batch-convert",
@@ -191,24 +211,15 @@ const toolDefinitions: Tool[] = [
     mergedInto: "image-rotate-flip",
   },
   {
-    id: "image-grayscale",
-    name: "画像グレースケール",
-    category: "image",
-    description: "画像をモノクロ・グレースケールに変換します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["grayscale", "モノクロ", "白黒", "グレースケール"],
-  },
-  {
+    // 工程3：画像グレースケール（旧 image-grayscale）を統合した。旧URLは ?mode=grayscale へ転送する（URLは /tools/image-adjust のまま）
     id: "image-adjust",
-    name: "画像明るさ・コントラスト調整",
+    name: "画像色調補正（明るさ・コントラスト・白黒）",
     category: "image",
-    description: "画像の明るさとコントラストを調整します",
+    description: "画像の明るさ・コントラストの調整と、グレースケール（白黒）への変換を、それぞれ単独でも組み合わせても行えます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["明るさ", "コントラスト", "brightness", "contrast", "調整"],
+    keywords: ["明るさ", "コントラスト", "brightness", "contrast", "調整", "色調補正", "grayscale", "モノクロ", "白黒", "グレースケール"],
   },
   {
     id: "image-metadata-remove",
@@ -330,25 +341,6 @@ const toolDefinitions: Tool[] = [
       "censor image",
     ],
   },
-  {
-    id: "image-passport-photo",
-    name: "証明写真サイズ変換",
-    category: "image",
-    description: "証明写真サイズにトリミングし、画像として保存またはA4用紙にまとめてPDF印刷できます",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: [
-      "証明写真",
-      "証明写真 サイズ",
-      "履歴書 写真",
-      "写真 トリミング",
-      "パスポートサイズ",
-      "id photo",
-      "passport photo",
-      "A4 印刷",
-    ],
-  },
 
   // ------------------------------------------------------------------
   // PDF
@@ -390,7 +382,9 @@ const toolDefinitions: Tool[] = [
     // 工程12：PDFの修正（記入・注釈・白消し・ページ番号・透かし）を1つの画面にまとめた入口。
     // 各機能の中身は既存ツール（PDF記入・注釈 / pdf-add-page-numbers / pdf-watermark）の画面を再利用する。
     // 工程2：PDF記入・注釈（旧 pdf-fill-annotate）の独立したページは廃止し、旧URLはこのツールへ転送する
-    // （記入・注釈・白消しは、このツールの最初に開く機能としてそのまま使える）。ページ番号追加・透かしの個別URLは維持。
+    // （記入・注釈・白消しは、このツールの最初に開く機能としてそのまま使える）。
+    // 工程3：ページ番号追加・透かしの独立したページも廃止し、旧URLは各機能を選んだ状態（?mode=page-numbers / ?mode=watermark）へ転送する。
+    // PDF編集（pdf-edit）は、ページの構成を変える操作（結合・分割・削除・抽出・並び替え・回転）だけを受け持つ。
     id: "pdf-fix",
     name: "PDF修正",
     category: "pdf",
@@ -417,7 +411,14 @@ const toolDefinitions: Tool[] = [
       "PDFに画像を追加",
       "PDFに印鑑を押す",
       "ページ番号",
+      "PDFページ番号追加",
+      "ノンブル",
+      "page number",
       "透かし",
+      "PDF透かし",
+      "watermark",
+      "社外秘",
+      "CONFIDENTIAL",
       "fix pdf",
       "whiteout",
     ],
@@ -604,28 +605,6 @@ const toolDefinitions: Tool[] = [
     processor: "browser",
     keywords: ["extract", "抽出", "ページ抽出"],
     mergedInto: "pdf-edit",
-  },
-  {
-    id: "pdf-add-page-numbers",
-    name: "PDFページ番号追加",
-    category: "pdf",
-    description: "PDFの各ページにページ番号を追加します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["ページ番号", "page number", "ノンブル"],
-    relatedToolIds: ["pdf-fix"],
-  },
-  {
-    id: "pdf-watermark",
-    name: "PDF透かし",
-    category: "pdf",
-    description: "PDFの各ページにテキストの透かしを追加します",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: ["透かし", "watermark", "社外秘", "CONFIDENTIAL"],
-    relatedToolIds: ["pdf-fix"],
   },
   {
     // pdf-libは暗号化の書き込みに対応していないため、Web Crypto APIを使い
@@ -890,14 +869,15 @@ const toolDefinitions: Tool[] = [
     keywords: ["置換", "検索"],
   },
   {
+    // 工程3：Excel（.xlsx）にも対応した（選んだシートだけを編集し、Excelで書き出す）。URLは /tools/csv-column-editor のまま
     id: "csv-column-editor",
-    name: "CSV列編集",
+    name: "CSV・Excel列編集",
     category: "csv-excel",
-    description: "CSVの列を選択・削除・リネーム・並び替えします",
+    description: "CSV・Excelの列を選択・削除・リネーム・並び替えします。対象にする行の範囲や、Excelのシートも選べます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["列編集", "列削除", "列並び替え", "column"],
+    keywords: ["列編集", "列削除", "列並び替え", "column", "CSV列編集", "Excel列編集", "excel", "エクセル", "列を削除", "シート"],
   },
   {
     // 次工程・軽量便利ツール一括追加（Tool 4）
@@ -1590,14 +1570,15 @@ const toolDefinitions: Tool[] = [
   },
   {
     // 次工程・軽量便利ツール一括追加（Tool 9）
+    // 工程3：段組み（1・2・3段、段の間隔、段区切り。文書全体または選んだ段落の範囲）の変更を追加した。URLはそのまま
     id: "word-paragraph-cleanup",
-    name: "Word段落整理",
+    name: "Word段落整理・段組み",
     category: "word",
-    description: "Word文書の全角・半角スペースや空白行をまとめて整理します",
+    description: "Word文書の全角・半角スペースや空白行の整理と、段組み（1・2・3段）の変更を行います",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["word", "段落整理", "空白行削除", "スペース変換"],
+    keywords: ["word", "段落整理", "空白行削除", "スペース変換", "段組み", "2段組み", "3段組み", "段区切り", "Word段落整理"],
   },
   {
     // 次工程・印刷帳票4ツール追加フェーズ

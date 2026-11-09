@@ -22,7 +22,7 @@ plainTest.describe("検索品質（やりたい作業の言い方で探す）", 
     ["Excelを比較", "office-compare"],
     ["Wordを比較", "office-compare"],
     ["CSVをExcelに", "excel-csv-convert"],
-    ["画像のサイズ変更", "image-resize"],
+    ["画像のサイズ変更", "image-compress"], // 工程3：画像リサイズは「画像リサイズ・圧縮」に統合
     ["画像を軽くする", "image-compress"],
     ["請求書を作る", "invoice-generator"],
     // 入力欄の例

@@ -86,12 +86,9 @@ const PdfPasswordProtectTool = dynamic(() =>
   import("./implementations/pdf-password-protect-tool").then((m) => m.PdfPasswordProtectTool),
   { loading: ToolLoading }
 );
-const ImageSnsSizeTool = dynamic(() =>
-  import("./implementations/image-sns-size-tool").then((m) => m.ImageSnsSizeTool),
-  { loading: ToolLoading }
-);
-const ImageCropTool = dynamic(() =>
-  import("./implementations/image-crop-tool").then((m) => m.ImageCropTool),
+// 工程3：SNSサイズ変換・画像トリミング・証明写真サイズ変換を1つにまとめた画面（目的を切り替えて使う）
+const ImageTrimTool = dynamic(() =>
+  import("./implementations/image-trim-tool").then((m) => m.ImageTrimTool),
   { loading: ToolLoading }
 );
 const ImageBatchConvertTool = dynamic(() =>
@@ -217,20 +214,8 @@ const ExcelToPdfTool = dynamic(() =>
   import("./implementations/excel-to-pdf-tool").then((m) => m.ExcelToPdfTool),
   { loading: ToolLoading }
 );
-const PdfAddPageNumbersTool = dynamic(() =>
-  import("./implementations/pdf-add-page-numbers-tool").then((m) => m.PdfAddPageNumbersTool),
-  { loading: ToolLoading }
-);
-const PdfWatermarkTool = dynamic(() =>
-  import("./implementations/pdf-watermark-tool").then((m) => m.PdfWatermarkTool),
-  { loading: ToolLoading }
-);
 const ImageFlipTool = dynamic(() =>
   import("./implementations/image-flip-tool").then((m) => m.ImageFlipTool),
-  { loading: ToolLoading }
-);
-const ImageGrayscaleTool = dynamic(() =>
-  import("./implementations/image-grayscale-tool").then((m) => m.ImageGrayscaleTool),
   { loading: ToolLoading }
 );
 const ImageAdjustTool = dynamic(() =>
@@ -275,10 +260,6 @@ const ImageWatermarkTool = dynamic(() =>
 );
 const ImageLayoutTool = dynamic(() =>
   import("./implementations/image-layout-tool").then((m) => m.ImageLayoutTool),
-  { loading: ToolLoading }
-);
-const ImagePassportPhotoTool = dynamic(() =>
-  import("./implementations/image-passport-photo-tool").then((m) => m.ImagePassportPhotoTool),
   { loading: ToolLoading }
 );
 const ImageMergeTool = dynamic(() =>
@@ -438,22 +419,16 @@ const PptxInvertTool = dynamic(() =>
   { loading: ToolLoading }
 );
 
-const IMAGE_TOOL_IDS = new Set([
-  "image-resize",
-  "image-compress",
-]);
-
 /**
  * ツールIDと実装コンポーネントの対応表。
  * status: "available" のツールのみここに追加する。
  * 該当が無い場合は呼び出し側で ComingSoon を表示する。
  */
 export function ToolImplementation({ toolId }: { toolId: string }) {
-  if (IMAGE_TOOL_IDS.has(toolId)) {
-    return <ImageCanvasTool toolId={toolId} />;
-  }
-
   switch (toolId) {
+    // 工程3：画像リサイズ（旧 image-resize）を統合した「画像リサイズ・圧縮」
+    case "image-compress":
+      return <ImageCanvasTool />;
     case "image-rotate-flip":
     case "image-rotate":
       return <ImageRotateFlipTool initialMode="rotate" />;
@@ -486,10 +461,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <BackgroundRemoverTool />;
     case "pdf-password-protect":
       return <PdfPasswordProtectTool />;
-    case "image-sns-size":
-      return <ImageSnsSizeTool />;
     case "image-crop":
-      return <ImageCropTool />;
+      return <ImageTrimTool />;
     case "image-batch-convert":
       return <ImageBatchConvertTool />;
     case "pdf-edit":
@@ -564,14 +537,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelToPdfTool />;
     case "pdf-extract-pages":
       return <PdfEditTool initialMode="extract" />;
-    case "pdf-add-page-numbers":
-      return <PdfAddPageNumbersTool />;
-    case "pdf-watermark":
-      return <PdfWatermarkTool />;
     case "image-flip":
       return <ImageFlipTool />;
-    case "image-grayscale":
-      return <ImageGrayscaleTool />;
     case "image-adjust":
       return <ImageAdjustTool />;
     case "csv-json-convert":
@@ -598,8 +565,6 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageWatermarkTool />;
     case "image-layout":
       return <ImageLayoutTool />;
-    case "image-passport-photo":
-      return <ImagePassportPhotoTool />;
     case "image-merge":
       return <ImageMergeTool />;
     case "image-padding-text":

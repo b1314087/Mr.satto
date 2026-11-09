@@ -24,7 +24,7 @@ import { fixtures } from "../fixtures/paths";
 const TEMP_COOKIE = "mrsatto_temp_access";
 
 async function processImage(page: Page) {
-  await page.goto("/tools/image-resize");
+  await page.goto("/tools/image-compress?mode=resize");
   await uploadFixture(page, fixtures.png);
   await page.getByRole("button", { name: "リサイズする" }).click();
   await waitForSuccess(page, "完了");
@@ -50,7 +50,7 @@ test.describe("Free: ダウンロード時の広告ゲート", () => {
   });
 
   test("ツールを開いただけでは広告を要求せず、ダウンロード時に広告を見る案内が出る", async ({ page }) => {
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
 
     await expect(page.locator('input[type="file"]')).toBeAttached();
     await expect(page.getByTestId("download-ad-notice")).toBeVisible();
@@ -306,7 +306,7 @@ test.describe("利用権トークン: 旧形式(v1)との互換と署名の検�
     await context.addCookies([
       { name: TEMP_COOKIE, value: `v2.${exp}.fallback.${sign(`v2.${exp}.ad`)}`, url: baseURL! },
     ]);
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await expect(page.getByTestId("download-ad-notice")).toBeVisible();
     await expect(page.getByText(/無料利用中：あと/)).toHaveCount(0);
   });

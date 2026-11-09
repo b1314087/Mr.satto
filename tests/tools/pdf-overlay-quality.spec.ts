@@ -243,7 +243,7 @@ async function expectPageNumbers(
 }
 
 test.describe("pdf-add-page-numbers: 出力PDFの品質", () => {
-  const SLUG = "pdf-add-page-numbers";
+  const SLUG = "pdf-fix?mode=page-numbers";
   const ready = (page: Page) => page.getByLabel("開始番号");
   const RUN = "ページ番号を追加する";
 
@@ -406,7 +406,7 @@ async function expectWatermark(
 }
 
 test.describe("pdf-watermark: 出力PDFの品質", () => {
-  const SLUG = "pdf-watermark";
+  const SLUG = "pdf-fix?mode=watermark";
   const TEXT_FIELD = (page: Page) => page.getByLabel("透かしの文字");
   const RUN = "透かしを追加する";
   const FONT_URL_PART = "/fonts/NotoSansJP-Regular.ttf";
@@ -634,7 +634,7 @@ async function expectPageNumbersDisplayed(
 }
 
 test.describe("pdf-add-page-numbers: 回転ページ（/Rotate）での向き・位置", () => {
-  const SLUG = "pdf-add-page-numbers";
+  const SLUG = "pdf-fix?mode=page-numbers";
   const ready = (page: Page) => page.getByLabel("開始番号");
   const RUN = "ページ番号を追加する";
 
@@ -763,7 +763,7 @@ async function expectWatermarkLayout(
 }
 
 test.describe("pdf-watermark: 回転ページ（/Rotate）での向き・位置", () => {
-  const SLUG = "pdf-watermark";
+  const SLUG = "pdf-fix?mode=watermark";
   const TEXT_FIELD = (page: Page) => page.getByLabel("透かしの文字");
   const RUN = "透かしを追加する";
 
@@ -835,7 +835,7 @@ test.describe("pdf-watermark: 回転ページ（/Rotate）での向き・位置"
 });
 
 test.describe("pdf-watermark: 小さいページでの収まり", () => {
-  const SLUG = "pdf-watermark";
+  const SLUG = "pdf-fix?mode=watermark";
   const TEXT_FIELD = (page: Page) => page.getByLabel("透かしの文字");
   const RUN = "透かしを追加する";
 

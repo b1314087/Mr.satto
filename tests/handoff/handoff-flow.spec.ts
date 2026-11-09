@@ -60,7 +60,7 @@ test.describe("ツール間の受け渡し：代表的な経路", () => {
     await expect(panel(page)).toBeVisible();
     const ids = await targetIds(page);
     expect(ids).toEqual(expect.arrayContaining(["pdf-fix", "pdf-compress", "pdf-to-image", "file-zip"]));
-    for (const id of ["pdf-edit", "qr-generator", "quote-order-generator", "image-resize", "excel-csv-convert"]) expect(ids).not.toContain(id);
+    for (const id of ["pdf-edit", "qr-generator", "quote-order-generator", "image-compress", "excel-csv-convert"]) expect(ids).not.toContain(id);
 
     // 候補を閉じても、元の結果はそのままダウンロードできる
     await page.getByTestId("handoff-close").click();
@@ -107,7 +107,7 @@ test.describe("ツール間の受け渡し：代表的な経路", () => {
     await expect(openButton(page)).toBeEnabled({ timeout: 25_000 });
     await openButton(page).click();
     const ids = await targetIds(page);
-    expect(ids).toEqual(expect.arrayContaining(["image-resize", "image-format-convert", "image-to-pdf"]));
+    expect(ids).toEqual(expect.arrayContaining(["image-compress", "image-format-convert", "image-to-pdf"]));
     for (const id of ["pdf-compress", "pdf-fix", "qr-generator", "fiscal-calendar"]) expect(ids).not.toContain(id);
 
     await targetButton(page, "image-format-convert").click();
@@ -165,28 +165,29 @@ plainTest.describe("ツール間の受け渡し：広告の確認（無料プラ
   test("受け渡しも、ダウンロードと同じ広告の確認を通る。キャンセルすれば移動せず、広告の後に受け渡される", async ({ page, context, baseURL }) => {
     await clearDevOverrides(context);
     await setDevAdOutcome(context, "granted", baseURL!);
-    await page.goto("/tools/image-resize");
+    await page.goto("/tools/image-compress?mode=resize");
     await uploadFixture(page, fixtures.png);
     await page.getByRole("button", { name: "リサイズする" }).click();
     await waitForSuccess(page, "完了");
 
+    // 工程3：画像リサイズは「画像リサイズ・圧縮」に統合したため、受け渡し先は画像形式変換にする
     await page.getByTestId("handoff-open").click();
-    await page.getByTestId("handoff-target-image-compress").click();
+    await page.getByTestId("handoff-target-image-format-convert").click();
     const dialog = page.getByTestId("download-gate-dialog");
     await expect(dialog).toHaveAttribute("data-phase", "prompt");
-    await expect(dialog).toContainText("画像圧縮で開く");
+    await expect(dialog).toContainText("画像形式変換で開く");
 
     // キャンセルすると、移動しない（受け渡しで広告の確認を回避できない）
     await dialog.getByRole("button", { name: "キャンセル" }).click();
     await expect(dialog).toHaveCount(0);
-    expect(new URL(page.url()).pathname).toBe("/tools/image-resize");
+    expect(new URL(page.url()).pathname).toBe("/tools/image-compress");
 
     // 広告の後、利用者のクリックで受け渡される
-    await page.getByTestId("handoff-target-image-compress").click();
+    await page.getByTestId("handoff-target-image-format-convert").click();
     await dialog.getByRole("button", { name: "広告を見てダウンロード" }).click();
     await expect(dialog).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
     await dialog.getByRole("button", { name: /ダウンロードする/ }).click();
-    await page.waitForURL(/\/tools\/image-compress$/, { timeout: 25_000 });
+    await page.waitForURL(/\/tools\/image-format-convert$/, { timeout: 25_000 });
     await page.getByTestId("handoff-received").waitFor({ timeout: 25_000 });
   });
 });

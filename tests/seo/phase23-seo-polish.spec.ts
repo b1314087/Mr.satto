@@ -93,10 +93,13 @@ test.describe("L2・L3: title・名称の整合", () => {
     expect(tools.find((t) => t.id === "pdf-fill-annotate")).toBeUndefined();
   });
 
-  test("SNSサイズ変換: 画面上の名称とtitleが一致する", () => {
-    const tool = tools.find((t) => t.id === "image-sns-size")!;
-    expect(tool.name).toBe("SNSサイズ変換");
-    expect(toolSeoContent["image-sns-size"].metaTitle.startsWith("SNSサイズ変換｜")).toBe(true);
+  test("画像トリミング（工程3でSNSサイズ変換・証明写真サイズ変換を統合）: titleが画面上の名称の主な部分で始まり、統合した機能もtitleにある", () => {
+    const tool = tools.find((t) => t.id === "image-crop")!;
+    expect(tool.name).toBe("画像トリミング（SNSサイズ・証明写真）");
+    expect(toolSeoContent["image-crop"].metaTitle.startsWith("画像トリミング｜")).toBe(true);
+    expect(toolSeoContent["image-crop"].metaTitle).toContain("SNSサイズ");
+    expect(toolSeoContent["image-crop"].metaTitle).toContain("証明写真");
+    expect(tools.find((t) => t.id === "image-sns-size")).toBeUndefined();
   });
 
   test("全ツール: titleに、画面上のツール名（「の」「を」の違いと、末尾の補足の括弧は除く）が含まれる", () => {
@@ -186,13 +189,11 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
       "excel-merge",
       "excel-to-pdf",
       "image-compress",
-      "pdf-add-page-numbers",
       "pdf-edit",
       "pdf-fix",
       "pdf-redact",
       "pdf-to-excel",
       "pdf-to-word",
-      "pdf-watermark",
       "pptx-invert",
       "receipt-accounting-csv",
       "seating-chart",

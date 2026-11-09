@@ -127,7 +127,7 @@ test.describe("SEO文: 設定が変わったときの復活・既存の切り替
     const text = allText(filled).join("\n");
     expect(text).not.toMatch(/Standard|スタンダード|Free|Premium/);
     expect(filled.metaDescription).toContain("無料プランは広告視聴で1ページずつ");
-    const generic = adaptToolSeoContentWith(toolSeoContent["image-resize"], ctx);
+    const generic = adaptToolSeoContentWith(toolSeoContent["image-compress"], ctx);
     expect(allText(generic).join("\n")).not.toMatch(/Standard|スタンダード/);
     const cat = adaptCategorySeoContentWith(categorySeoContent["image"], ctx);
     expect(categoryText(cat).join("\n")).not.toMatch(/Standard|スタンダード/);
@@ -244,7 +244,7 @@ test.describe("カテゴリ名の表記（「生成ツールツール」の重�
   test("生成ツールのツールページ（年度カレンダー）と、他のカテゴリのパンくず・構造化データが正しい", async ({ page }) => {
     for (const [path, label] of [
       ["/tools/fiscal-calendar", "生成ツール"],
-      ["/tools/image-resize", "画像ツール"],
+      ["/tools/image-compress", "画像ツール"],
       ["/tools/pdf-merge", "PDFツール"],
       ["/tools/csv-to-excel", "Excel・CSVツール"],
       ["/tools/char-count", "その他ツール"],
