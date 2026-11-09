@@ -7,7 +7,7 @@ import { getListedTools, getToolById, tools } from "@/lib/tools/data";
 import { searchTools } from "@/lib/tools/search";
 import { toolSeoContent } from "@/lib/seo/tool-content";
 import { TOOL_HANDOFF } from "@/lib/handoff/config";
-import { remapRange, remapSqref, mapRuns } from "@/lib/excel/xlsx-column-edit";
+import { adjustFormula, remapRange, remapSqref, mapRuns } from "@/lib/excel/xlsx-column-edit";
 import { mmToTwips } from "@/lib/word/columns";
 import { uploadFixture, clickAndDownload, closeResultPopup, waitForSuccess } from "../helpers/tool-runner";
 import { fixtures } from "../fixtures/paths";
@@ -93,6 +93,35 @@ plainTest("Excelの範囲の付け替え：削除・並び替えで、範囲が�
   const rows = { row: (r: number) => (r >= 3 && r <= 5 ? r - 2 : null), col: (c: number) => c };
   plainExpect(remapRange("A1:B4", rows)).toEqual(["A1:B2"]);
   plainExpect(mmToTwips(12.7)).toBe(720);
+});
+
+plainTest("数式の参照の書き直し：ずれるだけの参照は合わせて残し、安全に合わせられない数式は ok: false（値に置き換える）", () => {
+  // 列：A を削除し、B→A、C→B、D→C（行はそのまま）
+  const colMap = (c: number) => (c === 1 ? null : c - 1);
+  const ctx = { maps: { row: (r: number) => r, col: colMap }, sheetName: "名簿", localIsEdited: true };
+  plainExpect(adjustFormula("D2*12", ctx)).toEqual({ ok: true, text: "C2*12" });
+  plainExpect(adjustFormula("SUM($B$2:D10)+B$1", ctx)).toEqual({ ok: true, text: "SUM($A$2:C10)+A$1" });
+  // 文字列の中・ほかのシートへの参照は変えない。このシートへの参照（シート名付き）は合わせる
+  plainExpect(adjustFormula('"D2"&集計!D2&名簿!D2', ctx)).toEqual({ ok: true, text: '"D2"&集計!D2&名簿!C2' });
+  plainExpect(adjustFormula("SUM('名簿'!B:D)", ctx)).toEqual({ ok: true, text: "SUM('名簿'!A:C)" });
+  // 削除した列を参照する・範囲の中身が変わる・位置に依存する関数・テーブル参照は、書き直さない
+  plainExpect(adjustFormula("A2+1", ctx).ok).toBe(false);
+  plainExpect(adjustFormula("SUM(A2:C2)", ctx).ok).toBe(false);
+  plainExpect(adjustFormula("INDIRECT(\"B2\")", ctx).ok).toBe(false);
+  plainExpect(adjustFormula("ROW()", ctx).ok).toBe(false);
+  plainExpect(adjustFormula("SUM(表1[金額])", ctx).ok).toBe(false);
+  // 並び替えで範囲の中の順番が変わる（B と C を入れ替え）と、VLOOKUP の列番号などが変わるため書き直さない
+  const swap = { maps: { row: (r: number) => r, col: (c: number) => (c === 2 ? 3 : c === 3 ? 2 : c) }, sheetName: "名簿", localIsEdited: true };
+  plainExpect(adjustFormula("VLOOKUP(A1,A1:D9,3,FALSE)", swap).ok).toBe(false);
+  plainExpect(adjustFormula("B1*2", swap)).toEqual({ ok: true, text: "C1*2" });
+  // 共有数式を戻すとき：相対参照だけを1行ずらしてから合わせる
+  plainExpect(adjustFormula("D2*$D$1", { ...ctx, shift: { rows: 1, cols: 0 } })).toEqual({ ok: true, text: "C3*$C$1" });
+  // ほかのシートの数式では、シート名のない参照はそのシート自身を指すので変えない
+  plainExpect(adjustFormula("D2+名簿!D2", { ...ctx, localIsEdited: false })).toEqual({ ok: true, text: "D2+名簿!C2" });
+  // 行の範囲（3〜5行目だけを残す）：範囲の外の行への参照は書き直さない
+  const rows = { maps: { row: (r: number) => (r >= 3 && r <= 5 ? r - 2 : null), col: (c: number) => c }, sheetName: "名簿", localIsEdited: true };
+  plainExpect(adjustFormula("SUM(B3:B5)", rows)).toEqual({ ok: true, text: "SUM(B1:B3)" });
+  plainExpect(adjustFormula("B2", rows).ok).toBe(false);
 });
 
 // ---------------------------------------------------------------------------
@@ -256,7 +285,7 @@ ws.title = "名簿"
 ws.append(["番号", "氏名", "入社日", "給与", "合計"])
 ws.append([1, "山田", datetime.date(2024, 4, 1), 300000, "=D2*12"])
 ws.append([2, "佐藤", datetime.date(2023, 10, 15), 280000, "=D3*12"])
-ws.append([3, "鈴木", datetime.date(2022, 1, 5), 0, None])
+ws.append([3, "鈴木", datetime.date(2022, 1, 5), 0, "=A4*2"])
 for r in (2, 3, 4):
     ws.cell(r, 3).number_format = "yyyy/mm/dd"
 ws.column_dimensions["B"].width = 20
@@ -269,6 +298,19 @@ other["B2"] = 12345
 other["C3"] = "=SUM(名簿!D2:D4)"
 other.column_dimensions["A"].width = 30
 wb.save(sys.argv[1])
+# E2:E3 を、Excelが下へのコピーで作るのと同じ「共有数式」の形にする（E3 は E2 の数式を1行ずらして使う）
+import zipfile, shutil, os
+tmp = sys.argv[1] + ".tmp"
+with zipfile.ZipFile(sys.argv[1]) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "xl/worksheets/sheet1.xml":
+            text = data.decode("utf-8")
+            text = text.replace("<f>D2*12</f>", '<f t="shared" ref="E2:E3" si="0">D2*12</f>').replace("<f>D3*12</f>", '<f t="shared" si="0"/>')
+            assert 'si="0"/>' in text
+            data = text.encode("utf-8")
+        zout.writestr(item, data)
+shutil.move(tmp, sys.argv[1])
 `;
 
 const READ_XLSX = `
@@ -296,35 +338,44 @@ test.describe("工程3：CSV・Excel列編集", () => {
     await uploadFixture(page, src);
     await expect(page.getByTestId("column-editor-kind")).toContainText("Excelファイル", { timeout: 20_000 });
     await expect(page.getByLabel("編集するシート")).toBeVisible();
-    await expect(page.getByTestId("column-editor-formula-note")).toContainText("数式が2個");
+    await expect(page.getByTestId("column-editor-formula-note")).toContainText("数式が3個");
     // 番号を外し、入社日を上へ（氏名・入社日→入社日・氏名）、給与を「月給」に
     await page.getByLabel("番号を含める").uncheck();
     await page.getByLabel("入社日を上へ移動").click();
     await page.getByRole("textbox").nth(3).fill("月給");
     await page.getByRole("button", { name: "この内容で保存する" }).click();
     await waitForSuccess(page, "Excelの生成が完了しました");
-    await expect(page.getByTestId("column-editor-notices")).toContainText("数式2個を、計算結果の値に置き換えました");
+    // 数式の扱い：参照を合わせて残した数と、削除した列（番号）を参照していたため値にした数を、はっきり表示する
+    const formulas = page.getByTestId("column-editor-formulas");
+    await expect(formulas).toContainText("このシートの数式2個は、数式のまま残しました");
+    await expect(formulas).toContainText("このシートの数式1個は、参照先を安全に合わせられないため、計算結果の値に置き換えました");
+    await expect(formulas).toContainText("数式が残っていません");
     // テスト用のファイル（openpyxlで作成）には数式の計算結果が保存されていないため、その旨も知らせる
-    await expect(page.getByTestId("column-editor-notices")).toContainText("2個は、計算結果がファイルに保存されていなかったため空欄");
-    await expect(page.getByTestId("column-editor-notices")).toContainText("ほかのシートの数式1個");
+    await expect(formulas).toContainText("1個は、計算結果がファイルに保存されていなかったため空欄");
+    await expect(formulas).toContainText("ほかのシートの数式1個の、このシートへの参照を、新しい位置に合わせました");
+    await expect(formulas).toHaveAttribute("data-converted", "1");
     const out = test.info().outputPath("roster-edited.xlsx");
     await (await clickAndDownload(page, "Excelでダウンロード")).saveAs(out);
     const r = JSON.parse(py(READ_XLSX, [out]));
     expect(r.sheets).toEqual(["名簿", "集計"]);
     // 列：番号を削除 → 入社日・氏名・月給（給与）・合計
     expect(r.data["名簿"][0]).toEqual(["入社日", "氏名", "月給", "合計"]);
-    expect(r.data["名簿"][1]).toEqual(["2024-04-01T00:00:00", "山田", 300000, null]);
-    // 日付は日付、数値は数値のまま（文字にしない）。数式は値に置き換える（計算結果が無いものは空欄）
-    expect(r.types[1]).toEqual(["datetime", "str", "int", "NoneType"]);
+    // 数式は、参照を新しい位置に合わせて残る（給与は D列→C列。共有数式だった E3 も、1つずつの数式に戻して合わせる）
+    expect(r.data["名簿"][1]).toEqual(["2024-04-01T00:00:00", "山田", 300000, "=C2*12"]);
+    expect(r.data["名簿"][2][3]).toBe("=C3*12");
+    // 削除した列（番号）を参照していた数式は、計算結果の値（保存されていないため空欄）に置き換わる
+    expect(r.data["名簿"][3][3]).toBeNull();
+    // 日付は日付、数値は数値のまま（文字にしない）
+    expect(r.types[1]).toEqual(["datetime", "str", "int", "str"]);
     // 元のA6:B6の結合は、Aを削除したため1つの範囲にならず外れる（Bだけになる）
     expect(r.merged["名簿"]).toEqual([]);
     // 列の幅は、列と一緒に移る（氏名の幅20は、新しいB列へ。給与の幅15は、新しいC列へ）
     expect(r.widths["名簿"]["B"]).toBe(20);
     expect(r.widths["名簿"]["C"]).toBe(15);
-    // ほかのシートは変わらない（数式もそのまま）
+    // ほかのシートの値・幅は変わらない。このシートを参照する数式は、新しい位置（給与＝C列）に合わせて残る
     expect(r.data["集計"][0][0]).toBe("別シート");
     expect(r.data["集計"][1][1]).toBe(12345);
-    expect(r.data["集計"][2][2]).toBe("=SUM(名簿!D2:D4)");
+    expect(r.data["集計"][2][2]).toBe("=SUM(名簿!C2:C4)");
     expect(r.widths["集計"]["A"]).toBe(30);
   });
 

@@ -16,7 +16,7 @@ import {
 } from "@/components/tools/implementations/shared/before-after-table";
 import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
 import { CsvColumnEditProcessor, editCsvColumnRows, sliceRowRange } from "@/lib/processors/browser/csv-ops";
-import { editXlsxColumns, loadXlsxForColumnEdit } from "@/lib/excel/xlsx-column-edit";
+import { editXlsxColumns, loadXlsxForColumnEdit, type XlsxFormulaReport } from "@/lib/excel/xlsx-column-edit";
 import { columnToLetters } from "@/lib/compare/office-reader";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -85,6 +85,7 @@ export function CsvColumnEditorTool() {
     columnCount: number;
     kind: FileKind;
     notices: string[];
+    formulas: XlsxFormulaReport | null;
   } | null>(null);
 
   const { data: csvRows, error: csvError } = useAsyncFileData(kind === "csv" ? file : null, loadCsvRows);
@@ -216,7 +217,7 @@ export function CsvColumnEditorTool() {
         setResult({ ...output, kind });
       } else {
         const output = await new CsvColumnEditProcessor().process({ file, ...common });
-        setResult({ ...output, kind, notices: [] });
+        setResult({ ...output, kind, notices: [], formulas: null });
       }
       setStatus("success");
     } catch (e) {
@@ -318,8 +319,9 @@ export function CsvColumnEditorTool() {
           {range.error && <p className="text-xs text-red-600 dark:text-red-400">{range.error}</p>}
           {kind === "xlsx" && xlsxSheets && xlsxSheets[safeSheetIndex].formulaCount > 0 && (
             <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="column-editor-formula-note">
-              このシートには数式が{xlsxSheets[safeSheetIndex].formulaCount}個あります。列の削除・並び替えや行の範囲の指定をすると、
-              参照先がずれないよう、このシートの数式は計算結果の値に置き換えます（列名の変更だけなら、数式はそのまま残ります）。
+              このシートには数式が{xlsxSheets[safeSheetIndex].formulaCount}個あります。列の削除・並び替えや行の範囲の指定をしても、
+              数式はできるだけ残し、セルの参照を新しい位置に合わせます。参照しているセルを削除した場合など、安全に合わせられない数式だけは、
+              計算結果の値に置き換え、その数を保存のあとに表示します。
             </p>
           )}
         </div>
@@ -440,6 +442,32 @@ export function CsvColumnEditorTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.rowCount}行 ・ {result.columnCount}列 ・ {formatBytes(result.blob.size)}
           </p>
+          {result.formulas && (result.formulas.kept > 0 || result.formulas.converted > 0 || result.formulas.otherAdjusted > 0 || result.formulas.otherConverted > 0) && (
+            <div
+              data-testid="column-editor-formulas"
+              data-converted={result.formulas.converted + result.formulas.otherConverted}
+              className={`flex flex-col gap-1 rounded-lg border p-3 text-xs ${
+                result.formulas.converted + result.formulas.otherConverted > 0
+                  ? "border-red-300 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"
+                  : "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200"
+              }`}
+            >
+              <p className="font-semibold">数式の扱い</p>
+              {result.formulas.kept > 0 && <p>このシートの数式{result.formulas.kept}個は、数式のまま残しました（セルの参照は新しい位置に合わせています）。</p>}
+              {result.formulas.converted > 0 && (
+                <p className="font-semibold">
+                  このシートの数式{result.formulas.converted}個は、参照先を安全に合わせられないため、計算結果の値に置き換えました。これらのセルには数式が残っていません。
+                  {result.formulas.convertedEmpty > 0 && `（そのうち${result.formulas.convertedEmpty}個は、計算結果がファイルに保存されていなかったため空欄になりました）`}
+                </p>
+              )}
+              {result.formulas.otherAdjusted > 0 && <p>ほかのシートの数式{result.formulas.otherAdjusted}個の、このシートへの参照を、新しい位置に合わせました。</p>}
+              {result.formulas.otherConverted > 0 && (
+                <p className="font-semibold">
+                  ほかのシートの数式{result.formulas.otherConverted}個は、このシートへの参照を安全に合わせられないため、計算結果の値に置き換えました。これらのセルには数式が残っていません。
+                </p>
+              )}
+            </div>
+          )}
           {result.notices.length > 0 && (
             <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-amber-800 dark:text-amber-300" data-testid="column-editor-notices">
               {result.notices.map((n) => (
