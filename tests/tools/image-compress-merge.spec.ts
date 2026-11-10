@@ -1,6 +1,8 @@
 import { test as plainTest, expect as plainExpect } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
-import { uploadFixture, waitForSuccess } from "../helpers/tool-runner";
+import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool-runner";
+import { fixtures } from "../fixtures/paths";
+import { execFileSync } from "node:child_process";
 import { encodePng, makeImage } from "../helpers/pptx-builder";
 import { getListedTools, getToolById } from "@/lib/tools/data";
 import { searchTools } from "@/lib/tools/search";
@@ -93,3 +95,62 @@ async function uploadFixtureWhenReady(page: import("@playwright/test").Page) {
   fs.writeFileSync(file, encodePng(makeImage(60, 40, (x, y) => [x * 4, y * 6, 100, 255])));
   await uploadFixture(page, file);
 }
+
+// ---------------------------------------------------------------------------
+// 圧縮しても元より大きくしない（PNGは画質の設定が効かず、書き出し直すと大きくなることがあるため）
+// ---------------------------------------------------------------------------
+test.describe("画像リサイズ・圧縮: 元の画像より大きくしない", () => {
+  /** 色数を減らして小さく保存したPNGのイラスト（ブラウザで書き出し直すと、元より大きくなる） */
+  function makeSmallIllustrationPng(): string {
+    const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "small-png-")), "イラスト.png");
+    execFileSync("python3", [
+      "-c",
+      `
+import sys
+from PIL import Image, ImageDraw
+im = Image.new("RGB", (900, 650), (250, 248, 240))
+d = ImageDraw.Draw(im)
+d.ellipse([370, 220, 530, 380], fill=(222, 184, 135), outline=(90, 60, 40), width=5)
+d.polygon([(380, 250), (400, 170), (450, 230)], fill=(222, 184, 135))
+d.polygon([(520, 250), (500, 170), (450, 230)], fill=(222, 184, 135))
+im.quantize(colors=8).save(sys.argv[1], optimize=True)
+`,
+      out,
+    ]);
+    return out;
+  }
+
+  test("PNGのイラストを圧縮しても大きくならず、元の画像のままにして、そのことを知らせる", async ({ page }) => {
+    const src = makeSmallIllustrationPng();
+    const originalSize = fs.statSync(src).size;
+    await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
+    await uploadFixture(page, src);
+    await page.locator('input[type="range"]').fill("55");
+    await expect(page.getByTestId("image-size-note")).toContainText("元の画像のままにしました", { timeout: 20_000 });
+    await expect(page.getByTestId("tool-preview")).toContainText("（元の100%）");
+    await page.getByRole("button", { name: "圧縮する", exact: true }).click();
+    await waitForSuccess(page, "変換が完了しました");
+    await expect(page.getByTestId("image-size-note-result")).toContainText("元の画像のままにしました");
+    const download = await clickAndDownload(page, "ダウンロード");
+    const saved = test.info().outputPath("out.png");
+    await download.saveAs(saved);
+    plainExpect(fs.statSync(saved).size).toBe(originalSize);
+    plainExpect(fs.readFileSync(saved).equals(fs.readFileSync(src))).toBe(true);
+  });
+
+  test("サイズを変えるだけ（幅・高さがそのまま）でも、元より大きくしない。小さくしたときは、案内を出さない", async ({ page }) => {
+    const src = makeSmallIllustrationPng();
+    await page.goto("/tools/image-compress");
+    await uploadFixture(page, src);
+    await expect(page.getByTestId("image-op-resize")).toBeChecked();
+    await expect(page.getByTestId("image-size-note")).toContainText("元の画像のままにしました", { timeout: 20_000 });
+    // 写真（JPEG）を小さくしたときは、案内は出ない
+    await page.goto("/tools/image-compress");
+    await uploadFixture(page, fixtures.landscapeJpg);
+    const widthInput = page.locator("label", { hasText: "幅 (px)" }).locator("input");
+    await widthInput.fill("100");
+    await expect(page.getByTestId("tool-preview")).toContainText("処理後 ・ 100 ×", { timeout: 20_000 });
+    await expect(page.getByTestId("image-size-note")).toHaveCount(0);
+  });
+});

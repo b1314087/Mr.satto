@@ -53,6 +53,26 @@ export function toOutput(blob: Blob, width: number, height: number): ImageProces
   };
 }
 
+/**
+ * 縦横の大きさを変えずに書き出し直した結果が、元のファイル以上の大きさになったときは、元のファイルをそのまま返す。
+ * （ブラウザのPNGの書き出しは画質の設定を使わないため、もともと小さく保存されたPNGは、書き出し直すと大きくなることがある。
+ *  強く圧縮されたJPEGも同じ。小さくするための処理で、ファイルが大きくなるのを防ぐ）
+ */
+export function keepOriginalIfNotSmaller(
+  file: File,
+  img: HTMLImageElement,
+  out: Blob,
+  width: number,
+  height: number
+): ImageProcessorOutput {
+  const sameSize = width === img.naturalWidth && height === img.naturalHeight;
+  if (sameSize && out.size >= file.size && file.size > 0) {
+    const original = new Blob([file], { type: file.type || out.type });
+    return { ...toOutput(original, width, height), keptOriginal: true };
+  }
+  return toOutput(out, width, height);
+}
+
 export function drawToCanvas(img: HTMLImageElement, width: number, height: number) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -85,7 +105,7 @@ export class ImageResizeProcessor extends BrowserProcessor<
     const canvas = drawToCanvas(img, Math.round(width), Math.round(height));
     const outType = mimeType ?? file.type ?? "image/png";
     const blob = await canvasToBlob(canvas, outType, 0.92);
-    return toOutput(blob, canvas.width, canvas.height);
+    return mimeType ? toOutput(blob, canvas.width, canvas.height) : keepOriginalIfNotSmaller(file, img, blob, canvas.width, canvas.height);
   }
 }
 
@@ -119,7 +139,7 @@ export class ImageCompressProcessor extends BrowserProcessor<
     const canvas = drawToCanvas(img, size.width, size.height);
     const outType = mimeType ?? (file.type === "image/png" ? "image/png" : "image/jpeg");
     const blob = await canvasToBlob(canvas, outType, Math.min(Math.max(quality, 0.01), 1));
-    return toOutput(blob, canvas.width, canvas.height);
+    return mimeType ? toOutput(blob, canvas.width, canvas.height) : keepOriginalIfNotSmaller(file, img, blob, canvas.width, canvas.height);
   }
 }
 
@@ -152,9 +172,13 @@ export class ImageCompressToSizeProcessor extends BrowserProcessor<
     let high = 1;
     let best = await canvasToBlob(canvas, outType, high);
 
+    // 大きさを変えず、元の画像がすでに目標サイズ以下なら、元の画像のまま（書き出し直して大きくしない）
+    if (!mimeType && file.size > 0 && file.size <= targetBytes && canvas.width === img.naturalWidth && canvas.height === img.naturalHeight) {
+      return { ...toOutput(new Blob([file], { type: file.type || outType }), canvas.width, canvas.height), keptOriginal: true };
+    }
     // 目標サイズより既に小さければそのまま返す
     if (best.size <= targetBytes) {
-      return toOutput(best, canvas.width, canvas.height);
+      return mimeType ? toOutput(best, canvas.width, canvas.height) : keepOriginalIfNotSmaller(file, img, best, canvas.width, canvas.height);
     }
 
     for (let i = 0; i < 8; i++) {
@@ -168,7 +192,7 @@ export class ImageCompressToSizeProcessor extends BrowserProcessor<
       }
     }
 
-    return toOutput(best, canvas.width, canvas.height);
+    return mimeType ? toOutput(best, canvas.width, canvas.height) : keepOriginalIfNotSmaller(file, img, best, canvas.width, canvas.height);
   }
 }
 

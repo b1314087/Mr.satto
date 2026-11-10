@@ -59,6 +59,21 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/webp": "webp",
 };
 
+/**
+ * 書き出した大きさについての案内（元の画像のままにしたとき・元より大きくなったとき）。それ以外は null
+ */
+function sizeNoteFor(output: ImageProcessorOutput, original: File): string | null {
+  if (output.keptOriginal) {
+    return "元の画像より小さくできなかったため、元の画像のままにしました。もともと小さく保存されている画像（PNGのイラストなど）は、これ以上小さくなりません。";
+  }
+  if (original.size > 0 && output.sizeBytes > original.size) {
+    return original.type === "image/png"
+      ? "元の画像より大きくなりました。PNGの画像は、画質の設定では小さくなりません。「画像形式変換」でJPEG・WebPに変えると小さくなる場合があります。"
+      : "元の画像より大きくなりました。画質を下げるか、縦横のサイズを小さくしてお試しください。";
+  }
+  return null;
+}
+
 interface ImageRunSettings {
   width: number;
   height: number;
@@ -330,6 +345,11 @@ export function ImageCanvasTool() {
               {missedTargetMessage(shownPreview.output, targetKB)}
             </p>
           )}
+          {shownPreview && !previewStale && sizeNoteFor(shownPreview.output, file) && (
+            <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="image-size-note">
+              {sizeNoteFor(shownPreview.output, file)}
+            </p>
+          )}
           {isBatch && (
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               1枚目の画像のプレビューです。ほかの{files.length - 1}枚にも同じ設定で処理します。
@@ -584,6 +604,11 @@ export function ImageCanvasTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px ・ {formatBytes(result.sizeBytes)}
           </p>
+          {file && sizeNoteFor(result, file) && (
+            <p className="text-sm text-amber-700 dark:text-amber-400" data-testid="image-size-note-result">
+              {sizeNoteFor(result, file)}
+            </p>
+          )}
           {resultTargetKB !== null && missedTargetMessage(result, resultTargetKB) && (
             <p className="text-sm text-amber-700 dark:text-amber-400" data-testid="compress-result-missed">
               {missedTargetMessage(result, resultTargetKB)}

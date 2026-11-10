@@ -48,6 +48,11 @@ export interface ImageProcessorOutput {
   height: number;
   mimeType: string;
   sizeBytes: number;
+  /**
+   * 書き出し直すと元の画像より大きくなるため、元の画像をそのまま返したとき true
+   * （縦横の大きさを変えていないときだけ。PNGは画質の設定が効かないため、もともと小さく保存されたPNGで起きやすい）
+   */
+  keptOriginal?: boolean;
 }
 
 /** PDF処理系 Processor の共通出力形式（1ファイルを返す場合） */
