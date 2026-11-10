@@ -38,10 +38,16 @@ export interface LayoutParams {
   /** グループワーク：島ごとに詰める（fill）か、1人ずつ順に配る（deal） */
   deal: boolean;
   /**
-   * グループワーク：島を増やす方向（横＝左から右へ並べ、端まで来たら次の段へ／縦＝上から下へ並べ、端まで来たら次の列へ）。
-   * 省略時は横（これまでの並び）
+   * グループワーク：島を増やす方向。auto（省略時）は、これまでどおり島の数に合わせて並べる。
+   * horizontal は、選んだときの段数のまま、増やした島を右へ（次の列の上の段から順に）並べる。
+   * vertical は、選んだときの列数のまま、増やした島を下へ（次の段の左の列から順に）並べる。
    */
-  groupFlow?: GroupDirection;
+  groupFlow?: GroupFlow;
+  /**
+   * グループワーク：島の位置（[段, 列]、0始まり。島1から順）。増やす方向を選んだときの位置を覚えておき、
+   * それより後に増やした島だけを、選んだ方向へ並べる（すでに置いた島は動かさない）
+   */
+  groupCells?: [number, number][];
   /** グループワーク：机（島の長机）の向き（横＝席が机の上下に並ぶ／縦＝席が机の左右に並ぶ）。省略時は横（これまでの向き） */
   groupDesk?: GroupDirection;
   /** 授業・カスタム：行（前から）と列 */
@@ -91,11 +97,52 @@ export function deskNoun(purpose: Purpose): string {
 }
 
 export type GroupDirection = "horizontal" | "vertical";
+export type GroupFlow = "auto" | GroupDirection;
 
-export const GROUP_FLOW_OPTIONS: { value: GroupDirection; label: string }[] = [
-  { value: "horizontal", label: "横方向（左から右へ並べる）" },
-  { value: "vertical", label: "縦方向（上から下へ並べる）" },
+export const GROUP_FLOW_OPTIONS: { value: GroupFlow; label: string }[] = [
+  { value: "auto", label: "自動" },
+  { value: "horizontal", label: "横に増やす" },
+  { value: "vertical", label: "縦に増やす" },
 ];
+
+/** これまでの並べ方：1段に並べる島の数を島の数で決め、左から右へ、端まで来たら次の段へ */
+function autoGroupCells(tables: number): [number, number][] {
+  const cols = Math.max(1, Math.min(tables, tables <= 4 ? 2 : tables <= 9 ? 3 : 4));
+  return Array.from({ length: tables }, (_, t) => [Math.floor(t / cols), t % cols] as [number, number]);
+}
+
+/**
+ * グループワークの島の位置（[段, 列]）。覚えておいた位置（groupCells）はそのまま使い、足りない分だけ、増やす方向へ足していく。
+ * - 横に増やす：今ある段の数はそのまま。左の列から見て、空いているマスがある最初の列の、上の段から入れる（新しい列は、上の段から順に埋まる）
+ * - 縦に増やす：今ある列の数はそのまま。上の段から見て、空いているマスがある最初の段の、左の列から入れる
+ */
+export function groupCellsOf(p: Pick<LayoutParams, "tables" | "groupFlow" | "groupCells">): [number, number][] {
+  const flow = p.groupFlow ?? "auto";
+  if (flow === "auto") return autoGroupCells(p.tables);
+  const cells: [number, number][] = (p.groupCells ?? []).slice(0, p.tables).map(([r, c]) => [Math.max(0, Math.floor(r)), Math.max(0, Math.floor(c))]);
+  const used = new Set<string>();
+  const unique: [number, number][] = [];
+  for (const cell of cells) {
+    const k = `${cell[0]},${cell[1]}`;
+    if (!used.has(k)) {
+      used.add(k);
+      unique.push(cell);
+    }
+  }
+  while (unique.length < p.tables) {
+    const rows = Math.max(1, ...unique.map(([r]) => r + 1));
+    const cols = Math.max(1, ...unique.map(([, c]) => c + 1));
+    let next: [number, number] | null = null;
+    if (flow === "horizontal") {
+      for (let c = 0; next === null; c++) for (let r = 0; r < rows && next === null; r++) if (!used.has(`${r},${c}`)) next = [r, c];
+    } else {
+      for (let r = 0; next === null; r++) for (let c = 0; c < cols && next === null; c++) if (!used.has(`${r},${c}`)) next = [r, c];
+    }
+    used.add(`${next[0]},${next[1]}`);
+    unique.push(next);
+  }
+  return unique;
+}
 
 export const GROUP_DESK_OPTIONS: { value: GroupDirection; label: string }[] = [
   { value: "horizontal", label: "横向き（席は机の上下）" },
@@ -119,7 +166,7 @@ export const DEFAULT_PARAMS: LayoutParams = {
   tables: 4,
   perTable: 6,
   deal: false,
-  groupFlow: "horizontal",
+  groupFlow: "auto",
   groupDesk: "horizontal",
   rows: 5,
   cols: 6,
@@ -399,11 +446,10 @@ function islands(p: LayoutParams, round: boolean): LayoutGeometry {
     const islandH = vertical ? along : SEAT_H * 2 + th + GAP * 2;
     cellW = islandW + GAP * 5;
     cellH = islandH + GAP * 5;
-    // 島を増やす方向：横は左から右へ（端で次の段へ）、縦は上から下へ（端で次の列へ）。1列・1段に並べる数は同じ決め方
-    const columnFirst = p.groupFlow === "vertical";
+    // 島の位置（[段, 列]）。増やす方向を選んでいなければ、これまでどおりの並び
+    const cells = groupCellsOf(p);
     for (let t = 0; t < p.tables; t++) {
-      const gx = columnFirst ? Math.floor(t / cols) : t % cols;
-      const gy = columnFirst ? t % cols : Math.floor(t / cols);
+      const [gy, gx] = cells[t];
       const x0 = gx * cellW;
       const y0 = gy * cellH;
       const list: Seat[] = [];

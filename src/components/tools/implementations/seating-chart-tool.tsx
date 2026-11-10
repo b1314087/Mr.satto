@@ -14,7 +14,9 @@ import {
   DESK_LABEL_MAX,
   GROUP_DESK_OPTIONS,
   GROUP_FLOW_OPTIONS,
+  groupCellsOf,
   type GroupDirection,
+  type GroupFlow,
   DESK_LIMITS,
   deskNoun,
   MAX_DESKS,
@@ -237,6 +239,17 @@ export function SeatingChartTool() {
     setTags({});
     setLocked([]);
     setBlocked([]);
+  }
+
+  /**
+   * グループワーク：島を増やす方向を選ぶ。選んだときの島の位置を覚えておき、それより後に増やした島だけを選んだ方向へ並べる。
+   * 「自動」に戻すと、これまでどおり島の数に合わせて並べ直す
+   */
+  function chooseGroupFlow(flow: GroupFlow) {
+    if (!purpose || !params) return;
+    const groupCells = flow === "auto" ? undefined : groupCellsOf(params);
+    setBaseParams((prev) => ({ ...prev, [purpose]: { ...params, groupFlow: flow, groupCells } }));
+    setSelected([]);
   }
 
   function updateParam<K extends keyof LayoutParams>(key: K, value: LayoutParams[K]) {
@@ -490,21 +503,33 @@ export function SeatingChartTool() {
             )}
             {purpose === "group" && (
               <>
-                <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200" title="島を並べていく向きです。端まで並ぶと、次の段（または次の列）へ続きます">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
                   島を増やす方向
-                  <select
-                    value={params.groupFlow ?? "horizontal"}
-                    onChange={(e) => updateParam("groupFlow", e.target.value as GroupDirection)}
-                    className={`${inputClass} w-auto`}
-                    data-testid="seat-group-flow"
-                  >
+                  <div role="radiogroup" aria-label="島を増やす方向" className="flex gap-1" data-testid="seat-group-flow">
                     {GROUP_FLOW_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
+                      <button
+                        key={o.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={(params.groupFlow ?? "auto") === o.value}
+                        onClick={() => chooseGroupFlow(o.value)}
+                        data-testid={`seat-group-flow-${o.value}`}
+                        className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                          (params.groupFlow ?? "auto") === o.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                        }`}
+                      >
                         {o.label}
-                      </option>
+                      </button>
                     ))}
-                  </select>
-                </label>
+                  </div>
+                  <span className="w-full text-xs text-neutral-500 dark:text-neutral-400" data-testid="seat-group-flow-help">
+                    {(params.groupFlow ?? "auto") === "auto"
+                      ? "島の数に合わせて、自動で並べます。"
+                      : params.groupFlow === "horizontal"
+                        ? "いまの段の数のまま、このあと増やした島は右へ並びます（新しい列の上の段から順に入ります）。いま置いてある島は動きません。"
+                        : "いまの列の数のまま、このあと増やした島は下へ並びます（新しい段の左の列から順に入ります）。いま置いてある島は動きません。"}
+                  </span>
+                </div>
                 <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200" title="島の長机の向きです。横向きは席が机の上下に、縦向きは席が机の左右に並びます">
                   机の向き
                   <select

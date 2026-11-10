@@ -7,7 +7,7 @@ import { buildMinimalXlsx } from "../fixtures/xlsx-writer";
 import { assertDownloadedFile, clickAndDownload } from "../helpers/tool-runner";
 import { extractPdfContent, isValidPdfFile } from "../helpers/pdf-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
-import { autoParams, buildLayout, DEFAULT_PARAMS, rotateLayout, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
+import { autoParams, buildLayout, DEFAULT_PARAMS, groupCellsOf, rotateLayout, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
 import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
 import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
 import { isActiveRule, isNear, seatDistance, shuffleWithRules, violatedRules, type SeatRule } from "@/lib/seating/conditions";
@@ -924,87 +924,116 @@ test("seating-chart: PDFの用紙（B6などJISのA・B列ぜんぶ）と向き�
 });
 
 // ---------------------------------------------------------------------------
-// グループワーク：島を増やす方向と、机の向き（それぞれ独立して選べる）
+// グループワーク：島を増やす方向（押したあとに増やした島が、その方向へ並ぶ）と、机の向き
 // ---------------------------------------------------------------------------
 type Box = { x: number; y: number; w: number; h: number };
 const boxesOverlap = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-const GROUP_PATTERNS = [
-  { groupFlow: "vertical", groupDesk: "vertical" },
-  { groupFlow: "vertical", groupDesk: "horizontal" },
-  { groupFlow: "horizontal", groupDesk: "vertical" },
-  { groupFlow: "horizontal", groupDesk: "horizontal" },
-] as const;
+type Cell = [number, number];
+/** 島の数 from で「増やす方向」を押し、そのあと島の数を to にしたときの設定 */
+const grown = (flow: "horizontal" | "vertical", from: number, to: number, extra: Partial<typeof DEFAULT_PARAMS> = {}) => ({
+  ...DEFAULT_PARAMS,
+  ...extra,
+  groupFlow: flow,
+  groupCells: groupCellsOf({ tables: from, groupFlow: "auto" }),
+  tables: to,
+});
+const deskOf = (g: ReturnType<typeof buildLayout>, t: number) => g.shapes[t] as Extract<(typeof g.shapes)[number], { kind: "rect" }>;
 
-plainTest("グループワーク：4つの組み合わせのどれでも、島の数・1島の席を変えても、席どうし・机どうし・席と机が重ならない", () => {
-  for (const pattern of GROUP_PATTERNS) {
-    for (const tables of [1, 2, 3, 5, 6, 10, 13, 40]) {
-      for (const perTable of [2, 3, 6, 11, 16]) {
-        const g = buildLayout("group", { ...DEFAULT_PARAMS, ...pattern, tables, perTable });
-        const what = `${JSON.stringify(pattern)} 島${tables} 席${perTable}`;
-        plainExpect(g.seats.length, what).toBe(tables * perTable);
-        const seats: Box[] = g.seats.map((s) => ({ x: s.x, y: s.y, w: SEAT_W, h: SEAT_H }));
-        const desks: Box[] = g.shapes.map((sh) => (sh.kind === "rect" ? { x: sh.x, y: sh.y, w: sh.w, h: sh.h } : { x: 0, y: 0, w: 0, h: 0 }));
-        plainExpect(desks.length, what).toBe(tables);
-        const all = [...seats, ...desks];
-        const bad: string[] = [];
-        for (let i = 0; i < all.length; i++) {
-          for (let j = i + 1; j < all.length; j++) if (boxesOverlap(all[i], all[j])) bad.push(`${i}と${j}`);
-          // すべて座席表の中に収まる
-          const b = all[i];
-          if (!(b.x >= 0 && b.y >= 0 && b.x + b.w <= g.width && b.y + b.h <= g.height)) bad.push(`${i}がはみ出す`);
+plainTest("グループワーク：「横に増やす」を押したあとに増やした島は、段の数はそのままで右へ並ぶ（2段なら、新しい列の上・下に1つずつ）。いまの島は動かない", () => {
+  plainExpect(groupCellsOf({ tables: 4, groupFlow: "auto" })).toEqual([[0, 0], [0, 1], [1, 0], [1, 1]]);
+  const four: Cell[] = [[0, 0], [0, 1], [1, 0], [1, 1]];
+  plainExpect(groupCellsOf({ tables: 5, groupFlow: "horizontal", groupCells: four })).toEqual([...four, [0, 2]]);
+  plainExpect(groupCellsOf({ tables: 6, groupFlow: "horizontal", groupCells: four })).toEqual([...four, [0, 2], [1, 2]]);
+  plainExpect(groupCellsOf({ tables: 8, groupFlow: "horizontal", groupCells: four }).slice(4)).toEqual([[0, 2], [1, 2], [0, 3], [1, 3]]);
+  // 配置でも、いま置いてある4つの島の位置は変わらない
+  const before = buildLayout("group", { ...DEFAULT_PARAMS, tables: 4 });
+  const after = buildLayout("group", grown("horizontal", 4, 6));
+  for (let t = 0; t < 4; t++) plainExpect([deskOf(after, t).x, deskOf(after, t).y]).toEqual([deskOf(before, t).x, deskOf(before, t).y]);
+  plainExpect(deskOf(after, 4).y).toBe(deskOf(after, 0).y); // 島5は上の段
+  plainExpect(deskOf(after, 5).y).toBe(deskOf(after, 2).y); // 島6は下の段
+  plainExpect(deskOf(after, 4).x).toBeGreaterThan(deskOf(after, 1).x);
+  plainExpect(deskOf(after, 5).x).toBe(deskOf(after, 4).x);
+});
+
+plainTest("グループワーク：「縦に増やす」を押したあとに増やした島は、列の数はそのままで下へ並ぶ。途中で方向を変えると、それより後の島だけが新しい方向へ並ぶ", () => {
+  const four: Cell[] = [[0, 0], [0, 1], [1, 0], [1, 1]];
+  plainExpect(groupCellsOf({ tables: 6, groupFlow: "vertical", groupCells: four })).toEqual([...four, [2, 0], [2, 1]]);
+  const g = buildLayout("group", grown("vertical", 4, 6));
+  plainExpect(deskOf(g, 4).x).toBe(deskOf(g, 0).x);
+  plainExpect(deskOf(g, 4).y).toBeGreaterThan(deskOf(g, 2).y);
+  // 2×2 → 横に6つまで（2段×3列） → 縦に切り替えて9つまで：3列のまま、下の段に3つ
+  const six = groupCellsOf({ tables: 6, groupFlow: "horizontal", groupCells: four });
+  plainExpect(groupCellsOf({ tables: 9, groupFlow: "vertical", groupCells: six }).slice(6)).toEqual([[2, 0], [2, 1], [2, 2]]);
+  // 島を減らしてから増やし直しても、覚えた位置は保たれ、重ならない
+  plainExpect(groupCellsOf({ tables: 3, groupFlow: "vertical", groupCells: six })).toEqual(six.slice(0, 3));
+  // 1つの島から押した場合：横は1段のまま右へ、縦は1列のまま下へ
+  plainExpect(groupCellsOf({ tables: 3, groupFlow: "horizontal", groupCells: [[0, 0]] })).toEqual([[0, 0], [0, 1], [0, 2]]);
+  plainExpect(groupCellsOf({ tables: 3, groupFlow: "vertical", groupCells: [[0, 0]] })).toEqual([[0, 0], [1, 0], [2, 0]]);
+});
+
+plainTest("グループワーク：増やす方向（自動・横・縦）と机の向き（横・縦）のどの組み合わせでも、島の数・1島の席を変えても、重ならず、はみ出さない", () => {
+  for (const flow of ["auto", "horizontal", "vertical"] as const) {
+    for (const groupDesk of ["horizontal", "vertical"] as const) {
+      for (const from of [1, 3, 4]) {
+        for (const tables of [1, 2, 5, 6, 10, 13, 40]) {
+          for (const perTable of [2, 3, 6, 11, 16]) {
+            const params = flow === "auto" ? { ...DEFAULT_PARAMS, groupDesk, tables, perTable } : grown(flow, from, tables, { groupDesk, perTable });
+            const g = buildLayout("group", params);
+            const what = `${flow} 机${groupDesk} 押したとき${from} 島${tables} 席${perTable}`;
+            plainExpect(g.seats.length, what).toBe(tables * perTable);
+            const seats: Box[] = g.seats.map((st) => ({ x: st.x, y: st.y, w: SEAT_W, h: SEAT_H }));
+            const desks: Box[] = g.shapes.map((sh) => (sh.kind === "rect" ? { x: sh.x, y: sh.y, w: sh.w, h: sh.h } : { x: 0, y: 0, w: 0, h: 0 }));
+            plainExpect(desks.length, what).toBe(tables);
+            const all = [...seats, ...desks];
+            const bad: string[] = [];
+            for (let i = 0; i < all.length; i++) {
+              for (let j = i + 1; j < all.length; j++) if (boxesOverlap(all[i], all[j])) bad.push(`${i}と${j}`);
+              const b = all[i];
+              if (!(b.x >= 0 && b.y >= 0 && b.x + b.w <= g.width && b.y + b.h <= g.height)) bad.push(`${i}がはみ出す`);
+            }
+            plainExpect(bad.slice(0, 5), what).toEqual([]);
+          }
         }
-        plainExpect(bad.slice(0, 5), what).toEqual([]);
       }
     }
   }
 });
 
-plainTest("グループワーク：島を増やす方向（横＝左から右へ・縦＝上から下へ）と、机の向き（横＝席は上下・縦＝席は左右）が、それぞれ独立して効く", () => {
-  const uniq = (xs: number[]) => [...new Set(xs.map((x) => Math.round(x)))].sort((a, b) => a - b);
-  for (const pattern of GROUP_PATTERNS) {
-    const g = buildLayout("group", { ...DEFAULT_PARAMS, ...pattern, tables: 6, perTable: 6 });
-    const desks = g.shapes.filter((sh): sh is Extract<typeof sh, { kind: "rect" }> => sh.kind === "rect");
-    // 島の並び：6島は 3つずつ。横方向は3列×2段（島2は島1の右）、縦方向は2列×3段（島2は島1の下）
-    const xs = uniq(desks.map((d) => d.x));
-    const ys = uniq(desks.map((d) => d.y));
-    if (pattern.groupFlow === "horizontal") {
-      plainExpect([xs.length, ys.length]).toEqual([3, 2]);
-      plainExpect(desks[1].x).toBeGreaterThan(desks[0].x);
-      plainExpect(desks[1].y).toBe(desks[0].y);
-    } else {
-      plainExpect([xs.length, ys.length]).toEqual([2, 3]);
-      plainExpect(desks[1].y).toBeGreaterThan(desks[0].y);
-      plainExpect(desks[1].x).toBe(desks[0].x);
-    }
-    // 机の向き：横向きは横長の机で、席は机の上下。縦向きは縦長の机で、席は机の左右
-    const d = desks[0];
-    const island = g.seats.filter((s) => s.group === "島1");
-    if (pattern.groupDesk === "horizontal") {
-      plainExpect(d.w).toBeGreaterThan(d.h);
-      plainExpect(island.every((s) => s.y + SEAT_H <= d.y || s.y >= d.y + d.h)).toBe(true);
-    } else {
-      plainExpect(d.h).toBeGreaterThan(d.w);
-      plainExpect(island.every((s) => s.x + SEAT_W <= d.x || s.x >= d.x + d.w)).toBe(true);
+plainTest("グループワーク：机の向き（横＝席は上下・縦＝席は左右）は、増やす方向と関係なく効く", () => {
+  for (const params of [{ ...DEFAULT_PARAMS, tables: 6, perTable: 6 }, grown("horizontal", 4, 6, { perTable: 6 }), grown("vertical", 4, 6, { perTable: 6 })]) {
+    for (const groupDesk of ["horizontal", "vertical"] as const) {
+      const g = buildLayout("group", { ...params, groupDesk });
+      const d = deskOf(g, 0);
+      const island = g.seats.filter((st) => st.group === "島1");
+      if (groupDesk === "horizontal") {
+        plainExpect(d.w).toBeGreaterThan(d.h);
+        plainExpect(island.every((st) => st.y + SEAT_H <= d.y || st.y >= d.y + d.h)).toBe(true);
+      } else {
+        plainExpect(d.h).toBeGreaterThan(d.w);
+        plainExpect(island.every((st) => st.x + SEAT_W <= d.x || st.x >= d.x + d.w)).toBe(true);
+      }
     }
   }
 });
 
-plainTest("グループワーク：初期値（横方向・横向き）の配置は、これまでと同じ。指定が無いときも同じ。円卓は変わらない", () => {
-  plainExpect([DEFAULT_PARAMS.groupFlow, DEFAULT_PARAMS.groupDesk]).toEqual(["horizontal", "horizontal"]);
+plainTest("グループワーク：初期値（自動・横向き）の配置は、これまでと同じ。指定が無いときも同じ。円卓は変わらない", () => {
+  plainExpect([DEFAULT_PARAMS.groupFlow, DEFAULT_PARAMS.groupDesk]).toEqual(["auto", "horizontal"]);
   const base = { ...DEFAULT_PARAMS, tables: 5, perTable: 6 };
-  const explicit = buildLayout("group", { ...base, groupFlow: "horizontal", groupDesk: "horizontal" });
+  const explicit = buildLayout("group", { ...base, groupFlow: "auto", groupDesk: "horizontal" });
   const omitted = buildLayout("group", { ...base, groupFlow: undefined, groupDesk: undefined });
   plainExpect(omitted).toEqual(explicit);
-  // これまでの数字（島1の机は、席の高さ60＋間隔14の下・幅は3席分＋余白）
-  const d = explicit.shapes[0] as Extract<(typeof explicit.shapes)[number], { kind: "rect" }>;
+  // これまでの数字（島5つは3つずつ並べる。島1の机は、席の高さ60＋間隔14の下・幅は3席分＋余白）
+  const d = deskOf(explicit, 0);
   plainExpect([d.w, d.h]).toEqual([3 * SEAT_W + 2 * 14 + 28, 56]);
   plainExpect(explicit.seats[3].y - explicit.seats[0].y).toBe(SEAT_H + 14 + 56 + 14);
+  plainExpect(deskOf(explicit, 3).y).toBeGreaterThan(deskOf(explicit, 2).y);
+  plainExpect(deskOf(explicit, 2).y).toBe(deskOf(explicit, 0).y);
   // 円卓は、島の設定に関係なく同じ
   const round = { ...DEFAULT_PARAMS, tables: 5, perTable: 8 };
-  plainExpect(buildLayout("round", { ...round, groupFlow: "vertical", groupDesk: "vertical" })).toEqual(buildLayout("round", round));
+  plainExpect(buildLayout("round", { ...round, groupFlow: "vertical", groupDesk: "vertical", groupCells: [[0, 0]] })).toEqual(buildLayout("round", round));
 });
 
-test("グループワーク：島を増やす方向・机の向きは、グループワークのときだけ出て、プレビューとダウンロードに反映される。名前は入ったまま", async ({ page }) => {
+test("グループワーク：「横に増やす」「縦に増やす」を押したあとに島を増やすと、その方向へ並ぶ。机の向きも選べる。設定はグループワークのときだけ出て、ダウンロードにも反映される", async ({ page }) => {
   test.setTimeout(120_000);
   await openTool(page);
   await start(page, "classroom", ["A"]);
@@ -1012,34 +1041,49 @@ test("グループワーク：島を増やす方向・机の向きは、グル�
   await expect(page.getByTestId("seat-group-desk")).toHaveCount(0);
   await page.getByTestId("seat-purpose-group").click();
   await page.getByTestId("seat-names").fill(Array.from({ length: 24 }, (_, i) => `G${i + 1}`).join("\n"));
-  await expect(page.getByTestId("seat-group-flow")).toHaveValue("horizontal");
+  await expect(page.getByTestId("seat-group-flow-auto")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("seat-group-desk")).toHaveValue("horizontal");
-  const pngSize = async () => {
-    const png = await clickAndDownload(page, "画像（PNG）でダウンロード");
-    const buf = fs.readFileSync((await assertDownloadedFile(png, { format: "png" })).path);
-    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
-  };
-  const seatBox = async (i: number) => (await seat(page, i).boundingBox())!;
-  // 初期値：24人・6席の島が4つ（2×2）。席2は席1の右
-  const flowH = await pngSize();
-  plainExpect((await seatBox(1)).x).toBeGreaterThan((await seatBox(0)).x);
+  const preview = page.getByTestId("tool-preview");
+  const island = async (n: number) => (await preview.getByText(`島${n}`, { exact: true }).boundingBox())!;
+  // プレビューは全体に合わせて縮小されるため、同じ時点の島どうしの位置関係で確かめる
+  const near = (a: number, b: number) => Math.abs(a - b) < 2;
+  const all = async (n: number) => Promise.all(Array.from({ length: n }, (_, i) => island(i + 1)));
+  // 24人・1島6席：島4つ（2×2）
+  await expect(preview.getByText("島4", { exact: true })).toBeVisible();
+  // 横に増やす → 島を6つに：島5は上の段・島6は下の段の、新しい列。島1〜4の並びはそのまま
+  await page.getByTestId("seat-group-flow-horizontal").click();
+  await expect(page.getByTestId("seat-group-flow-help")).toContainText("右へ並びます");
+  await page.getByTestId("seat-tables").fill("6");
+  await expect(preview.getByText("島6", { exact: true })).toBeVisible();
+  {
+    const [i1, i2, i3, i4, i5, i6] = await all(6);
+    plainExpect(near(i2.y, i1.y) && i2.x > i1.x && near(i3.x, i1.x) && i3.y > i1.y && near(i4.x, i2.x) && near(i4.y, i3.y)).toBe(true);
+    plainExpect(near(i5.y, i1.y) && i5.x > i2.x).toBe(true);
+    plainExpect(near(i6.y, i3.y) && near(i6.x, i5.x)).toBe(true);
+  }
+  // 縦に増やす → 島を8つに：島7・島8は下の新しい段の、左の列から。前に置いた島の並びはそのまま
+  await page.getByTestId("seat-group-flow-vertical").click();
+  await page.getByTestId("seat-tables").fill("8");
+  await expect(preview.getByText("島8", { exact: true })).toBeVisible();
+  {
+    const [i1, i2, i3, , i5, i6, i7, i8] = await all(8);
+    plainExpect(near(i5.y, i1.y) && near(i6.y, i3.y) && near(i6.x, i5.x) && i5.x > i2.x).toBe(true);
+    plainExpect(i7.y > i3.y && near(i7.x, i1.x)).toBe(true);
+    plainExpect(near(i8.y, i7.y) && near(i8.x, i2.x)).toBe(true);
+  }
   // 机を縦向きに：席2は席1の下（同じ机の同じ側）
   await page.getByTestId("seat-group-desk").selectOption("vertical");
-  plainExpect((await seatBox(1)).y).toBeGreaterThan((await seatBox(0)).y);
-  plainExpect(Math.round((await seatBox(1)).x)).toBe(Math.round((await seatBox(0)).x));
-  // 島を縦方向に（机は縦向きのまま）：島が5つ以上なら列が減って縦に長くなる
-  await page.getByTestId("seat-tables").fill("6");
-  const deskVflowH = await pngSize();
-  await page.getByTestId("seat-group-flow").selectOption("vertical");
-  await expect(page.getByTestId("seat-group-desk")).toHaveValue("vertical");
-  const deskVflowV = await pngSize();
-  plainExpect(deskVflowV.h / deskVflowV.w).toBeGreaterThan(deskVflowH.h / deskVflowH.w);
-  // 名前は入ったまま（入力順に席1から）
+  const s0 = (await seat(page, 0).boundingBox())!;
+  const s1 = (await seat(page, 1).boundingBox())!;
+  plainExpect(s1.y > s0.y && near(s1.x, s0.x)).toBe(true);
+  // 名前は入ったまま
   plainExpect((await seatNames(page)).slice(0, 3)).toEqual(["G1", "G2", "G3"]);
-  // PDFにも出る（島の名前）
+  // ダウンロードにも出る
   await page.getByTestId("seat-format-pdf").click();
   const pdf = await clickAndDownload(page, "PDFでダウンロード");
   const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
-  plainExpect(content.text).toContain("島6");
-  void flowH;
+  plainExpect(content.text).toContain("島8");
+  // 自動に戻すと、これまでどおりの並び（8つは3つずつ）
+  await page.getByTestId("seat-group-flow-auto").click();
+  plainExpect(near((await island(3)).y, (await island(1)).y)).toBe(true);
 });
