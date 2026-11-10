@@ -69,7 +69,7 @@ import { SliderField } from "@/components/common/slider-field";
  * 生成物を保存することは一切行わない。
  */
 
-type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape" | "whiteout" | "blackout";
+export type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape" | "whiteout" | "blackout";
 type ColorChoice = "black" | "red" | "blue";
 
 interface PageInfo {
@@ -183,9 +183,21 @@ export function PdfFillAnnotateTool({
   initialFile = null,
   onFileChange,
   onDirtyChange,
+  controlledMode,
+  onModeChange,
+  inactive,
 }: SharedPdfFileProps & {
   /** 配置済みの注釈・文字・図形などが1つでもあるかが変わったときに呼ばれる（総合画面が、機能の切り替え前に確認を出すため） */
   onDirtyChange?: (hasEdits: boolean) => void;
+  /**
+   * 新工程1：操作（テキスト・チェック・図形など）を、外側（PDF修正の「やりたい操作」のプルダウン）から決める。
+   * 指定したときは、この画面の中の操作ボタンの列は出さない（操作の選び方を1か所にまとめる）
+   */
+  controlledMode?: ToolMode;
+  /** 画面の中で操作が変わったとき（置いたあとに「選択・移動」へ戻るときなど）に呼ばれる */
+  onModeChange?: (mode: ToolMode) => void;
+  /** 新工程1：この画面を隠しているあいだ（PDF修正でページ番号・透かしを選んでいるとき）は true。ページ全体へのドロップの受け取り先にしない */
+  inactive?: boolean;
 } = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
@@ -227,7 +239,19 @@ export function PdfFillAnnotateTool({
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
-  const [mode, setMode] = useState<ToolMode>("select");
+  const [modeState, setModeState] = useState<ToolMode>(controlledMode ?? "select");
+  const isControlled = controlledMode !== undefined;
+  const mode: ToolMode = controlledMode ?? modeState;
+  /** 画面の中から操作を変えたときに、外側へ伝えた値（外側から変わったのかを見分けるため） */
+  const lastInternalModeRef = useRef<ToolMode | null>(null);
+  function setMode(next: ToolMode) {
+    if (isControlled) {
+      lastInternalModeRef.current = next;
+      onModeChange?.(next);
+    } else {
+      setModeState(next);
+    }
+  }
   const [activeObjectId, setActiveObjectId] = useState<string | null>(null);
   const [repositioningId, setRepositioningId] = useState<string | null>(null);
 
@@ -278,6 +302,19 @@ export function PdfFillAnnotateTool({
 
   // --- 画像 ---
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
+  // 外側（プルダウン）から操作が変わったときも、操作ボタンを押したときと同じ後片付けをする
+  useEffect(() => {
+    if (!isControlled) return;
+    if (lastInternalModeRef.current === controlledMode) return;
+    lastInternalModeRef.current = controlledMode ?? null;
+    setRepositioningId(null);
+    if (controlledMode !== "image" && controlledMode !== "stamp" && pendingImage) {
+      URL.revokeObjectURL(pendingImage.previewUrl);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPendingImage(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlledMode]);
 
   // --- 書き出し ---
   const [status, setStatus] = useState<ProcessingState>("idle");
@@ -499,7 +536,8 @@ export function PdfFillAnnotateTool({
     setCanRedo(false);
     setActiveObjectId(null);
     setRepositioningId(null);
-    setMode("select");
+    // 外側（プルダウン）で操作を選んでいるときは、PDFを読み込んでも、選んだ操作のままにする
+    if (!isControlled) setMode("select");
 
     setFile(f);
     onFileChange?.(f);
@@ -1153,6 +1191,7 @@ export function PdfFillAnnotateTool({
           accept="application/pdf,.pdf"
           label="PDFをドラッグ&ドロップ"
           hint="またはタップして選択（1ファイル）"
+          pageDrop={inactive ? false : undefined}
           onFilesSelected={requestFileSelect}
           onError={setError}
         />
@@ -1287,6 +1326,7 @@ export function PdfFillAnnotateTool({
             </div>
           </div>
 
+          {!isControlled && (
           <div className="flex flex-wrap gap-2" role="group" aria-label="編集ツール">
             {MODE_LABELS.map((m) => (
               <button
@@ -1311,6 +1351,7 @@ export function PdfFillAnnotateTool({
               </button>
             ))}
           </div>
+          )}
 
           {mode === "text" && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">

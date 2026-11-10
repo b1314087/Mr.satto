@@ -6,20 +6,20 @@ import { FileDropzone } from "@/components/common/file-dropzone";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { useUnsavedChangesWarning } from "@/components/tools/implementations/shared/use-unsaved-changes-warning";
-import { buildGenericCsvBlob, neutralizeFormula, type CsvRecord } from "@/lib/accounting/csv-generic";
+import { neutralizeFormula, type CsvRecord } from "@/lib/accounting/csv-generic";
+import { FREEE_CSV_HEADER, FREEE_TEXT_MAX_LENGTH, type FreeeRecord } from "@/lib/accounting/csv-freee";
 import {
-  EMPTY_FREEE_ROW_OVERRIDE,
-  EMPTY_FREEE_SETTINGS,
-  FREEE_TEXT_MAX_LENGTH,
-  buildFreeeCsvBlob,
-  resolveFreeeRow,
-  validateFreeeSettings,
-  type FreeeDirection,
-  type FreeePaymentMode,
-  type FreeeRecord,
-  type FreeeRowOverride,
-  type FreeeSettings,
-} from "@/lib/accounting/csv-freee";
+  EMPTY_RECEIPT_JOURNAL_DEFAULTS,
+  FREEE_TAX_CATEGORY_OPTIONS,
+  FREEE_TAX_CATEGORY_OTHER,
+  buildReceiptFreeeCsvBlob,
+  buildReceiptFreeeRows,
+  buildReceiptFreeeXlsxBlob,
+  toFreeeRecord,
+  validateJournalFields,
+  type ReceiptJournalDefaults,
+  type ReceiptJournalFields,
+} from "@/lib/accounting/freee-receipt";
 import { extractReceipt, formatDateSlash } from "@/lib/accounting/receipt-extract";
 import { checkReceiptFile, detectReceiptFileKind, type ReceiptFileKind } from "@/lib/accounting/receipt-file-kind";
 import {
@@ -32,15 +32,7 @@ import {
   type TextLine,
 } from "@/lib/accounting/receipt-types";
 import { duplicateKeys, parseAmountInput, validateRow } from "@/lib/accounting/receipt-validate";
-import {
-  RECEIPT_DETAIL_TEXT_MAX,
-  TAX_CATEGORY_SUGGESTIONS,
-  TAX_RATE_OPTIONS,
-  checkReceiptDetails,
-  extractReceiptDetails,
-  type ReceiptDetailValues,
-} from "@/lib/accounting/receipt-details";
-import { buildJournalCsvBlob, buildJournalXlsxBlob, type JournalRecord } from "@/lib/accounting/journal-export";
+import { checkReceiptDetails, extractReceiptDetails, taxRateLabel, type ReceiptDetailValues } from "@/lib/accounting/receipt-details";
 import { downloadBlob } from "@/lib/utils/format";
 import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
@@ -48,16 +40,17 @@ import { ReceiptReadError, readReceiptFile, type ReadDocument } from "@/lib/proc
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 
 /**
- * 工程4で追加したこと:
- * - 税率・消費税額・登録番号・品目を読み取る（読み取れないものは空欄で「不明」と表示し、推測で埋めない）。
- * - 行ごとに、摘要・税区分・借方勘定科目・貸方勘定科目を入力できる（初期値なし。自動で決めない・確認済みにしない）。
- * - 合計金額と消費税額が合わないとき・登録番号の形が違うとき・税区分と税率が合わないときに注意を出す。
- * - 「明細・仕訳CSV」と、同じ内容のExcel（.xlsx）を出力できる（読み取り元のファイル名の列つき）。
- * - 入力した内容・設定は保存しない（画面を閉じると消える。これまでどおり）。
+ * 領収書・レシートから会計CSV作成（工程8。新工程1で、freee会計向けに作り直した）。
  *
- * 領収書・レシートから会計CSV作成（工程8）。
- * 画像・PDFを読み込み、日付・取引先・合計金額を抽出して、利用者が確認・修正した行だけを汎用CSVに出力する。
- * すべてブラウザの中で処理する。ファイル・読み取った内容は、サーバーへ送らず、端末にも保存しない。
+ * 画面の流れ：1. 初期値（借方勘定科目・貸方勘定科目・課税区分）→ 2. 読み込み → 3. 明細ごとの確認・訂正 →
+ * 画面の下の「仕訳プレビュー」で確かめて、freee会計向けCSV・Excel（.xlsx）で出力する。
+ * - 対応する会計ソフトは freee会計だけ（取引インポート用CSV。src/lib/accounting/freee-receipt.ts）。汎用CSV・明細CSVの選択は外した。
+ * - 初期値は、読み取った明細に最初から入れる値。明細ごとに、日付・取引先・摘要・金額・借方・貸方・課税区分を変えられる。
+ *   「支払状況」の選択はなくした（貸方勘定科目＝決済口座を入れれば決済済み、空欄なら未決済）。
+ * - 読み取った値は、利用者が確かめて「確認済み」にするまで確定扱いにしない。値を変えると未確認に戻る。
+ *   出力するのは確認済みの明細だけ。未確認の明細があるときは、出力の前にはっきり知らせる。
+ * - 仕訳プレビューは画面の下に固定して出し、入力を変えるとすぐ反映する。プレビュー・CSV・Excel は同じ行から作る。
+ * - ファイル・読み取った内容・入力は、ブラウザの中だけで扱い、送信も保存もしない。
  */
 
 interface DocRow {
@@ -74,26 +67,12 @@ interface DocRow {
   confirmed: boolean;
   /** 確認済みにしようとして、検証に通らなかったときのエラー */
   attemptErrors: string[] | null;
-  /** 工程4：詳しい項目（税率・税額・登録番号・品目・摘要・税区分・勘定科目） */
+  /** 読み取った税率・税額・登録番号・品目（課税区分を選ぶときの参考。工程4） */
   details: ReceiptDetailValues;
-  /** 自動で入れた詳しい項目（「自動読み取り」か「修正済み」かを示す） */
   autoDetails: ReceiptDetailValues;
+  /** 明細ごとの仕訳（借方勘定科目・貸方勘定科目・課税区分・摘要） */
+  journal: ReceiptJournalFields;
 }
-
-type CsvFormat = "generic" | "journal" | "freee";
-
-/** 詳しい項目のうち、読み取るもの（ラベルと入力の種類） */
-const DETAIL_READ_FIELDS: { key: "taxAmount" | "registrationNumber" | "items"; label: string; placeholder: string }[] = [
-  { key: "taxAmount", label: "消費税額", placeholder: "例：100" },
-  { key: "registrationNumber", label: "登録番号", placeholder: "例：T1234567890123" },
-  { key: "items", label: "品目", placeholder: "例：コピー用紙、ボールペン" },
-];
-/** 詳しい項目のうち、利用者が入力するもの */
-const DETAIL_INPUT_FIELDS: { key: "memo" | "debitAccount" | "creditAccount"; label: string; placeholder: string }[] = [
-  { key: "memo", label: "摘要", placeholder: "例：事務用品の購入" },
-  { key: "debitAccount", label: "借方勘定科目", placeholder: "例：消耗品費" },
-  { key: "creditAccount", label: "貸方勘定科目", placeholder: "例：現金" },
-];
 
 type JobStatus = "queued" | "reading" | "done" | "error";
 
@@ -114,13 +93,14 @@ interface QueueItem {
   generation: number;
 }
 
-const FIELD_LABEL: Record<ReceiptFieldKey, string> = { date: "日付", vendor: "取引先", total: "合計金額" };
+const FIELD_LABEL: Record<ReceiptFieldKey, string> = { date: "日付", vendor: "取引先", total: "金額（税込）" };
 
 const inputClass =
   "w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
 const smallButton =
   "rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700";
 const sectionClass = "flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800";
+const labelClass = "flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400";
 const GENERIC_JOB_ERROR = "このファイルを読み取れませんでした。別のファイルでお試しください。";
 
 function todayIso(): string {
@@ -148,6 +128,70 @@ function sourceLabel(row: DocRow, key: ReceiptFieldKey): string {
   return current === row.autoValues[key] ? "自動読み取り" : "入力・修正済み";
 }
 
+function stamp(): string {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const KNOWN_TAX = new Set(FREEE_TAX_CATEGORY_OPTIONS.map((o) => o.value));
+
+/**
+ * 課税区分の入力（プルダウン。一覧にない名前は「その他」で入力できる）
+ */
+function TaxCategoryField({
+  value,
+  onChange,
+  testId,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  testId: string;
+  ariaLabel: string;
+}) {
+  const [otherMode, setOtherMode] = useState(value !== "" && !KNOWN_TAX.has(value));
+  const selectValue = otherMode ? FREEE_TAX_CATEGORY_OTHER : value;
+  return (
+    <div className="flex flex-col gap-1">
+      <select
+        data-testid={testId}
+        aria-label={ariaLabel}
+        value={selectValue}
+        onChange={(e) => {
+          if (e.target.value === FREEE_TAX_CATEGORY_OTHER) {
+            setOtherMode(true);
+            onChange("");
+          } else {
+            setOtherMode(false);
+            onChange(e.target.value);
+          }
+        }}
+        className={inputClass}
+      >
+        <option value="">選択してください</option>
+        {FREEE_TAX_CATEGORY_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value} title={o.note}>
+            {o.value}
+          </option>
+        ))}
+        <option value={FREEE_TAX_CATEGORY_OTHER}>その他（freeeの税区分の名前を入力）</option>
+      </select>
+      {otherMode && (
+        <input
+          type="text"
+          data-testid={`${testId}-other`}
+          aria-label={`${ariaLabel}（その他の名前）`}
+          value={value}
+          maxLength={FREEE_TEXT_MAX_LENGTH}
+          placeholder="freeeの画面に表示されている税区分の名前"
+          onChange={(e) => onChange(e.target.value)}
+          className={inputClass}
+        />
+      )}
+    </div>
+  );
+}
+
 export function ReceiptAccountingTool() {
   /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
   const csvExport = useCsvExport();
@@ -159,10 +203,11 @@ export function ReceiptAccountingTool() {
   const [exportedSignature, setExportedSignature] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
-  // 出力形式と、freee向けCSVの入力。形式を切り替えても、どちらの入力も消えないよう、別々の状態として持つ
-  const [format, setFormat] = useState<CsvFormat>("generic");
-  const [freeeSettings, setFreeeSettings] = useState<FreeeSettings>(EMPTY_FREEE_SETTINGS);
-  const [freeeOverrides, setFreeeOverrides] = useState<Record<string, FreeeRowOverride>>({});
+  // 読み取りの前に決める初期値（借方勘定科目・貸方勘定科目・課税区分）。保存はしない（画面を閉じると消える）
+  const [defaults, setDefaults] = useState<ReceiptJournalDefaults>(EMPTY_RECEIPT_JOURNAL_DEFAULTS);
+  // 読み取りの途中（コールバックの中）でも、最新の初期値を使うために ref にも持つ
+  const defaultsRef = useRef<ReceiptJournalDefaults>(EMPTY_RECEIPT_JOURNAL_DEFAULTS);
+  const [previewOpen, setPreviewOpen] = useState(true);
 
   const docsRef = useRef<DocRow[]>([]);
   const queueRef = useRef<QueueItem[]>([]);
@@ -218,6 +263,8 @@ export function ReceiptAccountingTool() {
         attemptErrors: null,
         details,
         autoDetails: details,
+        // 初期値（借方・貸方・課税区分）を入れる。摘要には、読み取れた品目を入れる（空欄のこともある）
+        journal: { ...defaultsRef.current, memo: details.items },
       };
       commitDocs((prev) => [...prev, row]);
       setJobs((prev) => prev.map((j) => (j.id === item.jobId ? { ...j, documents: j.documents + 1 } : j)));
@@ -334,6 +381,7 @@ export function ReceiptAccountingTool() {
     [nextId, runQueue],
   );
 
+
   function cancelReading() {
     cancelRef.current = true;
   }
@@ -353,19 +401,12 @@ export function ReceiptAccountingTool() {
     setExportedSignature(null);
     setExpandedId(null);
     setConfirmReset(false);
-    setFreeeOverrides({});
   }
 
   function deleteDoc(id: string) {
     const target = docsRef.current.find((d) => d.id === id);
     if (target) URL.revokeObjectURL(target.previewUrl);
     commitDocs((prev) => prev.filter((d) => d.id !== id));
-    setFreeeOverrides((prev) => {
-      if (!(id in prev)) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
     if (expandedId === id) setExpandedId(null);
   }
 
@@ -374,11 +415,24 @@ export function ReceiptAccountingTool() {
     commitDocs((prev) => prev.map((d) => (d.id === id ? { ...d, values: { ...d.values, [key]: value }, confirmed: false, attemptErrors: null } : d)));
   }
 
-  function editDetail(id: string, key: keyof ReceiptDetailValues, value: string) {
-    // 詳しい項目を変えたときも、確認済みを外す（変更前の内容で確認したことにしない）
+  function editJournal(id: string, key: keyof ReceiptJournalFields, value: string) {
+    // 仕訳の項目を変えたときも、確認済みを外す
     commitDocs((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, details: { ...d.details, [key]: value.slice(0, RECEIPT_DETAIL_TEXT_MAX) }, confirmed: false, attemptErrors: null } : d)),
+      prev.map((d) =>
+        d.id === id ? { ...d, journal: { ...d.journal, [key]: value.slice(0, FREEE_TEXT_MAX_LENGTH) }, confirmed: false, attemptErrors: null } : d,
+      ),
     );
+  }
+
+  function setDefault(key: keyof ReceiptJournalDefaults, value: string) {
+    const next = { ...defaults, [key]: value.slice(0, FREEE_TEXT_MAX_LENGTH) };
+    defaultsRef.current = next;
+    setDefaults(next);
+  }
+
+  /** 初期値を、まだ確認していない明細に入れ直す（確認済みの明細は変えない） */
+  function applyDefaultsToUnconfirmed() {
+    commitDocs((prev) => prev.map((d) => (d.confirmed ? d : { ...d, journal: { ...d.journal, ...defaults }, attemptErrors: null })));
   }
 
   function toggleConfirm(id: string) {
@@ -388,7 +442,8 @@ export function ReceiptAccountingTool() {
         if (d.id !== id) return d;
         if (d.confirmed) return { ...d, confirmed: false, attemptErrors: null };
         const result = validateRow(d.values, { today });
-        if (result.errors.length > 0) return { ...d, attemptErrors: result.errors };
+        const errors = [...result.errors, ...validateJournalFields(d.journal)];
+        if (errors.length > 0) return { ...d, attemptErrors: errors };
         return { ...d, confirmed: true, attemptErrors: null };
       }),
     );
@@ -405,128 +460,136 @@ export function ReceiptAccountingTool() {
   const today = todayIso();
   const duplicates = useMemo(() => duplicateKeys(docs.map((d) => ({ id: d.id, values: d.values }))), [docs]);
 
-  // 出力の対象：確認済みで、検証を通った行だけ
-  const exportPlan = useMemo(() => {
-    const records: CsvRecord[] = [];
-    const entries: { id: string; label: string; record: CsvRecord }[] = [];
-    const journal: JournalRecord[] = [];
+  // 仕訳プレビュー：すべての明細を、出力と同じ行（buildReceiptFreeeRows）にする。出力するのは確認済みの明細だけ
+  const plan = useMemo(() => {
+    const exportRecords: FreeeRecord[] = [];
     const problems: string[] = [];
-    for (const d of docs) {
-      if (!d.confirmed) continue;
+    const preview = docs.map((d) => {
       const result = validateRow(d.values, { today });
-      if (result.normalized) {
-        records.push(result.normalized);
-        entries.push({ id: d.id, label: d.label, record: result.normalized });
-        journal.push({ ...result.normalized, details: d.details, source: d.label });
-      } else problems.push(`「${d.label}」：${result.errors.join(" ")}`);
-    }
-    return { records, entries, journal, problems };
-  }, [docs, today]);
-
-  // freee向けCSV：共通の設定と、確認済みの各行の勘定科目・税区分が、CSVに出せる状態かを調べる
-  const freeePlan = useMemo(() => {
-    const settingsProblems = validateFreeeSettings(freeeSettings);
-    const records: FreeeRecord[] = [];
-    const rows = exportPlan.entries.map((e) => {
-      const { errors, resolved } = resolveFreeeRow(e.record, freeeOverrides[e.id] ?? EMPTY_FREEE_ROW_OVERRIDE, freeeSettings);
-      if (resolved) records.push(resolved);
-      return { ...e, errors };
+      const record: CsvRecord | null = result.normalized;
+      const freee = record ? toFreeeRecord(record, d.journal) : null;
+      const cells = freee ? buildReceiptFreeeRows([freee])[1] : null;
+      if (d.confirmed) {
+        if (freee) exportRecords.push(freee);
+        else problems.push(`「${d.label}」：${[...result.errors, ...validateJournalFields(d.journal)].join(" ")}`);
+      }
+      return { id: d.id, label: d.label, confirmed: d.confirmed, cells, journal: d.journal, values: d.values };
     });
-    const rowProblemCount = rows.filter((r) => r.errors.length > 0).length;
-    return { settingsProblems, rows, records, rowProblemCount };
-  }, [exportPlan.entries, freeeSettings, freeeOverrides]);
+    return { preview, exportRecords, problems };
+  }, [docs, today]);
 
   const confirmedCount = docs.filter((d) => d.confirmed).length;
   const unconfirmedCount = docs.length - confirmedCount;
-  const signature =
-    format === "freee"
-      ? JSON.stringify({ f: "freee", records: exportPlan.records, settings: freeeSettings, rows: exportPlan.entries.map((e) => freeeOverrides[e.id] ?? null) })
-      : format === "journal"
-        ? JSON.stringify({ f: "journal", records: exportPlan.journal })
-        : JSON.stringify(exportPlan.records);
+  const allConfirmed = docs.length > 0 && unconfirmedCount === 0;
+  const signature = JSON.stringify(plan.exportRecords);
   const needsExport = docs.length > 0 && (unconfirmedCount > 0 || exportedSignature !== signature);
   useUnsavedChangesWarning(needsExport);
 
-  const formulaGuarded = exportPlan.records.filter((r) => neutralizeFormula(r.vendor) !== r.vendor).length;
+  const formulaGuarded = plan.exportRecords.filter((r) => neutralizeFormula(r.vendor) !== r.vendor).length;
   const activeJobs = jobs.filter((j) => j.status === "queued" || j.status === "reading");
   const doneJobs = jobs.filter((j) => j.status === "done");
-
-  const freeeBlocked =
-    format === "freee" && (freeePlan.settingsProblems.length > 0 || freeePlan.rowProblemCount > 0 || freeePlan.records.length !== exportPlan.records.length);
+  const canExport = plan.exportRecords.length > 0 && plan.problems.length === 0;
 
   function exportCsv() {
     setExportError(null);
-    if (exportPlan.problems.length > 0) {
-      setExportError("確認済みの行に、入力の不備があります。該当の行を直してください。");
+    if (!canExport) {
+      setExportError("確認済みの明細がないか、確認済みの明細に不備があります。");
       return;
     }
-    let blob: Blob | null;
-    if (format === "freee") {
-      if (freeeBlocked) {
-        setExportError("freee向けCSVに必要な入力が足りません。上の赤い表示の項目を入力してください。");
-        return;
-      }
-      blob = buildFreeeCsvBlob(freeePlan.records, freeeSettings);
-    } else if (format === "journal") {
-      blob = buildJournalCsvBlob(exportPlan.journal);
-    } else {
-      blob = buildGenericCsvBlob(exportPlan.records);
-    }
-    if (!blob) {
-      setExportError("確認済みのデータがありません。");
-      return;
-    }
-    const d = new Date();
-    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-    void csvExport.download(
-      blob,
-      format === "freee" ? `receipts-freee-${stamp}.csv` : format === "journal" ? `receipts-journal-${stamp}.csv` : `receipts-${stamp}.csv`,
-    );
+    const blob = buildReceiptFreeeCsvBlob(plan.exportRecords);
+    if (!blob) return;
+    void csvExport.download(blob, `receipts-freee-${stamp()}.csv`);
     setExportedSignature(signature);
   }
 
-  /** 明細・仕訳の内容を、Excel（.xlsx）で保存する（工程4） */
   async function exportXlsx() {
     setExportError(null);
-    if (exportPlan.problems.length > 0) {
-      setExportError("確認済みの行に、入力の不備があります。該当の行を直してください。");
+    if (!canExport) {
+      setExportError("確認済みの明細がないか、確認済みの明細に不備があります。");
       return;
     }
-    let blob: Blob | null = null;
     try {
-      blob = await buildJournalXlsxBlob(exportPlan.journal);
+      const blob = await buildReceiptFreeeXlsxBlob(plan.exportRecords);
+      if (!blob) return;
+      downloadBlob(blob, `receipts-freee-${stamp()}.xlsx`);
+      setExportedSignature(signature);
     } catch {
       setExportError("Excelファイルの作成に失敗しました。");
-      return;
     }
-    if (!blob) {
-      setExportError("確認済みのデータがありません。");
-      return;
-    }
-    const d = new Date();
-    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-    downloadBlob(blob, `receipts-journal-${stamp}.xlsx`);
-    setExportedSignature(signature);
   }
 
-  function setFreee<K extends keyof FreeeSettings>(key: K, value: FreeeSettings[K]) {
-    setFreeeSettings((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function setFreeeOverride(id: string, key: keyof FreeeRowOverride, value: string) {
-    setFreeeOverrides((prev) => ({ ...prev, [id]: { ...(prev[id] ?? EMPTY_FREEE_ROW_OVERRIDE), [key]: value } }));
-  }
+  const COL = {
+    date: FREEE_CSV_HEADER.indexOf("発生日"),
+    vendor: FREEE_CSV_HEADER.indexOf("取引先"),
+    account: FREEE_CSV_HEADER.indexOf("勘定科目"),
+    tax: FREEE_CSV_HEADER.indexOf("税区分"),
+    amount: FREEE_CSV_HEADER.indexOf("金額"),
+    memo: FREEE_CSV_HEADER.indexOf("備考"),
+    payAccount: FREEE_CSV_HEADER.indexOf("決済口座"),
+  };
 
   return (
-    <div className="flex flex-col gap-6" data-testid="receipt-tool">
+    // 画面の下に固定した仕訳プレビューの裏に、入力欄・ボタンが隠れないよう、移動するときは下に余白をとる
+    <div className="flex flex-col gap-6 pb-4 [&_:is(button,input,select,textarea,summary)]:scroll-mb-[50vh]" data-testid="receipt-tool">
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        読み込んだ画像・PDFと、読み取った内容は、このブラウザの中だけで処理します。サーバーへの送信や、端末への保存はしません（画面を閉じると消えます）。
+        freee会計に取り込むデータを作ります。画像・PDFと入力した内容は、このブラウザの中だけで扱い、送信も保存もしません。
       </p>
 
-      {/* 1. 読み込み */}
-      <section className={sectionClass} aria-labelledby="receipt-step1">
+      {/* 1. 初期値 */}
+      <section className={sectionClass} aria-labelledby="receipt-step1" data-testid="receipt-defaults">
         <h2 id="receipt-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          1. 領収書・レシートを読み込む
+          1. 初期値を決める
+        </h2>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">読み取った明細に、最初からこの値が入ります（あとで明細ごとに変えられます）。</p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <label className={labelClass}>
+            借方勘定科目
+            <input
+              type="text"
+              data-testid="receipt-default-debit"
+              value={defaults.debitAccount}
+              maxLength={FREEE_TEXT_MAX_LENGTH}
+              placeholder="例：消耗品費"
+              onChange={(e) => setDefault("debitAccount", e.target.value)}
+              className={inputClass}
+            />
+          </label>
+          <label className={labelClass}>
+            貸方勘定科目
+            <input
+              type="text"
+              data-testid="receipt-default-credit"
+              value={defaults.creditAccount}
+              maxLength={FREEE_TEXT_MAX_LENGTH}
+              placeholder="例：現金（空欄なら未決済）"
+              onChange={(e) => setDefault("creditAccount", e.target.value)}
+              className={inputClass}
+            />
+          </label>
+          <div className={labelClass}>
+            課税区分
+            <TaxCategoryField
+              value={defaults.taxCategory}
+              onChange={(v) => setDefault("taxCategory", v)}
+              testId="receipt-default-tax"
+              ariaLabel="課税区分の初期値"
+            />
+          </div>
+        </div>
+        <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+          勘定科目は、freeeに登録されている名前をそのまま入力してください。貸方勘定科目にはfreeeの口座（現金・普通預金など）を入れます。空欄にすると、未決済（未払金）として登録されます。
+        </p>
+        {docs.some((d) => !d.confirmed) && (
+          <button type="button" className={`${smallButton} w-fit`} onClick={applyDefaultsToUnconfirmed} data-testid="receipt-apply-defaults">
+            この初期値を、未確認の明細に入れ直す
+          </button>
+        )}
+      </section>
+
+      {/* 2. 読み込み */}
+      <section className={sectionClass} aria-labelledby="receipt-step2">
+        <h2 id="receipt-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+          2. 領収書・レシートを読み込む
         </h2>
         <FileDropzone
           // accept は渡さない：共通部品は、対応外のファイルが1つでも混ざると全部を断ってしまうため。
@@ -538,13 +601,9 @@ export function ReceiptAccountingTool() {
           onFilesSelected={(files) => void handleFiles(files)}
           onError={setNotice}
         />
-        <ul className="list-disc pl-5 text-xs text-neutral-500 dark:text-neutral-400">
-          <li>対応形式：JPG・PNG・WebP・PDF（HEICなどには対応していません）。</li>
-          <li>
-            上限：画像は1枚{RECEIPT_LIMITS.maxImageMB}MB、PDFは1つ{RECEIPT_LIMITS.maxPdfMB}MB・{OCR_MAX_PAGES}ページまで。一度に{RECEIPT_LIMITS.maxFilesPerAdd}ファイルまで、画面に並べられるのは{RECEIPT_LIMITS.maxDocuments}件までです（PDFは1ページを1件として数えます）。
-          </li>
-          <li>文字情報のあるPDFはその文字を使い、画像やスキャンしたPDFは、ブラウザの中の文字認識（OCR）で読み取ります。1件ずつ順に処理するため、時間がかかることがあります。</li>
-        </ul>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          JPG・PNG・WebP・PDF（画像は1枚{RECEIPT_LIMITS.maxImageMB}MB、PDFは{RECEIPT_LIMITS.maxPdfMB}MB・{OCR_MAX_PAGES}ページまで。並べられるのは{RECEIPT_LIMITS.maxDocuments}件まで）
+        </p>
         {notice && (
           <div data-testid="receipt-notice">
             <ErrorMessage message={notice} />
@@ -599,24 +658,21 @@ export function ReceiptAccountingTool() {
         )}
       </section>
 
-      {/* 2. 確認・修正 */}
-      <section className={sectionClass} aria-labelledby="receipt-step2">
-        <h2 id="receipt-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          2. 読み取り結果を確認・修正する
+      {/* 3. 確認・訂正 */}
+      <section className={sectionClass} aria-labelledby="receipt-step3">
+        <h2 id="receipt-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+          3. 明細を確認・訂正する
         </h2>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          読み取り結果には誤りが含まれることがあります。元の書類と見比べて、日付・取引先・合計金額を確かめ、「確認済みにする」を押した行だけがCSVに出力されます。自動では確認済みになりません。値を直すと、確認済みは外れます。
-        </p>
-
         {docs.length === 0 ? (
           <p data-testid="receipt-empty" className="text-sm text-neutral-500 dark:text-neutral-400">
-            まだ書類が読み込まれていません。上の枠から、領収書・レシートの画像やPDFを選んでください。
+            まだ明細がありません。2. で領収書・レシートを読み込んでください。
           </p>
         ) : (
           <>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">元の書類と見比べて訂正し、「確認済みにする」を押してください。確認済みの明細だけを出力します。</p>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p data-testid="receipt-summary" className="text-sm text-neutral-700 dark:text-neutral-200">
-                書類 {docs.length}件：確認済み {confirmedCount}件／未確認 {unconfirmedCount}件
+                明細 {docs.length}件：確認済み {confirmedCount}件／未確認 {unconfirmedCount}件
               </p>
               <div className="flex flex-wrap gap-2">
                 <button type="button" className={smallButton} onClick={clearConfirmations} disabled={confirmedCount === 0}>
@@ -627,6 +683,11 @@ export function ReceiptAccountingTool() {
                 </button>
               </div>
             </div>
+            {allConfirmed && (
+              <p data-testid="receipt-all-confirmed" className="rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-800 dark:bg-green-950/30 dark:text-green-200">
+                すべての明細を確認済みにしました。下の仕訳プレビューを確かめて、出力してください。
+              </p>
+            )}
 
             <PreviewFullscreenFrame>
             <ul className="flex flex-col gap-3" data-testid="tool-preview">
@@ -634,6 +695,11 @@ export function ReceiptAccountingTool() {
                 const live = validateRow(row.values, { today });
                 const isDuplicate = duplicates.has(row.id);
                 const expanded = expandedId === row.id;
+                const readInfo = [
+                  row.details.taxRate ? `税率 ${taxRateLabel(row.details.taxRate)}` : "",
+                  row.details.taxAmount ? `消費税 ${Number(row.details.taxAmount).toLocaleString("ja-JP")}円` : "",
+                  row.details.registrationNumber ? `登録番号 ${row.details.registrationNumber}` : "登録番号 読み取れず",
+                ].filter(Boolean);
                 return (
                   <li
                     key={row.id}
@@ -643,7 +709,7 @@ export function ReceiptAccountingTool() {
                     className={`flex flex-col gap-3 rounded-xl border p-3 ${
                       row.confirmed
                         ? "border-green-400 bg-green-50/60 dark:border-green-800 dark:bg-green-950/20"
-                        : "border-neutral-200 dark:border-neutral-800"
+                        : "border-amber-300 dark:border-amber-800"
                     }`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -663,7 +729,7 @@ export function ReceiptAccountingTool() {
                         </span>
                       </div>
                       <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                        {row.method === "ocr" ? "文字認識（OCR）で読み取り" : "PDFの文字情報から読み取り"}
+                        {row.method === "ocr" ? "文字認識（OCR）" : "PDFの文字情報"}
                       </span>
                     </div>
 
@@ -690,7 +756,7 @@ export function ReceiptAccountingTool() {
                           const candidates = field.candidates.filter((c) => c.value !== current);
                           return (
                             <div key={key} className="flex flex-col gap-1">
-                              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+                              <label className={labelClass}>
                                 {FIELD_LABEL[key]}
                                 {key === "date" ? (
                                   <input
@@ -722,7 +788,7 @@ export function ReceiptAccountingTool() {
                               )}
                               {field.lowConfidence && current === row.autoValues[key] && current !== "" && (
                                 <span data-testid={`receipt-lowconf-${key}`} className="text-[11px] text-amber-700 dark:text-amber-300">
-                                  文字の認識に自信が低い行から読み取った値です。元の書類と見比べてください。
+                                  文字の認識に自信が低い値です。元の書類と見比べてください。
                                 </span>
                               )}
                               {candidates.length > 0 && (
@@ -745,17 +811,61 @@ export function ReceiptAccountingTool() {
                             </div>
                           );
                         })}
+                        <label className={`${labelClass} md:col-span-3`}>
+                          摘要
+                          <input
+                            type="text"
+                            data-testid="receipt-memo"
+                            aria-label={`${row.label}の摘要`}
+                            value={row.journal.memo}
+                            maxLength={FREEE_TEXT_MAX_LENGTH}
+                            placeholder="例：事務用品の購入"
+                            onChange={(e) => editJournal(row.id, "memo", e.target.value)}
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className={labelClass}>
+                          借方勘定科目
+                          <input
+                            type="text"
+                            data-testid="receipt-debit"
+                            aria-label={`${row.label}の借方勘定科目`}
+                            value={row.journal.debitAccount}
+                            maxLength={FREEE_TEXT_MAX_LENGTH}
+                            placeholder="例：消耗品費"
+                            onChange={(e) => editJournal(row.id, "debitAccount", e.target.value)}
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className={labelClass}>
+                          貸方勘定科目
+                          <input
+                            type="text"
+                            data-testid="receipt-credit"
+                            aria-label={`${row.label}の貸方勘定科目`}
+                            value={row.journal.creditAccount}
+                            maxLength={FREEE_TEXT_MAX_LENGTH}
+                            placeholder="例：現金（空欄なら未決済）"
+                            onChange={(e) => editJournal(row.id, "creditAccount", e.target.value)}
+                            className={inputClass}
+                          />
+                        </label>
+                        <div className={labelClass}>
+                          課税区分
+                          <TaxCategoryField
+                            value={row.journal.taxCategory}
+                            onChange={(v) => editJournal(row.id, "taxCategory", v)}
+                            testId="receipt-tax"
+                            ariaLabel={`${row.label}の課税区分`}
+                          />
+                        </div>
                       </div>
                     </div>
 
-                    <ReceiptDetailsEditor row={row} onEdit={(key, value) => editDetail(row.id, key, value)} />
-
-                    {row.method === "text-layer" && (
-                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                        PDFに文字情報があっても、正しく読み取れているとは限りません。画像と見比べて確認してください。
-                      </p>
-                    )}
-                    {checkReceiptDetails(row.details, live.normalized?.total ?? null).map((w) => (
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400" data-testid="receipt-read-info">
+                      読み取った参考情報：{readInfo.join("・")}
+                    </p>
+                    {checkReceiptDetails({ ...row.details, taxCategory: row.journal.taxCategory }, live.normalized?.total ?? null).map((w) => (
                       <p key={w} data-testid="receipt-detail-warning" className="text-xs text-amber-700 dark:text-amber-300">
                         注意：{w}
                       </p>
@@ -767,7 +877,7 @@ export function ReceiptAccountingTool() {
                     ))}
                     {isDuplicate && (
                       <p data-testid="receipt-duplicate" className="text-xs text-amber-700 dark:text-amber-300">
-                        注意：日付・取引先・合計金額が同じ行が、ほかにもあります（同じ書類を2回読み込んでいないか確認してください。自動では削除しません）。
+                        注意：日付・取引先・金額が同じ明細が、ほかにもあります（同じ書類を2回読み込んでいないか確認してください）。
                       </p>
                     )}
                     {row.attemptErrors && (
@@ -782,7 +892,7 @@ export function ReceiptAccountingTool() {
                     )}
 
                     <details className="text-xs text-neutral-600 dark:text-neutral-300">
-                      <summary className="cursor-pointer">読み取った文字を見る（確認用）</summary>
+                      <summary className="cursor-pointer">読み取った文字を見る</summary>
                       <pre data-testid="receipt-raw-text" className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-neutral-50 p-2 dark:bg-neutral-900">
                         {row.lines.length === 0 ? "（文字を読み取れませんでした）" : row.lines.map((l) => l.text).join("\n")}
                       </pre>
@@ -803,7 +913,7 @@ export function ReceiptAccountingTool() {
                         {row.confirmed ? "確認済みを取り消す" : "確認済みにする"}
                       </button>
                       <button type="button" data-testid="receipt-delete" className={smallButton} onClick={() => deleteDoc(row.id)}>
-                        この行を削除する
+                        この明細を削除する
                       </button>
                     </div>
                   </li>
@@ -815,432 +925,105 @@ export function ReceiptAccountingTool() {
         )}
       </section>
 
-      {/* 3. 出力 */}
-      <section className={sectionClass} aria-labelledby="receipt-step3">
-        <h2 id="receipt-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          3. CSVを出力する
-        </h2>
-
-        <fieldset className="flex flex-col gap-2" data-testid="receipt-format">
-          <legend className="text-xs font-medium text-neutral-700 dark:text-neutral-200">出力する形式</legend>
-          <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-100">
-            <input
-              type="radio"
-              name="receipt-format"
-              data-testid="receipt-format-generic"
-              checked={format === "generic"}
-              onChange={() => setFormat("generic")}
-              className="mt-1"
-            />
-            <span>
-              汎用CSV（日付・取引先・合計金額）
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">Excelなどで開いて使う、特定の会計ソフト専用ではない形式です。</span>
+      {/* 画面の下に固定する仕訳プレビューと出力 */}
+      <section
+        aria-labelledby="receipt-preview-title"
+        data-testid="receipt-journal-preview"
+        className="sticky bottom-0 z-20 flex flex-col gap-2 rounded-t-xl border border-neutral-300 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-neutral-700 dark:bg-neutral-950/95"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="receipt-preview-title" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+            仕訳プレビュー（freee会計の取引インポート）
+          </h2>
+          <button
+            type="button"
+            className={smallButton}
+            onClick={() => setPreviewOpen((v) => !v)}
+            aria-expanded={previewOpen}
+            data-testid="receipt-preview-toggle"
+          >
+            {previewOpen ? "表を閉じる" : "表を開く"}
+          </button>
+        </div>
+        <p data-testid="receipt-export-count" className="text-xs text-neutral-700 dark:text-neutral-200">
+          出力：確認済み {plan.exportRecords.length}件
+          {unconfirmedCount > 0 && (
+            <span className="ml-1 font-semibold text-amber-700 dark:text-amber-300" data-testid="receipt-unconfirmed-warning">
+              ／未確認 {unconfirmedCount}件は出力されません。確認してから出力してください。
             </span>
-          </label>
-          <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-100">
-            <input
-              type="radio"
-              name="receipt-format"
-              data-testid="receipt-format-journal"
-              checked={format === "journal"}
-              onChange={() => setFormat("journal")}
-              className="mt-1"
-            />
-            <span>
-              明細・仕訳CSV／Excel（税率・税額・登録番号・品目・摘要・税区分・勘定科目つき）
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
-                会計ソフトの仕訳の取り込みで、列を対応付けて使える一覧の形です。CSVと、同じ内容のExcel（.xlsx）を保存できます。
-              </span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-100">
-            <input
-              type="radio"
-              name="receipt-format"
-              data-testid="receipt-format-freee"
-              checked={format === "freee"}
-              onChange={() => setFormat("freee")}
-              className="mt-1"
-            />
-            <span>
-              freee会計向けCSV（取引インポート用）
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
-                freee会計の「取引データのインポート」に使う形式です。収支区分・勘定科目・税区分などの入力が必要です。
-              </span>
-            </span>
-          </label>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">形式を切り替えても、入力した内容は消えません。</p>
-        </fieldset>
-
-        {format === "journal" ? (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="journal-explain">
-            確認済みにした行だけを、日付・取引先・合計金額（税込）・税率・消費税額・登録番号・品目・摘要・税区分・借方勘定科目・貸方勘定科目・読み取り元（ファイル名）の列で保存します。
-            不明な項目は空欄で出します。税区分・勘定科目は、各行に入力した内容をそのまま出し、このツールが推測して入れることはありません。
-            特定の会計ソフト専用の形式ではなく、会計ソフトへの取り込みを保証するものではありません。会計・税務の助言ではありません。
-          </p>
-        ) : format === "generic" ? (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            確認済みにした行だけを、日付・取引先・合計金額のCSV（UTF-8・Excelで開けます）として保存します。書類に書かれた合計金額をそのまま出力し、税込・税抜は区別しません。勘定科目・税区分は含みません。
-            特定の会計ソフト専用の形式ではなく、会計ソフトへの取り込みを保証するものではありません。会計・税務の助言ではなく、電子帳簿保存法に対応した保存の仕組みでもありません。
-          </p>
-        ) : (
-          <div data-testid="freee-explain" className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-            <p>
-              確認済みにした行だけを、freee会計の公式ヘルプに添付されている取引インポート用サンプルと同じ列・同じ順序のCSV（UTF-8・BOM付き）として保存します。保存したCSVは、freee会計の［取引入力］→［収入・支出形式］→右上の［…］→「取引データのインポート」から取り込みます。
-            </p>
-            <p>
-              金額は書類の合計金額（税込）をそのまま出し、税額・税計算区分は空欄にします（freeeが勘定科目と日付から計算します）。このツールは、勘定科目や税区分を書類の内容から推測しません。下の欄に、ご自身のfreeeに登録されている名前をそのまま入力してください。
-            </p>
-            <p>
-              このツールからfreeeへ直接登録することはなく、freeeへの取り込みが成功することを保証するものではありません（実際のfreeeでの取り込み確認はしていません）。取り込み前に、freeeの確認画面で内容を確かめてください。会計・税務の助言ではありません。
-            </p>
-          </div>
-        )}
-
-        <p data-testid="receipt-export-count" className="text-sm text-neutral-700 dark:text-neutral-200">
-          出力される書類：{exportPlan.records.length}件（確認済み {confirmedCount}件／未確認 {unconfirmedCount}件。未確認の行は出力されません）
+          )}
         </p>
-
-        {format === "freee" && (
-          <fieldset className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="freee-settings">
-            <legend className="px-1 text-xs font-medium text-neutral-700 dark:text-neutral-200">freee向けの共通の入力（初期値はありません）</legend>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                収支区分（必須）
-                <select
-                  data-testid="freee-direction"
-                  value={freeeSettings.direction}
-                  onChange={(e) => setFreee("direction", e.target.value as FreeeDirection)}
-                  className={inputClass}
-                >
-                  <option value="">選択してください</option>
-                  <option value="支出">支出（支払った領収書・レシート）</option>
-                  <option value="収入">収入（受け取った代金の領収書）</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                支払い状況（必須）
-                <select
-                  data-testid="freee-payment-mode"
-                  value={freeeSettings.paymentMode}
-                  onChange={(e) => setFreee("paymentMode", e.target.value as FreeePaymentMode)}
-                  className={inputClass}
-                >
-                  <option value="">選択してください</option>
-                  <option value="paid">支払い済み（決済日は領収書の日付、決済金額は合計金額で出力）</option>
-                  <option value="unpaid">未決済（決済日・決済口座・決済金額は空欄で出力）</option>
-                </select>
-              </label>
-              {freeeSettings.paymentMode === "paid" && (
-                <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400 md:col-span-2">
-                  決済口座（支払い済みの場合は必須）
-                  <input
-                    type="text"
-                    data-testid="freee-payment-account"
-                    value={freeeSettings.paymentAccount}
-                    maxLength={FREEE_TEXT_MAX_LENGTH}
-                    placeholder="freeeに登録されている口座の名前"
-                    onChange={(e) => setFreee("paymentAccount", e.target.value)}
-                    className={inputClass}
-                  />
-                  <span className="text-[11px]">
-                    プライベートな資金で支払った場合は、freeeの公式ヘルプでは、個人事業主は「事業主借」、法人は「役員借入金」を指定するとされています。
-                  </span>
-                </label>
-              )}
-              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                勘定科目（全行に使います。行ごとに変えることもできます）
-                <input
-                  type="text"
-                  data-testid="freee-account"
-                  value={freeeSettings.account}
-                  maxLength={FREEE_TEXT_MAX_LENGTH}
-                  placeholder="freeeに登録されている勘定科目の名前"
-                  onChange={(e) => setFreee("account", e.target.value)}
-                  className={inputClass}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                税区分（全行に使います。行ごとに変えることもできます）
-                <input
-                  type="text"
-                  data-testid="freee-tax"
-                  value={freeeSettings.taxCategory}
-                  maxLength={FREEE_TEXT_MAX_LENGTH}
-                  placeholder="freeeの税区分の名前"
-                  onChange={(e) => setFreee("taxCategory", e.target.value)}
-                  className={inputClass}
-                />
-              </label>
-            </div>
-            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-              勘定科目・税区分は、freeeに登録されている名前と同じでないと取り込めません。使える税区分は、事業者の区分・課税方式・取引の日付によって変わります（例：公式サンプルには「課対仕入10%」「課対仕入8%（軽）」などの表記が出ていますが、ご自身の設定で使えるとは限りません）。freeeの画面で確かめた名前を入力してください。勘定科目や税区分を、このツールが推測して入れることはありません。
-            </p>
-            {freeePlan.settingsProblems.length > 0 && (
-              <div data-testid="freee-problems" role="alert" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-                freee向けCSVを出力するには、次を入力してください：
-                <ul className="list-disc pl-5">
-                  {freeePlan.settingsProblems.map((p) => (
-                    <li key={p}>{p}</li>
+        {previewOpen && (
+          <div className="max-h-[25vh] sm:max-h-[35vh] overflow-auto" data-testid="receipt-export-preview">
+            {plan.preview.length === 0 ? (
+              <p data-testid="receipt-export-empty" className="text-xs text-neutral-500 dark:text-neutral-400">
+                確認済みのデータがありません。明細を読み込んで確認すると、ここに仕訳が表示されます。
+              </p>
+            ) : (
+              <table className="w-full min-w-[44rem] border-collapse text-left text-xs">
+                <thead className="sticky top-0 bg-white dark:bg-neutral-950">
+                  <tr className="border-b border-neutral-200 dark:border-neutral-800">
+                    {["状態", "発生日", "取引先", "摘要（備考）", "借方勘定科目（勘定科目）", "貸方勘定科目（決済口座）", "課税区分（税区分）", "金額"].map((h) => (
+                      <th key={h} className="px-2 py-1 font-medium">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {plan.preview.map((p) => (
+                    <tr
+                      key={p.id}
+                      data-testid="receipt-preview-row"
+                      data-confirmed={p.confirmed ? "true" : "false"}
+                      className={`border-b border-neutral-100 dark:border-neutral-900 ${p.confirmed ? "" : "text-neutral-400 dark:text-neutral-500"}`}
+                    >
+                      <td className="px-2 py-1 whitespace-nowrap">{p.confirmed ? "確認済み" : "未確認（出力しない）"}</td>
+                      {p.cells ? (
+                        <>
+                          <td className="px-2 py-1 whitespace-nowrap">{p.cells[COL.date]}</td>
+                          <td className="px-2 py-1">{p.cells[COL.vendor]}</td>
+                          <td className="px-2 py-1">{p.cells[COL.memo]}</td>
+                          <td className="px-2 py-1">{p.cells[COL.account]}</td>
+                          <td className="px-2 py-1">{p.cells[COL.payAccount] || "（未決済）"}</td>
+                          <td className="px-2 py-1">{p.cells[COL.tax]}</td>
+                          <td className="px-2 py-1 text-right">{Number(p.cells[COL.amount]).toLocaleString("ja-JP")}</td>
+                        </>
+                      ) : (
+                        <td className="px-2 py-1 text-amber-700 dark:text-amber-300" colSpan={7}>
+                          入力が足りないため、まだ仕訳にできません（{p.label}）
+                        </td>
+                      )}
+                    </tr>
                   ))}
-                </ul>
-              </div>
+                </tbody>
+              </table>
             )}
-          </fieldset>
-        )}
-
-        {exportPlan.records.length === 0 ? (
-          <p data-testid="receipt-export-empty" className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
-            確認済みのデータがありません。上の一覧で、内容を確かめた行の「確認済みにする」を押すと、ここに出力内容が表示されます。
-          </p>
-        ) : format === "journal" ? (
-          <div className="overflow-x-auto" data-testid="journal-export-preview">
-            <table className="w-full min-w-[40rem] border-collapse text-left text-xs">
-              <thead>
-                <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                  {["日付", "取引先", "合計金額", "税率", "消費税額", "登録番号", "税区分", "借方", "貸方", "読み取り元"].map((h) => (
-                    <th key={h} className="px-2 py-1 font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {exportPlan.journal.map((r, i) => (
-                  <tr key={i} className="border-b border-neutral-100 dark:border-neutral-900" data-testid="journal-row">
-                    <td className="px-2 py-1">{formatDateSlash(r.date)}</td>
-                    <td className="px-2 py-1">{r.vendor}</td>
-                    <td className="px-2 py-1 text-right">{r.total.toLocaleString("ja-JP")}</td>
-                    <td className="px-2 py-1">{TAX_RATE_OPTIONS.find((o) => o.value === r.details.taxRate)?.label ?? ""}</td>
-                    <td className="px-2 py-1 text-right">{r.details.taxAmount}</td>
-                    <td className="px-2 py-1">{r.details.registrationNumber}</td>
-                    <td className="px-2 py-1">{r.details.taxCategory}</td>
-                    <td className="px-2 py-1">{r.details.debitAccount}</td>
-                    <td className="px-2 py-1">{r.details.creditAccount}</td>
-                    <td className="px-2 py-1 break-all">{r.source}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
-        ) : format === "generic" ? (
-          <div className="overflow-x-auto" data-testid="receipt-export-preview">
-            <table className="w-full min-w-[20rem] border-collapse text-left text-xs">
-              <thead>
-                <tr className="border-b border-neutral-200 dark:border-neutral-800">
-                  <th className="px-2 py-1 font-medium">日付</th>
-                  <th className="px-2 py-1 font-medium">取引先</th>
-                  <th className="px-2 py-1 text-right font-medium">合計金額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {exportPlan.records.map((r, i) => (
-                  <tr key={i} className="border-b border-neutral-100 dark:border-neutral-900">
-                    <td className="px-2 py-1">{formatDateSlash(r.date)}</td>
-                    <td className="px-2 py-1">{r.vendor}</td>
-                    <td className="px-2 py-1 text-right">{r.total.toLocaleString("ja-JP")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-2" data-testid="freee-export-preview">
-            {freeePlan.rows.map((r) => {
-              const override = freeeOverrides[r.id] ?? EMPTY_FREEE_ROW_OVERRIDE;
-              return (
-                <li
-                  key={r.id}
-                  data-testid="freee-row"
-                  data-valid={r.errors.length === 0 ? "true" : "false"}
-                  className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800"
-                >
-                  <p className="text-xs text-neutral-700 dark:text-neutral-200">
-                    <span className="font-medium">{formatDateSlash(r.record.date)}</span>　{r.record.vendor}　
-                    <span className="font-medium">{r.record.total.toLocaleString("ja-JP")}円</span>
-                  </p>
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      勘定科目（空欄なら共通の入力を使います）
-                      <input
-                        type="text"
-                        data-testid="freee-row-account"
-                        aria-label={`${r.label}の勘定科目`}
-                        value={override.account}
-                        maxLength={FREEE_TEXT_MAX_LENGTH}
-                        placeholder={freeeSettings.account.trim() !== "" ? `共通：${freeeSettings.account}` : "未入力"}
-                        onChange={(e) => setFreeeOverride(r.id, "account", e.target.value)}
-                        className={inputClass}
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      税区分（空欄なら共通の入力を使います）
-                      <input
-                        type="text"
-                        data-testid="freee-row-tax"
-                        aria-label={`${r.label}の税区分`}
-                        value={override.taxCategory}
-                        maxLength={FREEE_TEXT_MAX_LENGTH}
-                        placeholder={freeeSettings.taxCategory.trim() !== "" ? `共通：${freeeSettings.taxCategory}` : "未入力"}
-                        onChange={(e) => setFreeeOverride(r.id, "taxCategory", e.target.value)}
-                        className={inputClass}
-                      />
-                    </label>
-                  </div>
-                  {neutralizeFormula(r.record.vendor) !== r.record.vendor && (
-                    <p data-testid="freee-row-formula-note" className="text-[11px] text-amber-700 dark:text-amber-300">
-                      この行の取引先は「=」「+」「-」「@」で始まるため、CSVでは先頭に「&apos;」を付けて出力します（freeeには「&apos;」も含めた名前で登録されます）。
-                    </p>
-                  )}
-                  {r.errors.length > 0 && (
-                    <ul data-testid="freee-row-errors" className="list-disc pl-5 text-xs text-red-700 dark:text-red-300">
-                      {r.errors.map((e) => (
-                        <li key={e}>{e}</li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
         )}
         {formulaGuarded > 0 && (
-          <p data-testid="receipt-formula-note" className="text-xs text-neutral-500 dark:text-neutral-400">
-            取引先が「=」「+」「-」「@」で始まる{formulaGuarded}件は、Excelで数式として実行されないよう、CSVでは先頭に「&apos;」を付けて出力します
-            {format === "freee" ? "（freeeには、先頭の「'」も含めた名前で取引先が登録されます。取り込み後に直してください）。" : "。"}
+          <p data-testid="receipt-formula-note" className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            取引先の先頭が「=」「+」「-」「@」の{formulaGuarded}件は、Excelで数式として動かないよう、先頭に「&apos;」を付けて出力します。
           </p>
         )}
-        {exportPlan.problems.length > 0 && (
-          <div data-testid="receipt-export-problems">
-            <ErrorMessage message="確認済みの行に、入力の不備があります。該当の行を直してください。" />
-            <ul className="mt-1 list-disc pl-5 text-xs text-red-700 dark:text-red-300">
-              {exportPlan.problems.map((p) => (
-                <li key={p}>{p}</li>
-              ))}
-            </ul>
+        {plan.problems.length > 0 && (
+          <div data-testid="receipt-export-problems" className="text-xs text-red-700 dark:text-red-300">
+            {plan.problems.map((p) => (
+              <p key={p}>{p}</p>
+            ))}
           </div>
-        )}
-        {format === "freee" && exportPlan.records.length > 0 && freeeBlocked && (
-          <p data-testid="freee-blocked-note" className="text-xs text-red-700 dark:text-red-300">
-            まだ出力できません。
-            {freeePlan.settingsProblems.length > 0 && "上の「freee向けCSVを出力するには」の項目を入力してください。"}
-            {freeePlan.rowProblemCount > 0 && `勘定科目・税区分が決まっていない行が${freeePlan.rowProblemCount}件あります（各行の赤い表示を確認してください）。`}
-          </p>
         )}
         {exportError && <ErrorMessage message={exportError} />}
         {csvExport.picker}
         {csvExport.confirm}
-        <div>
-          <RewardedDownloadGate
-            onDownload={exportCsv}
-            label="CSVをダウンロード"
-            disabled={exportPlan.records.length === 0 || exportPlan.problems.length > 0 || freeeBlocked}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <RewardedDownloadGate onDownload={exportCsv} label="freee用CSVをダウンロード" disabled={!canExport} />
+          <RewardedDownloadGate onDownload={() => void exportXlsx()} label="Excelをダウンロード" disabled={!canExport} />
         </div>
-        {format === "journal" && (
-          <div data-testid="journal-xlsx">
-            <RewardedDownloadGate
-              onDownload={() => void exportXlsx()}
-              label="Excelをダウンロード"
-              disabled={exportPlan.records.length === 0 || exportPlan.problems.length > 0}
-            />
-          </div>
-        )}
+        <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+          freee会計の［取引入力］→［収入・支出形式］→［…］→「取引データのインポート」で取り込みます。取り込みの成功は保証できません。取り込む前にfreeeの確認画面で確かめてください。
+        </p>
       </section>
     </div>
-  );
-}
-
-/**
- * 詳しい項目の確認・入力（工程4）。読み取った項目（税率・消費税額・登録番号・品目）は、読み取れないとき「不明」と表示する。
- * 摘要・税区分・勘定科目は、利用者が行ごとに入力する（初期値なし）。
- */
-function ReceiptDetailsEditor({
-  row,
-  onEdit,
-}: {
-  row: DocRow;
-  onEdit: (key: keyof ReceiptDetailValues, value: string) => void;
-}) {
-  const listId = `receipt-taxcat-${row.id}`;
-  const readState = (key: keyof ReceiptDetailValues) => {
-    const current = row.details[key];
-    if (current.trim() === "") return row.autoDetails[key].trim() === "" ? "不明（読み取れませんでした）" : "未入力";
-    return current === row.autoDetails[key] ? "自動読み取り" : "入力・修正済み";
-  };
-  return (
-    <details className="rounded-lg border border-neutral-200 p-2 text-xs dark:border-neutral-800" data-testid="receipt-details" open>
-      <summary className="cursor-pointer select-none font-medium text-neutral-700 dark:text-neutral-200">
-        税・登録番号・品目・仕訳の入力（明細・仕訳CSV／Excelに出力されます）
-      </summary>
-      <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <label className="flex flex-col gap-1 text-neutral-500 dark:text-neutral-400">
-          税率
-          <select
-            data-testid="receipt-tax-rate"
-            aria-label={`${row.label}の税率`}
-            value={row.details.taxRate}
-            onChange={(e) => onEdit("taxRate", e.target.value)}
-            className={inputClass}
-          >
-            {TAX_RATE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <span className="text-[11px]" data-testid="receipt-detail-source-taxRate">{readState("taxRate")}</span>
-        </label>
-        {DETAIL_READ_FIELDS.map((f) => (
-          <label key={f.key} className="flex flex-col gap-1 text-neutral-500 dark:text-neutral-400">
-            {f.label}
-            <input
-              type="text"
-              inputMode={f.key === "taxAmount" ? "numeric" : "text"}
-              data-testid={`receipt-${f.key}`}
-              aria-label={`${row.label}の${f.label}`}
-              value={row.details[f.key]}
-              placeholder={f.placeholder}
-              onChange={(e) => onEdit(f.key, e.target.value)}
-              className={inputClass}
-            />
-            <span className="text-[11px]" data-testid={`receipt-detail-source-${f.key}`}>{readState(f.key)}</span>
-          </label>
-        ))}
-        <label className="flex flex-col gap-1 text-neutral-500 dark:text-neutral-400">
-          税区分（行ごとに選ぶ・入力。初期値なし）
-          <input
-            type="text"
-            list={listId}
-            data-testid="receipt-tax-category"
-            aria-label={`${row.label}の税区分`}
-            value={row.details.taxCategory}
-            placeholder="選ぶか、会計ソフトの名前を入力"
-            onChange={(e) => onEdit("taxCategory", e.target.value)}
-            className={inputClass}
-          />
-          <datalist id={listId}>
-            {TAX_CATEGORY_SUGGESTIONS.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-        </label>
-        {DETAIL_INPUT_FIELDS.map((f) => (
-          <label key={f.key} className="flex flex-col gap-1 text-neutral-500 dark:text-neutral-400">
-            {f.label}
-            <input
-              type="text"
-              data-testid={`receipt-${f.key}`}
-              aria-label={`${row.label}の${f.label}`}
-              value={row.details[f.key]}
-              placeholder={f.placeholder}
-              onChange={(e) => onEdit(f.key, e.target.value)}
-              className={inputClass}
-            />
-          </label>
-        ))}
-      </div>
-      <p className="mt-2 text-[11px] text-neutral-500 dark:text-neutral-400">
-        税区分・勘定科目は、書類の内容から自動で決めません。お使いの会計ソフトに登録されている名前を入力してください。入力した内容は保存されません（画面を閉じると消えます）。
-      </p>
-    </details>
   );
 }

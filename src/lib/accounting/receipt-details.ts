@@ -52,18 +52,6 @@ export const TAX_RATE_OPTIONS: { value: string; label: string }[] = [
   { value: "mixed", label: "10%と8%の混在" },
 ];
 
-/**
- * 税区分の入力の候補（選ぶか、そのまま入力できる。初期値は入れない）。
- * 会計ソフトによって税区分の名前は違うため、ここにない名前もそのまま入力できる
- */
-export const TAX_CATEGORY_SUGGESTIONS = [
-  "課税仕入 10%",
-  "課税仕入 8%（軽減）",
-  "課税売上 10%",
-  "課税売上 8%（軽減）",
-  "非課税",
-  "不課税（対象外）",
-] as const;
 
 /** 品目として読み取る品名の数の上限 */
 const MAX_ITEMS = 5;
@@ -227,7 +215,7 @@ export function checkReceiptDetails(details: ReceiptDetailValues, total: number 
   }
   const cat = details.taxCategory.normalize("NFKC");
   if (cat !== "" && (details.taxRate === "10" || details.taxRate === "8")) {
-    const other = details.taxRate === "10" ? /8\s*%|軽減/ : /10\s*%/;
+    const other = details.taxRate === "10" ? /8\s*%|軽/ : /10\s*%/;
     if (other.test(cat)) warnings.push(`税区分（${details.taxCategory}）と、読み取った税率（${details.taxRate}%）が合っていません。`);
   }
   return warnings;

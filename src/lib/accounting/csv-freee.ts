@@ -93,6 +93,13 @@ export const EMPTY_FREEE_ROW_OVERRIDE: FreeeRowOverride = { account: "", taxCate
 export interface FreeeRecord extends CsvRecord {
   account: string;
   taxCategory: string;
+  /**
+   * 新工程1：この行の決済口座（貸方勘定科目）。指定したときは、共通の設定の代わりにこれを使う。
+   * 空文字なら未決済（決済日・決済口座・決済金額は空欄）。undefined なら共通の設定に従う（これまでどおり）
+   */
+  paymentAccount?: string;
+  /** 新工程1：備考（摘要）。省略時は空欄（これまでどおり） */
+  memo?: string;
 }
 
 /** Excelで数式として実行されうる先頭の文字（タブ・復帰を含む） */
@@ -107,7 +114,7 @@ function cleanText(raw: string): string {
  * これらはfreeeに登録されている名前と一致する必要があるため、取引先のように「'」を付けて直すことはせず、先頭が数式になりうる文字のときは
  * 入力し直してもらう（数式インジェクション対策を外さず、意味も変えない）。
  */
-function checkMasterText(raw: string, label: string, fix: string): { value: string | null; error: string | null } {
+export function checkMasterText(raw: string, label: string, fix: string): { value: string | null; error: string | null } {
   const value = cleanText(raw);
   if (value === "") return { value: null, error: `${label}が入力されていません。${fix}` };
   if (value.length > FREEE_TEXT_MAX_LENGTH) return { value: null, error: `${label}が長すぎます（${FREEE_TEXT_MAX_LENGTH}文字までです）。` };
@@ -169,9 +176,12 @@ export function buildFreeeCsvRows(records: FreeeRecord[], settings: FreeeSetting
     cells[6] = r.account;
     cells[7] = r.taxCategory;
     cells[8] = String(r.total);
-    if (paid) {
+    if (r.memo !== undefined) cells[11] = neutralizeFormula(cleanText(r.memo));
+    // 行ごとの決済口座（新工程1）があればそれを、なければ共通の設定を使う
+    const rowPaid = r.paymentAccount !== undefined ? cleanText(r.paymentAccount) !== "" : paid;
+    if (rowPaid) {
       cells[18] = date;
-      cells[19] = paymentAccount;
+      cells[19] = r.paymentAccount !== undefined ? cleanText(r.paymentAccount) : paymentAccount;
       cells[20] = String(r.total);
     }
     rows.push(cells);

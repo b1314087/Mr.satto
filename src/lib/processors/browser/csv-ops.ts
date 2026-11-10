@@ -222,12 +222,27 @@ export interface CsvColumnEditInput {
    */
   rowStart?: number;
   rowEnd?: number;
+  /** 新工程1（行の編集）：残す行（対象の範囲の中の番号・0始まり）を、出力したい順に並べたもの。省略時はそのまま */
+  rowOrder?: number[];
 }
 
 /**
  * 対象にする行の範囲だけを取り出す（1始まり・両端を含む。省略時はすべて。CSV・Excelの列編集で共通に使う）。
  * 範囲が正しくないときは日本語のエラーを throw する。
  */
+/**
+ * 行の削除・並び替え（新工程1：行の編集）。rowOrder は、対象の範囲の中の行の番号（0始まり）を、出力したい順に並べたもの。
+ * 含めなかった行は削除する。省略時はそのまま。出力とプレビューで共通に使う
+ */
+export function applyRowOrder<T>(rows: T[], rowOrder?: number[]): T[] {
+  if (!rowOrder) return rows;
+  if (rowOrder.length === 0) throw new Error("残す行を1つ以上選択してください");
+  if (new Set(rowOrder).size !== rowOrder.length || rowOrder.some((i) => !Number.isInteger(i) || i < 0 || i >= rows.length)) {
+    throw new Error("行の指定が正しくありません。ファイルを選び直してください。");
+  }
+  return rowOrder.map((i) => rows[i]);
+}
+
 export function sliceRowRange<T>(rows: T[], rowStart?: number, rowEnd?: number): T[] {
   if (rowStart === undefined && rowEnd === undefined) return rows;
   const start = rowStart ?? 1;
@@ -294,6 +309,7 @@ export class CsvColumnEditProcessor extends BrowserProcessor<
     hasHeader,
     rowStart,
     rowEnd,
+    rowOrder,
   }: CsvColumnEditInput): Promise<CsvColumnEditOutput> {
     if (columnOrder.length === 0) {
       throw new Error("残す列を1つ以上選択してください");
@@ -304,7 +320,7 @@ export class CsvColumnEditProcessor extends BrowserProcessor<
       throw new Error("CSVの内容が空です。ファイルを確認してください。");
     }
 
-    const resultRows = editCsvColumnRows(sliceRowRange(rows, rowStart, rowEnd), columnOrder, renames, hasHeader);
+    const resultRows = editCsvColumnRows(applyRowOrder(sliceRowRange(rows, rowStart, rowEnd), rowOrder), columnOrder, renames, hasHeader);
 
     const blob = csvRowsToBlob(resultRows);
     return { blob, rowCount: resultRows.length, columnCount: columnOrder.length };

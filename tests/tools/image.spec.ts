@@ -1,6 +1,7 @@
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
 import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { chooseCompressOnly } from "../helpers/image-ops";
 
 /**
  * 画像カテゴリの代表E2E（Phase 14 優先度1位）:
@@ -23,6 +24,7 @@ test("image-resize: 画像を入力してリサイズし、PNGをダウンロー
 
 test("image-compress: 画像を入力して圧縮し、ファイルをダウンロードできる", async ({ page }) => {
   await page.goto("/tools/image-compress");
+  await chooseCompressOnly(page);
   await uploadFixture(page, fixtures.jpg);
 
   await page.getByRole("button", { name: "圧縮する" }).click();
@@ -46,6 +48,7 @@ test("image-batch-convert: 複数画像を一括変換し、ZIPでダウンロ�
 
 test("image-compress（目標サイズ指定）: 目標KBを指定して圧縮し、ダウンロードできる", async ({ page }) => {
   await page.goto("/tools/image-compress");
+  await chooseCompressOnly(page);
   await uploadFixture(page, fixtures.jpg);
   await page.getByTestId("compress-kind-size").click();
   await expect(page.getByLabel("目標サイズ (KB)")).toBeVisible();

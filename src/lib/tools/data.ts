@@ -892,11 +892,11 @@ const toolDefinitions: Tool[] = [
     id: "excel-blank-remove",
     name: "Excel空白行・空白列削除",
     category: "csv-excel",
-    description: "Excelファイル内の完全に空白な行・列をまとめて削除します",
+    description: "Excelファイル内の完全に空白な行・列をまとめて削除します。選んだ範囲の中で、空白のセルを左・上に詰めることもできます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["空白行削除", "空白列削除", "excel", "クリーニング"],
+    keywords: ["空白行削除", "空白列削除", "excel", "クリーニング", "左に詰める", "上に詰める", "空白セル 詰める"],
   },
   {
     // 次工程・軽量便利ツール一括追加（Tool 6）
@@ -1345,7 +1345,7 @@ const toolDefinitions: Tool[] = [
     id: "receipt-accounting-csv",
     name: "領収書・レシートから会計CSV作成",
     category: "csv-excel",
-    description: "領収書・レシートの画像やPDFから、日付・取引先・合計金額を読み取り、元の書類と見比べて確認・修正した行だけをCSVにします。確認済みにした行だけが出力され、読み取りはすべてブラウザ内で行います",
+    description: "領収書・レシートの画像やPDFから日付・取引先・金額を読み取り、借方・貸方の勘定科目と課税区分を付けて、確認した明細だけをfreee会計向けCSV・Excelにします。読み取りはすべてブラウザ内で行います",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
@@ -1405,7 +1405,8 @@ const toolDefinitions: Tool[] = [
     id: "form-to-individual-pdfs",
     name: "PDF差し込み印刷",
     category: "pdf",
-    description: "Googleフォーム・Microsoft Formsの回答データ（CSV・Excel）をPDFテンプレートに差し込み、1人ずつの個別PDFを一括生成します",
+    // 新工程1：ツール一覧の説明を、実際の機能（どんな表のデータでも使える・写真も差し込める・ZIPで受け取る）に合わせた
+    description: "PDFの書式に、CSV・Excelなどの表のデータ（フォームの回答など）と写真を1行ずつ差し込み、1件ずつのPDFをまとめて作成します（ZIPでダウンロード）",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
@@ -1575,7 +1576,8 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["word", "段落整理", "空白行削除", "スペース変換", "段組み", "2段組み", "3段組み", "段区切り", "Word段落整理"],
+    // 新工程1：「2列」「3列」「カラム」でも見つかるようにした
+    keywords: ["word", "段落整理", "空白行削除", "スペース変換", "段組み", "段組", "2段組み", "3段組み", "2列", "3列", "Word 2列", "カラム", "段区切り", "Word段落整理"],
   },
   {
     // 次工程・印刷帳票4ツール追加フェーズ

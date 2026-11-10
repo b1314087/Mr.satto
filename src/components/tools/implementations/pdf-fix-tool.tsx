@@ -2,128 +2,126 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { PdfFillAnnotateTool } from "./pdf-fill-annotate-tool";
+import { PdfFillAnnotateTool, type ToolMode } from "./pdf-fill-annotate-tool";
 import { PdfAddPageNumbersTool } from "./pdf-add-page-numbers-tool";
 import { PdfWatermarkTool } from "./pdf-watermark-tool";
-import { PDF_FIX_MODES, getPdfFixMode, parsePdfFixMode, type PdfFixMode } from "@/lib/tools/pdf-fix-modes";
+import {
+  PDF_FIX_OPERATIONS,
+  getPdfFixOperation,
+  parsePdfFixMode,
+  type PdfFixAnnotateOperation,
+  type PdfFixMode,
+  type PdfFixOperation,
+} from "@/lib/tools/pdf-fix-modes";
 import { WHITEOUT_NOTICE } from "@/lib/pdf-annotate/whiteout";
 
 /**
- * PDF修正の総合画面（工程12）。記入・注釈・白消し／ページ番号／透かし を、機能の切り替えで使い分ける。
+ * PDF修正の総合画面（工程12。新工程1で、操作の選び方を「やりたい操作」のプルダウン1つにまとめた）。
  *
- * 各機能の中身は、これまでの個別ツールの画面をそのまま使う（処理も表示も変えない）。
- * この画面が足すのは「機能の切り替え」と「選択中のPDFの引き継ぎ（機能を切り替えても同じPDFを使う）」だけ。
- * - 機能を切り替えると、前の機能の結果・入力はリセットされる（古い結果をダウンロードさせない）。選んだPDFだけを引き継ぐ。
- *   ただし「記入・注釈」で配置済みの文字・図形などがある間は、切り替える前に確認を出す
- *   （切り替えると配置したものが消えるため。確認で「編集を続ける」を選べば、編集中の状態はそのまま残る）。
- * - 他のツールからPDFを直接受け取る個別の連携（旧：PDF編集の「この結果をPDF修正で開く」）は工程15で撤去した。
- *   ツール間の受け渡しは、今後すべてのツールで共通の仕組みとして作り直す。
+ * - プルダウンで選べるのは、今あるPDF修正の操作だけ（文字・チェック・図形・手書き・画像・印影・白消し・黒塗り・
+ *   置いたものの選択／ページ番号・透かし。src/lib/tools/pdf-fix-modes.ts の PDF_FIX_OPERATIONS）。
+ * - 選んだ操作の名前と使い方（置き方・動かし方・大きさの変え方）を、プルダウンのすぐ下に出す。
+ *   選んだ操作に関係する設定だけが出る（記入・注釈の画面は、操作ごとの設定欄だけを出す）。
+ * - 切り替えても、置いた文字・図形などは消えない：
+ *   ・PDFの上に置く操作どうしの切り替えは、同じ記入・注釈の画面のまま操作だけを変える。
+ *   ・ページ番号・透かしへ切り替えても、記入・注釈の画面は消さずに隠しておき、戻ると編集の続きができる
+ *     （以前は切り替えると配置したものが消えるため、確認を出していた）。
+ *   ・ページ番号・透かしの画面は、切り替えるたびに作り直す（古い結果をダウンロードさせない）。
+ * - 選んだPDFは、どの操作でも引き継ぐ。記入・注釈で編集中のPDFがあるときは、そのPDFと編集はそのまま残す。
  * - 旧「PDFページ番号追加」「PDF透かし」のアドレスからの転送（?mode=page-numbers / ?mode=watermark。工程3）では、
- *   その機能を選んだ状態で開く。
+ *   その操作を選んだ状態で開く。
  * 処理はすべてブラウザ内で行い、PDFは送信・保存しない。
  */
 
-function activeClass(active: boolean): string {
-  return `rounded-lg px-3 py-1.5 text-sm font-medium ${
-    active ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-  }`;
-}
-
 export function PdfFixTool() {
-  const [mode, setMode] = useState<PdfFixMode>("annotate");
+  const [operation, setOperation] = useState<PdfFixOperation>("text");
+  const info = getPdfFixOperation(operation);
+  const mode: PdfFixMode = info.mode;
+  // 記入・注釈の画面の中の操作（ページ番号・透かしを選んでいる間も、最後の操作を覚えておく）
+  const [annotateOp, setAnnotateOp] = useState<PdfFixAnnotateOperation>("text");
   // 「記入・注釈」で配置済みの編集があるか（画面側から知らせてもらう）
   const [annotateHasEdits, setAnnotateHasEdits] = useState(false);
-  // 確認待ちの機能の切り替え先
-  const [pending, setPending] = useState<PdfFixMode | null>(null);
-  // どの機能でも使う、選択中のPDF（機能を切り替えても引き継ぐ）
+  // どの操作でも使う、選択中のPDF（切り替えても引き継ぐ）
   const [sharedFile, setSharedFile] = useState<File | null>(null);
-  const info = getPdfFixMode(mode);
+  // 記入・注釈の画面が読み込んでいるPDF。編集がないときに別のPDFが選ばれていたら、記入・注釈の画面を作り直す
+  const [annotateFile, setAnnotateFile] = useState<File | null>(null);
+  const [annotateKey, setAnnotateKey] = useState(0);
+  // ページ番号・透かしの画面は、切り替えるたびに作り直す
+  const [pagesKey, setPagesKey] = useState(0);
 
-  // 旧URLから転送されてきたとき（?mode=page-numbers など）は、その機能を最初から選んでおく
+  // 旧URLから転送されてきたとき（?mode=page-numbers など）は、その操作を最初から選んでおく
   useEffect(() => {
     const fromUrl = parsePdfFixMode(new URLSearchParams(window.location.search).get("mode"));
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (fromUrl) setMode(fromUrl);
+    if (fromUrl === "page-numbers" || fromUrl === "watermark") setOperation(fromUrl);
   }, []);
-  const singleFileProps = { initialFile: sharedFile, onFileChange: setSharedFile };
 
-  // 編集が残っているのは「記入・注釈」を開いている間だけ。それ以外・編集なしのときは、確認なしで切り替える
-  const confirming = pending !== null && mode === "annotate" && annotateHasEdits ? pending : null;
-
-  function handleAnnotateDirty(hasEdits: boolean) {
-    setAnnotateHasEdits(hasEdits);
-    // 編集がなくなったら、残っていた確認待ちも捨てる（あとで編集を始めたときに、古い確認が突然出ないように）
-    if (!hasEdits) setPending(null);
-  }
-
-  function requestMode(next: PdfFixMode) {
-    if (next === mode) return;
-    if (mode === "annotate" && annotateHasEdits) {
-      setPending(next);
-      return;
+  function chooseOperation(next: PdfFixOperation) {
+    const nextInfo = getPdfFixOperation(next);
+    if (nextInfo.mode === "annotate") {
+      // ほかの画面で別のPDFを選んでいて、記入・注釈に編集がなければ、新しいPDFで開き直す
+      if (mode !== "annotate" && !annotateHasEdits && sharedFile && sharedFile !== annotateFile) setAnnotateKey((k) => k + 1);
+      setAnnotateOp(next as PdfFixAnnotateOperation);
+    } else if (next !== operation) {
+      setPagesKey((k) => k + 1);
     }
-    setPending(null);
-    setMode(next);
+    setOperation(next);
   }
+
+  /** 記入・注釈の画面の中で操作が変わったとき（置いたあと「選ぶ・動かす」に戻るときなど） */
+  function handleAnnotateModeChange(m: ToolMode) {
+    setAnnotateOp(m as PdfFixAnnotateOperation);
+    setOperation(m as PdfFixAnnotateOperation);
+  }
+
+  const singleFileProps = { initialFile: sharedFile, onFileChange: setSharedFile };
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <div role="group" aria-label="PDFの修正機能" data-testid="pdf-fix-modes" className="flex flex-wrap gap-2">
-          {PDF_FIX_MODES.map((m) => (
-            <button
-              key={m.mode}
-              type="button"
-              aria-pressed={mode === m.mode}
-              data-testid={`pdf-fix-mode-${m.mode}`}
-              onClick={() => requestMode(m.mode)}
-              className={activeClass(mode === m.mode)}
-            >
-              {m.label}
-            </button>
-          ))}
+      <div className="flex flex-col gap-2" data-testid="pdf-fix-modes" data-mode={mode}>
+        <label className="flex flex-col gap-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          やりたい操作
+          <select
+            data-testid="pdf-fix-operation"
+            value={operation}
+            onChange={(e) => chooseOperation(e.target.value as PdfFixOperation)}
+            className="w-full max-w-md rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+          >
+            <optgroup label="PDFの上に置く（置いたあと、動かす・大きさを変えることができます）">
+              {PDF_FIX_OPERATIONS.filter((o) => o.group === "place").map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="全ページにまとめて入れる">
+              {PDF_FIX_OPERATIONS.filter((o) => o.group === "pages").map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </label>
+        <div
+          data-testid="pdf-fix-mode-description"
+          className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950/20 dark:text-blue-100"
+        >
+          <p className="font-semibold" data-testid="pdf-fix-current-operation" data-operation={operation}>
+            いまの操作：{info.label}
+          </p>
+          <p>{info.howTo}</p>
+          {mode !== "annotate" && annotateHasEdits && (
+            <p className="mt-1" data-testid="pdf-fix-annotate-kept">
+              PDFの上に置いた文字・図形などは、そのまま残っています（「PDFの上に置く」操作を選ぶと、続きを編集できます）。
+              ページ番号・透かしは、それとは別のPDFとして書き出します。
+            </p>
+          )}
         </div>
-        <p data-testid="pdf-fix-mode-description" className="text-xs text-neutral-500 dark:text-neutral-400">
-          {info.description}
-        </p>
       </div>
 
-      {confirming && (
-        <div
-          role="alertdialog"
-          aria-label="機能の切り替えの確認"
-          data-testid="pdf-fix-switch-confirm"
-          className="flex flex-col gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/20 dark:text-red-200"
-        >
-          <p>
-            {`配置した文字・図形などがあります。「${getPdfFixMode(confirming).label}」に切り替えると、これらは消えます（元に戻せません）。`}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              data-testid="pdf-fix-switch-cancel"
-              onClick={() => setPending(null)}
-              className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-100 dark:border-red-800 dark:bg-transparent dark:text-red-200 dark:hover:bg-red-900/30"
-            >
-              編集を続ける
-            </button>
-            <button
-              type="button"
-              data-testid="pdf-fix-switch-confirm-ok"
-              onClick={() => {
-                const next = confirming;
-                setPending(null);
-                setMode(next);
-              }}
-              className="rounded-md bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-800"
-            >
-              消して切り替える
-            </button>
-          </div>
-        </div>
-      )}
-
-      {mode === "annotate" && (
+      {/* 白消し・黒塗りを選んだときだけ、見た目だけ隠す方式と、本当の墨消しの違いを出す */}
+      {(operation === "whiteout" || operation === "blackout") && (
         <p
           data-testid="pdf-fix-whiteout-notice"
           className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200"
@@ -148,11 +146,26 @@ export function PdfFixTool() {
         </p>
       )}
 
-      {/* key: 機能を切り替えたら、前の機能の状態（結果・入力）を必ず捨てて作り直す */}
-      <div key={mode}>
-        {mode === "annotate" && <PdfFillAnnotateTool {...singleFileProps} onDirtyChange={handleAnnotateDirty} />}
+      {/* key: ページ番号・透かしは、切り替えたら前の結果・入力を捨てて作り直す。
+          隠している記入・注釈の画面より前に置く（ページ番号・透かしの画面の、ファイルの選択欄が先に来るように） */}
+      <div key={`${mode}-${pagesKey}`}>
         {mode === "page-numbers" && <PdfAddPageNumbersTool {...singleFileProps} />}
         {mode === "watermark" && <PdfWatermarkTool {...singleFileProps} />}
+      </div>
+      {/* 記入・注釈の画面は、ほかの操作を選んでいる間も消さずに隠しておく（置いたものを消さないため） */}
+      <div hidden={mode !== "annotate"} data-testid="pdf-fix-annotate-panel">
+        <PdfFillAnnotateTool
+          key={annotateKey}
+          initialFile={sharedFile}
+          onFileChange={(f) => {
+            setAnnotateFile(f);
+            setSharedFile(f);
+          }}
+          onDirtyChange={setAnnotateHasEdits}
+          controlledMode={annotateOp}
+          onModeChange={handleAnnotateModeChange}
+          inactive={mode !== "annotate"}
+        />
       </div>
     </div>
   );

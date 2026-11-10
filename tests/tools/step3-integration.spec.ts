@@ -215,8 +215,10 @@ test.describe("工程3：画像リサイズ・圧縮", () => {
   test("リサイズと圧縮を同時に選ぶと、指定した大きさのJPGに圧縮され、元のファイルとの容量の比較が出る", async ({ page }) => {
     await page.goto("/tools/image-compress");
     await uploadFixture(page, fixtures.landscapeJpg);
-    await expect(page.getByTestId("image-op-compress")).toBeChecked();
-    await page.getByTestId("image-op-resize").check();
+    // 新工程1：初期状態は「サイズを変更する」だけ。圧縮を追加でオンにする
+    await expect(page.getByTestId("image-op-resize")).toBeChecked();
+    await expect(page.getByTestId("image-op-compress")).not.toBeChecked();
+    await page.getByTestId("image-op-compress").check();
     await page.getByLabel("幅 (px)").fill("120");
     await expect(page.getByTestId("tool-preview")).toContainText("120 × 80px", { timeout: 20_000 });
     await expect(page.getByTestId("tool-preview")).toContainText("元の");
@@ -231,7 +233,7 @@ test.describe("工程3：画像リサイズ・圧縮", () => {
   test("どちらも選ばないと実行できず、理由が出る。圧縮だけのときは元の大きさのまま", async ({ page }) => {
     await page.goto("/tools/image-compress");
     await uploadFixture(page, fixtures.landscapeJpg);
-    await page.getByTestId("image-op-compress").uncheck();
+    await page.getByTestId("image-op-resize").uncheck();
     await expect(page.getByTestId("image-op-none")).toBeVisible();
     await expect(page.getByRole("button", { name: "圧縮する" })).toBeDisabled();
     await page.getByTestId("image-op-compress").check();

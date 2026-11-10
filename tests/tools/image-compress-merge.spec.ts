@@ -8,6 +8,7 @@ import { toolSeoContent } from "@/lib/seo/tool-content";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { chooseCompressOnly } from "../helpers/image-ops";
 
 /**
  * 「画像圧縮」と「指定KBまで圧縮」の統合のテスト。
@@ -38,6 +39,7 @@ test.describe("画像圧縮の統合: 画面", () => {
 
   test("画質の指定と目標サイズの指定を切り替えられる（既定は画質の指定）", async ({ page }) => {
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     await expect(page.getByTestId("compress-kind-quality")).toHaveAttribute("aria-checked", "true");
     await uploadFixtureWhenReady(page);
     await expect(page.getByText(/画質: \d+%/)).toBeVisible();
@@ -58,6 +60,7 @@ test.describe("画像圧縮の統合: 画面", () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "noisy-")), "noisy.png");
     fs.writeFileSync(file, encodePng(noisy));
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     await uploadFixture(page, file);
     await page.getByTestId("compress-kind-size").click();
     await page.getByLabel("目標サイズ (KB)").fill("1");
@@ -74,6 +77,7 @@ test.describe("画像圧縮の統合: 画面", () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "smooth-")), "smooth.png");
     fs.writeFileSync(file, encodePng(smooth));
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     await uploadFixture(page, file);
     await page.getByTestId("compress-kind-size").click();
     await page.getByLabel("目標サイズ (KB)").fill("300");

@@ -5,6 +5,7 @@ import { waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpe
 import { uploadWhenReady } from "../helpers/tool-ready";
 import { extractPdfContent, isValidPdfFile } from "../helpers/pdf-inspect";
 import { checkBasicAccessibility, checkKeyboardFocusable } from "../helpers/a11y";
+import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
 
 /**
  * PDF記入・注釈（Phase 15）のE2Eテスト。
@@ -68,7 +69,8 @@ test("ツールページが表示される（PDF修正の「記入・注釈・�
   expect(response?.status()).toBe(200);
   await expect(page.locator("body")).not.toContainText("Application error");
   await expect(page.getByRole("heading", { level: 1, name: "PDF修正" })).toBeVisible();
-  await expect(page.getByTestId("pdf-fix-mode-annotate")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("pdf-fix-modes")).toHaveAttribute("data-mode", "annotate");
+  await expect(page.getByTestId("pdf-fix-operation")).toHaveValue("text");
 });
 
 // (2)(3) PDFアップロード・単一ページ表示
@@ -94,7 +96,7 @@ test("複数ページのPDFではページ送りができる", async ({ page }) 
 // (5) テキスト追加
 test("テキストを追加して内容を編集できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 60, 80);
 
   await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
@@ -106,7 +108,7 @@ test("テキストを追加して内容を編集できる", async ({ page }) => 
 // (6) テキスト移動
 test("テキストを配置し直す（移動）ことができる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 40, 60);
 
   const objectDiv = page.locator(CANVAS).locator("div").first();
@@ -124,7 +126,7 @@ test("テキストを配置し直す（移動）ことができる", async ({ pa
 // (7) テキスト削除
 test("テキストを削除できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 50, 50);
   await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
@@ -135,7 +137,7 @@ test("テキストを削除できる", async ({ page }) => {
 // (8) チェックボックス追加
 test("チェックボックスを追加してON/OFFを切り替えられる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "チェック", exact: true }).click();
+  await choosePdfFixOperation(page, "チェック");
   await clickCanvasAt(page, 80, 100);
   await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
@@ -148,7 +150,7 @@ test("チェックボックスを追加してON/OFFを切り替えられる", as
 // (9) チェックボックス削除
 test("チェックボックスを削除できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "チェック", exact: true }).click();
+  await choosePdfFixOperation(page, "チェック");
   await clickCanvasAt(page, 70, 70);
   await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
@@ -159,7 +161,7 @@ test("チェックボックスを削除できる", async ({ page }) => {
 // (10) 手書き入力
 test("ドラッグで手書き入力できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "手書き", exact: true }).click();
+  await choosePdfFixOperation(page, "手書き");
   await dragOnCanvas(page, [
     { x: 30, y: 30 },
     { x: 60, y: 60 },
@@ -171,7 +173,7 @@ test("ドラッグで手書き入力できる", async ({ page }) => {
 // (11) 手書き削除
 test("手書きを削除できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "手書き", exact: true }).click();
+  await choosePdfFixOperation(page, "手書き");
   await dragOnCanvas(page, [
     { x: 30, y: 30 },
     { x: 70, y: 70 },
@@ -184,7 +186,7 @@ test("手書きを削除できる", async ({ page }) => {
 
 test("消しゴムで手書きを削除できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "手書き", exact: true }).click();
+  await choosePdfFixOperation(page, "手書き");
   await dragOnCanvas(page, [
     { x: 30, y: 30 },
     { x: 70, y: 70 },
@@ -199,7 +201,7 @@ test("消しゴムで手書きを削除できる", async ({ page }) => {
 // (12) 画像追加
 test("画像を追加できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "画像", exact: true }).click();
+  await choosePdfFixOperation(page, "画像");
   await page.locator('input[type="file"]').last().setInputFiles(fixtures.png);
   await expect(page.getByText(/PDF上をクリックして配置してください/)).toBeVisible();
 
@@ -211,7 +213,7 @@ test("画像を追加できる", async ({ page }) => {
 // (13) 画像の移動・リサイズ
 test("画像を移動・リサイズできる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "画像", exact: true }).click();
+  await choosePdfFixOperation(page, "画像");
   await page.locator('input[type="file"]').last().setInputFiles(fixtures.png);
   await clickCanvasAt(page, 60, 60);
 
@@ -238,7 +240,7 @@ test("画像を移動・リサイズできる", async ({ page }) => {
 // (14)(15) PDF書き出し・ダウンロード、(16) 生成PDFの妥当性
 test("PDFを書き出してダウンロードでき、生成されたPDFが妥当である", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 50, 50);
   await page.locator(OBJECT_LIST).locator('textarea').first().fill("E2E-EXPORT-CHECK");
   await page.locator(OBJECT_LIST).locator('textarea').first().blur();
@@ -252,7 +254,7 @@ test("PDFを書き出してダウンロードでき、生成されたPDFが妥�
 // (17) ページ数が保持される
 test("元のPDFのページ数が書き出し後も保持される", async ({ page }) => {
   await openToolWithPdf(page, fixtures.multiPagePdf);
-  await page.getByRole("button", { name: "チェック", exact: true }).click();
+  await choosePdfFixOperation(page, "チェック");
   await clickCanvasAt(page, 50, 50);
 
   const downloadPath = await exportAndDownload(page);
@@ -265,7 +267,7 @@ test("元のPDFのページ数が書き出し後も保持される", async ({ pa
 // (18) 日本語出力の確認
 test("日本語のテキストが文字化けせずにPDFへ出力される", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 50, 100);
   const input = page.locator(OBJECT_LIST).locator('textarea').first();
   await input.fill("日本語テストABC123あいうえお");
@@ -279,7 +281,7 @@ test("日本語のテキストが文字化けせずにPDFへ出力される", as
 // 日付挿入（現在日付の自動入力をしないこと、明示的に選んだ日付だけが反映されることの確認）
 test("日付は自動入力されず、選択した日付だけがテキストに反映される", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 50, 50);
 
   const row = page.locator(OBJECT_LIST).locator("li").first();
@@ -315,7 +317,7 @@ test("表示倍率(50%/100%/150%)を変えても、PDF上の同じ相対位置�
   for (const zoom of [100, 50, 150]) {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     await page.getByRole("button", { name: `${zoom}%`, exact: true }).click();
-    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await choosePdfFixOperation(page, "テキスト");
 
     if (zoom === 100) {
       width100 = (await page.locator(CANVAS).boundingBox())?.width ?? 0;
@@ -376,7 +378,7 @@ test.describe("モバイル表示", () => {
 
   test("モバイル幅でもPDFの表示・記入・書き出しができる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "チェック", exact: true }).click();
+    await choosePdfFixOperation(page, "チェック");
     await clickCanvasAt(page, 40, 40);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
@@ -391,7 +393,7 @@ test.describe("モバイル表示", () => {
 test.describe("エッジケース", () => {
   test("空欄のテキストのまま書き出しても壊れない（空欄は出力から除外される）", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await choosePdfFixOperation(page, "テキスト");
     await clickCanvasAt(page, 50, 50);
     // テキストを入力しないまま書き出す
     const downloadPath = await exportAndDownload(page);
@@ -401,7 +403,7 @@ test.describe("エッジケース", () => {
 
   test("非常に長いテキストを入力してもクラッシュしない", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await choosePdfFixOperation(page, "テキスト");
     await clickCanvasAt(page, 50, 50);
     const longText = "あ".repeat(600); // 上限(500文字)を超える入力
     const input = page.locator(OBJECT_LIST).locator('textarea').first();
@@ -418,7 +420,7 @@ test.describe("エッジケース", () => {
   test("すばやい追加・削除を繰り返してもクラッシュしない", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     for (let i = 0; i < 5; i++) {
-      await page.getByRole("button", { name: "チェック", exact: true }).click();
+      await choosePdfFixOperation(page, "チェック");
       await clickCanvasAt(page, 40 + i * 5, 40 + i * 5);
       await page.locator(OBJECT_LIST).getByRole("button", { name: "削除" }).first().click();
     }
@@ -428,7 +430,7 @@ test.describe("エッジケース", () => {
 
   test("ページ移動をまたいでも配置した注釈が消えない", async ({ page }) => {
     await openToolWithPdf(page, fixtures.multiPagePdf);
-    await page.getByRole("button", { name: "チェック", exact: true }).click();
+    await choosePdfFixOperation(page, "チェック");
     await clickCanvasAt(page, 50, 50);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
@@ -441,7 +443,7 @@ test.describe("エッジケース", () => {
 
   test("横向き(landscape)のPDFでも配置・書き出しができる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.landscapePdf);
-    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await choosePdfFixOperation(page, "テキスト");
     await clickCanvasAt(page, 60, 40);
     const downloadPath = await exportAndDownload(page);
     const extracted = await extractPdfContent(downloadPath);
@@ -452,7 +454,7 @@ test.describe("エッジケース", () => {
   test("日本語の文字情報を持つPDFを読み込んでも壊れず、ページ数が保持される", async ({ page }) => {
     await openToolWithPdf(page, fixtures.japanesePdf);
     await expect(page.locator("body")).not.toContainText("Application error");
-    await page.getByRole("button", { name: "チェック", exact: true }).click();
+    await choosePdfFixOperation(page, "チェック");
     await clickCanvasAt(page, 50, 50);
     const downloadPath = await exportAndDownload(page);
     const extracted = await extractPdfContent(downloadPath);
@@ -462,7 +464,7 @@ test.describe("エッジケース", () => {
 
   test("Undo/Redoで直前の操作を取り消し・やり直しできる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "チェック", exact: true }).click();
+    await choosePdfFixOperation(page, "チェック");
     await clickCanvasAt(page, 50, 50);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
@@ -480,7 +482,7 @@ test.describe("エッジケース", () => {
 // ---------------------------------------------------------------------
 test("基本的なアクセシビリティ要件を満たす（ボタン・入力欄にラベルがある）", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 50, 50);
   await checkBasicAccessibility(page);
   await checkKeyboardFocusable(page);

@@ -10,6 +10,7 @@ import { BATCH_LIMITS, canUseBatch } from "@/lib/batch/batch-config";
 import { BATCH_COPY_PAIRS } from "@/lib/seo/batch-copy";
 import { getToolSeoContent } from "@/lib/seo/tool-content";
 import { adaptToolSeoContentWith } from "@/lib/seo/feature-copy";
+import { chooseCompressOnly } from "../helpers/image-ops";
 
 /**
  * Premium 複数ファイル一括処理のテスト。
@@ -94,6 +95,7 @@ for (const plan of ["free", "standard"] as const) {
     baseTest("画像圧縮: 2枚選ぶと1枚目だけを読み込み、プレミアムの機能だと案内する。そのまま1枚を処理できる", async ({ page, baseURL }) => {
       await asPlan(page, plan, baseURL);
       await page.goto("/tools/image-compress");
+      await chooseCompressOnly(page);
       await expect(page.getByTestId("batch-hint")).toContainText("プレミアムプラン");
       await uploadFixture(page, [fixtures.png, fixtures.landscapeJpg]);
       const notice = page.getByTestId("batch-notice");
@@ -159,6 +161,7 @@ function zipEntries(path: string): string[] {
 premiumTest.describe("プレミアム: 一括処理", () => {
   premiumTest("画像圧縮: 3枚をまとめて圧縮し、ファイルごとに完了が出て、ZIPと1枚ずつの両方で保存できる", async ({ page }) => {
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     await expect(page.getByTestId("batch-hint")).toContainText("30枚まで");
     await uploadFixture(page, [fixtures.png, fixtures.landscapeJpg, fixtures.portraitPng]);
     await expect(page.getByTestId("batch-notice")).toHaveCount(0);
@@ -178,6 +181,7 @@ premiumTest.describe("プレミアム: 一括処理", () => {
 
   premiumTest("壊れた画像が混ざっていても、ほかの画像は処理され、成功したものだけがZIPに入る", async ({ page }) => {
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     await uploadFixture(page, [fixtures.png, fixtures.corruptedImage, fixtures.landscapeJpg]);
     await page.getByRole("button", { name: "3枚をまとめて圧縮する" }).click();
     await expect(page.getByTestId("batch-summary")).toHaveText("3ファイル中 2ファイルが完了・1ファイルが失敗", { timeout: 60_000 });
@@ -189,6 +193,7 @@ premiumTest.describe("プレミアム: 一括処理", () => {
 
   premiumTest("同じ名前の画像があっても、ZIPの中で上書きされない", async ({ page }) => {
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     const png = fs.readFileSync(fixtures.png);
     const portrait = fs.readFileSync(fixtures.portraitPng);
     await page.locator('input[type="file"]').first().setInputFiles([
@@ -205,6 +210,7 @@ premiumTest.describe("プレミアム: 一括処理", () => {
 
   premiumTest("上限（30枚）を超えて選ぶと、30枚だけを読み込んで案内する", async ({ page }) => {
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     const png = fs.readFileSync(fixtures.png);
     const many = Array.from({ length: 31 }, (_, i) => ({ name: `img-${i + 1}.png`, mimeType: "image/png", buffer: png }));
     await page.locator('input[type="file"]').first().setInputFiles(many);
@@ -243,6 +249,7 @@ premiumTest.describe("プレミアム: 一括処理", () => {
 
   premiumTest("ページを開いた後にプレミアムでなくなった場合、一括処理は始まらず案内が出る", async ({ page, baseURL }) => {
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     await uploadFixture(page, [fixtures.png, fixtures.landscapeJpg]);
     // 契約が終わった・ログアウトした状態を再現する（サーバーでの確認が無料になる）
     await setDevPlanOverride(page.context(), "free", baseURL!);
@@ -254,6 +261,7 @@ premiumTest.describe("プレミアム: 一括処理", () => {
   premiumTest("スマホ幅でも、結果の一覧と保存ボタンが画面に収まる", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/tools/image-compress");
+    await chooseCompressOnly(page);
     await uploadFixture(page, [fixtures.png, fixtures.landscapeJpg]);
     await page.getByRole("button", { name: "2枚をまとめて圧縮する" }).click();
     await expect(page.getByTestId("batch-summary")).toHaveText("2ファイル中 2ファイルが完了", { timeout: 60_000 });
@@ -275,6 +283,7 @@ baseTest("料金ページに、一括処理がプレミアムの機能である�
 // 既存の単体処理の確認（プレミアムでも、1ファイルのときは従来どおりの結果画面になる）
 premiumTest("プレミアムでも、1枚だけのときは従来どおりの結果画面で保存できる", async ({ page }) => {
   await page.goto("/tools/image-compress");
+  await chooseCompressOnly(page);
   await uploadFixture(page, fixtures.png);
   await page.getByRole("button", { name: "圧縮する", exact: true }).click();
   await waitForSuccess(page, "変換が完了しました");

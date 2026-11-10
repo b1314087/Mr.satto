@@ -183,8 +183,19 @@ export function WordParagraphCleanupTool() {
     downloadBlob(result.blob, `${stripExtension(file.name)}-${result.cleaned ? "cleaned" : "columns"}.docx`);
   }
 
+  /** 新工程1：段組みだけを変えたいとき（整理のチェックをすべて外し、段組みの設定を開く） */
+  function chooseColumnsOnly() {
+    setOptions((prev) => Object.fromEntries(Object.keys(prev).map((k) => [k, false])) as unknown as ParagraphCleanupOptions);
+    setColumnsEnabled(true);
+    setResult(null);
+  }
+
   return (
     <div className="flex flex-col gap-6">
+      {/* 新工程1：段組み（2段・3段）がこのツールにあることを、最初に分かるようにする */}
+      <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="word-tool-guide">
+        できること：① スペース・空白行の整理　② 段組みの変更（1段・2段・3段。文書全体、または選んだ段落だけ。段の間隔・段区切りも指定できます）
+      </p>
       <FileDropzone
         accept={ACCEPT}
         maxSizeMB={50}
@@ -226,8 +237,18 @@ export function WordParagraphCleanupTool() {
               }}
               data-testid="word-columns-enable"
             />
-            段組みを変更する
+            段組みを変更する（1段・2段・3段）
           </label>
+          {(!columnsEnabled || hasAnyOption) && (
+            <button
+              type="button"
+              data-testid="word-columns-only"
+              onClick={chooseColumnsOnly}
+              className="w-fit rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+            >
+              整理はせずに、段組みだけを変更する
+            </button>
+          )}
           {columnsEnabled && (
             <div className="flex flex-col gap-3 text-sm text-neutral-600 dark:text-neutral-300">
               <div role="radiogroup" aria-label="段組みの数" className="flex flex-wrap items-center gap-2">

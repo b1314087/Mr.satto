@@ -4,6 +4,7 @@ import { fixtures } from "../fixtures/paths";
 import { waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
 import { uploadWhenReady } from "../helpers/tool-ready";
 import { extractPdfContent, isValidPdfFile, getPageOpSummary } from "../helpers/pdf-inspect";
+import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
 
 /**
  * PDF記入・注釈（Phase 17: 簡易PDFエディタへの強化）のE2Eテスト。
@@ -49,14 +50,14 @@ async function exportAndDownload(page: Page) {
 test.describe("図形", () => {
   test("矩形を追加できる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 150, 150);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
   });
 
   test("円・楕円を追加できる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await page.getByLabel("種類").selectOption("circle");
     await clickCanvasAt(page, 150, 150);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
@@ -64,7 +65,7 @@ test.describe("図形", () => {
 
   test("直線を追加できる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await page.getByLabel("種類").selectOption("line");
     await clickCanvasAt(page, 150, 150);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
@@ -72,7 +73,7 @@ test.describe("図形", () => {
 
   test("図形を移動・リサイズ・削除できる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 150, 150);
 
     const widthInput = page.locator(OBJECT_LIST).locator('input[type="number"]').first();
@@ -91,7 +92,7 @@ test.describe("図形", () => {
 
   test("図形（矩形・円）を回転できる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 150, 150);
 
     const rotationInput = page.locator(OBJECT_LIST).locator('label:has-text("回転") input[type="number"]');
@@ -104,7 +105,7 @@ test.describe("図形", () => {
 
   test("直線を回転すると座標が変わる（見た目上の回転として反映される）", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await page.getByLabel("種類").selectOption("line");
     await clickCanvasAt(page, 150, 150);
 
@@ -128,7 +129,7 @@ test.describe("図形", () => {
 
   test("塗りつぶしを切り替えられる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 150, 150);
     const fillCheckbox = page.locator(OBJECT_LIST).locator('label:has-text("塗りつぶし") input[type="checkbox"]');
     await expect(fillCheckbox).not.toBeChecked();
@@ -143,7 +144,7 @@ test.describe("図形", () => {
 test.describe("複製・前面/背面", () => {
   test("テキストを複製すると、明らかにずれた位置にもう1つ増える", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await choosePdfFixOperation(page, "テキスト");
     await clickCanvasAt(page, 60, 80);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
@@ -153,7 +154,7 @@ test.describe("複製・前面/背面", () => {
 
   test("チェック・画像も複製でき、オブジェクト数の上限は超えられない", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "チェック", exact: true }).click();
+    await choosePdfFixOperation(page, "チェック");
     await clickCanvasAt(page, 60, 80);
     await page.locator(OBJECT_LIST).getByRole("button", { name: "複製" }).click();
     await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
@@ -166,9 +167,9 @@ test.describe("複製・前面/背面", () => {
     // クリックすると、その図形自身のonClickにイベントが吸収されて新規配置が
     // できなくなる（Phase 15の画像リサイズテストと同じ既知の注意点）ため、
     // 十分に離れた位置へ配置する。
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 80, 80);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 500, 600);
     await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
 
@@ -186,7 +187,7 @@ test.describe("複製・前面/背面", () => {
 test.describe("印影", () => {
   test("印影画像を配置でき、通常の画像と同様に移動・リサイズ・回転できる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "印影", exact: true }).click();
+    await choosePdfFixOperation(page, "印影");
     await page.locator('input[type="file"]').last().setInputFiles(fixtures.stampTransparentPng);
     await expect(page.getByText(/PDF上をクリックして配置してください/)).toBeVisible();
 
@@ -206,7 +207,7 @@ test.describe("印影", () => {
 
   test("印影を配置してPDFを書き出すと、生成PDFに画像として出力される", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "印影", exact: true }).click();
+    await choosePdfFixOperation(page, "印影");
     await page.locator('input[type="file"]').last().setInputFiles(fixtures.stampTransparentPng);
     await clickCanvasAt(page, 150, 150);
 
@@ -224,12 +225,12 @@ test.describe("生成PDFの検証", () => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     // 図形を1つ配置するたびに自動的に「選択・移動」モードへ戻るため、種類を切り替える
     // 際には毎回「図形」ボタンを押し直してからselectする。
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 80, 80); // rectangle（既定）
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await page.getByLabel("種類").selectOption("circle");
     await clickCanvasAt(page, 200, 200);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await page.getByLabel("種類").selectOption("line");
     await clickCanvasAt(page, 300, 300);
     await expect(page.getByText("配置した注釈（3件）")).toBeVisible();
@@ -244,7 +245,7 @@ test.describe("生成PDFの検証", () => {
 
   test("回転させた画像を書き出しても、生成PDFは壊れず画像として出力される", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "画像", exact: true }).click();
+    await choosePdfFixOperation(page, "画像");
     await page.locator('input[type="file"]').last().setInputFiles(fixtures.png);
     await clickCanvasAt(page, 150, 150);
     await page.locator(OBJECT_LIST).getByRole("button", { name: "反時計回りに回転" }).click();
@@ -262,7 +263,7 @@ test.describe("生成PDFの検証", () => {
 // ---------------------------------------------------------------------
 test("複数行のテキストを入力し、整列を変更できる", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 50, 150);
 
   const textarea = page.locator(OBJECT_LIST).locator("textarea").first();
@@ -285,13 +286,13 @@ test("複数行のテキストを入力し、整列を変更できる", async ({
 test("複数ページで、それぞれのページに配置した図形・画像がページ移動後も保持され、書き出しにも反映される", async ({ page }) => {
   await openToolWithPdf(page, fixtures.multiPagePdf);
 
-  await page.getByRole("button", { name: "図形", exact: true }).click();
+  await choosePdfFixOperation(page, "図形");
   await clickCanvasAt(page, 80, 80);
   await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
   await page.getByRole("button", { name: "次のページ" }).click();
   await expect(page.getByText("2 / 3ページ")).toBeVisible();
-  await page.getByRole("button", { name: "チェック", exact: true }).click();
+  await choosePdfFixOperation(page, "チェック");
   await clickCanvasAt(page, 90, 90);
   await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
 
@@ -325,7 +326,7 @@ test("拡張したズーム倍率(125%・200%)でも図形を配置・書き出�
   for (const zoom of [125, 200]) {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     await page.getByRole("button", { name: `${zoom}%`, exact: true }).click();
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 80, 80);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 
@@ -350,7 +351,7 @@ test.describe("エッジケース(Phase 17)", () => {
       { x: 40, y: 650 },
     ];
     for (let i = 0; i < positions.length; i++) {
-      await page.getByRole("button", { name: "画像", exact: true }).click();
+      await choosePdfFixOperation(page, "画像");
       await page.locator('input[type="file"]').last().setInputFiles(fixtures.png);
       await clickCanvasAt(page, positions[i].x, positions[i].y);
       await expect(page.getByText(`配置した注釈（${i + 1}件）`)).toBeVisible();
@@ -367,7 +368,7 @@ test.describe("エッジケース(Phase 17)", () => {
       { x: 500, y: 650 },
     ];
     for (let i = 0; i < positions.length; i++) {
-      await page.getByRole("button", { name: "図形", exact: true }).click();
+      await choosePdfFixOperation(page, "図形");
       await clickCanvasAt(page, positions[i].x, positions[i].y);
       await expect(page.getByText(`配置した注釈（${i + 1}件）`)).toBeVisible();
     }
@@ -380,7 +381,7 @@ test.describe("エッジケース(Phase 17)", () => {
   test("1ページのみのPDFでもページ番号ジャンプ欄が表示されず、通常操作に支障がない", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     await expect(page.getByLabel("ページ番号を指定して移動")).toHaveCount(0);
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 60, 60);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
   });

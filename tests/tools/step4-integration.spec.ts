@@ -27,7 +27,7 @@ import {
   extractTaxRate,
   EMPTY_RECEIPT_DETAILS,
 } from "@/lib/accounting/receipt-details";
-import { buildJournalCsvRows, buildJournalXlsxRows, JOURNAL_HEADER } from "@/lib/accounting/journal-export";
+import { buildReceiptFreeeRows, receiptFreeeRowsToXlsx, toFreeeRecord, validateJournalFields } from "@/lib/accounting/freee-receipt";
 import { clampMoveDelta, displayToPageMatrix } from "@/lib/pdf-annotate/geometry";
 import {
   computeAutoExportScale,
@@ -44,6 +44,7 @@ import { uploadWhenReady } from "../helpers/tool-ready";
 import { setDevPlanOverride } from "../helpers/dev-plan";
 import { scratchDir } from "../helpers/tmp";
 import { fixtures } from "../fixtures/paths";
+import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
 
 /**
  * 工程4（既存ツールの改善）のテスト。
@@ -301,21 +302,21 @@ plainTest.describe("4-8: 税率・税額・登録番号・品目の読み取り�
     plainExpect(checkReceiptDetails({ ...base, taxCategory: "課税仕入 8%（軽減）" }, 1100)[0]).toContain("税区分");
     plainExpect(checkReceiptDetails({ ...EMPTY_RECEIPT_DETAILS, taxRate: "mixed", taxAmount: "140" }, 1640)).toEqual([]);
   });
-  plainTest("明細・仕訳CSV／Excel：列・数式の無害化・読み取り元・型", () => {
-    const rec = {
-      date: "2026-09-15",
-      vendor: "=危険な取引先",
-      total: 1100,
-      source: "receipt.pdf（1/2ページ）",
-      details: { ...EMPTY_RECEIPT_DETAILS, taxRate: "10", taxAmount: "100", registrationNumber: "T1234567890123", items: "コピー用紙", memo: "事務用品", taxCategory: "課税仕入 10%", debitAccount: "消耗品費", creditAccount: "現金" },
-    };
-    const rows = buildJournalCsvRows([rec]);
-    plainExpect(rows[0]).toEqual([...JOURNAL_HEADER]);
-    plainExpect(rows[1]).toEqual(["2026/09/15", "'=危険な取引先", "1100", "10%", "100", "T1234567890123", "コピー用紙", "事務用品", "課税仕入 10%", "消耗品費", "現金", "receipt.pdf（1/2ページ）"]);
-    const x = buildJournalXlsxRows([rec]);
-    plainExpect(x[1][0]).toMatchObject({ type: Date, format: "yyyy/mm/dd" });
-    plainExpect(x[1][2]).toMatchObject({ value: 1100, type: Number });
-    plainExpect(x[1][1]).toMatchObject({ value: "=危険な取引先", type: String });
+  plainTest("新工程1：freee用の行（CSV・Excel）：借方→勘定科目・貸方→決済口座・課税区分→税区分・摘要→備考。数式の無害化・型", () => {
+    const rec = { date: "2026-09-15", vendor: "=危険な取引先", total: 1100, source: "receipt.pdf（1/2ページ）" };
+    const fields = { debitAccount: "消耗品費", creditAccount: "現金", taxCategory: "課対仕入10%", memo: "事務用品" };
+    plainExpect(validateJournalFields(fields)).toEqual([]);
+    plainExpect(validateJournalFields({ ...fields, debitAccount: "", taxCategory: "" }).join("")).toContain("借方勘定科目が入力されていません");
+    const freee = toFreeeRecord(rec, fields)!;
+    const rows = buildReceiptFreeeRows([freee]);
+    plainExpect(rows[0]).toHaveLength(21);
+    plainExpect(rows[1]).toEqual(["支出", "", "2026/09/15", "", "", "'=危険な取引先", "消耗品費", "課対仕入10%", "1100", "", "", "事務用品", "", "", "", "", "", "", "2026/09/15", "現金", "1100"]);
+    // 貸方が空欄なら未決済（決済の3列は空）
+    const unpaid = buildReceiptFreeeRows([toFreeeRecord(rec, { ...fields, creditAccount: "" })!]);
+    plainExpect(unpaid[1].slice(18)).toEqual(["", "", ""]);
+    const x = receiptFreeeRowsToXlsx(rows);
+    plainExpect(x[1][8]).toMatchObject({ value: 1100, type: Number });
+    plainExpect(x[1][5]).toMatchObject({ value: "'=危険な取引先", type: String });
   });
 });
 
@@ -587,8 +588,10 @@ test.describe("4-2: PDF修正の操作", () => {
     await buildTextPdf(src, [["秘密の情報ABC"]]);
     await page.goto("/tools/pdf-fix");
     await uploadWhenReady(page, src, page.locator(CANVAS));
+    // 新工程1：見た目だけ隠す方式と墨消しの違いの説明は、白消し・黒塗りを選んだときだけ出す
+    await expect(page.getByTestId("pdf-fix-redaction-methods")).toHaveCount(0);
+    await choosePdfFixOperation(page, "黒塗り（見た目だけ）");
     await expect(page.getByTestId("pdf-fix-redaction-methods")).toContainText("墨消し（元のデータごと削除）＝PDF黒塗り・墨消し");
-    await page.getByRole("button", { name: "黒塗り（見た目だけ）", exact: true }).click();
     await expect(page.getByTestId("pdf-blackout-panel")).toContainText("墨消し（元のデータの削除）ではありません");
     await expect(page.getByTestId("pdf-blackout-redact-link")).toHaveAttribute("href", "/tools/pdf-redact");
     await page.locator(CANVAS).click({ position: { x: 120, y: 60 } });
@@ -606,12 +609,12 @@ test.describe("4-2: PDF修正の操作", () => {
   test("置いたものは、配置用のモードのままでもつかんで動かせ、ページの外へは出ない。右下のつまみで大きさを変えられる", async ({ page }) => {
     await page.goto("/tools/pdf-fix");
     await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS));
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     await page.locator(CANVAS).click({ position: { x: 200, y: 200 } });
     const shape = page.locator(`${CANVAS} > div.absolute`).last();
     await expect(shape).toBeVisible();
     // もう一度「図形」モードにしても、置いた図形をつかんで動かせる（新しい図形は増えない）
-    await page.getByRole("button", { name: "図形", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
     const canvasBox = (await page.locator(CANVAS).boundingBox())!;
     const before = (await shape.boundingBox())!;
     await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
@@ -640,10 +643,10 @@ test.describe("4-2: PDF修正の操作", () => {
   test("枠なしのチェック（マークだけ）を置ける。チェックした状態で置かれ、書き出せる", async ({ page }) => {
     await page.goto("/tools/pdf-fix");
     await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS));
-    await page.getByRole("button", { name: "チェック", exact: true }).click();
+    await choosePdfFixOperation(page, "チェック");
     await page.getByTestId("pdf-annotate-checkbox-frame").uncheck();
     await page.locator(CANVAS).click({ position: { x: 100, y: 100 } });
-    await page.getByRole("button", { name: "チェック", exact: true }).click();
+    await choosePdfFixOperation(page, "チェック");
     await page.getByTestId("pdf-annotate-checkbox-frame").uncheck();
     await page.locator(CANVAS).click({ position: { x: 160, y: 100 } });
     const marks = page.getByTestId("pdf-annotate-checkbox-object");
@@ -664,7 +667,7 @@ test.describe("4-2: PDF修正の操作", () => {
     }
     await page.goto("/tools/pdf-fix");
     await uploadWhenReady(page, src, page.locator(CANVAS));
-    await page.getByRole("button", { name: "黒塗り（見た目だけ）", exact: true }).click();
+    await choosePdfFixOperation(page, "黒塗り（見た目だけ）");
     const box = (await page.locator(CANVAS).boundingBox())!;
     // 見た目の左上あたり（キャンバスの幅の1/6・高さの1/6）に置く
     await page.locator(CANVAS).click({ position: { x: box.width / 6, y: box.height / 6 } });
@@ -866,7 +869,7 @@ test("4-7: 2段組みのPDFは、左の段→右の段の順に読み、Wordの�
 // ===========================================================================
 // 10. 画面（4-8 領収書・レシート）
 // ===========================================================================
-test("4-8: 文字情報のある領収書から税率・税額・登録番号・品目を読み取り、税区分・勘定科目を入力して、明細CSV・Excelに出力する", async ({ page }) => {
+test("4-8: 文字情報のある領収書から税率・税額・登録番号・品目を読み取って参考に表示し、品目を摘要に入れる。仕訳の項目を入力して、freee用CSV・Excelに出力する", async ({ page }) => {
   test.setTimeout(180_000);
   const dir = scratchDir("step4-receipt");
   const src = path.join(dir, "receipt.pdf");
@@ -879,42 +882,42 @@ test("4-8: 文字情報のある領収書から税率・税額・登録番号・
   await uploadWhenReady(page, src, page.getByTestId("receipt-row").nth(1), { readyTimeoutMs: 120_000 });
   const rows = page.getByTestId("receipt-row");
   const r1 = rows.nth(0);
-  await expect(r1.getByTestId("receipt-tax-rate")).toHaveValue("10");
-  await expect(r1.getByTestId("receipt-taxAmount")).toHaveValue("100");
-  await expect(r1.getByTestId("receipt-registrationNumber")).toHaveValue("T1234567890123");
-  await expect(r1.getByTestId("receipt-items")).toHaveValue("コピー用紙");
-  await expect(r1.getByTestId("receipt-detail-source-taxAmount")).toHaveText("自動読み取り");
-  // 税区分・勘定科目は空のまま（自動で入れない）。自動で確認済みにもならない
-  await expect(r1.getByTestId("receipt-tax-category")).toHaveValue("");
-  await expect(r1.getByTestId("receipt-debitAccount")).toHaveValue("");
+  await expect(r1.getByTestId("receipt-read-info")).toContainText("税率 10%");
+  await expect(r1.getByTestId("receipt-read-info")).toContainText("消費税 100円");
+  await expect(r1.getByTestId("receipt-read-info")).toContainText("登録番号 T1234567890123");
+  await expect(r1.getByTestId("receipt-memo")).toHaveValue("コピー用紙");
+  // 課税区分・勘定科目は、初期値を決めていなければ空のまま（自動で入れない）。自動で確認済みにもならない
+  await expect(r1.getByTestId("receipt-tax")).toHaveValue("");
+  await expect(r1.getByTestId("receipt-debit")).toHaveValue("");
   await expect(r1).toHaveAttribute("data-confirmed", "false");
-  // 2枚目は、合計と税額が合わない → 注意。登録番号は不明
+  // 2枚目は、合計と税額が合わない → 注意。登録番号は読み取れず
   const r2 = rows.nth(1);
   await expect(r2.getByTestId("receipt-detail-warning")).toContainText("合計金額と消費税額が合いません");
-  await expect(r2.getByTestId("receipt-detail-source-registrationNumber")).toHaveText("不明（読み取れませんでした）");
-  // 入力して確認済みにする
-  await r1.getByTestId("receipt-tax-category").fill("課税仕入 10%");
+  await expect(r2.getByTestId("receipt-read-info")).toContainText("登録番号 読み取れず");
+  // 税率10%と合わない課税区分を選ぶと、注意が出る
+  await r1.getByTestId("receipt-tax").selectOption("課対仕入8%（軽）");
+  await expect(r1.getByTestId("receipt-detail-warning")).toContainText("税区分");
+  await r1.getByTestId("receipt-tax").selectOption("課対仕入10%");
   await r1.getByTestId("receipt-memo").fill("事務用品");
-  await r1.getByTestId("receipt-debitAccount").fill("消耗品費");
-  await r1.getByTestId("receipt-creditAccount").fill("現金");
+  await r1.getByTestId("receipt-debit").fill("消耗品費");
+  await r1.getByTestId("receipt-credit").fill("現金");
   await r1.getByTestId("receipt-confirm").click();
   await expect(r1).toHaveAttribute("data-confirmed", "true");
-  // 税区分を変えると、確認済みは外れる
+  // 摘要を変えると、確認済みは外れる
   await r1.getByTestId("receipt-memo").fill("事務用品（コピー用紙）");
   await expect(r1).toHaveAttribute("data-confirmed", "false");
   await r1.getByTestId("receipt-confirm").click();
-  await page.getByTestId("receipt-format-journal").check();
-  await expect(page.getByTestId("journal-row")).toHaveCount(1);
-  const csvDl = await clickAndDownload(page, "CSVをダウンロード");
-  // 文字コードの選択が出る場合は、既定（UTF-8）のまま保存する
+  await expect(page.getByTestId("receipt-preview-row").first()).toContainText("事務用品（コピー用紙）");
+  const csvDl = await clickAndDownload(page, "freee用CSVをダウンロード");
   const { path: csv } = await assertDownloadedFile(csvDl, { minBytes: 10 });
-  const lines = fs.readFileSync(csv, "utf8").replace(/^﻿/, "").split(/\r?\n/);
-  expect(lines[0]).toBe(JOURNAL_HEADER.join(","));
-  expect(lines[1]).toBe("2026/09/15,株式会社サンプル商店,1100,10%,100,T1234567890123,コピー用紙,事務用品（コピー用紙）,課税仕入 10%,消耗品費,現金,receipt.pdf（1/2ページ）");
+  const lines = fs.readFileSync(csv, "utf8").replace(/^\ufeff/, "").split(/\r?\n/);
+  expect(lines[0].split(",")).toHaveLength(21);
+  expect(lines[1]).toBe("支出,,2026/09/15,,,株式会社サンプル商店,消耗品費,課対仕入10%,1100,,,事務用品（コピー用紙）,,,,,,,2026/09/15,現金,1100");
+  expect(lines).toHaveLength(2); // 未確認の2枚目は出力しない
   const xDl = await clickAndDownload(page, "Excelをダウンロード");
   const { path: xlsx } = await assertDownloadedFile(xDl, { format: "zip" });
   const row = JSON.parse(
-    py("import sys,json,openpyxl\nws=openpyxl.load_workbook(sys.argv[1]).active\nr=[c.value for c in ws[2]]\nprint(json.dumps([str(r[0])[:10], r[1], r[2], r[4], r[8], r[11]], ensure_ascii=False))", [asXlsx(xlsx)])
+    py("import sys,json,openpyxl\nws=openpyxl.load_workbook(sys.argv[1]).active\nr=[c.value for c in ws[2]]\nprint(json.dumps([r[2], r[5], r[6], r[7], r[8], r[11], r[19], r[20]], ensure_ascii=False))", [asXlsx(xlsx)])
   );
-  expect(row).toEqual(["2026-09-15", "株式会社サンプル商店", 1100, 100, "課税仕入 10%", "receipt.pdf（1/2ページ）"]);
+  expect(row).toEqual(["2026/09/15", "株式会社サンプル商店", "消耗品費", "課対仕入10%", 1100, "事務用品（コピー用紙）", "現金", 1100]);
 });

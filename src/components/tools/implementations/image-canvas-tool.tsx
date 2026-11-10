@@ -102,8 +102,9 @@ const PREVIEW_DEBOUNCE_MS = 250;
 
 export function ImageCanvasTool() {
   const [compressKind, setCompressKind] = useState<CompressKind>("quality");
-  const [useResize, setUseResize] = useState(false);
-  const [useCompress, setUseCompress] = useState(true);
+  // 新工程1：初期状態は「サイズを変更する」だけを選んだ状態（圧縮は必要なときに利用者がオンにする）
+  const [useResize, setUseResize] = useState(true);
+  const [useCompress, setUseCompress] = useState(false);
   const plan: ImageRunPlan = { resize: useResize, compress: useCompress, compressKind };
   const hasAction = useResize || useCompress;
   const actionLabel = actionLabelOf(plan);
@@ -140,6 +141,9 @@ export function ImageCanvasTool() {
       setUseResize(true);
       setUseCompress(false);
     } else if (mode === "size") {
+      // 旧「指定KBまで圧縮」からの転送：圧縮（目標サイズの指定）だけを選んだ状態で開く（これまでと同じ）
+      setUseResize(false);
+      setUseCompress(true);
       setCompressKind("size");
     }
   }, []);

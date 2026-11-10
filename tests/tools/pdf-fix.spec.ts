@@ -12,7 +12,7 @@ import { extractPdfContent, getPageOpSummary, isValidPdfFile } from "../helpers/
 import { siteConfig } from "@/lib/config/site";
 import { getListedTools, getToolById } from "@/lib/tools/data";
 import { getRelatedTools } from "@/lib/tools/related-tools";
-import { PDF_FIX_MODES, PDF_FIX_TOOL_ID, PDF_FIX_TOOL_PATH } from "@/lib/tools/pdf-fix-modes";
+import { PDF_FIX_MODES, PDF_FIX_OPERATIONS, PDF_FIX_TOOL_ID, PDF_FIX_TOOL_PATH } from "@/lib/tools/pdf-fix-modes";
 import { PDF_EDIT_MODES } from "@/lib/tools/pdf-edit-modes";
 import { toolSeoContent } from "@/lib/seo/tool-content";
 import { AVAILABLE_TOOL_IDS } from "@/lib/tools/registry";
@@ -24,6 +24,7 @@ import {
 } from "@/lib/pdf-annotate/whiteout";
 import type { AnnotationObject, RectangleShapeObject } from "@/lib/pdf-annotate/types";
 import sitemap from "@/app/sitemap";
+import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
 
 /**
  * 工程12：PDF修正（統合ツール）のテスト。
@@ -184,7 +185,9 @@ const workPath = (name: string) => path.join(workDir, name);
 
 test.use({ viewport: { width: 1280, height: 1400 } });
 
-const modeButton = (page: Page, mode: string) => page.getByTestId(`pdf-fix-mode-${mode}`);
+/** 新工程1：機能のボタンは「やりたい操作」のプルダウンになった。いまの画面（記入・注釈／ページ番号／透かし）は data-mode で分かる */
+const modes = (page: Page) => page.getByTestId("pdf-fix-modes");
+const operation = (page: Page) => page.getByTestId("pdf-fix-operation");
 
 async function openFix(page: Page) {
   await page.goto(PDF_FIX_TOOL_PATH);
@@ -197,29 +200,41 @@ async function openAnnotateWithPdf(page: Page, fixture: string) {
 }
 
 test.describe("PDF修正: 画面と機能", () => {
-  test("開ける：機能の切り替え・白消しの注意・プライバシーの説明が出る", async ({ page }) => {
+  test("開ける：やりたい操作のプルダウン・いまの操作と使い方・白消しの注意（白消し・黒塗りのときだけ）が出る", async ({ page }) => {
     await openFix(page);
     await expect(page.getByRole("heading", { level: 1 })).toContainText("PDF修正");
-    for (const m of PDF_FIX_MODES) await expect(modeButton(page, m.mode)).toBeVisible();
-    await expect(modeButton(page, "annotate")).toHaveAttribute("aria-pressed", "true");
+    // 既存の操作だけがプルダウンにある（新しい機能は増やしていない）
+    const values = await operation(page).locator("option").evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+    expect(values).toEqual(PDF_FIX_OPERATIONS.map((o) => o.value));
+    expect(new Set(PDF_FIX_OPERATIONS.map((o) => o.mode))).toEqual(new Set(PDF_FIX_MODES.map((m) => m.mode)));
+    await expect(operation(page)).toHaveValue("text");
+    await expect(modes(page)).toHaveAttribute("data-mode", "annotate");
+    await expect(page.getByTestId("pdf-fix-current-operation")).toHaveText("いまの操作：文字を書き込む");
+    await expect(page.getByTestId("pdf-fix-mode-description")).toContainText("クリック");
+    // 白消しの注意は、白消し・黒塗りを選んだときだけ出る
+    await expect(page.getByTestId("pdf-fix-whiteout-notice")).toHaveCount(0);
+    await choosePdfFixOperation(page, "whiteout");
     await expect(page.getByTestId("pdf-fix-whiteout-notice")).toContainText("元の文字情報がファイル内に残る場合があり");
     await expect(page.getByTestId("pdf-fix-whiteout-notice")).toContainText("機密情報を完全に削除する機能ではありません");
+    await choosePdfFixOperation(page, "blackout");
+    await expect(page.getByTestId("pdf-fix-redaction-methods")).toContainText("墨消し（元のデータごと削除）");
     // 直接開いたとき（引き継ぎなし）は、引き継ぎの表示も、エラーも出ない
     await expect(page.getByTestId("pdf-fix-handoff-banner")).toHaveCount(0);
     await expect(page.getByTestId("pdf-fix-handoff-error")).toHaveCount(0);
     await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible();
-    // 他の機能に切り替えられる
-    await modeButton(page, "page-numbers").click();
-    await expect(modeButton(page, "page-numbers")).toHaveAttribute("aria-pressed", "true");
+    // ページ番号・透かしに切り替えられる。関係のない設定（白消しの注意）は出ない
+    await choosePdfFixOperation(page, "page-numbers");
+    await expect(modes(page)).toHaveAttribute("data-mode", "page-numbers");
     await expect(page.getByTestId("pdf-fix-whiteout-notice")).toHaveCount(0);
-    await modeButton(page, "watermark").click();
-    await expect(page.getByTestId("pdf-fix-mode-description")).toContainText("透かし");
+    await expect(page.getByTestId("pdf-fix-annotate-panel")).toBeHidden();
+    await choosePdfFixOperation(page, "watermark");
+    await expect(page.getByTestId("pdf-fix-current-operation")).toContainText("透かし");
   });
 
   test("旧PDF記入・注釈のURLはPDF修正(記入・注釈・白消し)へ、旧ページ番号追加・透かしのURLは、その機能を選んだPDF修正へ転送される", async ({ page }) => {
     await page.goto("/tools/pdf-fill-annotate");
     await expect(page).toHaveURL(/\/tools\/pdf-fix$/);
-    await expect(modeButton(page, "annotate")).toHaveAttribute("aria-pressed", "true");
+    await expect(modes(page)).toHaveAttribute("data-mode", "annotate");
     await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS), { readyTimeoutMs: 25_000 });
     for (const [from, mode] of [
       ["pdf-add-page-numbers", "page-numbers"],
@@ -227,22 +242,23 @@ test.describe("PDF修正: 画面と機能", () => {
     ] as const) {
       await page.goto(`/tools/${from}`);
       await expect(page).toHaveURL(new RegExp(`/tools/pdf-fix\\?mode=${mode}$`));
-      await expect(modeButton(page, mode)).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
-      await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible();
+      await expect(modes(page)).toHaveAttribute("data-mode", mode, { timeout: 20_000 });
+      await expect(operation(page)).toHaveValue(mode);
+      await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true }).first()).toBeVisible();
     }
   });
 
   test("白消し→書き直し：白消しを置いてテキストを書き込み、書き出したPDFに反映される（元の文字は残る）", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.singlePagePdf);
 
-    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await choosePdfFixOperation(page, "白消し");
     await expect(page.getByTestId("pdf-whiteout-panel")).toContainText("見た目上の文字を隠すための機能");
     await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
     await expect(page.getByTestId("pdf-whiteout-badge")).toHaveCount(1);
 
     // 白消しの上に書き直す
-    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await choosePdfFixOperation(page, "テキスト");
     await page.locator(CANVAS).click({ position: { x: 100, y: 125 } });
     const textInput = page.locator(OBJECT_LIST).locator("textarea").first();
     await textInput.fill("訂正後ABC");
@@ -273,10 +289,10 @@ test.describe("PDF修正: 画面と機能", () => {
 
   test("後から置いた白消しは、すでに書いたテキストを隠さない（テキストの前に描かれない）", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await choosePdfFixOperation(page, "テキスト");
     await page.locator(CANVAS).click({ position: { x: 100, y: 125 } });
     await page.locator(OBJECT_LIST).locator("textarea").first().fill("先に書いた文字");
-    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await choosePdfFixOperation(page, "白消し");
     await page.locator(CANVAS).click({ position: { x: 200, y: 230 } });
     // 一覧では白消し（奥）が先頭に来る
     const items = page.locator(OBJECT_LIST).locator("li");
@@ -286,7 +302,7 @@ test.describe("PDF修正: 画面と機能", () => {
 
   test("ページ番号：PDF修正の画面から追加でき、出力に番号が入る", async ({ page }) => {
     await openFix(page);
-    await modeButton(page, "page-numbers").click();
+    await choosePdfFixOperation(page, "page-numbers");
     await uploadWhenReady(page, fixtures.multiPagePdf, page.getByRole("button", { name: "ページ番号を追加する" }), { readyTimeoutMs: 25_000 });
     await clickWhenReady(page.getByRole("button", { name: "ページ番号を追加する" }), { expectAfter: page.getByText("追加が完了しました") });
     const download = await clickAndDownload(page, /^ダウンロード$/);
@@ -301,7 +317,7 @@ test.describe("PDF修正: 画面と機能", () => {
 
   test("機能を切り替えても、選んだPDFが引き継がれる", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.multiPagePdf);
-    await modeButton(page, "page-numbers").click();
+    await choosePdfFixOperation(page, "page-numbers");
     // 選んだPDFが最初から選択済み（ファイル名が一覧に出ている）で、実行ボタンが使える
     await expect(page.getByRole("button", { name: "ページ番号を追加する" })).toBeVisible({ timeout: 25_000 });
     await expect(page.getByText(/multi-page\.pdf/).first()).toBeVisible();
@@ -315,75 +331,57 @@ test.describe("PDF修正: 画面と機能", () => {
   });
 });
 
-test.describe("PDF修正: 機能を切り替えるときの確認（工程17）", () => {
-  test("編集がないときは、確認なしで切り替えられる", async ({ page }) => {
+test.describe("PDF修正: 操作を切り替えても編集が消えない（新工程1。工程17の確認は不要になった）", () => {
+  test("PDFの上に置く操作どうしを切り替えても、置いたもの・入力した文字は残る。確認も出ない", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.singlePagePdf);
-    await modeButton(page, "page-numbers").click();
-    await expect(modeButton(page, "page-numbers")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
-  });
-
-  test("配置済みの編集があるときは確認が出て、「編集を続ける」なら編集中の状態がそのまま残る", async ({ page }) => {
-    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await choosePdfFixOperation(page, "白消し");
     await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
-    await page.getByRole("button", { name: "テキスト", exact: true }).click();
+    await choosePdfFixOperation(page, "テキスト");
     await page.locator(CANVAS).click({ position: { x: 100, y: 125 } });
     await page.locator(OBJECT_LIST).locator("textarea").first().fill("消えてはいけない文字");
     await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
-
-    await modeButton(page, "watermark").click();
-    const confirm = page.getByTestId("pdf-fix-switch-confirm");
-    await expect(confirm).toBeVisible();
-    await expect(confirm).toContainText("消えます");
-    // まだ切り替わっていない（記入・注釈のまま）
-    await expect(modeButton(page, "annotate")).toHaveAttribute("aria-pressed", "true");
-    await expect(modeButton(page, "watermark")).toHaveAttribute("aria-pressed", "false");
-
-    await page.getByTestId("pdf-fix-switch-cancel").click();
-    await expect(confirm).toHaveCount(0);
-    await expect(modeButton(page, "annotate")).toHaveAttribute("aria-pressed", "true");
-    // 注釈の件数・入力した文字・ファイルがそのまま
-    await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
+    for (const op of ["shape", "checkbox", "select", "ink"]) {
+      await choosePdfFixOperation(page, op);
+      await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
+    }
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
     await expect(page.locator(OBJECT_LIST).locator("textarea").first()).toHaveValue("消えてはいけない文字");
-    await expect(page.locator(CANVAS)).toBeVisible();
   });
 
-  test("「消して切り替える」を選ぶと切り替わり、選んだPDFは引き継がれる。戻ると編集は空から始まる", async ({ page }) => {
+  test("ページ番号・透かしに切り替えて戻っても、置いたものは残る。切り替えた先でも、残っていることが分かり、PDFは引き継がれる", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.multiPagePdf);
-    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await choosePdfFixOperation(page, "白消し");
     await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
-    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+    await choosePdfFixOperation(page, "テキスト");
+    await page.locator(CANVAS).click({ position: { x: 100, y: 125 } });
+    await page.locator(OBJECT_LIST).locator("textarea").first().fill("残る文字");
+    await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
 
-    await modeButton(page, "page-numbers").click();
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toBeVisible();
-    await page.getByTestId("pdf-fix-switch-confirm-ok").click();
+    await choosePdfFixOperation(page, "page-numbers");
     await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
-    await expect(modeButton(page, "page-numbers")).toHaveAttribute("aria-pressed", "true");
+    await expect(modes(page)).toHaveAttribute("data-mode", "page-numbers");
+    await expect(page.getByTestId("pdf-fix-annotate-kept")).toBeVisible();
     await expect(page.getByRole("button", { name: "ページ番号を追加する" })).toBeVisible({ timeout: 25_000 });
     await expect(page.getByText(/multi-page\.pdf/).first()).toBeVisible();
+    await choosePdfFixOperation(page, "watermark");
+    await expect(page.getByTestId("pdf-fix-annotate-kept")).toBeVisible();
 
-    // 戻ると、注釈は消えている（確認で承知した動作）。このときはもう確認は出ない
-    await modeButton(page, "annotate").click();
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
-    await expect(page.locator(CANVAS)).toBeVisible({ timeout: 25_000 });
-    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
+    // 戻ると、置いたものはそのまま
+    await choosePdfFixOperation(page, "select");
+    await expect(modes(page)).toHaveAttribute("data-mode", "annotate");
+    await expect(page.locator(CANVAS)).toBeVisible();
+    await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
+    await expect(page.locator(OBJECT_LIST).locator("textarea").first()).toHaveValue("残る文字");
   });
 
-  test("置いたものをすべて消したあとは、確認なしで切り替えられる（古い確認も残らない）", async ({ page }) => {
+  test("置いたあと、操作は「選ぶ・動かす」に戻る場合も、プルダウンといまの操作の表示が合っている", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await choosePdfFixOperation(page, "図形");
+    await expect(page.getByTestId("pdf-fix-current-operation")).toContainText("図形");
     await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
-    await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
-    await modeButton(page, "watermark").click();
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toBeVisible();
-    await page.getByTestId("pdf-fix-switch-cancel").click();
-    // 取り消し（元に戻す）で、置いたものがなくなる
-    await page.getByRole("button", { name: /元に戻す/ }).first().click();
-    await expect(page.getByText(/配置した注釈（\d+件）/)).toHaveCount(0);
-    await modeButton(page, "watermark").click();
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
-    await expect(modeButton(page, "watermark")).toHaveAttribute("aria-pressed", "true");
+    const value = await operation(page).inputValue();
+    const label = PDF_FIX_OPERATIONS.find((o) => o.value === value)!.label;
+    await expect(page.getByTestId("pdf-fix-current-operation")).toHaveText(`いまの操作：${label}`);
   });
 });
 
@@ -399,7 +397,7 @@ test.describe("PDF修正: PDFの選び直しでの編集の保護（工程18）"
 
   test("記入・注釈：編集があるときのPDF選び直しは、確認が出る。続けるなら編集もPDFもそのまま、確定すると新しいPDFで空から始まる", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.singlePagePdf);
-    await page.getByRole("button", { name: "白消し", exact: true }).click();
+    await choosePdfFixOperation(page, "白消し");
     await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
 

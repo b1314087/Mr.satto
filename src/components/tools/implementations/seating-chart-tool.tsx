@@ -8,8 +8,16 @@ import { usePageFileDrop } from "@/components/common/page-file-drop";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import {
   autoParams,
+  buildBaseLayout,
   buildLayout,
   DEFAULT_PARAMS,
+  DESK_LABEL_MAX,
+  DESK_LIMITS,
+  deskNoun,
+  MAX_DESKS,
+  newDesk,
+  supportsDesks,
+  type Desk,
   LIMITS,
   MAX_SEATS,
   normalizeParams,
@@ -25,7 +33,7 @@ import {
 import { cleanReading, namesFromRows, parseParticipants, readingsFromPaste, SEATING_MAX_PARTICIPANTS, type Participant } from "@/lib/seating/participants";
 import { axisGroups, canShuffle, evictBlocked, fillAroundLocked } from "@/lib/seating/arrange";
 import { describeRule, isActiveRule, shuffleWithRules, violatedRules, type SeatGrid, type SeatRule } from "@/lib/seating/conditions";
-import { exportChart, PAPER_SIZES, type ExportFormat, type PaperOrientation, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
+import { exportChart, PAPER_SIZES, usesRedNumbers, type ExportFormat, type PaperOrientation, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 
@@ -156,6 +164,8 @@ export function SeatingChartTool() {
   /** 座席表の向きを逆にする（前を下にする。先生・司会から見た向き）。画面・印刷・ダウンロードに反映する */
   const [flipped, setFlipped] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  /** 卓・机の番号（id を重ねないため） */
+  const deskSeq = useRef(0);
 
   const parsed = useMemo(() => parseParticipants(namesText), [namesText]);
   const participants = parsed.participants;
@@ -212,6 +222,7 @@ export function SeatingChartTool() {
         tags: Array.from({ length: seatCount }, (_, i) => tags[i] ?? ""),
         furigana,
         numbers: numbersOn,
+        redNumbers: usesRedNumbers(purpose),
         blocked: Array.from({ length: seatCount }, (_, i) => blockedSet.has(i)),
       }
     : null;
@@ -533,6 +544,19 @@ export function SeatingChartTool() {
                   })}
                 </div>
               </div>
+            )}
+            {supportsDesks(purpose) && (
+              <DeskEditor
+                purpose={purpose}
+                desks={params.desks ?? []}
+                onChange={(desks) => updateParam("desks", desks)}
+                onAdd={() => {
+                  const list = params.desks ?? [];
+                  if (list.length >= MAX_DESKS) return;
+                  deskSeq.current += 1;
+                  updateParam("desks", [...list, newDesk(purpose, buildBaseLayout(purpose, params), list, `desk-${deskSeq.current}`)]);
+                }}
+              />
             )}
           </div>
         )}
@@ -1089,7 +1113,7 @@ function SeatPreview({
                         )}
                         <span className="max-w-full truncate text-[16px] font-bold leading-tight text-slate-900 dark:text-slate-100">
                           {model.numbers && person.number && (
-                            <span className="mr-1 text-blue-700 dark:text-blue-300" data-testid="seat-number">
+                            <span className={`mr-1 ${model.redNumbers ? "text-red-600 dark:text-red-400" : ""}`} data-testid="seat-number" data-red={model.redNumbers ? "true" : undefined}>
                               {person.number}
                             </span>
                           )}
@@ -1481,6 +1505,86 @@ function ReadingEditor({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 卓・机を自由に置く（新工程1）。会議（対面・コの字）の卓を増やす・カスタムの机を置く、で共通に使う。
+ * 位置・大きさは、数字を入れるか、矢印のボタンで動かす。席の位置は変わらない。
+ */
+const DESK_STEP = 20;
+function DeskEditor({ purpose, desks, onChange, onAdd }: { purpose: Purpose; desks: Desk[]; onChange: (desks: Desk[]) => void; onAdd: () => void }) {
+  const noun = deskNoun(purpose);
+  const update = (id: string, patch: Partial<Desk>) => onChange(desks.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+  const clampTo = (v: number, [min, max]: readonly [number, number]) => Math.min(max, Math.max(min, Math.round(Number.isFinite(v) ? v : min)));
+  const field = (d: Desk, key: "x" | "y" | "w" | "h", label: string) => (
+    <label className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300">
+      {label}
+      <input
+        type="number"
+        inputMode="numeric"
+        step={DESK_STEP}
+        min={DESK_LIMITS[key][0]}
+        max={DESK_LIMITS[key][1]}
+        value={d[key]}
+        onChange={(e) => update(d.id, { [key]: clampTo(Number(e.target.value), DESK_LIMITS[key]) })}
+        className="w-16 rounded-md border border-neutral-300 px-1.5 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        data-testid={`seat-desk-${key}`}
+      />
+    </label>
+  );
+  const move = (d: Desk, dx: number, dy: number) => update(d.id, { x: clampTo(d.x + dx, DESK_LIMITS.x), y: clampTo(d.y + dy, DESK_LIMITS.y) });
+  return (
+    <div className="flex w-full flex-col gap-2 border-t border-neutral-100 pt-3 dark:border-neutral-800" data-testid="seat-desks">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
+          {noun}を置く
+          <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
+            {purpose === "custom" ? "机を自由に置き、位置と大きさを変えられます。" : "卓を増やし、位置と大きさを変えられます。"}席の位置は変わりません。
+          </span>
+        </p>
+        <button type="button" onClick={onAdd} disabled={desks.length >= MAX_DESKS} className={smallButton} data-testid="seat-desk-add">
+          ＋ {noun}を追加
+        </button>
+      </div>
+      {desks.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {desks.map((d, k) => (
+            <li key={d.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 p-2 dark:border-neutral-800" data-testid="seat-desk">
+              <input
+                type="text"
+                value={d.label}
+                maxLength={DESK_LABEL_MAX}
+                onChange={(e) => update(d.id, { label: e.target.value })}
+                aria-label={`${noun}${k + 1}の名前`}
+                placeholder="名前（空欄可）"
+                className="w-28 rounded-md border border-neutral-300 px-1.5 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                data-testid="seat-desk-label"
+              />
+              {field(d, "x", "横")}
+              {field(d, "y", "縦")}
+              {field(d, "w", "幅")}
+              {field(d, "h", "高さ")}
+              <span className="flex items-center gap-0.5" role="group" aria-label={`${noun}${k + 1}を動かす`}>
+                <button type="button" className={smallButton} onClick={() => move(d, -DESK_STEP, 0)} aria-label="左へ" data-testid="seat-desk-left">←</button>
+                <button type="button" className={smallButton} onClick={() => move(d, 0, -DESK_STEP)} aria-label="上へ" data-testid="seat-desk-up">↑</button>
+                <button type="button" className={smallButton} onClick={() => move(d, 0, DESK_STEP)} aria-label="下へ" data-testid="seat-desk-down">↓</button>
+                <button type="button" className={smallButton} onClick={() => move(d, DESK_STEP, 0)} aria-label="右へ" data-testid="seat-desk-right">→</button>
+              </span>
+              <button
+                type="button"
+                onClick={() => onChange(desks.filter((x) => x.id !== d.id))}
+                className="ml-auto rounded px-1.5 py-0.5 text-xs text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40"
+                aria-label={`${noun}${k + 1}を消す`}
+                data-testid="seat-desk-delete"
+              >
+                消す
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

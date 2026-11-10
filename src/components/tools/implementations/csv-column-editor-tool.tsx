@@ -15,7 +15,7 @@ import {
   toGridRows,
 } from "@/components/tools/implementations/shared/before-after-table";
 import { loadCsvRows, useAsyncFileData } from "@/components/tools/implementations/shared/use-file-data";
-import { CsvColumnEditProcessor, editCsvColumnRows, sliceRowRange } from "@/lib/processors/browser/csv-ops";
+import { CsvColumnEditProcessor, applyRowOrder, editCsvColumnRows, sliceRowRange } from "@/lib/processors/browser/csv-ops";
 import { editXlsxColumns, loadXlsxForColumnEdit, type XlsxFormulaReport } from "@/lib/excel/xlsx-column-edit";
 import { columnToLetters } from "@/lib/compare/office-reader";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
@@ -28,6 +28,18 @@ interface ColumnState {
 }
 
 type FileKind = "csv" | "xlsx";
+
+/** 新工程1：行の編集の状態（対象の範囲の中の行の番号・0始まり。並び替えてもこの値は変わらない） */
+interface RowState {
+  index: number;
+  included: boolean;
+}
+
+/** 行・列のどちらを編集する画面を出すか（どちらの設定も保存のときに両方使う） */
+type EditTarget = "columns" | "rows";
+
+/** 行の編集で、1行ずつ並べて表示できる行数の上限（多いときは、対象にする行の範囲を指定してもらう） */
+const ROW_EDIT_MAX_ROWS = 1000;
 
 const ACCEPT = ".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -57,6 +69,13 @@ function parseRowNumber(value: string): number | undefined {
 }
 
 /**
+ * 新工程1：「行を編集」「列を編集」を切り替えられるようにした。
+ * - 行の編集：残す行（チェック）と、行の並び順（↑↓）を選べる。見出しありのときは、見出しの行は先頭に固定する。
+ *   列の編集と同じ「対象にする行の範囲」の中で編集する（範囲の中が ROW_EDIT_MAX_ROWS 行を超えるときは、範囲の指定を案内する）。
+ * - 行と列の設定は、切り替えても消えない。保存のときは、行の編集（applyRowOrder）→列の編集の順に、両方を反映する。
+ * - Excelは、列の編集と同じ仕組み（src/lib/excel/xlsx-column-edit.ts の rowOrder）で、選んだシートだけを書き換える。
+ *   数式は、行の並び替え・削除のあとも、安全に合わせられるものは数式のまま残す（合わせられないものだけ値にする）。
+ *
  * CSV・Excel列編集（Phase 8。工程3でExcel（.xlsx）に対応）。
  *
  * - CSV：既存のRFC4180準拠パーサー/シリアライザ（src/lib/utils/csv.ts）と文字コードの共通処理だけを経由し、CSVで書き出す。
@@ -76,6 +95,9 @@ export function CsvColumnEditorTool() {
   const [rowEndText, setRowEndText] = useState("");
   // 列の状態は「どのファイル・どのシートのものか」と一緒に持つ（ファイル・シートが変わったら作り直す）
   const [columnsState, setColumnsState] = useState<{ key: string; columns: ColumnState[] } | null>(null);
+  const [editTarget, setEditTarget] = useState<EditTarget>("columns");
+  // 行の状態も「どのファイル・シート・行の範囲・見出しの有無のものか」と一緒に持つ（変わったら作り直す）
+  const [rowsState, setRowsState] = useState<{ key: string; rows: RowState[] } | null>(null);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +129,49 @@ export function CsvColumnEditorTool() {
       return { rows: null, error: e instanceof Error ? e.message : "対象にする行の範囲が正しくありません" };
     }
   }, [sourceRows, rowStart, rowEnd]);
+
+  // 行の編集の対象（見出しありのときは、見出しの行を除いた行）
+  const rangeRowCount = range.rows?.length ?? 0;
+  const firstDataIndex = hasHeader ? 1 : 0;
+  const rowKey = `${stateKey}|${rowStartText}|${rowEndText}|${hasHeader}|${rangeRowCount}`;
+  const editableRowCount = Math.max(0, rangeRowCount - firstDataIndex);
+  const rowEditTooMany = editableRowCount > ROW_EDIT_MAX_ROWS;
+  const rows: RowState[] | null =
+    range.rows && !rowEditTooMany
+      ? rowsState?.key === rowKey
+        ? rowsState.rows
+        : Array.from({ length: editableRowCount }, (_, i) => ({ index: i + firstDataIndex, included: true }))
+      : null;
+  const rowsEdited = !!rows && rowsState?.key === rowKey && rows.some((r, i) => !r.included || r.index !== i + firstDataIndex);
+  /** 出力する行の順番（対象の範囲の中の番号）。行を編集していなければ undefined（そのまま） */
+  const rowOrder: number[] | undefined = useMemo(
+    () => (rows && rowsEdited ? [...(hasHeader ? [0] : []), ...rows.filter((r) => r.included).map((r) => r.index)] : undefined),
+    [rows, rowsEdited, hasHeader]
+  );
+  const includedRowCount = rows ? rows.filter((r) => r.included).length : editableRowCount;
+
+  function updateRows(update: (prev: RowState[]) => RowState[]) {
+    if (!rows) return;
+    setRowsState({ key: rowKey, rows: update(rows) });
+    setResult(null);
+  }
+
+  /** 行の表示名（元のファイルの何行目か）と、その行の最初のいくつかの値 */
+  function rowLabel(index: number): { name: string; values: string } {
+    const sheetRow = (rowStart ?? 1) + index;
+    const values = (range.rows?.[index] ?? []).filter((v) => v !== "").slice(0, 4).join(" ／ ");
+    return { name: `${sheetRow}行目`, values: values || "（空の行）" };
+  }
+
+  function moveRow(position: number, direction: -1 | 1) {
+    updateRows((prev) => {
+      const target = position + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[position], next[target]] = [next[target], next[position]];
+      return next;
+    });
+  }
 
   /** 列の見出し（見出しありのときは、対象の範囲の最初の行の値。無ければ列記号） */
   function labelOf(index: number): string {
@@ -141,7 +206,12 @@ export function CsvColumnEditorTool() {
   // プレビュー: 出力と同じ editCsvColumnRows で、現在の設定(残す列・順序・列名・行の範囲)を適用した表を作る
   const preview = useMemo(() => {
     if (!range.rows || !columns) return null;
-    const all = range.rows;
+    let all: string[][];
+    try {
+      all = applyRowOrder(range.rows, rowOrder);
+    } catch {
+      all = range.rows;
+    }
     const limited = all.length > PREVIEW_COMPUTE_ROWS;
     const rows = limited ? all.slice(0, PREVIEW_COMPUTE_ROWS) : all;
     const width = Math.max(columnCount, 0);
@@ -172,7 +242,7 @@ export function CsvColumnEditorTool() {
       afterError,
       rowCount: rows.length,
     };
-  }, [range.rows, columns, columnCount, kind, hasHeader]);
+  }, [range.rows, columns, columnCount, kind, hasHeader, rowOrder]);
 
   function toggleColumn(index: number) {
     updateColumns((prev) => prev.map((c, i) => (i === index ? { ...c, included: !c.included } : c)));
@@ -212,11 +282,16 @@ export function CsvColumnEditorTool() {
         if (c.renameValue.trim() !== "") renames[c.originalIndex] = c.renameValue.trim();
       }
       const common = { columnOrder: included.map((c) => c.originalIndex), renames, hasHeader, rowStart, rowEnd };
+      if (rowOrder && rowOrder.length === (hasHeader ? 1 : 0)) {
+        throw new Error("残す行を1つ以上選択してください");
+      }
       if (kind === "xlsx") {
-        const output = await editXlsxColumns({ file, sheetIndex: safeSheetIndex, ...common });
+        // Excelの行の指定は、シートの行番号（1始まり）で渡す
+        const sheetRowOrder = rowOrder?.map((i) => (rowStart ?? 1) + i);
+        const output = await editXlsxColumns({ file, sheetIndex: safeSheetIndex, ...common, rowOrder: sheetRowOrder });
         setResult({ ...output, kind });
       } else {
-        const output = await new CsvColumnEditProcessor().process({ file, ...common });
+        const output = await new CsvColumnEditProcessor().process({ file, ...common, rowOrder });
         setResult({ ...output, kind, notices: [], formulas: null });
       }
       setStatus("success");
@@ -330,7 +405,125 @@ export function CsvColumnEditorTool() {
       {previewError && <ErrorMessage message={previewError} />}
 
       {columns && sourceRows && (
-        <div className="flex flex-col gap-2">
+        <div role="group" aria-label="編集の対象" data-testid="column-editor-target" className="flex flex-wrap gap-2">
+          {(
+            [
+              { value: "rows", label: "行を編集" },
+              { value: "columns", label: "列を編集" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              aria-pressed={editTarget === t.value}
+              data-testid={`column-editor-target-${t.value}`}
+              onClick={() => setEditTarget(t.value)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                editTarget === t.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+          <span className="self-center text-xs text-neutral-500 dark:text-neutral-400" data-testid="column-editor-summary">
+            残す行：{includedRowCount}行 ・ 残す列：{includedCount}列（行と列の設定は、切り替えても残り、保存のときに両方反映します）
+          </span>
+        </div>
+      )}
+
+      {editTarget === "rows" && columns && sourceRows && (
+        <div className="flex flex-col gap-2" data-testid="row-editor">
+          {rowEditTooMany ? (
+            <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="row-editor-too-many">
+              対象の行が{editableRowCount}行あります。行の編集は{ROW_EDIT_MAX_ROWS}行までの範囲で使えます。上の「対象にする行」で範囲を指定してください。
+            </p>
+          ) : rows && rows.length === 0 ? (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">編集できる行がありません。</p>
+          ) : (
+            rows && (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    チェックを外した行は削除します。↑↓で行の順番を変えられます。
+                    {hasHeader && "見出し（列名）の行は、いつも先頭に残します。"}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => updateRows((prev) => prev.map((r) => ({ ...r, included: true })))}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                  >
+                    すべての行を選ぶ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateRows((prev) => prev.map((r) => ({ ...r, included: false })))}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                  >
+                    すべての行を外す
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRowsState(null)}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                  >
+                    元の順に戻す
+                  </button>
+                </div>
+                <ul className="flex max-h-96 flex-col gap-1.5 overflow-y-auto">
+                  {rows.map((row, position) => {
+                    const label = rowLabel(row.index);
+                    return (
+                      <li
+                        key={row.index}
+                        data-testid="row-editor-row"
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                          row.included
+                            ? "border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+                            : "border-red-200 bg-red-50 opacity-70 dark:border-red-900 dark:bg-red-950/20"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={row.included}
+                          onChange={() => updateRows((prev) => prev.map((r, i) => (i === position ? { ...r, included: !r.included } : r)))}
+                          aria-label={`${label.name}を含める`}
+                        />
+                        <span className="w-16 shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{label.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-xs text-neutral-700 dark:text-neutral-200" title={label.values}>
+                          {label.values}
+                        </span>
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => moveRow(position, -1)}
+                            disabled={position === 0}
+                            aria-label={`${label.name}を上へ移動`}
+                            className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 disabled:opacity-30 dark:border-neutral-700 dark:text-neutral-300"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveRow(position, 1)}
+                            disabled={position === rows.length - 1}
+                            aria-label={`${label.name}を下へ移動`}
+                            className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 disabled:opacity-30 dark:border-neutral-700 dark:text-neutral-300"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )
+          )}
+        </div>
+      )}
+
+      {editTarget === "columns" && columns && sourceRows && (
+        <div className="flex flex-col gap-2" data-testid="column-editor-columns">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               {range.rows?.length ?? sourceRows.length}行 ・ {columns.length}列（残す列：{includedCount}列）
@@ -399,7 +592,7 @@ export function CsvColumnEditorTool() {
 
       {preview && (
         <BeforeAfterPreview
-          title="列編集のプレビュー"
+          title="編集のプレビュー"
           before={preview.before}
           after={preview.after}
           afterError={preview.afterError}
@@ -426,7 +619,7 @@ export function CsvColumnEditorTool() {
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || includedCount === 0 || range.error !== null}
+          disabled={status === "processing" || includedCount === 0 || range.error !== null || (!!rows && includedRowCount === 0 && editableRowCount > 0)}
           aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >

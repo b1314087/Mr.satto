@@ -23,8 +23,8 @@ import { cellValueText, columnToLetters, readXlsxBook } from "@/lib/compare/offi
  * 処理はすべてブラウザの中で行い、ファイルは送信しない。
  */
 
-const MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+export const MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+export const REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const XML_NS = "http://www.w3.org/XML/1998/namespace";
 
 export interface XlsxEditSheet {
@@ -61,6 +61,11 @@ export interface XlsxColumnEditInput {
   /** 対象にする行の範囲（1始まり・両端を含む）。範囲外の行は出力に含めない。省略時はすべて */
   rowStart?: number;
   rowEnd?: number;
+  /**
+   * 新工程1（行の編集）：残す行の元の行番号（1始まり・対象の範囲の中）を、出力したい順に並べたもの。
+   * 含めなかった行は削除する。省略時は、範囲の中のすべての行を元の順で残す
+   */
+  rowOrder?: number[];
 }
 
 /** 数式の扱いの結果（画面で、数式のまま残した数と、値に置き換えた数をはっきり知らせるために使う） */
@@ -177,6 +182,19 @@ export interface FormulaAdjustContext {
   localIsEdited: boolean;
   /** 共有数式（下へのコピーなど）を1つずつの数式に戻すときの、元の数式からのずれ（相対参照だけをずらす） */
   shift?: { rows: number; cols: number };
+  /**
+   * 新工程1（セルを詰める）：行・列の対応（maps）の代わりに、参照ごとに移る量を決める。
+   * 参照の範囲（列・行。列全体・行全体の参照では、その軸は null）を受け取り、ずらす量を返す。直せないときは null
+   */
+  remapRef?: (box: RefBox) => { rows: number; cols: number } | null;
+}
+
+/** 数式の中の参照の範囲（1始まり・両端を含む。列全体・行全体の参照では、その軸は null） */
+export interface RefBox {
+  c1: number | null;
+  c2: number | null;
+  r1: number | null;
+  r2: number | null;
 }
 
 export type FormulaAdjustResult = { ok: true; text: string } | { ok: false; reason: string };
@@ -275,7 +293,22 @@ export function adjustFormula(formula: string, ctx: FormulaAdjustContext): Formu
         }
         // 2) 編集したシートへの参照だけを、新しい位置に合わせる
         const pointsToEdited = prefix ? unquoteSheet(prefix).toLowerCase() === target : ctx.localIsEdited;
-        if (pointsToEdited) {
+        if (pointsToEdited && ctx.remapRef) {
+          const a = refParts[0];
+          const b = refParts[1] ?? refParts[0];
+          const box: RefBox = {
+            c1: a.col !== null && b.col !== null ? Math.min(a.col, b.col) : null,
+            c2: a.col !== null && b.col !== null ? Math.max(a.col, b.col) : null,
+            r1: a.row !== null && b.row !== null ? Math.min(a.row, b.row) : null,
+            r2: a.row !== null && b.row !== null ? Math.max(a.row, b.row) : null,
+          };
+          const delta = ctx.remapRef(box);
+          if (delta === null) return { ok: false, reason: "詰めたセルへの参照" };
+          for (const p of b === a ? [a] : [a, b]) {
+            if (p.col !== null) p.col += delta.cols;
+            if (p.row !== null) p.row += delta.rows;
+          }
+        } else if (pointsToEdited) {
           const a = refParts[0];
           const b = refParts[1] ?? refParts[0];
           if (a.col !== null && b.col !== null) {
@@ -313,7 +346,7 @@ export function adjustFormula(formula: string, ctx: FormulaAdjustContext): Formu
 const decoder = new TextDecoder("utf-8");
 const encoder = new TextEncoder();
 
-function parseXml(bytes: Uint8Array | undefined, what: string): Document {
+export function parseXml(bytes: Uint8Array | undefined, what: string): Document {
   if (!bytes) throw new Error(`Excelファイルの中に${what}が見つかりませんでした（壊れているか、対応していない形式の可能性があります）`);
   const doc = new DOMParser().parseFromString(decoder.decode(bytes), "application/xml");
   if (doc.getElementsByTagName("parsererror").length > 0) {
@@ -322,21 +355,21 @@ function parseXml(bytes: Uint8Array | undefined, what: string): Document {
   return doc;
 }
 
-function serialize(doc: Document, original: Uint8Array): Uint8Array {
+export function serialize(doc: Document, original: Uint8Array): Uint8Array {
   const text = new XMLSerializer().serializeToString(doc);
   const decl = /^<\?xml[^>]*\?>/.exec(decoder.decode(original.subarray(0, 200)))?.[0] ?? '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
   return encoder.encode(text.startsWith("<?xml") ? text : `${decl}\n${text}`);
 }
 
-function byLocal(root: Element | Document, local: string): Element[] {
+export function byLocal(root: Element | Document, local: string): Element[] {
   return Array.from(root.getElementsByTagNameNS("*", local));
 }
 
-function childrenByLocal(el: Element, local: string): Element[] {
+export function childrenByLocal(el: Element, local: string): Element[] {
   return Array.from(el.children).filter((c) => c.localName === local);
 }
 
-function resolveTarget(base: string, target: string): string {
+export function resolveTarget(base: string, target: string): string {
   if (target.startsWith("/")) return target.slice(1);
   const parts = base.split("/");
   parts.pop();
@@ -348,7 +381,7 @@ function resolveTarget(base: string, target: string): string {
 }
 
 /** シート名を、数式の中の書き方（'シート 1'! または Sheet1!）にする */
-function sheetRefPatterns(name: string): string[] {
+export function sheetRefPatterns(name: string): string[] {
   const quoted = `'${name.replace(/'/g, "''")}'!`;
   // 空白や記号を含まない名前（日本語の名前を含む）は、引用符なしでも書ける
   return /^[^\s'!\[\]:*?/\\\-+,()&^=<>;{}%$#@"0-9][^\s'!\[\]:*?/\\\-+,()&^=<>;{}%$#@"]*$/u.test(name) ? [quoted, `${name}!`] : [quoted];
@@ -378,7 +411,7 @@ function convertFormulaCellToValue(doc: Document, c: Element, f: Element): boole
   return false;
 }
 
-interface SheetFormulaResult {
+export interface SheetFormulaResult {
   /** 書き直して数式のまま残した数（edited のときは、触れずに残した数も含む） */
   kept: number;
   /** 実際に参照を書き直した数 */
@@ -394,7 +427,13 @@ interface SheetFormulaResult {
  * 共有数式（下へのコピーなど）は、対象になったグループを1つずつの数式に戻してから書き直す。
  * 安全に書き直せない数式は、計算結果の値に置き換える。
  */
-function processSheetFormulas(doc: Document, maps: AxisMaps, sheetName: string, edited: boolean): SheetFormulaResult {
+export function processSheetFormulas(
+  doc: Document,
+  maps: AxisMaps,
+  sheetName: string,
+  edited: boolean,
+  remapRef?: FormulaAdjustContext["remapRef"],
+): SheetFormulaResult {
   const result: SheetFormulaResult = { kept: 0, adjusted: 0, converted: 0, convertedEmpty: 0 };
   const patterns = sheetRefPatterns(sheetName).map((p) => p.toLowerCase());
   const refersToEdited = (text: string) => edited || patterns.some((p) => text.toLowerCase().includes(p));
@@ -430,7 +469,7 @@ function processSheetFormulas(doc: Document, maps: AxisMaps, sheetName: string, 
     }
     if (!refersToEdited(text)) continue;
     let adjusted: FormulaAdjustResult =
-      type === "dataTable" ? { ok: false, reason: "データテーブル" } : adjustFormula(text, { maps, sheetName, localIsEdited: edited, shift });
+      type === "dataTable" ? { ok: false, reason: "データテーブル" } : adjustFormula(text, { maps, sheetName, localIsEdited: edited, shift, remapRef });
     // 配列数式の範囲（編集したシートの番地）も、ずれるだけのときに限り新しい位置に合わせる
     let newArrayRef: string | null = null;
     if (adjusted.ok && edited && type === "array" && f.getAttribute("ref")) {
@@ -438,8 +477,9 @@ function processSheetFormulas(doc: Document, maps: AxisMaps, sheetName: string, 
       const parts = ref.split(":").map((x) => parseCellRef(x));
       const a = parts[0];
       const b = parts[1] ?? parts[0];
-      const cs = a && b ? translatedStart(Math.min(a.col, b.col), Math.max(a.col, b.col), maps.col) : null;
-      const rs = a && b ? translatedStart(Math.min(a.row, b.row), Math.max(a.row, b.row), maps.row) : null;
+      const d = a && b && remapRef ? remapRef({ c1: Math.min(a.col, b.col), c2: Math.max(a.col, b.col), r1: Math.min(a.row, b.row), r2: Math.max(a.row, b.row) }) : null;
+      const cs = a && b ? (remapRef ? (d ? Math.min(a.col, b.col) + d.cols : null) : translatedStart(Math.min(a.col, b.col), Math.max(a.col, b.col), maps.col)) : null;
+      const rs = a && b ? (remapRef ? (d ? Math.min(a.row, b.row) + d.rows : null) : translatedStart(Math.min(a.row, b.row), Math.max(a.row, b.row), maps.row)) : null;
       if (a && b && cs !== null && rs !== null) {
         const start = toCellRef({ row: rs, col: cs });
         const end = toCellRef({ row: rs + Math.abs(b.row - a.row), col: cs + Math.abs(b.col - a.col) });
@@ -488,6 +528,14 @@ export async function editXlsxColumns(input: XlsxColumnEditInput): Promise<XlsxC
   if (!Number.isInteger(rowStart) || !Number.isInteger(rowEnd) || rowStart < 1 || rowStart > rowEnd) {
     throw new Error(`対象にする行の範囲が正しくありません（1〜${maxRow}行目の間で、開始行が終了行以下になるように指定してください）`);
   }
+  const rowOrder = input.rowOrder;
+  if (rowOrder) {
+    if (rowOrder.length === 0) throw new Error("残す行を1つ以上選択してください");
+    if (new Set(rowOrder).size !== rowOrder.length || rowOrder.some((r) => !Number.isInteger(r) || r < rowStart || r > rowEnd)) {
+      throw new Error("行の指定が正しくありません。ファイルを選び直してください。");
+    }
+  }
+  const rowsReordered = !!rowOrder && (rowOrder.length !== rowEnd - rowStart + 1 || rowOrder.some((r, i) => r !== rowStart + i));
   const rowsLimited = rowStart !== 1 || rowEnd !== maxRow;
 
   // 列の対応：残す列は選んだ順に1列目から。値の範囲より右の列（書式だけの列）は、削除した列の数だけ左へ詰める
@@ -496,10 +544,19 @@ export async function editXlsxColumns(input: XlsxColumnEditInput): Promise<XlsxC
   const keptCount = columnOrder.length;
   const colMap = (c: number): number | null => (c <= maxCol ? (newColOf.get(c) ?? null) : keptCount + (c - maxCol));
   // 行の対応：範囲を指定したときは、範囲の最初の行が1行目になる（範囲外の行は削除）。指定しないときはそのまま
-  const rowMap = (r: number): number | null => (!rowsLimited ? r : r >= rowStart && r <= rowEnd ? r - rowStart + 1 : null);
+  const newRowOf = new Map<number, number>();
+  if (rowsReordered) rowOrder!.forEach((r, i) => newRowOf.set(r, i + 1));
+  const rowMap = (r: number): number | null => {
+    if (rowsReordered) {
+      // 行を並べ替え・削除したとき：残す行は選んだ順に1行目から。値の範囲より下の行（書式だけの行）は、範囲を指定していなければ詰めて残す
+      if (newRowOf.has(r)) return newRowOf.get(r)!;
+      return !rowsLimited && r > maxRow ? rowOrder!.length + (r - maxRow) : null;
+    }
+    return !rowsLimited ? r : r >= rowStart && r <= rowEnd ? r - rowStart + 1 : null;
+  };
   const maps: AxisMaps = { row: rowMap, col: colMap };
   const columnsChanged = keptCount !== maxCol || columnOrder.some((c, i) => c !== i);
-  const positionsChanged = columnsChanged || rowsLimited;
+  const positionsChanged = columnsChanged || rowsLimited || rowsReordered;
   const headerRenames = hasHeader
     ? Object.entries(renames ?? {})
         .map(([k, v]) => [Number(k), v.trim()] as const)
@@ -705,7 +762,7 @@ export async function editXlsxColumns(input: XlsxColumnEditInput): Promise<XlsxC
   }
 
   // 5) 使っている範囲（dimension）を新しい大きさにする
-  const outRows = rowsLimited ? rowEnd - rowStart + 1 : maxRow;
+  const outRows = rowsReordered ? rowOrder!.length : rowsLimited ? rowEnd - rowStart + 1 : maxRow;
   const dim = byLocal(sheet, "dimension")[0];
   if (dim) dim.setAttribute("ref", `A1:${toCellRef({ row: outRows, col: keptCount })}`);
 

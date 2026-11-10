@@ -26,6 +26,13 @@ export interface SeatingChartModel {
   blocked?: boolean[];
   /** 出席番号を付けるか（付けるときは、名前の前に描く。番号は Participant.number） */
   numbers?: boolean;
+  /** 出席番号を赤で描くか（新工程1：授業・カスタムのときだけ。ほかの用途は名前と同じ色） */
+  redNumbers?: boolean;
+}
+
+/** 出席番号を赤で描く用途（授業・カスタム） */
+export function usesRedNumbers(purpose: string | null | undefined): boolean {
+  return purpose === "classroom" || purpose === "custom";
 }
 
 /** 席に描く名前（出席番号を付けるときは「12 山田太郎」） */
@@ -78,6 +85,7 @@ const WHITE: Color = [1, 1, 1];
 const EMPTY_FILL: Color = [0.97, 0.97, 0.98];
 const TAG_FILL: Color = [0.98, 0.82, 0.35];
 const TAG_INK: Color = [0.35, 0.2, 0.0];
+const NUMBER_RED: Color = [0.8, 0.1, 0.1];
 
 interface TextOpts {
   size: number;
@@ -101,6 +109,21 @@ function fitSize(p: Painter, text: string, size: number, maxWidth: number, bold:
   const w = p.measure(text, size, bold);
   if (w <= maxWidth) return size;
   return Math.max(minSize, (size * maxWidth) / w);
+}
+
+/** 名前（出席番号つき）を描く。赤い番号のときは、番号と名前を分けて、全体が中央にくるように描く */
+function paintLabel(p: Painter, model: SeatingChartModel, person: Participant, cx: number, y: number, baseSize: number, maxW: number) {
+  const label = seatLabel(model, person);
+  const size = fitSize(p, label, baseSize, maxW, true, 7);
+  if (!(model.redNumbers && model.numbers && person.number)) {
+    p.text(label, cx, y, { size, color: INK, bold: true });
+    return;
+  }
+  const num = `${person.number} `;
+  const total = p.measure(label, size, true);
+  const left = cx - total / 2;
+  p.text(num, left, y, { size, color: NUMBER_RED, bold: true, align: "left" });
+  p.text(person.name, left + p.measure(num, size, true), y, { size, color: INK, bold: true, align: "left" });
 }
 
 export function paintChart(p: Painter, model: SeatingChartModel) {
@@ -140,21 +163,20 @@ export function paintChart(p: Painter, model: SeatingChartModel) {
       return;
     }
     const maxW = SEAT_W - 14;
-    const label = seatLabel(model, person);
     const reading = model.furigana ? (person.reading ?? "").trim() : "";
     const cx = x + SEAT_W / 2;
     if (reading && person.role) {
       p.text(reading, cx, y + 17, { size: fitSize(p, reading, 9, maxW, false, 5), color: MUTED });
-      p.text(label, cx, y + 32, { size: fitSize(p, label, 16, maxW, true, 7), color: INK, bold: true });
+      paintLabel(p, model, person, cx, y + 32, 16, maxW);
       p.text(person.role, cx, y + 49, { size: fitSize(p, person.role, 10, maxW, false, 6), color: MUTED });
     } else if (reading) {
       p.text(reading, cx, y + 20, { size: fitSize(p, reading, 10, maxW, false, 5), color: MUTED });
-      p.text(label, cx, y + 38, { size: fitSize(p, label, 18, maxW, true, 7), color: INK, bold: true });
+      paintLabel(p, model, person, cx, y + 38, 18, maxW);
     } else if (person.role) {
-      p.text(label, cx, y + 27, { size: fitSize(p, label, 17, maxW, true, 7), color: INK, bold: true });
+      paintLabel(p, model, person, cx, y + 27, 17, maxW);
       p.text(person.role, cx, y + 46, { size: fitSize(p, person.role, 11, maxW, false, 6), color: MUTED });
     } else {
-      p.text(label, cx, y + SEAT_H / 2 + 3, { size: fitSize(p, label, 18, maxW, true, 7), color: INK, bold: true });
+      paintLabel(p, model, person, cx, y + SEAT_H / 2 + 3, 18, maxW);
     }
   });
 }
@@ -211,17 +233,38 @@ export function chartSize(model: SeatingChartModel): { width: number; height: nu
 }
 
 // ---------------------------------------------------------------------------
-// 前後を1ページに（2つの向きを並べる）
+// 前後を1ページに（2つの向きを、用紙のちょうど半分ずつに並べる）
 // ---------------------------------------------------------------------------
+//
+// 新工程1：用紙（画像は書き出す絵全体）を、真ん中の線でちょうど半分に分け、
+// 片方に「前が上の向き」、もう片方に「前が下の向き」を入れる。それぞれの図は、自分の半分の中だけに収まるように縮小する
+// （真ん中の線をまたがない・重ならない）。真ん中には、折る・切るときの目安の細い線を引く。
 
 const CAPTION_H = 30;
-const VIEW_GAP = 36;
+/** 半分の中の余白（真ん中の線から図までの間も、この分あける） */
+const HALF_PAD = 18;
 
 interface PlacedView {
   model: SeatingChartModel;
   caption: string | null;
   dx: number;
   dy: number;
+  /** この図を描く倍率（1＝元の大きさ） */
+  scale: number;
+}
+
+/** 区切りの線（真ん中の線）。stacked＝上下に分ける */
+export interface HalfDivider {
+  stacked: boolean;
+  /** 線の位置（上下に分けるときは y、左右に分けるときは x） */
+  at: number;
+}
+
+export interface ComposedViews {
+  views: PlacedView[];
+  width: number;
+  height: number;
+  divider: HalfDivider | null;
 }
 
 /** 前の印（教卓・スクリーンなど）が、座席表の上半分にあるか（印が無ければ null） */
@@ -231,47 +274,94 @@ function frontIsUp(g: LayoutGeometry): boolean | null {
   return m.y + 15 < g.height / 2;
 }
 
-/** 書き出す絵の並べ方（1つ、または2つの向き）と、全体の大きさ */
-export function composeViews(model: SeatingChartModel, bothViews: boolean): { views: PlacedView[]; width: number; height: number } {
-  const size = chartSize(model);
-  if (!bothViews) return { views: [{ model, caption: null, dx: 0, dy: 0 }], ...size };
+/** 2つの向きの図と、見出し */
+function twoViews(model: SeatingChartModel): { model: SeatingChartModel; caption: string }[] {
   const other: SeatingChartModel = { ...model, geometry: rotateLayout(model.geometry) };
   const up = frontIsUp(model.geometry);
   const cap = (isUp: boolean | null, fallback: string) => (isUp === null ? fallback : isUp ? "前が上の向き" : "前が下の向き");
-  const first = cap(up, "そのままの向き");
-  const second = cap(up === null ? null : !up, "上下を逆にした向き");
-  // 横長の座席表は上下に、縦長の座席表は左右に並べる（用紙に大きく入るように）
-  const stacked = size.width >= size.height;
-  const blockW = size.width;
-  const blockH = size.height + CAPTION_H;
-  const views: PlacedView[] = [
-    { model, caption: first, dx: 0, dy: 0 },
-    { model: other, caption: second, dx: stacked ? 0 : blockW + VIEW_GAP, dy: stacked ? blockH + VIEW_GAP : 0 },
+  return [
+    { model, caption: cap(up, "そのままの向き") },
+    { model: other, caption: cap(up === null ? null : !up, "上下を逆にした向き") },
   ];
+}
+
+/** 1つの向きの図（見出しを含む）の大きさ */
+function blockSize(model: SeatingChartModel): { w: number; h: number } {
+  const size = chartSize(model);
+  return { w: size.width, h: size.height + CAPTION_H };
+}
+
+/**
+ * 幅 W・高さ H の面を、真ん中でちょうど半分に分け、2つの向きを1つずつ入れる（それぞれ半分の中で中央に置く）。
+ * pad は半分の外側の余白（用紙の余白）、HALF_PAD は真ん中の線の両側の余白。
+ */
+export function composeHalves(model: SeatingChartModel, W: number, H: number, stacked: boolean, pad = 0): ComposedViews {
+  const halfW = stacked ? W : W / 2;
+  const halfH = stacked ? H / 2 : H;
+  const block = blockSize(model);
+  const innerW = Math.max(1, halfW - HALF_PAD * 2 - (stacked ? pad * 2 : pad));
+  const innerH = Math.max(1, halfH - HALF_PAD * 2 - (stacked ? pad : pad * 2));
+  const scale = Math.min(innerW / block.w, innerH / block.h);
+  const views = twoViews(model).map((v, k) => {
+    // 半分の範囲（用紙の余白は、外側の辺にだけとる）
+    const x0 = stacked ? pad : k === 0 ? pad : W / 2;
+    const y0 = stacked ? (k === 0 ? pad : H / 2) : pad;
+    const x1 = stacked ? W - pad : k === 0 ? W / 2 : W - pad;
+    const y1 = stacked ? (k === 0 ? H / 2 : H - pad) : H - pad;
+    const dx = (x0 + x1) / 2 - (block.w * scale) / 2;
+    const dy = (y0 + y1) / 2 - (block.h * scale) / 2;
+    return { model: v.model, caption: v.caption, dx, dy, scale };
+  });
+  return { views, width: W, height: H, divider: { stacked, at: stacked ? H / 2 : W / 2 } };
+}
+
+/** 横長の座席表は上下に、縦長の座席表は左右に分ける（画像のとき） */
+function stackedFor(model: SeatingChartModel): boolean {
+  const size = chartSize(model);
+  return size.width >= size.height;
+}
+
+/** 書き出す絵の並べ方（1つ、または2つの向き）と、全体の大きさ（画像用。2つの向きのときは、ちょうど半分ずつ） */
+export function composeViews(model: SeatingChartModel, bothViews: boolean): ComposedViews {
+  const size = chartSize(model);
+  if (!bothViews) return { views: [{ model, caption: null, dx: 0, dy: 0, scale: 1 }], ...size, divider: null };
+  const stacked = stackedFor(model);
+  const block = blockSize(model);
+  const halfW = block.w + HALF_PAD * 2;
+  const halfH = block.h + HALF_PAD * 2;
+  return composeHalves(model, stacked ? halfW : halfW * 2, stacked ? halfH * 2 : halfH, stacked);
+}
+
+/** 描く位置をずらし、大きさを変える（文字の幅の計り方も、同じ倍率で合わせる） */
+function transformPainter(p: Painter, dx: number, dy: number, s: number): Painter {
   return {
-    views,
-    width: stacked ? blockW : blockW * 2 + VIEW_GAP,
-    height: stacked ? blockH * 2 + VIEW_GAP : blockH,
+    rect: (x, y, w, h, fill, stroke, lw = 1) => p.rect(x * s + dx, y * s + dy, w * s, h * s, fill, stroke, lw * s),
+    circle: (cx, cy, r, fill, stroke) => p.circle(cx * s + dx, cy * s + dy, r * s, fill, stroke),
+    text: (t, x, y, o) => p.text(t, x * s + dx, y * s + dy, { ...o, size: o.size * s }),
+    measure: (t, size, bold) => p.measure(t, size * s, bold) / s,
   };
 }
 
-/** 描く位置をずらす */
-function offsetPainter(p: Painter, dx: number, dy: number): Painter {
-  return {
-    rect: (x, y, w, h, fill, stroke, lw) => p.rect(x + dx, y + dy, w, h, fill, stroke, lw),
-    circle: (cx, cy, r, fill, stroke) => p.circle(cx + dx, cy + dy, r, fill, stroke),
-    text: (t, x, y, o) => p.text(t, x + dx, y + dy, o),
-    measure: (t, size, bold) => p.measure(t, size, bold),
-  };
-}
+const DIVIDER: Color = [0.7, 0.73, 0.78];
 
-function paintViews(p: Painter, layout: ReturnType<typeof composeViews>) {
+function paintViews(p: Painter, layout: ComposedViews) {
   for (const v of layout.views) {
+    const q = transformPainter(p, v.dx, v.dy, v.scale);
     if (v.caption) {
-      p.rect(v.dx, v.dy + 2, chartSize(v.model).width, CAPTION_H - 6, [0.93, 0.95, 0.98], null);
-      p.text(v.caption, v.dx + 12, v.dy + 2 + (CAPTION_H - 6) / 2, { size: 14, color: INK, bold: true, align: "left" });
+      q.rect(0, 2, chartSize(v.model).width, CAPTION_H - 6, [0.93, 0.95, 0.98], null);
+      q.text(v.caption, 12, 2 + (CAPTION_H - 6) / 2, { size: 14, color: INK, bold: true, align: "left" });
     }
-    paintChart(offsetPainter(p, v.dx, v.dy + (v.caption ? CAPTION_H : 0)), v.model);
+    paintChart(transformPainter(q, 0, v.caption ? CAPTION_H : 0, 1), v.model);
+  }
+  // 真ん中の線（折る・切るときの目安。点線）
+  const d = layout.divider;
+  if (d) {
+    const len = d.stacked ? layout.width : layout.height;
+    for (let t = 0; t < len; t += 12) {
+      const seg = Math.min(6, len - t);
+      if (d.stacked) p.rect(t, d.at - 0.4, seg, 0.8, DIVIDER, null);
+      else p.rect(d.at - 0.4, t, 0.8, seg, DIVIDER, null);
+    }
   }
 }
 
@@ -338,6 +428,27 @@ export function pdfPageSize(paper: PaperSize, orientation: PaperOrientation, con
   return landscape ? [long, short] : [short, long];
 }
 
+/**
+ * 「前後を1ページに」のときの用紙の向きと分け方。用紙は真ん中でちょうど半分に分ける。
+ * 向きが「自動」のときは、縦・横と、上下・左右の分け方のうち、図がいちばん大きく入るものにする
+ * （縦・横を選んだときは、その向きのまま、上下・左右のうち大きく入る方）。
+ */
+export function bothViewsPagePlan(model: SeatingChartModel, paper: PaperSize, orientation: PaperOrientation): { pageW: number; pageH: number; stacked: boolean; margin: number } {
+  const [long, short] = PAPER_PT[paper] ?? PAPER_PT.A4;
+  const sizes: [number, number][] = orientation === "portrait" ? [[short, long]] : orientation === "landscape" ? [[long, short]] : [[short, long], [long, short]];
+  let best: { pageW: number; pageH: number; stacked: boolean; margin: number; scale: number } | null = null;
+  for (const [pageW, pageH] of sizes) {
+    const margin = Math.min(PDF_MARGIN, Math.min(pageW, pageH) * 0.05);
+    for (const stacked of [true, false]) {
+      const scale = composeHalves(model, pageW, pageH, stacked, margin).views[0].scale;
+      if (!best || scale > best.scale + 1e-9) best = { pageW, pageH, stacked, margin, scale };
+    }
+  }
+  const { scale: _s, ...plan } = best!;
+  void _s;
+  return plan;
+}
+
 export async function chartToPdfBlob(model: SeatingChartModel, options: ExportOptions = {}): Promise<Blob> {
   const { paper = "A4", orientation = "auto", bothViews = false } = options;
   await ensurePdfLib({ fontkit: true });
@@ -345,16 +456,21 @@ export async function chartToPdfBlob(model: SeatingChartModel, options: ExportOp
   doc.registerFontkit(fontkitLib());
   // 日本語フォントは、一部の文字が欠けないよう、サブセットにしない（帳票のPDFと同じ方針）
   const font = await doc.embedFont(await loadJapaneseFontBytes(), { subset: false });
-  const layout = composeViews(model, bothViews);
-  const { width, height } = layout;
-  const [pageW, pageH] = pdfPageSize(paper, orientation, width, height);
-  // 小さい用紙では余白も小さくする（B6・A6でも座席表を大きく入れる）
-  const margin = Math.min(PDF_MARGIN, Math.min(pageW, pageH) * 0.05);
-  const scale = Math.min((pageW - margin * 2) / width, (pageH - margin * 2) / height);
-  const page = doc.addPage([pageW, pageH]);
-  const ox = (pageW - width * scale) / 2;
-  const oy = margin;
-  paintViews(pdfPainter(page, font, scale, ox, pageH, oy), layout);
+  if (!bothViews) {
+    const layout = composeViews(model, false);
+    const { width, height } = layout;
+    const [pageW, pageH] = pdfPageSize(paper, orientation, width, height);
+    // 小さい用紙では余白も小さくする（B6・A6でも座席表を大きく入れる）
+    const margin = Math.min(PDF_MARGIN, Math.min(pageW, pageH) * 0.05);
+    const scale = Math.min((pageW - margin * 2) / width, (pageH - margin * 2) / height);
+    const pg = doc.addPage([pageW, pageH]);
+    const ox = (pageW - width * scale) / 2;
+    paintViews(pdfPainter(pg, font, scale, ox, pageH, margin), layout);
+  } else {
+    const plan = bothViewsPagePlan(model, paper, orientation);
+    const pg = doc.addPage([plan.pageW, plan.pageH]);
+    paintViews(pdfPainter(pg, font, 1, 0, plan.pageH, 0), composeHalves(model, plan.pageW, plan.pageH, plan.stacked, plan.margin));
+  }
   doc.setTitle(model.title.trim() || "座席表");
   const bytes = await doc.save();
   return new Blob([bytes as BlobPart], { type: "application/pdf" });

@@ -6,6 +6,7 @@ import { waitForSuccess, clickAndDownload, assertDownloadedFile, closeResultPopu
 import { uploadWhenReady } from "../helpers/tool-ready";
 import { clearDevOverrides, setDevAdOutcome } from "../helpers/dev-plan";
 import { PDF_FIX_TOOL_PATH } from "@/lib/tools/pdf-fix-modes";
+import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
 
 /**
  * 工程25：PDF記入・注釈で、保存していない編集があるときだけ、ブラウザを閉じる・再読み込みする直前に
@@ -32,7 +33,7 @@ async function openToolWithPdf(page: Page) {
 
 async function addText(page: Page, x: number, y: number) {
   await closeResultPopup(page); // 書き出し後は完了ポップアップが開いていて、背面の画面は操作できない
-  await page.getByRole("button", { name: "テキスト", exact: true }).click();
+  await choosePdfFixOperation(page, "テキスト");
   await page.locator(CANVAS).click({ position: { x, y } });
 }
 
@@ -170,7 +171,6 @@ test.describe("PDF記入・注釈: 未保存の編集を離れるときの確認
 });
 
 test.describe("PDF修正: 記入・注釈の機能にも同じ離脱確認が働く（工程25）", () => {
-  const modeButton = (page: Page, mode: string) => page.getByTestId(`pdf-fix-mode-${mode}`);
 
   async function openFixWithPdf(page: Page) {
     await page.goto(PDF_FIX_TOOL_PATH);
@@ -187,22 +187,21 @@ test.describe("PDF修正: 記入・注釈の機能にも同じ離脱確認が働
     await expect.poll(() => wouldWarn(page)).toBe(false);
   });
 
-  test("編集を破棄して別の機能へ切り替えると、確認の登録も外れる（既存の切り替え確認は、そのまま働く）", async ({ page }) => {
+  test("新工程1：ページ番号・透かしへ切り替えても編集は残るため、離脱確認もそのまま働く。戻って保存すると要求しなくなる", async ({ page }) => {
     await openFixWithPdf(page);
     await addText(page, 60, 80);
     expect(await wouldWarn(page)).toBe(true);
 
-    await modeButton(page, "page-numbers").click();
-    await expect(page.getByTestId("pdf-fix-switch-confirm")).toBeVisible();
-    // 「編集を続ける」なら、編集も離脱確認もそのまま
-    await page.getByTestId("pdf-fix-switch-cancel").click();
-    await expect(modeButton(page, "annotate")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("pdf-fix-operation").selectOption("page-numbers");
+    await expect(page.getByTestId("pdf-fix-modes")).toHaveAttribute("data-mode", "page-numbers");
+    await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
     expect(await wouldWarn(page)).toBe(true);
 
-    await modeButton(page, "page-numbers").click();
-    await page.getByTestId("pdf-fix-switch-confirm-ok").click();
-    await expect(modeButton(page, "page-numbers")).toHaveAttribute("aria-pressed", "true");
-    expect(await wouldWarn(page)).toBe(false);
+    await page.getByTestId("pdf-fix-operation").selectOption("select");
+    await expect(page.getByTestId("pdf-fix-modes")).toHaveAttribute("data-mode", "annotate");
+    expect(await wouldWarn(page)).toBe(true);
+    await exportAndDownload(page);
+    await expect.poll(() => wouldWarn(page)).toBe(false);
   });
 });
 

@@ -46,6 +46,41 @@ export interface LayoutParams {
   holes: string[];
   /** 授業・カスタム：席番号1（名前を入れ始める席）の角。前の左・前の右・後ろの左・後ろの右（前を上にした図で） */
   start: SeatStart;
+  /** 会議（対面・コの字）・カスタム：自由に置く卓・机（新工程1。位置・大きさは利用者が決める） */
+  desks?: Desk[];
+}
+
+/**
+ * 自由に置く卓・机（新工程1）。会議の卓を増やす・カスタムの机を置く、で共通に使う。
+ * 位置（x・y）は、卓・机を置く前の座席表の座標（左上が0。書き出しの点と同じ単位）。席の位置は動かさない。
+ */
+export interface Desk {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** 卓・机に書く名前（空欄なら何も書かない） */
+  label: string;
+}
+
+export const DESK_LIMITS = {
+  x: [-2000, 6000],
+  y: [-2000, 6000],
+  w: [30, 2000],
+  h: [30, 1200],
+} as const;
+export const MAX_DESKS = 30;
+export const DESK_LABEL_MAX = 20;
+
+/** 卓・机を自由に置ける用途 */
+export function supportsDesks(purpose: Purpose): boolean {
+  return purpose === "meeting" || purpose === "meeting-u" || purpose === "custom";
+}
+
+/** 用途ごとの呼び方（会議は「卓」、カスタムは「机」） */
+export function deskNoun(purpose: Purpose): string {
+  return purpose === "custom" ? "机" : "卓";
 }
 
 export type SeatStart = "front-left" | "front-right" | "back-left" | "back-right";
@@ -70,6 +105,7 @@ export const DEFAULT_PARAMS: LayoutParams = {
   byColumn: false,
   holes: [],
   start: "front-left",
+  desks: [],
 };
 
 export const LIMITS = {
@@ -170,7 +206,39 @@ export function normalizeParams(p: LayoutParams): LayoutParams {
     perTable: clamp(p.perTable, LIMITS.perTable),
     rows: clamp(p.rows, LIMITS.rows),
     cols: clamp(p.cols, LIMITS.cols),
+    desks: normalizeDesks(p.desks),
   };
+}
+
+/** 卓・机の値を、範囲の中に直す（数でないもの・多すぎる分は除く） */
+export function normalizeDesks(desks: Desk[] | undefined): Desk[] {
+  if (!Array.isArray(desks)) return [];
+  return desks.slice(0, MAX_DESKS).map((d) => ({
+    id: String(d.id),
+    x: clamp(d.x, DESK_LIMITS.x),
+    y: clamp(d.y, DESK_LIMITS.y),
+    w: clamp(d.w, DESK_LIMITS.w),
+    h: clamp(d.h, DESK_LIMITS.h),
+    label: String(d.label ?? "").slice(0, DESK_LABEL_MAX),
+  }));
+}
+
+/** 卓・机を、座席表に加える（席・ほかの図形の位置は変えない。はみ出す分だけ全体を広げる） */
+export function withDesks(g: LayoutGeometry, desks: Desk[]): LayoutGeometry {
+  if (desks.length === 0) return g;
+  const shapes: Shape[] = [...g.shapes, ...desks.map((d): Shape => ({ kind: "rect", x: d.x, y: d.y, w: d.w, h: d.h, label: d.label || undefined }))];
+  return finish(g.seats, shapes, g.marks);
+}
+
+/** 新しく置く卓・机（今の座席表の下に置く。大きさは、会議は長机・カスタムは机1つ分） */
+export function newDesk(purpose: Purpose, base: LayoutGeometry, desks: Desk[], id: string): Desk {
+  const custom = purpose === "custom";
+  const w = custom ? SEAT_W : 240;
+  const h = custom ? SEAT_H : 70;
+  // 置いてある卓・机と、座席表の一番下より、さらに下に置く（重ならないように）
+  let bottom = base.height - PAD;
+  for (const d of desks) bottom = Math.max(bottom, d.y + d.h);
+  return { id, x: PAD, y: bottom + GAP * 2, w, h, label: `${deskNoun(purpose)}${desks.length + 1}` };
 }
 
 function finish(seats: Seat[], shapes: Shape[], marks: Mark[]): LayoutGeometry {
@@ -352,6 +420,13 @@ function grid(p: LayoutParams, custom: boolean): LayoutGeometry {
 }
 
 export function buildLayout(purpose: Purpose, params: LayoutParams): LayoutGeometry {
+  const p = normalizeParams(params);
+  const base = buildBaseLayout(purpose, p);
+  return supportsDesks(purpose) ? withDesks(base, p.desks ?? []) : base;
+}
+
+/** 卓・机を置く前の座席表 */
+export function buildBaseLayout(purpose: Purpose, params: LayoutParams): LayoutGeometry {
   const p = normalizeParams(params);
   switch (purpose) {
     case "meeting":
