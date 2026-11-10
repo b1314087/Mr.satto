@@ -62,6 +62,16 @@ const DEFAULTS_BY_PURPOSE: Record<Purpose, Partial<LayoutParams>> = {
   custom: { cols: 6, rows: 4 },
 };
 
+/** 右のメニューで切り替える設定（書き出しは、いつも出す） */
+type MenuPanel = "purpose" | "layout" | "names" | "marks" | "conditions";
+const MENU_PANELS: { value: MenuPanel; label: string }[] = [
+  { value: "purpose", label: "用途を選ぶ" },
+  { value: "layout", label: "座席のレイアウト" },
+  { value: "names", label: "名前を入れる" },
+  { value: "marks", label: "鍵をかけた席の確認" },
+  { value: "conditions", label: "席の条件" },
+];
+
 const TITLE_BY_PURPOSE: Record<Purpose, string> = {
   meeting: "会議 座席表",
   "meeting-u": "会議 座席表",
@@ -129,6 +139,8 @@ interface Manual {
 
 export function SeatingChartTool() {
   const [purpose, setPurpose] = useState<Purpose | null>(null);
+  /** 右のメニューで表示している設定（用途を選んだあと、最初は「名前を入れる」） */
+  const [panel, setPanel] = useState<MenuPanel>("names");
   const [baseParams, setBaseParams] = useState<Record<Purpose, LayoutParams>>(() => {
     const out = {} as Record<Purpose, LayoutParams>;
     for (const p of PURPOSES) out[p.id] = { ...DEFAULT_PARAMS, ...DEFAULTS_BY_PURPOSE[p.id] };
@@ -444,7 +456,7 @@ export function SeatingChartTool() {
   const step1 = (
       <section className={sectionClass} aria-labelledby="seat-step1">
         <h2 id="seat-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          1. 用途を選ぶ
+          {purpose ? "用途を選ぶ" : "1. 用途を選ぶ"}
         </h2>
         <div role="radiogroup" aria-label="用途" className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${purpose ? "lg:grid-cols-2" : ""}`}>
           {PURPOSES.map((p) => (
@@ -469,9 +481,17 @@ export function SeatingChartTool() {
             </button>
           ))}
         </div>
+      </section>
+  );
 
+  // 座席のレイアウト（席の数・並び・島・卓・机など。用途を選んだあとに出す）
+  const layoutSection = (
+      <section className={sectionClass} aria-labelledby="seat-layout-heading">
+        <h2 id="seat-layout-heading" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+          座席のレイアウト
+        </h2>
         {purpose && params && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-neutral-100 pt-3 dark:border-neutral-800" data-testid="seat-settings">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2" data-testid="seat-settings">
             {/* 座席表の名前（プレビュー・印刷・ダウンロードの一番上に出る見出し） */}
             <label className="flex w-full items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
               <span className="shrink-0">座席表の名前（見出し）</span>
@@ -657,13 +677,32 @@ export function SeatingChartTool() {
         <div data-preview-split className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
           <div className="contents lg:order-2 lg:flex lg:min-w-0 lg:flex-col lg:gap-4" data-testid="seat-menu">
 
-      {step1}
+      {/* 設定の切り替え：選んだ設定だけを出す（ほかの設定は、入力した内容を残したまま隠す）。書き出しは、いつも下に出す */}
+      <label className="flex flex-col gap-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+        表示する設定
+        <select
+          value={panel}
+          onChange={(e) => setPanel(e.target.value as MenuPanel)}
+          className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          data-testid="seat-panel"
+        >
+          {MENU_PANELS.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div hidden={panel !== "purpose"} data-testid="seat-panel-purpose">{step1}</div>
+      <div hidden={panel !== "layout"} data-testid="seat-panel-layout">{layoutSection}</div>
 
       {purpose && (
+        <div hidden={panel !== "names"} data-testid="seat-panel-names">
         <section className={sectionClass} aria-labelledby="seat-step2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 id="seat-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-              2. 名前を入れる
+              名前を入れる
             </h2>
             <div className="flex items-center gap-2">
               <input
@@ -736,10 +775,12 @@ export function SeatingChartTool() {
             />
           )}
         </section>
+        </div>
       )}
 
       {purpose && model && (
         // 鍵の印の表示（プレビューの欄には置かない。生徒に見せる画面に、切り替えのスイッチを出さないため）
+        <div hidden={panel !== "marks"} data-testid="seat-panel-marks">
         <section className={sectionClass} aria-labelledby="seat-marks-heading" data-testid="seat-marks-section">
           <h2 id="seat-marks-heading" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
             鍵をかけた席の確認
@@ -759,9 +800,11 @@ export function SeatingChartTool() {
             </p>
           )}
         </section>
+        </div>
       )}
 
       {purpose && model && (
+        <div hidden={panel !== "conditions"} data-testid="seat-panel-conditions">
         <ConditionsPanel
           names={names}
           rules={rules}
@@ -776,12 +819,13 @@ export function SeatingChartTool() {
           onApply={shuffle}
           canApply={canShuffle(slots, fixedSet) && participants.length > 0}
         />
+        </div>
       )}
 
       {purpose && model && (
         <section className={sectionClass} aria-labelledby="seat-step3">
           <h2 id="seat-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-            3. 書き出す
+            書き出す
           </h2>
           <div role="radiogroup" aria-label="書き出す形式" className="flex flex-wrap gap-2">
             {FORMATS.map((f) => (

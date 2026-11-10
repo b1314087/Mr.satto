@@ -5,6 +5,7 @@ import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
 import { uploadFixture } from "../helpers/tool-runner";
+import { openSeatPanel } from "../helpers/seating-panel";
 
 /**
  * ロードマップC 工程2：pdf.js の作業用スレッド（Worker）を、処理が終わったら必ず閉じること・
@@ -142,7 +143,9 @@ test.describe("PDFを作る部品は、ページを開いた時点では読み�
 
   test("座席表：PDFで書き出すときに部品を読み込み、PDFが正しく作られる（日本語フォントも入る）", async ({ page }) => {
     await page.goto("/tools/seating-chart");
+    await openSeatPanel(page, "purpose");
     await page.getByTestId("seat-purpose-meeting").click();
+    await openSeatPanel(page, "names");
     await page.getByTestId("seat-names").fill("山田太郎\n佐藤花子");
     await page.getByTestId("seat-format-pdf").click();
     const wait = page.waitForEvent("download");

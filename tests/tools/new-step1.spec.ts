@@ -5,6 +5,7 @@ import { test, expect } from "../fixtures/premium-test";
 import { assertDownloadedFile, clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool-runner";
 import { extractPdfContent } from "../helpers/pdf-inspect";
 import { fixtures } from "../fixtures/paths";
+import { openSeatPanel } from "../helpers/seating-panel";
 import { applyRowOrder } from "@/lib/processors/browser/csv-ops";
 import { planShift, rangeLabel, remapRefForShift, shiftedPosition, validateShiftRange } from "@/lib/excel/xlsx-shift-cells";
 import { buildBaseLayout, buildLayout, DEFAULT_PARAMS, newDesk, normalizeDesks, supportsDesks, withDesks } from "@/lib/seating/layouts";
@@ -309,23 +310,34 @@ test.describe("9：座席表", () => {
   test("9-2：会議（対面）で卓を増やし、位置・大きさを変えられる。プレビュー・PDFに出る", async ({ page }) => {
     test.setTimeout(120_000);
     await openSeating(page);
+    await openSeatPanel(page, "purpose");
     await page.getByTestId("seat-purpose-meeting").click();
+    await openSeatPanel(page, "names");
     await page.getByTestId("seat-names").fill(["議長", "A", "B", "C"].join("\n"));
+    await openSeatPanel(page, "layout");
     await expect(page.getByTestId("seat-desks")).toContainText("卓を置く");
+    await openSeatPanel(page, "layout");
     await page.getByTestId("seat-desk-add").click();
+    await openSeatPanel(page, "layout");
     await page.getByTestId("seat-desk-add").click();
     await expect(desks(page)).toHaveCount(2);
     const first = desks(page).first();
+    await openSeatPanel(page, "layout");
     await expect(first.getByTestId("seat-desk-label")).toHaveValue("卓1");
+    await openSeatPanel(page, "layout");
     await first.getByTestId("seat-desk-label").fill("司会卓");
     const x0 = Number(await first.getByTestId("seat-desk-x").inputValue());
+    await openSeatPanel(page, "layout");
     await first.getByTestId("seat-desk-right").click();
+    await openSeatPanel(page, "layout");
     await expect(first.getByTestId("seat-desk-x")).toHaveValue(String(x0 + 20));
+    await openSeatPanel(page, "layout");
     await first.getByTestId("seat-desk-w").fill("320");
     const preview = page.getByTestId("tool-preview");
     const shape = preview.getByText("司会卓", { exact: true });
     await expect(shape).toBeVisible();
     // 席の位置は変わらない（卓を置く前と同じ）
+    await openSeatPanel(page, "layout");
     await desks(page).nth(1).getByTestId("seat-desk-delete").click();
     await expect(desks(page)).toHaveCount(1);
     await page.getByTestId("seat-format-pdf").click();
@@ -337,22 +349,33 @@ test.describe("9：座席表", () => {
 
   test("9-3：カスタムで机を自由に置ける（会議と同じ部品）。9-4：出席番号は授業・カスタムで赤、会議では赤くしない", async ({ page }) => {
     await openSeating(page);
+    await openSeatPanel(page, "purpose");
     await page.getByTestId("seat-purpose-custom").click();
+    await openSeatPanel(page, "names");
     await page.getByTestId("seat-names").fill(["1 山田", "2 佐藤", "3 鈴木"].join("\n"));
+    await openSeatPanel(page, "layout");
     await expect(page.getByTestId("seat-desks")).toContainText("机を置く");
+    await openSeatPanel(page, "layout");
     await page.getByTestId("seat-desk-add").click();
+    await openSeatPanel(page, "layout");
     await expect(desks(page).first().getByTestId("seat-desk-label")).toHaveValue("机1");
+    await openSeatPanel(page, "layout");
     await desks(page).first().getByTestId("seat-desk-down").click();
+    await openSeatPanel(page, "layout");
     await desks(page).first().getByTestId("seat-desk-h").fill("90");
     await expect(page.getByTestId("tool-preview").getByText("机1", { exact: true })).toBeVisible();
     await expect(page.getByTestId("seat-number").first()).toHaveAttribute("data-red", "true");
     await expect(page.getByTestId("seat-number").first()).toHaveClass(/text-red-600/);
     // 授業も赤
+    await openSeatPanel(page, "purpose");
     await page.getByTestId("seat-purpose-classroom").click();
+    await openSeatPanel(page, "layout");
     await expect(page.getByTestId("seat-desks")).toHaveCount(0); // 授業には卓・机の設定は出さない
     await expect(page.getByTestId("seat-number").first()).toHaveAttribute("data-red", "true");
     // 会議では赤くしない
+    await openSeatPanel(page, "purpose");
     await page.getByTestId("seat-purpose-meeting").click();
+    await openSeatPanel(page, "names");
     await page.getByTestId("seat-numbers").check();
     await expect(page.getByTestId("seat-number").first()).toBeVisible();
     await expect(page.getByTestId("seat-number").first()).not.toHaveAttribute("data-red", "true");
@@ -362,9 +385,11 @@ test.describe("9：座席表", () => {
   test("9-1：前後を1ページに：PDFの上半分に前が上の図、下半分に前が下の図が、真ん中の線をまたがずに入る（A4縦・A5横）", async ({ page }) => {
     test.setTimeout(120_000);
     await openSeating(page);
+    await openSeatPanel(page, "purpose");
     await page.getByTestId("seat-purpose-classroom").click();
     // PDFの文字の読み取り（pdf.js）で英数字が崩れることがあるため、名前は日本語にする
     const people = ["一郎", "二郎", "三郎", "四郎", "五郎", "六郎", "七郎", "八郎", "九郎", "十郎", "百合", "千代"];
+    await openSeatPanel(page, "names");
     await page.getByTestId("seat-names").fill(people.join("\n"));
     await page.getByTestId("seat-format-pdf").click();
     await page.getByTestId("seat-both-views").check();

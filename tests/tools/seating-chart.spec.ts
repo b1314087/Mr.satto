@@ -11,6 +11,7 @@ import { autoParams, buildLayout, DEFAULT_PARAMS, groupCellsOf, tableLabelOf, ro
 import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
 import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
 import { isActiveRule, isNear, seatDistance, shuffleWithRules, violatedRules, type SeatRule } from "@/lib/seating/conditions";
+import { openSeatPanel } from "../helpers/seating-panel";
 
 /**
  * 座席表作成（seating-chart）のテスト（2026-11 作り直し）。
@@ -121,6 +122,7 @@ const PEOPLE = [`${MARKER}, 社長`, "佐藤花子, 部長", "鈴木一郎, 課�
 async function openTool(page: Page, width = 1280) {
   await page.setViewportSize({ width, height: 900 });
   await page.goto("/tools/seating-chart");
+  await openSeatPanel(page, "purpose");
   await expect(page.getByTestId("seat-purpose-meeting")).toBeVisible({ timeout: 60_000 });
   await page.waitForFunction(
     () => {
@@ -133,7 +135,9 @@ async function openTool(page: Page, width = 1280) {
 }
 
 async function start(page: Page, purpose: Purpose, lines: string[]) {
+  await openSeatPanel(page, "purpose");
   await page.getByTestId(`seat-purpose-${purpose}`).click();
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-names").fill(lines.join("\n"));
 }
 
@@ -147,9 +151,11 @@ function seat(page: Page, index: number) {
 
 test("seating-chart: 最初は用途だけを選ばせ、選ぶと名前の欄が出る。入力した順番に席番号1から入る（会議は1番が議長席）", async ({ page }) => {
   await openTool(page);
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-names")).toHaveCount(0);
   await expect(page.getByTestId("tool-preview")).toHaveCount(0);
   await start(page, "meeting", PEOPLE);
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("6人 ／ 7席");
   const names = await seatNames(page);
   plainExpect(names.slice(0, 6)).toEqual([MARKER, "佐藤花子", "鈴木一郎", "高橋次郎", "田中三郎", "小林四郎"]);
@@ -162,7 +168,9 @@ test("seating-chart: 用途ごとに、人数に合わせた席ができる。�
   await openTool(page);
   const twelve = Array.from({ length: 12 }, (_, i) => `参加者${i + 1}`);
   await start(page, "classroom", twelve);
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人 ／ 12席");
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-by-column").selectOption("col");
   // 縦に並べると、2人目は1列目の後ろ（前から2列目）
   await expect(seat(page, 1)).toHaveAttribute("data-name", "参加者2");
@@ -171,29 +179,45 @@ test("seating-chart: 用途ごとに、人数に合わせた席ができる。�
   plainExpect(Math.abs(box0!.x - box1!.x)).toBeLessThan(2);
   plainExpect(box1!.y).toBeGreaterThan(box0!.y);
 
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-group").click();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人 ／ 12席");
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-deal").selectOption("deal");
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人");
 
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-round").click();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人 ／ 16席");
 
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-custom").click();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人 ／ 12席");
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-custom-cell").first().click();
   // 通路にしても、人数に合わせて行が増え、全員が座れる
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-shortage")).toHaveCount(0);
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人 ／ 17席");
 });
 
 test("seating-chart: 席が足りないときは、足りない席数と座れない人を出し、「人数に合わせる」で直る", async ({ page }) => {
   await openTool(page);
   await start(page, "round", Array.from({ length: 10 }, (_, i) => `名前${i + 1}`));
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-tables").fill("1");
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-autofit")).not.toBeChecked();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-shortage")).toContainText("席が2席足りません（名前9、名前10）");
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-shortage").getByRole("button", { name: "人数に合わせる" }).click();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-shortage")).toHaveCount(0);
 });
 
@@ -213,14 +237,21 @@ test("seating-chart: ExcelとCSVの名簿（名前・役職）を読み込める
   const xls = path.join(dir, "old.xls");
   fs.writeFileSync(xls, "dummy");
   await openTool(page);
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-meeting").click();
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-import-input").setInputFiles(xlsx);
   await expect(page.getByText("2人を読み込みました")).toBeVisible();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-names")).toHaveValue("Excel花子\t部長\nExcel月子\t主任");
   await expect(seat(page, 0)).toHaveAttribute("aria-label", "席1：Excel花子（部長）");
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-import-input").setInputFiles(csv);
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-names")).toHaveValue("1\tCSV一郎\t営業\n2\tCSV二郎\t総務");
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-numbers")).toBeChecked();
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-import-input").setInputFiles(xls);
   await expect(page.getByRole("alert").filter({ hasText: ".xls" })).toBeVisible();
   fs.rmSync(dir, { recursive: true, force: true });
@@ -252,6 +283,7 @@ test("seating-chart: 2人を選んで「入れ替え」、またはドラッグ�
   plainExpect((await seatNames(page)).slice(0, 6)).toEqual(["", "A5", "A1", "A4", "A2", "A3"]);
 
   // 名前を足しても、入れ替えた席はそのまま。新しい人は空いた席へ
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-names").fill(["A1", "A2", "A3", "A4", "A5", "A6"].join("\n"));
   plainExpect((await seatNames(page)).slice(0, 6)).toEqual(["A6", "A5", "A1", "A4", "A2", "A3"]);
 
@@ -282,6 +314,7 @@ test("seating-chart: PCでは、プレビューが真ん中（左）に大きく
 test("seating-chart: スマホ幅では、プレビューは画面の下に固定され、上の入力欄を見ている間も見える。たためる", async ({ page }) => {
   await openTool(page, 390);
   await start(page, "classroom", Array.from({ length: 30 }, (_, i) => `生徒${i + 1}`));
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-meeting").scrollIntoViewIfNeeded();
   await page.evaluate(() => window.scrollTo(0, 0));
   const panel = page.getByTestId("tool-preview");
@@ -301,6 +334,7 @@ test("seating-chart: 画像（PNG・JPEG）・PDFで書き出せ（Excelの書�
   const recorder = new NetworkRecorder(page);
   await openTool(page);
   await start(page, "meeting", PEOPLE);
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-title").fill("役員会議");
   await seat(page, 0).click();
   await seat(page, 1).click();
@@ -475,19 +509,26 @@ test("seating-chart: 鍵の印は最初はプレビューに出ない（生徒�
   const bgOther = await seat(page, 3).evaluate((e) => getComputedStyle(e).backgroundColor);
   plainExpect(bgLocked).toBe(bgOther);
   // 切り替えは右のメニュー（編集する側）にあり、プレビューの欄には出ない
+  await openSeatPanel(page, "marks");
   await expect(page.getByTestId("tool-preview").getByTestId("seat-show-marks")).toHaveCount(0);
+  await openSeatPanel(page, "marks");
   await expect(page.getByTestId("seat-marks-section").getByTestId("seat-show-marks")).toBeVisible();
+  await openSeatPanel(page, "marks");
   await expect(page.getByTestId("seat-locked-count")).toHaveText("鍵をかけた席：1席");
+  await openSeatPanel(page, "marks");
   await page.getByTestId("seat-show-marks").check();
   await expect(seat(page, 2).getByTestId("seat-lock-icon")).toBeVisible();
 });
 
 /** 席の条件を1つ足す（欄を開いて、種類と人を選ぶ） */
 async function addRule(page: Page, kind: "apart" | "near" | "place" | "stay", a: string, b?: string) {
+  await openSeatPanel(page, "conditions");
   if ((await page.getByTestId("seat-conditions-body").count()) === 0) await page.getByTestId("seat-conditions-toggle").click();
   await page.getByTestId("seat-rule-add").click();
   const rule = page.getByTestId("seat-rule").last();
+  await openSeatPanel(page, "conditions");
   await rule.getByTestId("seat-rule-kind").selectOption(kind);
+  await openSeatPanel(page, "conditions");
   await rule.getByTestId("seat-rule-a").selectOption(a);
   if (b) await rule.getByTestId("seat-rule-b").selectOption(b);
   return rule;
@@ -502,14 +543,21 @@ async function seatGrid(page: Page) {
 test("seating-chart: 席の条件は最初はたたまれていて、件数も出ない。条件はプレビュー・印の表示にも出ない", async ({ page }) => {
   await openTool(page);
   await start(page, "classroom", Array.from({ length: 12 }, (_, i) => `N${i + 1}`));
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-conditions-toggle")).toHaveText(/^▶\s*席の条件$/);
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-conditions-body")).toHaveCount(0);
   await addRule(page, "apart", "N1", "N2");
+  await openSeatPanel(page, "conditions");
   await page.getByTestId("seat-conditions-toggle").click();
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-conditions-body")).toHaveCount(0);
   // たたんでいると、満たしていない条件があっても「！」だけ（N1とN2は最初は隣どうし）
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-conditions-warn")).toBeVisible();
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-conditions-toggle")).not.toContainText("1");
+  await openSeatPanel(page, "marks");
   await page.getByTestId("seat-show-marks").check();
   const previewText = await page.getByTestId("tool-preview").innerText();
   plainExpect(previewText).not.toContain("離す");
@@ -521,12 +569,16 @@ test("seating-chart: 「2人を離す」「近くにする」「列を決める�
   const names = Array.from({ length: 24 }, (_, i) => `N${i + 1}`);
   await start(page, "classroom", names);
   const apart = await addRule(page, "apart", "N1", "N2");
+  await openSeatPanel(page, "conditions");
   await apart.getByTestId("seat-rule-n").fill("3");
   await expect(apart).toHaveAttribute("data-unmet", "true");
   await addRule(page, "near", "N3", "N20");
   const place = await addRule(page, "place", "N24");
+  await openSeatPanel(page, "conditions");
   await place.getByTestId("seat-rule-axis").selectOption("row");
+  await openSeatPanel(page, "conditions");
   await place.getByTestId("seat-rule-from").fill("1");
+  await openSeatPanel(page, "conditions");
   await place.getByTestId("seat-rule-to").fill("1");
   await addRule(page, "stay", "N8");
 
@@ -550,22 +602,30 @@ test("seating-chart: 「2人を離す」「近くにする」「列を決める�
     plainExpect(pos(g, "N24").r).toBe(0);
     plainExpect(pos(g, "N8").x).toBe(n8x);
   }
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-rule").first()).not.toHaveAttribute("data-unmet", "true");
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-rule-error")).toHaveCount(0);
 });
 
 test("seating-chart: 満たせない条件のときは、並びを変えずに案内を出す（条件の欄の中だけ）", async ({ page }) => {
   await openTool(page);
   await start(page, "classroom", Array.from({ length: 6 }, (_, i) => `N${i + 1}`));
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-autofit").uncheck().catch(() => undefined);
   const rule = await addRule(page, "apart", "N1", "N2");
+  await openSeatPanel(page, "conditions");
   await rule.getByTestId("seat-rule-n").fill("20");
   const before = await seatNames(page);
+  await openSeatPanel(page, "conditions");
   await page.getByTestId("seat-rule-apply").click();
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-rule-error")).toContainText("見つかりませんでした");
   plainExpect(await seatNames(page)).toEqual(before);
   plainExpect(await page.getByTestId("tool-preview").innerText()).not.toContain("見つかりませんでした");
+  await openSeatPanel(page, "conditions");
   await page.getByTestId("seat-conditions-toggle").click();
+  await openSeatPanel(page, "conditions");
   await expect(page.getByTestId("seat-conditions-warn")).toBeVisible();
 });
 
@@ -635,8 +695,10 @@ test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力�
   test.setTimeout(90_000);
   await openTool(page);
   await start(page, "meeting", ["山田太郎, 部長", "佐藤花子", "鈴木一郎"]);
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-furigana").check();
   await expect(page.getByTestId("seat-reading")).toHaveCount(3);
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 3人");
 
   // 1人ずつ入力（Enterで次の人へ）
@@ -644,21 +706,28 @@ test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力�
   await first.fill("やまだ たろう");
   await first.press("Enter");
   await expect(page.getByLabel("佐藤花子のふりがな")).toBeFocused();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 2人");
   await expect(page.getByLabel("佐藤花子のふりがな")).toHaveAttribute("data-empty", "true");
 
   // まとめて貼り付け（2行目の空行は「その人は入れない」= 山田は上書き、佐藤は空、鈴木は入る）
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-reading-paste-toggle").click();
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-reading-paste").fill("ヤマダ タロウ\n\nすずき いちろう");
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-reading-paste-apply").click();
   await expect(page.getByText("3人分のふりがなを入れました")).toBeVisible();
   await expect(page.getByLabel("鈴木一郎のふりがな")).toHaveValue("すずき いちろう");
   await page.getByLabel("佐藤花子のふりがな").fill("さとう はなこ");
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-reading-missing")).toHaveText("全員入力済み");
   await expect(seat(page, 0).getByTestId("seat-reading-text")).toHaveText("ヤマダ タロウ");
 
   // 名簿を書き直しても、同じ名前のふりがなは残る
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-names").fill(["山田太郎, 部長", "佐藤花子", "鈴木一郎", "高橋次郎"].join("\n"));
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 1人");
 
   await page.getByTestId("seat-format-pdf").click();
@@ -668,6 +737,7 @@ test("seating-chart: 名前を貼り付けたあとに、ふりがなを入力�
   plainExpect(content.text).toContain("ヤマダ タロウ");
 
   // 外すと、画面から消える
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-furigana").uncheck();
   await expect(seat(page, 0).getByTestId("seat-reading-text")).toHaveCount(0);
 });
@@ -684,11 +754,15 @@ test("seating-chart: Excelの「ふりがな」の列も読み込み、ふりが
     )
   );
   await openTool(page);
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-meeting").click();
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-import-input").setInputFiles(xlsx);
   await expect(page.getByText("2人を読み込みました（ふりがなも1人分を読み込みました）")).toBeVisible();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-furigana")).toBeChecked();
   await expect(page.getByLabel("山田太郎のふりがな")).toHaveValue("ヤマダタロウ");
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-reading-missing")).toHaveText("未入力 1人");
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -697,13 +771,16 @@ test("seating-chart: 席を選んで「空席にする」と、だれも座ら�
   test.setTimeout(90_000);
   await openTool(page);
   await start(page, "classroom", ["C1", "C2", "C3", "C4", "C5", "C6"]);
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("6人 ／ 6席");
   await seat(page, 1).click();
   await page.getByTestId("seat-block").click();
   await expect(seat(page, 1)).toHaveAttribute("data-blocked", "true");
   await expect(seat(page, 1).getByTestId("seat-blocked-label")).toHaveText("空席");
   // 人数に合わせて席が1つ増え、全員が座れる
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("（うち空席にした席 1）");
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-shortage")).toHaveCount(0);
   plainExpect((await seatNames(page)).slice(0, 7)).toEqual(["C1", "", "C2", "C3", "C4", "C5", "C6"]);
 
@@ -749,8 +826,10 @@ async function dropFile(page: Page, selector: string, name: string, mime: string
 
 test("seating-chart: Excel・CSVの名簿を、ページのどこに落としても読み込める（大きく表示している画面でも）", async ({ page }) => {
   await openTool(page);
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-classroom").click();
   await dropFile(page, "h1", "meibo.csv", "text/csv", "氏名\n田中\n高橋\n伊藤\n");
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-names")).toHaveValue("田中\n高橋\n伊藤");
   plainExpect((await seatNames(page)).slice(0, 3)).toEqual(["田中", "高橋", "伊藤"]);
 
@@ -806,15 +885,19 @@ test("seating-chart: 出席番号を付けると、名前の前に番号が出�
   test.setTimeout(120_000);
   await openTool(page);
   await start(page, "classroom", ["12 山田", "3 佐藤", "鈴木"]);
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-numbers")).toBeChecked();
   await expect(seat(page, 0).getByTestId("seat-number")).toHaveText("12");
   await expect(seat(page, 2).getByTestId("seat-number")).toHaveText("3"); // 番号の無い人は名簿の順
   plainExpect((await seatNames(page)).slice(0, 3)).toEqual(["山田", "佐藤", "鈴木"]);
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-numbers").uncheck();
   await expect(page.getByTestId("seat-number")).toHaveCount(0);
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-numbers").check();
 
   // 1番の席を後ろの右に
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-start").selectOption("back-right");
   const box = async (i: number) => (await seat(page, i).boundingBox())!;
   const all = await page.getByTestId("seat").evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y })));
@@ -1037,11 +1120,17 @@ test("グループワーク：「横に増やす」「縦に増やす」を押�
   test.setTimeout(120_000);
   await openTool(page);
   await start(page, "classroom", ["A"]);
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-group-flow")).toHaveCount(0);
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-group-desk")).toHaveCount(0);
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-group").click();
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-names").fill(Array.from({ length: 24 }, (_, i) => `G${i + 1}`).join("\n"));
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-group-flow-auto")).toHaveAttribute("aria-checked", "true");
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-group-desk")).toHaveValue("horizontal");
   const preview = page.getByTestId("tool-preview");
   const island = async (n: number) => (await preview.getByText(`島${n}`, { exact: true }).boundingBox())!;
@@ -1051,8 +1140,11 @@ test("グループワーク：「横に増やす」「縦に増やす」を押�
   // 24人・1島6席：島4つ（2×2）
   await expect(preview.getByText("島4", { exact: true })).toBeVisible();
   // 横に増やす → 島を6つに：島5は上の段・島6は下の段の、新しい列。島1〜4の並びはそのまま
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-group-flow-horizontal").click();
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-group-flow-help")).toContainText("右へ並びます");
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-tables").fill("6");
   await expect(preview.getByText("島6", { exact: true })).toBeVisible();
   {
@@ -1062,7 +1154,9 @@ test("グループワーク：「横に増やす」「縦に増やす」を押�
     plainExpect(near(i6.y, i3.y) && near(i6.x, i5.x)).toBe(true);
   }
   // 縦に増やす → 島を8つに：島7・島8は下の新しい段の、左の列から。前に置いた島の並びはそのまま
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-group-flow-vertical").click();
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-tables").fill("8");
   await expect(preview.getByText("島8", { exact: true })).toBeVisible();
   {
@@ -1072,6 +1166,7 @@ test("グループワーク：「横に増やす」「縦に増やす」を押�
     plainExpect(near(i8.y, i7.y) && near(i8.x, i2.x)).toBe(true);
   }
   // 机を縦向きに：席2は席1の下（同じ机の同じ側）
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-group-desk").selectOption("vertical");
   const s0 = (await seat(page, 0).boundingBox())!;
   const s1 = (await seat(page, 1).boundingBox())!;
@@ -1084,6 +1179,7 @@ test("グループワーク：「横に増やす」「縦に増やす」を押�
   const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
   plainExpect(content.text).toContain("島8");
   // 自動に戻すと、これまでどおりの並び（8つは3つずつ）
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-group-flow-auto").click();
   plainExpect(near((await island(3)).y, (await island(1)).y)).toBe(true);
 });
@@ -1113,19 +1209,24 @@ test("座席表の名前（見出し）を用途の設定のところで決め�
   await start(page, "group", Array.from({ length: 12 }, (_, i) => `M${i + 1}`));
   const preview = page.getByTestId("tool-preview");
   // 見出しは、入力が無ければ用途ごとの名前。入力するとプレビューにすぐ出る
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-settings").getByTestId("seat-title")).toBeVisible();
   await expect(page.getByTestId("seat-preview-title")).toHaveText("グループワーク 座席表");
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-title").fill("三年二組 グループ学習");
   await expect(page.getByTestId("seat-preview-title")).toHaveText("三年二組 グループ学習");
   // 島の名前
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-table-labels-toggle").click();
   const inputs = page.getByTestId("seat-table-label");
   await expect(inputs).toHaveCount(2); // 12人・1島6席で2島
   await inputs.nth(0).fill("Aチーム");
   await expect(preview.getByText("Aチーム", { exact: true })).toBeVisible();
   await expect(preview.getByText("島2", { exact: true })).toBeVisible();
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-table-labels-toggle")).toContainText("1個を変更中");
   // 島を増やしても、入力した名前は残る
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-tables").fill("3");
   await expect(inputs).toHaveCount(3);
   await expect(inputs.nth(0)).toHaveValue("Aチーム");
@@ -1140,11 +1241,48 @@ test("座席表の名前（見出し）を用途の設定のところで決め�
   plainExpect(content.text).toContain("Aチーム");
   plainExpect(content.text).toContain("とても長い島の名前をつけてみるテスト");
   // 円卓でも、テーブルの名前を入力できる
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-round").click();
   if ((await page.getByTestId("seat-table-labels-toggle").getAttribute("aria-expanded")) !== "true") await page.getByTestId("seat-table-labels-toggle").click();
+  await openSeatPanel(page, "layout");
   await page.getByTestId("seat-table-label").first().fill("来賓席");
   await expect(preview.getByText("来賓席", { exact: true })).toBeVisible();
   // 授業では、島の名前の欄は出さない
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-classroom").click();
+  await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-table-labels")).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------
+// 右のメニュー：設定はプルダウンで切り替え、書き出しはいつも表示
+// ---------------------------------------------------------------------------
+test("メニュー：「表示する設定」のプルダウンで、用途・座席のレイアウト・名前・鍵の確認・席の条件を切り替え、書き出しはいつも見える。切り替えても入力は消えない", async ({ page }) => {
+  await openTool(page);
+  // 用途を選ぶ前は、用途の一覧だけ（プルダウンはまだ出さない）
+  await expect(page.getByTestId("seat-panel")).toHaveCount(0);
+  await page.getByTestId("seat-purpose-classroom").click();
+  const select = page.getByTestId("seat-panel");
+  const values = await select.locator("option").evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).textContent));
+  plainExpect(values).toEqual(["用途を選ぶ", "座席のレイアウト", "名前を入れる", "鍵をかけた席の確認", "席の条件"]);
+  // 用途を選んだあとは、名前の入力が出ている
+  await expect(select).toHaveValue("names");
+  await page.getByTestId("seat-names").fill("一郎\n二郎\n三郎");
+  const panels = { purpose: "seat-purpose-meeting", layout: "seat-settings", names: "seat-names", marks: "seat-show-marks", conditions: "seat-conditions" } as const;
+  for (const [panel, id] of Object.entries(panels)) {
+    await select.selectOption(panel);
+    await expect(page.getByTestId(id)).toBeVisible();
+    for (const [other, otherId] of Object.entries(panels)) if (other !== panel) await expect(page.getByTestId(otherId)).toBeHidden();
+    // 書き出しは、どの設定を表示していても見える
+    await expect(page.getByTestId("seat-format-pdf")).toBeVisible();
+    await expect(page.getByRole("button", { name: "画像（PNG）でダウンロード" })).toBeVisible();
+  }
+  // 切り替えても、入力した名前・設定は残る
+  await select.selectOption("layout");
+  await page.getByTestId("seat-title").fill("切り替えの確認");
+  await select.selectOption("names");
+  await expect(page.getByTestId("seat-names")).toHaveValue("一郎\n二郎\n三郎");
+  await select.selectOption("layout");
+  await expect(page.getByTestId("seat-title")).toHaveValue("切り替えの確認");
+  plainExpect((await seatNames(page)).slice(0, 3)).toEqual(["一郎", "二郎", "三郎"]);
 });

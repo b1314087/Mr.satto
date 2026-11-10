@@ -9,6 +9,7 @@ import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { decodeCsvWith, detectAndDecodeCsv } from "@/lib/utils/csv-encoding";
 import { parseCsv } from "@/lib/utils/csv";
+import { openSeatPanel } from "../helpers/seating-panel";
 
 /**
  * CSVの文字コード対応（UTF-8・UTF-8 BOM付き・Shift_JIS／Windows-31J）。
@@ -222,9 +223,13 @@ test("座席表：Shift_JISの名簿CSVを読み込める（Excel以外の画面
     const el = document.querySelector('[data-testid="seat-purpose-meeting"]');
     return !!el && Object.keys(el).some((k) => k.startsWith("__reactProps$"));
   });
+  await openSeatPanel(page, "purpose");
   await page.getByTestId("seat-purpose-meeting").click();
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-names")).toBeVisible();
+  await openSeatPanel(page, "names");
   await page.getByTestId("seat-import-input").setInputFiles(writeTemp("名簿.csv", encodeSjis("氏名\n髙橋一郎\nﾔﾏﾀﾞ\n")));
+  await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-names")).toHaveValue(/髙橋一郎/);
   await expect(page.getByTestId("csv-encoding")).toHaveAttribute("data-encoding", "shift_jis");
 });
