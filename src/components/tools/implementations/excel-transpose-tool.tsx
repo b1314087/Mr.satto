@@ -19,6 +19,7 @@ import { useAsyncFileData } from "@/components/tools/implementations/shared/use-
 import { readXlsxSheets } from "@/lib/excel/xlsx-simple-io";
 import { ExcelTransposeProcessor, transposeRows } from "@/lib/processors/browser/excel-transpose";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -81,6 +82,7 @@ export function ExcelTransposeTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept={ACCEPT}
         maxSizeMB={50}
         label="Excelファイル（.xlsx）をドラッグ&ドロップ"
@@ -123,14 +125,16 @@ export function ExcelTransposeTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          行と列を入れ替える
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            行と列を入れ替える
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="変換が完了しました" />

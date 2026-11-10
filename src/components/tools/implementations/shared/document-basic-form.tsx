@@ -141,7 +141,7 @@ export function DocumentBasicForm({
                 ? `この発行日の${meta.label}は、このブラウザで ${formatSerial(lastUsed)} まで使いました。次の番号を選んでいます。${
                     lastUsed >= DOCUMENT_SERIAL_MAX ? `（一覧は ${formatSerial(DOCUMENT_SERIAL_MAX)} までです。それより先は番号の欄を直接書き換えてください）` : ""
                   }`
-                : "日付は発行日から取ります。使った番号はこのブラウザだけに覚え、次回は続きの番号を選んでおきます。"}
+                : "日付は発行日から。使った番号はこのブラウザに覚え、次回は続きを選びます。"}
           </p>
         </div>
 

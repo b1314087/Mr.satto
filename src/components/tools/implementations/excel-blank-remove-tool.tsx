@@ -34,6 +34,7 @@ import {
   type ShiftDirection,
   type XlsxShiftOutput,
 } from "@/lib/excel/xlsx-shift-cells";
+import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -253,6 +254,7 @@ export function ExcelBlankRemoveTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept={ACCEPT}
         maxSizeMB={50}
         label="Excelファイル（.xlsx）をドラッグ&ドロップ"
@@ -266,18 +268,13 @@ export function ExcelBlankRemoveTool() {
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">空白の行・列を削除する</p>
-          <div className="flex flex-wrap gap-2" data-testid="blank-remove-modes">
+          <div className="ms-seg" data-testid="blank-remove-modes">
             {MODE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
                 aria-pressed={mode === opt.value}
                 onClick={() => chooseMode(opt.value)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  mode === opt.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {opt.label}
               </button>
@@ -285,7 +282,7 @@ export function ExcelBlankRemoveTool() {
           </div>
 
           <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">範囲の中で空白のセルを詰める（範囲の外は変わりません）</p>
-          <div className="flex flex-wrap gap-2" data-testid="blank-shift-modes">
+          <div className="ms-seg" data-testid="blank-shift-modes">
             {SHIFT_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -293,9 +290,6 @@ export function ExcelBlankRemoveTool() {
                 aria-pressed={mode === opt.value}
                 onClick={() => chooseMode(opt.value)}
                 data-testid={`blank-${opt.value}`}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  mode === opt.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {opt.label}
               </button>
@@ -445,15 +439,17 @@ export function ExcelBlankRemoveTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          data-testid="blank-remove-run"
-        >
-          {shiftDirection ? `${directionLabel(shiftDirection)}` : "空白を削除する"}
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            data-testid="blank-remove-run"
+          >
+            {shiftDirection ? `${directionLabel(shiftDirection)}` : "空白を削除する"}
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel={isShift ? "詰めました" : "削除が完了しました"} />

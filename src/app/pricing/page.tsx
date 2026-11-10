@@ -14,6 +14,8 @@ import { verifyPremiumPrice } from "@/lib/stripe/price-guard-server";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { PricingActionButton } from "@/components/pricing/pricing-action-button";
 import { tools } from "@/lib/tools/data";
+import { PremiumTag } from "@/components/ui/premium-badge";
+import type React from "react";
 
 export const metadata: Metadata = {
   title: "料金プラン",
@@ -63,6 +65,23 @@ function getPlanUsageNote(planId: string, adGateActive: boolean): string {
     default:
       return "";
   }
+}
+
+/** プランの特典の1行（✓ 付き） */
+function PlanItem({ children, testId }: { children: React.ReactNode; testId?: string }) {
+  return (
+    <li className="flex items-start gap-2" data-testid={testId}>
+      <span aria-hidden="true" className="mt-0.5 font-bold text-ms-accent dark:text-ms-focus">
+        ✓
+      </span>
+      <span className="min-w-0">{children}</span>
+    </li>
+  );
+}
+
+/** 特典の補足（小さく、次の行に） */
+function Sub({ children }: { children: React.ReactNode }) {
+  return <span className="block text-xs text-ms-muted">{children}</span>;
 }
 
 export default async function PricingPage({
@@ -125,44 +144,42 @@ export default async function PricingPage({
                 </p>
               </div>
 
-              <ul className="flex flex-col gap-2 text-sm text-ms-muted">
-                <li className="flex items-start gap-2">
-                  <span aria-hidden="true">・</span>
-                  {getToolAccessLabel(plan.toolAccess)}
-                </li>
-                <li className="flex items-start gap-2" data-testid={`pricing-batch-${id}`}>
-                  <span aria-hidden="true">・</span>
-                  {id === "premium"
-                    ? "複数ファイルの一括処理（画像圧縮・画像リサイズ・PDF圧縮・画像形式変換・背景透過など。対応ツールで最大10〜30ファイル）"
-                    : "ファイルは1つずつ処理（複数ファイルの一括処理はプレミアムのみ）"}
-                </li>
-                {getAdsLabel(plan.adsRequired, adGateActive) && (
-                  <li className="flex items-start gap-2">
-                    <span aria-hidden="true">・</span>
-                    {getAdsLabel(plan.adsRequired, adGateActive)}
-                  </li>
-                )}
-                <li className="flex items-start gap-2">
-                  <span aria-hidden="true">・</span>
-                  {id === "premium" ? "年度カレンダー作成の「AIで読み取る」補助（Excel・CSV・画像・スキャンPDF／利用枠あり）" : "通常の年度カレンダー作成は無料（AIは使いません）"}
-                </li>
-                <li className="flex items-start gap-2">
-                  <span aria-hidden="true">・</span>
-                  {id === "premium" ? "「記入済みPDF→Excel」は、ページ数・回数の制限なし" : "「記入済みPDF→Excel」は、1回1ページまで"}
-                </li>
-                {id === "premium" && (
-                  <li className="flex items-start gap-2">
-                    <span aria-hidden="true">・</span>
-                    「記入済みPDF→Excel」の「AIで項目を読み取る」補助（文字のPDF／5ページまで・利用枠あり）
-                  </li>
-                )}
-                {id === "premium" && (
-                  <li className="flex items-start gap-2">
-                    <span aria-hidden="true">・</span>
-                    「PDF→Excel」の「AIで表を読み取る」補助（文字のPDF／5ページまで・利用枠あり）
-                  </li>
-                )}
+              {/* 特典の一覧（✓ 付き）。AIの補助はまとめて、小さな見出しの下に並べる */}
+              <ul className="flex flex-col gap-2 text-sm text-ms-text">
+                <PlanItem>{getToolAccessLabel(plan.toolAccess)}</PlanItem>
+                <PlanItem testId={`pricing-batch-${id}`}>
+                  {id === "premium" ? (
+                    <>
+                      複数ファイルの一括処理<Sub>画像圧縮・リサイズ・PDF圧縮・形式変換・背景透過など。最大10〜30ファイル</Sub>
+                    </>
+                  ) : (
+                    <>
+                      ファイルは1つずつ処理<Sub>一括処理はプレミアムのみ</Sub>
+                    </>
+                  )}
+                </PlanItem>
+                {getAdsLabel(plan.adsRequired, adGateActive) && <PlanItem>{getAdsLabel(plan.adsRequired, adGateActive)}</PlanItem>}
+                <PlanItem>{id === "premium" ? "「記入済みPDF→Excel」は、ページ数・回数の制限なし" : "「記入済みPDF→Excel」は、1回1ページまで"}</PlanItem>
+                {id === "free" && <PlanItem>通常の年度カレンダー作成は無料（AIは使いません）</PlanItem>}
               </ul>
+              {id === "premium" && (
+                <div className="flex flex-col gap-2 border-t border-ms-border pt-3">
+                  <p className="flex items-center gap-2 text-xs font-semibold text-ms-text">
+                    AIの読み取り補助 <PremiumTag kind="ai" /> <span className="font-normal text-ms-muted">利用枠あり</span>
+                  </p>
+                  <ul className="flex flex-col gap-1.5 text-sm text-ms-text">
+                    <PlanItem>
+                      年度カレンダー作成の「AIで読み取る」補助<Sub>Excel・CSV・画像・スキャンPDF</Sub>
+                    </PlanItem>
+                    <PlanItem>
+                      「記入済みPDF→Excel」の「AIで項目を読み取る」補助<Sub>文字のPDF／5ページまで</Sub>
+                    </PlanItem>
+                    <PlanItem>
+                      「PDF→Excel」の「AIで表を読み取る」補助<Sub>文字のPDF／5ページまで</Sub>
+                    </PlanItem>
+                  </ul>
+                </div>
+              )}
 
               <p className="text-xs text-ms-muted">
                 {getPlanUsageNote(plan.id, adGateActive)}

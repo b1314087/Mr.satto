@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import type React from "react";
 import { matchesAccept } from "@/lib/utils/file-accept";
 import { useHandoffReceiver } from "@/components/handoff/handoff-provider";
 import { usePageFileDrop } from "@/components/common/page-file-drop";
@@ -24,6 +25,14 @@ interface FileDropzoneProps {
    * 受け取り先がページに1つだけのとき、ページのどこへ落としても、この欄で選んだときと同じ処理に渡す。
    */
   pageDrop?: boolean;
+  /**
+   * ファイルを読み込んだあとの小さな表示（UI・UX改善の「ファイル行」）。
+   * true のあいだは大きな枠の代わりに、1行の欄（「ファイルを変更」「ファイルを追加」のボタン＋ドロップ受け付け）を出す。
+   * 選び直し・ドロップ・ページ全体へのドロップ・受け渡しの扱いは、大きな枠のときと同じ。
+   */
+  compact?: boolean;
+  /** 小さな表示のときのボタンの意味。add＝今のファイルに足す、replace＝選び直す（既定） */
+  compactAction?: "add" | "replace";
 }
 
 /**
@@ -52,6 +61,8 @@ export function FileDropzone({
   onError,
   acceptHandoff = true,
   pageDrop,
+  compact = false,
+  compactAction = "replace",
 }: FileDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -119,6 +130,73 @@ export function FileDropzone({
 
   const hintId = `${inputId}-hint`;
 
+  const dragHandlers = {
+    onDragOver: (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setIsDragging(true);
+    },
+    onDragLeave: (e: React.DragEvent<HTMLDivElement>) => {
+      // 中の文字やアイコンの上に移っただけでは、ドラッグ中の表示を解除しない（ちらつき防止）
+      if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+      setIsDragging(false);
+    },
+    onDrop: (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsDragging(false);
+      if (containsDirectory(e.dataTransfer)) {
+        onError?.(FOLDER_DROP_MESSAGE);
+        return;
+      }
+      validateAndEmit(e.dataTransfer.files);
+    },
+  };
+
+  const input = (
+    <input
+      id={inputId}
+      ref={inputRef}
+      type="file"
+      aria-label={label}
+      accept={accept}
+      multiple={multiple}
+      className="hidden"
+      onChange={(e) => {
+        // 入力欄を空に戻す前に、選ばれたファイルを取り出しておく（FilePickButton と同じ方式）。
+        // 空に戻さないと、直前と同じファイルを選び直したとき、ブラウザが変更を通知せず（change が発生せず）、
+        // 確認で取り消したあとの選び直しなどができない。取り出した File は入力欄とは独立しているので、空に戻しても失われない。
+        // 取り消し（何も選ばない）の場合は files が空なので、何も処理されない。
+        const files = Array.from(e.target.files ?? []);
+        e.target.value = "";
+        validateAndEmit(files);
+      }}
+    />
+  );
+
+  // 読み込み後の小さな表示（ファイル行）。大きな枠と同じ入力欄・同じ確認を使う
+  if (compact) {
+    const adding = compactAction === "add";
+    return (
+      <div className="ms-dropzone-compact" data-dragging={isDragging ? "true" : undefined} data-testid="dropzone-compact" {...dragHandlers}>
+        <span id={hintId} className="ms-dropzone-compact-text">
+          {isDragging ? "ここでマウスを離すと選択されます" : adding ? "ドロップでも追加できます" : "ドロップでも入れ替えできます"}
+        </span>
+        <button
+          type="button"
+          className="ms-dropzone-compact-btn"
+          aria-label={label}
+          aria-describedby={hintId}
+          onClick={() => inputRef.current?.click()}
+        >
+          <span aria-hidden="true">{adding ? "＋" : "⇄"}</span>
+          {adding ? "ファイルを追加" : "ファイルを変更"}
+        </button>
+        {input}
+        {pageDropOverlay}
+      </div>
+    );
+  }
+
   return (
     <div
       role="button"
@@ -136,25 +214,7 @@ export function FileDropzone({
           inputRef.current?.click();
         }
       }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
-        setIsDragging(true);
-      }}
-      onDragLeave={(e) => {
-        // 中の文字やアイコンの上に移っただけでは、ドラッグ中の表示を解除しない（ちらつき防止）
-        if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
-        setIsDragging(false);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        setIsDragging(false);
-        if (containsDirectory(e.dataTransfer)) {
-          onError?.(FOLDER_DROP_MESSAGE);
-          return;
-        }
-        validateAndEmit(e.dataTransfer.files);
-      }}
+      {...dragHandlers}
       className="ms-dropzone"
     >
       <svg
@@ -177,24 +237,7 @@ export function FileDropzone({
       </p>
       {/* 見た目だけの「ファイルを選択」ボタン（文字は CSS で出す。操作は枠全体のクリック・キー操作が担う） */}
       <span aria-hidden="true" className="ms-dropzone-cta" />
-      <input
-        id={inputId}
-        ref={inputRef}
-        type="file"
-        aria-label={label}
-        accept={accept}
-        multiple={multiple}
-        className="hidden"
-        onChange={(e) => {
-          // 入力欄を空に戻す前に、選ばれたファイルを取り出しておく（FilePickButton と同じ方式）。
-          // 空に戻さないと、直前と同じファイルを選び直したとき、ブラウザが変更を通知せず（change が発生せず）、
-          // 確認で取り消したあとの選び直しなどができない。取り出した File は入力欄とは独立しているので、空に戻しても失われない。
-          // 取り消し（何も選ばない）の場合は files が空なので、何も処理されない。
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          validateAndEmit(files);
-        }}
-      />
+      {input}
       {pageDropOverlay}
     </div>
   );

@@ -12,6 +12,7 @@ import { ImageFlipProcessor, ImageRotateProcessor, drawFlipped, drawRotated, rot
 import { useDownscaledImage, useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 画像の回転・反転の共通画面（画像回転ページ・画像反転ページで共用）。
@@ -167,6 +168,7 @@ export function ImageRotateFlipTool({ initialMode = "rotate" }: { initialMode?: 
       </div>
 
       <FileDropzone
+        compact={!!file}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど。1ファイル50MBまで）"
@@ -222,14 +224,16 @@ export function ImageRotateFlipTool({ initialMode = "rotate" }: { initialMode?: 
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {modeLabel}する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {modeLabel}する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel={`${modeLabel}が完了しました`} />

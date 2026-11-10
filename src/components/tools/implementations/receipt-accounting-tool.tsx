@@ -38,6 +38,7 @@ import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { ReceiptReadError, readReceiptFile, type ReadDocument } from "@/lib/processors/browser/receipt-ocr";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { StepHeading } from "@/components/ui/step-heading";
 
 /**
  * 領収書・レシートから会計CSV作成（工程8。新工程1で、freee会計向けに作り直した）。
@@ -532,14 +533,12 @@ export function ReceiptAccountingTool() {
     // 画面の下に固定した仕訳プレビューの裏に、入力欄・ボタンが隠れないよう、移動するときは下に余白をとる
     <div className="flex flex-col gap-6 pb-4 [&_:is(button,input,select,textarea,summary)]:scroll-mb-[50vh]" data-testid="receipt-tool">
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        freee会計に取り込むデータを作ります。画像・PDFと入力した内容は、このブラウザの中だけで扱い、送信も保存もしません。
+        freee会計に取り込むデータを作ります（画像・PDFはこのブラウザの中だけで扱い、送信も保存もしません）。
       </p>
 
       {/* 1. 初期値 */}
       <section className={sectionClass} aria-labelledby="receipt-step1" data-testid="receipt-defaults">
-        <h2 id="receipt-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          1. 初期値を決める
-        </h2>
+        <StepHeading n={1} as="h2" id="receipt-step1">初期値を決める</StepHeading>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">読み取った明細に、最初からこの値が入ります（あとで明細ごとに変えられます）。</p>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <label className={labelClass}>
@@ -588,10 +587,10 @@ export function ReceiptAccountingTool() {
 
       {/* 2. 読み込み */}
       <section className={sectionClass} aria-labelledby="receipt-step2">
-        <h2 id="receipt-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          2. 領収書・レシートを読み込む
-        </h2>
+        <StepHeading n={2} as="h2" id="receipt-step2">領収書・レシートを読み込む</StepHeading>
         <FileDropzone
+          compact={docs.length > 0}
+          compactAction="add"
           // accept は渡さない：共通部品は、対応外のファイルが1つでも混ざると全部を断ってしまうため。
           // 形式の確認は、ファイル1つずつ、先頭のバイトで行い、対応外・壊れたファイルだけを個別にエラーにする。
           multiple
@@ -660,9 +659,7 @@ export function ReceiptAccountingTool() {
 
       {/* 3. 確認・訂正 */}
       <section className={sectionClass} aria-labelledby="receipt-step3">
-        <h2 id="receipt-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          3. 明細を確認・訂正する
-        </h2>
+        <StepHeading n={3} as="h2" id="receipt-step3">明細を確認・訂正する</StepHeading>
         {docs.length === 0 ? (
           <p data-testid="receipt-empty" className="text-sm text-neutral-500 dark:text-neutral-400">
             まだ明細がありません。2. で領収書・レシートを読み込んでください。

@@ -38,6 +38,8 @@ import {
 import { mergeTrackFrom } from "@/lib/video/track";
 import { trackRegionInBackground, type TrackEngine } from "@/lib/video/track-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
+import { Segmented } from "@/components/ui/segmented";
 
 const MAX_REGIONS = 20;
 const MIN_SIDE = 8;
@@ -425,6 +427,7 @@ export function VideoMosaicTool() {
     <div className="flex flex-col gap-5">
       {!file && (
         <FileDropzone
+          compact={!!file}
           accept={VIDEO_INPUT_ACCEPT}
           maxSizeMB={VIDEO_DROPZONE_MAX_MB}
           label="動画ファイルをドラッグ&ドロップ"
@@ -615,16 +618,18 @@ export function VideoMosaicTool() {
               </label>
             ))}
           </fieldset>
-          <button
-            type="button"
-            onClick={() => handleExport()}
-            disabled={status === "processing" || tracking !== null || !info}
-            aria-busy={status === "processing" || undefined}
-            data-testid="vm-export"
-            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            モザイクをかけて書き出す
-          </button>
+          <RunBar>
+            <button
+              type="button"
+              onClick={() => handleExport()}
+              disabled={status === "processing" || tracking !== null || !info}
+              aria-busy={status === "processing" || undefined}
+              data-testid="vm-export"
+              className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              モザイクをかけて書き出す
+            </button>
+          </RunBar>
         </section>
       )}
 
@@ -709,7 +714,7 @@ function RegionCard({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded bg-blue-600 px-1.5 text-xs font-bold text-white">{index + 1}</span>
-        <div role="radiogroup" aria-label={`範囲${index + 1}の動き`} className="flex gap-1">
+        <div role="radiogroup" aria-label={`範囲${index + 1}の動き`} className="ms-seg">
           {(
             [
               { v: "track", label: "追跡" },
@@ -722,26 +727,20 @@ function RegionCard({
               role="radio"
               aria-checked={r.mode === o.v}
               onClick={() => onChange((cur) => (o.v === "fixed" ? { ...cur, mode: "fixed", box: boxAt(cur, time, frameSec) } : { ...cur, mode: "track" }))}
-              className={`rounded-md px-2 py-1 text-xs font-medium ${r.mode === o.v ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"}`}
               data-testid={`vm-mode-${o.v}`}
             >
               {o.label}
             </button>
           ))}
         </div>
-        <select
+        <Segmented
+          size="sm"
+          ariaLabel={`範囲${index + 1}のかけ方`}
+          testId="vm-kind"
           value={r.kind}
-          onChange={(e) => onChange((cur) => ({ ...cur, kind: e.target.value as EffectKind }))}
-          aria-label={`範囲${index + 1}のかけ方`}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900"
-          data-testid="vm-kind"
-        >
-          {KIND_OPTIONS.map((k) => (
-            <option key={k.value} value={k.value}>
-              {k.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onChange((cur) => ({ ...cur, kind: v }))}
+          options={KIND_OPTIONS.map((k) => ({ value: k.value, label: k.label }))}
+        />
         {r.kind !== "fill" && (
           <label className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300">
             強さ

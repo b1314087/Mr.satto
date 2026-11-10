@@ -8,6 +8,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob, dataUrlToBlob } from "@/lib/utils/format";
 import { useLiveQr } from "./shared/use-live-qr";
+import { RunBar } from "@/components/ui/run-bar";
 
 function buildVCard(fields: Record<string, string>): string {
   const lines = [
@@ -128,14 +129,16 @@ export function BusinessCardQrTool() {
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={handleGenerate}
-        disabled={!name.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
-        名刺二次元コードを生成する
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={!name.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          名刺二次元コードを生成する
+        </button>
+      </RunBar>
 
       <ProcessingStatus state={status} successLabel="生成しました" />
       {error && <ErrorMessage message={error} />}

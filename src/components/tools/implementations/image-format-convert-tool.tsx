@@ -25,6 +25,7 @@ import {
   transparencyNote,
   type ConvertFormat,
 } from "@/lib/image-format-convert";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 画像形式変換の共通画面（JPG変換・PNG変換・WebP変換・画像一括変換の4ページで共用）。
@@ -263,6 +264,8 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
       }
     >
       <FileDropzone
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         multiple
         maxSizeMB={50}
@@ -279,7 +282,7 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
       {files.length > 0 && (
         <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">変換先の形式</p>
-          <div role="group" aria-label="変換先の形式" className="flex flex-wrap gap-2">
+          <div role="group" aria-label="変換先の形式" className="ms-seg">
             {CONVERT_FORMATS.map((opt) => (
               <button
                 key={opt.value}
@@ -287,9 +290,6 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
                 aria-pressed={targetFormat === opt.value}
                 data-testid={`convert-format-${opt.ext}`}
                 onClick={() => chooseFormat(opt.value)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  targetFormat === opt.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {opt.label}
               </button>
@@ -309,14 +309,16 @@ export function ImageFormatConvertTool({ initialFormat = "image/jpeg" }: { initi
       )}
 
       {files.length > 0 && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || convertible.length === 0} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {convertible.length}件を{target}に変換する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || convertible.length === 0} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {convertible.length}件を{target}に変換する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="変換が完了しました" />

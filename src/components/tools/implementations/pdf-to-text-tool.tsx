@@ -14,6 +14,7 @@ import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { usePremiumFeature } from "@/lib/plans/use-premium-feature";
+import { RunBar } from "@/components/ui/run-bar";
 
 /** 画面のプレビューで抽出するページ数・表示する文字数(重くならないよう先頭だけ) */
 const PREVIEW_PAGES = 2;
@@ -200,6 +201,7 @@ export function PdfToTextTool() {
       </div>
 
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
         maxSizeMB={100}
         label="PDFまたは画像をドラッグ&ドロップ"
@@ -273,7 +275,7 @@ export function PdfToTextTool() {
       )}
 
       {file && (
-        <div className="flex flex-wrap items-center gap-3">
+        <RunBar>
           <button
             type="button"
             onClick={handleRun}
@@ -300,7 +302,7 @@ export function PdfToTextTool() {
               画像ファイルはOCRでしか読み取れないため、プレミアムプランでご利用いただけます。
             </span>
           )}
-        </div>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel={progressLabel || "処理中..."} successLabel="テキスト抽出が完了しました" />

@@ -49,6 +49,7 @@ import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
 import { usePremiumFeature } from "@/lib/plans/use-premium-feature";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 電子印鑑生成ツール（Phase 16）。
@@ -611,14 +612,13 @@ function TextStampPanel({
 
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">色</legend>
-          <div className="flex gap-2">
+          <div className="ms-seg">
             {COLOR_OPTIONS.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 aria-pressed={color === c.id}
                 onClick={() => setColor(c.id)}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm ${color === c.id ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
               >
                 <span
                   aria-hidden="true"
@@ -656,7 +656,7 @@ function TextStampPanel({
         {withQr && (
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">QRコードの位置</span>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="QRコードの位置">
+            <div className="ms-seg" role="group" aria-label="QRコードの位置">
               {STAMP_QR_CORNERS.map((c) => (
                 <button
                   key={c.id}
@@ -664,7 +664,6 @@ function TextStampPanel({
                   data-testid={`qr-corner-${c.id}`}
                   aria-pressed={qrCorner === c.id}
                   onClick={() => setQrCorner(c.id)}
-                  className={`rounded-lg px-3 py-1.5 text-sm ${qrCorner === c.id ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
                 >
                   {c.label}
                 </button>
@@ -707,10 +706,7 @@ function TextStampPanel({
         <fieldset className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
           <legend className="mb-1 px-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">フォント</legend>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            標準では一般的なゴシック体で描画します。篆書体・印相体・古印体・隷書体などをお使いになりたい場合は、
-            お手持ちのフォントファイル（.ttf / .otf / .woff / .woff2）を選択してください。これらの書体は無料で
-            アプリに組み込んで配布できるライセンスのものがほぼ無いため、本ツールにはあらかじめ同梱していません。
-            選択したファイルはこのブラウザの中だけで処理され、サーバーには送信されません。
+            標準はゴシック体です。篆書体・印相体などを使うときは、お手持ちのフォントファイル（.ttf / .otf / .woff / .woff2）を選んでください（ブラウザの中だけで使います）。
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <FilePickButton
@@ -792,15 +788,17 @@ function TextStampPanel({
           </div>
         </details>
 
-        <button
-          type="button"
-          disabled={status === "processing" || text.trim() === "" || textTooLong || !!qrInputError || missingPdf || (withQr && !qrFits)}
-          aria-busy={status === "processing" || undefined}
-          onClick={exportWithSerial}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          印影画像を生成する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            disabled={status === "processing" || text.trim() === "" || textTooLong || !!qrInputError || missingPdf || (withQr && !qrFits)}
+            aria-busy={status === "processing" || undefined}
+            onClick={exportWithSerial}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            印影画像を生成する
+          </button>
+        </RunBar>
       </div>
     </PreviewSplitLayout>
   );
@@ -1242,14 +1240,13 @@ function ImportStampPanel({
             )}
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">出力サイズ</legend>
-              <div className="flex gap-2">
+              <div className="ms-seg">
                 {[50, 100, 150, 200].map((p) => (
                   <button
                     key={p}
                     type="button"
                     aria-pressed={scalePercent === p}
                     onClick={() => setScalePercent(p)}
-                    className={`rounded-lg px-3 py-1.5 text-sm ${scalePercent === p ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
                   >
                     {p}%
                   </button>
@@ -1257,7 +1254,7 @@ function ImportStampPanel({
               </div>
             </fieldset>
 
-            <div className="flex gap-2">
+            <RunBar>
               <button
                 type="button"
                 onClick={() => setStep("crop")}
@@ -1286,7 +1283,7 @@ function ImportStampPanel({
               >
                 印影画像を生成する
               </button>
-            </div>
+            </RunBar>
           </div>
         </PreviewSplitLayout>
       )}
@@ -1303,8 +1300,8 @@ function QrOption({ checked, onChange, note }: { checked: boolean; onChange: (v:
         固有番号とQRコードを入れる
       </label>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        生成するたびに、ランダムな固有番号（例：MS-7K9P-2XQ8-4D6A）を発行し、その番号（と、入力した場合は印鑑作成日・認証コード）を入れたQRコードを印影に入れます。番号・作成日・認証コードは印影には表示しません。
-        番号はこのブラウザの中で作るため、ほかの人が作った印影の番号と重ならないことまでは保証できません（重なる可能性はきわめて低い番号です）。
+        生成するたびに固有番号（例：MS-7K9P-2XQ8-4D6A）を作り、作成日・認証コードとともにQRコードで印影に入れます（印影の表面には出しません）。
+        番号はブラウザの中で作るため、重ならないことまでは保証できません（重なる可能性はきわめて低い番号です）。
         {note ? ` ${note}` : ""}
       </p>
     </div>

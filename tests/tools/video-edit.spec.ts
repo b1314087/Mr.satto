@@ -22,6 +22,7 @@ import {
 } from "@/lib/video/edit-settings";
 import { getToolSeoContent } from "@/lib/seo/tool-content";
 import { ensureMediabunny } from "@/lib/media/mediabunny-loader";
+import { openAdvanced } from "../helpers/advanced-settings";
 
 /**
  * 動画編集 工程2（形式変換・圧縮・解像度・フレームレートの4ツール統合）のテスト。
@@ -91,6 +92,8 @@ async function openWithVideo(page: Page, toolId: string, file: string) {
   await expect(page.getByTestId("video-edit-settings")).toBeVisible();
   // 動画の情報（解像度・fps）を調べ終えるまで待つ
   await expect(page.getByText("動画の情報を調べています…")).toHaveCount(0, { timeout: 30_000 });
+  // 出力形式・回転・音声などは「詳細設定」の中にあるので、開いておく
+  await openAdvanced(page, "video-edit-advanced");
 }
 
 // ---------------------------------------------------------------------------

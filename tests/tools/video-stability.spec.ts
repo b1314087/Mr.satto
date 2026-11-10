@@ -9,6 +9,7 @@ import { fixtures } from "../fixtures/paths";
 import { uploadFixture, closeResultPopup } from "../helpers/tool-runner";
 import { BlobAssembler, moveMoovToFront, shiftChunkOffsets } from "@/lib/video/stream-output";
 import { discardReasonMessage, toFriendlyVideoError, VideoUserFacingError } from "@/lib/video/shared";
+import { openAdvanced } from "../helpers/advanced-settings";
 
 /**
  * 動画編集 工程1（8ツール共通の安定性・メモリ・音声保持）のテスト。
@@ -268,7 +269,8 @@ test.describe("音声を書き出せない環境", () => {
     // 工程2から：処理を始める前に、書き出せない形式を選べないようにし、日本語で理由を伝える
     // （処理中に書き出せなかった場合の日本語の案内は、上の「エラーの日本語化」のテストで確かめている）
     const settings = page.getByTestId("video-edit-settings");
-    await expect(settings.getByText("選べない形式は、お使いのブラウザでは、この設定で書き出せません。")).toBeVisible({ timeout: 30_000 });
+    await openAdvanced(page, "video-edit-advanced");
+    await expect(settings.getByText("選べない形式は、このブラウザでは書き出せません")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("radio", { name: "MP4" })).toBeDisabled();
     await expect(page.getByRole("radio", { name: "WebM" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "圧縮する" })).toBeDisabled();

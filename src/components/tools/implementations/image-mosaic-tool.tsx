@@ -20,6 +20,7 @@ import {
 } from "@/lib/processors/browser/image-mosaic";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 画像モザイク（Step 8）。
@@ -459,6 +460,7 @@ export function ImageMosaicTool() {
       previewWidth="lg"
     >
       <FileDropzone
+        compact={!!file}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）。隠したい範囲は1枚の画像に複数指定できます"
@@ -543,17 +545,12 @@ export function ImageMosaicTool() {
           </div>
 
           {regions.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="ms-seg">
               {regions.map((region, index) => (
-                <button
+                <button aria-pressed={region.id === selectedId}
                   key={region.id}
                   type="button"
                   onClick={() => setSelectedId(region.id)}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${
-                    region.id === selectedId
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {index + 1}: {KIND_LABEL[region.kind]}
                 </button>
@@ -569,18 +566,13 @@ export function ImageMosaicTool() {
 
               <div className="flex flex-col gap-2">
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">種類</p>
-                <div className="flex gap-2">
+                <div className="ms-seg">
                   {(["mosaic", "blur"] as MosaicKind[]).map((kind) => (
                     <button
                       key={kind}
                       type="button"
                       onClick={() => updateRegion(selectedRegion.id, { kind })}
                       aria-pressed={selectedRegion.kind === kind}
-                      className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                        selectedRegion.kind === kind
-                          ? "bg-blue-600 text-white"
-                          : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                      }`}
                     >
                       {KIND_LABEL[kind]}
                     </button>
@@ -661,7 +653,7 @@ export function ImageMosaicTool() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2">
+          <RunBar>
             <button
               type="button"
               onClick={() => void handleSave("png")}
@@ -678,7 +670,7 @@ export function ImageMosaicTool() {
             >
               JPEGで保存
             </button>
-          </div>
+          </RunBar>
         </div>
       )}
 

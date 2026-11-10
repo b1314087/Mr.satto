@@ -15,6 +15,7 @@ import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { useFilledPdfToExcelUsage, UsageGatePanel, describeConsumeFailure } from "./filled-pdf-to-excel/usage-gate";
 import { FilledPdfToExcelTemplatePanel } from "./filled-pdf-to-excel-template-panel";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
 
 const LANGUAGE_OPTIONS: { value: OcrLanguageOption; label: string }[] = [
   { value: "ja+en", label: "日本語＋英語" },
@@ -211,6 +212,8 @@ function AutoExtractSection() {
       </div>
 
       <FileDropzone
+        compact={files.length > 0}
+        compactAction="replace"
         accept="application/pdf,.pdf"
         multiple
         maxSizeMB={50}
@@ -268,14 +271,16 @@ function AutoExtractSection() {
       )}
 
       {files.length > 0 && (
-        <button
-          type="button"
-          onClick={() => void handleRun()}
-          disabled={!canRun || status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          Excelに変換する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={() => void handleRun()}
+            disabled={!canRun || status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            Excelに変換する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel={progressLabel || "処理中..."} successLabel="Excelファイルの生成が完了しました" />

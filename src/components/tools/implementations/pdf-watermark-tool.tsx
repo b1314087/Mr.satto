@@ -18,6 +18,7 @@ import { PdfWatermarkProcessor, type WatermarkPosition } from "@/lib/processors/
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
+import { RunBar } from "@/components/ui/run-bar";
 
 const POSITIONS: { value: WatermarkPosition; label: string }[] = [
   { value: "center", label: "中央" },
@@ -158,6 +159,7 @@ export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdf
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -185,17 +187,12 @@ export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdf
 
           <div className="flex flex-col gap-1.5 text-sm">
             位置
-            <div className="flex flex-wrap gap-2">
+            <div className="ms-seg">
               {POSITIONS.map((p) => (
-                <button
+                <button aria-pressed={position === p.value}
                   key={p.value}
                   type="button"
                   onClick={() => setPosition(p.value)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                    position === p.value
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {p.label}
                 </button>
@@ -246,14 +243,16 @@ export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdf
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || text.trim() === ""} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          透かしを追加する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || text.trim() === ""} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            透かしを追加する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="追加が完了しました" />

@@ -38,6 +38,7 @@ import {
   type PdfCompressSettings,
   type PdfReadState,
 } from "@/lib/pdf/compress-settings";
+import { RunBar } from "@/components/ui/run-bar";
 
 /** 1つのPDFの先頭ページの縮小表示(圧縮前・圧縮後で同じ形式) */
 function FirstPageThumb({
@@ -360,6 +361,8 @@ export function PdfCompressTool() {
       }
     >
       <FileDropzone
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="application/pdf,.pdf"
         maxSizeMB={100}
         label="PDFをドラッグ&ドロップ"
@@ -393,15 +396,17 @@ export function PdfCompressTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          data-testid="compress-run"
-          onClick={handleRun}
-          disabled={status === "processing" || !canRun} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {isBatch ? `${files.length}つのPDFをまとめて圧縮する` : "圧縮する"}
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            data-testid="compress-run"
+            onClick={handleRun}
+            disabled={status === "processing" || !canRun} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isBatch ? `${files.length}つのPDFをまとめて圧縮する` : "圧縮する"}
+          </button>
+        </RunBar>
       )}
 
       {/* 処理中の表示（画面全体を薄暗くした中央のパネル）。目標のサイズに合わせているときは、何回目かも出す */}
@@ -568,7 +573,7 @@ function TargetSizePanel({
         )}
       </div>
       {choices.length > 0 && (
-        <div role="group" aria-label="よく使うサイズ" className="flex flex-wrap gap-2">
+        <div role="group" aria-label="よく使うサイズ" className="ms-seg">
           {choices.map((mb) => (
             <button
               key={mb}
@@ -576,11 +581,6 @@ function TargetSizePanel({
               data-testid={`compress-target-choice-${mb}`}
               aria-pressed={targetText === String(mb)}
               onClick={() => onChange(String(mb))}
-              className={`ms-focus-ring rounded-lg px-3 py-1 text-xs font-medium ${
-                targetText === String(mb)
-                  ? "bg-blue-600 text-white"
-                  : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-              }`}
             >
               {mb}MB
             </button>
@@ -593,8 +593,16 @@ function TargetSizePanel({
         </p>
       )}
       <p id="compress-target-help" className="text-xs text-neutral-500 dark:text-neutral-400">
-        指定したサイズ以下になるまで、PDFの中の写真の画質と大きさを自動で下げます（できるだけ画質を保てる設定を選びます。JPEG以外で入っている写真も、JPEGにして小さくします）。文字・図形・リンクは変わりません。届かないときは、いちばん小さくできた結果を表示します。1MB＝1,000,000バイトで計算するため、アップロードの上限にも確実に収まります。
+        写真の画質と大きさを自動で調整します（文字・図形・リンクは変わりません）。
       </p>
+      {/* くわしい仕組みは、必要なときだけ開く */}
+      <details className="text-xs text-neutral-500 dark:text-neutral-400">
+        <summary className="w-fit cursor-pointer underline-offset-2 hover:underline">しくみ・注意点</summary>
+        <p className="mt-1">
+          指定したサイズ以下になるまで、PDFの中の写真の画質と大きさを下げます（できるだけ画質を保てる設定を選び、JPEG以外の写真もJPEGにして小さくします）。
+          届かないときは、いちばん小さくできた結果を表示します。1MB＝1,000,000バイトで計算するため、アップロードの上限にも確実に収まります。
+        </p>
+      </details>
     </div>
   );
 }
@@ -677,7 +685,7 @@ function CompressSettingsPanel({
             />
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            高いほど画質を保ちやすく、低いほどサイズが小さくなりやすくなります（画質は下がります）。PDF内のJPEG画像に使います。
+            高いほど画質を保ち、低いほど小さくなります（PDF内のJPEG画像に使います）。
           </p>
           {checked.qualityError && (
             <p role="alert" data-testid="compress-quality-error" className="text-xs text-red-700 dark:text-red-400">
@@ -730,7 +738,7 @@ function CompressSettingsPanel({
             </label>
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            縦・横の長い方がこのピクセル数を超える画像だけを縮小します。小さくするほどサイズは減りやすく、拡大したときの細かさは下がります。
+            長い辺がこのピクセル数を超える画像だけを縮小します。
           </p>
           {checked.edgeError && (
             <p role="alert" data-testid="compress-edge-error" className="text-xs text-red-700 dark:text-red-400">
@@ -751,7 +759,7 @@ function CompressSettingsPanel({
         </button>
       </div>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        文字・図形・リンクは変わりません（文字の検索・選択もそのまま）。どれだけ小さくなるかはPDFの中身しだいです。サイズで決めたいときは「サイズを指定する」を選んでください。JPEG以外で入っている大きな写真もJPEGにします（小さな画像・図・透明の情報はそのまま残ります）。
+        文字・図形・リンクは変わりません。どれだけ小さくなるかはPDFの中身しだいです（サイズで決めたいときは「サイズを指定する」）。
       </p>
     </fieldset>
   );

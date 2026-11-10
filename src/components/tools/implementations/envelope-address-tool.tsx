@@ -44,6 +44,7 @@ import {
 import { parseTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT =
   ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
@@ -338,20 +339,15 @@ export function EnvelopeAddressTool() {
             <span className="text-neutral-600 dark:text-neutral-300">
               封筒サイズ
             </span>
-            <div className="flex flex-wrap gap-2">
+            <div className="ms-seg">
               {ENVELOPE_SIZE_IDS.map((id) => (
-                <button
+                <button aria-pressed={envelopeSize === id}
                   key={id}
                   type="button"
                   onClick={() => {
                     setEnvelopeSize(id);
                     clearResult();
                   }}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    envelopeSize === id
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {ENVELOPE_SIZE_LABELS[id]}
                 </button>
@@ -362,7 +358,7 @@ export function EnvelopeAddressTool() {
             <span className="text-neutral-600 dark:text-neutral-300">
               封筒の向き
             </span>
-            <div className="flex gap-2">
+            <div className="ms-seg">
               {(["portrait", "landscape"] as const).map((o) => (
                 <button
                   key={o}
@@ -373,11 +369,6 @@ export function EnvelopeAddressTool() {
                     resetBlockPositions();
                     clearResult();
                   }}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    orientation === o
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {o === "portrait" ? "縦向き" : "横向き"}
                 </button>
@@ -423,6 +414,7 @@ export function EnvelopeAddressTool() {
             または、Excel/CSVから複数の宛先をまとめて読み込む（任意）
           </p>
           <FileDropzone
+            compact={!!importedFile}
             accept={ACCEPT}
             maxSizeMB={20}
             label="CSV/Excelをドラッグ&ドロップ"
@@ -495,7 +487,7 @@ export function EnvelopeAddressTool() {
           <div className="flex flex-wrap gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-neutral-600 dark:text-neutral-300">敬称（宛先の最後の行）</span>
-            <div className="flex gap-2">
+            <div className="ms-seg">
               {(["sama", "onchu", "none"] as const).map((h) => (
                 <button
                   key={h}
@@ -505,11 +497,6 @@ export function EnvelopeAddressTool() {
                     setHonorific(h);
                     clearResult();
                   }}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    honorific === h
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {HONORIFIC_LABELS[h]}
                 </button>
@@ -549,9 +536,9 @@ export function EnvelopeAddressTool() {
             <span className="text-neutral-600 dark:text-neutral-300">
               書字方向
             </span>
-            <div className="flex gap-2">
+            <div className="ms-seg">
               {(["vertical", "horizontal"] as const).map((mode) => (
-                <button
+                <button aria-pressed={writingMode === mode}
                   key={mode}
                   type="button"
                   onClick={() => {
@@ -560,11 +547,6 @@ export function EnvelopeAddressTool() {
                     // 封筒の向きは書字方向とは独立。ここでは変えない
                     clearResult();
                   }}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    writingMode === mode
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {mode === "vertical" ? "縦書き" : "横書き"}
                 </button>
@@ -736,14 +718,16 @@ export function EnvelopeAddressTool() {
 
         {validationError && <ErrorMessage message={validationError} />}
 
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {status === "processing" ? "作成中…" : "PDFを作成"}
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {status === "processing" ? "作成中…" : "PDFを作成"}
+          </button>
+        </RunBar>
 
         <ProcessingStatus state={status} successLabel="封筒PDFを作成しました" />
         {error && <ErrorMessage message={error} />}

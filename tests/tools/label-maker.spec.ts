@@ -67,7 +67,7 @@ test.describe("ラベル作成(Word)", () => {
 
   test("書体・太字・位置・枠線の設定がWordに反映される", async ({ page }) => {
     await openTool(page);
-    await page.getByLabel("書体").selectOption("mincho");
+    await page.getByRole("button", { name: "明朝体", exact: true }).click();
     await page.getByLabel("太字にする").check();
     await page.getByRole("button", { name: "左", exact: true }).first().click();
     await page.getByRole("button", { name: "上", exact: true }).click();
@@ -107,7 +107,7 @@ test.describe("ラベル作成(Word)", () => {
   test("1行を1枚にする(タブ区切りは改行になる)", async ({ page }) => {
     await openTool(page);
     await page.getByRole("button", { name: "ラベルごとに違う内容" }).click();
-    await page.getByLabel("ラベルの区切り方").selectOption("line");
+    await page.getByRole("button", { name: "1行を1枚にする", exact: true }).click();
     await page.getByLabel("ラベルごとの文字").fill("山田\t東京\n佐藤\t大阪");
     await expect(page.getByText("2件のラベルを読み取りました")).toBeVisible();
     await expect(page.getByTestId("label-cell").nth(0)).toContainText("山田");

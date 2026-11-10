@@ -70,6 +70,7 @@ export function CsvToJsonTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept=".csv,text/csv"
         label="CSVをドラッグ&ドロップ"
         hint="またはタップして選択"

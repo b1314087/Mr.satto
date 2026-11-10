@@ -15,6 +15,7 @@ import {
   validateScanGridExcelInput,
 } from "@/lib/processors/browser/roster-template";
 import { downloadBlob } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /** 読み取り用に描画する画像の長辺(px)。大きいほど細かい線を拾えるが重くなる */
 const RENDER_LONG_SIDE = 2200;
@@ -179,6 +180,7 @@ export function RosterScanPanel() {
       <div className="flex flex-col gap-2">
         <p className="text-sm text-neutral-600 dark:text-neutral-300">スキャンしたPDFの罫線から列幅・行の高さを読み取り、同じ大きさの空欄の枠をExcelで作ります（文字は読み取りません）。</p>
         <FileDropzone
+          compact={!!scan}
           accept=".pdf,application/pdf"
           maxSizeMB={50}
           label="スキャンしたPDFをドラッグ&ドロップ"
@@ -252,14 +254,16 @@ export function RosterScanPanel() {
 
           {validation && <ErrorMessage message={validation} />}
 
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={status === "processing" || !!validation} aria-busy={status === "processing" || undefined}
-            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            枠のExcelを作成
-          </button>
+          <RunBar>
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={status === "processing" || !!validation} aria-busy={status === "processing" || undefined}
+              className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              枠のExcelを作成
+            </button>
+          </RunBar>
           <ProcessingStatus state={status} successLabel="作成しました" />
           {error && <ErrorMessage message={error} />}
           {result && (

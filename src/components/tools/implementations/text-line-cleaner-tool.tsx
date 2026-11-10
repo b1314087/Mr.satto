@@ -10,6 +10,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { downloadBlob } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const SORT_OPTIONS: { value: TextLineSort; label: string }[] = [
   { value: "none", label: "並び替えない" },
@@ -168,17 +169,12 @@ export function TextLineCleanerTool() {
 
         <div className="flex flex-col gap-1.5 pt-1 text-sm text-neutral-600 dark:text-neutral-300">
           並び替え
-          <div className="flex flex-wrap gap-2">
+          <div className="ms-seg">
             {SORT_OPTIONS.map((opt) => (
-              <button
+              <button aria-pressed={sort === opt.value}
                 key={opt.value}
                 type="button"
                 onClick={() => setSort(opt.value)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  sort === opt.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {opt.label}
               </button>
@@ -187,14 +183,16 @@ export function TextLineCleanerTool() {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={handleRun}
-        disabled={!input.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
-        整理する
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleRun}
+          disabled={!input.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          整理する
+        </button>
+      </RunBar>
 
       <ProcessingStatus state={status} successLabel="処理が完了しました" />
       {error && <ErrorMessage message={error} />}

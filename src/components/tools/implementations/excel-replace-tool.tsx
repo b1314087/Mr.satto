@@ -21,6 +21,7 @@ import { useAsyncFileData } from "@/components/tools/implementations/shared/use-
 import { readXlsxSheets } from "@/lib/excel/xlsx-simple-io";
 import { ExcelReplaceProcessor, replaceInSheets, type ExcelReplaceScope } from "@/lib/processors/browser/excel-replace";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -151,6 +152,7 @@ export function ExcelReplaceTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept={ACCEPT}
         maxSizeMB={50}
         label="Excelファイル（.xlsx）をドラッグ&ドロップ"
@@ -220,17 +222,12 @@ export function ExcelReplaceTool() {
 
           <div className="flex flex-col gap-2">
             <p className="text-xs text-neutral-500 dark:text-neutral-400">対象範囲</p>
-            <div className="flex flex-wrap gap-2">
+            <div className="ms-seg">
               {SCOPE_OPTIONS.map((opt) => (
-                <button
+                <button aria-pressed={scope === opt.value}
                   key={opt.value}
                   type="button"
                   onClick={() => setScope(opt.value)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                    scope === opt.value
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {opt.label}
                 </button>
@@ -333,14 +330,16 @@ export function ExcelReplaceTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || find === ""} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {operation === "delete" ? "削除を実行する" : "置換を実行する"}
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || find === ""} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {operation === "delete" ? "削除を実行する" : "置換を実行する"}
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="処理が完了しました" />

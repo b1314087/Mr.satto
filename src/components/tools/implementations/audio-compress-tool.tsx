@@ -78,6 +78,7 @@ export function AudioCompressTool() {
     <div className="flex flex-col gap-6">
 
       <FileDropzone
+        compact={!!file}
         accept={AUDIO_INPUT_ACCEPT}
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}
         label="音声ファイルをドラッグ&ドロップ"

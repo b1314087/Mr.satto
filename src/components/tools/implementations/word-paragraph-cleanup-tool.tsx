@@ -28,6 +28,7 @@ import {
   type ColumnCount,
   type ColumnSettings,
 } from "@/lib/word/columns";
+import { RunBar } from "@/components/ui/run-bar";
 
 /** 段区切りの段落番号の入力（「3, 8」など）を番号の並びにする。読めないときは null */
 function parseBreakList(text: string): number[] | null {
@@ -194,9 +195,10 @@ export function WordParagraphCleanupTool() {
     <div className="flex flex-col gap-6">
       {/* 新工程1：段組み（2段・3段）がこのツールにあることを、最初に分かるようにする */}
       <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="word-tool-guide">
-        できること：① スペース・空白行の整理　② 段組みの変更（1段・2段・3段。文書全体、または選んだ段落だけ。段の間隔・段区切りも指定できます）
+        スペース・空白行の整理と、段組みの変更（1段・2段・3段）ができます。
       </p>
       <FileDropzone
+        compact={!!file}
         accept={ACCEPT}
         maxSizeMB={50}
         label="Wordファイル（.docx）をドラッグ&ドロップ"
@@ -208,18 +210,22 @@ export function WordParagraphCleanupTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
-        <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">適用する整理内容を選択</p>
-          <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          {/* 整理すること（いくつでも選べる）。オン・オフのチップで選ぶ（チェックボックスと同じ扱い） */}
+          <p id="word-cleanup-options-label" className="text-sm font-medium text-ms-text">
+            整理すること<span className="ml-1 text-xs font-normal text-ms-muted">（いくつでも選べます）</span>
+          </p>
+          <div role="group" aria-labelledby="word-cleanup-options-label" className="ms-toggle-chips">
             {OPTION_ITEMS.map((item) => (
-              <label key={item.key} className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
-                <input
-                  type="checkbox"
-                  checked={options[item.key]}
-                  onChange={() => toggleOption(item.key)}
-                />
+              <button
+                key={item.key}
+                type="button"
+                role="checkbox"
+                aria-checked={options[item.key]}
+                onClick={() => toggleOption(item.key)}
+              >
                 {item.label}
-              </label>
+              </button>
             ))}
           </div>
         </div>
@@ -251,8 +257,9 @@ export function WordParagraphCleanupTool() {
           )}
           {columnsEnabled && (
             <div className="flex flex-col gap-3 text-sm text-neutral-600 dark:text-neutral-300">
-              <div role="radiogroup" aria-label="段組みの数" className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-neutral-500 dark:text-neutral-400">段数</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ms-muted">段数</span>
+                <div role="radiogroup" aria-label="段組みの数" className="ms-seg ms-seg-sm">
                 {([1, 2, 3] as const).map((n) => (
                   <button
                     key={n}
@@ -264,13 +271,11 @@ export function WordParagraphCleanupTool() {
                       setColumnCount(n);
                       setResult(null);
                     }}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                      columnCount === n ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                    }`}
                   >
                     {n}段
                   </button>
                 ))}
+                </div>
               </div>
               <label className="flex flex-wrap items-center gap-2">
                 段の間隔
@@ -290,8 +295,9 @@ export function WordParagraphCleanupTool() {
                 mm
                 <span className="text-xs text-neutral-500 dark:text-neutral-400">（段の幅はすべて同じになります）</span>
               </label>
-              <div role="radiogroup" aria-label="段組みにする範囲" className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-neutral-500 dark:text-neutral-400">範囲</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ms-muted">範囲</span>
+                <div role="radiogroup" aria-label="段組みにする範囲" className="ms-seg ms-seg-sm">
                 {(
                   [
                     { v: "all", label: "文書全体" },
@@ -308,13 +314,11 @@ export function WordParagraphCleanupTool() {
                       setColumnScope(o.v);
                       setResult(null);
                     }}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                      columnScope === o.v ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                    }`}
                   >
                     {o.label}
                   </button>
                 ))}
+                </div>
               </div>
               {columnScope === "range" && (
                 <div className="flex flex-wrap items-center gap-2">
@@ -409,8 +413,8 @@ export function WordParagraphCleanupTool() {
                 </div>
               )}
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                変えるのは段組みの設定だけです（本文・表・画像・ヘッダー・フッターなどは変えません）。実際の段組みの見え方は、Wordなど開くアプリが計算して決めます。
-                段組みだけを変えたいときは、上の「適用する整理内容」のチェックをすべて外してください。
+                変えるのは段組みの設定だけです（本文・表・画像は変えません。見え方はWordなどが決めます）。
+                段組みだけを変えたいときは、上の「整理すること」をすべて外してください。
               </p>
             </div>
           )}
@@ -437,14 +441,16 @@ export function WordParagraphCleanupTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || !canRun} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {runLabel}
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || !canRun} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {runLabel}
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel={columnsEnabled && !hasAnyOption ? "段組みの変更が完了しました" : "整理が完了しました"} />

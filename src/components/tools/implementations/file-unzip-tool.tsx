@@ -17,6 +17,7 @@ import {
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useObjectUrl } from "@/lib/utils/use-object-url";
+import { RunBar } from "@/components/ui/run-bar";
 
 /** プレビュー用の画像サムネイル（Object URLはこのコンポーネントが破棄する） */
 function ZipEntryThumb({ blob, alt }: { blob: Blob; alt: string }) {
@@ -117,6 +118,7 @@ export function FileUnzipTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept="application/zip,.zip,application/x-zip-compressed"
         maxSizeMB={200}
         label="ZIPファイルをドラッグ&ドロップ"
@@ -162,14 +164,16 @@ export function FileUnzipTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          解凍する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            解凍する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel="解凍中..." successLabel="解凍が完了しました" />

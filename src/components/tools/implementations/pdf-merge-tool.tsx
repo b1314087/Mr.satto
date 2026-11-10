@@ -13,6 +13,7 @@ import { fileKey as fileIdentity, revokeOutputUrl, useKeyedRun } from "@/compone
 import { PdfMergeProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 // 並べ替えてもサムネイルを作り直さないよう、Fileごとに固定のキーを割り当てる
 const fileKeys = new WeakMap<File, number>();
@@ -84,6 +85,8 @@ export function PdfMergeTool() {
       }
     >
       <FileDropzone
+        compact={files.length > 0}
+        compactAction="add"
         accept="application/pdf,.pdf"
         multiple
         maxSizeMB={100}
@@ -104,14 +107,16 @@ export function PdfMergeTool() {
       )}
 
       {files.length >= 2 && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {files.length}件のPDFを結合する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {files.length}件のPDFを結合する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="結合が完了しました" />

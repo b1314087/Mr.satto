@@ -42,6 +42,7 @@ import { describeRule, isActiveRule, shuffleWithRules, violatedRules, type SeatG
 import { exportChart, PAPER_SIZES, usesRedNumbers, type ExportFormat, type PaperOrientation, type PaperSize, type SeatingChartModel } from "@/lib/processors/browser/seating-export";
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
+import { Segmented } from "@/components/ui/segmented";
 
 /** 人数に合わせて自動で変わる項目（手で変えると「人数に合わせる」を外す） */
 const AUTO_FIELDS: Record<Purpose, (keyof LayoutParams)[]> = {
@@ -567,17 +568,29 @@ export function SeatingChartTool() {
             {(purpose === "group" || purpose === "classroom" || purpose === "custom") && (
               <FormGroup title="並び方">
                 {(purpose === "group" || purpose === "classroom") && (
-                  <FormRow label="名前の入れ方" htmlFor="seat-order-select">
+                  <FormRow label="名前の入れ方">
                     {purpose === "group" ? (
-                      <select id="seat-order-select" value={params.deal ? "deal" : "fill"} onChange={(e) => updateParam("deal", e.target.value === "deal")} className={`${inputClass} w-full`} data-testid="seat-deal">
-                        <option value="fill">島ごとに詰める</option>
-                        <option value="deal">1人ずつ順に配る</option>
-                      </select>
+                      <Segmented
+                        ariaLabel="名前の入れ方"
+                        testId="seat-deal"
+                        value={params.deal ? "deal" : "fill"}
+                        onChange={(v) => updateParam("deal", v === "deal")}
+                        options={[
+                          { value: "fill", label: "島ごとに詰める" },
+                          { value: "deal", label: "1人ずつ配る", title: "1人ずつ順に配る" },
+                        ]}
+                      />
                     ) : (
-                      <select id="seat-order-select" value={params.byColumn ? "col" : "row"} onChange={(e) => updateParam("byColumn", e.target.value === "col")} className={`${inputClass} w-full`} data-testid="seat-by-column">
-                        <option value="row">横に順番</option>
-                        <option value="col">縦に順番</option>
-                      </select>
+                      <Segmented
+                        ariaLabel="名前の入れ方"
+                        testId="seat-by-column"
+                        value={params.byColumn ? "col" : "row"}
+                        onChange={(v) => updateParam("byColumn", v === "col")}
+                        options={[
+                          { value: "row", label: "横に順番" },
+                          { value: "col", label: "縦に順番" },
+                        ]}
+                      />
                     )}
                   </FormRow>
                 )}
@@ -606,7 +619,7 @@ export function SeatingChartTool() {
                         )
                       }
                     >
-                      <div role="radiogroup" aria-label="島を増やす方向" className="flex flex-wrap gap-1" data-testid="seat-group-flow">
+                      <div role="radiogroup" aria-label="島を増やす方向" className="ms-seg" data-testid="seat-group-flow">
                         {GROUP_FLOW_OPTIONS.map((o) => (
                           <button
                             key={o.value}
@@ -615,9 +628,6 @@ export function SeatingChartTool() {
                             aria-checked={(params.groupFlow ?? "auto") === o.value}
                             onClick={() => chooseGroupFlow(o.value)}
                             data-testid={`seat-group-flow-${o.value}`}
-                            className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                              (params.groupFlow ?? "auto") === o.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-                            }`}
                           >
                             {o.label}
                           </button>
@@ -857,7 +867,7 @@ export function SeatingChartTool() {
           </h2>
           <div className="flex flex-col gap-2.5">
             <FormRow label="形式">
-              <div role="radiogroup" aria-label="書き出す形式" className="flex flex-wrap gap-1.5">
+              <div role="radiogroup" aria-label="書き出す形式" className="ms-seg">
                 {FORMATS.map((f) => (
                   <button
                     key={f.value}
@@ -866,9 +876,6 @@ export function SeatingChartTool() {
                     aria-checked={format === f.value}
                     onClick={() => setFormat(f.value)}
                     data-testid={`seat-format-${f.value}`}
-                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                      format === f.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                    }`}
                   >
                     {f.label}
                   </button>
@@ -886,18 +893,18 @@ export function SeatingChartTool() {
                     ))}
                   </select>
                 </FormRow>
-                <FormRow label="向き" htmlFor="seat-paper-orientation-select">
-                  <select
-                    id="seat-paper-orientation-select"
+                <FormRow label="向き">
+                  <Segmented
+                    ariaLabel="向き"
+                    testId="seat-paper-orientation"
                     value={paperOrientation}
-                    onChange={(e) => setPaperOrientation(e.target.value as PaperOrientation)}
-                    className={`${inputClass} w-full`}
-                    data-testid="seat-paper-orientation"
-                  >
-                    <option value="auto">自動（表の形に合わせる）</option>
-                    <option value="portrait">縦</option>
-                    <option value="landscape">横</option>
-                  </select>
+                    onChange={(v) => setPaperOrientation(v)}
+                    options={[
+                      { value: "auto", label: "自動", title: "自動（表の形に合わせる）" },
+                      { value: "portrait", label: "縦" },
+                      { value: "landscape", label: "横" },
+                    ]}
+                  />
                 </FormRow>
               </>
             )}
@@ -1507,7 +1514,7 @@ function ConditionsPanel({
       <>
         <div className="flex flex-col gap-2" data-testid="seat-conditions-body">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            シャッフルするときに守る条件です。プレビュー・印刷・ダウンロードには表示されません。「離す」の席の数は、隣・前後・斜めを1席として数えます。
+            シャッフルのときに守る条件です（印刷には出ません。「離す」は隣・前後・斜めを1席と数えます）。
           </p>
           {rules.length === 0 && <p className="text-xs text-neutral-500 dark:text-neutral-400">条件はまだありません。</p>}
           <ul className="flex flex-col gap-2">
@@ -1550,10 +1557,17 @@ function ConditionsPanel({
                   {r.kind === "place" && (
                     <>
                       <span>を</span>
-                      <select value={r.axis} onChange={(e) => update(r.id, { axis: e.target.value as "col" | "row", from: 1, to: 1 })} className={select} data-testid="seat-rule-axis" aria-label="列の向き">
-                        <option value="row">前から</option>
-                        <option value="col">左から</option>
-                      </select>
+                      <Segmented
+                        size="sm"
+                        ariaLabel="列の向き"
+                        testId="seat-rule-axis"
+                        value={r.axis}
+                        onChange={(v) => update(r.id, { axis: v, from: 1, to: 1 })}
+                        options={[
+                          { value: "row", label: "前から" },
+                          { value: "col", label: "左から" },
+                        ]}
+                      />
                       <input type="number" min={1} max={r.axis === "col" ? maxCol : maxRow} value={r.from} onChange={(e) => { const v = Math.max(1, Number(e.target.value) || 1); update(r.id, { from: v, to: Math.max(v, r.to) }); }} className={num} data-testid="seat-rule-from" aria-label="何列目から" />
                       <span>〜</span>
                       <input type="number" min={1} max={r.axis === "col" ? maxCol : maxRow} value={r.to} onChange={(e) => { const v = Math.max(1, Number(e.target.value) || 1); update(r.id, { to: v, from: Math.min(v, r.from) }); }} className={num} data-testid="seat-rule-to" aria-label="何列目まで" />
@@ -1563,10 +1577,17 @@ function ConditionsPanel({
                   {r.kind === "stay" && (
                     <>
                       <span>を今の</span>
-                      <select value={r.axis} onChange={(e) => update(r.id, { axis: e.target.value as "col" | "row" })} className={select} data-testid="seat-rule-axis" aria-label="列の向き">
-                        <option value="col">縦の列</option>
-                        <option value="row">横の列</option>
-                      </select>
+                      <Segmented
+                        size="sm"
+                        ariaLabel="列の向き"
+                        testId="seat-rule-axis"
+                        value={r.axis}
+                        onChange={(v) => update(r.id, { axis: v })}
+                        options={[
+                          { value: "col", label: "縦の列" },
+                          { value: "row", label: "横の列" },
+                        ]}
+                      />
                       <span>のままにする</span>
                     </>
                   )}

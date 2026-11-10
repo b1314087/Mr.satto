@@ -20,6 +20,7 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { CsvReplaceProcessor, replaceCsvRows } from "@/lib/processors/browser/csv-ops";
 import { parseCsv } from "@/lib/utils/csv";
 import { formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 export function CsvReplaceTool() {
   /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
@@ -87,6 +88,7 @@ export function CsvReplaceTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept=".csv,text/csv"
         maxSizeMB={50}
         label="CSVファイルをドラッグ&ドロップ"
@@ -152,14 +154,16 @@ export function CsvReplaceTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || search === ""} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          置換を実行する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || search === ""} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            置換を実行する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="置換が完了しました" />

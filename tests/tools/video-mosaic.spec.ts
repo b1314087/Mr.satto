@@ -271,7 +271,7 @@ test("video-mosaic: 追跡しなくても、固定の範囲で書き出せる（
   await openWithVideo(page);
   await dragVideo(page, { x: 200, y: 150 }, { x: 300, y: 220 });
   await page.getByTestId("vm-mode-fixed").click();
-  await page.getByTestId("vm-kind").selectOption("fill");
+  await page.getByTestId("vm-kind").getByRole("radio", { name: "黒塗り" }).click();
   await page.getByText("WebM", { exact: true }).click();
   await page.getByTestId("vm-export").click();
   const dl = await clickAndDownload(page, "ダウンロード");

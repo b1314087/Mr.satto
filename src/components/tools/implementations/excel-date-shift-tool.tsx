@@ -26,6 +26,7 @@ import {
   type DateShiftMode,
 } from "@/lib/processors/browser/excel-date-shift";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -135,6 +136,7 @@ export function ExcelDateShiftTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept={ACCEPT}
         maxSizeMB={50}
         label="Excelファイル（.xlsx）をドラッグ&ドロップ"
@@ -147,17 +149,12 @@ export function ExcelDateShiftTool() {
 
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <div className="flex flex-wrap gap-2">
+          <div className="ms-seg">
             {MODE_OPTIONS.map((opt) => (
-              <button
+              <button aria-pressed={mode === opt.value}
                 key={opt.value}
                 type="button"
                 onClick={() => handleModeChange(opt.value)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  mode === opt.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {opt.label}
               </button>
@@ -212,14 +209,16 @@ export function ExcelDateShiftTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          一括変更する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            一括変更する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="変更が完了しました" />

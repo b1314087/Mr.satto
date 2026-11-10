@@ -16,6 +16,8 @@ import {
   type DocumentFormState,
   type DocumentType,
 } from "@/lib/documents/types";
+import { StepHeading } from "@/components/ui/step-heading";
+import { AdvancedSettings } from "@/components/ui/advanced-settings";
 
 /**
  * 帳票作成ツールの共通実装（Phase 2-C）。
@@ -37,36 +39,33 @@ export function DocumentGeneratorTool({ type }: { type: DocumentType }) {
     setForm((prev) => ({ ...prev, ...p }));
   }
 
-  const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧"];
-  const previewStep = meta.showBankAccount ? CIRCLED[6] : CIRCLED[5];
-  const actionStep = meta.showBankAccount ? CIRCLED[7] : CIRCLED[6];
+  const previewStep = meta.showBankAccount ? 7 : 6;
+  const actionStep = meta.showBankAccount ? 8 : 7;
 
   return (
     <PreviewSplitLayout
       previewWidth="lg"
       preview={
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
-          {previewStep} プレビュー
-        </h2>
+        <StepHeading n={previewStep} as="h2">
+          プレビュー
+        </StepHeading>
         <div data-testid="tool-preview">
           <DocumentPreview form={form} />
         </div>
       </section>
       }
     >
-      <p className="text-sm text-neutral-500 dark:text-neutral-400">入力内容は画面を閉じると消えます。</p>
-
       <DocumentMemoImport form={form} onApply={patch} />
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">① 基本情報</h2>
+        <StepHeading n={1} as="h2">基本情報</StepHeading>
         <DocumentBasicForm form={form} onChange={patch} />
       </section>
 
       <section className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
         <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">② 宛先</h2>
+          <StepHeading n={2} as="h2">宛先</StepHeading>
           <PartyInfoForm
             label="宛先情報"
             party={form.recipient}
@@ -74,39 +73,43 @@ export function DocumentGeneratorTool({ type }: { type: DocumentType }) {
           />
         </div>
         <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
-            ③ 発行者（自社情報）
-          </h2>
+          <StepHeading n={3} as="h2">発行者（自社情報）</StepHeading>
           <PartyInfoForm label="発行者情報" party={form.issuer} onChange={(issuer) => patch({ issuer })} />
         </div>
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">④ 明細</h2>
+        <StepHeading n={4} as="h2">明細</StepHeading>
         <LineItemsEditor items={form.items} onChange={(items) => patch({ items })} />
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">⑤ 税・金額</h2>
+        <StepHeading n={5} as="h2">税・金額</StepHeading>
         <TaxSettings taxRatePercent={form.taxRatePercent} taxRounding={form.taxRounding} onChange={patch} />
       </section>
 
       {meta.showBankAccount && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
-            ⑥ 振込先
-          </h2>
-          <BankAccountForm
-            bankAccount={form.bankAccount}
-            onChange={(bankAccount) => patch({ bankAccount })}
-          />
+          <StepHeading n={6} as="h2">振込先</StepHeading>
+          {/* 振込先は任意なので、ふだんは閉じておく。入力済みなら、閉じていても銀行名を出す */}
+          <AdvancedSettings
+            title="振込先を入れる"
+            summary={form.bankAccount.bankName ? `入力済み：${form.bankAccount.bankName}` : "任意"}
+            defaultOpen={Boolean(form.bankAccount.bankName || form.bankAccount.accountNumber)}
+            testId="bank-account-settings"
+          >
+            <BankAccountForm
+              bankAccount={form.bankAccount}
+              onChange={(bankAccount) => patch({ bankAccount })}
+            />
+          </AdvancedSettings>
         </section>
       )}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
-          {actionStep} PDF出力
-        </h2>
+        <StepHeading n={actionStep} as="h2">
+          PDF出力
+        </StepHeading>
         <DocumentActions form={form} />
       </section>
     </PreviewSplitLayout>

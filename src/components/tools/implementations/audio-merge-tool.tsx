@@ -91,6 +91,8 @@ export function AudioMergeTool() {
     <div className="flex flex-col gap-6">
 
       <FileDropzone
+        compact={files.length > 0}
+        compactAction="add"
         accept={AUDIO_INPUT_ACCEPT}
         multiple
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}

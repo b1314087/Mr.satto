@@ -9,6 +9,7 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { FileZipProcessor, planZipEntryNames } from "@/lib/processors/browser/file-ops";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /** この合計サイズ以下なら、プレビューでも実際にZIPを作ってサイズを出す */
 const EXACT_ESTIMATE_MAX_BYTES = 20 * 1024 * 1024;
@@ -98,6 +99,8 @@ export function FileZipTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={files.length > 0}
+        compactAction="add"
         multiple
         maxSizeMB={200}
         label="ファイルをドラッグ&ドロップ（複数可）"
@@ -142,14 +145,16 @@ export function FileZipTool() {
       )}
 
       {files.length > 0 && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {files.length}件をZIP化する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {files.length}件をZIP化する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="ZIPの作成が完了しました" />

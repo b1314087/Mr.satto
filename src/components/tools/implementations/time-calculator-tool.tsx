@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TimeToolsProcessor, type TimeToolMode } from "@/lib/processors/browser/time-tools";
 import { ErrorMessage } from "@/components/common/error-message";
+import { RunBar } from "@/components/ui/run-bar";
 
 const TABS: { value: TimeToolMode; label: string }[] = [
   { value: "diff", label: "時間差" },
@@ -139,19 +140,14 @@ export function TimeCalculatorTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap gap-2">
+      <div className="ms-seg">
         {TABS.map((t) => (
-          <button
+          <button aria-pressed={tab === t.value}
             key={t.value}
             type="button"
             onClick={() => {
               setTab(t.value);
             }}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              tab === t.value
-                ? "bg-blue-600 text-white"
-                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
-            }`}
           >
             {t.label}
           </button>
@@ -306,13 +302,15 @@ export function TimeCalculatorTool() {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleRun}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-      >
-        計算する
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleRun}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+        >
+          計算する
+        </button>
+      </RunBar>
 
       {error && <ErrorMessage message={error} />}
 

@@ -34,8 +34,7 @@ export function TrialCard({
       <div>
         <h2 className="text-base font-semibold text-ms-text">プレミアムを{TRIAL_DAYS}日間、無料でためせます</h2>
         <p className="mt-1 text-xs leading-relaxed text-ms-muted">
-          1アカウントにつき1回だけ。お支払い方法の登録は不要で、自動で課金されることはありません。期限が来ると、自動で無料プランに戻ります。
-          AIの利用枠は、お試しの間は少なめです。
+          カード登録は不要で、自動で課金されることはありません（1アカウント1回・期限が来ると無料プランに戻ります。AIの利用枠は少なめ）。
         </p>
       </div>
       {state === "available" ? (

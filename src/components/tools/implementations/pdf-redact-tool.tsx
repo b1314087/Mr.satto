@@ -20,6 +20,7 @@ import {
 } from "@/lib/pdf/redact";
 import { PdfRedactProcessor, type PdfRedactOutput } from "@/lib/processors/browser/pdf-redact";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 type PdfDoc = Awaited<ReturnType<typeof loadPdfDocument>>;
 
@@ -256,6 +257,7 @@ export function PdfRedactTool({ initialFile = null, onFileChange }: SharedPdfFil
       </div>
 
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         maxSizeMB={MAX_SOURCE_MB}
         label="PDFをドラッグ&ドロップ"
@@ -434,15 +436,17 @@ export function PdfRedactTool({ initialFile = null, onFileChange }: SharedPdfFil
       )}
 
       {doc && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={regions.length === 0 || status === "processing"}
-          aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          黒塗りを確定して新しいPDFを作る
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={regions.length === 0 || status === "processing"}
+            aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            黒塗りを確定して新しいPDFを作る
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="黒塗りが完了しました" />

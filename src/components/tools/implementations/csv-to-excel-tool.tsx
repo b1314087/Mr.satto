@@ -18,6 +18,7 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { CsvToExcelProcessor } from "@/lib/processors/browser/csv-excel";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 export function CsvToExcelTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -82,6 +83,7 @@ export function CsvToExcelTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept=".csv,text/csv"
         maxSizeMB={50}
         label="CSVファイルをドラッグ&ドロップ"
@@ -107,14 +109,16 @@ export function CsvToExcelTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          Excelに変換する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            Excelに変換する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus

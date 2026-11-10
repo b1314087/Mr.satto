@@ -26,6 +26,7 @@ import {
 } from "@/components/tools/implementations/shared/before-after-table";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { ExcelChartPageCheck, type ChartPageCheckState } from "@/components/tools/implementations/excel-chart-page-check";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * Excel（XLSX）→ PDF（Phase 9、Phase 18.2 B節で大幅改修）。
@@ -200,6 +201,7 @@ export function ExcelToPdfTool() {
       <p className="text-xs text-neutral-500 dark:text-neutral-400">対応形式は.xlsxのみです。数式は再計算せず、保存されている値を表示します。</p>
 
       <FileDropzone
+        compact={!!file}
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         maxSizeMB={30}
         label="Excelファイル(.xlsx)をドラッグ&ドロップ"
@@ -328,14 +330,16 @@ export function ExcelToPdfTool() {
       )}
 
       {sheets && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || selectedSheets.size === 0} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          PDFに変換する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || selectedSheets.size === 0} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            PDFに変換する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel="変換中..." successLabel="PDFの生成が完了しました" />

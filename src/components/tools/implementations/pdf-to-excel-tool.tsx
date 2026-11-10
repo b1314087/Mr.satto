@@ -20,6 +20,7 @@ import { FilledPdfAiPanel, formAiEnabled } from "./filled-pdf-to-excel/ai-panel"
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
 
 type TablePreview =
   | { file: File; hasTextLayer: boolean; rows: string[][]; layout: PdfToExcelLayoutNotes | null }
@@ -207,6 +208,7 @@ export function PdfToExcelTool() {
       <p className="text-xs text-neutral-500 dark:text-neutral-400">文字の位置から表を推定します。複雑なレイアウトでは、正しく変換できない場合があります。</p>
 
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         maxSizeMB={50}
         label="PDFをドラッグ&ドロップ"
@@ -300,14 +302,16 @@ export function PdfToExcelTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          Excelに変換する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            Excelに変換する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus

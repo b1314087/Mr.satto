@@ -46,6 +46,8 @@ import {
 import { formatDuration, resizedDimensions } from "@/lib/video/estimate";
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
+import { AdvancedSettings } from "@/components/ui/advanced-settings";
 
 /** 選んだ動画を調べた結果（解像度・fps・音声の有無・映像のコーデック・書き出せる形式） */
 interface SourceInfo {
@@ -269,7 +271,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     <fieldset className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="video-edit-trim">
       <legend className="px-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">切り取り（トリミング）</legend>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        残したい部分の開始と終了を入れます（例: 1:05.5）。動画を再生して止め、「今の位置」を押しても入れられます。空なら最初から・最後まで。
+        再生して止め「今の位置」でも入れられます（例: 1:05.5。空なら最初から・最後まで）。
       </p>
       <div className="flex flex-wrap items-end gap-3">
         {(["start", "end"] as const).map((which) => (
@@ -321,7 +323,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
       )}
       <label className="flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-300">
         <input type="checkbox" checked={settings.fastTrim} onChange={(e) => update({ fastTrim: e.target.checked })} className="mt-0.5" data-testid="video-edit-trim-fast" />
-        <span>速さを優先する（作り直さずに切るので速く、画質も変わりません。ただし開始が少し前（多くは数秒以内）にずれることがあります）</span>
+        <span>速さを優先する（画質は変わらず速いが、開始が数秒前にずれることがあります）</span>
       </label>
     </fieldset>
   );
@@ -337,7 +339,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
         onChange={(v) => update({ container: v as OutputContainer })}
         note={
           OUTPUT_CONTAINER_OPTIONS.some((o) => !containerAvailable(o.value))
-            ? "選べない形式は、お使いのブラウザでは、この設定で書き出せません。画質・解像度・フレームレートを「元のまま」にすると選べる場合があります。"
+            ? "選べない形式は、このブラウザでは書き出せません（画質などを「元のまま」にすると選べる場合があります）。"
             : undefined
         }
       />
@@ -350,7 +352,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
         options={QUALITY_CHOICES.map((o) => ({ value: o.value, label: o.label }))}
         value={settings.quality}
         onChange={(v) => update({ quality: v as QualityChoice })}
-        note={QUALITY_CHOICES.find((o) => o.value === settings.quality)?.description}
+        note={undefined}
       />
     ),
     resolution: (
@@ -367,9 +369,9 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
         note={
           source && resolutionOptions.length === 0
             ? "この動画はすでに解像度が小さいため、縮小できる選択肢がありません（拡大はしません）。"
-            : `元の動画より大きい解像度は選べません（拡大はしません）。縦横の比率はそのまま保ちます（縦長の動画は横の長さ、横長の動画は縦の長さが、選んだ大きさになります）。${
-                source ? `できあがる大きさ：${resolutionOptions.map((p) => { const d = resizedDimensions(source.width, source.height, p); return `${p}p＝${d.width}×${d.height}`; }).join("、")}` : ""
-              }`
+            : source
+              ? `できあがる大きさ：${resolutionOptions.map((p) => { const d = resizedDimensions(source.width, source.height, p); return `${p}p＝${d.width}×${d.height}`; }).join("、")}（縦横の比率はそのまま）`
+              : undefined
         }
       />
     ),
@@ -381,7 +383,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
         options={[{ value: "original", label: "元のフレームレート" }, ...fpsOptions.map((f) => ({ value: String(f), label: `${f}fps` }))]}
         value={settings.fps === null ? null : String(settings.fps)}
         onChange={(v) => update({ fps: v === "original" ? "original" : Number(v) })}
-        note="元の動画より高いフレームレートは選べません（コマを増やすことはしません）。"
+        note={undefined}
       />
     ),
   };
@@ -401,7 +403,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
         ]}
         value={String(settings.rotate)}
         onChange={(v) => update({ rotate: Number(v) as RotateChoice })}
-        note={settings.rotate !== 0 && settings.container === "mp4" ? "MP4は、作り直さずに向きの情報を付けて回転します（速く、画質も変わりません）。" : undefined}
+        note={settings.rotate !== 0 && settings.container === "mp4" ? "MP4は向きの情報を付けて回転します（速く、画質も変わりません）。" : undefined}
       />
       <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
         <input
@@ -444,11 +446,35 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     ];
   })();
 
+  // 詳細設定の見出しの横に出す、今の値の要約（例：「MP4・元の解像度・元のfps・回転なし・音声あり」）
+  const advancedSummary = [
+    ...otherSections.map((k) =>
+      k === "container"
+        ? settings.container.toUpperCase()
+        : k === "quality"
+          ? (QUALITY_CHOICES.find((o) => o.value === settings.quality)?.label ?? "")
+          : k === "resolution"
+            ? settings.resolution === null
+              ? "解像度を選んでください"
+              : settings.resolution === "original"
+                ? "元の解像度"
+                : `${settings.resolution}p`
+            : settings.fps === null
+              ? "fpsを選んでください"
+              : settings.fps === "original"
+                ? "元のfps"
+                : `${settings.fps}fps`
+    ),
+    settings.rotate === 0 ? "回転なし" : settings.rotate === 90 ? "右に90°" : settings.rotate === 180 ? "180°" : "左に90°",
+    settings.muted ? "音声なし" : "音声あり",
+  ].join("・");
+
   const busy = status === "processing";
 
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
@@ -466,13 +492,17 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
           <div className="flex flex-col gap-2 rounded-xl border border-blue-200 bg-blue-50/40 p-4 dark:border-blue-900 dark:bg-blue-950/20" data-testid={`video-edit-focus-${preset.focus}`}>
             {sections[preset.focus]}
           </div>
-          <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-            <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
-              あわせて変えられる設定（変えなければ元のまま。切り取りは下の動画のところで決められます。すべての設定を1回の変換でまとめて反映します）
-            </p>
+          {/* あわせて変えられる設定は「詳細設定」にまとめ、ふだんは閉じておく。閉じていても今の値を右に出す。
+              値は閉じても消えず、書き出しのときにまとめて反映する */}
+          <AdvancedSettings
+            title="詳細設定"
+            summary={advancedSummary}
+            testId="video-edit-advanced"
+            defaultOpen={otherSections.some((k) => (k === "resolution" && settings.resolution === null) || (k === "fps" && settings.fps === null))}
+          >
             {otherSections.map((k) => sections[k])}
             {editSections}
-          </div>
+          </AdvancedSettings>
         </div>
       )}
 
@@ -494,15 +524,17 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
 
       {file && (
         <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => handleRun()}
-            disabled={busy || detecting || !source || missing !== null || selectedContainerUnavailable || trimProblem !== null}
-            aria-busy={busy || undefined}
-            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            {preset.actionLabel}
-          </button>
+          <RunBar>
+            <button
+              type="button"
+              onClick={() => handleRun()}
+              disabled={busy || detecting || !source || missing !== null || selectedContainerUnavailable || trimProblem !== null}
+              aria-busy={busy || undefined}
+              className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {preset.actionLabel}
+            </button>
+          </RunBar>
           {source && missing && (
             <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="video-edit-missing">
               {missing === "resolution" ? "変更後の解像度を選んでください。" : "変更後のフレームレートを選んでください。"}
@@ -584,7 +616,7 @@ function ResultSummary({ result, outputName }: { result: VideoEditOutput; output
   );
 }
 
-/** 選択肢のボタン（ラジオボタン）。従来の動画ツールと同じ見た目 */
+/** 選択肢のボタン（ラジオボタン）。見た目は全ページ共通のセグメントボタン */
 function ChoiceGroup({
   legend,
   name,
@@ -602,19 +634,11 @@ function ChoiceGroup({
 }) {
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{legend}</legend>
-      <div className="flex flex-wrap gap-2">
+      <legend className="mb-1.5 text-sm font-medium text-ms-text">{legend}</legend>
+      {/* セグメントボタンの見た目（.ms-seg-radio）。中身はこれまでどおりのラジオボタン */}
+      <div className="ms-seg-radio">
         {options.map((opt) => (
-          <label
-            key={opt.value}
-            className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-              opt.disabled
-                ? "cursor-not-allowed border-neutral-200 text-neutral-400 dark:border-neutral-800 dark:text-neutral-600"
-                : value === opt.value
-                  ? "cursor-pointer border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                  : "cursor-pointer border-neutral-300 text-neutral-600 hover:border-blue-400 dark:border-neutral-700 dark:text-neutral-300"
-            }`}
-          >
+          <label key={opt.value}>
             <input
               type="radio"
               name={name}
@@ -628,7 +652,7 @@ function ChoiceGroup({
           </label>
         ))}
       </div>
-      {note && <p className="text-xs text-neutral-500 dark:text-neutral-400">{note}</p>}
+      {note && <p className="mt-1.5 text-xs text-ms-muted">{note}</p>}
     </fieldset>
   );
 }

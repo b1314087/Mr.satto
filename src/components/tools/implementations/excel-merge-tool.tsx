@@ -31,6 +31,7 @@ import {
   type MergeOutputFormat,
 } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /** 列の対応表に出す列数の上限（これ以上は省略して件数だけ示す） */
 const MAX_COLUMN_ROWS = 30;
@@ -161,6 +162,8 @@ export function ExcelMergeTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={files.length > 0}
+        compactAction="add"
         accept={MERGE_FILE_ACCEPT}
         multiple
         maxSizeMB={50}
@@ -223,7 +226,7 @@ export function ExcelMergeTool() {
             値がすべて同じ行は、2行目以降を除く
           </label>
 
-          <div role="radiogroup" aria-label="出力形式" className="flex flex-wrap gap-2">
+          <div role="radiogroup" aria-label="出力形式" className="ms-seg">
             {(
               [
                 { value: "xlsx", label: "Excel（.xlsx）" },
@@ -239,11 +242,6 @@ export function ExcelMergeTool() {
                   setFormat(opt.value);
                   invalidate();
                 }}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  format === opt.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {opt.label}
               </button>
@@ -334,15 +332,17 @@ export function ExcelMergeTool() {
       )}
 
       {files.length >= 2 && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={!canRun}
-          aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {files.length}件を結合する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={!canRun}
+            aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {files.length}件を結合する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="結合が完了しました" />

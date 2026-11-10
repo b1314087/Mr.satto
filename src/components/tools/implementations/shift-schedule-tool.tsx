@@ -35,6 +35,9 @@ import {
 import { shiftTitle, shiftToCsvBlob, shiftToPdfBlob, shiftToXlsxBlob, typeTimeText } from "@/lib/processors/browser/shift-export";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { StepHeading } from "@/components/ui/step-heading";
+import { AdvancedSettings } from "@/components/ui/advanced-settings";
+import { Segmented } from "@/components/ui/segmented";
 
 const inputClass =
   "rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
@@ -243,12 +246,12 @@ export function ShiftScheduleTool() {
 
   return (
     <div className="flex flex-col gap-5">
-      <p className="rounded-xl bg-neutral-50 p-3 text-xs leading-relaxed text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
-        勤務区分とスタッフを決めて、日ごとの勤務を表に入れていくツールです。勤務の自動割り当てや最適化はしません。連続勤務や勤務間の休息時間は、下で決めた目安に合わない箇所を知らせるだけで、法令に合っているかは判定しません。入力した内容は、この端末の中だけで処理し、外部には送りません。
+      <p className="text-xs leading-relaxed text-ms-muted">
+        勤務の種類とスタッフを決め、表のマスを押して入れます（自動の割り当てはしません）。入力した内容は、この端末の中だけで処理します。
       </p>
 
       <section className={sectionClass} aria-labelledby="shift-step1">
-        <h3 id="shift-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">1. 年月と確認の目安</h3>
+        <StepHeading n={1} as="h3" id="shift-step1">年月と確認の目安</StepHeading>
         <div className="flex flex-wrap items-end gap-3">
           <label className={labelClass}>
             タイトル（空なら年月から付けます）
@@ -275,51 +278,58 @@ export function ShiftScheduleTool() {
             </select>
           </label>
         </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className={labelClass}>
-            連続勤務の上限の目安（日。0は確認しない）
-            <input
-              data-testid="shift-max-consecutive"
-              type="number"
-              min={0}
-              max={31}
-              value={schedule.settings.maxConsecutive}
-              onChange={(e) => update({ settings: { ...schedule.settings, maxConsecutive: Math.min(31, Math.max(0, toInt(e.target.value, 0))) } })}
-              className={`${inputClass} w-24`}
-            />
-          </label>
-          <label className={labelClass}>
-            勤務間にあけたい時間（時間。0は確認しない）
-            <input
-              data-testid="shift-min-rest"
-              type="number"
-              min={0}
-              max={24}
-              value={schedule.settings.minRestHours}
-              onChange={(e) => update({ settings: { ...schedule.settings, minRestHours: Math.min(24, Math.max(0, toInt(e.target.value, 0))) } })}
-              className={`${inputClass} w-24`}
-            />
-          </label>
-          <label className={labelClass}>
-            1日に必要な出勤人数（0は確認しない）
-            <input
-              data-testid="shift-min-staff"
-              type="number"
-              min={0}
-              max={SHIFT_MAX_STAFF}
-              value={schedule.settings.minStaffPerDay}
-              onChange={(e) => update({ settings: { ...schedule.settings, minStaffPerDay: Math.min(SHIFT_MAX_STAFF, Math.max(0, toInt(e.target.value, 0))) } })}
-              className={`${inputClass} w-24`}
-            />
-          </label>
-        </div>
+        {/* 確認の目安は任意なので、ふだんは閉じておく（閉じていても今の値を出す） */}
+        <AdvancedSettings
+          title="確認の目安（任意）"
+          summary={`連続勤務 ${schedule.settings.maxConsecutive || "確認しない"}${schedule.settings.maxConsecutive ? "日" : ""}・勤務間 ${schedule.settings.minRestHours || "確認しない"}${schedule.settings.minRestHours ? "時間" : ""}・必要人数 ${schedule.settings.minStaffPerDay || "確認しない"}${schedule.settings.minStaffPerDay ? "人" : ""}`}
+          testId="shift-check-settings"
+        >
+          <div className="flex flex-wrap items-end gap-3">
+            <label className={labelClass}>
+              連続勤務の上限の目安（日。0は確認しない）
+              <input
+                data-testid="shift-max-consecutive"
+                type="number"
+                min={0}
+                max={31}
+                value={schedule.settings.maxConsecutive}
+                onChange={(e) => update({ settings: { ...schedule.settings, maxConsecutive: Math.min(31, Math.max(0, toInt(e.target.value, 0))) } })}
+                className={`${inputClass} w-24`}
+              />
+            </label>
+            <label className={labelClass}>
+              勤務間にあけたい時間（時間。0は確認しない）
+              <input
+                data-testid="shift-min-rest"
+                type="number"
+                min={0}
+                max={24}
+                value={schedule.settings.minRestHours}
+                onChange={(e) => update({ settings: { ...schedule.settings, minRestHours: Math.min(24, Math.max(0, toInt(e.target.value, 0))) } })}
+                className={`${inputClass} w-24`}
+              />
+            </label>
+            <label className={labelClass}>
+              1日に必要な出勤人数（0は確認しない）
+              <input
+                data-testid="shift-min-staff"
+                type="number"
+                min={0}
+                max={SHIFT_MAX_STAFF}
+                value={schedule.settings.minStaffPerDay}
+                onChange={(e) => update({ settings: { ...schedule.settings, minStaffPerDay: Math.min(SHIFT_MAX_STAFF, Math.max(0, toInt(e.target.value, 0))) } })}
+                className={`${inputClass} w-24`}
+              />
+            </label>
+          </div>
+        </AdvancedSettings>
         {ymError && <ErrorMessage message={ymError} />}
       </section>
 
       <section className={sectionClass} aria-labelledby="shift-step2">
-        <h3 id="shift-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">2. 勤務区分（表に入れる種類）</h3>
+        <StepHeading n={2} as="h3" id="shift-step2">勤務区分（表に入れる種類）</StepHeading>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          終了時刻が開始時刻以前のときは、翌日の時刻として数えます（夜勤など。例：22:00〜06:00）。「休み」は実働時間に含めません。
+          終了が開始より前なら翌日として数えます（夜勤。例：22:00〜06:00）。「休み」は実働に含めません。
         </p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-xs">
@@ -341,10 +351,17 @@ export function ShiftScheduleTool() {
                   <td className="pr-2 pb-1"><input aria-label={`${i + 1}番目の略称`} data-testid={`shift-type-code-${i}`} value={t.code} onChange={(e) => updateType(t.id, { code: e.target.value })} className={`${inputClass} w-14`} /></td>
                   <td className="pr-2 pb-1"><input aria-label={`${i + 1}番目の名前`} data-testid={`shift-type-name-${i}`} value={t.name} onChange={(e) => updateType(t.id, { name: e.target.value })} className={`${inputClass} w-28`} /></td>
                   <td className="pr-2 pb-1">
-                    <select aria-label={`${i + 1}番目の種類`} data-testid={`shift-type-kind-${i}`} value={t.kind} onChange={(e) => updateType(t.id, { kind: e.target.value === "off" ? "off" : "work" })} className={inputClass}>
-                      <option value="work">勤務</option>
-                      <option value="off">休み</option>
-                    </select>
+                    <Segmented
+                      size="sm"
+                      ariaLabel={`${i + 1}番目の種類`}
+                      testId={`shift-type-kind-${i}`}
+                      value={t.kind === "off" ? "off" : "work"}
+                      onChange={(v) => updateType(t.id, { kind: v })}
+                      options={[
+                        { value: "work", label: "勤務" },
+                        { value: "off", label: "休み" },
+                      ]}
+                    />
                   </td>
                   <td className="pr-2 pb-1"><input aria-label={`${i + 1}番目の開始時刻`} data-testid={`shift-type-start-${i}`} disabled={t.kind === "off"} value={t.kind === "off" ? "" : t.start} onChange={(e) => updateType(t.id, { start: e.target.value })} className={`${inputClass} w-20 disabled:opacity-40`} placeholder="09:00" /></td>
                   <td className="pr-2 pb-1"><input aria-label={`${i + 1}番目の終了時刻`} data-testid={`shift-type-end-${i}`} disabled={t.kind === "off"} value={t.kind === "off" ? "" : t.end} onChange={(e) => updateType(t.id, { end: e.target.value })} className={`${inputClass} w-20 disabled:opacity-40`} placeholder="18:00" /></td>
@@ -375,28 +392,30 @@ export function ShiftScheduleTool() {
       </section>
 
       <section className={sectionClass} aria-labelledby="shift-step3">
-        <h3 id="shift-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">3. スタッフ</h3>
+        <StepHeading n={3} as="h3" id="shift-step3">スタッフ</StepHeading>
         <ul className="flex flex-col gap-1.5">
           {schedule.staff.map((s, i) => (
             <li key={s.id} className="flex items-center gap-2">
               <span className="w-6 text-right text-xs text-neutral-400">{i + 1}</span>
               <input aria-label={`${i + 1}人目の名前`} data-testid={`shift-staff-name-${i}`} value={s.name} maxLength={60} onChange={(e) => update({ staff: schedule.staff.map((m) => (m.id === s.id ? { ...m, name: e.target.value } : m)) })} className={`${inputClass} w-48`} />
-              <button type="button" className={smallButton} onClick={() => moveStaff(i, -1)} disabled={i === 0} aria-label={`${s.name || i + 1}を上へ`}>上へ</button>
-              <button type="button" className={smallButton} onClick={() => moveStaff(i, 1)} disabled={i === schedule.staff.length - 1} aria-label={`${s.name || i + 1}を下へ`}>下へ</button>
-              <button type="button" className={smallButton} onClick={() => removeStaff(s.id)} aria-label={`${s.name || i + 1}を削除`}>削除</button>
+              <button type="button" className={smallButton} onClick={() => moveStaff(i, -1)} disabled={i === 0} aria-label={`${s.name || i + 1}を上へ`} title="上へ">↑</button>
+              <button type="button" className={smallButton} onClick={() => moveStaff(i, 1)} disabled={i === schedule.staff.length - 1} aria-label={`${s.name || i + 1}を下へ`} title="下へ">↓</button>
+              <button type="button" className={smallButton} onClick={() => removeStaff(s.id)} aria-label={`${s.name || i + 1}を削除`} title="削除">✕</button>
             </li>
           ))}
         </ul>
-        <div className="flex flex-col gap-2">
+        <div>
+          <button type="button" className={smallButton} data-testid="shift-add-staff" onClick={() => addStaff([""])} disabled={schedule.staff.length >= SHIFT_MAX_STAFF}>＋ 1人追加（{schedule.staff.length}/{SHIFT_MAX_STAFF}）</button>
+        </div>
+        <AdvancedSettings title="名前をまとめて追加" summary="1行に1人（「、」「,」区切りも可）" testId="shift-staff-bulk-settings">
           <label className={labelClass}>
-            名前をまとめて追加（1行に1人。「、」「,」区切りも可）
+            名前（1行に1人）
             <textarea data-testid="shift-staff-bulk" value={staffText} onChange={(e) => setStaffText(e.target.value)} rows={3} className={`${inputClass} w-full max-w-md`} />
           </label>
-          <div className="flex flex-wrap gap-2">
+          <div>
             <button type="button" className={smallButton} data-testid="shift-staff-bulk-add" onClick={() => { addStaff(parseStaffNames(staffText)); setStaffText(""); }} disabled={parseStaffNames(staffText).length === 0}>まとめて追加</button>
-            <button type="button" className={smallButton} data-testid="shift-add-staff" onClick={() => addStaff([""])} disabled={schedule.staff.length >= SHIFT_MAX_STAFF}>1人追加（{schedule.staff.length}/{SHIFT_MAX_STAFF}）</button>
           </div>
-        </div>
+        </AdvancedSettings>
         {staffProblems.length > 0 && (
           <div data-testid="shift-staff-errors" className="flex flex-col gap-2">
             {staffProblems.map((p) => (
@@ -408,9 +427,9 @@ export function ShiftScheduleTool() {
 
       <PreviewFullscreenFrame>
       <section className={sectionClass} aria-labelledby="shift-step4" data-testid="tool-preview">
-        <h3 id="shift-step4" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">4. 勤務表（{schedule.year}年{schedule.month}月）</h3>
+        <StepHeading n={4} as="h3" id="shift-step4">勤務表（{schedule.year}年{schedule.month}月）</StepHeading>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          入れたい勤務区分を選んでから、表のマスを押すか、マウスでなぞってください（キーボードでは、マスに移動してEnterキーかスペースキー）。同じ勤務区分をもう一度入れても、変わりません。
+          勤務区分を選んで、表のマスを押すか、なぞって入れます（キーボードはマスでEnterかスペース）。
         </p>
         <div role="group" aria-label="入れる勤務区分" className="flex flex-wrap gap-2">
           {schedule.types.map((t) => (
@@ -512,8 +531,7 @@ export function ShiftScheduleTool() {
           </div>
         )}
 
-        <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          <h4 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">曜日を指定して、まとめて入れる</h4>
+        <AdvancedSettings title="曜日を指定して、まとめて入れる" summary="土日・祝日をまとめて休みに など" testId="shift-bulk-settings">
           <div className="flex flex-wrap items-end gap-3">
             <label className={labelClass}>
               対象
@@ -558,7 +576,7 @@ export function ShiftScheduleTool() {
             <button type="button" className={smallButton} data-testid="shift-bulk-run" onClick={runBulk}>まとめて入れる</button>
           </div>
           {bulkMessage && <p data-testid="shift-bulk-message" className="text-xs text-neutral-600 dark:text-neutral-300">{bulkMessage}</p>}
-        </div>
+        </AdvancedSettings>
 
         <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800" data-testid="shift-issues">
           <h4 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">確認（決めた目安に合わない箇所）</h4>
@@ -573,13 +591,13 @@ export function ShiftScheduleTool() {
               ))}
             </ul>
           )}
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">これは入力した目安との比較だけで、労働基準法などの法令や、就業規則に合っているかの判定ではありません。</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">入力した目安との比較だけで、法令や就業規則に合っているかの判定ではありません。</p>
         </div>
       </section>
       </PreviewFullscreenFrame>
 
       <section className={sectionClass} aria-labelledby="shift-step5">
-        <h3 id="shift-step5" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">5. 保存と書き出し</h3>
+        <StepHeading n={5} as="h3" id="shift-step5">保存と書き出し</StepHeading>
         {problems.length > 0 && <ErrorMessage message={`入力に不備があるため、書き出せません：${problems[0]}${problems.length > 1 ? `（ほか${problems.length - 1}件）` : ""}`} testId="shift-export-blocked" />}
         <div className="flex flex-wrap items-center gap-3">
           <RewardedDownloadGate onDownload={() => exportAs("pdf")} label="PDFでダウンロード" disabled={exporting || problems.length > 0} />
@@ -589,19 +607,17 @@ export function ShiftScheduleTool() {
           {csvExport.confirm}
         </div>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          PDFはA4横です（30人を超えると、ページを分けます）。ExcelとPDFには、色つきの表、出勤日数・休日数・未入力・実働時間、日ごとの出勤人数が入ります。未入力のマスは空欄で出力します。
+          PDFはA4横（30人を超えるとページを分けます）。集計（出勤日数・実働時間・日ごとの人数）も入ります。
         </p>
         {exportError && <ErrorMessage message={exportError} />}
-        <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          <h4 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">続きを後で作る（保存ファイル）</h4>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">このページを閉じると、入力した内容は消えます。続きを作るときは、保存ファイルを作っておき、次回に読み込んでください。</p>
+        <AdvancedSettings title="続きを後で作る（保存ファイル）" summary="ページを閉じると入力は消えます" testId="shift-save-settings">
           <div>
             <button type="button" className={smallButton} data-testid="shift-save-json" onClick={saveJson}>保存ファイル（JSON）を作る</button>
           </div>
           {/* 保存ファイルの読み込みは補助の機能で、読み込むと入力中の表が置き換わるため、ページ全体へのドロップは受けない */}
           <FileDropzone accept=".json" maxSizeMB={5} label="保存ファイル（JSON）を読み込む" hint="このツールで作った保存ファイルを選んでください" onFilesSelected={loadJson} onError={setLoadError} pageDrop={false} />
           {loadError && <ErrorMessage message={loadError} testId="shift-load-error" />}
-        </div>
+        </AdvancedSettings>
         {message && <p data-testid="shift-message" className="text-xs text-neutral-600 dark:text-neutral-300">{message}</p>}
       </section>
     </div>

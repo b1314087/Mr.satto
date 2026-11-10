@@ -13,7 +13,8 @@ test("画像リサイズ: ファイルを選ぶ前は枠がカードの幅いっ
   await waitForFileInputHydrated(page);
   const widths = () =>
     page.evaluate(() => {
-      const zone = document.querySelector(".ms-dropzone") as HTMLElement;
+      // 選んだあとは小さなファイル行の欄（.ms-dropzone-compact）になる（UI・UX改善）
+      const zone = document.querySelector(".ms-dropzone, .ms-dropzone-compact") as HTMLElement;
       const panel = document.querySelector(".ms-tool-panel") as HTMLElement;
       const z = zone.getBoundingClientRect();
       const p = panel.getBoundingClientRect();

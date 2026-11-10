@@ -28,6 +28,7 @@ import {
 import { parseTableFile, type ParsedTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
 import { TicketPreview } from "./shared/ticket-preview";
+import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT = ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
 
@@ -242,15 +243,12 @@ export function TicketVoucherTool() {
         </div>
         <div className="flex flex-col gap-1 text-sm">
           <span className="text-neutral-600 dark:text-neutral-300">向き</span>
-          <div className="flex gap-2">
+          <div className="ms-seg">
             {(["portrait", "landscape"] as PaperOrientation[]).map((o) => (
-              <button
+              <button aria-pressed={form.orientation === o}
                 key={o}
                 type="button"
                 onClick={() => update("orientation", o)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  form.orientation === o ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {o === "portrait" ? "縦" : "横"}
               </button>
@@ -327,7 +325,7 @@ export function TicketVoucherTool() {
       <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <p className="text-sm font-medium">Excel/CSVから一括で読み込む（任意・1行=1枚）</p>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">列ごとに「タイトル」「金額」などを割り当てます。</p>
-        <FileDropzone accept={ACCEPT} maxSizeMB={20} label="CSV/Excelをドラッグ&ドロップ" hint="またはタップして選択" onFilesSelected={handleImportFile} onError={setImportError} />
+        <FileDropzone compact={!!importedFile} accept={ACCEPT} maxSizeMB={20} label="CSV/Excelをドラッグ&ドロップ" hint="またはタップして選択" onFilesSelected={handleImportFile} onError={setImportError} />
         <CsvEncodingControl files={[importedFile]} onChange={(f) => void handleImportFile([f])} />
         {importError && <ErrorMessage message={importError} />}
         {table && (
@@ -446,14 +444,16 @@ export function TicketVoucherTool() {
 
       {validationError && <ErrorMessage message={validationError} />}
 
-      <button
-        type="button"
-        onClick={handleRun}
-        disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
-        PDFを作成
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleRun}
+          disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          PDFを作成
+        </button>
+      </RunBar>
 
       <ProcessingStatus state={status} successLabel="PDFを作成しました" />
       {error && <ErrorMessage message={error} />}

@@ -19,6 +19,7 @@ import {
 } from "@/lib/processors/browser/image-merge";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 // 透明背景をプレビューで分かりやすく示す市松模様。
 // electronic-stamp-generator-tool.tsx の CHECKER_STYLE と同じ配色・寸法を再利用する。
@@ -272,6 +273,8 @@ export function ImageMergeTool() {
       previewWidth="lg"
     >
       <FileDropzone
+        compact={files.length > 0}
+        compactAction="add"
         accept="image/*"
         multiple
         maxSizeMB={50}
@@ -490,7 +493,7 @@ export function ImageMergeTool() {
       {settingsError && <ErrorMessage message={settingsError} />}
 
       {files.length >= 2 && (
-        <div className="flex flex-wrap gap-2">
+        <RunBar>
           <button
             type="button"
             onClick={() => void handleSave("png")}
@@ -507,7 +510,7 @@ export function ImageMergeTool() {
           >
             JPEGで保存
           </button>
-        </div>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="画像結合が完了しました" />

@@ -50,7 +50,7 @@ async function addPerson(page: Page) {
 }
 
 async function setFieldType(page: Page, badge: string, type: "text" | "checkbox") {
-  await page.getByLabel(`種類 (${badge})`).selectOption(type);
+  await page.getByLabel(`種類 (${badge})`).getByRole("radio", { name: type === "text" ? "テキスト" : "チェックボックス" }).click();
 }
 
 async function addField(page: Page, spec: TemplateFieldSpec, type: "text" | "checkbox" = "text") {

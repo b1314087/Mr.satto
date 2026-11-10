@@ -22,6 +22,8 @@ import {
 import { exportReportDocx, exportReportXlsx, reportFileName, type CompareReport } from "@/lib/compare/report-export";
 import { diffChars } from "@/lib/compare/sequence-diff";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
+import { StepHeading } from "@/components/ui/step-heading";
 
 type Mode = "diff" | "match";
 
@@ -163,9 +165,7 @@ export function OfficeCompareTool() {
   return (
     <div className="flex flex-col gap-6">
       <section className={sectionClass} aria-labelledby="cmp-step1">
-        <h2 id="cmp-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          1. 調べ方を選ぶ
-        </h2>
+        <StepHeading n={1} as="h2" id="cmp-step1">調べ方を選ぶ</StepHeading>
         <div role="radiogroup" aria-label="調べ方" className="grid gap-2 sm:grid-cols-2">
           {(
             [
@@ -202,9 +202,7 @@ export function OfficeCompareTool() {
       </section>
 
       <section className={sectionClass} aria-labelledby="cmp-step2">
-        <h2 id="cmp-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          2. 比べる2つのファイルを選ぶ
-        </h2>
+        <StepHeading n={2} as="h2" id="cmp-step2">比べる2つのファイルを選ぶ</StepHeading>
         <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-start">
           <FileSlot title={mode === "diff" ? "ファイルA（比較元・前の版）" : "ファイルA"} picked={fileA} onPick={(f) => pick("A", f)} onClear={() => { setFileA(null); resetResult(); }} onError={setError} slot="a" />
           <div className="flex justify-center md:pt-10">
@@ -254,16 +252,18 @@ export function OfficeCompareTool() {
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={run}
-          disabled={!canRun}
-          aria-busy={status === "processing" || undefined}
-          data-testid="cmp-run"
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          比べる
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={run}
+            disabled={!canRun}
+            aria-busy={status === "processing" || undefined}
+            data-testid="cmp-run"
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            比べる
+          </button>
+        </RunBar>
         {!fileA || !fileB ? <p className="text-xs text-neutral-500 dark:text-neutral-400">2つのファイルを選ぶと、「比べる」を押せます。</p> : null}
       </section>
 
@@ -272,9 +272,7 @@ export function OfficeCompareTool() {
 
       {outcome && report && (
         <section className={sectionClass} aria-labelledby="cmp-step3" data-testid="cmp-result">
-          <h2 id="cmp-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-            3. 結果
-          </h2>
+          <StepHeading n={3} as="h2" id="cmp-step3">結果</StepHeading>
           {outcome.mode === "diff" ? (
             <DiffView result={outcome.result} />
           ) : (
@@ -291,7 +289,7 @@ export function OfficeCompareTool() {
 
           <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
             <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">結果をファイルで保存する</p>
-            <div role="radiogroup" aria-label="保存の形式" className="flex flex-wrap gap-2">
+            <div role="radiogroup" aria-label="保存の形式" className="ms-seg">
               {(
                 [
                   { value: "xlsx", label: "Excel（一覧の表）" },
@@ -305,9 +303,6 @@ export function OfficeCompareTool() {
                   aria-checked={exportFormat === opt.value}
                   data-testid={`cmp-export-${opt.value}`}
                   onClick={() => setExportFormat(opt.value)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    exportFormat === opt.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {opt.label}
                 </button>

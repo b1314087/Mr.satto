@@ -22,6 +22,7 @@ import { parseTableFile, type ParsedTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
 import { RosterPreview } from "./shared/roster-preview";
 import { RosterScanPanel } from "./roster-scan-panel";
+import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT =
   ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
@@ -166,6 +167,7 @@ export function RosterTemplateTool() {
       {mode === "data" && (
         <>
           <FileDropzone
+            compact={!!file}
             accept={ACCEPT}
             maxSizeMB={20}
             label="CSV/Excelファイルをドラッグ&ドロップ"
@@ -296,7 +298,7 @@ export function RosterTemplateTool() {
                 <ErrorMessage message={previewValidationError} />
               )}
 
-              <div className="flex flex-wrap gap-3">
+              <RunBar>
                 <button
                   type="button"
                   onClick={() => handleGenerate("excel")}
@@ -313,7 +315,7 @@ export function RosterTemplateTool() {
                 >
                   PDFを作成
                 </button>
-              </div>
+              </RunBar>
 
               <ProcessingStatus state={status} successLabel="作成しました" />
               {error && <ErrorMessage message={error} />}

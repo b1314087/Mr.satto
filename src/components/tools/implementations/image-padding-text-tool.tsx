@@ -22,6 +22,7 @@ import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { mmToPt, ptToMm } from "@/lib/print/paper-sizes";
 import { createZip, type ZipEntry } from "@/lib/utils/zip";
 import { downloadBlob, dedupeFileNames, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 // 透明背景をプレビューで分かりやすく示す市松模様。
 // electronic-stamp-generator-tool.tsx / image-merge-tool.tsx と同じ配色・寸法。
@@ -565,6 +566,8 @@ export function ImagePaddingTextTool() {
       }
     >
       <FileDropzone
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         multiple
         maxSizeMB={50}
@@ -670,7 +673,7 @@ export function ImagePaddingTextTool() {
               JPEG
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <RunBar>
             <button
               type="button"
               onClick={() => void handleSaveCurrent()}
@@ -687,7 +690,7 @@ export function ImagePaddingTextTool() {
             >
               {files.length}件を一括出力
             </button>
-          </div>
+          </RunBar>
         </div>
       )}
 

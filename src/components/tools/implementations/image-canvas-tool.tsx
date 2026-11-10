@@ -20,6 +20,7 @@ import { useBatchSelection } from "@/components/common/use-batch-selection";
 import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
 import { BatchResultList, type BatchResultRow } from "@/components/common/batch-result-list";
 import { runBatchSequentially, type BatchItem } from "@/lib/batch/run-batch";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 画像リサイズ・圧縮（工程3で、画像リサイズ（旧 image-resize）と画像圧縮（image-compress）を1つにまとめた）。
@@ -397,39 +398,38 @@ export function ImageCanvasTool() {
         </div>
       ) : null}
     >
-      <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800" data-testid="image-ops">
-        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">行う処理（どちらか一方だけ・両方を選べます）</p>
-        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-neutral-700 dark:text-neutral-200">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={useResize}
-              data-testid="image-op-resize"
-              onChange={(e) => {
-                setUseResize(e.target.checked);
-                setResult(null);
-                setBatchItems([]);
-                setStatus("idle");
-                setError(null);
-              }}
-            />
-            サイズを変更する（幅・高さ）
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={useCompress}
-              data-testid="image-op-compress"
-              onChange={(e) => {
-                setUseCompress(e.target.checked);
-                setResult(null);
-                setBatchItems([]);
-                setStatus("idle");
-                setError(null);
-              }}
-            />
-            圧縮する（容量を小さくする）
-          </label>
+      <div className="flex flex-col gap-2" data-testid="image-ops">
+        {/* やること（サイズ変更・圧縮）。両方を選べるので、オン・オフの切り替えボタン（チェックボックスと同じ扱い） */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p id="image-ops-label" className="text-sm font-medium text-ms-text">
+            やること<span className="ml-1 text-xs font-normal text-ms-muted">（両方も選べます）</span>
+          </p>
+          <div className="ms-seg" role="group" aria-labelledby="image-ops-label">
+            {(
+              [
+                { id: "resize", label: "サイズを変更", checked: useResize, set: setUseResize, testId: "image-op-resize" },
+                { id: "compress", label: "容量を圧縮", checked: useCompress, set: setUseCompress, testId: "image-op-compress" },
+              ] as const
+            ).map((op) => (
+              <button
+                key={op.id}
+                type="button"
+                role="checkbox"
+                aria-checked={op.checked}
+                data-testid={op.testId}
+                onClick={() => {
+                  op.set(!op.checked);
+                  setResult(null);
+                  setBatchItems([]);
+                  setStatus("idle");
+                  setError(null);
+                }}
+              >
+                <span aria-hidden="true">{op.checked ? "✓" : "＋"}</span>
+                {op.label}
+              </button>
+            ))}
+          </div>
         </div>
         {!hasAction && (
           <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="image-op-none">
@@ -441,42 +441,9 @@ export function ImageCanvasTool() {
         )}
       </div>
 
-      {useCompress && (
-        <div role="radiogroup" aria-label="圧縮のしかた" className="flex flex-wrap gap-2" data-testid="compress-kind">
-          {(
-            [
-              { id: "quality", label: "画質を指定して圧縮", hint: "スライダーで画質を決めます" },
-              { id: "size", label: "目標サイズ(KB)を指定して圧縮", hint: "指定したサイズ以下になるよう自動で調整します" },
-            ] as const
-          ).map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              role="radio"
-              aria-checked={compressKind === o.id}
-              data-testid={`compress-kind-${o.id}`}
-              onClick={() => {
-                setCompressKind(o.id);
-                // やり方を変えたら、前のやり方の結果は消す
-                setResult(null);
-                setBatchItems([]);
-                setStatus("idle");
-                setError(null);
-              }}
-              className={`flex flex-col items-start rounded-lg border px-4 py-2 text-left text-sm transition-colors ${
-                compressKind === o.id
-                  ? "border-blue-600 bg-blue-50 text-blue-900 dark:border-blue-400 dark:bg-blue-950 dark:text-blue-100"
-                  : "border-neutral-300 text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
-              }`}
-            >
-              <span className="font-medium">{o.label}</span>
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">{o.hint}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
       <FileDropzone
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         multiple
         label="画像をドラッグ&ドロップ"
@@ -540,6 +507,41 @@ export function ImageCanvasTool() {
         </div>
       )}
 
+      {useCompress && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p id="compress-kind-label" className="text-sm font-medium text-ms-text">
+            圧縮のしかた
+          </p>
+          <div role="radiogroup" aria-labelledby="compress-kind-label" className="ms-seg" data-testid="compress-kind">
+            {(
+              [
+                { id: "quality", label: "画質で指定", hint: "スライダーで画質を決めます" },
+                { id: "size", label: "目標サイズ(KB)で指定", hint: "指定したサイズ以下になるよう自動で調整します" },
+              ] as const
+            ).map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                role="radio"
+                aria-checked={compressKind === o.id}
+                title={o.hint}
+                data-testid={`compress-kind-${o.id}`}
+                onClick={() => {
+                  setCompressKind(o.id);
+                  // やり方を変えたら、前のやり方の結果は消す
+                  setResult(null);
+                  setBatchItems([]);
+                  setStatus("idle");
+                  setError(null);
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {file && useCompress && compressKind === "quality" && (
         <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <label className="flex items-center justify-between text-sm">
@@ -571,14 +573,16 @@ export function ImageCanvasTool() {
 
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || !settingsValid} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {isBatch ? `${files.length}枚をまとめて${actionLabel}` : actionLabel}
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || !settingsValid} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isBatch ? `${files.length}枚をまとめて${actionLabel}` : actionLabel}
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus

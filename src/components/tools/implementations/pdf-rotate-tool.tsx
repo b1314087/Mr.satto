@@ -15,6 +15,7 @@ import { fileKey, revokeOutputUrl, useKeyedRun } from "@/components/tools/implem
 import { PdfRotateProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const PREVIEW_MAX_PAGES = 40;
 
@@ -76,6 +77,7 @@ export function PdfRotateTool({ initialFile = null, onFileChange }: SharedPdfFil
       }
     >
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -90,17 +92,12 @@ export function PdfRotateTool({ initialFile = null, onFileChange }: SharedPdfFil
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
             すべてのページを時計回りに{rotateBy}°回転します
           </p>
-          <div className="flex gap-2">
+          <div className="ms-seg">
             {[90, 180, 270].map((deg) => (
-              <button
+              <button aria-pressed={rotateBy === deg}
                 key={deg}
                 type="button"
                 onClick={() => setRotateBy(deg as 90 | 180 | 270)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  rotateBy === deg
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {deg}°
               </button>
@@ -110,14 +107,16 @@ export function PdfRotateTool({ initialFile = null, onFileChange }: SharedPdfFil
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          回転する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            回転する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="回転が完了しました" />

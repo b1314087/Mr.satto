@@ -13,6 +13,7 @@ import { useObjectUrl } from "@/components/tools/implementations/shared/image-li
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -136,6 +137,7 @@ export function ImageMetadataRemoveTool() {
     <div className="flex flex-col gap-6">
 
       <FileDropzone
+        compact={!!file}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
@@ -188,14 +190,16 @@ export function ImageMetadataRemoveTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          メタデータを削除する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            メタデータを削除する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="処理が完了しました" />

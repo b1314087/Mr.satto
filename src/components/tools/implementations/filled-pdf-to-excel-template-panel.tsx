@@ -20,6 +20,7 @@ import { FilledPdfToExcelTemplateProcessor } from "@/lib/processors/browser/fill
 import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, sanitizeFileName, stripExtension } from "@/lib/utils/format";
 import { useFilledPdfToExcelUsage, UsageGatePanel, describeConsumeFailure } from "./filled-pdf-to-excel/usage-gate";
+import { Segmented } from "@/components/ui/segmented";
 
 /**
  * 記入されたPDF→Excel「テンプレートモード」（Phase 18）。
@@ -730,15 +731,16 @@ export function FilledPdfToExcelTemplatePanel() {
                               onChange={(e) => updateField(field.id, { label: e.target.value })}
                               className="min-w-0 flex-1 rounded border border-neutral-300 px-1.5 py-0.5 dark:border-neutral-700 dark:bg-neutral-950"
                             />
-                            <select
-                              aria-label={`種類 (${badge})`}
-                              value={field.type}
-                              onChange={(e) => updateField(field.id, { type: e.target.value === "checkbox" ? "checkbox" : "text" })}
-                              className="rounded border border-neutral-300 px-1 py-0.5 dark:border-neutral-700 dark:bg-neutral-950"
-                            >
-                              <option value="text">テキスト</option>
-                              <option value="checkbox">チェックボックス</option>
-                            </select>
+                            <Segmented
+                              size="sm"
+                              ariaLabel={`種類 (${badge})`}
+                              value={field.type === "checkbox" ? "checkbox" : "text"}
+                              onChange={(v) => updateField(field.id, { type: v })}
+                              options={[
+                                { value: "text", label: "テキスト" },
+                                { value: "checkbox", label: "チェックボックス" },
+                              ]}
+                            />
                             <button type="button" onClick={() => deleteField(field.id)} className="text-red-600 dark:text-red-400">
                               削除
                             </button>
@@ -895,6 +897,8 @@ export function FilledPdfToExcelTemplatePanel() {
       {step === "upload" && (
         <div className="flex flex-col gap-4">
           <FileDropzone
+            compact={filledFiles.length > 0}
+            compactAction="replace"
             accept="application/pdf,.pdf"
             multiple
             maxSizeMB={50}

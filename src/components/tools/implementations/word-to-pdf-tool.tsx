@@ -15,6 +15,7 @@ import { useAsyncFileData } from "@/components/tools/implementations/shared/use-
 import { loadDocxPackage } from "@/lib/word/docx-text-ops";
 import { WordToPdfProcessor, type WordToPdfOutput } from "@/lib/processors/browser/word-to-pdf";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 async function loadDocxBodyTexts(file: File): Promise<string[]> {
   const pkg = await loadDocxPackage(file);
@@ -78,6 +79,7 @@ export function WordToPdfTool() {
       <p className="text-xs text-neutral-500 dark:text-neutral-400">複雑なレイアウトは、元のWordと一致しない場合があります。</p>
 
       <FileDropzone
+        compact={!!file}
         accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         maxSizeMB={30}
         label="Word文書(.docx)をドラッグ&ドロップ"
@@ -107,14 +109,16 @@ export function WordToPdfTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          PDFに変換する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            PDFに変換する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel="変換中..." successLabel="PDFの生成が完了しました" />

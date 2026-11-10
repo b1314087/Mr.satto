@@ -19,6 +19,8 @@ import { CsvColumnEditProcessor, applyRowOrder, editCsvColumnRows, sliceRowRange
 import { editXlsxColumns, loadXlsxForColumnEdit, type XlsxFormulaReport } from "@/lib/excel/xlsx-column-edit";
 import { columnToLetters } from "@/lib/compare/office-reader";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
+import { AdvancedSettings } from "@/components/ui/advanced-settings";
 
 interface ColumnState {
   /** 元のファイルでの列インデックス（0始まり）。並び替えてもこの値は変わらない */
@@ -307,6 +309,7 @@ export function CsvColumnEditorTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept={ACCEPT}
         label="CSV・Excel（.xlsx）ファイルをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -315,15 +318,6 @@ export function CsvColumnEditorTool() {
       />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
-      {file && kind === "csv" && <CsvEncodingControl files={[file]} />}
-      {file && kind && (
-        <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="column-editor-kind">
-          {kind === "xlsx"
-            ? "Excelファイルとして読み込みました。選んだシートだけを編集し、Excel（.xlsx）で書き出します（ほかのシートはそのまま残ります）。"
-            : "CSVファイルとして読み込みました。CSVで書き出します。"}
-        </p>
-      )}
-
       {kind === "xlsx" && xlsxSheets && xlsxSheets.length > 1 && (
         <label className="flex flex-col gap-1 text-sm text-neutral-600 dark:text-neutral-300">
           編集するシート
@@ -348,88 +342,98 @@ export function CsvColumnEditorTool() {
         </label>
       )}
 
-      {file && sourceRows && (
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
-            <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
-            対象の範囲の1行目を見出し（列名）として扱う
-          </label>
-          <div className="flex flex-wrap items-end gap-3 text-sm text-neutral-600 dark:text-neutral-300">
-            <span className="basis-full text-xs text-neutral-500 dark:text-neutral-400">
-              対象にする行（空欄のときはすべての行。範囲外の行は書き出しに含めません）
-            </span>
-            <label className="flex flex-col gap-1">
-              開始行
-              <input
-                type="number"
-                min={1}
-                max={sourceRows.length}
-                value={rowStartText}
-                placeholder="1"
-                aria-label="対象にする行の開始行"
-                onChange={(e) => {
-                  setRowStartText(e.target.value);
-                  setResult(null);
-                }}
-                className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              終了行
-              <input
-                type="number"
-                min={1}
-                max={sourceRows.length}
-                value={rowEndText}
-                placeholder={String(sourceRows.length)}
-                aria-label="対象にする行の終了行"
-                onChange={(e) => {
-                  setRowEndText(e.target.value);
-                  setResult(null);
-                }}
-                className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
-              />
-            </label>
-          </div>
-          {range.error && <p className="text-xs text-red-600 dark:text-red-400">{range.error}</p>}
-          {kind === "xlsx" && xlsxSheets && xlsxSheets[safeSheetIndex].formulaCount > 0 && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="column-editor-formula-note">
-              このシートには数式が{xlsxSheets[safeSheetIndex].formulaCount}個あります。列の削除・並び替えや行の範囲の指定をしても、
-              数式はできるだけ残し、セルの参照を新しい位置に合わせます。参照しているセルを削除した場合など、安全に合わせられない数式だけは、
-              計算結果の値に置き換え、その数を保存のあとに表示します。
-            </p>
-          )}
-        </div>
-      )}
-
-      {previewError && <ErrorMessage message={previewError} />}
-
       {columns && sourceRows && (
-        <div role="group" aria-label="編集の対象" data-testid="column-editor-target" className="flex flex-wrap gap-2">
-          {(
-            [
-              { value: "rows", label: "行を編集" },
-              { value: "columns", label: "列を編集" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              aria-pressed={editTarget === t.value}
-              data-testid={`column-editor-target-${t.value}`}
-              onClick={() => setEditTarget(t.value)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                editTarget === t.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-          <span className="self-center text-xs text-neutral-500 dark:text-neutral-400" data-testid="column-editor-summary">
-            残す行：{includedRowCount}行 ・ 残す列：{includedCount}列（行と列の設定は、切り替えても残り、保存のときに両方反映します）
+        <div role="group" aria-label="編集の対象" data-testid="column-editor-target" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-sm font-medium text-ms-text">編集するもの</span>
+          <div className="ms-seg">
+            {(
+              [
+                { value: "rows", label: "行を編集" },
+                { value: "columns", label: "列を編集" },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                aria-pressed={editTarget === t.value}
+                data-testid={`column-editor-target-${t.value}`}
+                onClick={() => setEditTarget(t.value)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-ms-muted" data-testid="column-editor-summary" title="行と列の設定は、切り替えても残り、保存のときに両方反映します">
+            残す行：{includedRowCount}行 ・ 残す列：{includedCount}列
           </span>
         </div>
       )}
+
+      {/* 読み込みの設定（文字コード・見出しの扱い・対象の行）は、ふだんは変えないので閉じておく。閉じていても今の値を出す */}
+      {file && sourceRows && (
+        <AdvancedSettings
+          title="読み込みの設定"
+          summary={
+            <span data-testid="column-editor-kind">
+              {kind === "xlsx" ? "Excelファイル（このシートだけ編集）" : "CSVファイル"}・{hasHeader ? "1行目を見出し" : "見出しなし"}・
+              {rowStartText || rowEndText ? `${rowStartText || 1}〜${rowEndText || sourceRows.length}行` : "全行"}
+            </span>
+          }
+          testId="column-editor-read-settings"
+        >
+          {kind === "csv" && <CsvEncodingControl files={[file]} />}
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-300">
+              <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
+              対象の範囲の1行目を見出し（列名）として扱う
+            </label>
+            <div className="flex flex-wrap items-end gap-3 text-sm text-neutral-600 dark:text-neutral-300">
+              <span className="basis-full text-xs text-ms-muted">対象にする行（空欄ならすべて）</span>
+              <label className="flex flex-col gap-1">
+                開始行
+                <input
+                  type="number"
+                  min={1}
+                  max={sourceRows.length}
+                  value={rowStartText}
+                  placeholder="1"
+                  aria-label="対象にする行の開始行"
+                  onChange={(e) => {
+                    setRowStartText(e.target.value);
+                    setResult(null);
+                  }}
+                  className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                終了行
+                <input
+                  type="number"
+                  min={1}
+                  max={sourceRows.length}
+                  value={rowEndText}
+                  placeholder={String(sourceRows.length)}
+                  aria-label="対象にする行の終了行"
+                  onChange={(e) => {
+                    setRowEndText(e.target.value);
+                    setResult(null);
+                  }}
+                  className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
+            </div>
+          </div>
+        </AdvancedSettings>
+      )}
+      {file && sourceRows && range.error && <p className="text-xs text-red-600 dark:text-red-400">{range.error}</p>}
+      {file && sourceRows && kind === "xlsx" && xlsxSheets && xlsxSheets[safeSheetIndex].formulaCount > 0 && (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="column-editor-formula-note">
+          このシートには数式が{xlsxSheets[safeSheetIndex].formulaCount}個あります。数式はできるだけ残し、参照を新しい位置に合わせます
+          （合わせられないものだけ値に置き換え、保存のあとに数を表示します）。
+        </p>
+      )}
+
+      {previewError && <ErrorMessage message={previewError} />}
 
       {editTarget === "rows" && columns && sourceRows && (
         <div className="flex flex-col gap-2" data-testid="row-editor">
@@ -616,15 +620,17 @@ export function CsvColumnEditorTool() {
       )}
 
       {columns && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || includedCount === 0 || range.error !== null || (!!rows && includedRowCount === 0 && editableRowCount > 0)}
-          aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          この内容で保存する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || includedCount === 0 || range.error !== null || (!!rows && includedRowCount === 0 && editableRowCount > 0)}
+            aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            この内容で保存する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel={result?.kind === "xlsx" ? "Excelの生成が完了しました" : "CSVの生成が完了しました"} />

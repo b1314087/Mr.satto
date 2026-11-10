@@ -32,6 +32,7 @@ import { FiscalCalendarEventsImport, type EventImportState } from "./shared/fisc
 import { CONFIRMED_THROUGH_YEAR, HOLIDAY_DATA_CHECKED_AT, HOLIDAY_DATA_SOURCES } from "@/lib/calendar/holiday-data";
 import { downloadBlob } from "@/lib/utils/format";
 import { FiscalCalendarPreview } from "./shared/fiscal-calendar-preview";
+import { RunBar } from "@/components/ui/run-bar";
 
 const YEARS = Array.from({ length: FISCAL_YEAR_UI_MAX - FISCAL_YEAR_UI_MIN + 1 }, (_, i) => FISCAL_YEAR_UI_MIN + i);
 
@@ -42,12 +43,6 @@ function currentFiscalYear(): number {
   return Math.min(FISCAL_YEAR_UI_MAX, Math.max(FISCAL_YEAR_UI_MIN, fy));
 }
 
-const optionButtonClass = (active: boolean) =>
-  `rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
-    active
-      ? "border-blue-600 bg-blue-600 text-white"
-      : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-  }`;
 
 export function FiscalCalendarTool() {
   // 初期値は今日が属する年度（日付・曜日ツールが今日の日付を初期値にしているのと同じ方式）
@@ -137,7 +132,7 @@ export function FiscalCalendarTool() {
         preview={
           <div data-testid="tool-preview" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
             <p className="text-sm font-medium">プレビュー</p>
-            <div className="flex flex-wrap gap-1" role="group" aria-label="プレビューする月">
+            <div className="ms-seg" role="group" aria-label="プレビューする月">
               {groups.map((g, i) => {
                 const index = i * monthsPerSheet;
                 const active = Math.floor(previewMonth / monthsPerSheet) === i;
@@ -147,11 +142,6 @@ export function FiscalCalendarTool() {
                     type="button"
                     aria-pressed={active}
                     onClick={() => setPreviewMonth(index)}
-                    className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                      active
-                        ? "bg-blue-600 text-white"
-                        : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
-                    }`}
                   >
                     {groupButtonLabel(g)}
                   </button>
@@ -222,7 +212,7 @@ export function FiscalCalendarTool() {
 
           <fieldset className="flex flex-col gap-1 text-sm">
             <legend className="mb-1 text-neutral-600 dark:text-neutral-300">週の始まり</legend>
-            <div className="flex flex-wrap gap-2">
+            <div className="ms-seg">
               {(
                 [
                   ["mon", "月曜日始まり"],
@@ -237,7 +227,6 @@ export function FiscalCalendarTool() {
                     setWeekStart(id);
                     resetResults();
                   }}
-                  className={optionButtonClass(weekStart === id)}
                 >
                   {label}
                 </button>
@@ -292,7 +281,7 @@ export function FiscalCalendarTool() {
 
           <fieldset className="flex flex-col gap-1 text-sm">
             <legend className="mb-1 text-neutral-600 dark:text-neutral-300">カレンダー形式</legend>
-            <div className="flex flex-wrap gap-2">
+            <div className="ms-seg">
               {(
                 [
                   [1, "1か月 / 1シート"],
@@ -308,7 +297,6 @@ export function FiscalCalendarTool() {
                     setMonthsPerSheet(id);
                     resetResults();
                   }}
-                  className={optionButtonClass(monthsPerSheet === id)}
                 >
                   {label}
                 </button>
@@ -316,16 +304,16 @@ export function FiscalCalendarTool() {
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
               {arrangement === "stacked"
-                ? "4月+5月・6月+7月…のように、2か月を上下（上が前の月、下が次の月）に並べて6シート（PDFは6ページ）にします。A4縦向きで作成します。"
+                ? "2か月を上下に並べて6シート（A4縦）にします。"
                 : arrangement === "side-by-side"
-                  ? "4月+5月・6月+7月…のように、2か月を左右（左が前の月、右が次の月）に並べて6シート（PDFは6ページ）にします。A4横向きで作成します。"
-                  : "1か月を1シート（PDFは1ページ）にして、12シート（12ページ）にします。"}
+                  ? "2か月を左右に並べて6シート（A4横）にします。"
+                  : "1か月1シートで、12シートにします。"}
             </p>
           </fieldset>
 
           <fieldset className="flex flex-col gap-1 text-sm">
             <legend className="mb-1 text-neutral-600 dark:text-neutral-300">用紙（A4）の向き</legend>
-            <div className="flex flex-wrap gap-2">
+            <div className="ms-seg">
               {(
                 [
                   ["landscape", "横向き"],
@@ -340,7 +328,6 @@ export function FiscalCalendarTool() {
                     setOrientation(id);
                     resetResults();
                   }}
-                  className={optionButtonClass(orientation === id)}
                 >
                   {label}
                 </button>
@@ -385,7 +372,7 @@ export function FiscalCalendarTool() {
           </p>
         )}
 
-        <div className="flex flex-wrap gap-3">
+        <RunBar>
           <button
             type="button"
             onClick={() => handleGenerate("excel")}
@@ -402,7 +389,7 @@ export function FiscalCalendarTool() {
           >
             {monthsPerSheet === 2 ? "PDFを作成（2か月ずつ6ページ）" : "PDFを作成（月別12ページ）"}
           </button>
-        </div>
+        </RunBar>
 
         <ProcessingStatus state={status} successLabel="作成しました" />
         {error && <ErrorMessage message={error} />}
@@ -424,8 +411,10 @@ export function FiscalCalendarTool() {
           </ResultPopup>
         )}
 
-        <div className="rounded-lg bg-neutral-50 p-3 text-xs leading-relaxed text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
-          <p>
+        {/* 祝日のデータの説明・出典は、必要なときだけ開く */}
+        <details className="rounded-lg bg-neutral-50 p-3 text-xs leading-relaxed text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
+          <summary className="cursor-pointer font-medium">祝日のデータについて（{CONFIRMED_THROUGH_YEAR}年まで公示済み・出典）</summary>
+          <p className="mt-1">
             祝日は、祝日法に基づく計算で求めています。{CONFIRMED_THROUGH_YEAR}年までは国立天文台の暦要項で公示済みの日付で、確認日は
             {HOLIDAY_DATA_CHECKED_AT}です。それより先は、春分の日・秋分の日が推定（「※」付き）で、そのほかの祝日は現行の祝日法による日付です。
           </p>
@@ -440,7 +429,7 @@ export function FiscalCalendarTool() {
               </span>
             ))}
           </p>
-        </div>
+        </details>
       </PreviewSplitLayout>
     </div>
   );

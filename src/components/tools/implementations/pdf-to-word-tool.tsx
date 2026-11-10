@@ -12,6 +12,7 @@ import { PdfToWordProcessor, previewPdfToWordBlocks, type PdfToWordOutput } from
 import type { DocumentBlock, RunInfo } from "@/lib/pdf/paragraph-reconstruction";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
 
 /** プレビューに出す先頭ページのブロック数の上限(重くならないよう先頭だけ) */
 const PREVIEW_MAX_BLOCKS = 30;
@@ -191,6 +192,7 @@ export function PdfToWordTool() {
       <p className="text-xs text-neutral-500 dark:text-neutral-400">2段組・図形・特殊なフォントなど、複雑なレイアウトは再現されない場合があります。</p>
 
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         maxSizeMB={50}
         label="PDFをドラッグ&ドロップ"
@@ -227,14 +229,16 @@ export function PdfToWordTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          Wordに変換する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            Wordに変換する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus

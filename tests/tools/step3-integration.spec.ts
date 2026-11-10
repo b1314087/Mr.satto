@@ -403,6 +403,7 @@ test.describe("工程3：CSV・Excel行列編集（旧 CSV・Excel列編集）",
     expect(r.merged["名簿"]).toEqual(["A6:B6"]);
     // 行の範囲
     await closeResultPopup(page);
+    await openAdvanced(page, "column-editor-read-settings");
     await page.getByLabel("対象にする行の開始行").fill("2");
     await page.getByLabel("対象にする行の終了行").fill("3");
     await page.getByText("対象の範囲の1行目を見出し（列名）として扱う").click();
@@ -424,6 +425,7 @@ test.describe("工程3：CSV・Excel行列編集（旧 CSV・Excel列編集）",
     await page.getByRole("button", { name: "すべての列を外す" }).click();
     await expect(page.getByRole("button", { name: "この内容で保存する" })).toBeDisabled();
     await page.getByRole("button", { name: "すべての列を選ぶ" }).click();
+    await openAdvanced(page, "column-editor-read-settings");
     await page.getByLabel("対象にする行の終了行").fill("2");
     await page.getByRole("button", { name: "この内容で保存する" }).click();
     await waitForSuccess(page, "CSVの生成が完了しました");
@@ -475,6 +477,7 @@ for s in sects:
 paras = [p.text for p in d.paragraphs]
 print(json.dumps({"sections": info, "paragraphs": paras, "breaks": xml.count('w:type="column"'), "tables": len(d.tables), "headerText": d.sections[0].header.paragraphs[0].text, "names": z.namelist()}, ensure_ascii=False))
 `;
+import { openAdvanced } from "../helpers/advanced-settings";
 
 test.describe("工程3：Word段落整理・段組み", () => {
   test("文書全体を2段組み（間隔10mm）にでき、本文・表・ヘッダーは変わらない", async ({ page }) => {
@@ -483,7 +486,7 @@ test.describe("工程3：Word段落整理・段組み", () => {
     await page.goto("/tools/word-paragraph-cleanup");
     await uploadFixture(page, src);
     // 整理はしない（段組みだけ）
-    for (const name of ["連続するスペースを1つにまとめる", "連続する空白行を1行にまとめる"]) await page.getByLabel(name).uncheck();
+    for (const name of ["連続するスペースを1つにまとめる", "連続する空白行を1行にまとめる"]) await page.getByRole("checkbox", { name }).uncheck();
     await page.getByTestId("word-columns-enable").check();
     await page.getByLabel("段の間隔（mm）").fill("10");
     await page.getByRole("button", { name: "段組みを変更する" }).click();
@@ -507,7 +510,7 @@ test.describe("工程3：Word段落整理・段組み", () => {
     py(MAKE_DOCX, [src]);
     await page.goto("/tools/word-paragraph-cleanup");
     await uploadFixture(page, src);
-    for (const name of ["連続するスペースを1つにまとめる", "連続する空白行を1行にまとめる"]) await page.getByLabel(name).uncheck();
+    for (const name of ["連続するスペースを1つにまとめる", "連続する空白行を1行にまとめる"]) await page.getByRole("checkbox", { name }).uncheck();
     await page.getByTestId("word-columns-enable").check();
     await page.getByTestId("word-columns-count-3").click();
     await page.getByTestId("word-columns-scope-range").click();

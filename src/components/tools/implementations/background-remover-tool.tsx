@@ -24,6 +24,7 @@ import { WorkerCanceledError } from "@/lib/workers/worker-channel";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useObjectUrl } from "@/lib/utils/use-object-url";
+import { RunBar } from "@/components/ui/run-bar";
 
 type PreviewBg = "checker" | "white" | "black" | "green";
 
@@ -233,6 +234,8 @@ export function BackgroundRemoverTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         multiple
         maxSizeMB={30}
@@ -269,8 +272,9 @@ export function BackgroundRemoverTool() {
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
-            <div className="flex items-center gap-1 text-xs" role="group" aria-label="プレビューの背景">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-neutral-500 dark:text-neutral-400">背景:</span>
+<div className="ms-seg" role="group" aria-label="プレビューの背景">
               {(
                 [
                   ["checker", "市松"],
@@ -284,12 +288,12 @@ export function BackgroundRemoverTool() {
                   type="button"
                   aria-pressed={previewBg === v}
                   onClick={() => setPreviewBg(v)}
-                  className={`rounded-md px-2 py-0.5 ${previewBg === v ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"}`}
                 >
                   {label}
                 </button>
               ))}
             </div>
+</div>
           </div>
           {previewError && <ErrorMessage message={previewError} />}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -346,14 +350,16 @@ export function BackgroundRemoverTool() {
       )}
 
       {files.length > 0 && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {files.length > 1 ? `${files.length}枚の背景を透明にする` : "背景を透明にする"}
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {files.length > 1 ? `${files.length}枚の背景を透明にする` : "背景を透明にする"}
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus

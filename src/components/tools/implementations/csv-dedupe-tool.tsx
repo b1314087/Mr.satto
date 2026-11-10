@@ -21,6 +21,7 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { CsvDedupeProcessor, dedupeCsvRows } from "@/lib/processors/browser/csv-ops";
 import { parseCsv } from "@/lib/utils/csv";
 import { formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 export function CsvDedupeTool() {
   /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
@@ -86,6 +87,7 @@ export function CsvDedupeTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept=".csv,text/csv"
         maxSizeMB={50}
         label="CSVファイルをドラッグ&ドロップ"
@@ -131,14 +133,16 @@ export function CsvDedupeTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          重複を削除する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            重複を削除する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="重複削除が完了しました" />

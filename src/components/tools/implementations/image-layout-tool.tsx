@@ -30,6 +30,7 @@ import {
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { Segmented } from "@/components/ui/segmented";
 
 /**
  * 画像ホワイトボード（工程4で「画像レイアウト」から改称・拡張。URL /tools/image-layout は変えない）。
@@ -507,6 +508,8 @@ export function ImageLayoutTool() {
     <div className="flex flex-col gap-6 lg:flex-row">
       <div className="flex flex-1 flex-col gap-4">
         <FileDropzone
+          compact={items.length > 0}
+          compactAction="add"
           accept="image/*"
           multiple
           label="画像をドラッグ&ドロップ"
@@ -905,33 +908,30 @@ export function ImageLayoutTool() {
 
         <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">出力</h3>
-          <div className="flex gap-2 text-sm">
+          <div className="ms-seg">
             {(["png", "jpeg", "pdf"] as ImageLayoutOutputFormat[]).map((fmt) => (
-              <button
+              <button aria-pressed={outputFormat === fmt}
                 key={fmt}
                 type="button"
                 onClick={() => setOutputFormat(fmt)}
-                className={`flex-1 rounded-md px-2 py-1.5 uppercase ${outputFormat === fmt ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
               >
                 {fmt}
               </button>
             ))}
           </div>
-          <label className="flex items-center justify-between gap-2 text-sm">
-            書き出しの解像度
-            <select
-              aria-label="書き出しの解像度"
-              data-testid="whiteboard-export-scale"
-              value={String(exportScale)}
-              onChange={(e) => setExportScale(e.target.value === "auto" ? "auto" : (Number(e.target.value) as 2 | 3 | 4))}
-              className="rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            >
-              <option value="auto">自動（画像の元の解像度に合わせる）</option>
-              <option value="2">2倍</option>
-              <option value="3">3倍</option>
-              <option value="4">4倍</option>
-            </select>
-          </label>
+          <Segmented
+            label="書き出しの解像度"
+            size="sm"
+            testId="whiteboard-export-scale"
+            value={String(exportScale)}
+            onChange={(v) => setExportScale(v === "auto" ? "auto" : (Number(v) as 2 | 3 | 4))}
+            options={[
+              { value: "auto", label: "自動", title: "自動（画像の元の解像度に合わせる）" },
+              { value: "2", label: "2倍" },
+              { value: "3", label: "3倍" },
+              { value: "4", label: "4倍" },
+            ]}
+          />
           <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="whiteboard-export-note">
             {exportScale === "auto"
               ? `キャンバス（${Math.round(canvasWidthPx)}×${Math.round(canvasHeightPx)}）の2〜4倍の大きさで書き出します。配置した画像は、元の解像度を落とさない大きさにします。`

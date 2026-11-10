@@ -1,6 +1,7 @@
 "use client";
 
 import type { BankAccountInfo } from "@/lib/documents/types";
+import { Segmented } from "@/components/ui/segmented";
 
 const inputClass =
   "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
@@ -21,8 +22,8 @@ export function BankAccountForm({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">振込先情報（任意）</p>
+    <div className="flex flex-col gap-3">
+      <p className="sr-only">振込先情報（任意）</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <input
           value={bankAccount.bankName}
@@ -36,14 +37,16 @@ export function BankAccountForm({
           placeholder="支店名"
           className={inputClass}
         />
-        <select
-          value={bankAccount.accountType}
-          onChange={(e) => set("accountType", e.target.value)}
-          className={inputClass}
-        >
-          <option value="普通">普通</option>
-          <option value="当座">当座</option>
-        </select>
+        <Segmented
+          ariaLabel="口座の種類"
+          wide
+          value={bankAccount.accountType === "当座" ? "当座" : "普通"}
+          onChange={(v) => set("accountType", v)}
+          options={[
+            { value: "普通", label: "普通" },
+            { value: "当座", label: "当座" },
+          ]}
+        />
         <input
           value={bankAccount.accountNumber}
           onChange={(e) => set("accountNumber", e.target.value)}

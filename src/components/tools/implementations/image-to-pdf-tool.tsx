@@ -13,6 +13,7 @@ import { computeImagePageLayout, type ImageToPdfPageSize } from "@/lib/processor
 import { useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 type PageSize = ImageToPdfPageSize;
 
@@ -157,6 +158,8 @@ export function ImageToPdfTool() {
       ) : null}
     >
       <FileDropzone
+        compact={files.length > 0}
+        compactAction="add"
         accept="image/*"
         multiple
         maxSizeMB={50}
@@ -204,14 +207,16 @@ export function ImageToPdfTool() {
 
 
       {files.length > 0 && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {files.length}件の画像をPDF化する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {files.length}件の画像をPDF化する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="PDFの作成が完了しました" />

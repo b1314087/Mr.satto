@@ -42,6 +42,8 @@ import {
 } from "@/lib/video/subtitles";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
+import { Segmented } from "@/components/ui/segmented";
 
 /** 新しく足す字幕の長さ（秒） */
 const NEW_CUE_LENGTH_SEC = 2;
@@ -309,10 +311,11 @@ export function VideoSubtitleTool() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        字幕は映像に焼き付けず、ON・OFFを切り替えられる字幕トラックとして追加します（MKV・WebM）。VLCなどの再生アプリで表示できます。ブラウザでの再生や、YouTube・SNSへの投稿では動画の中の字幕は表示されないため、字幕ファイル（.srt・.vtt）も保存できます。
+        字幕は焼き付けず、ON・OFFできる字幕トラックとして入れます（MKV・WebM。VLCなどで表示）。YouTube・SNS用に字幕ファイル（.srt・.vtt）も保存できます。
       </p>
 
       <FileDropzone
+        compact={!!file}
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
@@ -392,7 +395,7 @@ export function VideoSubtitleTool() {
             </button>
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            時間は「時:分:秒.ミリ秒」（例：00:00:01.500）で入力します。動画を止めて「今の時間」を押すと、その位置の時間が入ります。
+            時間は「時:分:秒.ミリ秒」（例：00:00:01.500）。動画を止めて「今の時間」でも入れられます。
           </p>
 
           {cues.length === 0 ? (
@@ -520,16 +523,19 @@ export function VideoSubtitleTool() {
               <span className="w-10 text-xs">{style.backgroundOpacity}%</span>
             </label>
           </div>
-          <label className="flex items-center gap-2">
-            字幕の言語
-            <select data-testid="vs-language" value={language} onChange={(e) => setLanguage(e.target.value as SubtitleLanguage)} className="rounded-md border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900">
-              {SUBTITLE_LANGUAGE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </label>
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true">字幕の言語</span>
+            <Segmented
+              ariaLabel="字幕の言語"
+              size="sm"
+              testId="vs-language"
+              value={language}
+              onChange={(v) => setLanguage(v)}
+              options={SUBTITLE_LANGUAGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            />
+          </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            表示設定は、字幕トラックとWebVTT（.vtt）に保存されます（VLCで反映を確認しています）。再生アプリによっては、色・大きさ・位置が反映されないことがあります。SRT（.srt）には時間と文字だけが入ります。
+            表示設定は字幕トラックと.vttに保存します（アプリによっては反映されません。.srtは時間と文字だけ）。
           </p>
         </section>
       )}
@@ -548,7 +554,7 @@ export function VideoSubtitleTool() {
               <span className="text-xs text-neutral-500 dark:text-neutral-400">WebM は、元の動画が WebM のときに選べます。</span>
             )}
           </fieldset>
-          <div className="flex flex-wrap items-center gap-3">
+          <RunBar>
             <button type="button" data-testid="vs-run" onClick={handleRun} disabled={busy} aria-busy={busy || undefined} className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50">
               字幕つきの動画を書き出す
             </button>
@@ -558,7 +564,7 @@ export function VideoSubtitleTool() {
             <button type="button" data-testid="vs-save-vtt" onClick={() => downloadSubtitleFile("vtt")} disabled={busy} className="rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
               字幕ファイル（.vtt）を保存
             </button>
-          </div>
+          </RunBar>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             映像・音声は作り直さずにそのまま使うため、画質・音質は変わりません。.srt は YouTube などに字幕としてアップロードできます。
           </p>

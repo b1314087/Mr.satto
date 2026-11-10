@@ -348,7 +348,7 @@ export function SheetTabs({
 }) {
   if (names.length <= 1) return null;
   return (
-    <div role="tablist" aria-label="プレビューするシート" className="flex flex-wrap gap-1">
+    <div role="tablist" aria-label="プレビューするシート" className="ms-seg">
       {names.map((name, i) => (
         <button
           key={`${name}-${i}`}
@@ -356,9 +356,6 @@ export function SheetTabs({
           role="tab"
           aria-selected={i === active}
           onClick={() => onChange(i)}
-          className={`rounded-md px-2.5 py-1 text-xs ${
-            i === active ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-          }`}
         >
           {name}
         </button>

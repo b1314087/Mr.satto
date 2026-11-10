@@ -32,6 +32,7 @@ import {
   type ShiftType,
 } from "../../src/lib/shift/model";
 import { shiftToCsvBlob, typeTimeText } from "../../src/lib/processors/browser/shift-export";
+import { openAdvanced } from "../helpers/advanced-settings";
 
 /**
  * シフト表作成（shift-schedule）のテスト。
@@ -273,6 +274,8 @@ async function openTool(page: Page) {
   await page.getByTestId("shift-year").fill("2026");
   await page.getByTestId("shift-month").selectOption("10");
   await expect(page.getByTestId("shift-cell-0-31")).toBeVisible();
+  // 確認の目安・まとめて追加・曜日指定・保存ファイルは「詳細設定」の中にあるので、開いておく
+  await openAdvanced(page);
 }
 
 const cell = (page: Page, staff: number, day: number) => page.getByTestId(`shift-cell-${staff}-${day}`);

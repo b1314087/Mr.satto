@@ -16,6 +16,7 @@ import {
 } from "@/lib/processors/browser/pdf";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
 
 const FIELD_LABELS: { key: keyof PdfMetadataInfo; label: string }[] = [
   { key: "title", label: "タイトル" },
@@ -95,6 +96,7 @@ export function PdfMetadataRemoveTool() {
       <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">XMPなど一部のメタデータは、削除できない場合があります。</div>
 
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -146,14 +148,16 @@ export function PdfMetadataRemoveTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          メタデータを削除する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            メタデータを削除する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="メタデータの削除が完了しました" />

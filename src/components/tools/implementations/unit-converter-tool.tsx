@@ -73,7 +73,7 @@ export function UnitConverterTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div role="tablist" aria-label="単位の種類" className="flex flex-wrap gap-2">
+      <div role="tablist" aria-label="単位の種類" className="ms-seg">
         {UNIT_CATEGORIES.map((c) => (
           <button
             key={c.id}
@@ -81,11 +81,6 @@ export function UnitConverterTool() {
             role="tab"
             aria-selected={c.id === categoryId}
             onClick={() => changeCategory(c.id)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              c.id === categoryId
-                ? "bg-blue-600 text-white"
-                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
-            }`}
           >
             {c.label}
           </button>

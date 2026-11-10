@@ -564,11 +564,11 @@ test("pdf-redact: 墨消しはPDF修正の「やりたい操作」から選べ�
   const notice = page.getByTestId("pdf-fix-whiteout-notice");
   await expect(notice).toContainText("元の文字情報がファイル内に残る場合があり");
   await notice.getByTestId("pdf-fix-open-redact").click();
-  await expect(page.getByTestId("pdf-fix-operation")).toHaveValue("redact");
+  await expect(page.getByTestId("pdf-fix-operation")).toHaveAttribute("data-value", "redact");
   await expect(page.getByTestId("pdf-redact-notice")).toBeVisible();
   // 旧URL
   await page.goto("/tools/pdf-redact");
   await expect(page).toHaveURL(/\/tools\/pdf-fix\?mode=redact$/);
-  await expect(page.getByTestId("pdf-fix-operation")).toHaveValue("redact", { timeout: 20_000 });
+  await expect(page.getByTestId("pdf-fix-operation")).toHaveAttribute("data-value", "redact", { timeout: 20_000 });
   await expect(page.getByTestId("pdf-redact-notice")).toBeVisible();
 });

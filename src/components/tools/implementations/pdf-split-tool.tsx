@@ -17,6 +17,7 @@ import { parsePageRanges, type PageRange } from "@/lib/pdf/page-selection";
 import type { NamedFileOutput } from "@/lib/processors/types";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 type SplitMode = "each-page" | "range";
 
@@ -155,6 +156,7 @@ export function PdfSplitTool({ initialFile = null, onFileChange }: SharedPdfFile
       }
     >
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -209,14 +211,16 @@ export function PdfSplitTool({ initialFile = null, onFileChange }: SharedPdfFile
       )}
 
       {file && pageCount !== null && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          分割する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            分割する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="分割が完了しました" />

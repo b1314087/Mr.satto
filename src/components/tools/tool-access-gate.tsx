@@ -113,12 +113,23 @@ export function ToolAccessGate({
         <TemporaryAccessBanner expiresAtMs={temporaryAccessExpiresAtMs as number} />
       )}
       {showDownloadAdNotice && (
-        <p
-          data-testid="download-ad-notice"
-          className="mb-4 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
-        >
-          無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。
-        </p>
+        // 無料の利用条件（広告を1回見ると1時間広告なし）。帯ではなく右上の小さなバッジにし、押すと全文を出す。
+        // 仕組み・条件は変えない（表示の仕方だけ）。全文は、閉じていても読み上げで読める
+        <div className="ms-ad-badge-row">
+          <details className="ms-ad-badge" data-testid="download-ad-notice">
+            <summary aria-label="無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。">
+              <span aria-hidden="true">
+                <b>無料</b>・保存時に広告1回で1時間広告なし
+              </span>
+              <span className="ms-info-dot" aria-hidden="true">
+                i
+              </span>
+            </summary>
+            <p className="ms-ad-badge-text">
+              無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。
+            </p>
+          </details>
+        </div>
       )}
       {children}
     </DownloadGateProvider>

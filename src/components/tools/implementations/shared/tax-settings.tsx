@@ -6,9 +6,7 @@ import {
   type TaxRatePercent,
   type TaxRounding,
 } from "@/lib/documents/types";
-
-const selectClass =
-  "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
+import { Segmented } from "@/components/ui/segmented";
 
 const ROUNDING_OPTIONS = Object.keys(TAX_ROUNDING_LABELS) as TaxRounding[];
 
@@ -25,37 +23,23 @@ export function TaxSettings({
   taxRounding: TaxRounding;
   onChange: (patch: { taxRatePercent?: TaxRatePercent; taxRounding?: TaxRounding }) => void;
 }) {
+  // 選択肢が3つずつなので、プルダウンではなくセグメントボタンで選ぶ（UI・UX改善）
   return (
-    <div className="flex flex-wrap items-end gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-      <label className="flex flex-col gap-1.5 text-sm">
-        消費税率
-        <select
-          value={taxRatePercent}
-          onChange={(e) => onChange({ taxRatePercent: Number(e.target.value) as TaxRatePercent })}
-          className={selectClass}
-        >
-          {TAX_RATE_OPTIONS.map((rate) => (
-            <option key={rate} value={rate}>
-              {rate}%
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1.5 text-sm">
-        端数処理
-        <select
-          value={taxRounding}
-          onChange={(e) => onChange({ taxRounding: e.target.value as TaxRounding })}
-          className={selectClass}
-        >
-          {ROUNDING_OPTIONS.map((key) => (
-            <option key={key} value={key}>
-              {TAX_ROUNDING_LABELS[key]}
-            </option>
-          ))}
-        </select>
-      </label>
+    <div className="flex flex-wrap items-end gap-x-6 gap-y-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+      <Segmented
+        label="消費税率"
+        value={String(taxRatePercent)}
+        onChange={(v) => onChange({ taxRatePercent: Number(v) as TaxRatePercent })}
+        options={TAX_RATE_OPTIONS.map((rate) => ({ value: String(rate), label: `${rate}%` }))}
+        testId="tax-rate"
+      />
+      <Segmented
+        label="端数処理"
+        value={taxRounding}
+        onChange={(v) => onChange({ taxRounding: v })}
+        options={ROUNDING_OPTIONS.map((key) => ({ value: key, label: TAX_ROUNDING_LABELS[key] }))}
+        testId="tax-rounding"
+      />
     </div>
   );
 }

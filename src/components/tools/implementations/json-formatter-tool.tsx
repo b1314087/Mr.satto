@@ -11,6 +11,7 @@ import {
 } from "@/components/tools/implementations/shared/before-after-table";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
+import { Segmented } from "@/components/ui/segmented";
 
 export function JsonFormatterTool() {
   const [input, setInput] = useState("");
@@ -79,17 +80,19 @@ export function JsonFormatterTool() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm">
-          インデント
-          <select
-            value={indent}
-            onChange={(e) => setIndent(Number(e.target.value))}
-            className="rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            <option value={2}>2スペース</option>
-            <option value={4}>4スペース</option>
-          </select>
-        </label>
+        <div className="flex items-center gap-2 text-sm">
+          <span aria-hidden="true">インデント</span>
+          <Segmented
+            ariaLabel="インデント"
+            size="sm"
+            value={String(indent)}
+            onChange={(v) => setIndent(Number(v))}
+            options={[
+              { value: "2", label: "2スペース" },
+              { value: "4", label: "4スペース" },
+            ]}
+          />
+        </div>
         <button
           type="button"
           onClick={() => run(false)}

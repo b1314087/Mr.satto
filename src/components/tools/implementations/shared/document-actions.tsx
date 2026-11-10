@@ -14,6 +14,7 @@ import { validateDocumentForm } from "@/lib/documents/validation";
 import { DOCUMENT_TYPE_META, type DocumentFormState } from "@/lib/documents/types";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { runWithDownloadAccess } from "@/lib/download/download-gate";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 帳票共通: PDF生成・ダウンロード・印刷導線。
@@ -53,15 +54,18 @@ export function DocumentActions({ form }: { form: DocumentFormState }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <button
-        type="button"
-        onClick={handleGenerate}
-        disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-        title={preValidationError ?? undefined}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
-        {status === "processing" ? "作成中..." : meta.actionLabel}
-      </button>
+      {/* 実行バー。まだ足りない入力があるときは、その内容を横に出す（なければ、入力が保存されないことを知らせる） */}
+      <RunBar note={preValidationError ?? "入力内容は画面を閉じると消えます"}>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+          title={preValidationError ?? undefined}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          {status === "processing" ? "作成中..." : meta.actionLabel}
+        </button>
+      </RunBar>
 
       <ProcessingStatus state={status} processingLabel="PDFを作成中..." successLabel="PDFを作成しました" />
       {error && <ErrorMessage message={error} />}

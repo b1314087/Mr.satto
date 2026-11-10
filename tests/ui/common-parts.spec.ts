@@ -190,8 +190,10 @@ test.describe("ファイル選択欄（CSV重複削除で確認）", () => {
 
     await dragEvent(page, "dragover", csv);
     await dragEvent(page, "drop", csv);
-    await expect(zone).not.toHaveAttribute("data-dragging", "true");
     await expect(page.locator("li", { has: page.getByText("dropped.csv") })).toBeVisible();
+    // 選んだあとは、大きな枠の代わりに小さなファイル行の欄（UI・UX改善）になり、ドラッグ中の表示は残らない
+    await expect(page.getByTestId("dropzone-compact")).toBeVisible();
+    await expect(page.getByTestId("dropzone-compact")).not.toHaveAttribute("data-dragging", "true");
   });
 
   test("対応していない形式をドロップすると、ファイルは選ばれず、エラーが表示される（既存のエラー文言）", async ({ page }) => {

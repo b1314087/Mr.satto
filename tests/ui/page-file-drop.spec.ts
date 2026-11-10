@@ -103,7 +103,7 @@ test.describe("全画面のドロップ：共通のファイル選択欄（1つ�
     await expect(page.getByRole("button", { name: /2件を.*に変換する/ })).toBeVisible({ timeout: 20_000 });
 
     // 欄そのものへ落としたときは、欄が処理し、全画面の仕組みは同じファイルをもう一度渡さない
-    await dragOn(page, ["dragenter", "dragover", "drop"], [file(fixtures.png, "third.png", "image/png")], { selector: ".ms-dropzone" });
+    await dragOn(page, ["dragenter", "dragover", "drop"], [file(fixtures.png, "third.png", "image/png")], { selector: ".ms-dropzone, .ms-dropzone-compact" });
     await expect(page.getByRole("button", { name: /3件を.*に変換する/ })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: /4件を/ })).toHaveCount(0);
   });

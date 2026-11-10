@@ -16,6 +16,7 @@ import { PdfExtractPagesProcessor, pdfOutputName } from "@/lib/processors/browse
 import { parsePageSelection } from "@/lib/pdf/page-selection";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const PREVIEW_MAX_PAGES = 40;
 
@@ -109,6 +110,7 @@ export function PdfExtractPagesTool({ initialFile = null, onFileChange }: Shared
       }
     >
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -133,14 +135,16 @@ export function PdfExtractPagesTool({ initialFile = null, onFileChange }: Shared
       )}
 
       {file && pageCount !== null && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || pageSelection.trim() === ""} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          ページを抽出する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || pageSelection.trim() === ""} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            ページを抽出する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="抽出が完了しました" />

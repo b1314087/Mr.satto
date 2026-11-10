@@ -1312,3 +1312,533 @@ a[data-nav-pending="true"] {
 :where(body *):has(.ms-preview-fs) {
   z-index: 100 !important;
 }
+
+/* =====================================================================
+   UI・UX改善（全ページ共通の部品）
+   広告バッジ・ファイル行・詳細設定・セグメント・実行バー・有料機能の印・番号付き見出し
+   どれもガラス調（--ms-surface-glass・--ms-glass-sheen・--ms-glass-highlight）をそのまま使う
+   ===================================================================== */
+@layer components {
+  /* ---- 広告バッジ（無料の利用条件。ツールの枠の右上に小さく） ---- */
+  .ms-ad-badge-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.75rem;
+  }
+  .ms-ad-badge {
+    position: relative;
+    display: inline-flex;
+    max-width: 100%;
+  }
+  .ms-ad-badge > summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 1.75rem;
+    padding: 0.2rem 0.4rem 0.2rem 0.7rem;
+    border-radius: 9999px;
+    border: 1px solid var(--ms-border);
+    background-color: var(--ms-surface-glass-solid);
+    background-image: var(--ms-glass-sheen);
+    box-shadow: var(--ms-glass-highlight);
+    font-size: 0.75rem;
+    color: var(--ms-text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .ms-ad-badge > summary::-webkit-details-marker {
+    display: none;
+  }
+  .ms-ad-badge > summary b {
+    color: var(--ms-accent);
+    font-weight: 700;
+  }
+  .dark .ms-ad-badge > summary b {
+    color: #8fb3ff;
+  }
+  .ms-ad-badge > summary:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+  .ms-info-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 9999px;
+    border: 1px solid var(--ms-border-strong);
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ms-text-muted);
+    flex-shrink: 0;
+  }
+  .ms-ad-badge-text {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.375rem);
+    z-index: 30;
+    width: min(20rem, calc(100vw - 2.5rem));
+    padding: 0.625rem 0.75rem;
+    border-radius: var(--ms-radius-control);
+    border: 1px solid var(--ms-border);
+    background: var(--ms-surface-strong);
+    box-shadow: var(--ms-shadow-lift);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--ms-text);
+  }
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .ms-ad-badge > summary {
+      background-color: var(--ms-surface-glass);
+      -webkit-backdrop-filter: blur(var(--ms-blur)) saturate(1.9);
+      backdrop-filter: blur(var(--ms-blur)) saturate(1.9);
+    }
+  }
+
+  /* ---- ファイル行（読み込み後の小さな選択欄）。ドロップ枠の代わりに、ファイル一覧の上に1行で出す ---- */
+  .ms-dropzone-compact {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    width: 100%;
+    padding: 0.5rem 0.5rem 0.5rem 0.875rem;
+    border: 1.5px dashed var(--ms-dash);
+    border-radius: var(--ms-radius-control);
+    background-color: var(--ms-surface-glass);
+    background-image: var(--ms-glass-sheen);
+    color: var(--ms-text-muted);
+    font-size: 0.8125rem;
+    transition:
+      border-color var(--ms-duration) var(--ms-ease),
+      background-color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-dropzone-compact[data-dragging="true"] {
+    border-style: solid;
+    border-color: var(--ms-accent);
+    background-image: linear-gradient(var(--ms-hover-tint), var(--ms-hover-tint)), var(--ms-glass-sheen);
+  }
+  .ms-dropzone-compact-text {
+    flex: 1 1 10rem;
+    min-width: 0;
+  }
+  .ms-dropzone-compact-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.875rem;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--ms-accent) 35%, transparent);
+    background: color-mix(in srgb, var(--ms-accent) 9%, transparent);
+    color: var(--ms-accent);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .dark .ms-dropzone-compact-btn {
+    color: #9dbcff;
+  }
+  .ms-dropzone-compact-btn:hover {
+    background: color-mix(in srgb, var(--ms-accent) 15%, transparent);
+  }
+  .ms-dropzone-compact-btn:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+
+  /* ---- セグメントボタン（少ない選択肢から1つを選ぶ） ---- */
+  .ms-seg {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 2px;
+    max-width: 100%;
+    width: fit-content;
+    padding: 3px;
+    border-radius: 0.875rem;
+    border: 1px solid var(--ms-border);
+    background-color: var(--ms-surface-input);
+    background-image: var(--ms-glass-sheen);
+    box-shadow: var(--ms-glass-highlight);
+  }
+  .ms-seg-wide {
+    display: flex;
+    width: 100%;
+  }
+  .ms-seg-wide > button {
+    flex: 1 1 0;
+  }
+  .ms-seg > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.875rem;
+    border-radius: 0.65rem;
+    border: 0;
+    background: transparent;
+    color: var(--ms-text-muted);
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.3;
+    text-align: center;
+    cursor: pointer;
+    transition:
+      background-color var(--ms-duration) var(--ms-ease),
+      color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-seg-sm > button {
+    min-height: 1.875rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+  }
+  .ms-seg > button:hover:not(:disabled):not([aria-checked="true"]):not([aria-pressed="true"]) {
+    background-color: var(--ms-hover-tint);
+    color: var(--ms-text);
+  }
+  .ms-seg > button[aria-checked="true"],
+  .ms-seg > button[aria-pressed="true"] {
+    color: var(--ms-on-accent);
+    background-color: var(--ms-accent);
+    background-image: var(--ms-accent-gradient);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 4px 12px -4px rgba(37, 99, 235, 0.55);
+  }
+  .ms-seg > button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .ms-seg > button:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 1px;
+  }
+  .ms-seg-swatch {
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+  }
+  .ms-seg > button[aria-checked="true"] .ms-seg-swatch {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+  }
+  /* ラジオボタンを label で包んだ既存の選択（動画の画質など）を、同じ見た目にする */
+  .ms-seg-radio {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    max-width: 100%;
+    width: fit-content;
+    padding: 3px;
+    border-radius: 0.875rem;
+    border: 1px solid var(--ms-border);
+    background-color: var(--ms-surface-input);
+    background-image: var(--ms-glass-sheen);
+    box-shadow: var(--ms-glass-highlight);
+  }
+  .ms-tool-panel .ms-seg-radio > label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.875rem;
+    border: 0 !important;
+    border-radius: 0.65rem !important;
+    background: transparent !important;
+    color: var(--ms-text-muted) !important;
+    font-size: 0.875rem;
+    font-weight: 600;
+    box-shadow: none !important;
+    cursor: pointer;
+  }
+  .ms-tool-panel .ms-seg-radio > label:has(input:checked) {
+    color: var(--ms-on-accent) !important;
+    background-color: var(--ms-accent) !important;
+    background-image: var(--ms-accent-gradient) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 4px 12px -4px rgba(37, 99, 235, 0.55) !important;
+  }
+  .ms-tool-panel .ms-seg-radio > label:has(input:disabled) {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .ms-tool-panel .ms-seg-radio > label:has(input:focus-visible) {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 1px;
+  }
+
+  /* ---- 詳細設定（ふだんは閉じておく設定） ---- */
+  .ms-adv {
+    border-radius: var(--ms-radius-control);
+    border: 1px solid var(--ms-border);
+    background-color: var(--ms-surface-glass);
+    background-image: var(--ms-glass-sheen);
+    box-shadow: var(--ms-glass-highlight);
+  }
+  .ms-adv > summary {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.875rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .ms-adv > summary::-webkit-details-marker {
+    display: none;
+  }
+  .ms-adv > summary:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+    border-radius: var(--ms-radius-control);
+  }
+  .ms-adv-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--ms-text);
+  }
+  .ms-adv-title::before {
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform var(--ms-duration) var(--ms-ease);
+    opacity: 0.6;
+    flex-shrink: 0;
+  }
+  .ms-adv[open] > summary .ms-adv-title::before {
+    transform: rotate(45deg);
+  }
+  .ms-adv-summary {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--ms-text-muted);
+    text-align: right;
+    min-width: 0;
+  }
+  .ms-adv-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 0.25rem 0.875rem 1rem;
+  }
+
+  /* ---- 実行バー（実行ボタンの置き場所。ボタンが画面の下に隠れているあいだだけ、下にくっつく） ---- */
+  .ms-run-bar {
+    position: sticky;
+    bottom: -1px;
+    z-index: 25;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.875rem;
+    width: fit-content;
+    max-width: 100%;
+    margin: -0.5rem;
+    padding: 0.5rem;
+    border-radius: calc(var(--ms-radius-control) + 0.5rem);
+    border: 1px solid transparent;
+    transition:
+      background-color var(--ms-duration) var(--ms-ease),
+      box-shadow var(--ms-duration) var(--ms-ease),
+      border-color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-run-bar[data-stuck="true"] {
+    padding-bottom: calc(0.5rem + 1px + env(safe-area-inset-bottom, 0px));
+    border-color: var(--ms-border);
+    background-color: var(--ms-surface-glass-solid);
+    background-image: var(--ms-glass-sheen);
+    box-shadow: var(--ms-glass-highlight), var(--ms-shadow-lift);
+  }
+  @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .ms-run-bar[data-stuck="true"] {
+      background-color: color-mix(in srgb, var(--ms-surface-glass-solid) 72%, transparent);
+      -webkit-backdrop-filter: blur(12px) saturate(1.6);
+      backdrop-filter: blur(12px) saturate(1.6);
+    }
+  }
+  .ms-run-bar > button {
+    white-space: nowrap;
+  }
+  .ms-run-bar-note {
+    font-size: 0.75rem;
+    color: var(--ms-text-muted);
+    min-width: 0;
+  }
+  @media (max-width: 639px) {
+    .ms-run-bar[data-stuck="true"] {
+      left: 0;
+      width: 100%;
+    }
+    .ms-run-bar[data-stuck="true"] > button {
+      flex: 1 1 auto;
+    }
+  }
+
+  /* ---- 有料機能の印（プレミアム・AI） ---- */
+  .ms-premium-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.05rem 0.55rem;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.14), rgba(37, 99, 235, 0.14));
+    border: 1px solid rgba(124, 58, 237, 0.28);
+    color: #5b21b6;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .ms-premium-tag::before {
+    content: "✦";
+    font-size: 0.6rem;
+  }
+  .dark .ms-premium-tag {
+    color: #d8c6ff;
+    border-color: rgba(196, 170, 255, 0.35);
+  }
+  .ms-premium-hint {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--ms-text-muted);
+  }
+
+
+  /* ---- アイコン付きの操作ボタン（PDF修正の「やりたい操作」など、選択肢が多めで種類が分かれるもの） ---- */
+  .ms-op-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr));
+    gap: 0.375rem;
+  }
+  .ms-op-grid > button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.125rem;
+    min-height: 3.25rem;
+    padding: 0.375rem 0.25rem;
+    border-radius: var(--ms-radius-control);
+    border: 1px solid var(--ms-border);
+    background-color: var(--ms-surface-input);
+    background-image: var(--ms-glass-sheen);
+    color: var(--ms-text);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: center;
+    cursor: pointer;
+    transition:
+      background-color var(--ms-duration) var(--ms-ease),
+      border-color var(--ms-duration) var(--ms-ease);
+  }
+  .ms-op-grid > button:hover:not([aria-checked="true"]) {
+    border-color: var(--ms-border-strong);
+    background-color: var(--ms-hover-tint);
+  }
+  .ms-op-grid > button[aria-checked="true"] {
+    border-color: var(--ms-accent);
+    color: var(--ms-on-accent);
+    background-color: var(--ms-accent);
+    background-image: var(--ms-accent-gradient);
+    box-shadow: 0 4px 12px -4px rgba(37, 99, 235, 0.55);
+  }
+  .ms-op-grid > button:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+  .ms-op-icon {
+    font-size: 1rem;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+
+
+  /* ---- オン・オフのチップ（いくつでも選べる選択。role="checkbox" のボタン） ---- */
+  .ms-toggle-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .ms-toggle-chips > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2.25rem;
+    padding: 0.375rem 0.875rem;
+    border-radius: 9999px;
+    border: 1px solid var(--ms-border-strong);
+    background-color: var(--ms-surface-input);
+    background-image: var(--ms-glass-sheen);
+    color: var(--ms-text-muted);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ms-toggle-chips > button::before {
+    content: "";
+    width: 0.95rem;
+    height: 0.95rem;
+    border-radius: 0.3rem;
+    border: 1.5px solid var(--ms-border-strong);
+    flex-shrink: 0;
+  }
+  .ms-toggle-chips > button[aria-checked="true"] {
+    border-color: var(--ms-accent);
+    background-color: color-mix(in srgb, var(--ms-accent) 10%, transparent);
+    color: var(--ms-text);
+  }
+  .ms-toggle-chips > button[aria-checked="true"]::before {
+    border-color: var(--ms-accent);
+    background: var(--ms-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 80% no-repeat;
+  }
+  .ms-toggle-chips > button:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 2px;
+  }
+
+  /* ---- 番号付き見出し（操作の順番があるツール） ---- */
+  .ms-step-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--ms-text);
+    line-height: 1.4;
+  }
+  .ms-step-no {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 9999px;
+    background-color: var(--ms-accent);
+    background-image: var(--ms-accent-gradient);
+    color: var(--ms-on-accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+}

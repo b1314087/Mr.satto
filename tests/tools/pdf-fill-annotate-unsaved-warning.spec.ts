@@ -192,12 +192,12 @@ test.describe("PDF修正: 記入・注釈の機能にも同じ離脱確認が働
     await addText(page, 60, 80);
     expect(await wouldWarn(page)).toBe(true);
 
-    await page.getByTestId("pdf-fix-operation").selectOption("page-numbers");
+    await page.getByTestId("pdf-fix-op-page-numbers").click();
     await expect(page.getByTestId("pdf-fix-modes")).toHaveAttribute("data-mode", "page-numbers");
     await expect(page.getByTestId("pdf-fix-switch-confirm")).toHaveCount(0);
     expect(await wouldWarn(page)).toBe(true);
 
-    await page.getByTestId("pdf-fix-operation").selectOption("select");
+    await page.getByTestId("pdf-fix-op-select").click();
     await expect(page.getByTestId("pdf-fix-modes")).toHaveAttribute("data-mode", "annotate");
     expect(await wouldWarn(page)).toBe(true);
     await exportAndDownload(page);

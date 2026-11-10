@@ -18,6 +18,7 @@ import {
 } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const POSITION_OPTIONS: { value: ImageWatermarkPosition; label: string }[] = [
   { value: "top-left", label: "左上" },
@@ -160,6 +161,7 @@ export function ImageWatermarkTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
@@ -202,17 +204,12 @@ export function ImageWatermarkTool() {
 
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">位置</p>
-            <div className="flex flex-wrap gap-2">
+            <div className="ms-seg">
               {POSITION_OPTIONS.map((opt) => (
-                <button
+                <button aria-pressed={position === opt.value}
                   key={opt.value}
                   type="button"
                   onClick={() => setPosition(opt.value)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                    position === opt.value
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {opt.label}
                 </button>
@@ -243,14 +240,16 @@ export function ImageWatermarkTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || !text.trim()} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          透かしを追加する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || !text.trim()} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            透かしを追加する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="処理が完了しました" />

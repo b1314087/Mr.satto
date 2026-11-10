@@ -200,14 +200,14 @@ async function openAnnotateWithPdf(page: Page, fixture: string) {
 }
 
 test.describe("PDF修正: 画面と機能", () => {
-  test("開ける：やりたい操作のプルダウン・いまの操作と使い方・白消しの注意（白消し・黒塗りのときだけ）が出る", async ({ page }) => {
+  test("開ける：やりたい操作のボタン・いまの操作と使い方・白消しの注意（白消し・黒塗りのときだけ）が出る", async ({ page }) => {
     await openFix(page);
     await expect(page.getByRole("heading", { level: 1 })).toContainText("PDF修正");
-    // 既存の操作だけがプルダウンにある（新しい機能は増やしていない）
-    const values = await operation(page).locator("option").evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+    // 既存の操作だけがボタンにある（新しい機能は増やしていない）
+    const values = await operation(page).getByRole("radio").evaluateAll((els) => els.map((e) => (e.getAttribute("data-testid") ?? "").replace("pdf-fix-op-", "")));
     expect(values).toEqual(PDF_FIX_OPERATIONS.map((o) => o.value));
     expect(new Set(PDF_FIX_OPERATIONS.map((o) => o.mode))).toEqual(new Set(PDF_FIX_MODES.map((m) => m.mode)));
-    await expect(operation(page)).toHaveValue("text");
+    await expect(operation(page)).toHaveAttribute("data-value", "text");
     await expect(modes(page)).toHaveAttribute("data-mode", "annotate");
     await expect(page.getByTestId("pdf-fix-current-operation")).toHaveText("いまの操作：文字を書き込む");
     await expect(page.getByTestId("pdf-fix-mode-description")).toContainText("クリック");
@@ -244,7 +244,7 @@ test.describe("PDF修正: 画面と機能", () => {
       await page.goto(`/tools/${from}`);
       await expect(page).toHaveURL(new RegExp(`/tools/pdf-fix\\?mode=${mode}$`));
       await expect(modes(page)).toHaveAttribute("data-mode", mode, { timeout: 20_000 });
-      await expect(operation(page)).toHaveValue(mode);
+      await expect(operation(page)).toHaveAttribute("data-value", mode);
       await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true }).first()).toBeVisible();
     }
   });
@@ -375,12 +375,12 @@ test.describe("PDF修正: 操作を切り替えても編集が消えない（新
     await expect(page.locator(OBJECT_LIST).locator("textarea").first()).toHaveValue("残る文字");
   });
 
-  test("置いたあと、操作は「選ぶ・動かす」に戻る場合も、プルダウンといまの操作の表示が合っている", async ({ page }) => {
+  test("置いたあと、操作は「選ぶ・動かす」に戻る場合も、選んだボタンといまの操作の表示が合っている", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.singlePagePdf);
     await choosePdfFixOperation(page, "図形");
     await expect(page.getByTestId("pdf-fix-current-operation")).toContainText("図形");
     await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
-    const value = await operation(page).inputValue();
+    const value = (await operation(page).getAttribute("data-value")) ?? "";
     const label = PDF_FIX_OPERATIONS.find((o) => o.value === value)!.label;
     await expect(page.getByTestId("pdf-fix-current-operation")).toHaveText(`いまの操作：${label}`);
   });

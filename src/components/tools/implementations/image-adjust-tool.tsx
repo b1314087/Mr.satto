@@ -14,6 +14,7 @@ import { ImageAdjustProcessor, applyImageAdjust, loadImage } from "@/lib/process
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useObjectUrl } from "@/lib/utils/use-object-url";
+import { RunBar } from "@/components/ui/run-bar";
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -170,6 +171,8 @@ export function ImageAdjustTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         multiple
         maxSizeMB={50}
@@ -268,14 +271,16 @@ export function ImageAdjustTool() {
       )}
 
       {files.length > 0 && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {files.length > 1 ? `${files.length}枚をまとめて調整する` : "適用する"}
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {files.length > 1 ? `${files.length}枚をまとめて調整する` : "適用する"}
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel={progressLabel || "処理中..."} successLabel="調整が完了しました" />

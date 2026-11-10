@@ -42,6 +42,7 @@ import { downloadBlob } from "@/lib/utils/format";
 import { approxWrap } from "./shared/approx-text";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { LABEL_IMPORT_ACCEPT, honorificLineFromHeader, readLabelImportFile, rowsToLabelListText, type LabelImportData } from "@/lib/label/import-file";
+import { RunBar } from "@/components/ui/run-bar";
 
 type OutputFormat = "word" | "excel";
 
@@ -90,19 +91,10 @@ function ChoiceButtons<T extends string>({
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{label}</p>
-      <div className="flex flex-wrap gap-2">
+      {/* 見た目は全ページ共通のセグメントボタン（.ms-seg）。押している状態は aria-pressed */}
+      <div className="ms-seg">
         {options.map((o) => (
-          <button
-            key={o.value}
-            type="button"
-            aria-pressed={value === o.value}
-            onClick={() => onChange(o.value)}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-              value === o.value
-                ? "bg-blue-600 text-white"
-                : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-            }`}
-          >
+          <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
             {o.label}
           </button>
         ))}
@@ -456,6 +448,7 @@ export function ExcelLabelTool() {
       <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">ラベルの内容</p>
         <FileDropzone
+          compact={!!importedFile}
           accept={LABEL_IMPORT_ACCEPT}
           label="Excel・CSVのファイルをドラッグ&ドロップ"
           hint="またはタップして選択（.xlsx・.csv）。1行が1枚のラベルになり、横に並んだセルはラベルの中で改行されます"
@@ -554,18 +547,15 @@ export function ExcelLabelTool() {
         ) : (
           <>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-neutral-600 dark:text-neutral-300">ラベルの区切り方</span>
-                <select
-                  aria-label="ラベルの区切り方"
-                  value={content.splitMode}
-                  onChange={(e) => updateContent({ splitMode: e.target.value as LabelContent["splitMode"] })}
-                  className={FIELD_CLASS}
-                >
-                  <option value="blank">空行で区切る（1枚が複数行になる宛名など）</option>
-                  <option value="line">1行を1枚にする（Excelの行を貼り付け可・列は改行に）</option>
-                </select>
-              </label>
+              <ChoiceButtons<LabelContent["splitMode"]>
+                label="ラベルの区切り方"
+                value={content.splitMode}
+                onChange={(v) => updateContent({ splitMode: v })}
+                options={[
+                  { value: "blank", label: "空行で区切る" },
+                  { value: "line", label: "1行を1枚にする" },
+                ]}
+              />
               <NumberField
                 label={`使い始める位置（1〜${perPage}枚目）`}
                 value={content.startPosition}
@@ -658,21 +648,12 @@ export function ExcelLabelTool() {
           <p className="text-xs text-amber-700 dark:text-amber-400">文字の位置の調整は、Wordで作成したときだけ反映されます（Excelには反映されません）。</p>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">書体</span>
-            <select
-              aria-label="書体"
-              value={style.fontKey}
-              onChange={(e) => updateStyle({ fontKey: e.target.value as LabelStyle["fontKey"] })}
-              className={FIELD_CLASS}
-            >
-              {LABEL_FONTS.map((f) => (
-                <option key={f.key} value={f.key}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <ChoiceButtons<LabelStyle["fontKey"]>
+            label="書体"
+            value={style.fontKey}
+            onChange={(v) => updateStyle({ fontKey: v })}
+            options={LABEL_FONTS.map((f) => ({ value: f.key, label: f.label }))}
+          />
           <label className="flex items-center gap-2 self-end pb-2 text-sm text-neutral-700 dark:text-neutral-200">
             <input type="checkbox" checked={style.bold} onChange={(e) => updateStyle({ bold: e.target.checked })} />
             太字にする
@@ -709,14 +690,16 @@ export function ExcelLabelTool() {
 
       {validationError && <ErrorMessage message={validationError} />}
 
-      <button
-        type="button"
-        onClick={handleRun}
-        disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
-        {format === "word" ? "Wordを作成" : "Excelを作成"}
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleRun}
+          disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          {format === "word" ? "Wordを作成" : "Excelを作成"}
+        </button>
+      </RunBar>
 
       <ProcessingStatus state={status} successLabel="ラベルシートを作成しました" />
       {error && <ErrorMessage message={error} />}

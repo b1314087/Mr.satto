@@ -27,6 +27,8 @@ import {
 } from "@/lib/processors/browser/quote-order-pdf";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { runWithDownloadAccess } from "@/lib/download/download-gate";
+import { RunBar } from "@/components/ui/run-bar";
+import { StepHeading } from "@/components/ui/step-heading";
 
 const inputClass =
   "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
@@ -38,8 +40,13 @@ const approxMeasure: MeasureFn = (text, size) => {
   return w;
 };
 
-function Heading({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">{children}</h2>;
+/** 番号付きの見出し（n は手順の番号） */
+function Heading({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <StepHeading n={n} as="h2">
+      {children}
+    </StepHeading>
+  );
 }
 
 /**
@@ -90,7 +97,7 @@ export function QuoteOrderGeneratorTool() {
       previewWidth="lg"
       preview={
       <section className="flex flex-col gap-3">
-        <Heading>⑥ プレビュー（上が見積書・下が注文書）</Heading>
+        <Heading n={6}>プレビュー（上が見積書・下が注文書）</Heading>
         {warning && (
           <p data-testid="quote-order-overflow" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">
             {warning}
@@ -155,7 +162,7 @@ export function QuoteOrderGeneratorTool() {
       <DocumentMemoImport form={form} onApply={patch} deliveryTextField onDeliveryText={setDeliveryDate} />
 
       <section className="flex flex-col gap-3">
-        <Heading>① 基本情報（見積書・注文書に共通）</Heading>
+        <Heading n={1}>基本情報（見積書・注文書に共通）</Heading>
         <DocumentBasicForm form={form} onChange={patch} />
         <label className="flex flex-col gap-1.5 text-sm sm:max-w-sm">
           注文書に入れる納期（任意）
@@ -170,36 +177,38 @@ export function QuoteOrderGeneratorTool() {
 
       <section className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
         <div className="flex flex-col gap-3">
-          <Heading>② 宛先（お客様）</Heading>
+          <Heading n={2}>宛先（お客様）</Heading>
           <PartyInfoForm label="宛先情報" party={form.recipient} onChange={(recipient) => patch({ recipient })} />
         </div>
         <div className="flex flex-col gap-3">
-          <Heading>③ 発行者（自社情報）</Heading>
+          <Heading n={3}>発行者（自社情報）</Heading>
           <PartyInfoForm label="発行者情報" party={form.issuer} onChange={(issuer) => patch({ issuer })} />
         </div>
       </section>
 
       <section className="flex flex-col gap-3">
-        <Heading>④ 明細</Heading>
+        <Heading n={4}>明細</Heading>
         <LineItemsEditor items={form.items} onChange={(items) => patch({ items })} />
       </section>
 
       <section className="flex flex-col gap-3">
-        <Heading>⑤ 税・金額</Heading>
+        <Heading n={5}>税・金額</Heading>
         <TaxSettings taxRatePercent={form.taxRatePercent} taxRounding={form.taxRounding} onChange={patch} />
       </section>
 
       <section className="flex flex-col gap-3">
-        <Heading>⑦ PDF出力</Heading>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          title={preValidationError ?? undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {status === "processing" ? "作成中..." : "見積書・注文書を作成する"}
-        </button>
+        <Heading n={7}>PDF出力</Heading>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            title={preValidationError ?? undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {status === "processing" ? "作成中..." : "見積書・注文書を作成する"}
+          </button>
+        </RunBar>
         <ProcessingStatus state={status} processingLabel="PDFを作成中..." successLabel="PDFを作成しました" />
         {error && <ErrorMessage message={error} />}
         {result && (

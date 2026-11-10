@@ -36,6 +36,7 @@ import {
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
 
 const FORMAT_OPTIONS: { value: ThumbnailImageFormat; label: string }[] = [
   { value: "png", label: "PNG" },
@@ -327,6 +328,7 @@ export function VideoThumbnailTool() {
     <div className="flex flex-col gap-6">
 
       <FileDropzone
+        compact={!!file}
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
@@ -521,7 +523,7 @@ export function VideoThumbnailTool() {
       )}
 
       {file && (
-        <div className="flex flex-wrap items-center gap-3">
+        <RunBar>
           {mode === "single" ? (
             <button
               type="button"
@@ -543,7 +545,7 @@ export function VideoThumbnailTool() {
               {plan && !plan.error && plan.times.length > 0 ? `${plan.times.length}枚をまとめて抽出する` : "まとめて抽出する"}
             </button>
           )}
-        </div>
+        </RunBar>
       )}
 
       <ProcessingStatus

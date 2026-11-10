@@ -27,6 +27,8 @@ import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/impleme
 import { formatDuration } from "@/lib/video/estimate";
 
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
+import { Segmented } from "@/components/ui/segmented";
 
 /**
  * H.264コーデック変換（Phase 10 / 動画ツール 5）。
@@ -195,6 +197,7 @@ export function VideoH264Tool() {
     <div className="flex flex-col gap-6">
 
       <FileDropzone
+        compact={!!file}
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
@@ -229,19 +232,16 @@ export function VideoH264Tool() {
       )}
 
       {file && probeResult?.canDecode && probeResult.codec !== "avc" && (
-        <label className="flex w-fit flex-col gap-1.5 text-sm">
-          <span className="font-medium text-neutral-700 dark:text-neutral-200">再エンコードの画質</span>
-          <select
-            aria-label="再エンコードの画質"
-            value={quality}
-            onChange={(e) => setQuality(e.target.value as VideoQualityName)}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            <option value="high">高画質（ファイルは大きめ）</option>
-            <option value="medium">標準</option>
-            <option value="low">ファイルサイズ優先（画質は下がります）</option>
-          </select>
-        </label>
+        <Segmented
+          label="再エンコードの画質"
+          value={quality}
+          onChange={(v) => setQuality(v)}
+          options={[
+            { value: "high", label: "高画質", title: "高画質（ファイルは大きめ）" },
+            { value: "medium", label: "標準" },
+            { value: "low", label: "サイズ優先", title: "ファイルサイズ優先（画質は下がります）" },
+          ]}
+        />
       )}
 
       {file && (
@@ -267,7 +267,7 @@ export function VideoH264Tool() {
       )}
 
       {file && (
-        <div className="flex flex-wrap items-center gap-3">
+        <RunBar>
           <button
             type="button"
             onClick={() => handleRun()}
@@ -276,7 +276,7 @@ export function VideoH264Tool() {
           >
             H.264に変換する
           </button>
-        </div>
+        </RunBar>
       )}
 
       <ProcessingStatus

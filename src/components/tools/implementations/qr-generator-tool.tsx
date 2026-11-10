@@ -19,6 +19,8 @@ import {
   type QrLogoPosition,
 } from "@/lib/qr/logo";
 import { useLiveQr } from "./shared/use-live-qr";
+import { RunBar } from "@/components/ui/run-bar";
+import { Segmented } from "@/components/ui/segmented";
 
 type MarkKind = "default" | "custom" | "none";
 
@@ -166,21 +168,19 @@ export function QrGeneratorTool() {
           onChange={setSize}
           onReset={size !== DEFAULT_SIZE ? () => setSize(DEFAULT_SIZE) : undefined}
         />
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200">
-          誤り訂正レベル
-          <select
-            value={logo ? "H" : ecl}
-            disabled={!!logo}
-            onChange={(e) => setEcl(e.target.value as Ecl)}
-            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-normal disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            {ECL_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* 誤り訂正レベル（4択）。ボタンには記号と割合だけを出し、正式な説明はカーソルを乗せると出る */}
+        <Segmented
+          label={
+            <>
+              誤り訂正レベル
+              {logo && <span className="ml-1 text-xs font-normal text-ms-muted">（マーク付きのためH）</span>}
+            </>
+          }
+          value={logo ? "H" : ecl}
+          disabled={!!logo}
+          onChange={(v) => setEcl(v)}
+          options={ECL_OPTIONS.map((o) => ({ value: o.value, label: o.label.replace(/（約(\d+)%を復元）/, " $1%"), title: o.label }))}
+        />
         <label className="flex items-center gap-3 text-sm">
           <input type="color" value={fg} onChange={(e) => setFg(e.target.value)} className={colorInputClass} />
           前景色（QRの色）
@@ -194,7 +194,7 @@ export function QrGeneratorTool() {
 
       <section className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">二次元コードのマーク（ロゴ）</p>
-        <div className="flex flex-wrap gap-2" role="group" aria-label="マークの種類">
+        <div className="ms-seg" role="group" aria-label="マークの種類">
           {(
             [
               { value: "default", label: "Mr.Sattoのアイコン" },
@@ -207,11 +207,6 @@ export function QrGeneratorTool() {
               type="button"
               aria-pressed={markKind === o.value}
               onClick={() => setMarkKind(o.value)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                markKind === o.value
-                  ? "bg-blue-600 text-white"
-                  : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-              }`}
             >
               {o.label}
             </button>
@@ -233,7 +228,7 @@ export function QrGeneratorTool() {
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5" role="group" aria-label="マークの位置">
               <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">マークの位置</p>
-              <div className="flex gap-2">
+              <div className="ms-seg">
                 {(
                   [
                     { value: "center", label: "真ん中" },
@@ -245,11 +240,6 @@ export function QrGeneratorTool() {
                     type="button"
                     aria-pressed={markPosition === o.value}
                     onClick={() => setMarkPosition(o.value)}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                      markPosition === o.value
-                        ? "bg-blue-600 text-white"
-                        : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                    }`}
                   >
                     {o.label}
                   </button>
@@ -270,14 +260,16 @@ export function QrGeneratorTool() {
         <p className="text-xs text-neutral-500 dark:text-neutral-400">マークを付けると誤り訂正レベルが自動で「H（最高）」になります。印刷・配布の前に、スマートフォンで読み取れることを必ず確認してください。</p>
       </section>
 
-      <button
-        type="button"
-        onClick={handleGenerate}
-        disabled={!text.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
-        二次元コードを生成する
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={!text.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          二次元コードを生成する
+        </button>
+      </RunBar>
 
       <ProcessingStatus state={status} successLabel="生成しました" />
       {(error || live.error) && <ErrorMessage message={(error ?? live.error)!} />}

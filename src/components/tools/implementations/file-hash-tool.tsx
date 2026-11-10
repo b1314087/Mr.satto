@@ -7,6 +7,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { FileHashProcessor, type FileHashOutput } from "@/lib/processors/browser/file-hash";
 import { formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * ファイルハッシュ（SHA-256）（Phase 8）。
@@ -69,6 +70,7 @@ export function FileHashTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         maxSizeMB={200}
         label="ファイルをドラッグ&ドロップ"
         hint="またはタップして選択（形式は問いません）"
@@ -79,13 +81,15 @@ export function FileHashTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && status === "error" && (
-        <button
-          type="button"
-          onClick={() => void compute(file)}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          SHA-256を計算する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={() => void compute(file)}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            SHA-256を計算する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel="ハッシュを計算中..." successLabel="計算が完了しました" />

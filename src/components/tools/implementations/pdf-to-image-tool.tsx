@@ -10,6 +10,7 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { PdfToImageProcessor, type PdfToImageOutputItem } from "@/lib/processors/browser/pdf-render";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 type OutputFormat = "image/png" | "image/jpeg";
 
@@ -78,6 +79,7 @@ export function PdfToImageTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -120,14 +122,16 @@ export function PdfToImageTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          画像化する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            画像化する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="画像化が完了しました" />

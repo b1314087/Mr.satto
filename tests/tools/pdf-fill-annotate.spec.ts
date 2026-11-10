@@ -70,7 +70,7 @@ test("ツールページが表示される（PDF修正の「記入・注釈・�
   await expect(page.locator("body")).not.toContainText("Application error");
   await expect(page.getByRole("heading", { level: 1, name: "PDF修正" })).toBeVisible();
   await expect(page.getByTestId("pdf-fix-modes")).toHaveAttribute("data-mode", "annotate");
-  await expect(page.getByTestId("pdf-fix-operation")).toHaveValue("text");
+  await expect(page.getByTestId("pdf-fix-operation")).toHaveAttribute("data-value", "text");
 });
 
 // (2)(3) PDFアップロード・単一ページ表示

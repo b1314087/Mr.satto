@@ -51,6 +51,9 @@ import {
 } from "@/lib/pdf-annotate/whiteout";
 import Link from "next/link";
 import { SliderField } from "@/components/common/slider-field";
+import { RunBar } from "@/components/ui/run-bar";
+import { Segmented } from "@/components/ui/segmented";
+import { StepHeading } from "@/components/ui/step-heading";
 
 /**
  * PDF記入・注釈（Phase 15）。
@@ -112,6 +115,8 @@ const COLOR_CHOICES: Record<ColorChoice, AnnotationColor> = {
   blue: { r: 0.1, g: 0.35, b: 0.85 },
 };
 const COLOR_LABELS: Record<ColorChoice, string> = { black: "黒", red: "赤", blue: "青" };
+/** 色のボタンに出す丸の色 */
+const COLOR_SWATCH: Record<ColorChoice, string> = { black: "#111827", red: "#dc2626", blue: "#2563eb" };
 
 function cssColor(c: AnnotationColor): string {
   return `rgb(${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)})`;
@@ -1192,13 +1197,13 @@ export function PdfFillAnnotateTool({
   return (
     <div className="flex flex-col gap-6">
       {operationSlot && !previewShown && operationSlot}
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">手書き入力は署名欄への記入などに使えますが、法的な効力を持つ電子署名機能ではありません。</p>
 
       {error && <ErrorMessage message={error} />}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">1. PDFをアップロード</h2>
+        <StepHeading n={1} as="h2">PDFをアップロード</StepHeading>
         <FileDropzone
+          compact={!!file}
           accept="application/pdf,.pdf"
           label="PDFをドラッグ&ドロップ"
           hint="またはタップして選択（1ファイル）"
@@ -1246,7 +1251,7 @@ export function PdfFillAnnotateTool({
         <section data-preview-split className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(360px,560px)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,664px)] lg:grid-rows-[auto_1fr] lg:gap-x-6">
           {/* PC幅: 左に設定、右にキャンバス(画面に固定)。スマホ幅は従来どおり 設定 → キャンバス → 注釈一覧 の順に縦並び */}
           <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-1">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">2. 記入・注釈を配置</h2>
+          <StepHeading n={2} as="h2">記入・注釈を配置</StepHeading>
 
           <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-600 dark:text-neutral-300">
             <div className="flex items-center gap-2">
@@ -1369,38 +1374,30 @@ export function PdfFillAnnotateTool({
               <div className="w-56">
                 <SliderField label="文字サイズ" value={textFontSize} min={6} max={96} unit="pt" onChange={setTextFontSize} />
               </div>
-              <label className="flex items-center gap-1">
-                色
-                <select
+              <div className="flex items-center gap-1.5">
+                <span aria-hidden="true">色</span>
+                <Segmented
+                  size="sm"
+                  ariaLabel="色"
                   value={textColorChoice}
-                  onChange={(e) => setTextColorChoice(e.target.value as ColorChoice)}
-                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                >
-                  {(Object.keys(COLOR_LABELS) as ColorChoice[]).map((c) => (
-                    <option key={c} value={c}>
-                      {COLOR_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={(next) => setTextColorChoice(next)}
+                  options={(Object.keys(COLOR_LABELS) as ColorChoice[]).map((c) => ({ value: c, label: COLOR_LABELS[c], swatch: COLOR_SWATCH[c] }))}
+                />
+              </div>
               <label className="flex items-center gap-1">
                 <input type="checkbox" checked={textBold} onChange={(e) => setTextBold(e.target.checked)} />
                 太字
               </label>
-              <label className="flex items-center gap-1">
-                整列
-                <select
+              <div className="flex items-center gap-1.5">
+                <span aria-hidden="true">整列</span>
+                <Segmented
+                  size="sm"
+                  ariaLabel="整列"
                   value={textAlign}
-                  onChange={(e) => setTextAlign(e.target.value as TextAlign)}
-                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                >
-                  {(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => (
-                    <option key={a} value={a}>
-                      {ALIGN_LABELS[a]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={(next) => setTextAlign(next)}
+                  options={(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => ({ value: a, label: ALIGN_LABELS[a] }))}
+                />
+              </div>
               <span className="text-neutral-500 dark:text-neutral-400">改行はShift+Enter</span>
             </div>
           )}
@@ -1418,20 +1415,16 @@ export function PdfFillAnnotateTool({
                   className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
                 />
               </label>
-              <label className="flex items-center gap-1">
-                マーク
-                <select
+              <div className="flex items-center gap-1.5">
+                <span aria-hidden="true">マーク</span>
+                <Segmented
+                  size="sm"
+                  ariaLabel="マーク"
                   value={checkboxMarkStyle}
-                  onChange={(e) => setCheckboxMarkStyle(e.target.value as CheckboxMarkStyle)}
-                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                >
-                  {(Object.keys(MARK_STYLE_LABELS) as CheckboxMarkStyle[]).map((m) => (
-                    <option key={m} value={m}>
-                      {MARK_STYLE_LABELS[m]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={(next) => setCheckboxMarkStyle(next)}
+                  options={(Object.keys(MARK_STYLE_LABELS) as CheckboxMarkStyle[]).map((m) => ({ value: m, label: MARK_STYLE_LABELS[m] }))}
+                />
+              </div>
               <label className="flex items-center gap-1">
                 <input
                   type="checkbox"
@@ -1485,34 +1478,26 @@ export function PdfFillAnnotateTool({
 
           {mode === "shape" && (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/20">
-              <label className="flex items-center gap-1">
-                種類
-                <select
+              <div className="flex items-center gap-1.5">
+                <span aria-hidden="true">種類</span>
+                <Segmented
+                  size="sm"
+                  ariaLabel="種類"
                   value={shapeKind}
-                  onChange={(e) => setShapeKind(e.target.value as ShapeKind)}
-                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                >
-                  {(Object.keys(SHAPE_KIND_LABELS) as ShapeKind[]).map((k) => (
-                    <option key={k} value={k}>
-                      {SHAPE_KIND_LABELS[k]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-1">
-                色
-                <select
+                  onChange={(next) => setShapeKind(next)}
+                  options={(Object.keys(SHAPE_KIND_LABELS) as ShapeKind[]).map((k) => ({ value: k, label: SHAPE_KIND_LABELS[k] }))}
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span aria-hidden="true">色</span>
+                <Segmented
+                  size="sm"
+                  ariaLabel="色"
                   value={shapeColorChoice}
-                  onChange={(e) => setShapeColorChoice(e.target.value as ColorChoice)}
-                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                >
-                  {(Object.keys(COLOR_LABELS) as ColorChoice[]).map((c) => (
-                    <option key={c} value={c}>
-                      {COLOR_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={(next) => setShapeColorChoice(next)}
+                  options={(Object.keys(COLOR_LABELS) as ColorChoice[]).map((c) => ({ value: c, label: COLOR_LABELS[c], swatch: COLOR_SWATCH[c] }))}
+                />
+              </div>
               <label className="flex items-center gap-1">
                 線の太さ
                 <input
@@ -1551,20 +1536,16 @@ export function PdfFillAnnotateTool({
                   className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
                 />
               </label>
-              <label className="flex items-center gap-1">
-                色
-                <select
+              <div className="flex items-center gap-1.5">
+                <span aria-hidden="true">色</span>
+                <Segmented
+                  size="sm"
+                  ariaLabel="色"
                   value={inkColorChoice}
-                  onChange={(e) => setInkColorChoice(e.target.value as ColorChoice)}
-                  className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                >
-                  {(Object.keys(COLOR_LABELS) as ColorChoice[]).map((c) => (
-                    <option key={c} value={c}>
-                      {COLOR_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={(next) => setInkColorChoice(next)}
+                  options={(Object.keys(COLOR_LABELS) as ColorChoice[]).map((c) => ({ value: c, label: COLOR_LABELS[c], swatch: COLOR_SWATCH[c] }))}
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => setEraseMode((v) => !v)}
@@ -2229,7 +2210,7 @@ export function PdfFillAnnotateTool({
 
       {file && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">3. PDFを書き出してダウンロード</h2>
+          <StepHeading n={3} as="h2">PDFを書き出してダウンロード</StepHeading>
           {objects.some(isWhiteoutObject) && (
             <p
               data-testid="pdf-whiteout-export-notice"
@@ -2259,14 +2240,17 @@ export function PdfFillAnnotateTool({
               を使ってください。
             </p>
           )}
-          <button
-            type="button"
-            onClick={() => void handleExport()}
-            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            PDFを書き出す
-          </button>
+          <RunBar>
+            <button
+              type="button"
+              onClick={() => void handleExport()}
+              disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+              className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              PDFを書き出す
+            </button>
+          </RunBar>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">手書き入力は署名欄への記入などに使えますが、法的な効力を持つ電子署名機能ではありません。</p>
 
           <ProcessingStatus state={status} successLabel="書き出しが完了しました" />
 
@@ -2338,17 +2322,18 @@ function DateInsertHelper({ onInsert }: { onInsert: (text: string) => void }) {
           className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
         />
       </label>
-      <label className="flex items-center gap-1">
-        <span className="sr-only">日付の表示形式</span>
-        <select
+      <div className="flex items-center gap-1">
+        <Segmented
+          size="sm"
+          ariaLabel="日付の表示形式"
           value={style}
-          onChange={(e) => setStyle(e.target.value as "slash" | "kanji")}
-          className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          <option value="slash">2026/09/27</option>
-          <option value="kanji">2026年9月27日</option>
-        </select>
-      </label>
+          onChange={(v) => setStyle(v)}
+          options={[
+            { value: "slash", label: "2026/09/27" },
+            { value: "kanji", label: "2026年9月27日" },
+          ]}
+        />
+      </div>
       <button
         type="button"
         onClick={() => {

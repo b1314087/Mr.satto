@@ -25,6 +25,9 @@ import {
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { RunBar } from "@/components/ui/run-bar";
+import { StepHeading } from "@/components/ui/step-heading";
+import { Segmented } from "@/components/ui/segmented";
 
 /**
  * PDF差し込み印刷（旧名：フォーム回答から個別PDFを一括作成。Phase 11 ツール②。工程2で表示名を変更）。
@@ -430,8 +433,9 @@ export function FormToIndividualPdfsTool() {
 
       {/* --- 1. テンプレートアップロード --- */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">1. 帳票テンプレートPDFをアップロード</h2>
+        <StepHeading n={1} as="h2">帳票テンプレートPDFをアップロード</StepHeading>
         <FileDropzone
+          compact={!!templateFile}
           accept="application/pdf,.pdf"
           maxSizeMB={30}
           label="帳票のPDFをドラッグ&ドロップ"
@@ -447,7 +451,7 @@ export function FormToIndividualPdfsTool() {
         <section data-preview-split className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(360px,560px)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,664px)] lg:grid-rows-[auto_1fr] lg:gap-x-6">
           {/* PC幅: 左に設定、右にプレビュー(画面に固定)。スマホ幅は従来どおり 設定 → プレビュー → 項目一覧 の順に縦並び */}
           <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-1">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">2. フィールドを配置</h2>
+          <StepHeading n={2} as="h2">フィールドを配置</StepHeading>
 
           {pages.length > 1 && (
             <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
@@ -543,14 +547,16 @@ export function FormToIndividualPdfsTool() {
                       className="w-28 rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
                       placeholder="項目名"
                     />
-                    <select
+                    <Segmented
+                      size="sm"
+                      ariaLabel="項目の種類"
                       value={field.dataType}
-                      onChange={(e) => updateField(field.id, { dataType: e.target.value as "text" | "photo" })}
-                      className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                    >
-                      <option value="text">テキスト</option>
-                      <option value="photo">写真</option>
-                    </select>
+                      onChange={(v) => updateField(field.id, { dataType: v })}
+                      options={[
+                        { value: "text", label: "テキスト" },
+                        { value: "photo", label: "写真" },
+                      ]}
+                    />
                     <label className="flex items-center gap-1">
                       ページ
                       <select
@@ -596,15 +602,17 @@ export function FormToIndividualPdfsTool() {
                             onChange={(v) => updateField(field.id, { fontSize: v })}
                           />
                         </div>
-                        <select
+                        <Segmented
+                          size="sm"
+                          ariaLabel="文字の揃え"
                           value={field.align}
-                          onChange={(e) => updateField(field.id, { align: e.target.value as FieldDefinition["align"] })}
-                          className="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                        >
-                          <option value="left">左揃え</option>
-                          <option value="center">中央揃え</option>
-                          <option value="right">右揃え</option>
-                        </select>
+                          onChange={(v) => updateField(field.id, { align: v })}
+                          options={[
+                            { value: "left", label: "左" },
+                            { value: "center", label: "中央" },
+                            { value: "right", label: "右" },
+                          ]}
+                        />
                       </>
                     )}
                     <button
@@ -643,8 +651,9 @@ export function FormToIndividualPdfsTool() {
       {/* --- 3. CSV/Excelアップロード --- */}
       {(step === "data" || step === "mapping" || step === "photos" || step === "preview" || step === "generate") && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">3. 回答データ（CSV・Excel）をアップロード</h2>
+          <StepHeading n={3} as="h2">回答データ（CSV・Excel）をアップロード</StepHeading>
           <FileDropzone
+            compact={!!dataFile}
             accept=".csv,.xlsx,.tsv,.txt"
             maxSizeMB={20}
             label="CSV・Excelファイルをドラッグ&ドロップ"
@@ -746,7 +755,7 @@ export function FormToIndividualPdfsTool() {
       {/* --- 4. マッピング確認 --- */}
       {table && (step === "mapping" || step === "photos" || step === "preview" || step === "generate") && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">4. 列の対応（マッピング）を確認</h2>
+          <StepHeading n={4} as="h2">列の対応（マッピング）を確認</StepHeading>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">列名が完全一致した項目のみ自動で対応付けています。内容を確認してください。</p>
           <table className="w-full text-left text-xs">
             <thead>
@@ -871,9 +880,10 @@ export function FormToIndividualPdfsTool() {
       {/* --- 5. 写真アップロード --- */}
       {photoFields.length > 0 && (step === "photos" || step === "preview" || step === "generate") && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">5. 写真をアップロード</h2>
+          <StepHeading n={5} as="h2">写真をアップロード</StepHeading>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">列のファイル名と一致する画像のみ対応付けます（JPEG・PNG）。一致しない人の写真欄は空欄になります。</p>
           <FileDropzone
+            compact={photoFiles.length > 0}
             accept="image/jpeg,image/png,.jpg,.jpeg,.png"
             multiple
             maxSizeMB={15}
@@ -899,7 +909,7 @@ export function FormToIndividualPdfsTool() {
       {/* --- 6. プレビュー --- */}
       {(step === "preview" || step === "generate") && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">6. 1人分のプレビュー</h2>
+          <StepHeading n={6} as="h2">1人分のプレビュー</StepHeading>
           {table && (
             <label className="flex items-center gap-2 text-xs">
               確認する行:
@@ -952,16 +962,18 @@ export function FormToIndividualPdfsTool() {
       {/* --- 7. 一括生成 --- */}
       {step === "generate" && table && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">7. 全員分を一括生成</h2>
+          <StepHeading n={7} as="h2">全員分を一括生成</StepHeading>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">対象: {table.rows.length}人分</p>
-          <button
-            type="button"
-            onClick={() => void handleGenerateAll()}
-            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            一括生成してZIPを作成する
-          </button>
+          <RunBar>
+            <button
+              type="button"
+              onClick={() => void handleGenerateAll()}
+              disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+              className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              一括生成してZIPを作成する
+            </button>
+          </RunBar>
           {status === "processing" && (
             <button
               type="button"

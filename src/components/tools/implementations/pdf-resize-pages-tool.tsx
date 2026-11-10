@@ -19,6 +19,7 @@ import {
 } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const SIZE_OPTIONS: { value: PdfPageSizePreset; label: string }[] = [
   { value: "a4", label: "A4" },
@@ -188,6 +189,7 @@ export function PdfResizePagesTool() {
       }
     >
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -206,17 +208,12 @@ export function PdfResizePagesTool() {
         <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">変更後のサイズ</p>
-            <div className="flex gap-2">
+            <div className="ms-seg">
               {SIZE_OPTIONS.map((opt) => (
-                <button
+                <button aria-pressed={pageSize === opt.value}
                   key={opt.value}
                   type="button"
                   onClick={() => setPageSize(opt.value)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                    pageSize === opt.value
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {opt.label}
                 </button>
@@ -226,22 +223,17 @@ export function PdfResizePagesTool() {
 
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">向き</p>
-            <div className="flex gap-2">
+            <div className="ms-seg">
               {(
                 [
                   { value: "portrait", label: "縦向き" },
                   { value: "landscape", label: "横向き" },
                 ] as const
               ).map((opt) => (
-                <button
+                <button aria-pressed={orientation === opt.value}
                   key={opt.value}
                   type="button"
                   onClick={() => setOrientation(opt.value)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                    orientation === opt.value
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {opt.label}
                 </button>
@@ -283,14 +275,16 @@ export function PdfResizePagesTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          変更する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            変更する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="ページサイズの変更が完了しました" />

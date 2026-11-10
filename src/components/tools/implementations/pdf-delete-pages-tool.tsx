@@ -16,6 +16,7 @@ import { usePdfPageCount } from "@/components/tools/implementations/shared/use-p
 import { PdfDeletePagesProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const PREVIEW_MAX_PAGES = 40;
 
@@ -94,6 +95,7 @@ export function PdfDeletePagesTool({ initialFile = null, onFileChange }: SharedP
       }
     >
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -118,14 +120,16 @@ export function PdfDeletePagesTool({ initialFile = null, onFileChange }: SharedP
       )}
 
       {file && pageCount !== null && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || selected.size === 0 || willDeleteAll} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {selected.size}ページを削除する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || selected.size === 0 || willDeleteAll} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {selected.size}ページを削除する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="削除が完了しました" />

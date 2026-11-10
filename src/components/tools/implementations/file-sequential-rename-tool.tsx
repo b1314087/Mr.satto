@@ -16,6 +16,7 @@ import { RenamePreviewList } from "@/components/tools/implementations/shared/ren
 import type { NamedFileOutput } from "@/lib/processors/types";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * ファイル連番リネーム。
@@ -112,6 +113,8 @@ export function FileSequentialRenameTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={files.length > 0}
+        compactAction="add"
         multiple
         maxSizeMB={100}
         label="ファイルをドラッグ&ドロップ（複数可）"
@@ -173,14 +176,16 @@ export function FileSequentialRenameTool() {
       {plan && <RenamePreviewList files={files} plan={plan} />}
 
       {files.length > 0 && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {files.length}件を連番リネームする
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {files.length}件を連番リネームする
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="リネームが完了しました" />

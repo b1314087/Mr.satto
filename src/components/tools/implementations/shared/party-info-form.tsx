@@ -25,7 +25,8 @@ export function PartyInfoForm({
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{label}</p>
+      {/* 見出し（「② 宛先」など）と同じ内容なので、画面には出さず、読み上げだけに残す */}
+      <p className="sr-only">{label}</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <input
           value={party.companyName}

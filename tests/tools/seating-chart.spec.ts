@@ -171,7 +171,7 @@ test("seating-chart: 用途ごとに、人数に合わせた席ができる。�
   await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人 ／ 12席");
   await openSeatPanel(page, "layout");
-  await page.getByTestId("seat-by-column").selectOption("col");
+  await page.getByTestId("seat-by-column-col").click();
   // 縦に並べると、2人目は1列目の後ろ（前から2列目）
   await expect(seat(page, 1)).toHaveAttribute("data-name", "参加者2");
   const box0 = await seat(page, 0).boundingBox();
@@ -184,7 +184,7 @@ test("seating-chart: 用途ごとに、人数に合わせた席ができる。�
   await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人 ／ 12席");
   await openSeatPanel(page, "layout");
-  await page.getByTestId("seat-deal").selectOption("deal");
+  await page.getByTestId("seat-deal-deal").click();
   await openSeatPanel(page, "names");
   await expect(page.getByTestId("seat-count")).toContainText("12人");
 
@@ -567,7 +567,7 @@ test("seating-chart: 「2人を離す」「近くにする」「列を決める�
   await addRule(page, "near", "N3", "N20");
   const place = await addRule(page, "place", "N24");
   await openSeatPanel(page, "conditions");
-  await place.getByTestId("seat-rule-axis").selectOption("row");
+  await place.getByTestId("seat-rule-axis-row").click();
   await openSeatPanel(page, "conditions");
   await place.getByTestId("seat-rule-from").fill("1");
   await openSeatPanel(page, "conditions");
@@ -951,19 +951,19 @@ test("seating-chart: PDFの用紙（B6などJISのA・B列ぜんぶ）と向き�
   };
   // B6・縦：128×182mm（362.8×515.9pt）
   await page.getByTestId("seat-paper").selectOption("B6");
-  await page.getByTestId("seat-paper-orientation").selectOption("portrait");
+  await page.getByTestId("seat-paper-orientation-portrait").click();
   let c = await download();
   plainExpect(Math.round(c.pages[0].width)).toBe(363);
   plainExpect(Math.round(c.pages[0].height)).toBe(516);
   // 横を選ぶと、幅と高さが入れ替わる
-  await page.getByTestId("seat-paper-orientation").selectOption("landscape");
+  await page.getByTestId("seat-paper-orientation-landscape").click();
   c = await download();
   plainExpect(Math.round(c.pages[0].width)).toBe(516);
   plainExpect(Math.round(c.pages[0].height)).toBe(363);
 
   // 前後を1ページに：1ページに、同じ名前が2回・2つの向きの見出しが出る。上の図は前が上、下の図は前が下
   await page.getByTestId("seat-paper").selectOption("A4");
-  await page.getByTestId("seat-paper-orientation").selectOption("portrait");
+  await page.getByTestId("seat-paper-orientation-portrait").click();
   await page.getByTestId("seat-both-views").check();
   c = await download();
   plainExpect(c.pageCount).toBe(1);

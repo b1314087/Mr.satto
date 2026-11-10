@@ -12,6 +12,7 @@ import { croppedBox } from "@/lib/pdf/overlay-layout";
 import { PdfCropPagesProcessor, type PdfCropMargins } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const PRESETS: { label: string; mm: number }[] = [
   { label: "0mm", mm: 0 },
@@ -78,6 +79,7 @@ export function PdfCropPagesTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -178,14 +180,16 @@ export function PdfCropPagesTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          余白を調整する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            余白を調整する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="余白の調整が完了しました" />

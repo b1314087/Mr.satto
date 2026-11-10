@@ -11,6 +11,7 @@ import {
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
+import { RunBar } from "@/components/ui/run-bar";
 
 export function CsvFormatTool() {
   /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
@@ -122,14 +123,16 @@ export function CsvFormatTool() {
         />
       )}
 
-      <button
-        type="button"
-        onClick={handleFormat}
-        disabled={!input.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
-        {status === "processing" ? "処理中..." : "整形する"}
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleFormat}
+          disabled={!input.trim() || status === "processing"} aria-busy={status === "processing" || undefined}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          {status === "processing" ? "処理中..." : "整形する"}
+        </button>
+      </RunBar>
 
       <ProcessingStatus state={status} processingLabel="処理中..." successLabel="整形が完了しました" />
       {error && <ErrorMessage message={error} />}

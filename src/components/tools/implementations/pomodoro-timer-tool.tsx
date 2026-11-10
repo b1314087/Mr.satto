@@ -77,17 +77,12 @@ export function PomodoroTimerTool() {
 
   return (
     <div className="flex flex-col items-center gap-6">
-      <div className="flex flex-wrap justify-center gap-2">
+      <div className="ms-seg">
         {(Object.keys(MODES) as ModeKey[]).map((key) => (
-          <button
+          <button aria-pressed={mode === key}
             key={key}
             type="button"
             onClick={() => switchMode(key)}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              mode === key
-                ? "bg-blue-600 text-white"
-                : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-            }`}
           >
             {MODES[key].label} ({durations[key]}分)
           </button>

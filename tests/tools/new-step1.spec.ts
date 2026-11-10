@@ -395,7 +395,7 @@ test.describe("9：座席表", () => {
     await page.getByTestId("seat-both-views").check();
     for (const [paper, orient] of [["A4", "portrait"], ["A5", "landscape"]] as const) {
       await page.getByTestId("seat-paper").selectOption(paper);
-      await page.getByTestId("seat-paper-orientation").selectOption(orient);
+      await page.getByTestId(`seat-paper-orientation-${orient}`).click();
       const pdf = await clickAndDownload(page, "PDFでダウンロード");
       const c = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
       const p = c.pages[0];

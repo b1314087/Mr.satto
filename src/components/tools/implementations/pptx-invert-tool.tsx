@@ -13,6 +13,7 @@ import { PptxInvertProcessor, type PptxInvertOutput } from "@/lib/processors/bro
 import { DEFAULT_COLOR_CHOICE, PALETTE_PRESETS, contrastRatio, normalizeHex, presetOf, type ColorChoice } from "@/lib/pptx/palette";
 import { downloadBlob } from "@/lib/utils/format";
 import { ImageCompare } from "./shared/image-compare";
+import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT = ".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
@@ -174,6 +175,7 @@ export function PptxInvertTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept={ACCEPT}
         maxSizeMB={150}
         label="PowerPointファイル（.pptx）をドラッグ&ドロップ"
@@ -226,14 +228,16 @@ export function PptxInvertTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          白黒を反転する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            白黒を反転する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel={progress || "変換しています..."} successLabel="変換が完了しました" />

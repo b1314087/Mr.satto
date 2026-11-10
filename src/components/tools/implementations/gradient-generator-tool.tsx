@@ -19,6 +19,7 @@ import {
   type GradientType,
 } from "@/lib/gradient/gradient";
 import { downloadBlob } from "@/lib/utils/format";
+import { Segmented } from "@/components/ui/segmented";
 
 const TYPE_OPTIONS: { value: GradientType; label: string }[] = [
   { value: "linear", label: "線形(直線)" },
@@ -130,18 +131,13 @@ export function GradientGeneratorTool() {
       <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
         <div className="flex flex-col gap-1.5">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">種類</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="ms-seg">
             {TYPE_OPTIONS.map((o) => (
               <button
                 key={o.value}
                 type="button"
                 aria-pressed={spec.type === o.value}
                 onClick={() => patch({ type: o.value })}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  spec.type === o.value
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {o.label}
               </button>
@@ -156,18 +152,13 @@ export function GradientGeneratorTool() {
         {spec.type === "radial" && (
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">形</p>
-            <div className="flex gap-2">
+            <div className="ms-seg">
               {(["circle", "ellipse"] as const).map((shape) => (
                 <button
                   key={shape}
                   type="button"
                   aria-pressed={spec.radialShape === shape}
                   onClick={() => patch({ radialShape: shape })}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                    spec.radialShape === shape
-                      ? "bg-blue-600 text-white"
-                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                  }`}
                 >
                   {shape === "circle" ? "円" : "楕円"}
                 </button>
@@ -277,18 +268,13 @@ export function GradientGeneratorTool() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <select
-          aria-label="画像のサイズ"
-          value={pngSize}
-          onChange={(e) => setPngSize(Number(e.target.value))}
-          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          {PNG_SIZES.map((s, i) => (
-            <option key={s.label} value={i}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+        <Segmented
+          ariaLabel="画像のサイズ"
+          size="sm"
+          value={String(pngSize)}
+          onChange={(v) => setPngSize(Number(v))}
+          options={PNG_SIZES.map((s, i) => ({ value: String(i), label: s.label.replace(/\((.+)\)$/, ""), title: s.label }))}
+        />
         <button
           type="button"
           onClick={downloadPng}

@@ -34,6 +34,41 @@ import { WHITEOUT_NOTICE } from "@/lib/pdf-annotate/whiteout";
  * 処理はすべてブラウザ内で行い、PDFは送信・保存しない。
  */
 
+/** やりたい操作のボタンに出す、短い名前とアイコン（正式な名前はボタンにカーソルを乗せると出る） */
+const PDF_FIX_OPERATION_SHORT: Record<PdfFixOperation, string> = {
+  text: "文字",
+  checkbox: "チェック",
+  shape: "図形",
+  ink: "手書き",
+  image: "画像",
+  stamp: "印影",
+  whiteout: "白消し",
+  blackout: "黒塗り",
+  select: "選ぶ・動かす",
+  "page-numbers": "ページ番号",
+  watermark: "透かし",
+  redact: "墨消し",
+};
+const PDF_FIX_OPERATION_ICONS: Record<PdfFixOperation, string> = {
+  text: "Aa",
+  checkbox: "✓",
+  shape: "□",
+  ink: "✎",
+  image: "▣",
+  stamp: "㊞",
+  whiteout: "▭",
+  blackout: "■",
+  select: "↖",
+  "page-numbers": "#",
+  watermark: "◌",
+  redact: "▮",
+};
+const PDF_FIX_OPERATION_GROUPS = [
+  { group: "place", label: "PDFの上に置く（置いたあと動かせます）" },
+  { group: "pages", label: "全ページにまとめて入れる" },
+  { group: "remove", label: "元のデータごと消す" },
+] as const;
+
 export function PdfFixTool() {
   const [operation, setOperation] = useState<PdfFixOperation>("text");
   const info = getPdfFixOperation(operation);
@@ -80,40 +115,35 @@ export function PdfFixTool() {
   /** やりたい操作のプルダウンと、いまの操作・使い方 */
   const operationBlock = (
       <div className="flex flex-col gap-2" data-testid="pdf-fix-modes" data-mode={mode}>
-        <label className="flex flex-col gap-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">
-          やりたい操作
-          <select
-            data-testid="pdf-fix-operation"
-            value={operation}
-            onChange={(e) => chooseOperation(e.target.value as PdfFixOperation)}
-            className="w-full max-w-md rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-          >
-            <optgroup label="PDFの上に置く（置いたあと、動かす・大きさを変えることができます）">
-              {PDF_FIX_OPERATIONS.filter((o) => o.group === "place").map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="全ページにまとめて入れる">
-              {PDF_FIX_OPERATIONS.filter((o) => o.group === "pages").map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="元のデータごと消す">
-              {PDF_FIX_OPERATIONS.filter((o) => o.group === "remove").map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </label>
+        {/* やりたい操作（12個）を、アイコン付きのボタンで並べる（以前はプルダウン）。グループは以前の区分と同じ */}
+        <div role="radiogroup" aria-label="やりたい操作" data-testid="pdf-fix-operation" data-value={operation} className="flex flex-col gap-2">
+          {PDF_FIX_OPERATION_GROUPS.map((g) => (
+            <div key={g.group} className="flex flex-col gap-1">
+              <p className="text-[11px] font-semibold text-ms-muted">{g.label}</p>
+              <div className="ms-op-grid">
+                {PDF_FIX_OPERATIONS.filter((o) => o.group === g.group).map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={operation === o.value}
+                    title={o.label}
+                    data-testid={`pdf-fix-op-${o.value}`}
+                    onClick={() => chooseOperation(o.value)}
+                  >
+                    <span aria-hidden="true" className="ms-op-icon">
+                      {PDF_FIX_OPERATION_ICONS[o.value]}
+                    </span>
+                    {PDF_FIX_OPERATION_SHORT[o.value]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
         <div
           data-testid="pdf-fix-mode-description"
-          className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950/20 dark:text-blue-100"
+          className="flex flex-col gap-0.5 rounded-lg bg-ms-hover-tint px-3 py-2 text-xs text-ms-text"
         >
           <p className="font-semibold" data-testid="pdf-fix-current-operation" data-operation={operation}>
             いまの操作：{info.label}

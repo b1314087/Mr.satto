@@ -11,6 +11,7 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { ImageTileSplitProcessor, computeTileBoundaries } from "@/lib/processors/browser/image-tile-split";
 import { createZip, type ZipEntry } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 type OutputFormat = "png" | "jpeg";
 
@@ -163,6 +164,7 @@ export function ImageTileSplitTool() {
       ) : null}
     >
       <FileDropzone
+        compact={!!file}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
@@ -247,14 +249,16 @@ export function ImageTileSplitTool() {
 
 
       {file && (
-        <button
-          type="button"
-          onClick={() => void handleExport()}
-          disabled={!canProcess || status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {tileCount}枚に分割する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={() => void handleExport()}
+            disabled={!canProcess || status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            {tileCount}枚に分割する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="タイル分割が完了しました" />

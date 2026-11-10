@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PremiumHint, PremiumTag } from "@/components/ui/premium-badge";
 import { featureFlags } from "@/lib/config/features";
 import type { BatchNotice } from "./use-batch-selection";
 
@@ -13,23 +14,23 @@ import type { BatchNotice } from "./use-batch-selection";
  * - 課金の機能スイッチがオフの間は、プランの話をしない（上限だけを知らせる）。
  */
 export function BatchPlanHint({ batchAllowed, limit, unit = "ファイル" }: { batchAllowed: boolean; limit: number; unit?: string }) {
+  // 1行の小さな案内にする（UI・UX改善）。有料機能の印は PremiumTag / PremiumHint と同じ見た目
   if (batchAllowed) {
     return (
-      <p className="text-xs text-ms-muted" data-testid="batch-hint">
-        一度に{limit}
-        {unit}まで選んで、まとめて処理できます{featureFlags.billing ? "（プレミアムプランの一括処理）" : ""}。
+      <p className="ms-premium-hint" data-testid="batch-hint">
+        <span>
+          一度に{limit}
+          {unit}まで、まとめて処理できます
+        </span>
+        {featureFlags.billing && <PremiumTag />}
       </p>
     );
   }
   return (
-    <p className="text-xs text-ms-muted" data-testid="batch-hint">
-      1{unit}ずつ処理できます。複数の{unit === "枚" ? "画像" : "ファイル"}をまとめて処理する一括処理（最大{limit}
-      {unit}）は、
-      <Link href="/pricing" className="underline underline-offset-2 hover:text-ms-text">
-        プレミアムプラン
-      </Link>
-      の機能です。
-    </p>
+    <PremiumHint testId="batch-hint">
+      複数の{unit === "枚" ? "画像" : "ファイル"}の一括処理（最大{limit}
+      {unit}）は
+    </PremiumHint>
   );
 }
 

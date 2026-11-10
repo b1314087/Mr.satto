@@ -24,6 +24,7 @@ import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-vid
 import { VideoOutputPlayer, VideoPreviewPanel } from "@/components/tools/implementations/shared/video-preview-panel";
 
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 動画メタデータ削除。
@@ -145,6 +146,7 @@ export function VideoMetadataRemoveTool() {
       <p className="text-xs text-neutral-500 dark:text-neutral-400">すべてのメタデータの除去を保証するものではありません。</p>
 
       <FileDropzone
+        compact={!!file}
         accept={VIDEO_INPUT_ACCEPT}
         maxSizeMB={VIDEO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"
@@ -181,7 +183,7 @@ export function VideoMetadataRemoveTool() {
       )}
 
       {file && (
-        <div className="flex flex-wrap items-center gap-3">
+        <RunBar>
           <button
             type="button"
             onClick={() => handleRun()}
@@ -190,7 +192,7 @@ export function VideoMetadataRemoveTool() {
           >
             メタデータを削除する
           </button>
-        </div>
+        </RunBar>
       )}
 
       <ProcessingStatus

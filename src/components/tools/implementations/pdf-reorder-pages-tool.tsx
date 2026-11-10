@@ -16,6 +16,7 @@ import { usePdfPageCount } from "@/components/tools/implementations/shared/use-p
 import { PdfReorderPagesProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const PREVIEW_MAX_PAGES = 40;
 
@@ -92,6 +93,7 @@ export function PdfReorderPagesTool({ initialFile = null, onFileChange }: Shared
       }
     >
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
@@ -109,14 +111,16 @@ export function PdfReorderPagesTool({ initialFile = null, onFileChange }: Shared
       )}
 
       {file && order && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing" || isUnchanged} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          並び替えを適用する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing" || isUnchanged} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            並び替えを適用する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="並び替えが完了しました" />

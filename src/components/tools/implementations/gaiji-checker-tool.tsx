@@ -22,6 +22,8 @@ import {
 } from "@/lib/gaiji/detect";
 import { displayOfFinding } from "@/lib/gaiji/report";
 import { findVariantChars, fontLabel, loadMjVariantIndex, shortSjisLabel, sjisNoteOf, type MjVariantIndex, type VariantFinding } from "@/lib/gaiji/variants";
+import { RunBar } from "@/components/ui/run-bar";
+import { StepHeading } from "@/components/ui/step-heading";
 
 /** 戸籍・住民基本台帳などの字を、本来の形で出す書体（利用者のパソコンに入っているときだけ効く） */
 const IPAMJ_FONT_FAMILY = '"IPAmj明朝", "IPAmjMincho", serif';
@@ -256,9 +258,7 @@ export function GaijiCheckerTool() {
   return (
     <div className="flex flex-col gap-6">
       <section className={sectionClass} aria-labelledby="gaiji-step1">
-        <h2 id="gaiji-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          1. 調べる文字を入れる
-        </h2>
+        <StepHeading n={1} as="h2" id="gaiji-step1">調べる文字を入れる</StepHeading>
 
         <label className="flex items-start gap-2 rounded-lg bg-neutral-50 p-2.5 text-xs text-neutral-600 dark:bg-neutral-900/60 dark:text-neutral-300">
           <input
@@ -292,7 +292,7 @@ export function GaijiCheckerTool() {
             aria-describedby="gaiji-text-count gaiji-status"
             className={`${inputClass} w-full font-normal`}
           />
-          <div className="flex flex-wrap items-center gap-3">
+          <RunBar>
             <button
               type="button"
               data-testid="gaiji-run"
@@ -309,7 +309,7 @@ export function GaijiCheckerTool() {
             <span id="gaiji-text-count" className={mutedText}>
               {text.length.toLocaleString("ja-JP")}文字（{SCAN_MAX_CHARS.toLocaleString("ja-JP")}文字まで）
             </span>
-          </div>
+          </RunBar>
         </div>
 
         <div id="gaiji-status" role="status" aria-live="polite" data-testid="gaiji-status" className="flex flex-col gap-1">
@@ -421,7 +421,7 @@ export function GaijiCheckerTool() {
 
           {cleaned && scanned.text !== null && scanned.text !== "" && (
             <div data-testid="gaiji-clean" className="flex flex-col gap-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">3. 整えたテキスト</h3>
+              <StepHeading n={3} as="h3">整えたテキスト</StepHeading>
               <p className="text-xs text-neutral-600 dark:text-neutral-300">見えない文字の削除や、①→1・ｱ→ア などの直せる文字だけを直した文章です。外字などはそのまま残します。</p>
               <details data-testid="gaiji-clean-settings" className="text-xs text-neutral-700 dark:text-neutral-200">
                 <summary className="cursor-pointer font-medium text-neutral-600 dark:text-neutral-300">詳しい設定（直す内容・直した数）</summary>

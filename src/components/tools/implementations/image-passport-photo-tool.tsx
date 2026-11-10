@@ -25,6 +25,7 @@ import {
   type PaperOrientation,
 } from "@/lib/print/paper-sizes";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 証明写真サイズ変換ツール（Mr.Satto 次工程フェーズ Step 4）。
@@ -523,6 +524,7 @@ export function ImagePassportPhotoTool() {
       previewWidth="lg"
     >
       <FileDropzone
+        compact={!!file}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
@@ -630,30 +632,27 @@ export function ImagePassportPhotoTool() {
       {file && !sizeError && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">① 証明写真として保存</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="ms-seg">
             {(["image/jpeg", "image/png"] as const).map((mime) => (
-              <button
+              <button aria-pressed={photoFormat === mime}
                 key={mime}
                 type="button"
                 onClick={() => setPhotoFormat(mime)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  photoFormat === mime
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {mime === "image/jpeg" ? "JPEG" : "PNG"}
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={handlePhotoOutput}
-            disabled={photoStatus === "processing"} aria-busy={photoStatus === "processing" || undefined}
-            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            画像を書き出す
-          </button>
+          <RunBar>
+            <button
+              type="button"
+              onClick={handlePhotoOutput}
+              disabled={photoStatus === "processing"} aria-busy={photoStatus === "processing" || undefined}
+              className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              画像を書き出す
+            </button>
+          </RunBar>
           <ProcessingStatus state={photoStatus} successLabel="書き出しが完了しました" />
           {photoError && <ErrorMessage message={photoError} />}
           {photoResult && (
@@ -802,14 +801,16 @@ export function ImagePassportPhotoTool() {
               </div>
             </div>
           )}
-          <button
-            type="button"
-            onClick={handleSheetOutput}
-            disabled={sheetStatus === "processing" || maxSheetCells === 0} aria-busy={sheetStatus === "processing" || undefined}
-            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            PDFを書き出す
-          </button>
+          <RunBar>
+            <button
+              type="button"
+              onClick={handleSheetOutput}
+              disabled={sheetStatus === "processing" || maxSheetCells === 0} aria-busy={sheetStatus === "processing" || undefined}
+              className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              PDFを書き出す
+            </button>
+          </RunBar>
           <ProcessingStatus state={sheetStatus} processingLabel="PDFを作成中..." successLabel="PDFの作成が完了しました" />
           {sheetError && <ErrorMessage message={sheetError} />}
           {sheetResult && (

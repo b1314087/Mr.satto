@@ -77,6 +77,7 @@ export function AudioExtractTool() {
     <div className="flex flex-col gap-6">
 
       <FileDropzone
+        compact={!!file}
         accept={VIDEO_TO_AUDIO_INPUT_ACCEPT}
         maxSizeMB={AUDIO_DROPZONE_MAX_MB}
         label="動画ファイルをドラッグ&ドロップ"

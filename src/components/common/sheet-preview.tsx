@@ -61,7 +61,7 @@ export function SheetFilePreview({
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       {!sheets && !error && <p className="text-xs text-neutral-400">読み込み中…</p>}
       {sheets && sheets.length > 1 && sheetIndex === undefined && (
-        <div role="tablist" aria-label="シート" className="flex flex-wrap gap-1">
+        <div role="tablist" aria-label="シート" className="ms-seg">
           {sheets.map((s, i) => (
             <button
               key={`${s.name}-${i}`}
@@ -69,7 +69,6 @@ export function SheetFilePreview({
               role="tab"
               aria-selected={i === active}
               onClick={() => setTab(i)}
-              className={`rounded-md px-2.5 py-1 text-xs ${i === active ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"}`}
             >
               {s.name}
             </button>

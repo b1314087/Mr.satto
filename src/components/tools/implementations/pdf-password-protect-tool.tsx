@@ -10,6 +10,7 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { PdfPasswordProtectProcessor, type PdfProtectOutput } from "@/lib/processors/browser/pdf-protect";
 import { getPdfjs, withPdfDocument, PDFJS_ASSET_OPTIONS, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 const inputClass =
   "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900";
@@ -141,6 +142,7 @@ export function PdfPasswordProtectTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept="application/pdf,.pdf"
         maxSizeMB={100}
         label="PDFをドラッグ&ドロップ"
@@ -237,15 +239,17 @@ export function PdfPasswordProtectTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={!canRun}
-          aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          パスワードを設定する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={!canRun}
+            aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            パスワードを設定する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} processingLabel="暗号化しています..." successLabel="パスワードを設定しました" />

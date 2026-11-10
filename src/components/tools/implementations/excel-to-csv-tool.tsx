@@ -12,6 +12,7 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ExcelToCsvProcessor, sheetRowsToCsvBlob, type ExcelSheet } from "@/lib/processors/browser/csv-excel";
 import { sanitizeFileName, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 export function ExcelToCsvTool() {
   /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
@@ -88,6 +89,7 @@ export function ExcelToCsvTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
+        compact={!!file}
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         maxSizeMB={50}
         label="Excelファイル（.xlsx）をドラッグ&ドロップ"
@@ -110,14 +112,16 @@ export function ExcelToCsvTool() {
       )}
 
       {file && !sheets && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          CSVに変換する
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            CSVに変換する
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus
@@ -143,17 +147,12 @@ export function ExcelToCsvTool() {
               <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
                 ダウンロードするシートを選択
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="ms-seg">
                 {sheets.map((sheet, i) => (
-                  <button
+                  <button aria-pressed={i === selectedSheetIndex}
                     key={`${sheet.name}-${i}`}
                     type="button"
                     onClick={() => setSelectedSheetIndex(i)}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                      i === selectedSheetIndex
-                        ? "bg-blue-600 text-white"
-                        : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                    }`}
                   >
                     {sheet.name}
                   </button>

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { DateToolsProcessor, dateListToCsvBlob, type DateListItem } from "@/lib/processors/browser/date-tools";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ErrorMessage } from "@/components/common/error-message";
+import { RunBar } from "@/components/ui/run-bar";
 
 type Tab = "weekday" | "shift" | "list" | "extract" | "business";
 
@@ -147,19 +148,14 @@ export function DateWeekdayTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap gap-2">
+      <div className="ms-seg">
         {TABS.map((t) => (
-          <button
+          <button aria-pressed={tab === t.value}
             key={t.value}
             type="button"
             onClick={() => {
               setTab(t.value);
             }}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              tab === t.value
-                ? "bg-blue-600 text-white"
-                : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300"
-            }`}
           >
             {t.label}
           </button>
@@ -216,17 +212,12 @@ export function DateWeekdayTool() {
       {tab === "extract" && (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">抽出する曜日を選択</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="ms-seg">
             {WEEKDAY_OPTIONS.map((w) => (
-              <button
+              <button aria-pressed={selectedWeekdays.includes(w.value)}
                 key={w.value}
                 type="button"
                 onClick={() => toggleWeekday(w.value)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  selectedWeekdays.includes(w.value)
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {w.label}
               </button>
@@ -235,13 +226,15 @@ export function DateWeekdayTool() {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={handleRun}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-      >
-        計算する
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleRun}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+        >
+          計算する
+        </button>
+      </RunBar>
 
       {error && <ErrorMessage message={error} />}
 

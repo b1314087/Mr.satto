@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { PasswordGenerateProcessor } from "@/lib/processors/browser/password";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
+import { RunBar } from "@/components/ui/run-bar";
 
 const STRENGTH_LABEL = ["とても弱い", "弱い", "普通", "強い", "とても強い"];
 const STRENGTH_COLOR = [
@@ -205,14 +206,16 @@ export function PasswordGeneratorTool() {
         </span>
       </label>
 
-      <button
-        type="button"
-        onClick={handleGenerate}
-        disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-        className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-      >
-        {status === "processing" ? "生成中..." : "パスワードを生成する"}
-      </button>
+      <RunBar>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          {status === "processing" ? "生成中..." : "パスワードを生成する"}
+        </button>
+      </RunBar>
 
       <ProcessingStatus state={status} processingLabel="生成中..." successLabel="パスワードを生成しました" />
       {error && <ErrorMessage message={error} />}

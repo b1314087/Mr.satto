@@ -13,6 +13,7 @@ import { ImageCropProcessor, resolveCropRect, type CropRegion } from "@/lib/proc
 import { useLoadedImage } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
+import { RunBar } from "@/components/ui/run-bar";
 
 interface Box {
   xPct: number;
@@ -266,6 +267,7 @@ export function ImageCropTool() {
       ) : null}
     >
       <FileDropzone
+        compact={!!file}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
@@ -277,18 +279,13 @@ export function ImageCropTool() {
 
       {file && imageUrl && naturalSize && (
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap gap-2">
+          <div className="ms-seg">
             {RATIO_PRESETS.map((preset) => (
-              <button
+              <button aria-pressed={ratio === preset.ratio}
                 key={preset.label}
                 type="button"
                 onClick={() => handleRatioSelect(preset.ratio)}
                 title={preset.hint}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  ratio === preset.ratio
-                    ? "bg-blue-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
               >
                 {preset.label}
               </button>
@@ -338,14 +335,16 @@ export function ImageCropTool() {
       )}
 
       {file && (
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-          className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          トリミングする
-        </button>
+        <RunBar>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            トリミングする
+          </button>
+        </RunBar>
       )}
 
       <ProcessingStatus state={status} successLabel="トリミングが完了しました" />
