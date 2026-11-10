@@ -868,13 +868,13 @@ const toolDefinitions: Tool[] = [
   {
     // 工程3：Excel（.xlsx）にも対応した（選んだシートだけを編集し、Excelで書き出す）。URLは /tools/csv-column-editor のまま
     id: "csv-column-editor",
-    name: "CSV・Excel列編集",
+    name: "CSV・Excel行列編集",
     category: "csv-excel",
-    description: "CSV・Excelの列を選択・削除・リネーム・並び替えします。対象にする行の範囲や、Excelのシートも選べます",
+    description: "CSV・Excelの行・列を選択・削除・並び替えし、列名も変えられます。対象にする行の範囲や、Excelのシートも選べます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["列編集", "列削除", "列並び替え", "column", "CSV列編集", "Excel列編集", "excel", "エクセル", "列を削除", "シート"],
+    keywords: ["列編集", "列削除", "列並び替え", "column", "CSV列編集", "Excel列編集", "excel", "エクセル", "列を削除", "シート", "行編集", "行削除", "行並び替え", "行列編集", "CSV・Excel列編集"],
   },
   {
     // 次工程・軽量便利ツール一括追加（Tool 4）
@@ -890,13 +890,13 @@ const toolDefinitions: Tool[] = [
   {
     // 次工程・軽量便利ツール一括追加（Tool 5）
     id: "excel-blank-remove",
-    name: "Excel空白行・空白列削除",
+    name: "空白削除",
     category: "csv-excel",
     description: "Excelファイル内の完全に空白な行・列をまとめて削除します。選んだ範囲の中で、空白のセルを左・上に詰めることもできます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["空白行削除", "空白列削除", "excel", "クリーニング", "左に詰める", "上に詰める", "空白セル 詰める"],
+    keywords: ["空白行削除", "空白列削除", "excel", "クリーニング", "左に詰める", "上に詰める", "空白セル 詰める", "Excel空白行・空白列削除", "空白削除"],
   },
   {
     // 次工程・軽量便利ツール一括追加（Tool 6）

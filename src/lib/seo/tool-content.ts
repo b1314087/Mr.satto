@@ -2230,7 +2230,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     ],
   },
   "csv-column-editor": {
-    metaTitle: "CSV・Excel列編集｜列の選択・削除・リネーム・並び替え（シート・行の範囲も指定）",
+    metaTitle: "CSV・Excel行列編集｜行・列の選択・削除・並び替え・列名の変更（シート・行の範囲も指定）",
     metaDescription:
       "CSV・Excel（.xlsx）ファイルの列を選択・削除・リネーム・並び替えできる無料ツール。Excelはシートを選んで編集し、ほかのシートや書式はそのまま残します。日本語・BOM付き・Shift_JISのCSVにも対応しています。",
     lead: "CSV・Excelファイルの列を、選択（削除）・リネーム・並び替えして書き出します。CSVはCSVで、ExcelはExcel（.xlsx）で保存します。",
@@ -2321,7 +2321,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     ],
   },
   "excel-blank-remove": {
-    metaTitle: "Excel空白行・空白列削除｜完全に空白な行・列をまとめて削除",
+    metaTitle: "空白削除｜Excelの空白行・空白列の削除と、空白セルを左・上に詰める",
     metaDescription:
       "Excelファイル(.xlsx)から、値が何も入っていない完全に空白な行・列をまとめて削除できる無料ツール。範囲を指定しての削除にも対応。",
     lead: "Excelファイル内の完全に空白な行・列を、まとめて削除します。選んだ範囲の中で、空白のセルを左・上に詰めることもできます。",

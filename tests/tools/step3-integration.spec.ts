@@ -60,7 +60,7 @@ plainTest("統合した旧ツールは、一覧・登録・SEO・受け渡し・
   plainExpect(getToolById("image-adjust")?.name).toBe("画像色調補正（明るさ・コントラスト・白黒）");
   plainExpect(getToolById("image-compress")?.name).toBe("画像リサイズ・圧縮");
   plainExpect(getToolById("image-crop")?.name).toBe("画像トリミング（SNSサイズ・証明写真）");
-  plainExpect(getToolById("csv-column-editor")?.name).toBe("CSV・Excel列編集");
+  plainExpect(getToolById("csv-column-editor")?.name).toBe("CSV・Excel行列編集");
   plainExpect(getToolById("word-paragraph-cleanup")?.name).toBe("Word段落整理・段組み");
   // 旧ツールの名前で探すと、統合先が出る
   const top = (q: string) => searchTools(getListedTools(), q)[0]?.id;
@@ -332,7 +332,7 @@ out["types"] = [[type(c.value).__name__ for c in row] for row in ws.iter_rows()]
 print(json.dumps(out, ensure_ascii=False, default=str))
 `;
 
-test.describe("工程3：CSV・Excel列編集", () => {
+test.describe("工程3：CSV・Excel行列編集（旧 CSV・Excel列編集）", () => {
   test("Excel：列の削除・並び替え・列名の変更を、選んだシートだけに行い、値の種類・幅・結合・ほかのシートを保つ", async ({ page }) => {
     const src = test.info().outputPath("roster.xlsx");
     py(MAKE_XLSX, [src]);

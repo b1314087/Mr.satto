@@ -195,7 +195,7 @@ test.describe("1：画像リサイズ・圧縮の初期状態", () => {
   });
 });
 
-test.describe("3：CSV・Excel列編集の「行を編集」", () => {
+test.describe("3：CSV・Excel行列編集の「行を編集」", () => {
   async function openWith(page: Page, file: string) {
     await page.goto("/tools/csv-column-editor");
     await uploadFixture(page, file);
@@ -418,7 +418,7 @@ test.describe("9：座席表", () => {
   });
 });
 
-test.describe("10：Excel空白行・空白列削除の「左に詰める」「上に詰める」", () => {
+test.describe("10：空白削除（旧 Excel空白行・空白列削除）の「左に詰める」「上に詰める」", () => {
   const MAKE = `
 import sys, datetime
 from openpyxl import Workbook
