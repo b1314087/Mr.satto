@@ -998,7 +998,8 @@ body {
  * レイヤーの外に書くことで、ツール側の個別クラスより優先される。
  * 対象は「角丸・枠線の色・フォーカス枠・主要ボタンの質感」だけ。配置・寸法・文言・動作には触れない。
  * ========================================================================== */
-.ms-tool-panel :is(select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="password"], input[type="search"], input[type="url"], input[type="tel"], input[type="date"], input[type="time"], input[type="datetime-local"]) {
+/* data-ms-inline-edit：画面の上でそのまま書き換える欄（座席表のプレビューの見出しなど）。枠を出さない見た目を、ツール側で決める */
+.ms-tool-panel :is(select, textarea, input[type="text"], input[type="number"], input[type="email"], input[type="password"], input[type="search"], input[type="url"], input[type="tel"], input[type="date"], input[type="time"], input[type="datetime-local"]):not([data-ms-inline-edit]) {
   border-radius: var(--ms-radius-control);
   border-color: var(--ms-border-strong);
 }

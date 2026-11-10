@@ -436,10 +436,10 @@ export function SeatingChartTool() {
     setSelected([]);
   }
 
-  const numberField = (label: string, key: "perSide" | "front" | "sides" | "tables" | "perTable" | "rows" | "cols", testId: string) =>
+  /** 数を入れる欄（見出しは、行の左に出す。unit は欄の右に出す単位） */
+  const numberInput = (key: "perSide" | "front" | "sides" | "tables" | "perTable" | "rows" | "cols", testId: string, unit: string, ariaLabel: string) =>
     params && (
-      <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-        {label}
+      <span className="flex items-center gap-1.5">
         <input
           type="number"
           inputMode="numeric"
@@ -448,10 +448,21 @@ export function SeatingChartTool() {
           value={params[key]}
           onChange={(e) => updateParam(key, Number(e.target.value))}
           className={inputClass}
+          aria-label={ariaLabel}
           data-testid={testId}
         />
-      </label>
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">{unit}</span>
+      </span>
     );
+
+  /** 島（テーブル）の名前を1つ変える（右のメニューとプレビューで共通） */
+  function setTableLabel(index: number, value: string) {
+    if (!params) return;
+    const next = (params.tableLabels ?? []).slice();
+    while (next.length <= index) next.push("");
+    next[index] = value.slice(0, TABLE_LABEL_MAX);
+    updateParam("tableLabels", next);
+  }
 
   const step1 = (
       <section className={sectionClass} aria-labelledby="seat-step1">
@@ -484,151 +495,165 @@ export function SeatingChartTool() {
       </section>
   );
 
-  // 座席のレイアウト（席の数・並び・島・卓・机など。用途を選んだあとに出す）
+  // 座席のレイアウト（見出し・席の数・並び方・島の名前・通路・卓や机。用途を選んだあとに出す）
+  // 入力欄は「左に項目名・右に入力欄」の行にそろえ、まとまりごとに小見出しを付ける
+  const isTables = purpose === "group" || purpose === "round";
+  const tableNoun = purpose === "round" ? "テーブル" : "島";
   const layoutSection = (
       <section className={sectionClass} aria-labelledby="seat-layout-heading">
         <h2 id="seat-layout-heading" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
           座席のレイアウト
         </h2>
         {purpose && params && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2" data-testid="seat-settings">
-            {/* 座席表の名前（プレビュー・印刷・ダウンロードの一番上に出る見出し） */}
-            <label className="flex w-full items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-              <span className="shrink-0">座席表の名前（見出し）</span>
-              <input
-                type="text"
-                value={title}
-                maxLength={60}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={TITLE_BY_PURPOSE[purpose]}
-                className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                data-testid="seat-title"
-              />
-            </label>
-            {purpose === "meeting" && (
-              <>
-                {numberField("片側の席", "perSide", "seat-per-side")}
+          <div className="flex flex-col gap-4" data-testid="seat-settings">
+            <FormGroup title="見出し">
+              <FormRow label="座席表の名前" htmlFor="seat-title-input">
+                <input
+                  id="seat-title-input"
+                  type="text"
+                  value={title}
+                  maxLength={60}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={TITLE_BY_PURPOSE[purpose]}
+                  className={`${inputClass} w-full`}
+                  data-testid="seat-title"
+                />
+              </FormRow>
+            </FormGroup>
+
+            <FormGroup title="席の数">
+              {purpose === "meeting" && (
+                <FormPair>
+                  <FormRow label="片側の席">{numberInput("perSide", "seat-per-side", "席", "片側の席")}</FormRow>
+                  <FormRow label="議長席">
+                    <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                      <input type="checkbox" checked={params.head} onChange={(e) => updateParam("head", e.target.checked)} data-testid="seat-head" />
+                      置く
+                    </label>
+                  </FormRow>
+                </FormPair>
+              )}
+              {purpose === "meeting-u" && (
+                <FormPair>
+                  <FormRow label="正面の席">{numberInput("front", "seat-front", "席", "正面の席")}</FormRow>
+                  <FormRow label="左右の席">{numberInput("sides", "seat-sides", "席ずつ", "左右の席")}</FormRow>
+                </FormPair>
+              )}
+              {isTables && (
+                <FormPair>
+                  <FormRow label={`${tableNoun}の数`}>{numberInput("tables", "seat-tables", "個", `${tableNoun}の数`)}</FormRow>
+                  <FormRow label={purpose === "group" ? "1島の席" : "1卓の席"}>{numberInput("perTable", "seat-per-table", "席", purpose === "group" ? "1島の席" : "1卓の席")}</FormRow>
+                </FormPair>
+              )}
+              {(purpose === "classroom" || purpose === "custom") && (
+                <FormPair>
+                  <FormRow label="横の席">{numberInput("cols", "seat-cols", "席", "横の席")}</FormRow>
+                  <FormRow label="前からの列">{numberInput("rows", "seat-rows", "列", "前からの列")}</FormRow>
+                </FormPair>
+              )}
+              <FormRow label="席の数の決め方">
                 <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-                  <input type="checkbox" checked={params.head} onChange={(e) => updateParam("head", e.target.checked)} data-testid="seat-head" />
-                  議長席
+                  <input
+                    type="checkbox"
+                    checked={autoFit[purpose]}
+                    onChange={(e) => setAutoFit((prev) => ({ ...prev, [purpose]: e.target.checked }))}
+                    data-testid="seat-autofit"
+                  />
+                  名前の数に合わせて席を増やす
                 </label>
-              </>
-            )}
-            {purpose === "meeting-u" && (
-              <>
-                {numberField("正面の席", "front", "seat-front")}
-                {numberField("左右の席", "sides", "seat-sides")}
-              </>
-            )}
-            {(purpose === "group" || purpose === "round") && (
-              <>
-                {numberField(purpose === "group" ? "島の数" : "テーブルの数", "tables", "seat-tables")}
-                {numberField(purpose === "group" ? "1島の席" : "1卓の席", "perTable", "seat-per-table")}
-              </>
-            )}
-            {purpose === "group" && (
-              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-                入れ方
-                <select value={params.deal ? "deal" : "fill"} onChange={(e) => updateParam("deal", e.target.value === "deal")} className={`${inputClass} w-auto`} data-testid="seat-deal">
-                  <option value="fill">島ごとに詰める</option>
-                  <option value="deal">1人ずつ順に配る</option>
-                </select>
-              </label>
-            )}
-            {purpose === "group" && (
-              <>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-                  島を増やす方向
-                  <div role="radiogroup" aria-label="島を増やす方向" className="flex gap-1" data-testid="seat-group-flow">
-                    {GROUP_FLOW_OPTIONS.map((o) => (
-                      <button
-                        key={o.value}
-                        type="button"
-                        role="radio"
-                        aria-checked={(params.groupFlow ?? "auto") === o.value}
-                        onClick={() => chooseGroupFlow(o.value)}
-                        data-testid={`seat-group-flow-${o.value}`}
-                        className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                          (params.groupFlow ?? "auto") === o.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-                        }`}
+              </FormRow>
+            </FormGroup>
+
+            {(purpose === "group" || purpose === "classroom" || purpose === "custom") && (
+              <FormGroup title="並び方">
+                {(purpose === "group" || purpose === "classroom") && (
+                  <FormRow label="名前の入れ方" htmlFor="seat-order-select">
+                    {purpose === "group" ? (
+                      <select id="seat-order-select" value={params.deal ? "deal" : "fill"} onChange={(e) => updateParam("deal", e.target.value === "deal")} className={`${inputClass} w-full`} data-testid="seat-deal">
+                        <option value="fill">島ごとに詰める</option>
+                        <option value="deal">1人ずつ順に配る</option>
+                      </select>
+                    ) : (
+                      <select id="seat-order-select" value={params.byColumn ? "col" : "row"} onChange={(e) => updateParam("byColumn", e.target.value === "col")} className={`${inputClass} w-full`} data-testid="seat-by-column">
+                        <option value="row">横に順番</option>
+                        <option value="col">縦に順番</option>
+                      </select>
+                    )}
+                  </FormRow>
+                )}
+                {(purpose === "classroom" || purpose === "custom") && (
+                  <FormRow label="1番の席" htmlFor="seat-start-select" help="名前を入れ始める席。前を上にした図で見た位置です">
+                    <select id="seat-start-select" value={params.start ?? "front-left"} onChange={(e) => updateParam("start", e.target.value as SeatStart)} className={`${inputClass} w-full`} data-testid="seat-start">
+                      {SEAT_START_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </FormRow>
+                )}
+                {purpose === "group" && (
+                  <>
+                    <FormRow
+                      label="島を増やす方向"
+                      help={
+                        (params.groupFlow ?? "auto") === "auto" ? undefined : (
+                          <span data-testid="seat-group-flow-help">
+                            {params.groupFlow === "horizontal"
+                              ? "いまの段の数のまま、このあと増やした島は右へ並びます。いま置いてある島は動きません。"
+                              : "いまの列の数のまま、このあと増やした島は下へ並びます。いま置いてある島は動きません。"}
+                          </span>
+                        )
+                      }
+                    >
+                      <div role="radiogroup" aria-label="島を増やす方向" className="flex flex-wrap gap-1" data-testid="seat-group-flow">
+                        {GROUP_FLOW_OPTIONS.map((o) => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={(params.groupFlow ?? "auto") === o.value}
+                            onClick={() => chooseGroupFlow(o.value)}
+                            data-testid={`seat-group-flow-${o.value}`}
+                            className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                              (params.groupFlow ?? "auto") === o.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </FormRow>
+                    <FormRow label="机の向き" htmlFor="seat-group-desk-select">
+                      <select
+                        id="seat-group-desk-select"
+                        value={params.groupDesk ?? "horizontal"}
+                        onChange={(e) => updateParam("groupDesk", e.target.value as GroupDirection)}
+                        className={`${inputClass} w-full`}
+                        data-testid="seat-group-desk"
                       >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="w-full text-xs text-neutral-500 dark:text-neutral-400" data-testid="seat-group-flow-help">
-                    {(params.groupFlow ?? "auto") === "auto"
-                      ? "島の数に合わせて、自動で並べます。"
-                      : params.groupFlow === "horizontal"
-                        ? "いまの段の数のまま、このあと増やした島は右へ並びます（新しい列の上の段から順に入ります）。いま置いてある島は動きません。"
-                        : "いまの列の数のまま、このあと増やした島は下へ並びます（新しい段の左の列から順に入ります）。いま置いてある島は動きません。"}
-                  </span>
-                </div>
-                <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200" title="島の長机の向きです。横向きは席が机の上下に、縦向きは席が机の左右に並びます">
-                  机の向き
-                  <select
-                    value={params.groupDesk ?? "horizontal"}
-                    onChange={(e) => updateParam("groupDesk", e.target.value as GroupDirection)}
-                    className={`${inputClass} w-auto`}
-                    data-testid="seat-group-desk"
-                  >
-                    {GROUP_DESK_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
+                        {GROUP_DESK_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </FormRow>
+                  </>
+                )}
+              </FormGroup>
             )}
-            {(purpose === "classroom" || purpose === "custom") && (
-              <>
-                {numberField("横の席", "cols", "seat-cols")}
-                {numberField("前からの列", "rows", "seat-rows")}
-              </>
+
+            {isTables && (
+              <FormGroup title={`${tableNoun}の名前`}>
+                <TableLabelEditor round={purpose === "round"} count={params.tables} labels={params.tableLabels ?? []} onChange={setTableLabel} />
+              </FormGroup>
             )}
-            {purpose === "classroom" && (
-              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-                入れ方
-                <select value={params.byColumn ? "col" : "row"} onChange={(e) => updateParam("byColumn", e.target.value === "col")} className={`${inputClass} w-auto`} data-testid="seat-by-column">
-                  <option value="row">横に順番</option>
-                  <option value="col">縦に順番</option>
-                </select>
-              </label>
-            )}
-            {(purpose === "classroom" || purpose === "custom") && (
-              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200" title="席番号1（名前を入れ始める席）の場所。前を上にした図で見た位置です">
-                1番の席
-                <select value={params.start ?? "front-left"} onChange={(e) => updateParam("start", e.target.value as SeatStart)} className={`${inputClass} w-auto`} data-testid="seat-start">
-                  {SEAT_START_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-              <input
-                type="checkbox"
-                checked={autoFit[purpose]}
-                onChange={(e) => setAutoFit((prev) => ({ ...prev, [purpose]: e.target.checked }))}
-                data-testid="seat-autofit"
-              />
-              人数に合わせる
-            </label>
-            {(purpose === "group" || purpose === "round") && (
-              <TableLabelEditor
-                round={purpose === "round"}
-                count={params.tables}
-                labels={params.tableLabels ?? []}
-                onChange={(labels) => updateParam("tableLabels", labels)}
-              />
-            )}
+
             {purpose === "custom" && (
-              <div className="w-full">
-                <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">マスを押すと、席と通路が切り替わります</p>
-                <div className="inline-grid gap-1" style={{ gridTemplateColumns: `repeat(${params.cols}, 1.5rem)` }} data-testid="seat-custom-grid">
+              <FormGroup title="通路">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">マスを押すと、席と通路が切り替わります（青が席）</p>
+                <div className="inline-grid w-fit gap-1" style={{ gridTemplateColumns: `repeat(${params.cols}, 1.5rem)` }} data-testid="seat-custom-grid">
                   {Array.from({ length: params.rows * params.cols }, (_, k) => {
                     const r = Math.floor(k / params.cols);
                     const c = k % params.cols;
@@ -647,20 +672,23 @@ export function SeatingChartTool() {
                     );
                   })}
                 </div>
-              </div>
+              </FormGroup>
             )}
+
             {supportsDesks(purpose) && (
-              <DeskEditor
-                purpose={purpose}
-                desks={params.desks ?? []}
-                onChange={(desks) => updateParam("desks", desks)}
-                onAdd={() => {
-                  const list = params.desks ?? [];
-                  if (list.length >= MAX_DESKS) return;
-                  deskSeq.current += 1;
-                  updateParam("desks", [...list, newDesk(purpose, buildBaseLayout(purpose, params), list, `desk-${deskSeq.current}`)]);
-                }}
-              />
+              <FormGroup title={purpose === "custom" ? "机" : "卓"}>
+                <DeskEditor
+                  purpose={purpose}
+                  desks={params.desks ?? []}
+                  onChange={(desks) => updateParam("desks", desks)}
+                  onAdd={() => {
+                    const list = params.desks ?? [];
+                    if (list.length >= MAX_DESKS) return;
+                    deskSeq.current += 1;
+                    updateParam("desks", [...list, newDesk(purpose, buildBaseLayout(purpose, params), list, `desk-${deskSeq.current}`)]);
+                  }}
+                />
+              </FormGroup>
             )}
           </div>
         )}
@@ -827,52 +855,59 @@ export function SeatingChartTool() {
           <h2 id="seat-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
             書き出す
           </h2>
-          <div role="radiogroup" aria-label="書き出す形式" className="flex flex-wrap gap-2">
-            {FORMATS.map((f) => (
-              <button
-                key={f.value}
-                type="button"
-                role="radio"
-                aria-checked={format === f.value}
-                onClick={() => setFormat(f.value)}
-                data-testid={`seat-format-${f.value}`}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  format === f.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
+          <div className="flex flex-col gap-2.5">
+            <FormRow label="形式">
+              <div role="radiogroup" aria-label="書き出す形式" className="flex flex-wrap gap-1.5">
+                {FORMATS.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={format === f.value}
+                    onClick={() => setFormat(f.value)}
+                    data-testid={`seat-format-${f.value}`}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      format === f.value ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </FormRow>
+            {format === "pdf" && (
+              <>
+                <FormRow label="用紙" htmlFor="seat-paper-select">
+                  <select id="seat-paper-select" value={paper} onChange={(e) => setPaper(e.target.value as PaperSize)} className={`${inputClass} w-full`} data-testid="seat-paper">
+                    {PAPER_SIZES.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormRow>
+                <FormRow label="向き" htmlFor="seat-paper-orientation-select">
+                  <select
+                    id="seat-paper-orientation-select"
+                    value={paperOrientation}
+                    onChange={(e) => setPaperOrientation(e.target.value as PaperOrientation)}
+                    className={`${inputClass} w-full`}
+                    data-testid="seat-paper-orientation"
+                  >
+                    <option value="auto">自動（表の形に合わせる）</option>
+                    <option value="portrait">縦</option>
+                    <option value="landscape">横</option>
+                  </select>
+                </FormRow>
+              </>
+            )}
+            <FormRow label="前後" help="前が上の向きと、前が下の向きを1枚に印刷します。前に立つ人と、席に座る人の両方がそのまま読めます。">
+              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                <input type="checkbox" checked={bothViews} onChange={(e) => setBothViews(e.target.checked)} data-testid="seat-both-views" />
+                1ページに並べる
+              </label>
+            </FormRow>
           </div>
-          {format === "pdf" && (
-            <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-700 dark:text-neutral-200">
-              <label className="flex items-center gap-2 whitespace-nowrap">
-                用紙
-                <select value={paper} onChange={(e) => setPaper(e.target.value as PaperSize)} className={`${inputClass} w-auto`} data-testid="seat-paper">
-                  {PAPER_SIZES.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-2 whitespace-nowrap">
-                向き
-                <select value={paperOrientation} onChange={(e) => setPaperOrientation(e.target.value as PaperOrientation)} className={`${inputClass} w-auto`} data-testid="seat-paper-orientation">
-                  <option value="auto">自動（表の形に合わせる）</option>
-                  <option value="portrait">縦</option>
-                  <option value="landscape">横</option>
-                </select>
-              </label>
-            </div>
-          )}
-          <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-            <input type="checkbox" className="mt-1" checked={bothViews} onChange={(e) => setBothViews(e.target.checked)} data-testid="seat-both-views" />
-            <span>
-              前後を1ページに並べる
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">前が上の向きと、上下を逆にした向き（前が下）を1枚に印刷します。前に立つ人と、席に座る人の両方がそのまま読めます。</span>
-            </span>
-          </label>
           <RewardedDownloadGate onDownload={download} label={`${FORMATS.find((f) => f.value === format)!.label}でダウンロード`} disabled={participants.length === 0} />
           {exportError && <ErrorMessage message={exportError} />}
         </section>
@@ -901,6 +936,13 @@ export function SeatingChartTool() {
           onShuffle={shuffle}
           canShuffle={canShuffle(slots, fixedSet) && participants.length > 0}
           onTag={tagSelected}
+          titleValue={title}
+          titlePlaceholder={purpose ? TITLE_BY_PURPOSE[purpose] : "座席表"}
+          onTitleChange={setTitle}
+          tableNoun={purpose === "group" ? "島" : purpose === "round" ? "テーブル" : null}
+          tableCount={purpose === "group" || purpose === "round" ? (params?.tables ?? 0) : 0}
+          tableLabels={params?.tableLabels ?? []}
+          onTableLabelChange={setTableLabel}
         />
       )}
           </div>
@@ -931,8 +973,25 @@ function SeatPreview({
   onFlippedChange,
   onShuffle,
   canShuffle: shuffleEnabled,
+  titleValue,
+  titlePlaceholder,
+  onTitleChange,
+  tableNoun,
+  tableCount,
+  tableLabels,
+  onTableLabelChange,
 }: {
   model: SeatingChartModel;
+  /** 座席表の名前（見出し）の入力の値（空欄なら titlePlaceholder を出す）。プレビューの上でも直接入力できる */
+  titleValue: string;
+  titlePlaceholder: string;
+  onTitleChange: (v: string) => void;
+  /** 島（テーブル）の名前をプレビューで入力できる用途のとき、その呼び方（「島」「テーブル」）。それ以外は null */
+  tableNoun: string | null;
+  /** 島（テーブル）の数（geometry.shapes の先頭から、この数だけが島・テーブル） */
+  tableCount: number;
+  tableLabels: string[];
+  onTableLabelChange: (index: number, value: string) => void;
   /** 鍵の印をプレビューに出すか */
   showMarks: boolean;
   /** 画面いっぱいに大きく表示しているか */
@@ -958,6 +1017,22 @@ function SeatPreview({
 }) {
   const g = model.geometry;
   const [open, setOpen] = useState(true);
+  /** 島・テーブルの名前を、プレビューの机の上で直接入力する欄（島・テーブルでない図形は null） */
+  const tableLabelField = (k: number) =>
+    tableNoun && k < tableCount ? (
+      <input
+        type="text"
+        value={tableLabels[k] ?? ""}
+        maxLength={TABLE_LABEL_MAX}
+        onChange={(e) => onTableLabelChange(k, e.target.value)}
+        placeholder={`${tableNoun}${k + 1}`}
+        aria-label={`${tableNoun}${k + 1}の名前`}
+        title={`${tableNoun}${k + 1}の名前。ここで直接入力できます`}
+        data-ms-inline-edit
+        className="w-full min-w-0 rounded border border-transparent bg-transparent px-0.5 text-center text-inherit placeholder:text-slate-500 hover:border-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none dark:placeholder:text-slate-300 dark:focus:bg-slate-900"
+        data-testid="seat-preview-table-label"
+      />
+    ) : null;
   const [boxW, setBoxW] = useState(800);
   const boxRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ index: number; x: number; y: number; moved: boolean } | null>(null);
@@ -1113,9 +1188,18 @@ function SeatPreview({
       )}
       </div>
       {open && (
-        <p className="truncate text-center text-sm font-bold text-slate-800 dark:text-slate-100" data-testid="seat-preview-title" title="座席表の名前（見出し）。左のメニューの「座席表の名前」で変えられます">
-          {model.title}
-        </p>
+        <input
+          type="text"
+          value={titleValue}
+          maxLength={60}
+          onChange={(e) => onTitleChange(e.target.value)}
+          placeholder={titlePlaceholder}
+          aria-label="座席表の名前（見出し）"
+          data-ms-inline-edit
+          title="座席表の名前（見出し）。ここで直接入力できます"
+          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-center text-sm font-bold text-slate-800 placeholder:text-slate-800 hover:border-slate-300 focus:border-blue-500 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-100 dark:hover:border-slate-600"
+          data-testid="seat-preview-title"
+        />
       )}
       {open && (
         <div ref={boxRef} className="overflow-auto" style={{ maxHeight: maxH + 8 }}>
@@ -1124,11 +1208,11 @@ function SeatPreview({
               {g.shapes.map((sh, k) =>
                 sh.kind === "rect" ? (
                   <div key={k} className="absolute flex items-center justify-center overflow-hidden break-all rounded-lg border border-slate-300 bg-slate-100 px-1 text-center text-[13px] leading-tight text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" style={{ left: sh.x, top: sh.y, width: sh.w, height: sh.h }}>
-                    {sh.label}
+                    {tableLabelField(k) ?? sh.label}
                   </div>
                 ) : (
                   <div key={k} className="absolute flex items-center justify-center overflow-hidden break-all rounded-full border border-slate-300 bg-slate-100 px-2 text-center text-[14px] leading-tight text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" style={{ left: sh.cx - sh.r, top: sh.cy - sh.r, width: sh.r * 2, height: sh.r * 2 }}>
-                    {sh.label}
+                    {tableLabelField(k) ?? sh.label}
                   </div>
                 )
               )}
@@ -1375,7 +1459,6 @@ function ConditionsPanel({
   onApply: () => void;
   canApply: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const nameSet = new Set(names);
   const unmetIds = new Set(unmet.map((r) => r.id));
   const warn = error !== null || unmet.length > 0;
@@ -1413,16 +1496,15 @@ function ConditionsPanel({
 
   return (
     <section className={sectionClass} aria-label="席の条件" data-testid="seat-conditions">
-      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex items-center gap-2 text-left text-sm font-semibold text-neutral-800 dark:text-neutral-100" data-testid="seat-conditions-toggle">
-        <span aria-hidden="true">{open ? "▼" : "▶"}</span>
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
         席の条件
-        {warn && !open && (
+        {warn && (
           <span className="rounded-full bg-amber-400 px-1.5 text-[10px] font-bold text-amber-950" title="満たしていない条件があります" data-testid="seat-conditions-warn">
             ！
           </span>
         )}
-      </button>
-      {open && (
+      </h2>
+      <>
         <div className="flex flex-col gap-2" data-testid="seat-conditions-body">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             シャッフルするときに守る条件です。プレビュー・印刷・ダウンロードには表示されません。「離す」の席の数は、隣・前後・斜めを1席として数えます。
@@ -1510,7 +1592,7 @@ function ConditionsPanel({
             <p className="sr-only">{rules.map(describeRule).join("。")}</p>
           )}
         </div>
-      )}
+      </>
     </section>
   );
 }
@@ -1715,43 +1797,63 @@ function DeskEditor({ purpose, desks, onChange, onAdd }: { purpose: Purpose; des
  * 島（グループワーク）・テーブル（円卓）の名前を入力する。空欄の島は「島1」「テーブル1」のまま。
  * 島の数を変えても、入力した名前は番号ごとに残る
  */
-function TableLabelEditor({ round, count, labels, onChange }: { round: boolean; count: number; labels: string[]; onChange: (labels: string[]) => void }) {
+function TableLabelEditor({ round, count, labels, onChange }: { round: boolean; count: number; labels: string[]; onChange: (index: number, value: string) => void }) {
   const noun = round ? "テーブル" : "島";
-  const [open, setOpen] = useState(false);
-  const set = (i: number, value: string) => {
-    const next = labels.slice();
-    while (next.length <= i) next.push("");
-    next[i] = value.slice(0, TABLE_LABEL_MAX);
-    onChange(next);
-  };
-  const named = labels.slice(0, count).filter((l) => l.trim() !== "").length;
   return (
     <div className="flex w-full flex-col gap-2" data-testid="seat-table-labels">
-      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`${smallButton} w-fit`} data-testid="seat-table-labels-toggle">
-        {open ? "▼" : "▶"} {noun}の名前を変える{named > 0 ? `（${named}個を変更中）` : ""}
-      </button>
-      {open && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {Array.from({ length: count }, (_, i) => (
-            <label key={i} className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300">
-              <span className="w-14 shrink-0">
-                {noun}
-                {i + 1}
-              </span>
-              <input
-                type="text"
-                value={labels[i] ?? ""}
-                maxLength={TABLE_LABEL_MAX}
-                onChange={(e) => set(i, e.target.value)}
-                placeholder={`${noun}${i + 1}`}
-                aria-label={`${noun}${i + 1}の名前`}
-                className="min-w-0 flex-1 rounded-md border border-neutral-300 px-1.5 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                data-testid="seat-table-label"
-              />
-            </label>
-          ))}
-        </div>
-      )}
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">空欄の{noun}は「{noun}1」のように番号で表示します。プレビューの{noun}の名前を押しても入力できます。</p>
+      <div className="grid grid-cols-2 gap-3">
+        {Array.from({ length: count }, (_, i) => (
+          <label key={i} className="flex min-w-0 flex-col gap-1 text-xs font-medium text-neutral-600 dark:text-neutral-300">
+            <span>
+              {noun}
+              {i + 1}
+            </span>
+            <input
+              type="text"
+              value={labels[i] ?? ""}
+              maxLength={TABLE_LABEL_MAX}
+              onChange={(e) => onChange(i, e.target.value)}
+              placeholder={`${noun}${i + 1}`}
+              aria-label={`${noun}${i + 1}の名前`}
+              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+              data-testid="seat-table-label"
+            />
+          </label>
+        ))}
+      </div>
     </div>
   );
+}
+
+/** 設定のまとまり（小見出しと、その下の行） */
+function FormGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="flex flex-col gap-2.5 border-t border-neutral-100 pt-3 first:border-t-0 first:pt-0 dark:border-neutral-800">
+      <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{title}</legend>
+      {children}
+    </fieldset>
+  );
+}
+
+/** 設定の1項目（上に項目名、下に入力欄と説明。右のメニューの幅でも入力欄を広く使えるように縦に並べる） */
+function FormRow({ label, htmlFor, help, children }: { label: string; htmlFor?: string; help?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className="text-xs font-medium text-neutral-600 dark:text-neutral-300">
+          {label}
+        </label>
+      ) : (
+        <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300">{label}</span>
+      )}
+      <div className="min-w-0">{children}</div>
+      {help && <p className="text-xs text-neutral-500 dark:text-neutral-400">{help}</p>}
+    </div>
+  );
+}
+
+/** 短い項目（数の欄など）を2つずつ横に並べる */
+function FormPair({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-2 gap-3">{children}</div>;
 }
