@@ -330,7 +330,14 @@ export function VideoSubtitleTool() {
         <PreviewFullscreenFrame>
         <section data-testid="tool-preview" aria-label="字幕のプレビュー" className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（字幕の表示時間・位置・大きさの確認）</p>
-          <div className="relative w-full overflow-hidden rounded-lg bg-black" style={{ containerType: "inline-size" }}>
+          {/* 縦長の動画でも大きすぎず小さすぎず見えるよう、高さの上限（画面の6割・30rem）に合う幅にする。字幕の重なりは、この枠に合わせて出す */}
+          <div
+            className="relative mx-auto w-full overflow-hidden rounded-lg bg-black"
+            style={{
+              containerType: "inline-size",
+              maxWidth: meta && meta.width > 0 && meta.height > 0 ? `calc(min(60vh, 30rem) * ${meta.width / meta.height})` : undefined,
+            }}
+          >
             <video
               ref={videoRef}
               data-testid="vs-video"
@@ -339,7 +346,7 @@ export function VideoSubtitleTool() {
               controls
               playsInline
               preload="metadata"
-              className="max-h-80 w-full"
+              className="block h-auto max-h-[min(60vh,30rem)] w-full"
             />
             <div className={`pointer-events-none absolute inset-x-0 top-0 bottom-10 flex justify-center px-[4%] ${overlayAlign}`} aria-hidden="true">
               {active.length > 0 && (

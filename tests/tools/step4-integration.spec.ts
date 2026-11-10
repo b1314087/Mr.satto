@@ -591,9 +591,10 @@ test.describe("4-2: PDF修正の操作", () => {
     // 新工程1：見た目だけ隠す方式と墨消しの違いの説明は、白消し・黒塗りを選んだときだけ出す
     await expect(page.getByTestId("pdf-fix-redaction-methods")).toHaveCount(0);
     await choosePdfFixOperation(page, "黒塗り（見た目だけ）");
-    await expect(page.getByTestId("pdf-fix-redaction-methods")).toContainText("墨消し（元のデータごと削除）＝PDF黒塗り・墨消し");
+    await expect(page.getByTestId("pdf-fix-redaction-methods")).toContainText("墨消し（元のデータごと削除）＝「やりたい操作」の墨消し");
     await expect(page.getByTestId("pdf-blackout-panel")).toContainText("墨消し（元のデータの削除）ではありません");
-    await expect(page.getByTestId("pdf-blackout-redact-link")).toHaveAttribute("href", "/tools/pdf-redact");
+    // 墨消しへの案内は、PDF修正の中で「墨消し」に切り替えるボタン
+    await expect(page.getByTestId("pdf-blackout-redact-link")).toContainText("墨消し（元の文字ごと黒塗りで消す）");
     await page.locator(CANVAS).click({ position: { x: 120, y: 60 } });
     await expect(page.getByTestId("pdf-blackout-object")).toHaveCount(1);
     await expect(page.getByTestId("pdf-blackout-badge")).toContainText("元データは残る");

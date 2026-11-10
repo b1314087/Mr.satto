@@ -177,7 +177,6 @@ test.describe("設定の整合", () => {
     "image-watermark": "image-watermark-tool.tsx",
     "image-mosaic": "image-mosaic-tool.tsx",
     "pdf-fix": "pdf-fill-annotate-tool.tsx",
-    "pdf-redact": "pdf-redact-tool.tsx",
     "pdf-compress": "pdf-compress-tool.tsx",
     "pdf-metadata-remove": "pdf-metadata-remove-tool.tsx",
     "pdf-resize-pages": "pdf-resize-pages-tool.tsx",

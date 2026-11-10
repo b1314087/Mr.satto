@@ -550,7 +550,7 @@ export function ImagePaddingTextTool() {
           >
             {previewResult ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={previewResult.url} alt="余白・文字入れ結果のプレビュー" className="max-h-72 max-w-full object-contain" />
+              <img src={previewResult.url} alt="余白・文字入れ結果のプレビュー" className="max-h-[min(55vh,28rem)] max-w-full object-contain" />
             ) : (
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {previewLoading ? "プレビューを作成しています…" : "設定を変更するとプレビューが表示されます"}

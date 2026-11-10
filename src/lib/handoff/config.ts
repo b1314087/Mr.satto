@@ -46,7 +46,6 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   // PDF編集は、開いた直後が「結合」（複数のPDFが前提）のため、受け取りは設定しない。結果の送り出しだけ行う
   "pdf-edit": { role: "edit", send: { kinds: ["pdf", "zip"] } },
   "pdf-fix": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
-  "pdf-redact": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
   "pdf-compress": { role: "edit", receive: { kinds: ["pdf"], maxFiles: BATCH_LIMITS["pdf-compress"], maxFileSizeMB: 100 }, send: { kinds: ["pdf"] } },
   "pdf-metadata-remove": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
   "pdf-resize-pages": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },

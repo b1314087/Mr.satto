@@ -80,6 +80,8 @@ export function ImageMosaicTool() {
   const [zoomPercent, setZoomPercent] = useState(100);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  /** 画像を読み込んだあと、表示欄ができてから「画面に合わせる」倍率にする（縦長・横長のどちらでも、最初は画面に収まる大きさ） */
+  const fitPendingRef = useRef(false);
   const dragRef = useRef<DragState | null>(null);
   const nextIdRef = useRef(1);
 
@@ -106,7 +108,9 @@ export function ImageMosaicTool() {
     setLoadError(null);
     const img = new Image();
     img.onload = () => {
-      setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+      const size = { width: img.naturalWidth, height: img.naturalHeight };
+      setNaturalSize(size);
+      fitPendingRef.current = true;
     };
     img.onerror = () => {
       setLoadError(
@@ -313,12 +317,28 @@ export function ImageMosaicTool() {
     setZoomPercent(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(percent))));
   }
 
-  function handleZoomFit() {
+  /**
+   * 画面に合わせる倍率：表示欄の幅と、画面の高さの7割の両方に収まる倍率（100%より大きくはしない）。
+   * 縦長の画像は高さで、横長の画像は幅で決まる
+   */
+  function fitZoomPercent(size: { width: number; height: number }): number {
     const container = containerRef.current;
-    if (!container || !naturalSize) return;
-    const availableWidth = container.clientWidth || naturalSize.width;
-    const fitPercent = (availableWidth / naturalSize.width) * 100;
-    zoomTo(Math.min(100, fitPercent));
+    const availableWidth = container?.clientWidth || size.width;
+    const availableHeight = typeof window !== "undefined" ? Math.max(240, window.innerHeight * 0.7) : size.height;
+    const fit = Math.min(availableWidth / size.width, availableHeight / size.height) * 100;
+    return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(Math.min(100, fit))));
+  }
+
+  useEffect(() => {
+    if (!naturalSize || !fitPendingRef.current || !containerRef.current) return;
+    fitPendingRef.current = false;
+    // 画面より小さい画像は100%のまま
+    setZoomPercent(fitZoomPercent(naturalSize));
+  }, [naturalSize]);
+
+  function handleZoomFit() {
+    if (!naturalSize) return;
+    zoomTo(fitZoomPercent(naturalSize));
   }
 
   async function handleSave(format: "png" | "jpeg") {
@@ -671,7 +691,7 @@ export function ImageMosaicTool() {
           <img
             src={result.url}
             alt="モザイク処理結果のプレビュー"
-            className="max-h-72 max-w-full object-contain"
+            className="max-h-[min(55vh,28rem)] max-w-full object-contain"
           />
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px（元画像と同じサイズ）・{formatBytes(result.sizeBytes)}

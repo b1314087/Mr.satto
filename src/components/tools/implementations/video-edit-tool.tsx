@@ -43,7 +43,7 @@ import {
   type VideoEditSettings,
   type VideoEditToolId,
 } from "@/lib/video/edit-settings";
-import { formatDuration } from "@/lib/video/estimate";
+import { formatDuration, resizedDimensions } from "@/lib/video/estimate";
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 
@@ -367,7 +367,9 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
         note={
           source && resolutionOptions.length === 0
             ? "この動画はすでに解像度が小さいため、縮小できる選択肢がありません（拡大はしません）。"
-            : "元の動画より大きい解像度は選べません（拡大はしません）。縦横の比率はそのまま保ちます。"
+            : `元の動画より大きい解像度は選べません（拡大はしません）。縦横の比率はそのまま保ちます（縦長の動画は横の長さ、横長の動画は縦の長さが、選んだ大きさになります）。${
+                source ? `できあがる大きさ：${resolutionOptions.map((p) => { const d = resizedDimensions(source.width, source.height, p); return `${p}p＝${d.width}×${d.height}`; }).join("、")}` : ""
+              }`
         }
       />
     ),

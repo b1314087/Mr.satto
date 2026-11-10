@@ -186,6 +186,8 @@ export function PdfFillAnnotateTool({
   controlledMode,
   onModeChange,
   inactive,
+  operationSlot,
+  onOpenRedaction,
 }: SharedPdfFileProps & {
   /** 配置済みの注釈・文字・図形などが1つでもあるかが変わったときに呼ばれる（総合画面が、機能の切り替え前に確認を出すため） */
   onDirtyChange?: (hasEdits: boolean) => void;
@@ -198,6 +200,13 @@ export function PdfFillAnnotateTool({
   onModeChange?: (mode: ToolMode) => void;
   /** 新工程1：この画面を隠しているあいだ（PDF修正でページ番号・透かしを選んでいるとき）は true。ページ全体へのドロップの受け取り先にしない */
   inactive?: boolean;
+  /**
+   * PDF修正の「やりたい操作」。PDFを表示しているときはプレビュー（PDFの表示）のすぐ上に、
+   * まだ表示していないときは画面の一番上に出す（どちらか1か所だけ）
+   */
+  operationSlot?: React.ReactNode;
+  /** PDF修正の中で使うとき：墨消し（元の文字ごと消す）へ切り替える。無いときは墨消しのページへのリンクを出す */
+  onOpenRedaction?: () => void;
 } = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null);
@@ -1179,8 +1188,10 @@ export function PdfFillAnnotateTool({
     setPageJumpValue("");
   }
 
+  const previewShown = Boolean(file && pageImageUrl && currentPageInfo);
   return (
     <div className="flex flex-col gap-6">
+      {operationSlot && !previewShown && operationSlot}
       <p className="text-xs text-neutral-500 dark:text-neutral-400">手書き入力は署名欄への記入などに使えますが、法的な効力を持つ電子署名機能ではありません。</p>
 
       {error && <ErrorMessage message={error} />}
@@ -1458,9 +1469,15 @@ export function PdfFillAnnotateTool({
               <span>{BLACKOUT_NOTICE.body}</span>
               <span>
                 個人情報などを元のデータごと消す（墨消し）には、
-                <Link href={TRUE_REDACTION_TOOL_PATH} className="font-semibold underline" data-testid="pdf-blackout-redact-link">
-                  {TRUE_REDACTION_TOOL_NAME}
-                </Link>
+                {onOpenRedaction ? (
+                  <button type="button" onClick={onOpenRedaction} className="font-semibold underline" data-testid="pdf-blackout-redact-link">
+                    {TRUE_REDACTION_TOOL_NAME}
+                  </button>
+                ) : (
+                  <Link href={TRUE_REDACTION_TOOL_PATH} className="font-semibold underline" data-testid="pdf-blackout-redact-link">
+                    {TRUE_REDACTION_TOOL_NAME}
+                  </Link>
+                )}
                 を使ってください。
               </span>
             </div>
@@ -1633,6 +1650,12 @@ export function PdfFillAnnotateTool({
             data-testid="tool-preview"
             className="w-full min-w-0 overflow-x-auto lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
           >
+            {operationSlot && (
+              // PDF修正の「やりたい操作」：プレビューのすぐ上（縦に動かしても見えるように上に貼り付ける）
+              <div className="sticky left-0 top-0 z-20 mb-2 rounded-lg bg-white/90 p-2 shadow-sm backdrop-blur dark:bg-neutral-950/90" data-testid="pdf-fix-operation-near-preview">
+                {operationSlot}
+              </div>
+            )}
             <div
               data-testid="pdf-annotate-canvas"
               className="relative select-none border border-neutral-300 dark:border-neutral-700"
@@ -2224,9 +2247,15 @@ export function PdfFillAnnotateTool({
               黒塗り（見た目だけ）を含んでいます。{BLACKOUT_NOTICE.title}
               {BLACKOUT_NOTICE.body}
               元のデータごと消す必要があるときは、
-              <Link href={TRUE_REDACTION_TOOL_PATH} className="font-semibold underline">
-                {TRUE_REDACTION_TOOL_NAME}
-              </Link>
+              {onOpenRedaction ? (
+                <button type="button" onClick={onOpenRedaction} className="font-semibold underline">
+                  {TRUE_REDACTION_TOOL_NAME}
+                </button>
+              ) : (
+                <Link href={TRUE_REDACTION_TOOL_PATH} className="font-semibold underline">
+                  {TRUE_REDACTION_TOOL_NAME}
+                </Link>
+              )}
               を使ってください。
             </p>
           )}

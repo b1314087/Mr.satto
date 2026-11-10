@@ -7,6 +7,7 @@ import { unzlibSync } from "fflate";
 import { PDFArray, PDFDocument, PDFName, StandardFonts, degrees, rgb } from "pdf-lib";
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload, assertDownloadedFile, waitForSuccess } from "../helpers/tool-runner";
+import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
 import { uploadWhenReady } from "../helpers/tool-ready";
 import { extractPdfContent, isValidPdfFile } from "../helpers/pdf-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
@@ -251,9 +252,12 @@ test("pdf-redact: 検査の前提 — 元のPDFには対象の文字が含まれ
   expect(extracted.text).toContain(SECRET_A);
 });
 
+/** 墨消しは、PDF修正の「やりたい操作」の1つ（旧 /tools/pdf-redact は、ここへ転送する） */
+const REDACT_URL = "/tools/pdf-fix?mode=redact";
+
 async function openTool(page: Page, file: string) {
   await page.setViewportSize({ width: 1280, height: 1000 });
-  await page.goto("/tools/pdf-redact");
+  await page.goto(REDACT_URL);
   await uploadWhenReady(page, [file], page.getByTestId("pdf-redact-canvas"), { readyTimeoutMs: 40_000 });
   await expect(page.getByTestId("pdf-redact-page-label")).toContainText("1 /");
   // ページの描画が終わるまで待つ
@@ -532,7 +536,7 @@ test("pdf-redact: 範囲の取り消し（直前・ページ単位・個別）�
 // 3. 異常系・既存ツールへの影響
 // ---------------------------------------------------------------------------
 test("pdf-redact: PDFではないファイルは、内容を処理せず、読み込めない理由を示す", async ({ page }) => {
-  await page.goto("/tools/pdf-redact");
+  await page.goto(REDACT_URL);
   await uploadWhenReady(page, [files.fake], page.getByRole("alert").first(), { readyTimeoutMs: 40_000 });
   await expect(page.getByRole("alert").first()).toContainText("読み込みに失敗しました");
   await expect(page.getByRole("alert").first()).not.toContainText("SECRET-FAKE");
@@ -541,7 +545,7 @@ test("pdf-redact: PDFではないファイルは、内容を処理せず、読�
 });
 
 test("pdf-redact: ページ数が上限を超えるPDFは、処理せず、上限を示す", async ({ page }) => {
-  await page.goto("/tools/pdf-redact");
+  await page.goto(REDACT_URL);
   await uploadWhenReady(page, [files.many], page.getByRole("alert").first(), { readyTimeoutMs: 60_000 });
   await expect(page.getByRole("alert").first()).toContainText("ページ数が多すぎます");
   await expect(page.getByRole("alert").first()).toContainText(`${REDACT_MAX_PAGES}ページまで`);
@@ -549,16 +553,22 @@ test("pdf-redact: ページ数が上限を超えるPDFは、処理せず、上�
 });
 
 test("pdf-redact: PDF以外のファイル（.txt）は受け付けず、対応していない旨を示す", async ({ page }) => {
-  await page.goto("/tools/pdf-redact");
+  await page.goto(REDACT_URL);
   await uploadWhenReady(page, [files.txt], page.getByText("対応していません"), { readyTimeoutMs: 40_000 });
   await expect(page.getByTestId("pdf-redact-canvas")).toHaveCount(0);
 });
 
-test("pdf-redact: PDF修正の白消しの注意書きから、このツールへ案内される（PDF修正は引き続き開ける）", async ({ page }) => {
+test("pdf-redact: 墨消しはPDF修正の「やりたい操作」から選べる。白消しの注意書きから墨消しへ切り替えられる。旧URLは墨消しを選んだPDF修正へ転送される", async ({ page }) => {
   await page.goto("/tools/pdf-fix");
+  await choosePdfFixOperation(page, "白消し");
   const notice = page.getByTestId("pdf-fix-whiteout-notice");
-  await expect(notice).toBeVisible();
   await expect(notice).toContainText("元の文字情報がファイル内に残る場合があり");
-  const link = notice.getByRole("link", { name: "PDF黒塗り・墨消し" });
-  await expect(link).toHaveAttribute("href", "/tools/pdf-redact");
+  await notice.getByTestId("pdf-fix-open-redact").click();
+  await expect(page.getByTestId("pdf-fix-operation")).toHaveValue("redact");
+  await expect(page.getByTestId("pdf-redact-notice")).toBeVisible();
+  // 旧URL
+  await page.goto("/tools/pdf-redact");
+  await expect(page).toHaveURL(/\/tools\/pdf-fix\?mode=redact$/);
+  await expect(page.getByTestId("pdf-fix-operation")).toHaveValue("redact", { timeout: 20_000 });
+  await expect(page.getByTestId("pdf-redact-notice")).toBeVisible();
 });

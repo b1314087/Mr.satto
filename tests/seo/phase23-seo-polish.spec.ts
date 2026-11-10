@@ -182,7 +182,7 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
     // 工程11: Office文書系（word-to-pdf / excel-to-pdf / pptx-invert）、工程12: PDF修正への導線（pdf-edit / 記入・注釈 / ページ番号 / 透かし / pdf-fix）
     // 新プロジェクト工程5: 座席表作成（seating-chart）から、近い用途の名簿テンプレート作成（roster-template）を案内
     // 新プロジェクト工程8: 領収書・レシートから会計CSV作成（receipt-accounting-csv）から、文字認識（ocr）とPDF→Excelを案内
-    // 新プロジェクト工程4: PDF黒塗り・墨消し（pdf-redact）と、白消しがあるPDF修正（pdf-fix）を互いに案内
+    // 新プロジェクト工程4: PDF黒塗り・墨消し（pdf-redact）と、白消しがあるPDF修正（pdf-fix）を互いに案内 → PDF黒塗り・墨消しはPDF修正の墨消しに統合
     // 新プロジェクト工程3: Excelファイル結合（excel-merge）と、近い用途のCSV結合（csv-merge）を互いに案内
     //   → 工程2: CSV結合は Excel・CSV結合（excel-merge）に統合。PDF記入・注釈は PDF修正に統合
     // 新規ツール：動画字幕追加（video-subtitle）から、近い用途の動画変換・動画モザイクを案内
@@ -193,7 +193,6 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
       "image-compress",
       "pdf-edit",
       "pdf-fix",
-      "pdf-redact",
       "pdf-to-excel",
       "pdf-to-word",
       "pptx-invert",

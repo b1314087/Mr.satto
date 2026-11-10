@@ -89,7 +89,7 @@ export function AudioPreviewPanel({
             controls
             playsInline
             preload="metadata"
-            className="max-h-56 w-full rounded-lg bg-black"
+            className="block mx-auto h-auto w-auto max-w-full max-h-[min(60vh,30rem)] rounded-lg bg-black"
           />
         ) : (
           <audio

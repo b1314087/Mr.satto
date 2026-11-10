@@ -278,6 +278,8 @@ const nextConfig: NextConfig = {
       // - SNSサイズ変換・証明写真サイズ変換 → 画像トリミング（SNSサイズ・証明写真）
       { source: "/tools/pdf-add-page-numbers", destination: "/tools/pdf-fix?mode=page-numbers", permanent: true },
       { source: "/tools/pdf-watermark", destination: "/tools/pdf-fix?mode=watermark", permanent: true },
+      // PDF黒塗り・墨消し → PDF修正（墨消しを選んだ状態）
+      { source: "/tools/pdf-redact", destination: "/tools/pdf-fix?mode=redact", permanent: true },
       { source: "/tools/image-grayscale", destination: "/tools/image-adjust?mode=grayscale", permanent: true },
       { source: "/tools/image-resize", destination: "/tools/image-compress?mode=resize", permanent: true },
       { source: "/tools/image-sns-size", destination: "/tools/image-crop?mode=sns", permanent: true },

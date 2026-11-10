@@ -218,7 +218,7 @@ export function ImageAdjustTool() {
                 <img
                   src={originalUrl}
                   alt="元の画像"
-                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                  className="max-h-[min(55vh,28rem)] w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
                 />
               )}
             </figure>
@@ -230,7 +230,7 @@ export function ImageAdjustTool() {
                 ref={previewCanvasRef}
                 aria-label="調整後のプレビュー"
                 data-testid="adjust-preview"
-                className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                className="max-h-[min(55vh,28rem)] w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
               />
             </figure>
           </div>

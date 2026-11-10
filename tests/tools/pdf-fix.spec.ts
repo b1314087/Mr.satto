@@ -54,7 +54,7 @@ plainTest.describe("PDF修正: ツール登録・SEO・既存URLの維持", () =
     // 独立したページを廃止した（旧URLはPDF修正へ転送する）
     const listed = new Set(getListedTools().map((t) => t.id));
     plainExpect(listed.has(PDF_FIX_TOOL_ID)).toBe(true);
-    plainExpect(PDF_FIX_MODES.map((m) => m.formerToolId)).toEqual(["pdf-fill-annotate", "pdf-add-page-numbers", "pdf-watermark"]);
+    plainExpect(PDF_FIX_MODES.map((m) => m.formerToolId)).toEqual(["pdf-fill-annotate", "pdf-add-page-numbers", "pdf-watermark", "pdf-redact"]);
     for (const m of PDF_FIX_MODES) {
       plainExpect(getToolById(m.formerToolId), m.formerToolId).toBeUndefined();
       plainExpect(listed.has(m.formerToolId), `${m.formerToolId}が一覧に残っている`).toBe(false);
@@ -102,7 +102,7 @@ plainTest.describe("PDF修正: ツール登録・SEO・既存URLの維持", () =
       plainExpect(urls, id).toContain(`${siteConfig.url}/tools/${id}`);
     }
     // 独立したページを廃止したPDF記入・注釈・ページ番号追加・透かしは、sitemapに載せない
-    for (const id of ["pdf-fill-annotate", "pdf-add-page-numbers", "pdf-watermark"]) plainExpect(urls).not.toContain(`${siteConfig.url}/tools/${id}`);
+    for (const id of ["pdf-fill-annotate", "pdf-add-page-numbers", "pdf-watermark", "pdf-redact"]) plainExpect(urls).not.toContain(`${siteConfig.url}/tools/${id}`);
   });
 
   plainTest("関連ツール：既存ツール⇄PDF修正が相互にリンクされる", () => {
@@ -239,6 +239,7 @@ test.describe("PDF修正: 画面と機能", () => {
     for (const [from, mode] of [
       ["pdf-add-page-numbers", "page-numbers"],
       ["pdf-watermark", "watermark"],
+      ["pdf-redact", "redact"],
     ] as const) {
       await page.goto(`/tools/${from}`);
       await expect(page).toHaveURL(new RegExp(`/tools/pdf-fix\\?mode=${mode}$`));

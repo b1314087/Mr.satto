@@ -24,11 +24,14 @@ interface Box {
 const DEFAULT_BOX: Box = { xPct: 10, yPct: 10, wPct: 80, hPct: 80 };
 const MIN_SIZE_PCT = 5;
 
-const RATIO_PRESETS: { label: string; ratio: number | null }[] = [
+/** 切り抜く形（縦長・横長のどちらも選べる） */
+const RATIO_PRESETS: { label: string; ratio: number | null; hint?: string }[] = [
   { label: "自由", ratio: null },
-  { label: "1:1", ratio: 1 },
-  { label: "4:3", ratio: 4 / 3 },
-  { label: "16:9", ratio: 16 / 9 },
+  { label: "1:1", ratio: 1, hint: "正方形" },
+  { label: "4:3", ratio: 4 / 3, hint: "横長" },
+  { label: "3:4", ratio: 3 / 4, hint: "縦長" },
+  { label: "16:9", ratio: 16 / 9, hint: "横長" },
+  { label: "9:16", ratio: 9 / 16, hint: "縦長（スマホ・ストーリーズ）" },
 ];
 
 const EXT_BY_MIME: Record<string, string> = {
@@ -138,8 +141,16 @@ export function ImageCropTool() {
 
   function applyRatio(b: Box, r: number | null): Box {
     if (!r || !naturalSize) return b;
-    const hPct = (b.wPct * naturalSize.width) / (r * naturalSize.height);
-    return clampBox({ ...b, hPct });
+    // 幅はそのままで高さを合わせる。画像の下からはみ出すとき（横長の画像で縦長の形を選んだときなど）は、
+    // 高さを画像の中に収め、幅のほうを縮めて形を保つ
+    let wPct = b.wPct;
+    let hPct = (wPct * naturalSize.width) / (r * naturalSize.height);
+    const maxH = 100 - b.yPct;
+    if (hPct > maxH) {
+      hPct = maxH;
+      wPct = (hPct * r * naturalSize.height) / naturalSize.width;
+    }
+    return clampBox({ ...b, wPct, hPct });
   }
 
   function handleBoxPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
@@ -272,6 +283,7 @@ export function ImageCropTool() {
                 key={preset.label}
                 type="button"
                 onClick={() => handleRatioSelect(preset.ratio)}
+                title={preset.hint}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
                   ratio === preset.ratio
                     ? "bg-blue-600 text-white"
@@ -285,13 +297,14 @@ export function ImageCropTool() {
 
           <div
             ref={containerRef}
-            className="relative w-full touch-none select-none overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700"
+            // 縦長の画像でも画面からはみ出さないよう、高さの上限を決め、枠は画像の大きさに合わせる
+            className="relative mx-auto w-fit max-w-full touch-none select-none overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700"
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="トリミング対象の画像" draggable={false} className="block w-full h-auto select-none" />
+            <img src={imageUrl} alt="トリミング対象の画像" draggable={false} className="block h-auto w-auto max-w-full max-h-[min(70vh,40rem)] select-none" />
             <div
               onPointerDown={handleBoxPointerDown}
               className="absolute cursor-move border-2 border-blue-400 bg-blue-400/10"

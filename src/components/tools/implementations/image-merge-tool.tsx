@@ -254,7 +254,7 @@ export function ImageMergeTool() {
               <img
                 src={previewResult.url}
                 alt="結合結果のプレビュー"
-                className="max-h-72 max-w-full object-contain"
+                className="max-h-[min(55vh,28rem)] max-w-full object-contain"
               />
             ) : (
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -523,7 +523,7 @@ export function ImageMergeTool() {
             <img
               src={result.url}
               alt="結合結果のプレビュー"
-              className="max-h-72 max-w-full object-contain"
+              className="max-h-[min(55vh,28rem)] max-w-full object-contain"
             />
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">

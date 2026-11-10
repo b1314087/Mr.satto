@@ -182,7 +182,7 @@ export function ImageWatermarkTool() {
             ref={previewCanvasRef}
             aria-label="透かし入りプレビュー"
             data-testid="watermark-preview"
-            className="max-h-96 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+            className="mx-auto block h-auto w-auto max-h-[min(60vh,30rem)] max-w-full rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900"
           />
         </div>
       )}

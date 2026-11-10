@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
+import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -41,8 +41,12 @@ function clamp01(v: number): number {
 }
 
 /** PDF黒塗り・墨消し。範囲を指定したページを画像にして黒を焼き込み、元のデータを残さない新しいPDFを作る */
-export function PdfRedactTool() {
-  const [file, setFile] = useState<File | null>(null);
+/**
+ * 墨消し（元の文字ごと黒塗りで消す）。PDF修正の「やりたい操作」の1つとして使う（独立したページは廃止）。
+ * initialFile：PDF修正でほかの操作のときに選んだPDFを引き継ぐ。onFileChange：選んだPDFをPDF修正に知らせる
+ */
+export function PdfRedactTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
+  const [file, setFile] = useState<File | null>(initialFile);
   const [doc, setDoc] = useState<PdfDoc | null>(null);
   const [loading, setLoading] = useState(false);
   const [pageCount, setPageCount] = useState(0);
@@ -248,13 +252,7 @@ export function PdfRedactTool() {
             <li key={p}>{p}</li>
           ))}
         </ul>
-        <p>
-          黒い四角形を重ねるだけで、元の文字を消さない機能は
-          <Link href="/tools/pdf-fix" className="underline">
-            PDF修正の白消し
-          </Link>
-          です。個人情報などを確実に消したいときは、このツールを使ってください。
-        </p>
+        <p>黒い四角形を重ねるだけで、元の文字を消さない操作は「白消し」「黒塗り（見た目だけ）」です。個人情報などを確実に消したいときは、この墨消しを使ってください。</p>
       </div>
 
       <FileDropzone
@@ -265,6 +263,7 @@ export function PdfRedactTool() {
         onFilesSelected={(files) => {
           resetAll();
           setFile(files[0]);
+          onFileChange?.(files[0] ?? null);
         }}
         onError={setError}
       />
@@ -274,6 +273,7 @@ export function PdfRedactTool() {
           files={[file]}
           onRemove={() => {
             setFile(null);
+            onFileChange?.(null);
             resetAll();
           }}
         />

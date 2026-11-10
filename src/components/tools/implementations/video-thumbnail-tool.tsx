@@ -388,7 +388,7 @@ export function VideoThumbnailTool() {
             controls
             playsInline
             preload="auto"
-            className="max-h-64 w-full rounded-lg bg-black"
+            className="block mx-auto h-auto w-auto max-w-full max-h-[min(60vh,30rem)] rounded-lg bg-black"
           />
 
           {meta && meta.durationSec > 0 && (

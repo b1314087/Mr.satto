@@ -11,7 +11,7 @@
 export const PDF_FIX_TOOL_ID = "pdf-fix";
 export const PDF_FIX_TOOL_PATH = "/tools/pdf-fix";
 
-export type PdfFixMode = "annotate" | "page-numbers" | "watermark";
+export type PdfFixMode = "annotate" | "page-numbers" | "watermark" | "redact";
 
 export interface PdfFixModeInfo {
   mode: PdfFixMode;
@@ -47,6 +47,14 @@ export const PDF_FIX_MODES: PdfFixModeInfo[] = [
     formerToolId: "pdf-watermark",
     description: "各ページに、「社外秘」などの文字を透かしとして入れます。",
   },
+  {
+    // 黒塗り・墨消し（旧 PDF黒塗り・墨消し）は、独立したページを廃止し、PDF修正の中で使う（旧URLは ?mode=redact へ転送）
+    mode: "redact",
+    label: "墨消し",
+    formerName: "PDF黒塗り・墨消し",
+    formerToolId: "pdf-redact",
+    description: "隠したい範囲を指定し、元の文字・画像のデータごと黒塗りで消した新しいPDFを作ります。",
+  },
 ];
 
 export function getPdfFixMode(mode: PdfFixMode): PdfFixModeInfo {
@@ -69,14 +77,14 @@ export function parsePdfFixMode(value: string | null): PdfFixMode | null {
 
 /** 記入・注釈の画面の中の操作（pdf-fill-annotate-tool.tsx の ToolMode と同じ値） */
 export type PdfFixAnnotateOperation = "text" | "checkbox" | "shape" | "ink" | "image" | "stamp" | "whiteout" | "blackout" | "select";
-export type PdfFixOperation = PdfFixAnnotateOperation | "page-numbers" | "watermark";
+export type PdfFixOperation = PdfFixAnnotateOperation | "page-numbers" | "watermark" | "redact";
 
 export interface PdfFixOperationInfo {
   value: PdfFixOperation;
   /** プルダウンの表示名 */
   label: string;
   /** プルダウンのまとまり */
-  group: "place" | "pages";
+  group: "place" | "pages" | "remove";
   /** どの画面で行うか */
   mode: PdfFixMode;
   /** 使い方（PDFの上での置き方・動かし方・大きさの変え方） */
@@ -97,6 +105,14 @@ export const PDF_FIX_OPERATIONS: PdfFixOperationInfo[] = [
   { value: "select", label: "置いたものを選ぶ・動かす・大きさを変える", group: "place", mode: "annotate", howTo: `置いたものをクリックすると選べます。${MOVE_RESIZE}` },
   { value: "page-numbers", label: "ページ番号を入れる", group: "pages", mode: "page-numbers", howTo: "全ページに、開始番号・位置・大きさを選んでページ番号を入れます。" },
   { value: "watermark", label: "透かしを入れる", group: "pages", mode: "watermark", howTo: "全ページに、「社外秘」などの文字を透かしとして入れます。" },
+  {
+    value: "redact",
+    label: "墨消し（元の文字ごと黒塗りで消す）",
+    group: "remove",
+    mode: "redact",
+    howTo:
+      "PDFの上をドラッグして、隠したい範囲を囲みます。囲んだページを画像にして黒を焼き込むため、元の文字・画像のデータは残りません（コピー・検索でも読めません）。個人情報などを確実に消したいときに使います。",
+  },
 ];
 
 export function getPdfFixOperation(value: PdfFixOperation): PdfFixOperationInfo {

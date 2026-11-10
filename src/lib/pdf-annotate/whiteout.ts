@@ -49,7 +49,7 @@ export function whiteoutInsertIndex(objects: AnnotationObject[]): number {
 //
 // PDF修正の「黒塗り（見た目だけ）」は、黒い塗りつぶしの四角形を重ねて、見た目を隠すだけの機能（方式A）。
 // 元の文字・画像のデータはPDFの中に残る。元のデータごと取り除く本当の黒塗り（墨消し。方式B）は、
-// 別のツール「PDF黒塗り・墨消し」（/tools/pdf-redact。ページを画像にして黒を焼き込む）が行う。
+// PDF修正の「墨消し（元の文字ごと黒塗りで消す）」（旧 PDF黒塗り・墨消し。/tools/pdf-fix?mode=redact。ページを画像にして黒を焼き込む）が行う。
 // 画面では、この2つを必ず区別して表示し、方式Aを「墨消し」「完全に削除」「復元できない」と表現しないこと。
 
 /** 黒塗り（見た目だけ）に使う色（真っ黒。図形の「黒」（わずかに青みのある黒）とは別の色にして区別する） */
@@ -60,8 +60,8 @@ export const BLACKOUT_DEFAULT_WIDTH = 160;
 export const BLACKOUT_DEFAULT_HEIGHT = 24;
 
 /** 本当の黒塗り（墨消し）を行うツール */
-export const TRUE_REDACTION_TOOL_PATH = "/tools/pdf-redact";
-export const TRUE_REDACTION_TOOL_NAME = "PDF黒塗り・墨消し";
+export const TRUE_REDACTION_TOOL_PATH = "/tools/pdf-fix?mode=redact";
+export const TRUE_REDACTION_TOOL_NAME = "墨消し（元の文字ごと黒塗りで消す）";
 
 /** 黒塗り（見た目だけ）の注意書き（画面に必ず表示する） */
 export const BLACKOUT_NOTICE = {

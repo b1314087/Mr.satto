@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PdfFillAnnotateTool, type ToolMode } from "./pdf-fill-annotate-tool";
 import { PdfAddPageNumbersTool } from "./pdf-add-page-numbers-tool";
 import { PdfWatermarkTool } from "./pdf-watermark-tool";
+import { PdfRedactTool } from "./pdf-redact-tool";
 import {
   PDF_FIX_OPERATIONS,
   getPdfFixOperation,
@@ -28,7 +28,8 @@ import { WHITEOUT_NOTICE } from "@/lib/pdf-annotate/whiteout";
  *     （以前は切り替えると配置したものが消えるため、確認を出していた）。
  *   ・ページ番号・透かしの画面は、切り替えるたびに作り直す（古い結果をダウンロードさせない）。
  * - 選んだPDFは、どの操作でも引き継ぐ。記入・注釈で編集中のPDFがあるときは、そのPDFと編集はそのまま残す。
- * - 旧「PDFページ番号追加」「PDF透かし」のアドレスからの転送（?mode=page-numbers / ?mode=watermark。工程3）では、
+ * - 墨消し（元の文字ごと黒塗りで消す。旧 PDF黒塗り・墨消し）も、やりたい操作の1つとして、ここで使う。
+ * - 旧「PDFページ番号追加」「PDF透かし」「PDF黒塗り・墨消し」のアドレスからの転送（?mode=page-numbers / ?mode=watermark / ?mode=redact）では、
  *   その操作を選んだ状態で開く。
  * 処理はすべてブラウザ内で行い、PDFは送信・保存しない。
  */
@@ -53,7 +54,7 @@ export function PdfFixTool() {
   useEffect(() => {
     const fromUrl = parsePdfFixMode(new URLSearchParams(window.location.search).get("mode"));
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (fromUrl === "page-numbers" || fromUrl === "watermark") setOperation(fromUrl);
+    if (fromUrl === "page-numbers" || fromUrl === "watermark" || fromUrl === "redact") setOperation(fromUrl);
   }, []);
 
   function chooseOperation(next: PdfFixOperation) {
@@ -76,8 +77,8 @@ export function PdfFixTool() {
 
   const singleFileProps = { initialFile: sharedFile, onFileChange: setSharedFile };
 
-  return (
-    <div className="flex flex-col gap-4">
+  /** やりたい操作のプルダウンと、いまの操作・使い方 */
+  const operationBlock = (
       <div className="flex flex-col gap-2" data-testid="pdf-fix-modes" data-mode={mode}>
         <label className="flex flex-col gap-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">
           やりたい操作
@@ -101,6 +102,13 @@ export function PdfFixTool() {
                 </option>
               ))}
             </optgroup>
+            <optgroup label="元のデータごと消す">
+              {PDF_FIX_OPERATIONS.filter((o) => o.group === "remove").map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </label>
         <div
@@ -119,6 +127,12 @@ export function PdfFixTool() {
           )}
         </div>
       </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* 記入・注釈のときは、やりたい操作をプレビュー（PDFの表示）のすぐ上に出す。ページ番号・透かしのときは、ここに出す */}
+      {mode !== "annotate" && operationBlock}
 
       {/* 白消し・黒塗りを選んだときだけ、見た目だけ隠す方式と、本当の墨消しの違いを出す */}
       {(operation === "whiteout" || operation === "blackout") && (
@@ -129,9 +143,9 @@ export function PdfFixTool() {
           <span className="font-semibold">{WHITEOUT_NOTICE.title}</span>
           {WHITEOUT_NOTICE.body}
           個人情報などを確実に消したいときは、
-          <Link href="/tools/pdf-redact" className="underline">
-            PDF黒塗り・墨消し
-          </Link>
+          <button type="button" onClick={() => chooseOperation("redact")} className="underline" data-testid="pdf-fix-open-redact">
+            墨消し（元の文字ごと黒塗りで消す）
+          </button>
           を使ってください。
           <span className="mt-2 block" data-testid="pdf-fix-redaction-methods">
             <span className="block">
@@ -139,7 +153,7 @@ export function PdfFixTool() {
               黒い四角形を重ねて見た目を隠します。元の文字・画像のデータはPDFの中に残ります（墨消しではありません）。
             </span>
             <span className="block">
-              <span className="font-semibold">墨消し（元のデータごと削除）＝PDF黒塗り・墨消し：</span>
+              <span className="font-semibold">墨消し（元のデータごと削除）＝「やりたい操作」の墨消し：</span>
               範囲を指定したページを画像にして黒を焼き込み、元の文字・画像のデータを残さない新しいPDFを作ります。
             </span>
           </span>
@@ -151,6 +165,7 @@ export function PdfFixTool() {
       <div key={`${mode}-${pagesKey}`}>
         {mode === "page-numbers" && <PdfAddPageNumbersTool {...singleFileProps} />}
         {mode === "watermark" && <PdfWatermarkTool {...singleFileProps} />}
+        {mode === "redact" && <PdfRedactTool {...singleFileProps} />}
       </div>
       {/* 記入・注釈の画面は、ほかの操作を選んでいる間も消さずに隠しておく（置いたものを消さないため） */}
       <div hidden={mode !== "annotate"} data-testid="pdf-fix-annotate-panel">
@@ -165,6 +180,8 @@ export function PdfFixTool() {
           controlledMode={annotateOp}
           onModeChange={handleAnnotateModeChange}
           inactive={mode !== "annotate"}
+          operationSlot={mode === "annotate" ? operationBlock : undefined}
+          onOpenRedaction={() => chooseOperation("redact")}
         />
       </div>
     </div>

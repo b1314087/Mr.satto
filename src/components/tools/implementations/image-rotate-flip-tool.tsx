@@ -133,7 +133,7 @@ export function ImageRotateFlipTool({ initialMode = "rotate" }: { initialMode?: 
                   <img
                     src={originalUrl}
                     alt="元の画像"
-                    className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                    className="max-h-[min(55vh,28rem)] w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
                   />
                 )}
               </figure>
@@ -143,7 +143,7 @@ export function ImageRotateFlipTool({ initialMode = "rotate" }: { initialMode?: 
                   ref={previewCanvasRef}
                   aria-label={`${modeLabel}後のプレビュー`}
                   data-testid="transform-preview-canvas"
-                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                  className="max-h-[min(55vh,28rem)] w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
                 />
               </figure>
             </div>

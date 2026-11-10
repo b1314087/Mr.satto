@@ -345,7 +345,7 @@ export function ImageCanvasTool() {
                 <img
                   src={originalUrl}
                   alt="元の画像"
-                  className="max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
+                  className="max-h-[min(55vh,28rem)] w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain dark:border-neutral-700 dark:bg-neutral-900"
                 />
               )}
             </figure>
@@ -363,7 +363,7 @@ export function ImageCanvasTool() {
                 <img
                   src={shownPreview.output.url}
                   alt="処理後のプレビュー"
-                  className={`max-h-72 w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain transition-opacity dark:border-neutral-700 dark:bg-neutral-900 ${
+                  className={`max-h-[min(55vh,28rem)] w-full rounded-lg border border-neutral-200 bg-neutral-100 object-contain transition-opacity dark:border-neutral-700 dark:bg-neutral-900 ${
                     previewStale ? "opacity-50" : ""
                   }`}
                 />

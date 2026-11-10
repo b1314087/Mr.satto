@@ -26,7 +26,7 @@ const none: Input = { kind: "none" };
 
 const CASES: [string, Input][] = [
   // PDF
-  ...(["pdf-merge", "pdf-split", "pdf-delete-pages", "pdf-reorder-pages", "pdf-rotate", "pdf-extract-pages", "pdf-fix?mode=page-numbers", "pdf-fix?mode=watermark", "pdf-redact", "pdf-resize-pages", "pdf-crop-pages", "pdf-compress", "pdf-metadata-remove", "pdf-to-text", "pdf-to-word", "pdf-to-excel", "filled-pdf-to-excel"] as const).map((id) => [id, pdf] as [string, Input]),
+  ...(["pdf-merge", "pdf-split", "pdf-delete-pages", "pdf-reorder-pages", "pdf-rotate", "pdf-extract-pages", "pdf-fix?mode=page-numbers", "pdf-fix?mode=watermark", "pdf-fix?mode=redact", "pdf-resize-pages", "pdf-crop-pages", "pdf-compress", "pdf-metadata-remove", "pdf-to-text", "pdf-to-word", "pdf-to-excel", "filled-pdf-to-excel"] as const).map((id) => [id, pdf] as [string, Input]),
   // 画像
   // 工程3：統合した旧ツールは、統合先でその機能を選んだ状態（?mode=）で確かめる
   ...(["image-crop?mode=sns", "image-crop", "image-batch-convert", "image-format-convert", "image-rotate-flip", "image-to-pdf", "image-flip", "image-adjust?mode=grayscale", "image-metadata-remove", "image-layout", "image-crop?mode=passport", "image-padding-text", "image-tile-split", "image-mosaic", "image-compress?mode=resize", "image-compress", "image-rotate"] as const).map((id) => [id, img] as [string, Input]),
@@ -107,7 +107,7 @@ for (const [id, input] of CASES) {
         await uploadFixture(page, input.files);
       } else if (input.kind === "text") {
         if (input.firstClick) await page.getByRole("radio", { name: new RegExp(input.firstClick.replace(/[()（）]/g, ".")) }).click();
-        const field = page.locator("textarea, input[type='text']").first();
+        const field = page.locator("textarea, input[type='text']").filter({ visible: true }).first(); // 隠れている入力欄（座席表のメニューの別の設定など）は使わない
         await field.waitFor({ state: "visible", timeout: 20_000 });
         await field.fill(input.text + (attempt ? " " : ""));
         if (input.thenClick) await page.getByRole("button", { name: input.thenClick, exact: true }).click();

@@ -388,11 +388,12 @@ const toolDefinitions: Tool[] = [
     // 工程2：PDF記入・注釈（旧 pdf-fill-annotate）の独立したページは廃止し、旧URLはこのツールへ転送する
     // （記入・注釈・白消しは、このツールの最初に開く機能としてそのまま使える）。
     // 工程3：ページ番号追加・透かしの独立したページも廃止し、旧URLは各機能を選んだ状態（?mode=page-numbers / ?mode=watermark）へ転送する。
+    // 黒塗り・墨消し（旧 pdf-redact）も、やりたい操作の「墨消し」としてまとめ、旧URLは ?mode=redact へ転送する。
     // PDF編集（pdf-edit）は、ページの構成を変える操作（結合・分割・削除・抽出・並び替え・回転）だけを受け持つ。
     id: "pdf-fix",
     name: "PDF修正",
     category: "pdf",
-    description: "PDFに文字・図形・手書き・印影の追加、白消しと書き直し、ページ番号、透かしを、ひとつの画面で行えます",
+    description: "PDFに文字・図形・手書き・印影の追加、白消しと書き直し、元のデータごと消す黒塗り（墨消し）、ページ番号、透かしを、ひとつの画面で行えます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
@@ -425,24 +426,12 @@ const toolDefinitions: Tool[] = [
       "CONFIDENTIAL",
       "fix pdf",
       "whiteout",
-    ],
-    relatedToolIds: ["pdf-edit", "pdf-redact"],
-  },
-  {
-    // 工程4：PDFの確実な黒塗り・墨消し。範囲を指定したページを画像にして黒を焼き込み、元の文字・画像のデータを残さない。
-    // 見た目だけ隠す「PDF修正の白消し」とは別のツール（混同させない）。
-    id: "pdf-redact",
-    name: "PDF黒塗り・墨消し",
-    category: "pdf",
-    description: "PDFの個人情報・機密情報を、元のデータごと取り除いて黒塗りします。範囲を指定したページを画像にして、文字が読み取れない新しいPDFを作ります",
-    status: "available",
-    requiredPlan: "standard",
-    processor: "browser",
-    keywords: [
+      // 黒塗り・墨消し（旧 PDF黒塗り・墨消し。新工程1の追加分でPDF修正にまとめた）
       "黒塗り",
       "墨消し",
       "PDF黒塗り",
       "PDF墨消し",
+      "PDF黒塗り・墨消し",
       "PDFマスキング",
       "個人情報を消す",
       "マイナンバー",
@@ -454,7 +443,7 @@ const toolDefinitions: Tool[] = [
       "redaction",
       "mask",
     ],
-    relatedToolIds: ["pdf-fix"],
+    relatedToolIds: ["pdf-edit"],
   },
   {
     id: "pdf-merge",

@@ -25,6 +25,8 @@ import { fixtures } from "../fixtures/paths";
 const MERGED = [
   { id: "pdf-add-page-numbers", to: "/tools/pdf-fix?mode=page-numbers", hub: "pdf-fix" },
   { id: "pdf-watermark", to: "/tools/pdf-fix?mode=watermark", hub: "pdf-fix" },
+  // PDF黒塗り・墨消しは、PDF修正の「墨消し」に統合
+  { id: "pdf-redact", to: "/tools/pdf-fix?mode=redact", hub: "pdf-fix" },
   { id: "image-grayscale", to: "/tools/image-adjust?mode=grayscale", hub: "image-adjust" },
   { id: "image-resize", to: "/tools/image-compress?mode=resize", hub: "image-compress" },
   { id: "image-sns-size", to: "/tools/image-crop?mode=sns", hub: "image-crop" },
@@ -66,6 +68,8 @@ plainTest("統合した旧ツールは、一覧・登録・SEO・受け渡し・
   const top = (q: string) => searchTools(getListedTools(), q)[0]?.id;
   plainExpect(top("PDFページ番号追加")).toBe("pdf-fix");
   plainExpect(top("PDF透かし")).toBe("pdf-fix");
+  plainExpect(top("PDF黒塗り")).toBe("pdf-fix");
+  plainExpect(top("墨消し")).toBe("pdf-fix");
   plainExpect(top("画像リサイズ")).toBe("image-compress");
   plainExpect(top("SNSサイズ変換")).toBe("image-crop");
   plainExpect(top("証明写真")).toBe("image-crop");
