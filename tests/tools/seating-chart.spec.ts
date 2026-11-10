@@ -7,7 +7,7 @@ import { buildMinimalXlsx } from "../fixtures/xlsx-writer";
 import { assertDownloadedFile, clickAndDownload } from "../helpers/tool-runner";
 import { extractPdfContent, isValidPdfFile } from "../helpers/pdf-inspect";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
-import { autoParams, buildLayout, DEFAULT_PARAMS, groupCellsOf, rotateLayout, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
+import { autoParams, buildLayout, DEFAULT_PARAMS, groupCellsOf, tableLabelOf, rotateLayout, roundRing, SEAT_H, SEAT_W, type Purpose } from "@/lib/seating/layouts";
 import { namesFromRows, parseParticipants, readingsFromPaste, splitLine } from "@/lib/seating/participants";
 import { axisGroups, canShuffle, evictBlocked, fillAroundLocked, shuffleUnlocked } from "@/lib/seating/arrange";
 import { isActiveRule, isNear, seatDistance, shuffleWithRules, violatedRules, type SeatRule } from "@/lib/seating/conditions";
@@ -1086,4 +1086,65 @@ test("グループワーク：「横に増やす」「縦に増やす」を押�
   // 自動に戻すと、これまでどおりの並び（8つは3つずつ）
   await page.getByTestId("seat-group-flow-auto").click();
   plainExpect(near((await island(3)).y, (await island(1)).y)).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// 座席表の名前（見出し）と、島・テーブルの名前
+// ---------------------------------------------------------------------------
+plainTest("島・テーブルの名前：入力した名前を机と席の場所に使い、空欄の島は「島1」「テーブル1」のまま。長すぎる名前は切る", () => {
+  plainExpect(tableLabelOf({}, 0, false)).toBe("島1");
+  plainExpect(tableLabelOf({ tableLabels: ["  ", "Aチーム"] }, 0, false)).toBe("島1");
+  plainExpect(tableLabelOf({ tableLabels: ["  ", "Aチーム"] }, 1, false)).toBe("Aチーム");
+  plainExpect(tableLabelOf({ tableLabels: ["来賓席"] }, 0, true)).toBe("来賓席");
+  plainExpect(tableLabelOf({ tableLabels: ["あ".repeat(30)] }, 0, false)).toBe("あ".repeat(20));
+  const g = buildLayout("group", { ...DEFAULT_PARAMS, tables: 3, perTable: 4, tableLabels: ["企画", "", "営業"] });
+  plainExpect(g.shapes.map((sh) => sh.label)).toEqual(["企画", "島2", "営業"]);
+  plainExpect(g.seats.filter((st) => st.group === "営業")).toHaveLength(4);
+  // 名前を変えても、配置（位置）は変わらない
+  const plain = buildLayout("group", { ...DEFAULT_PARAMS, tables: 3, perTable: 4 });
+  plainExpect(g.seats.map((st) => [st.x, st.y])).toEqual(plain.seats.map((st) => [st.x, st.y]));
+  const r = buildLayout("round", { ...DEFAULT_PARAMS, tables: 2, perTable: 6, tableLabels: ["来賓席"] });
+  plainExpect(r.shapes.map((sh) => sh.label)).toEqual(["来賓席", "テーブル2"]);
+});
+
+test("座席表の名前（見出し）を用途の設定のところで決められ、プレビューの上に出る。島の名前も入力でき、島を増やしても残る。PDFにも出る", async ({ page }) => {
+  test.setTimeout(120_000);
+  await openTool(page);
+  await start(page, "group", Array.from({ length: 12 }, (_, i) => `M${i + 1}`));
+  const preview = page.getByTestId("tool-preview");
+  // 見出しは、入力が無ければ用途ごとの名前。入力するとプレビューにすぐ出る
+  await expect(page.getByTestId("seat-settings").getByTestId("seat-title")).toBeVisible();
+  await expect(page.getByTestId("seat-preview-title")).toHaveText("グループワーク 座席表");
+  await page.getByTestId("seat-title").fill("三年二組 グループ学習");
+  await expect(page.getByTestId("seat-preview-title")).toHaveText("三年二組 グループ学習");
+  // 島の名前
+  await page.getByTestId("seat-table-labels-toggle").click();
+  const inputs = page.getByTestId("seat-table-label");
+  await expect(inputs).toHaveCount(2); // 12人・1島6席で2島
+  await inputs.nth(0).fill("Aチーム");
+  await expect(preview.getByText("Aチーム", { exact: true })).toBeVisible();
+  await expect(preview.getByText("島2", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("seat-table-labels-toggle")).toContainText("1個を変更中");
+  // 島を増やしても、入力した名前は残る
+  await page.getByTestId("seat-tables").fill("3");
+  await expect(inputs).toHaveCount(3);
+  await expect(inputs.nth(0)).toHaveValue("Aチーム");
+  await inputs.nth(2).fill("とても長い島の名前をつけてみるテスト");
+  await expect(inputs.nth(2)).toHaveValue("とても長い島の名前をつけてみるテスト");
+  // PDFに、見出しと島の名前が出る
+  await page.getByTestId("seat-format-pdf").click();
+  const pdf = await clickAndDownload(page, "PDFでダウンロード");
+  plainExpect(pdf.suggestedFilename()).toBe("三年二組 グループ学習.pdf");
+  const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
+  plainExpect(content.text).toContain("三年二組 グループ学習");
+  plainExpect(content.text).toContain("Aチーム");
+  plainExpect(content.text).toContain("とても長い島の名前をつけてみるテスト");
+  // 円卓でも、テーブルの名前を入力できる
+  await page.getByTestId("seat-purpose-round").click();
+  if ((await page.getByTestId("seat-table-labels-toggle").getAttribute("aria-expanded")) !== "true") await page.getByTestId("seat-table-labels-toggle").click();
+  await page.getByTestId("seat-table-label").first().fill("来賓席");
+  await expect(preview.getByText("来賓席", { exact: true })).toBeVisible();
+  // 授業では、島の名前の欄は出さない
+  await page.getByTestId("seat-purpose-classroom").click();
+  await expect(page.getByTestId("seat-table-labels")).toHaveCount(0);
 });

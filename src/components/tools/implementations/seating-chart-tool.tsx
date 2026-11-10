@@ -12,6 +12,7 @@ import {
   buildLayout,
   DEFAULT_PARAMS,
   DESK_LABEL_MAX,
+  TABLE_LABEL_MAX,
   GROUP_DESK_OPTIONS,
   GROUP_FLOW_OPTIONS,
   groupCellsOf,
@@ -471,6 +472,19 @@ export function SeatingChartTool() {
 
         {purpose && params && (
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-neutral-100 pt-3 dark:border-neutral-800" data-testid="seat-settings">
+            {/* 座席表の名前（プレビュー・印刷・ダウンロードの一番上に出る見出し） */}
+            <label className="flex w-full items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+              <span className="shrink-0">座席表の名前（見出し）</span>
+              <input
+                type="text"
+                value={title}
+                maxLength={60}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={TITLE_BY_PURPOSE[purpose]}
+                className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                data-testid="seat-title"
+              />
+            </label>
             {purpose === "meeting" && (
               <>
                 {numberField("片側の席", "perSide", "seat-per-side")}
@@ -583,6 +597,14 @@ export function SeatingChartTool() {
               />
               人数に合わせる
             </label>
+            {(purpose === "group" || purpose === "round") && (
+              <TableLabelEditor
+                round={purpose === "round"}
+                count={params.tables}
+                labels={params.tableLabels ?? []}
+                onChange={(labels) => updateParam("tableLabels", labels)}
+              />
+            )}
             {purpose === "custom" && (
               <div className="w-full">
                 <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">マスを押すと、席と通路が切り替わります</p>
@@ -713,17 +735,6 @@ export function SeatingChartTool() {
               }}
             />
           )}
-          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-            タイトル
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={TITLE_BY_PURPOSE[purpose]}
-              className="min-w-0 flex-1 rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-              data-testid="seat-title"
-            />
-          </label>
         </section>
       )}
 
@@ -1058,16 +1069,21 @@ function SeatPreview({
       )}
       </div>
       {open && (
+        <p className="truncate text-center text-sm font-bold text-slate-800 dark:text-slate-100" data-testid="seat-preview-title" title="座席表の名前（見出し）。左のメニューの「座席表の名前」で変えられます">
+          {model.title}
+        </p>
+      )}
+      {open && (
         <div ref={boxRef} className="overflow-auto" style={{ maxHeight: maxH + 8 }}>
           <div style={{ width: g.width * scale, height: g.height * scale }} className="relative mx-auto">
             <div className="absolute left-0 top-0 origin-top-left" style={{ width: g.width, height: g.height, transform: `scale(${scale})` }}>
               {g.shapes.map((sh, k) =>
                 sh.kind === "rect" ? (
-                  <div key={k} className="absolute flex items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-[13px] text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" style={{ left: sh.x, top: sh.y, width: sh.w, height: sh.h }}>
+                  <div key={k} className="absolute flex items-center justify-center overflow-hidden break-all rounded-lg border border-slate-300 bg-slate-100 px-1 text-center text-[13px] leading-tight text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" style={{ left: sh.x, top: sh.y, width: sh.w, height: sh.h }}>
                     {sh.label}
                   </div>
                 ) : (
-                  <div key={k} className="absolute flex items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-[14px] text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" style={{ left: sh.cx - sh.r, top: sh.cy - sh.r, width: sh.r * 2, height: sh.r * 2 }}>
+                  <div key={k} className="absolute flex items-center justify-center overflow-hidden break-all rounded-full border border-slate-300 bg-slate-100 px-2 text-center text-[14px] leading-tight text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" style={{ left: sh.cx - sh.r, top: sh.cy - sh.r, width: sh.r * 2, height: sh.r * 2 }}>
                     {sh.label}
                   </div>
                 )
@@ -1646,6 +1662,51 @@ function DeskEditor({ purpose, desks, onChange, onAdd }: { purpose: Purpose; des
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 島（グループワーク）・テーブル（円卓）の名前を入力する。空欄の島は「島1」「テーブル1」のまま。
+ * 島の数を変えても、入力した名前は番号ごとに残る
+ */
+function TableLabelEditor({ round, count, labels, onChange }: { round: boolean; count: number; labels: string[]; onChange: (labels: string[]) => void }) {
+  const noun = round ? "テーブル" : "島";
+  const [open, setOpen] = useState(false);
+  const set = (i: number, value: string) => {
+    const next = labels.slice();
+    while (next.length <= i) next.push("");
+    next[i] = value.slice(0, TABLE_LABEL_MAX);
+    onChange(next);
+  };
+  const named = labels.slice(0, count).filter((l) => l.trim() !== "").length;
+  return (
+    <div className="flex w-full flex-col gap-2" data-testid="seat-table-labels">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`${smallButton} w-fit`} data-testid="seat-table-labels-toggle">
+        {open ? "▼" : "▶"} {noun}の名前を変える{named > 0 ? `（${named}個を変更中）` : ""}
+      </button>
+      {open && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {Array.from({ length: count }, (_, i) => (
+            <label key={i} className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300">
+              <span className="w-14 shrink-0">
+                {noun}
+                {i + 1}
+              </span>
+              <input
+                type="text"
+                value={labels[i] ?? ""}
+                maxLength={TABLE_LABEL_MAX}
+                onChange={(e) => set(i, e.target.value)}
+                placeholder={`${noun}${i + 1}`}
+                aria-label={`${noun}${i + 1}の名前`}
+                className="min-w-0 flex-1 rounded-md border border-neutral-300 px-1.5 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                data-testid="seat-table-label"
+              />
+            </label>
+          ))}
+        </div>
       )}
     </div>
   );

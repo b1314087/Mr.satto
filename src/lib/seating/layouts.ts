@@ -48,6 +48,8 @@ export interface LayoutParams {
    * それより後に増やした島だけを、選んだ方向へ並べる（すでに置いた島は動かさない）
    */
   groupCells?: [number, number][];
+  /** グループワーク・円卓：島（テーブル）ごとの名前（島1から順）。空欄の島は「島1」「テーブル1」のまま */
+  tableLabels?: string[];
   /** グループワーク：机（島の長机）の向き（横＝席が机の上下に並ぶ／縦＝席が机の左右に並ぶ）。省略時は横（これまでの向き） */
   groupDesk?: GroupDirection;
   /** 授業・カスタム：行（前から）と列 */
@@ -84,6 +86,14 @@ export const DESK_LIMITS = {
   h: [30, 1200],
 } as const;
 export const MAX_DESKS = 30;
+/** 島（テーブル）の名前の長さの上限 */
+export const TABLE_LABEL_MAX = 20;
+
+/** 島（テーブル）の名前。入力が無ければ「島1」「テーブル1」 */
+export function tableLabelOf(p: Pick<LayoutParams, "tableLabels">, index: number, round: boolean): string {
+  const custom = (p.tableLabels?.[index] ?? "").trim().slice(0, TABLE_LABEL_MAX);
+  return custom || `${round ? "テーブル" : "島"}${index + 1}`;
+}
 export const DESK_LABEL_MAX = 20;
 
 /** 卓・机を自由に置ける用途 */
@@ -426,11 +436,11 @@ function islands(p: LayoutParams, round: boolean): LayoutGeometry {
     for (let t = 0; t < p.tables; t++) {
       const cx = (t % cols) * cellW + cellW / 2;
       const cy = Math.floor(t / cols) * cellH + cellH / 2;
-      shapes.push({ kind: "circle", cx, cy, r, label: `テーブル${t + 1}` });
+      shapes.push({ kind: "circle", cx, cy, r, label: tableLabelOf(p, t, true) });
       const list: Seat[] = [];
       for (let s = 0; s < perTable; s++) {
         const a = -Math.PI / 2 + (2 * Math.PI * s) / perTable;
-        list.push({ x: cx + Math.cos(a) * ring - SEAT_W / 2, y: cy + Math.sin(a) * ring - SEAT_H / 2, group: `テーブル${t + 1}` });
+        list.push({ x: cx + Math.cos(a) * ring - SEAT_W / 2, y: cy + Math.sin(a) * ring - SEAT_H / 2, group: tableLabelOf(p, t, true) });
       }
       seatsByTable.push(list);
     }
@@ -455,14 +465,14 @@ function islands(p: LayoutParams, round: boolean): LayoutGeometry {
       const list: Seat[] = [];
       if (vertical) {
         const tableX = x0 + SEAT_W + GAP;
-        shapes.push({ kind: "rect", x: tableX, y: y0, w: th, h: along, label: `島${t + 1}` });
-        for (let s = 0; s < top; s++) list.push({ x: x0, y: y0 + GAP + s * (SEAT_H + GAP), group: `島${t + 1}` });
-        for (let s = 0; s < bottom; s++) list.push({ x: tableX + th + GAP, y: y0 + GAP + s * (SEAT_H + GAP), group: `島${t + 1}` });
+        shapes.push({ kind: "rect", x: tableX, y: y0, w: th, h: along, label: tableLabelOf(p, t, false) });
+        for (let s = 0; s < top; s++) list.push({ x: x0, y: y0 + GAP + s * (SEAT_H + GAP), group: tableLabelOf(p, t, false) });
+        for (let s = 0; s < bottom; s++) list.push({ x: tableX + th + GAP, y: y0 + GAP + s * (SEAT_H + GAP), group: tableLabelOf(p, t, false) });
       } else {
         const tableY = y0 + SEAT_H + GAP;
-        shapes.push({ kind: "rect", x: x0, y: tableY, w: along, h: th, label: `島${t + 1}` });
-        for (let s = 0; s < top; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: y0, group: `島${t + 1}` });
-        for (let s = 0; s < bottom; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: tableY + th + GAP, group: `島${t + 1}` });
+        shapes.push({ kind: "rect", x: x0, y: tableY, w: along, h: th, label: tableLabelOf(p, t, false) });
+        for (let s = 0; s < top; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: y0, group: tableLabelOf(p, t, false) });
+        for (let s = 0; s < bottom; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: tableY + th + GAP, group: tableLabelOf(p, t, false) });
       }
       seatsByTable.push(list);
     }

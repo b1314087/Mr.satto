@@ -135,10 +135,11 @@ export function paintChart(p: Painter, model: SeatingChartModel) {
   for (const sh of g.shapes) {
     if (sh.kind === "rect") {
       p.rect(sh.x, sh.y + oy, sh.w, sh.h, TABLE_FILL, TABLE_BORDER, 1.2);
-      if (sh.label) p.text(sh.label, sh.x + sh.w / 2, sh.y + oy + sh.h / 2, { size: 13, color: MUTED });
+      // 名前（島・卓の名前は利用者が入力できるため、机の幅に収まる大きさにする）
+      if (sh.label) p.text(sh.label, sh.x + sh.w / 2, sh.y + oy + sh.h / 2, { size: fitSize(p, sh.label, 13, sh.w - 8, false, 6), color: MUTED });
     } else {
       p.circle(sh.cx, sh.cy + oy, sh.r, TABLE_FILL, TABLE_BORDER);
-      if (sh.label) p.text(sh.label, sh.cx, sh.cy + oy, { size: 14, color: MUTED });
+      if (sh.label) p.text(sh.label, sh.cx, sh.cy + oy, { size: fitSize(p, sh.label, 14, sh.r * 1.8, false, 6), color: MUTED });
     }
   }
   for (const m of g.marks) {
