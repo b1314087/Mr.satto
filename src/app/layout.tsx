@@ -45,7 +45,7 @@ export const viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ja" suppressHydrationWarning className="h-full">
-      <body className="flex min-h-full flex-col antialiased">
+      <body className="flex min-h-full flex-col">
         {/* NEXT_PUBLIC_ADSENSE_CLIENT_ID が設定されている場合のみAdSenseスクリプトを読み込む。
             未設定の間(現在)は何も出力せず、外部への通信も発生しない。 */}
         {isAdsEnabled() && (
