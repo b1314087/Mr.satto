@@ -12,6 +12,9 @@ import {
   buildLayout,
   DEFAULT_PARAMS,
   DESK_LABEL_MAX,
+  GROUP_DESK_OPTIONS,
+  GROUP_FLOW_OPTIONS,
+  type GroupDirection,
   DESK_LIMITS,
   deskNoun,
   MAX_DESKS,
@@ -484,6 +487,40 @@ export function SeatingChartTool() {
                   <option value="deal">1人ずつ順に配る</option>
                 </select>
               </label>
+            )}
+            {purpose === "group" && (
+              <>
+                <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200" title="島を並べていく向きです。端まで並ぶと、次の段（または次の列）へ続きます">
+                  島を増やす方向
+                  <select
+                    value={params.groupFlow ?? "horizontal"}
+                    onChange={(e) => updateParam("groupFlow", e.target.value as GroupDirection)}
+                    className={`${inputClass} w-auto`}
+                    data-testid="seat-group-flow"
+                  >
+                    {GROUP_FLOW_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200" title="島の長机の向きです。横向きは席が机の上下に、縦向きは席が机の左右に並びます">
+                  机の向き
+                  <select
+                    value={params.groupDesk ?? "horizontal"}
+                    onChange={(e) => updateParam("groupDesk", e.target.value as GroupDirection)}
+                    className={`${inputClass} w-auto`}
+                    data-testid="seat-group-desk"
+                  >
+                    {GROUP_DESK_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
             )}
             {(purpose === "classroom" || purpose === "custom") && (
               <>

@@ -37,6 +37,13 @@ export interface LayoutParams {
   perTable: number;
   /** グループワーク：島ごとに詰める（fill）か、1人ずつ順に配る（deal） */
   deal: boolean;
+  /**
+   * グループワーク：島を増やす方向（横＝左から右へ並べ、端まで来たら次の段へ／縦＝上から下へ並べ、端まで来たら次の列へ）。
+   * 省略時は横（これまでの並び）
+   */
+  groupFlow?: GroupDirection;
+  /** グループワーク：机（島の長机）の向き（横＝席が机の上下に並ぶ／縦＝席が机の左右に並ぶ）。省略時は横（これまでの向き） */
+  groupDesk?: GroupDirection;
   /** 授業・カスタム：行（前から）と列 */
   rows: number;
   cols: number;
@@ -83,6 +90,18 @@ export function deskNoun(purpose: Purpose): string {
   return purpose === "custom" ? "机" : "卓";
 }
 
+export type GroupDirection = "horizontal" | "vertical";
+
+export const GROUP_FLOW_OPTIONS: { value: GroupDirection; label: string }[] = [
+  { value: "horizontal", label: "横方向（左から右へ並べる）" },
+  { value: "vertical", label: "縦方向（上から下へ並べる）" },
+];
+
+export const GROUP_DESK_OPTIONS: { value: GroupDirection; label: string }[] = [
+  { value: "horizontal", label: "横向き（席は机の上下）" },
+  { value: "vertical", label: "縦向き（席は机の左右）" },
+];
+
 export type SeatStart = "front-left" | "front-right" | "back-left" | "back-right";
 
 export const SEAT_START_OPTIONS: { value: SeatStart; label: string }[] = [
@@ -100,6 +119,8 @@ export const DEFAULT_PARAMS: LayoutParams = {
   tables: 4,
   perTable: 6,
   deal: false,
+  groupFlow: "horizontal",
+  groupDesk: "horizontal",
   rows: 5,
   cols: 6,
   byColumn: false,
@@ -367,20 +388,36 @@ function islands(p: LayoutParams, round: boolean): LayoutGeometry {
       seatsByTable.push(list);
     }
   } else {
+    // 1つの島：机の片側に top 席、反対側に bottom 席
     const top = Math.ceil(perTable / 2);
     const bottom = perTable - top;
-    const tw = top * SEAT_W + (top - 1) * GAP + GAP * 2;
     const th = 56;
-    cellW = tw + GAP * 5;
-    cellH = SEAT_H * 2 + th + GAP * 2 + GAP * 5;
+    const vertical = p.groupDesk === "vertical";
+    // 机の長さ（席が並ぶ方向）と、島1つ分の大きさ（机と両側の席を含む）
+    const along = vertical ? top * SEAT_H + (top - 1) * GAP + GAP * 2 : top * SEAT_W + (top - 1) * GAP + GAP * 2;
+    const islandW = vertical ? SEAT_W * 2 + th + GAP * 2 : along;
+    const islandH = vertical ? along : SEAT_H * 2 + th + GAP * 2;
+    cellW = islandW + GAP * 5;
+    cellH = islandH + GAP * 5;
+    // 島を増やす方向：横は左から右へ（端で次の段へ）、縦は上から下へ（端で次の列へ）。1列・1段に並べる数は同じ決め方
+    const columnFirst = p.groupFlow === "vertical";
     for (let t = 0; t < p.tables; t++) {
-      const x0 = (t % cols) * cellW;
-      const y0 = Math.floor(t / cols) * cellH;
-      const tableY = y0 + SEAT_H + GAP;
-      shapes.push({ kind: "rect", x: x0, y: tableY, w: tw, h: th, label: `島${t + 1}` });
+      const gx = columnFirst ? Math.floor(t / cols) : t % cols;
+      const gy = columnFirst ? t % cols : Math.floor(t / cols);
+      const x0 = gx * cellW;
+      const y0 = gy * cellH;
       const list: Seat[] = [];
-      for (let s = 0; s < top; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: y0, group: `島${t + 1}` });
-      for (let s = 0; s < bottom; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: tableY + th + GAP, group: `島${t + 1}` });
+      if (vertical) {
+        const tableX = x0 + SEAT_W + GAP;
+        shapes.push({ kind: "rect", x: tableX, y: y0, w: th, h: along, label: `島${t + 1}` });
+        for (let s = 0; s < top; s++) list.push({ x: x0, y: y0 + GAP + s * (SEAT_H + GAP), group: `島${t + 1}` });
+        for (let s = 0; s < bottom; s++) list.push({ x: tableX + th + GAP, y: y0 + GAP + s * (SEAT_H + GAP), group: `島${t + 1}` });
+      } else {
+        const tableY = y0 + SEAT_H + GAP;
+        shapes.push({ kind: "rect", x: x0, y: tableY, w: along, h: th, label: `島${t + 1}` });
+        for (let s = 0; s < top; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: y0, group: `島${t + 1}` });
+        for (let s = 0; s < bottom; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: tableY + th + GAP, group: `島${t + 1}` });
+      }
       seatsByTable.push(list);
     }
   }
