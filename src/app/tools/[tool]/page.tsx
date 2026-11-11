@@ -18,8 +18,7 @@ import { shouldShowAds } from "@/lib/plans/access";
 import { CurrentPlanProvider } from "@/lib/plans/plan-context";
 import { Breadcrumb } from "@/components/tools/breadcrumb";
 import { CategoryLanding } from "@/components/tools/category-landing";
-import { ToolHowTo } from "@/components/tools/tool-how-to";
-import { ToolFaq } from "@/components/tools/tool-faq";
+import { ToolGuide } from "@/components/tools/tool-guide";
 import { JsonLd } from "@/components/seo/json-ld";
 import { buildBreadcrumbList, buildFaqPage } from "@/lib/seo/structured-data";
 import { getToolSeoContent } from "@/lib/seo/tool-content";
@@ -192,7 +191,13 @@ export default async function ToolPage({ params }: ToolPageProps) {
           </div>
           <p className="text-ms-muted">{seo?.lead ?? tool.description}</p>
         </div>
-        <CategoryBadge category={tool.category} />
+        <div className="flex flex-col items-end gap-2 max-sm:w-full max-sm:flex-row-reverse max-sm:items-center max-sm:justify-between">
+          <CategoryBadge category={tool.category} />
+          {seo && (
+            // 使い方・よくある質問（全ツール共通のパネル）。統合済みの旧ツールは、まとめ先のツールの図を使う
+            <ToolGuide toolId={tool.mergedInto ?? tool.id} toolName={tool.name} howTo={seo.howTo} faq={seo.faq} />
+          )}
+        </div>
       </div>
 
       <div className="ms-tool-panel p-4 sm:p-6">
@@ -261,9 +266,6 @@ export default async function ToolPage({ params }: ToolPageProps) {
           <AdSlot placement="tool-page" />
         </div>
       )}
-
-      {seo && <ToolHowTo steps={seo.howTo} />}
-      {seo && <ToolFaq items={seo.faq} />}
 
       {related.length > 0 && (
         <div className="mt-12">

@@ -158,6 +158,8 @@ test.describe("説明文（PDF→Excel・PDF→Word）", () => {
   test("PDF→Excelに、記入済みPDF→Excelとの違いのFAQがある（画面とFAQPageにも出る）", async ({ page }) => {
     expect(getToolSeoContent("pdf-to-excel")!.faq.map((f) => f.question)).toContain("「記入済みPDF→Excel」とはどう違いますか？");
     await page.goto("/tools/pdf-to-excel");
-    await expect(page.getByText("「記入済みPDF→Excel」とはどう違いますか？")).toBeVisible();
+    // FAQは「よくある質問」ボタンで開くパネルに出る
+    await page.getByTestId("guide-open-faq").click();
+    await expect(page.getByTestId("guide-faq").getByText("「記入済みPDF→Excel」とはどう違いますか？")).toBeVisible();
   });
 });

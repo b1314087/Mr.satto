@@ -182,7 +182,14 @@ test.describe("Phase 21: 構造化データ(BreadcrumbList / FAQPage)が画面�
       const faqPage = blocks.find((b) => b["@type"] === "FAQPage");
       if (seo && seo.faq.length > 0) {
         expect(faqPage, `${toolId} はFAQを持つはずですが、FAQPageのJSON-LDが見つかりません`).toBeTruthy();
-        await expect(page.getByRole("heading", { name: "よくある質問" })).toBeVisible();
+        // FAQは「よくある質問」ボタンで開くパネルに表示する（構造化データと同じ質問が並ぶこと）
+        await page.getByTestId("guide-open-faq").click();
+        const faqSection = page.getByTestId("guide-faq");
+        await expect(faqSection).toBeVisible();
+        const questions = (faqPage!.mainEntity as { name: string }[]).map((q) => q.name);
+        for (const q of questions) {
+          await expect(faqSection.locator("summary", { hasText: q })).toBeVisible();
+        }
       } else {
         expect(faqPage).toBeFalsy();
       }
