@@ -69,8 +69,13 @@ export type GuidePart =
   | { k: "preview"; kind: GuidePreviewKind; caption?: string };
 
 export interface GuideStep {
-  /** ステップの短い見出し（図の下に出す。例：「画像を選ぶ」） */
+  /** ステップの短い見出し（スライドの右に大きく出す。例：「画像を選ぶ」） */
   title: string;
+  /**
+   * 見出しの下の説明文。書かないときは、いま操作する部品から自動で作る
+   * （src/lib/guides/describe.ts。例：実行ボタンなら「『圧縮する』を押します。」）
+   */
+  desc?: string;
   /** 図に描く部品（上から順） */
   parts: GuidePart[];
   /** いま操作する部品（parts の番号）。完了の画面を出すときは "popup" */

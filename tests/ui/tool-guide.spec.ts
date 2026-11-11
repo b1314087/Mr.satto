@@ -5,8 +5,9 @@ import { toolSeoContent } from "@/lib/seo/tool-content";
 import { toolGuides } from "@/lib/guides/tool-guides";
 
 /**
- * 全ツール共通の「使い方」「よくある質問」パネル（src/components/tools/tool-guide.tsx）。
- * - ボタンは2つ・最初は閉じている・押すと上からパネルが出る・✕／背景／Escで閉じる・フォーカスが戻る
+ * 全ツール共通の「使い方」「よくある質問」の幕（src/components/tools/tool-guide.tsx）。
+ * - ボタンは2つ・最初は閉じている・押すとガラス調の幕が画面全体に下りる・「閉じる」／Esc／「わかった」で閉じる・フォーカスが戻る
+ * - 使い方は1ページ1手順のスライド（次へ・戻る・←→キー）
  * - 使い方は図（PC・スマホ用）、よくある質問は文字だけで、構造化データ（FAQPage）と同じ内容
  * - 開け閉めしてもツールの入力はそのまま
  */
@@ -47,8 +48,8 @@ async function openTool(page: Page, id: string) {
   await page.waitForLoadState("networkidle");
 }
 
-test.describe("使い方・よくある質問のパネル", () => {
-  test("最初は閉じていて、使い方を開くと図が出る。✕で閉じるとボタンにフォーカスが戻る", async ({ page }) => {
+test.describe("使い方・よくある質問の幕", () => {
+  test("最初は閉じていて、使い方を開くと図が出る。「閉じる」で閉じるとボタンにフォーカスが戻る", async ({ page }) => {
     await openTool(page, "image-compress");
     const panel = page.getByTestId("guide-panel");
     await expect(panel).not.toBeInViewport();
@@ -90,7 +91,7 @@ test.describe("使い方・よくある質問のパネル", () => {
     await expect(items.nth(1)).toHaveAttribute("open", "");
     await expect(items.nth(0)).toContainText(expected[0].answer);
 
-    // パネルの中で使い方に切り替えられる
+    // 幕の中で使い方に切り替えられる
     await page.getByTestId("guide-tab-howto").click();
     await expect(page.getByTestId("guide-howto")).toBeVisible();
     await expect(faq).toBeHidden();
@@ -100,7 +101,7 @@ test.describe("使い方・よくある質問のパネル", () => {
     await expect(faqBtn).toBeFocused();
   });
 
-  test("背景を押すと閉じる。開け閉めしてもツールの入力はそのまま", async ({ page }) => {
+  test("使い方は1ページずつスライドする（次へ・戻る・←→キー）。最後の「わかった」で閉じ、ツールの入力はそのまま", async ({ page }) => {
     await openTool(page, "char-count");
     // 開発サーバーでは、図を初めて開いたときに部品を組み立てるので、先に1回開け閉めしておく
     await page.getByTestId("guide-open-howto").click();
@@ -108,16 +109,38 @@ test.describe("使い方・よくある質問のパネル", () => {
     await page.keyboard.press("Escape");
     const textarea = page.locator("textarea").first();
     await textarea.fill("Mr.Sattoで文字数を数えます。");
+
+    const total = toolGuides["char-count"].steps.length;
     await page.getByTestId("guide-open-howto").click();
-    await expect(page.getByTestId("guide-panel")).toBeInViewport();
-    // パネルの外（背景）の下のほうを押す
+    const panel = page.getByTestId("guide-panel");
+    await expect(panel).toBeInViewport();
+    // 幕は画面全体を覆う
+    const box = await panel.boundingBox();
     const vp = page.viewportSize()!;
-    await page.mouse.click(vp.width / 2, vp.height - 8);
-    await expect(page.getByTestId("guide-panel")).not.toBeInViewport();
+    expect(Math.round(box!.height)).toBe(vp.height);
+    await expect(page.getByTestId("guide-count")).toHaveText(`1 / ${total}`);
+    await expect(page.getByTestId("guide-prev")).toBeDisabled();
+    const current = page.locator('[data-testid="guide-step"][data-current]');
+    await expect(current).toContainText(toolGuides["char-count"].steps[0].title);
+
+    await page.getByTestId("guide-next").click();
+    await expect(page.getByTestId("guide-count")).toHaveText(`2 / ${total}`);
+    await expect(current).toContainText(toolGuides["char-count"].steps[1].title);
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByTestId("guide-count")).toHaveText(`1 / ${total}`);
+    for (let i = 1; i < total; i++) await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("guide-count")).toHaveText(`${total} / ${total}`);
+
+    await page.getByTestId("guide-done").click();
+    await expect(panel).not.toBeInViewport();
+    await expect(page.getByTestId("guide-open-howto")).toBeFocused();
     await expect(textarea).toHaveValue("Mr.Sattoで文字数を数えます。");
+    // もう一度開くと、1ページ目から
+    await page.getByTestId("guide-open-howto").click();
+    await expect(page.getByTestId("guide-count")).toHaveText(`1 / ${total}`);
   });
 
-  test("スマホ幅：パネルは画面の幅いっぱいで、横にはみ出さない。スマホ用の図が出る", async ({ page }) => {
+  test("スマホ幅：幕は画面の幅いっぱいで、横にはみ出さない。スマホ用の図が出る", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openTool(page, "video-compress");
     await page.getByTestId("guide-open-howto").click();
@@ -127,8 +150,8 @@ test.describe("使い方・よくある質問のパネル", () => {
     const viewportWidth = await page.evaluate(() => Math.round(document.querySelector(".ms-guide-root")!.getBoundingClientRect().width));
     expect(Math.round(box!.width)).toBe(viewportWidth);
     const overflow = await page.evaluate(() => {
-      const body = document.querySelector(".ms-guide-body")!;
-      return body.scrollWidth - body.clientWidth;
+      const panel = document.querySelector(".ms-guide-panel")!;
+      return panel.scrollWidth - panel.clientWidth;
     });
     expect(overflow).toBeLessThanOrEqual(1);
     await expect(page.locator(".gd-fig-sp").first()).toBeVisible();

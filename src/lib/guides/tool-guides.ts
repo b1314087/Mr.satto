@@ -686,3 +686,32 @@ export const toolGuides: Record<string, ToolGuide> = {
   },
 };
 
+/**
+ * 部品だけでは伝わりにくいステップの説明文（ツールID → ステップ番号（1から）→ 説明文）。
+ * ほかのステップは、いま操作する部品から自動で作る（src/lib/guides/describe.ts）。
+ */
+const descriptions: Record<string, Record<number, string>> = {
+  "image-compress": { 1: "「サイズを変更」「容量を圧縮」から、やりたいことを選びます。両方を選ぶこともできます。" },
+  "image-crop": { 3: "比率を選び、プレビューの枠をドラッグして、切り抜く範囲を決めます。" },
+  "image-layout": { 2: "画像はドラッグで好きな位置に動かせます。「文字を追加」で文字も入れられます。" },
+  "image-padding-text": { 3: "余白に表示する文字を入れ、文字の大きさと揃え方を選びます。" },
+  "image-mosaic": { 2: "「＋ 範囲を追加」を押して、プレビューの枠を隠したい所に合わせます。" },
+  "pdf-edit": { 3: "上から順に結合されます。「↑」などで順番を入れ替えられます。" },
+  "pdf-fix": { 3: "PDFの上を押すと、そこに置かれます。置いたあとはドラッグで動かせます。" },
+  "pdf-to-excel": { 2: "読み取った表を確かめ、見出しのまとめ方やシートの分け方を選びます。" },
+  "receipt-accounting-csv": { 3: "読み取った明細を表で確かめ、違うところは直します。" },
+  "video-mosaic": { 2: "動画を止めて、隠したい所をプレビューの上でドラッグして囲みます。" },
+  "audio-merge": { 2: "上から順に結合されます。「↑」などで順番を入れ替えられます。" },
+  "seating-chart": { 3: "2人を選んで入れ替えたり、ドラッグで席を動かしたりできます。" },
+  "shift-schedule": { 3: "勤務区分（早番・遅番など）を選んでから、表のマスを押して入れます。" },
+  "unit-converter": { 3: "ほかの単位に換算した結果が一覧で表示されます。" },
+  "char-count": { 2: "入力すると、文字数・単語数・行数などがすぐに表示されます。" },
+  "office-compare": { 3: "比べる内容にチェックを入れて「比べる」を押すと、違いが一覧で表示されます。" },
+  "pomodoro-timer": { 2: "「スタート」を押すと、タイマーが動き始めます。途中で止めることもできます。" },
+};
+for (const [id, map] of Object.entries(descriptions)) {
+  for (const [n, desc] of Object.entries(map)) {
+    const target = toolGuides[id]?.steps[Number(n) - 1];
+    if (target) target.desc = desc;
+  }
+}
