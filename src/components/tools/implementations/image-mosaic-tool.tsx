@@ -47,7 +47,10 @@ import { RunBar } from "@/components/ui/run-bar";
 
 const MIN_REGION_SIZE_PX = 8;
 const ZOOM_PRESETS = [25, 50, 75, 150, 200, 300];
-const MIN_ZOOM = 10;
+// 大きな写真（カメラの写真など）でも「画面に合わせる」で全体が収まるよう、1%まで小さくできる
+const MIN_ZOOM = 1;
+/** プレビュー欄の高さの上限（px）。「画面に合わせる」も、この高さに収まる倍率にする */
+const PREVIEW_MAX_HEIGHT = 512;
 const MAX_ZOOM = 400;
 
 type Corner = "nw" | "ne" | "sw" | "se";
@@ -320,15 +323,17 @@ export function ImageMosaicTool() {
   }
 
   /**
-   * 画面に合わせる倍率：表示欄の幅と、画面の高さの7割の両方に収まる倍率（100%より大きくはしない）。
-   * 縦長の画像は高さで、横長の画像は幅で決まる
+   * 画面に合わせる倍率：プレビュー欄の幅と高さ（欄の高さの上限と、画面の高さの7割の小さい方）の両方に、
+   * 画像の全体が収まる倍率（100%より大きくはしない）。縦長の画像は高さで、横長の画像は幅で決まる。
+   * 少しでもはみ出すとスクロールが出て端が切れて見えるため、切り捨てで求める。
    */
   function fitZoomPercent(size: { width: number; height: number }): number {
     const container = containerRef.current;
     const availableWidth = container?.clientWidth || size.width;
-    const availableHeight = typeof window !== "undefined" ? Math.max(240, window.innerHeight * 0.7) : size.height;
+    const viewport = typeof window !== "undefined" ? Math.max(240, window.innerHeight * 0.7) : PREVIEW_MAX_HEIGHT;
+    const availableHeight = Math.min(PREVIEW_MAX_HEIGHT, viewport) - 2; // 枠線の分
     const fit = Math.min(availableWidth / size.width, availableHeight / size.height) * 100;
-    return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(Math.min(100, fit))));
+    return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.floor(Math.min(100, fit))));
   }
 
   useEffect(() => {
@@ -378,10 +383,12 @@ export function ImageMosaicTool() {
             ref={containerRef}
             data-testid="tool-preview"
             className="w-full max-w-full overflow-auto rounded-lg border border-neutral-200 bg-neutral-900 dark:border-neutral-700"
-            style={{ maxHeight: "32rem" }}
+            // サイト共通の scrollbar-gutter: stable（globals.css）が効くと、右にスクロールバー分の黒い帯ができ、真ん中からずれるため、ここでは外す
+            style={{ maxHeight: PREVIEW_MAX_HEIGHT, scrollbarGutter: "auto" }}
           >
             <div
-              className="relative select-none"
+              // 欄より小さいときは真ん中に置く（右側に空いた黒い余白だけが目立たないように）
+              className="relative mx-auto select-none"
               style={{ width: stageWidth, height: stageHeight }}
               onPointerDown={handleStageBackgroundPointerDown}
               onPointerMove={handleStagePointerMove}

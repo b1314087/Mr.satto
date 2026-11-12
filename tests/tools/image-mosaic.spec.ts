@@ -332,3 +332,42 @@ test("image-mosaic: モバイル幅(375px)でも横スクロールが発生せ�
   await expect(page.getByRole("button", { name: "PNGで保存" })).toBeVisible();
   await expect(page.getByRole("button", { name: "JPEGで保存" })).toBeVisible();
 });
+
+test.describe("プレビュー：大きな写真でも「画面に合わせる」で全体が見える", () => {
+  for (const [label, w, h] of [
+    ["縦長のカメラ写真（4000×6000）", 4000, 6000],
+    ["横長のカメラ写真（6000×4000）", 6000, 4000],
+  ] as const) {
+    test(`${label}：欄からはみ出さず（スクロールが出ない）、欄の真ん中に表示する。倍率は10%より小さくもできる`, async ({ page }) => {
+      test.setTimeout(120_000);
+      const { execFileSync } = await import("node:child_process");
+      const src = test.info().outputPath(`big-${w}x${h}.jpg`);
+      execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(int(sys.argv[2]),int(sys.argv[3])),(40,160,90)).save(sys.argv[1],quality=60)", src, String(w), String(h)]);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto("/tools/image-mosaic");
+      await uploadFixture(page, src);
+      const box = page.getByTestId("tool-preview");
+      const canvas = page.getByTestId("mosaic-preview-canvas");
+      await expect(canvas).toBeVisible({ timeout: 30_000 });
+      const check = async () => {
+        const m = await box.evaluate((el) => {
+          const stage = el.firstElementChild as HTMLElement;
+          const b = el.getBoundingClientRect();
+          const s = stage.getBoundingClientRect();
+          return { sw: el.scrollWidth, cw: el.clientWidth, sh: el.scrollHeight, ch: el.clientHeight, left: s.left - b.left, right: b.right - s.right, stageH: s.height };
+        });
+        expect(m.sw).toBeLessThanOrEqual(m.cw); // 横にはみ出さない
+        expect(m.sh).toBeLessThanOrEqual(m.ch); // 縦にはみ出さない（下が切れない）
+        expect(Math.abs(m.left - m.right)).toBeLessThanOrEqual(2); // 真ん中
+        expect(m.stageH).toBeGreaterThan(200); // 小さくなりすぎない
+      };
+      await check();
+      const pct = Number((await page.getByTestId("zoom-percent-display").textContent())!.replace("%", ""));
+      expect(pct).toBeLessThan(10);
+      // 一度拡大してから「画面に合わせる」でも同じように収まる
+      await page.getByRole("button", { name: "100%", exact: true }).click();
+      await page.getByRole("button", { name: "画面に合わせる" }).click();
+      await check();
+    });
+  }
+});
