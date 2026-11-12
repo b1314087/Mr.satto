@@ -21,6 +21,8 @@ import {
   canEncodeVideoInto,
   inspectVideoFile,
   type OutputContainer,
+  CONVERT_CONTAINER_OPTIONS,
+  isIsobmffContainer,
 } from "@/lib/video/shared";
 import {
   QUALITY_CHOICES,
@@ -133,9 +135,11 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     try {
       const info = await inspectVideoFile(selected);
       info.input.dispose();
-      const [mp4, webm] = await Promise.all([
+      const [mp4, webm, mov, mkv] = await Promise.all([
         canEncodeVideoInto("mp4", info.displayWidth, info.displayHeight),
         canEncodeVideoInto("webm", info.displayWidth, info.displayHeight),
+        canEncodeVideoInto("mov", info.displayWidth, info.displayHeight),
+        canEncodeVideoInto("mkv", info.displayWidth, info.displayHeight),
       ]);
       // 調べている間に動画を消した・選び直した場合は、古い結果を使わない
       if (runIdRef.current !== selectId) return;
@@ -146,7 +150,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
         durationSec: info.durationSec,
         hasAudio: info.hasAudio,
         codec: info.codec,
-        encodable: { mp4, webm },
+        encodable: { mp4, webm, mov, mkv },
       });
     } catch (e) {
       if (runIdRef.current !== selectId) return;
@@ -246,7 +250,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
   }
 
   const outputName = (container: OutputContainer) => {
-    const ext = OUTPUT_CONTAINER_OPTIONS.find((o) => o.value === container)?.ext ?? "mp4";
+    const ext = CONVERT_CONTAINER_OPTIONS.find((o) => o.value === container)?.ext ?? "mp4";
     return `${stripExtension(file?.name ?? "video")}${preset.fileSuffix}.${ext}`;
   };
 
@@ -267,7 +271,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
   const trimInvalidText = (text: string) => text.trim() !== "" && Number.isNaN(parseTimeInput(text) ?? 0);
 
   // 工程3：切り取り（動画のすぐ下に置き、再生位置を見ながら決められるようにする）
-  const trimControls = source && (
+  const trimControls = source && preset.trim && (
     <fieldset className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="video-edit-trim">
       <legend className="px-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">切り取り（トリミング）</legend>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -328,17 +332,20 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     </fieldset>
   );
 
+  // 総合改修 16：形式変換では MOV・MKV も選べる（ほかの動画編集ページは、これまでどおり MP4・WebM）
+  const containerOptions = toolId === "video-convert" ? CONVERT_CONTAINER_OPTIONS : OUTPUT_CONTAINER_OPTIONS;
+
   const sections: Record<VideoEditFocus, ReactNode> = {
     container: (
       <ChoiceGroup
         key="container"
         legend="出力形式"
         name={`${toolId}-container`}
-        options={OUTPUT_CONTAINER_OPTIONS.map((o) => ({ value: o.value, label: o.label, disabled: !containerAvailable(o.value) }))}
+        options={containerOptions.map((o) => ({ value: o.value, label: o.label, disabled: !containerAvailable(o.value) }))}
         value={settings.container}
         onChange={(v) => update({ container: v as OutputContainer })}
         note={
-          OUTPUT_CONTAINER_OPTIONS.some((o) => !containerAvailable(o.value))
+          containerOptions.some((o) => !containerAvailable(o.value))
             ? "選べない形式は、このブラウザでは書き出せません（画質などを「元のまま」にすると選べる場合があります）。"
             : undefined
         }
@@ -403,7 +410,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
         ]}
         value={String(settings.rotate)}
         onChange={(v) => update({ rotate: Number(v) as RotateChoice })}
-        note={settings.rotate !== 0 && settings.container === "mp4" ? "MP4は向きの情報を付けて回転します（速く、画質も変わりません）。" : undefined}
+        note={settings.rotate !== 0 && isIsobmffContainer(settings.container) ? "MP4・MOVは向きの情報を付けて回転します（速く、画質も変わりません）。" : undefined}
       />
       <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
         <input

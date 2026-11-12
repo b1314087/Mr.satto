@@ -20,7 +20,7 @@ test("video-thumbnail: 動画から1コマを抽出し画像としてダウン�
   await page.goto("/tools/video-thumbnail");
   await uploadFixture(page, fixtures.webm);
 
-  await page.getByRole("button", { name: "この時点を抽出する" }).click();
+  await page.getByRole("button", { name: "一時停止した位置を抽出する" }).click();
   await waitForSuccess(page, "完了", 45_000);
 
   const download = await clickAndDownload(page, "画像をダウンロード");

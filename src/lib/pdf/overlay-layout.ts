@@ -267,23 +267,129 @@ export function watermarkLayout(input: WatermarkLayoutInput): WatermarkLayout {
 }
 
 // --- ページサイズ変更 ---
-export type PageSizePreset = "a4" | "a3" | "letter" | "original";
+/**
+ * PDFページサイズ変更で選べる用紙（総合改修 20：実務で使う標準の用紙を網羅し、足りないものはカスタムで指定する）。
+ * - A判（ISO 216）A0〜A6、B判（日本のJIS B）B0〜B6
+ * - 北米：Letter・Legal・Ledger（Tabloid、11×17インチ）・Executive
+ * - はがき（100×148mm）
+ * - custom：幅・高さをmmで指定（10〜2000mm）
+ * 値は縦向き（幅＜高さ）の pt。mm 起点のものは 1mm＝72/25.4pt。
+ */
+export type PageSizePreset =
+  | "a0" | "a1" | "a2" | "a3" | "a4" | "a5" | "a6"
+  | "b0" | "b1" | "b2" | "b3" | "b4" | "b5" | "b6"
+  | "letter" | "legal" | "ledger" | "executive"
+  | "postcard"
+  | "custom"
+  | "original";
 export type PageOrientation = "portrait" | "landscape";
 export type ResizeContentMode = "fit" | "keep";
 
-export const PAGE_SIZE_PT: Record<Exclude<PageSizePreset, "original">, { width: number; height: number }> = {
-  a4: { width: 595.28, height: 841.89 },
+const mm = (v: number) => Math.round(((v * 72) / 25.4) * 100) / 100;
+
+export const PAGE_SIZE_PT: Record<Exclude<PageSizePreset, "original" | "custom">, { width: number; height: number }> = {
+  a0: { width: mm(841), height: mm(1189) },
+  a1: { width: mm(594), height: mm(841) },
+  a2: { width: mm(420), height: mm(594) },
   a3: { width: 841.89, height: 1190.55 },
+  a4: { width: 595.28, height: 841.89 },
+  a5: { width: mm(148), height: mm(210) },
+  a6: { width: mm(105), height: mm(148) },
+  b0: { width: mm(1030), height: mm(1456) },
+  b1: { width: mm(728), height: mm(1030) },
+  b2: { width: mm(515), height: mm(728) },
+  b3: { width: mm(364), height: mm(515) },
+  b4: { width: mm(257), height: mm(364) },
+  b5: { width: mm(182), height: mm(257) },
+  b6: { width: mm(128), height: mm(182) },
   letter: { width: 612, height: 792 },
+  legal: { width: 612, height: 1008 },
+  ledger: { width: 792, height: 1224 },
+  executive: { width: 522, height: 756 },
+  postcard: { width: mm(100), height: mm(148) },
 };
 
-/** 変更後のページサイズ(pt)。"original"(変更なし)は null */
+/** 用紙の選択肢（画面の表示順。グループごと） */
+export const PAGE_SIZE_GROUPS: { label: string; options: { value: Exclude<PageSizePreset, "original">; label: string; note: string }[] }[] = [
+  {
+    label: "A判",
+    options: [
+      { value: "a0", label: "A0", note: "841×1189mm" },
+      { value: "a1", label: "A1", note: "594×841mm" },
+      { value: "a2", label: "A2", note: "420×594mm" },
+      { value: "a3", label: "A3", note: "297×420mm" },
+      { value: "a4", label: "A4", note: "210×297mm" },
+      { value: "a5", label: "A5", note: "148×210mm" },
+      { value: "a6", label: "A6", note: "105×148mm" },
+    ],
+  },
+  {
+    label: "B判（JIS）",
+    options: [
+      { value: "b0", label: "B0", note: "1030×1456mm" },
+      { value: "b1", label: "B1", note: "728×1030mm" },
+      { value: "b2", label: "B2", note: "515×728mm" },
+      { value: "b3", label: "B3", note: "364×515mm" },
+      { value: "b4", label: "B4", note: "257×364mm" },
+      { value: "b5", label: "B5", note: "182×257mm" },
+      { value: "b6", label: "B6", note: "128×182mm" },
+    ],
+  },
+  {
+    label: "北米",
+    options: [
+      { value: "letter", label: "Letter", note: "8.5×11インチ" },
+      { value: "legal", label: "Legal", note: "8.5×14インチ" },
+      { value: "ledger", label: "Ledger（Tabloid）", note: "11×17インチ" },
+      { value: "executive", label: "Executive", note: "7.25×10.5インチ" },
+    ],
+  },
+  {
+    label: "その他",
+    options: [
+      { value: "postcard", label: "はがき", note: "100×148mm" },
+      { value: "custom", label: "カスタム", note: "幅・高さを指定" },
+    ],
+  },
+];
+
+export const CUSTOM_SIZE_MIN_MM = 10;
+export const CUSTOM_SIZE_MAX_MM = 2000;
+
+/** 用紙の表示名 */
+export function pageSizeLabel(p: PageSizePreset): string {
+  if (p === "original") return "元のサイズ";
+  for (const g of PAGE_SIZE_GROUPS) for (const o of g.options) if (o.value === p) return o.label;
+  return p;
+}
+
+/** カスタムの幅・高さ（mm）が使える範囲か。使えないときは理由を返す */
+export function customSizeError(custom: { widthMm: number; heightMm: number } | undefined): string | null {
+  if (!custom) return "幅と高さを入れてください。";
+  for (const [label, v] of [["幅", custom.widthMm], ["高さ", custom.heightMm]] as const) {
+    if (!Number.isFinite(v)) return `${label}を数字で入れてください。`;
+    if (v < CUSTOM_SIZE_MIN_MM || v > CUSTOM_SIZE_MAX_MM) return `${label}は${CUSTOM_SIZE_MIN_MM}〜${CUSTOM_SIZE_MAX_MM}mmで指定してください。`;
+  }
+  return null;
+}
+
+/**
+ * 変更後のページサイズ(pt)。"original"(変更なし)・使えないカスタムは null。
+ * カスタムは、入れた幅・高さのまま（向きの指定で幅と高さを入れ替える）。
+ */
 export function resizeTargetSize(
   pageSize: PageSizePreset,
-  orientation: PageOrientation
+  orientation: PageOrientation,
+  custom?: { widthMm: number; heightMm: number }
 ): { width: number; height: number } | null {
   if (pageSize === "original") return null;
-  const base = PAGE_SIZE_PT[pageSize];
+  let base: { width: number; height: number };
+  if (pageSize === "custom") {
+    if (customSizeError(custom)) return null;
+    base = { width: mm(custom!.widthMm), height: mm(custom!.heightMm) };
+    return orientation === "landscape" ? { width: base.height, height: base.width } : base;
+  }
+  base = PAGE_SIZE_PT[pageSize];
   const long = Math.max(base.width, base.height);
   const short = Math.min(base.width, base.height);
   return orientation === "landscape" ? { width: long, height: short } : { width: short, height: long };

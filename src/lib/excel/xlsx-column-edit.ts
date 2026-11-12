@@ -33,6 +33,16 @@ export interface XlsxEditSheet {
   /** 表示用の値（文字）。1行目〜最後の行、A列〜最後の列。数式は計算結果の値、日付は yyyy/mm/dd */
   rows: string[][];
   formulaCount: number;
+  /** 結合セルの範囲（0始まり。r1・c1が左上、r2・c2が右下） */
+  merges: { r1: number; c1: number; r2: number; c2: number }[];
+}
+
+function parseA1(ref: string): { row: number; col: number } | null {
+  const m = /^\$?([A-Z]+)\$?(\d+)$/.exec(ref.toUpperCase());
+  if (!m) return null;
+  let col = 0;
+  for (const ch of m[1]) col = col * 26 + (ch.charCodeAt(0) - 64);
+  return { row: Number(m[2]), col };
 }
 
 /** プレビュー・列の一覧用に、ブックの全シートの値を読む（元のファイルは変更しない） */
@@ -45,7 +55,12 @@ export async function loadXlsxForColumnEdit(file: File): Promise<XlsxEditSheet[]
       rows[cell.row - 1][cell.col - 1] = cellValueText(cell);
       if (cell.formula !== null) formulaCount++;
     }
-    return { name: sheet.name, hidden: sheet.hidden, rows, formulaCount };
+    const merges = (sheet.merges ?? []).flatMap((ref) => {
+      const [a, b] = ref.split(":").map(parseA1);
+      if (!a || !b) return [];
+      return [{ r1: Math.min(a.row, b.row) - 1, c1: Math.min(a.col, b.col) - 1, r2: Math.max(a.row, b.row) - 1, c2: Math.max(a.col, b.col) - 1 }];
+    });
+    return { name: sheet.name, hidden: sheet.hidden, rows, formulaCount, merges };
   });
 }
 

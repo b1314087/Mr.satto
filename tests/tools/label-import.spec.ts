@@ -335,3 +335,14 @@ test.describe("Excel・CSVの読み込み", () => {
     await expect(page.getByText("古い形式（.xls）は読み込めません")).toBeVisible();
   });
 });
+
+test("Excel・CSVの取り込み欄は、設定のいちばん上。設定は見出しを押すと開閉する（総合改修 3-1・3-2）", async ({ page }) => {
+  await openTool(page);
+  const ids = await page.getByTestId("label-settings").locator(":scope > details").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+  expect(ids).toEqual(["label-section-content", "label-section-paper", "label-section-style", "label-section-format"]);
+  await expect(page.getByTestId("label-section-content").getByText("Excel・CSVのファイルをドラッグ&ドロップ")).toBeVisible();
+  const paper = page.getByTestId("label-section-paper");
+  await paper.locator("summary").click();
+  await expect(paper).not.toHaveAttribute("open", "");
+  await expect(page.getByTestId("label-section-style")).toHaveAttribute("open", "");
+});

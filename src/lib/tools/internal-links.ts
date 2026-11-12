@@ -29,7 +29,8 @@ export const POPULAR_TOOL_IDS: readonly string[] = [
   "image-crop",
   "image-format-convert",
   "excel-csv-convert",
-  "estimate-generator",
+  // 総合改修 10：見積書作成は「見積書・注文書・請求書作成」（document-suite）に統合した
+  "document-suite",
   "video-compress",
   "video-h264",
   // 工程4：OCRはPDF→テキスト（OCR対応）に統合した

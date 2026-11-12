@@ -50,6 +50,10 @@ import { downloadBlob } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
 import { usePremiumFeature } from "@/lib/plans/use-premium-feature";
 import { RunBar } from "@/components/ui/run-bar";
+import { usePrehydrationValue } from "@/lib/hooks/use-prehydration-value";
+import { Segmented } from "@/components/ui/segmented";
+import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
+import { PositionSliders } from "@/components/common/position-sliders";
 
 /**
  * 電子印鑑生成ツール（Phase 16）。
@@ -58,7 +62,8 @@ import { RunBar } from "@/components/ui/run-bar";
  * 法的な効力を持つ電子署名・デジタル署名・電子契約を提供するものではない。
  * UI文言でもその旨を明示し、「電子署名」という語は使用しない。
  *
- * 「文字から作る」「印鑑を取り込む」の2モードを持つ。処理はすべて
+ * 「文字から作る」「印鑑を取り込む」「固有ID付きで作る」の3つの作成方法を持つ（総合改修 5-1。固有ID・QRコードの設定は、
+ * 固有ID付きで作るときだけ出す）。印影画像は PNG（透明）・JPEG（白背景）・WebP（透明）で書き出せる（5-3）。処理はすべて
  * ブラウザのCanvas上で完結し、画像・PDFの中身をサーバーへ送信したり、
  * localStorage/sessionStorage/IndexedDBへ保存したりすることは一切ない。
  *
@@ -74,7 +79,42 @@ import { RunBar } from "@/components/ui/run-bar";
  * バーで決めた位置に押し、PDFとして出力する(印影だけのPNGは出さない)。PDFもブラウザの中だけで読み込み・書き換える。
  */
 
-type Mode = "text" | "import";
+/** 作成方法（総合改修 5-1）：文字から作る・印鑑を取り込む・固有ID付きで作る */
+type Mode = "text" | "import" | "id";
+/** 固有ID付きで作るときの印影の元 */
+type IdSource = "text" | "import";
+/** 印影画像の出力形式（総合改修 5-3） */
+type StampImageFormat = "png" | "jpeg" | "webp";
+
+const FORMAT_INFO: Record<StampImageFormat, { label: string; ext: string; note: string }> = {
+  png: { label: "PNG", ext: "png", note: "背景は透明です。" },
+  jpeg: { label: "JPEG", ext: "jpg", note: "JPEGは透明にできないため、背景は白になります。" },
+  webp: { label: "WebP", ext: "webp", note: "背景は透明です。" },
+};
+
+/** 書き出しの付帯情報：qr＝QRコードを入れたか（固有IDだけでQRコードなしのときは false） */
+type ExportMeta = { qr: boolean };
+type OnExport = (exported: StampExport | Promise<StampExport>, info: StampQrInfo | null, meta?: ExportMeta) => void | Promise<void>;
+
+/** 出力形式の選択（PNG・JPEG・WebP）。JPEGは背景が白になることを、選んだ時点で案内する */
+function OutputFormatSection({ value, onChange, n }: { value: StampImageFormat; onChange: (v: StampImageFormat) => void; n?: number }) {
+  return (
+    <SettingsSection n={n} title="出力形式" testId="stamp-format-section" summary={FORMAT_INFO[value].label}>
+      <div className="flex flex-col gap-2">
+        <div className="ms-seg" role="group" aria-label="出力形式" data-testid="stamp-format">
+          {(["png", "jpeg", "webp"] as const).map((f) => (
+            <button key={f} type="button" aria-pressed={value === f} onClick={() => onChange(f)} data-testid={`stamp-format-${f}`}>
+              {FORMAT_INFO[f].label}
+            </button>
+          ))}
+        </div>
+        <p className={`text-xs ${value === "jpeg" ? "text-amber-700 dark:text-amber-400" : "text-neutral-500 dark:text-neutral-400"}`} data-testid="stamp-format-note">
+          {FORMAT_INFO[value].note}
+        </p>
+      </div>
+    </SettingsSection>
+  );
+}
 
 /** 作った印影の出力：印影のPNG、または、印影を押したPDF(固有番号とQRコードを入れるとき) */
 type StampExport =
@@ -181,12 +221,14 @@ const COLOR_OPTIONS: { id: StampColorId; label: string }[] = [
   { id: "blue", label: "青" },
 ];
 
-function extToSuffix(): string {
-  return "png";
-}
-
 export function ElectronicStampGeneratorTool() {
   const [mode, setMode] = useState<Mode>("text");
+  const [idSource, setIdSource] = useState<IdSource>("text");
+  const [format, setFormat] = useState<StampImageFormat>("png");
+  /** 完成した印影にQRコードを入れたか */
+  const [resultHasQr, setResultHasQr] = useState(false);
+  /** 完成した印影の出力形式（PNG・JPEG・WebP。PDFのときは使わない） */
+  const [resultFormat, setResultFormat] = useState<StampImageFormat>("png");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<StampResult | null>(null);
@@ -208,7 +250,7 @@ export function ElectronicStampGeneratorTool() {
     setError(null);
   }
 
-  async function handleExport(exported: StampExport | Promise<StampExport>, info: StampQrInfo | null) {
+  async function handleExport(exported: StampExport | Promise<StampExport>, info: StampQrInfo | null, meta: ExportMeta = { qr: info !== null }) {
     const issuedSerial = info?.serial ?? null;
     setStatus("processing");
     setError(null);
@@ -216,7 +258,7 @@ export function ElectronicStampGeneratorTool() {
       const done = await exported;
       const output: StampResult =
         done.kind === "png"
-          ? { kind: "png", ...(await new StampExportProcessor().process({ canvas: done.canvas })) }
+          ? { kind: "png", ...(await new StampExportProcessor().process({ canvas: done.canvas, format })) }
           : {
               kind: "pdf",
               blob: done.blob,
@@ -230,6 +272,8 @@ export function ElectronicStampGeneratorTool() {
       if (result) URL.revokeObjectURL(result.url);
       setSerial(issuedSerial);
       setQrInfo(info);
+      setResultHasQr(meta.qr);
+      setResultFormat(format);
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -240,47 +284,62 @@ export function ElectronicStampGeneratorTool() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            setMode("text");
-            resetResult();
-          }}
-          aria-pressed={mode === "text"}
-          className={`rounded-lg px-4 py-2 text-sm font-medium ${
-            mode === "text"
-              ? "bg-blue-600 text-white"
-              : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-          }`}
-        >
-          文字から作る
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMode("import");
-            resetResult();
-          }}
-          aria-pressed={mode === "import"}
-          className={`rounded-lg px-4 py-2 text-sm font-medium ${
-            mode === "import"
-              ? "bg-blue-600 text-white"
-              : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-          }`}
-        >
-          印鑑を取り込む
-        </button>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="作成方法" data-testid="stamp-mode">
+        {(
+          [
+            { id: "text", label: "文字から作る" },
+            { id: "import", label: "印鑑を取り込む" },
+            { id: "id", label: "固有ID付きで作る" },
+          ] as const
+        ).map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => {
+              // 固有ID付きに切り替えるときは、いま作っている印影（文字・取り込み）をそのまま使う（入力を消さない）
+              if (m.id === "id" && mode !== "id") setIdSource(mode);
+              setMode(m.id);
+              resetResult();
+            }}
+            aria-pressed={mode === m.id}
+            className={`rounded-lg px-4 py-2 text-sm font-medium ${
+              mode === m.id ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
       </div>
+
+      {mode === "id" && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            生成するたびに固有ID（例：MS-7K9P-2XQ8-4D6A）を作ります。作成日・認証コードは任意で付けられ、QRコードを入れるかどうかも選べます。
+          </p>
+          <Segmented
+            ariaLabel="印影の元"
+            testId="stamp-id-source"
+            value={idSource}
+            onChange={(v: IdSource) => {
+              setIdSource(v);
+              resetResult();
+            }}
+            options={[
+              { value: "text", label: "文字から作る" },
+              { value: "import", label: "取り込んだ印鑑を使う" },
+            ]}
+          />
+        </div>
+      )}
 
       <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
         本ツールで作成・取り込みできるのは「印影画像」です。法的な効力を持つ電子署名・デジタル署名を提供するものではありません。
       </p>
 
-      {mode === "text" ? (
-        <TextStampPanel onExport={handleExport} status={status} />
+      {(mode === "id" ? idSource : mode) === "text" ? (
+        <TextStampPanel key="text" idMode={mode === "id"} onExport={handleExport} status={status} format={format} onFormat={setFormat} />
       ) : (
-        <ImportStampPanel onExport={handleExport} status={status} />
+        <ImportStampPanel key="import" idMode={mode === "id"} onExport={handleExport} status={status} format={format} onFormat={setFormat} />
       )}
 
       <ProcessingStatus state={status} processingLabel="生成中..." successLabel="印影画像が完成しました" />
@@ -299,11 +358,11 @@ export function ElectronicStampGeneratorTool() {
           <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="stamp-result-summary">
             {result.kind === "pdf"
               ? `この印影を、PDF（全${result.pageCount}ページ）の${formatPageNumbers(result.pageNumbers)}に押しました。`
-              : `${result.width} × ${result.height}px（透明PNG）`}
+              : `${result.width} × ${result.height}px（${resultFormat === "jpeg" ? "白背景のJPEG" : resultFormat === "webp" ? "透明WebP" : "透明PNG"}）`}
           </p>
           {serial && qrInfo && (
-            <div className="text-sm text-neutral-700 dark:text-neutral-200" data-testid="stamp-qr-contents">
-              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">QRコードに入っている情報</p>
+            <div className="text-sm text-neutral-700 dark:text-neutral-200" data-testid={resultHasQr ? "stamp-qr-contents" : "stamp-id-contents"}>
+              <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{resultHasQr ? "QRコードに入っている情報" : "この印影の固有ID（QRコードは入れていません）"}</p>
               <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
                 <dt>固有番号</dt>
                 <dd data-testid="stamp-serial" className="font-mono font-semibold">{serial}</dd>
@@ -321,21 +380,22 @@ export function ElectronicStampGeneratorTool() {
                 )}
               </dl>
               <span className="mt-1 block text-xs text-neutral-500 dark:text-neutral-400">
-                QRコードには、上の情報だけが入っています（名前などは入っていません）。番号はこのブラウザの中で作り、どこにも送信・保存していません。
-                QRコードの情報はだれでもコピー・編集できるため、印影の複製を防いだり、作成者本人であることを証明したりするものではありません。
+                {resultHasQr
+                  ? "QRコードには、上の情報だけが入っています（名前などは入っていません）。番号はこのブラウザの中で作り、どこにも送信・保存していません。QRコードの情報はだれでもコピー・編集できるため、印影の複製を防いだり、作成者本人であることを証明したりするものではありません。"
+                  : "固有IDは、ファイル名にも入ります。番号はこのブラウザの中で作り、どこにも送信・保存していません。控えとして記録しておいてください。"}
               </span>
             </div>
           )}
           <RewardedDownloadGate
-            label={result.kind === "pdf" ? "PDFをダウンロード" : "PNGをダウンロード"}
+            label={result.kind === "pdf" ? "PDFをダウンロード" : `${FORMAT_INFO[resultFormat].label}をダウンロード`}
             onDownload={() =>
               downloadBlob(
                 result.blob,
                 result.kind === "pdf"
                   ? `electronic-stamp-${serial ?? "stamped"}.pdf`
                   : serial
-                    ? `electronic-stamp-${serial}.${extToSuffix()}`
-                    : `electronic-stamp.${extToSuffix()}`
+                    ? `electronic-stamp-${serial}.${FORMAT_INFO[resultFormat].ext}`
+                    : `electronic-stamp.${FORMAT_INFO[resultFormat].ext}`
               )
             }
           />
@@ -350,11 +410,18 @@ export function ElectronicStampGeneratorTool() {
 // ---------------------------------------------------------------------------
 
 function TextStampPanel({
+  idMode,
   onExport,
   status,
+  format,
+  onFormat,
 }: {
-  onExport: (exported: StampExport | Promise<StampExport>, info: StampQrInfo | null) => void | Promise<void>;
+  /** 固有ID付きで作るとき（固有ID・QRコードの設定を出す） */
+  idMode: boolean;
+  onExport: OnExport;
   status: ProcessingState;
+  format: StampImageFormat;
+  onFormat: (v: StampImageFormat) => void;
 }) {
   const [text, setText] = useState("印");
   const [shape, setShape] = useState<StampShape>("round");
@@ -366,7 +433,8 @@ function TextStampPanel({
   const [color, setColor] = useState<StampColorId>("red");
   const [offsetXPct, setOffsetXPct] = useState(0);
   const [offsetYPct, setOffsetYPct] = useState(0);
-  const [withQr, setWithQr] = useState(false);
+  // 固有ID付きで作るときは、QRコードを入れるのが既定（外すと、固有IDだけを付けた印影画像になる）
+  const [withQr, setWithQr] = useState(idMode);
   /** QRコードを置く隅(丸印は円の外側、角印は枠の内側) */
   const [qrCorner, setQrCorner] = useState<StampQrCorner>("bottom-right");
   /** QRコードに入れる、任意の印鑑作成日・認証コード(入力されたそのまま) */
@@ -376,10 +444,19 @@ function TextStampPanel({
   const [target, setTarget] = useState<StampPdfTargetValue | null>(null);
   /** 複数ページ押印(プレミアムの機能)を使えるか */
   const premium = usePremiumFeature();
+  // 作成方法を切り替えたとき：固有ID付きではQRコードを入れるのが既定。固有ID付きをやめたら、QRコードと押印するPDFを外す
+  const [prevIdMode, setPrevIdMode] = useState(idMode);
+  if (prevIdMode !== idMode) {
+    setPrevIdMode(idMode);
+    setWithQr(idMode);
+    setTarget(null);
+  }
   // 未入力の項目はQRコードに入れない(空のときは渡さない)
   const qrOptional = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
 
   const previewRef = useRef<HTMLCanvasElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+  usePrehydrationValue(textInputRef, text, setText);
   const latestCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // カスタムフォント（篆書体・印相体・古印体・隷書体など、ユーザー自身が
@@ -476,7 +553,7 @@ function TextStampPanel({
 
   const qrFits = canPlaceStampQr({ sizePx, shape, borderWidthRatio, ...qrOptional });
   const qrMinSize = withQr && !qrFits ? stampQrMinSizePx({ shape, borderWidthRatio, ...qrOptional }) : null;
-  const qrInputError = withQr ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
+  const qrInputError = idMode ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
 
   /** 「印影画像を生成する」：固有番号を発行し、その番号のQRコードを入れた印影を作る */
   const stampBase = {
@@ -524,6 +601,12 @@ function TextStampPanel({
   /** 「生成する」：QRコードなしなら印影のPNG。QRコードを入れるなら、番号を発行し、その印影を選んだPDFに押す */
   function exportWithSerial() {
     if (!withQr) {
+      if (idMode) {
+        // 固有IDだけ（QRコードなし）：番号を発行し、結果とファイル名に出す。印影の表面には入れない
+        if (qrInputError) return;
+        void onExport({ kind: "png", canvas: generateStampCanvas(stampBase) }, { serial: generateStampSerial(), ...qrOptional }, { qr: false });
+        return;
+      }
       void onExport({ kind: "png", canvas: generateStampCanvas(stampBase) }, null);
       return;
     }
@@ -545,166 +628,109 @@ function TextStampPanel({
               </div>
       }
     >
-      <div className="flex flex-1 flex-col gap-4">
-        <div>
-          <label htmlFor="stamp-text-input" className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            文字
-          </label>
-          <input
-            id="stamp-text-input"
-            type="text"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            maxLength={STAMP_LIMITS.maxTextLength + 4}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            placeholder="例）印、山田、承認"
-          />
-          {textTooLong && (
-            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-              文字数は{STAMP_LIMITS.maxTextLength}文字以内でご利用ください。
-            </p>
-          )}
-        </div>
-
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">印影タイプ</legend>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              aria-pressed={shape === "round"}
-              onClick={() => setShape("round")}
-              className={`rounded-lg px-3 py-1.5 text-sm ${shape === "round" ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
-            >
-              丸印
-            </button>
-            <button
-              type="button"
-              aria-pressed={shape === "square"}
-              onClick={() => setShape("square")}
-              className={`rounded-lg px-3 py-1.5 text-sm ${shape === "square" ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
-            >
-              角印
-            </button>
+      <SettingsStack className="flex-1" testId="stamp-text-settings">
+        <SettingsSection n={1} title="文字" testId="stamp-section-text" summary={text}>
+          <div>
+            <label htmlFor="stamp-text-input" className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">
+              文字
+            </label>
+            <input
+              ref={textInputRef}
+              id="stamp-text-input"
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              maxLength={STAMP_LIMITS.maxTextLength + 4}
+              className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+              placeholder="例）印、山田、承認"
+            />
+            {textTooLong && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                文字数は{STAMP_LIMITS.maxTextLength}文字以内でご利用ください。
+              </p>
+            )}
           </div>
-        </fieldset>
+        </SettingsSection>
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">文字の向き</legend>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              aria-pressed={layout === "vertical"}
-              onClick={() => setLayout("vertical")}
-              className={`rounded-lg px-3 py-1.5 text-sm ${layout === "vertical" ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
-            >
-              縦書き
-            </button>
-            <button
-              type="button"
-              aria-pressed={layout === "horizontal"}
-              onClick={() => setLayout("horizontal")}
-              className={`rounded-lg px-3 py-1.5 text-sm ${layout === "horizontal" ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
-            >
-              横書き
-            </button>
-          </div>
-        </fieldset>
-
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">色</legend>
-          <div className="ms-seg">
-            {COLOR_OPTIONS.map((c) => (
+        <SettingsSection
+          n={2}
+          title="形・色・大きさ"
+          testId="stamp-section-look"
+          summary={`${shape === "round" ? "丸印" : "角印"}・${layout === "vertical" ? "縦書き" : "横書き"}・${COLOR_OPTIONS.find((c) => c.id === color)?.label ?? ""}`}
+          bodyClassName="flex flex-col gap-4"
+        >
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">印影タイプ</legend>
+            <div className="flex gap-2">
               <button
-                key={c.id}
                 type="button"
-                aria-pressed={color === c.id}
-                onClick={() => setColor(c.id)}
+                aria-pressed={shape === "round"}
+                onClick={() => setShape("round")}
+                className={`rounded-lg px-3 py-1.5 text-sm ${shape === "round" ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
               >
-                <span
-                  aria-hidden="true"
-                  className="h-3 w-3 rounded-full"
-                  style={{ backgroundColor: STAMP_COLORS[c.id] }}
-                />
-                {c.label}
+                丸印
               </button>
-            ))}
-          </div>
-        </fieldset>
+              <button
+                type="button"
+                aria-pressed={shape === "square"}
+                onClick={() => setShape("square")}
+                className={`rounded-lg px-3 py-1.5 text-sm ${shape === "square" ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
+              >
+                角印
+              </button>
+            </div>
+          </fieldset>
 
-        <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
-          印影サイズ（{sizePx}px）
-          <input
-            type="range"
-            min={STAMP_LIMITS.minStampSizePx}
-            max={STAMP_LIMITS.maxStampSizePx}
-            step={10}
-            value={sizePx}
-            onChange={(e) => setSizePx(Number(e.target.value))}
-          />
-        </label>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">文字の向き</legend>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                aria-pressed={layout === "vertical"}
+                onClick={() => setLayout("vertical")}
+                className={`rounded-lg px-3 py-1.5 text-sm ${layout === "vertical" ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
+              >
+                縦書き
+              </button>
+              <button
+                type="button"
+                aria-pressed={layout === "horizontal"}
+                onClick={() => setLayout("horizontal")}
+                className={`rounded-lg px-3 py-1.5 text-sm ${layout === "horizontal" ? "bg-blue-600 text-white" : "bg-neutral-100 dark:bg-neutral-800"}`}
+              >
+                横書き
+              </button>
+            </div>
+          </fieldset>
 
-        <QrOption
-          checked={withQr}
-          onChange={(v) => {
-            setWithQr(v);
-            // チェックを外したら、選んでいたPDFも外す(もう一度チェックしたら、選び直す)
-            if (!v) setTarget(null);
-          }} />
-        {withQr && (
-          <QrInfoFields createdDate={createdDate} onCreatedDate={setCreatedDate} authCode={authCode} onAuthCode={setAuthCode} />
-        )}
-        {withQr && (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">QRコードの位置</span>
-            <div className="ms-seg" role="group" aria-label="QRコードの位置">
-              {STAMP_QR_CORNERS.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  data-testid={`qr-corner-${c.id}`}
-                  aria-pressed={qrCorner === c.id}
-                  onClick={() => setQrCorner(c.id)}
-                >
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">色</legend>
+            <div className="ms-seg">
+              {COLOR_OPTIONS.map((c) => (
+                <button key={c.id} type="button" aria-pressed={color === c.id} onClick={() => setColor(c.id)}>
+                  <span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ backgroundColor: STAMP_COLORS[c.id] }} />
                   {c.label}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {shape === "round"
-                ? "丸印では、円の外側の隅に置きます（円の大きさは変えず、QRコードの分だけ画像が大きくなります）。"
-                : "角印では、枠の内側の隅に置き、文字はQRコードと重ならない大きさで中央に置きます。"}
-            </p>
-          </div>
-        )}
-        {withQr && !qrFits && (
-          <p className="text-xs text-amber-700 dark:text-amber-400">
-            この大きさでは、QRコードを入れる場所が足りません。
-            {qrMinSize !== null ? `印影サイズを${qrMinSize}px以上にするか、枠を細くしてください` : "枠を細くしてください"}
-            （QRコードを入れない場合は、「固有番号とQRコードを入れる」のチェックを外してください）。
-          </p>
-        )}
-        {withQr && (
-          <StampPdfTarget
-            value={target}
-            onChange={setTarget}
-            stamp={placementStamp}
-            imageWidthRatio={placementStamp ? placementStamp.width / stampSizePx : 1}
-            multiPage={premium.allowed}
-          />
-        )}
+          </fieldset>
 
-        <SliderField
-          label="文字サイズ"
-          value={Math.round(fontScale * 100)}
-          min={50}
-          max={150}
-          step={5}
-          unit="%"
-          onChange={(v) => setFontScale(v / 100)}
-        />
+          <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
+            印影サイズ（{sizePx}px）
+            <input
+              type="range"
+              min={STAMP_LIMITS.minStampSizePx}
+              max={STAMP_LIMITS.maxStampSizePx}
+              step={10}
+              value={sizePx}
+              onChange={(e) => setSizePx(Number(e.target.value))}
+            />
+          </label>
 
-        <fieldset className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700">
-          <legend className="mb-1 px-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">フォント</legend>
+          <SliderField label="文字サイズ" value={Math.round(fontScale * 100)} min={50} max={150} step={5} unit="%" onChange={(v) => setFontScale(v / 100)} />
+        </SettingsSection>
+
+        <SettingsSection n={3} title="フォント" testId="stamp-section-font" summary={customFont ? customFont.fileName : "標準（ゴシック体）"} bodyClassName="flex flex-col gap-2">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             標準はゴシック体です。篆書体・印相体などを使うときは、お手持ちのフォントファイル（.ttf / .otf / .woff / .woff2）を選んでください（ブラウザの中だけで使います）。
           </p>
@@ -724,9 +750,7 @@ function TextStampPanel({
             )}
           </div>
           <ProcessingStatus state={fontLoading ? "processing" : "idle"} processingLabel="読み込み中..." />
-          {customFont && !fontLoading && (
-            <p className="text-xs text-neutral-600 dark:text-neutral-300">使用中: {customFont.fileName}</p>
-          )}
+          {customFont && !fontLoading && <p className="text-xs text-neutral-600 dark:text-neutral-300">使用中: {customFont.fileName}</p>}
           {fontError && <ErrorMessage message={fontError} />}
           {customFont && (
             <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
@@ -734,59 +758,84 @@ function TextStampPanel({
               太字で描画する
             </label>
           )}
-        </fieldset>
+        </SettingsSection>
 
-        <details className="rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-700">
-          <summary className="cursor-pointer font-medium text-neutral-700 dark:text-neutral-200">
-            詳細設定（枠の太さ・余白・位置調整）
-          </summary>
-          <div className="mt-3 flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-neutral-700 dark:text-neutral-200">
-              枠の太さ
-              <input
-                type="range"
-                min={0.01}
-                max={0.1}
-                step={0.005}
-                value={borderWidthRatio}
-                onChange={(e) => setBorderWidthRatio(Number(e.target.value))}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-neutral-700 dark:text-neutral-200">
-              内側の余白
-              <input
-                type="range"
-                min={0}
-                max={0.3}
-                step={0.01}
-                value={paddingRatio}
-                onChange={(e) => setPaddingRatio(Number(e.target.value))}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-neutral-700 dark:text-neutral-200">
-              文字位置（左右）
-              <input
-                type="range"
-                min={-20}
-                max={20}
-                step={1}
-                value={offsetXPct}
-                onChange={(e) => setOffsetXPct(Number(e.target.value))}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-neutral-700 dark:text-neutral-200">
-              文字位置（上下）
-              <input
-                type="range"
-                min={-20}
-                max={20}
-                step={1}
-                value={offsetYPct}
-                onChange={(e) => setOffsetYPct(Number(e.target.value))}
-              />
-            </label>
-          </div>
-        </details>
+        <SettingsSection n={4} title="詳細設定（枠の太さ・余白・文字の位置）" testId="stamp-section-detail" defaultOpen={false} bodyClassName="flex flex-col gap-3 text-sm">
+          <label className="flex flex-col gap-1 text-neutral-700 dark:text-neutral-200">
+            枠の太さ
+            <input type="range" min={0.01} max={0.1} step={0.005} value={borderWidthRatio} onChange={(e) => setBorderWidthRatio(Number(e.target.value))} />
+          </label>
+          <label className="flex flex-col gap-1 text-neutral-700 dark:text-neutral-200">
+            内側の余白
+            <input type="range" min={0} max={0.3} step={0.01} value={paddingRatio} onChange={(e) => setPaddingRatio(Number(e.target.value))} />
+          </label>
+          <PositionSliders
+            x={offsetXPct}
+            y={offsetYPct}
+            min={-20}
+            max={20}
+            step={1}
+            xLabel="文字位置（左右）"
+            yLabel="文字位置（上下）"
+            onChange={({ x, y }) => {
+              setOffsetXPct(x);
+              setOffsetYPct(y);
+            }}
+            testId="stamp-text-offset"
+          />
+        </SettingsSection>
+
+        {idMode && (
+          <SettingsSection n={5} title="固有ID・QRコード" testId="stamp-section-id" summary={withQr ? "QRコードあり" : "QRコードなし"} bodyClassName="flex flex-col gap-3">
+            <QrOption
+              checked={withQr}
+              onChange={(v) => {
+                setWithQr(v);
+                // チェックを外したら、選んでいたPDFも外す(もう一度チェックしたら、選び直す)
+                if (!v) setTarget(null);
+              }}
+            />
+            <QrInfoFields createdDate={createdDate} onCreatedDate={setCreatedDate} authCode={authCode} onAuthCode={setAuthCode} withQr={withQr} />
+            {withQr && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">QRコードの位置</span>
+                <div className="ms-seg" role="group" aria-label="QRコードの位置">
+                  {STAMP_QR_CORNERS.map((c) => (
+                    <button key={c.id} type="button" data-testid={`qr-corner-${c.id}`} aria-pressed={qrCorner === c.id} onClick={() => setQrCorner(c.id)}>
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {shape === "round"
+                    ? "丸印では、円の外側の隅に置きます（円の大きさは変えず、QRコードの分だけ画像が大きくなります）。"
+                    : "角印では、枠の内側の隅に置き、文字はQRコードと重ならない大きさで中央に置きます。"}
+                </p>
+              </div>
+            )}
+            {withQr && !qrFits && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                この大きさでは、QRコードを入れる場所が足りません。
+                {qrMinSize !== null ? `印影サイズを${qrMinSize}px以上にするか、枠を細くしてください` : "枠を細くしてください"}
+                （QRコードを入れない場合は、「QRコードを入れる」のチェックを外してください）。
+              </p>
+            )}
+          </SettingsSection>
+        )}
+
+        {idMode && withQr ? (
+          <SettingsSection n={6} title="押印するPDF" testId="stamp-section-pdf">
+            <StampPdfTarget
+              value={target}
+              onChange={setTarget}
+              stamp={placementStamp}
+              imageWidthRatio={placementStamp ? placementStamp.width / stampSizePx : 1}
+              multiPage={premium.allowed}
+            />
+          </SettingsSection>
+        ) : (
+          <OutputFormatSection n={idMode ? 6 : 5} value={format} onChange={onFormat} />
+        )}
 
         <RunBar>
           <button
@@ -799,7 +848,7 @@ function TextStampPanel({
             印影画像を生成する
           </button>
         </RunBar>
-      </div>
+      </SettingsStack>
     </PreviewSplitLayout>
   );
 }
@@ -809,11 +858,18 @@ function TextStampPanel({
 // ---------------------------------------------------------------------------
 
 function ImportStampPanel({
+  idMode,
   onExport,
   status,
+  format,
+  onFormat,
 }: {
-  onExport: (exported: StampExport | Promise<StampExport>, info: StampQrInfo | null) => void | Promise<void>;
+  /** 固有ID付きで作るとき（固有ID・QRコードの設定を出す） */
+  idMode: boolean;
+  onExport: OnExport;
   status: ProcessingState;
+  format: StampImageFormat;
+  onFormat: (v: StampImageFormat) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [step, setStep] = useState<ImportStep>("select");
@@ -848,14 +904,21 @@ function ImportStampPanel({
   const [thresholdPercent, setThresholdPercent] = useState(55);
   const [autoTrimEnabled, setAutoTrimEnabled] = useState(true);
   const [scalePercent, setScalePercent] = useState(100);
-  const [withQr, setWithQr] = useState(false);
+  const [withQr, setWithQr] = useState(idMode);
   const [createdDate, setCreatedDate] = useState("");
   const [authCode, setAuthCode] = useState("");
-  const qrInputError = withQr ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
+  const qrInputError = idMode ? (validateStampCreatedDate(createdDate) ?? validateStampAuthCode(authCode)) : null;
   /** 固有番号とQRコードを入れるときに押印するPDFと、押す位置 */
   const [target, setTarget] = useState<StampPdfTargetValue | null>(null);
   /** 複数ページ押印(プレミアムの機能)を使えるか */
   const premium = usePremiumFeature();
+  // 作成方法を切り替えたとき：固有ID付きではQRコードを入れるのが既定。固有ID付きをやめたら、QRコードと押印するPDFを外す
+  const [prevIdMode, setPrevIdMode] = useState(idMode);
+  if (prevIdMode !== idMode) {
+    setPrevIdMode(idMode);
+    setWithQr(idMode);
+    setTarget(null);
+  }
   /** 調整後の印影(PDFの上の位置を見せるため。finalCanvasRef と同じもの) */
   const [finalCanvas, setFinalCanvas] = useState<HTMLCanvasElement | null>(null);
   const optionalInfo = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
@@ -1190,69 +1253,70 @@ function ImportStampPanel({
                       </div>
           }
         >
-          <div className="flex flex-1 flex-col gap-4">
-            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-              <input
-                type="checkbox"
-                checked={removalEnabled}
-                onChange={(e) => setRemovalEnabled(e.target.checked)}
-              />
-              背景を自動的に透明化する
-            </label>
-            <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
-              しきい値（{thresholdPercent}）
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                disabled={!removalEnabled}
-                value={thresholdPercent}
-                onChange={(e) => setThresholdPercent(Number(e.target.value))}
-              />
-            </label>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">背景が複雑な画像は、完全に分離できない場合があります。しきい値で調整してください。</p>
-            <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-              <input
-                type="checkbox"
-                checked={autoTrimEnabled}
-                onChange={(e) => setAutoTrimEnabled(e.target.checked)}
-              />
-              余白を自動的にトリミングする
-            </label>
-            {trimMessage && <p className="text-xs text-amber-700 dark:text-amber-400">{trimMessage}</p>}
-            <QrOption
-          checked={withQr}
-          onChange={(v) => {
-            setWithQr(v);
-            // チェックを外したら、選んでいたPDFも外す(もう一度チェックしたら、選び直す)
-            if (!v) setTarget(null);
-          }} note="取り込んだ印影には、印影の下にQRコードを並べます。" />
-            {withQr && <QrInfoFields createdDate={createdDate} onCreatedDate={setCreatedDate} authCode={authCode} onAuthCode={setAuthCode} />}
-            {withQr && (
-              <StampPdfTarget
-                value={target}
-                onChange={setTarget}
-                stamp={placementStamp}
-                imageWidthRatio={placementStamp && finalCanvas ? placementStamp.width / finalCanvas.width : 1}
-                multiPage={premium.allowed}
-              />
-            )}
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-1 text-sm font-medium text-neutral-700 dark:text-neutral-200">出力サイズ</legend>
-              <div className="ms-seg">
+          <SettingsStack className="flex-1" testId="stamp-import-settings">
+            <SettingsSection n={1} title="背景と余白" testId="stamp-section-background" summary={removalEnabled ? "背景を透明にする" : "背景をそのまま"} bodyClassName="flex flex-col gap-3">
+              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                <input type="checkbox" checked={removalEnabled} onChange={(e) => setRemovalEnabled(e.target.checked)} />
+                背景を自動的に透明化する
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
+                しきい値（{thresholdPercent}）
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  disabled={!removalEnabled}
+                  value={thresholdPercent}
+                  onChange={(e) => setThresholdPercent(Number(e.target.value))}
+                />
+              </label>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">背景が複雑な画像は、完全に分離できない場合があります。しきい値で調整してください。</p>
+              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                <input type="checkbox" checked={autoTrimEnabled} onChange={(e) => setAutoTrimEnabled(e.target.checked)} />
+                余白を自動的にトリミングする
+              </label>
+              {trimMessage && <p className="text-xs text-amber-700 dark:text-amber-400">{trimMessage}</p>}
+            </SettingsSection>
+
+            <SettingsSection n={2} title="出力サイズ" testId="stamp-section-scale" summary={`${scalePercent}%`}>
+              <div className="ms-seg" role="group" aria-label="出力サイズ">
                 {[50, 100, 150, 200].map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    aria-pressed={scalePercent === p}
-                    onClick={() => setScalePercent(p)}
-                  >
+                  <button key={p} type="button" aria-pressed={scalePercent === p} onClick={() => setScalePercent(p)}>
                     {p}%
                   </button>
                 ))}
               </div>
-            </fieldset>
+            </SettingsSection>
+
+            {idMode && (
+              <SettingsSection n={3} title="固有ID・QRコード" testId="stamp-section-id" summary={withQr ? "QRコードあり" : "QRコードなし"} bodyClassName="flex flex-col gap-3">
+                <QrOption
+                  checked={withQr}
+                  onChange={(v) => {
+                    setWithQr(v);
+                    // チェックを外したら、選んでいたPDFも外す(もう一度チェックしたら、選び直す)
+                    if (!v) setTarget(null);
+                  }}
+                  note="取り込んだ印影には、印影の下にQRコードを並べます。"
+                />
+                <QrInfoFields createdDate={createdDate} onCreatedDate={setCreatedDate} authCode={authCode} onAuthCode={setAuthCode} withQr={withQr} />
+              </SettingsSection>
+            )}
+
+            {idMode && withQr ? (
+              <SettingsSection n={4} title="押印するPDF" testId="stamp-section-pdf">
+                <StampPdfTarget
+                  value={target}
+                  onChange={setTarget}
+                  stamp={placementStamp}
+                  imageWidthRatio={placementStamp && finalCanvas ? placementStamp.width / finalCanvas.width : 1}
+                  multiPage={premium.allowed}
+                />
+              </SettingsSection>
+            ) : (
+              <OutputFormatSection n={idMode ? 4 : 3} value={format} onChange={onFormat} />
+            )}
 
             <RunBar>
               <button
@@ -1270,6 +1334,11 @@ function ImportStampPanel({
                   const source = finalCanvasRef.current;
                   if (!source || qrInputError) return;
                   if (!withQr) {
+                    if (idMode) {
+                      // 固有IDだけ（QRコードなし）：番号を発行し、結果とファイル名に出す
+                      void onExport({ kind: "png", canvas: source }, { serial: generateStampSerial(), ...optionalInfo }, { qr: false });
+                      return;
+                    }
                     void onExport({ kind: "png", canvas: source }, null);
                     return;
                   }
@@ -1284,23 +1353,27 @@ function ImportStampPanel({
                 印影画像を生成する
               </button>
             </RunBar>
-          </div>
+          </SettingsStack>
         </PreviewSplitLayout>
       )}
     </div>
   );
 }
 
-/** 固有番号とQRコードを入れるかの選択(文字から作る・取り込むの両方で使う) */
+/**
+ * QRコードを入れるかの選択（固有ID付きで作るときだけ出す。総合改修 5-1）。
+ * 固有IDは、QRコードを入れても入れなくても、生成するたびに必ず付く（QRコードを入れるときはIDが必須のため）。
+ */
 function QrOption({ checked, onChange, note }: { checked: boolean; onChange: (v: boolean) => void; note?: string }) {
   return (
     <div className="flex flex-col gap-1">
       <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
         <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-        固有番号とQRコードを入れる
+        QRコードを入れる
       </label>
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        生成するたびに固有番号（例：MS-7K9P-2XQ8-4D6A）を作り、作成日・認証コードとともにQRコードで印影に入れます（印影の表面には出しません）。
+        生成するたびに固有ID（例：MS-7K9P-2XQ8-4D6A）を作ります。QRコードを入れるときは、固有IDと、入力した作成日・認証コードだけをQRコードに入れ、押印するPDFに押します（印影の表面には文字で出しません）。
+        QRコードを入れないときは、固有IDを付けた印影画像になります（IDは結果の画面とファイル名に出ます）。
         番号はブラウザの中で作るため、重ならないことまでは保証できません（重なる可能性はきわめて低い番号です）。
         {note ? ` ${note}` : ""}
       </p>
@@ -1314,12 +1387,16 @@ function QrInfoFields({
   onCreatedDate,
   authCode,
   onAuthCode,
+  withQr = true,
 }: {
   createdDate: string;
   onCreatedDate: (v: string) => void;
   authCode: string;
   onAuthCode: (v: string) => void;
+  /** QRコードを入れるか（入れないときは、結果の画面に出すだけ） */
+  withQr?: boolean;
 }) {
+  const where = withQr ? "QRコード" : "結果の画面（固有IDの控え）";
   const dateError = validateStampCreatedDate(createdDate);
   const codeError = validateStampAuthCode(authCode);
   return (
@@ -1343,7 +1420,7 @@ function QrInfoFields({
           )}
         </span>
         <span className="text-xs text-neutral-500 dark:text-neutral-400">
-          入力した日付を、そのままQRコードに入れます（今日の日付などで置き換えません）。空欄なら、日付は入れません。
+          入力した日付を、そのまま{where}に入れます（今日の日付などで置き換えません）。空欄なら、日付は入れません。
         </span>
         {dateError && <span className="text-xs text-red-600 dark:text-red-400">{dateError}</span>}
       </label>
@@ -1361,7 +1438,7 @@ function QrInfoFields({
           className="w-full max-w-xs rounded-lg border border-neutral-300 bg-white px-3 py-1.5 font-mono text-sm dark:border-neutral-600 dark:bg-neutral-900"
         />
         <span className="text-xs text-neutral-500 dark:text-neutral-400">
-          自由に決めたコードを、そのままQRコードに入れます（印影には表示しません）。半角の英数字と記号、{STAMP_AUTH_CODE_MAX_LENGTH}文字まで。空欄なら入れません。
+          自由に決めたコードを、そのまま{where}に入れます（印影には表示しません）。半角の英数字と記号、{STAMP_AUTH_CODE_MAX_LENGTH}文字まで。空欄なら入れません。
           このコードは、本人確認や暗号による認証の仕組みではありません。
         </span>
         {codeError && <span className="text-xs text-red-600 dark:text-red-400">{codeError}</span>}

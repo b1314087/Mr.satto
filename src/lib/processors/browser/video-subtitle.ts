@@ -8,7 +8,9 @@ import {
   toFriendlyVideoError,
 } from "@/lib/video/shared";
 import { createBlobStreamTarget } from "@/lib/video/stream-output";
-import { buildWebVtt, type ResolvedCue, type SubtitleLanguage, type SubtitleStyle, SUBTITLE_LANGUAGE_OPTIONS } from "@/lib/video/subtitles";
+import { buildWebVtt, type ResolvedCue, type SubtitleLanguage, SUBTITLE_LANGUAGE_OPTIONS } from "@/lib/video/subtitles";
+import { drawSubtitles, type SubtitleBackground } from "@/lib/video/subtitle-render";
+import { runConversion, type OutputContainer } from "@/lib/video/shared";
 import { ensureMediabunny, mediabunny } from "@/lib/media/mediabunny-loader";
 
 /**
@@ -120,7 +122,8 @@ export async function hasMatroskaWebVttTrack(blob: Blob): Promise<boolean> {
 export interface VideoSubtitleInput {
   file: File;
   cues: ResolvedCue[];
-  style: SubtitleStyle;
+  /** 字幕の背景（帯）。全体の設定 */
+  background: SubtitleBackground;
   language: SubtitleLanguage;
   container: SubtitleContainer;
   onProgress?: (progress: number) => void;
@@ -141,7 +144,7 @@ export interface VideoSubtitleOutput {
 }
 
 export class VideoSubtitleProcessor extends BrowserProcessor<VideoSubtitleInput, VideoSubtitleOutput> {
-  async process({ file, cues, style, language, container, onProgress, cancelSignal }: VideoSubtitleInput): Promise<VideoSubtitleOutput> {
+  async process({ file, cues, background, language, container, onProgress, cancelSignal }: VideoSubtitleInput): Promise<VideoSubtitleOutput> {
     await ensureMediabunny();
     if (cues.length === 0) throw new VideoUserFacingError("字幕が1件も登録されていません。字幕を追加してから書き出してください。");
     if (cancelSignal?.aborted) throw new VideoCanceledByUserError();
@@ -195,7 +198,7 @@ export class VideoSubtitleProcessor extends BrowserProcessor<VideoSubtitleInput,
       try {
         if (cancelSignal?.aborted) throw new VideoCanceledByUserError();
         await output.start();
-        await subtitleSource.add(buildWebVtt(shiftCues(cues, shiftSec), style));
+        await subtitleSource.add(buildWebVtt(shiftCues(cues, shiftSec), background));
         subtitleSource.close();
         await conversion.execute();
         if (canceledByUser || cancelSignal?.aborted) throw new VideoCanceledByUserError();
@@ -279,4 +282,78 @@ async function verifySubtitleOutput(
     throw new VideoUserFacingError("字幕トラックを書き出せませんでした。もう一度お試しください。");
   }
   return copied;
+}
+
+// ---------------------------------------------------------------------------
+// 映像に焼き付ける（総合改修 11）
+// ---------------------------------------------------------------------------
+
+export interface VideoSubtitleBurnInput {
+  file: File;
+  cues: ResolvedCue[];
+  background: SubtitleBackground;
+  container: OutputContainer;
+  onProgress?: (progress: number) => void;
+  cancelSignal?: AbortSignal;
+  /** 音声を書き出せないときに、音声なしで書き出す（利用者が選んだときだけ） */
+  dropAudio?: boolean;
+}
+
+export interface VideoSubtitleBurnOutput {
+  blob: Blob;
+  url: string;
+  sizeBytes: number;
+  container: OutputContainer;
+  cueCount: number;
+  width: number;
+  height: number;
+  hasAudio: boolean;
+}
+
+/**
+ * 字幕を映像に焼き付けた動画を書き出す（見た目どおり。どの再生アプリ・SNSでも表示される）。
+ * 1コマずつ、プレビューと同じ描画関数（drawSubtitles）で字幕を描き、映像を作り直す。音声はできるだけそのまま入れる。
+ * フォント・縁取り・位置・フェードなど、字幕ごとの見た目がそのまま反映される。
+ */
+export class VideoSubtitleBurnProcessor extends BrowserProcessor<VideoSubtitleBurnInput, VideoSubtitleBurnOutput> {
+  async process({ file, cues, background, container, onProgress, cancelSignal, dropAudio }: VideoSubtitleBurnInput): Promise<VideoSubtitleBurnOutput> {
+    await ensureMediabunny();
+    if (cues.length === 0) throw new VideoUserFacingError("字幕が1件も登録されていません。字幕を追加してから書き出してください。");
+    if (cancelSignal?.aborted) throw new VideoCanceledByUserError();
+    const info = await inspectVideoFile(file);
+    try {
+      const W = info.displayWidth;
+      const H = info.displayHeight;
+      let canvas: OffscreenCanvas | HTMLCanvasElement;
+      if (typeof OffscreenCanvas !== "undefined") canvas = new OffscreenCanvas(W, H);
+      else {
+        canvas = document.createElement("canvas");
+        canvas.width = W;
+        canvas.height = H;
+      }
+      const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null;
+      if (!ctx) throw new Error("この環境では、字幕を焼き付けられません。");
+      const process = (sample: MB.VideoSample) => {
+        ctx.clearRect(0, 0, W, H);
+        // 回転の情報（縦向きに撮った動画など）も反映して、表示の向きで描く
+        sample.draw(ctx, 0, 0, W, H);
+        drawSubtitles(ctx, W, H, cues, sample.timestamp, background);
+        return canvas;
+      };
+      const { blob, sizeBytes } = await runConversion({
+        input: info.input,
+        container,
+        video: { process, processedWidth: W, processedHeight: H, forceTranscode: true },
+        onProgress,
+        cancelSignal,
+        dropAudio,
+      });
+      return { blob, url: URL.createObjectURL(blob), sizeBytes, container, cueCount: cues.length, width: W, height: H, hasAudio: info.hasAudio && !dropAudio };
+    } catch (e) {
+      if (e instanceof VideoCanceledByUserError || e instanceof VideoAudioWouldBeLostError) throw e;
+      throw toFriendlyVideoError(e);
+    } finally {
+      info.input.dispose();
+    }
+  }
 }

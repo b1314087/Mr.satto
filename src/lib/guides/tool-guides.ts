@@ -85,8 +85,8 @@ export const toolGuides: Record<string, ToolGuide> = {
   "image-compress": {
     split: true,
     steps: [
-      step("やることを選ぶ", [chips("やること（両方も選べます）", ["✓ サイズを変更", "＋ 容量を圧縮"], [0]), drop("画像をドラッグ&ドロップ")], 0),
-      step("画像を選ぶ", [chips("やること（両方も選べます）", ["✓ サイズを変更", "＋ 容量を圧縮"], [0]), drop("画像をドラッグ&ドロップ")], 1),
+      step("やることを選ぶ", [chips("やること（どちらか1つ）", ["✓ サイズを変更", "容量を圧縮"], [0]), drop("画像をドラッグ&ドロップ")], 0),
+      step("画像を選ぶ", [chips("やること（どちらか1つ）", ["✓ サイズを変更", "容量を圧縮"], [0]), drop("画像をドラッグ&ドロップ")], 1),
       step("サイズを入れる", [file(IMG), input2("幅 (px)", "1280", "高さ (px)", "720"), check("縦横比を固定"), preview("image")], 1),
       ...finish("リサイズする", "リサイズする", [file(IMG), input2("幅 (px)", "1280", "高さ (px)", "720"), check("縦横比を固定")]).slice(0, 1),
     ],
@@ -485,10 +485,10 @@ export const toolGuides: Record<string, ToolGuide> = {
   },
 
   // ------------------------------------------------------------------ 動画・音声
-  "video-convert": videoEdit("出力形式", ["MP4", "WebM"], 0, "元のまま・元の解像度・元のfps・回転なし・音声あり", "変換する"),
+  "video-convert": videoEdit("出力形式", ["MP4", "MOV", "WebM", "MKV"], 0, "元のまま・元の解像度・元のfps・回転なし・音声あり", "変換する"),
   "video-compress": videoEdit("画質・圧縮", ["元のまま", "高画質（弱め）", "標準", "高圧縮（強め）"], 2, "MP4・元の解像度・元のfps・回転なし・音声あり", "圧縮する"),
   "video-resize": videoEdit("解像度", ["元の解像度", "1080p", "720p", "480p"], 2, "MP4・元のまま・元のfps・回転なし・音声あり", "解像度を変更する"),
-  "video-frame-rate": videoEdit("フレームレート", ["元のフレームレート", "30fps", "24fps", "15fps"], 2, "MP4・元のまま・元の解像度・回転なし・音声あり", "フレームレートを変更する"),
+  "video-frame-rate": videoEdit("フレームレート", ["元のフレームレート", "60fps", "30fps", "24fps"], 2, "MP4・元のまま・元の解像度・回転なし・音声あり", "フレームレートを変更する"),
   "video-h264": {
     steps: [
       pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),
@@ -499,22 +499,36 @@ export const toolGuides: Record<string, ToolGuide> = {
   "video-thumbnail": {
     steps: [
       pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),
-      step("取り出す時点を決める", [file(MP4), seg(undefined, ["1枚（この時点）", "指定した時刻", "一定の間隔", "均等に"], 0), preview("video"), slider("抽出する時点", 0.4)], 3),
-      ...finish("抽出する", "この時点を抽出する", [file(MP4), slider("抽出する時点", 0.4), seg(undefined, ["PNG", "JPEG"], 0)], "画像をダウンロード"),
+      step("再生して一時停止する", [file(MP4), head("再生して、抽出したい位置で一時停止する", 1), preview("video")], 2),
+      ...finish("抽出する", "一時停止した位置を抽出する", [file(MP4), seg("画像形式", ["PNG", "JPEG"], 0)], "画像をダウンロード"),
     ],
   },
   // 動画カット・結合：不要部分を削除（最初のモード）。結合は「video-cut-merge@merge」
+  "excel-space-remove": {
+    steps: [
+      pick("Excelファイルを選ぶ", "Excelファイル（.xlsx）をドラッグ&ドロップ"),
+      step("消す空白を選ぶ", [file("名簿.xlsx"), head("消す空白の種類", 1), check("半角スペース"), check("全角スペース"), head("消す場所", 2), check("先頭の空白"), check("末尾の空白")], 1),
+      ...finish("保存する", "空白を整えて保存する", [file("名簿.xlsx"), head("消す場所", 2)], "Excelファイルをダウンロード"),
+    ],
+  },
+  "postal-search": {
+    steps: [
+      { title: "調べる向きを選ぶ", parts: [seg(undefined, ["郵便番号から住所", "住所から郵便番号"], 0)], focus: 0 },
+      { title: "郵便番号か住所を入れる", parts: [seg(undefined, ["郵便番号から住所", "住所から郵便番号"], 0), input("郵便番号", "100-0001"), btn("住所を調べる")], focus: 1 },
+      { title: "結果をコピーする", parts: [input("〒100-0001", "東京都千代田区千代田"), btn("コピー")], focus: 1 },
+    ],
+  },
   "video-cut-merge": {
     steps: [
       pick("「不要部分を削除」を選んで動画を選ぶ", "動画をドラッグ&ドロップ", [seg(undefined, ["不要部分を削除", "複数の動画を結合"], 0)]),
-      step("残したい区間を入れる", [file(MP4), input2("区間1 開始", "0:05.0", "区間1 終了", "0:20.0"), btn("＋ 区間を追加"), preview("video")], 1),
-      ...finish("書き出す", "不要部分を削除して書き出す", [file(MP4), input2("区間1 開始", "0:05.0", "区間1 終了", "0:20.0"), btn("＋ 区間を追加")]),
+      step("タイムラインで不要な範囲を削除する", [file(MP4), preview("video", "赤い行をドラッグして範囲を選ぶ"), btn("選んだ範囲を削除"), btn("▶ つないだ結果を再生")], 2),
+      ...finish("書き出す", "不要部分を削除して書き出す", [file(MP4), preview("video"), btn("選んだ範囲を削除")]),
     ],
   },
   "video-cut-merge@merge": {
     steps: [
       pick("「複数の動画を結合」を選んで動画を選ぶ", "動画をドラッグ&ドロップ（複数可）", [seg(undefined, ["不要部分を削除", "複数の動画を結合"], 1)]),
-      step("順番を確かめる", [file(MP4, true), file("movie2.mp4"), btn("↑"), preview("video")], 2),
+      step("順番と残す範囲を決める", [file(MP4, true), file("movie2.mp4"), btn("⋮⋮ ドラッグで並べ替え"), preview("video", "バーの端をドラッグして切り取る")], 2),
       ...finish("結合する", "動画を結合する", [file(MP4, true), file("movie2.mp4")]),
     ],
   },
@@ -524,9 +538,9 @@ export const toolGuides: Record<string, ToolGuide> = {
   "video-subtitle": {
     steps: [
       pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),
-      step("字幕を追加する", [file(MP4), preview("video"), head("字幕（1件）"), run("＋ 字幕を追加")], 3),
-      step("表示を整える", [head("字幕の表示設定"), seg(undefined, ["上", "中央", "下"], 2), seg(undefined, ["小", "中", "大", "特大"], 1), seg("字幕の言語", ["日本語", "英語", "指定しない"], 0)], 1),
-      ...finish("書き出す", "字幕つきの動画を書き出す", [head("字幕の表示設定"), seg("字幕の言語", ["日本語", "英語", "指定しない"], 0)]).slice(0, 1),
+      step("字幕を追加して時間を決める", [file(MP4), preview("video", "タイムラインのバーをドラッグ"), head("字幕（1件）"), run("＋ 字幕を追加")], 3),
+      step("字幕ごとの見た目を決める", [head("1番目の見た目"), seg("フォント", ["ゴシック", "太ゴシック", "明朝", "丸ゴシック"], 0), slider("文字の大きさ", 0.3), slider("横の位置（X）", 0.5), slider("縦の位置（Y）", 0.88)], 1),
+      ...finish("書き出す", "字幕つきの動画を書き出す", [head("書き出し"), seg(undefined, ["映像に焼き付ける", "字幕トラック"], 0)]).slice(0, 1),
     ],
   },
   "video-mosaic": {
@@ -616,6 +630,8 @@ export const toolGuides: Record<string, ToolGuide> = {
       step("保存する", [run("名刺二次元コードを生成する"), btn("画像としてダウンロード"), preview("qr")], 1),
     ],
   },
+  // 総合改修 10：統合した「見積書・注文書・請求書作成」。書類ごとの図は guideModes で切り替える
+  "document-suite": documentGuide("有効期限（任意）", "見積書を作成する"),
   "estimate-generator": documentGuide("有効期限（任意）", "見積書を作成する"),
   "invoice-generator": documentGuide("支払期限（任意）", "請求書を作成する"),
   "order-generator": documentGuide("納期（任意）", "注文書を作成する"),
@@ -631,19 +647,20 @@ export const toolGuides: Record<string, ToolGuide> = {
   postcard: {
     split: true,
     steps: [
-      step("はがきの向きを選ぶ", [head("はがきの向き", 1), seg(undefined, ["縦向き", "横向き"], 0), preview("postcard")], 1),
+      step("作る面とはがきの向きを選ぶ", [seg("作る面", ["文字・画像の面", "宛名面"], 0), head("はがきの向き", 1), seg(undefined, ["縦向き", "横向き"], 0), preview("postcard")], 2),
       step("文字を置く", [btn("＋ 文字を追加"), text("文字（改行できます）", ["あけまして", "おめでとうございます"]), slider("横の位置（X）", 0.5, "50%"), slider("縦の位置（Y）", 0.7, "70%"), preview("postcard")], 1),
       step("画像を置く", [btn("＋ 画像を追加"), slider("画像の大きさ（はがきの幅に対する割合）", 0.3, "60%"), slider("縦の位置（Y）", 0.3, "30%"), preview("postcard")], 0),
+      step("宛名面を作るとき", [seg("作る面", ["文字・画像の面", "宛名面"], 1), head("宛先", 1), input("郵便番号（7けた）", "100-0001"), text("住所", ["東京都千代田区千代田1-1"]), input("氏名", "山田 太郎")], 2),
       { title: "PDFにして印刷する", parts: [head("PDFにして印刷する", 3), run("PDFを作成する"), preview("postcard")], focus: 1 },
     ],
   },
   "envelope-address": {
     split: true,
     steps: [
-      step("封筒を選ぶ", [head("手順1： 封筒を選ぶ"), seg("封筒サイズ", ["長形3号（120×235mm）", "長形4号（90×205mm）", "角形2号（240×332mm）"], 0), seg("封筒の向き", ["縦向き", "横向き"], 0), preview("envelope")], 1),
-      step("宛先を入れる", [head("手順2： 宛先を入れる"), text("宛先1", ["〒100-0001", "東京都千代田区千代田1-1", "山田 太郎"]), seg("敬称（宛先の最後の行）", ["様", "御中", "なし"], 0), preview("envelope")], 1),
-      step("レイアウトを整える", [head("手順3： レイアウトを整える"), seg("書字方向", ["縦書き", "横書き"], 0), slider("宛先の文字サイズ", 0.4), preview("envelope")], 1),
-      { title: "PDFを作る", parts: [head("手順3： レイアウトを整える"), slider("宛先の文字サイズ", 0.4), run("PDFを作成"), preview("envelope")], focus: 2 },
+      step("封筒を選ぶ", [head("封筒を選ぶ", 2), seg("封筒サイズ", ["長形3号（120×235mm）", "長形4号（90×205mm）", "角形2号（240×332mm）"], 0), seg("封筒の向き", ["縦向き", "横向き"], 0), preview("envelope")], 1),
+      step("宛先を入れる", [head("宛先を入れる", 3), text("宛先1", ["〒100-0001", "東京都千代田区千代田1-1", "山田 太郎"]), seg("敬称（宛先の最後の行）", ["様", "御中", "なし"], 0), preview("envelope")], 1),
+      step("レイアウトを整える", [head("レイアウトを整える", 4), seg("書字方向", ["縦書き", "横書き"], 0), slider("宛先の文字サイズ", 0.4), preview("envelope")], 1),
+      { title: "PDFを作る", parts: [head("レイアウトを整える", 4), slider("宛先の文字サイズ", 0.4), run("PDFを作成"), preview("envelope")], focus: 2 },
     ],
   },
   "ticket-voucher": {
@@ -680,9 +697,9 @@ export const toolGuides: Record<string, ToolGuide> = {
   "electronic-stamp-generator": {
     split: true,
     steps: [
-      step("文字を入れる", [btns(["文字から作る", "印鑑を取り込む"], 0), input("文字", "山田"), btns(["丸印", "角印"], 0), preview("stamp")], 1),
-      step("色・大きさを決める", [seg("色", ["朱色", "黒", "青"], 0), slider("印影サイズ", 0.4, "300px"), check("固有番号とQRコードを入れる"), preview("stamp")], 0),
-      step("生成する", [seg("色", ["朱色", "黒", "青"], 0), run("印影画像を生成する"), preview("stamp")], 1),
+      step("作り方を選んで文字を入れる", [btns(["文字から作る", "印鑑を取り込む", "固有ID付きで作る"], 0), head("文字", 1), input("文字", "山田"), preview("stamp")], 0),
+      step("形・色・大きさを決める", [head("形・色・大きさ", 2), btns(["丸印", "角印"], 0), seg("色", ["朱色", "黒", "青"], 0), slider("印影サイズ", 0.4, "300px"), preview("stamp")], 2),
+      step("出力形式を選んで生成する", [head("出力形式", 5), seg(undefined, ["PNG", "JPEG", "WebP"], 0), run("印影画像を生成する"), preview("stamp")], 1),
     ],
   },
   "qr-generator": {
@@ -821,6 +838,16 @@ export const guideModes: Record<string, GuideModeOption[]> = {
     { mode: "excel-to-csv", label: "Excel → CSV", guideId: "excel-csv-convert" },
     { mode: "csv-to-excel", label: "CSV → Excel", guideId: "excel-csv-convert@csv-to-excel" },
   ],
+  "postal-search": [
+    { mode: "zip-to-address", label: "郵便番号から住所", guideId: "postal-search" },
+    { mode: "address-to-zip", label: "住所から郵便番号", guideId: "postal-search" },
+  ],
+  "document-suite": [
+    { mode: "estimate", label: "見積書", guideId: "estimate-generator" },
+    { mode: "quote-order", label: "見積書・注文書の一体作成", guideId: "quote-order-generator" },
+    { mode: "invoice", label: "請求書", guideId: "invoice-generator" },
+    { mode: "order", label: "注文書", guideId: "order-generator" },
+  ],
   "video-cut-merge": [
     { mode: "cut", label: "不要部分を削除", guideId: "video-cut-merge" },
     { mode: "merge", label: "複数の動画を結合", guideId: "video-cut-merge@merge" },
@@ -870,7 +897,7 @@ export function guideIdForMode(hubId: string, mode: string): string | null {
  * ほかのステップは、いま操作する部品から自動で作る（src/lib/guides/describe.ts）。
  */
 const descriptions: Record<string, Record<number, string>> = {
-  "image-compress": { 1: "「サイズを変更」「容量を圧縮」から、やりたいことを選びます。両方を選ぶこともできます。" },
+  "image-compress": { 1: "「サイズを変更」「容量を圧縮」から、やりたいことを1つ選びます。もう一方を押すと選択が切り替わります。" },
   "image-crop": { 3: "比率を選び、プレビューの枠をドラッグして、切り抜く範囲を決めます。" },
   "image-layout": { 2: "画像はドラッグで好きな位置に動かせます。「文字を追加」で文字も入れられます。" },
   "image-padding-text": { 3: "余白に表示する文字を入れ、文字の大きさと揃え方を選びます。" },
@@ -890,8 +917,8 @@ const descriptions: Record<string, Record<number, string>> = {
   "video-mosaic": { 2: "動画を止めて、隠したい所をプレビューの上でドラッグして囲みます。" },
   "audio-merge": { 2: "上から順に結合されます。「↑」などで順番を入れ替えられます。" },
   "excel-extract": { 2: "「行を抽出」か「列を抽出」を選び、検索する文字を入れます。セルの中にその文字が含まれていれば一致し、残る行・列がプレビューに出ます。" },
-  "video-cut-merge": { 1: "上の「不要部分を削除」を選び、動画を選びます。", 2: "残したい部分の開始・終了を入れます。「＋ 区間を追加」で区間を増やせ、上から順につながります。" },
-  "video-cut-merge@merge": { 1: "上の「複数の動画を結合」を選び、動画を2本以上選びます。", 2: "上から順に結合されます。「↑」などで順番を入れ替えられ、それぞれ再生して確かめられます。" },
+  "video-cut-merge": { 1: "上の「不要部分を削除」を選び、動画を選びます。", 2: "タイムラインの赤い行をドラッグして不要な範囲を選び、「選んだ範囲を削除」を押します。残す区間（緑のバー）は端をドラッグして調整でき、「つないだ結果を再生」で確かめられます。" },
+  "video-cut-merge@merge": { 1: "上の「複数の動画を結合」を選び、動画を2本以上選びます。", 2: "つまみ（⋮⋮）のドラッグで順番を変え、各動画のバーの端をドラッグして不要な最初・最後を切り取ります。「つないだ結果を再生」で確かめられます。" },
   postcard: { 2: "「＋ 文字を追加」で文字を入れ、大きさ・色・位置（X・Y）を調整します。", 3: "「＋ 画像を追加」で写真やイラストを置き、大きさと位置を調整します。縦横比はそのままです。" },
   "seating-chart": { 3: "2人を選んで入れ替えたり、ドラッグで席を動かしたりできます。" },
   "shift-schedule": { 3: "勤務区分（早番・遅番など）を選んでから、表のマスを押して入れます。" },

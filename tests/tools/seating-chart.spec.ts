@@ -1370,3 +1370,27 @@ test("グループワーク「片側だけ」：選ぶと席が机の片側に�
   await seg.getByRole("radio", { name: "机の両側" }).click();
   expect(await rowsOf()).toBe(before);
 });
+
+test("設定は折りたたみ式：設定のまとまりごとに見出しがあり、見出しを押すとそのまとまりだけが開閉する（閉じても値は残る）（総合改修 7-1）", async ({ page }) => {
+  await openTool(page);
+  await start(page, "meeting", PEOPLE);
+  await openSeatPanel(page, "layout");
+  const layout = page.getByTestId("seat-section-layout");
+  await expect(layout).toHaveAttribute("open", "");
+  const groups = layout.locator("details[data-testid^='seat-group-']");
+  expect(await groups.count()).toBeGreaterThan(1);
+  const first = groups.first();
+  const second = groups.nth(1);
+  await expect(first).toHaveAttribute("open", "");
+  await first.locator("summary").first().click();
+  await expect(first).not.toHaveAttribute("open", "");
+  await expect(second).toHaveAttribute("open", ""); // ほかのまとまりは開いたまま
+  await first.locator("summary").first().click();
+  await expect(first).toHaveAttribute("open", "");
+  // 名前の欄を閉じても、入れた名前は席に残る
+  await openSeatPanel(page, "names");
+  const names = page.getByTestId("seat-section-names");
+  await names.locator("summary").first().click();
+  await expect(names).not.toHaveAttribute("open", "");
+  expect(await seatNames(page)).toContain(MARKER);
+});

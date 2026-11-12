@@ -9,6 +9,8 @@ import { ReorderableFileList } from "@/components/tools/implementations/shared/r
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { SliderField } from "@/components/common/slider-field";
 import { TextColorField } from "@/components/common/text-color-field";
+import { PositionSliders } from "@/components/common/position-sliders";
+import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
@@ -170,10 +172,16 @@ function SettingsFields({
     );
   }
 
+  const edgeLabel = EDGE_OPTIONS.find((o) => o.id === values.edge)?.label ?? "";
+  // 総合改修 22：設定が多く読みにくかったので、内容ごとの折りたたみ（余白・背景・文字・文字色・文字の位置）に分けた
   return (
-    <div className="flex flex-col gap-5">
+    <SettingsStack>
+      <SettingsSection
+        n={1}
+        title="余白"
+        summary={`上${pxToDisplay(values.paddingTop, unit)}・下${pxToDisplay(values.paddingBottom, unit)}・左${pxToDisplay(values.paddingLeft, unit)}・右${pxToDisplay(values.paddingRight, unit)}${unitLabel}`}
+      >
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">余白</p>
         <div className="flex flex-wrap items-center gap-3">
           {paddingField("paddingTop", "上")}
           {paddingField("paddingBottom", "下")}
@@ -204,9 +212,10 @@ function SettingsFields({
           </button>
         </div>
       </div>
+      </SettingsSection>
 
+      <SettingsSection n={2} title="背景" summary={values.background === "transparent" ? "透明" : values.background}>
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">背景</p>
         <div className="flex flex-wrap items-center gap-2">
           {BACKGROUND_PRESETS.map((opt) => (
             <button
@@ -232,9 +241,10 @@ function SettingsFields({
           JPEGで保存する場合、透明は白背景になります。
         </p>
       </div>
+      </SettingsSection>
 
+      <SettingsSection n={3} title="文字" summary={values.text.trim() ? values.text.split("\n")[0] : "（未入力）"}>
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">文字</p>
         <textarea
           value={values.text}
           onChange={(e) => onChange("text", e.target.value)}
@@ -254,7 +264,6 @@ function SettingsFields({
             太字
           </button>
         </div>
-        <TextColorField value={values.color} onChange={(c) => onChange("color", c)} testId="padding-text-color" />
         <div className="flex flex-wrap gap-2">
           {TEXT_ALIGN_OPTIONS.map((opt) => (
             <button
@@ -267,6 +276,19 @@ function SettingsFields({
             </button>
           ))}
         </div>
+      </div>
+      </SettingsSection>
+
+      <SettingsSection n={4} title="文字色" summary={values.color}>
+        <TextColorField value={values.color} onChange={(c) => onChange("color", c)} testId="padding-text-color" />
+      </SettingsSection>
+
+      <SettingsSection
+        n={5}
+        title="文字の位置"
+        summary={values.posX !== null || values.posY !== null ? `${edgeLabel}の余白・X ${values.posX ?? presetPos.x}%・Y ${values.posY ?? presetPos.y}%` : `${edgeLabel}の余白`}
+      >
+      <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-1">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">配置する余白</p>
           <div className="flex flex-wrap gap-2">
@@ -324,30 +346,15 @@ function SettingsFields({
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="padding-text-xy">
-          <SliderField
-            label="横の位置（X）"
-            value={values.posX ?? presetPos.x}
-            min={0}
-            max={100}
-            unit="%"
-            onChange={(v) => {
-              onChange("posX", v);
-              if (values.posY === null) onChange("posY", presetPos.y);
-            }}
-          />
-          <SliderField
-            label="縦の位置（Y）"
-            value={values.posY ?? presetPos.y}
-            min={0}
-            max={100}
-            unit="%"
-            onChange={(v) => {
-              onChange("posY", v);
-              if (values.posX === null) onChange("posX", presetPos.x);
-            }}
-          />
-        </div>
+        <PositionSliders
+          testId="padding-text-xy"
+          x={values.posX ?? presetPos.x}
+          y={values.posY ?? presetPos.y}
+          onChange={(p) => {
+            onChange("posX", p.x);
+            onChange("posY", p.y);
+          }}
+        />
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           バーで、選んだ余白の中の文字の位置を細かく動かせます（0%＝余白の左端・上端、100%＝右端・下端）。上の位置のボタンを押すと、その位置に戻ります。
         </p>
@@ -355,7 +362,8 @@ function SettingsFields({
           選択した余白の幅・高さが0pxの場合、その余白には文字が表示されません。
         </p>
       </div>
-    </div>
+      </SettingsSection>
+    </SettingsStack>
   );
 }
 
@@ -575,6 +583,7 @@ export function ImagePaddingTextTool() {
 
   return (
     <PreviewSplitLayout
+      mobileSticky
       preview={
         files.length > 0 && currentFile ? (
         <div data-testid="tool-preview" className="flex flex-col gap-2">
@@ -593,7 +602,7 @@ export function ImagePaddingTextTool() {
           >
             {previewResult ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={previewResult.url} alt="余白・文字入れ結果のプレビュー" className="max-h-[min(55vh,28rem)] max-w-full object-contain" />
+              <img src={previewResult.url} alt="余白・文字入れ結果のプレビュー" className="max-h-[min(30vh,28rem)] max-w-full object-contain lg:max-h-[min(55vh,28rem)]" />
             ) : (
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {previewLoading ? "プレビューを作成しています…" : "設定を変更するとプレビューが表示されます"}

@@ -15,6 +15,7 @@ import {
   pageNumberLayout,
   resizeContentRect,
   resizeTargetSize,
+  customSizeError,
   watermarkLayout,
   type PageNumberPosition as LayoutPageNumberPosition,
   type PageOrientation,
@@ -783,6 +784,8 @@ export interface PdfResizePagesInput {
   pageSize: PdfPageSizePreset;
   orientation: PdfPageOrientation;
   contentMode: PdfResizeContentMode;
+  /** pageSize が "custom" のときの幅・高さ（mm） */
+  custom?: { widthMm: number; heightMm: number };
 }
 
 /**
@@ -795,7 +798,7 @@ export class PdfResizePagesProcessor extends BrowserProcessor<
   PdfResizePagesInput,
   PdfProcessorOutput
 > {
-  async process({ file, pageSize, orientation, contentMode }: PdfResizePagesInput) {
+  async process({ file, pageSize, orientation, contentMode, custom }: PdfResizePagesInput) {
     const doc = await loadPdfDoc(file);
     const pages = doc.getPages();
     if (pages.length === 0) {
@@ -808,7 +811,11 @@ export class PdfResizePagesProcessor extends BrowserProcessor<
     }
 
     // 変更後のサイズ・内容の配置はプレビュー(overlay-layout)と共通
-    const target = resizeTargetSize(pageSize, orientation);
+    if (pageSize === "custom") {
+      const problem = customSizeError(custom);
+      if (problem) throw new Error(problem);
+    }
+    const target = resizeTargetSize(pageSize, orientation, custom);
     if (!target) return finalizePdf(doc);
     const { width: newWidth, height: newHeight } = target;
 

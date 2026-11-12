@@ -53,7 +53,8 @@ function MetadataRows({ report }: { report: ImageMetadataReport }) {
                 : "text-right text-neutral-400 dark:text-neutral-500"
             }
           >
-            {row.present ? (row.detail ? `あり（${row.detail}）` : "あり") : "なし"}
+            {/* 検出した情報は書き出しで取り除くので「削除」と表示する（「あり」だと残すように読めるため） */}
+            {row.present ? (row.detail ? `削除（${row.detail}）` : "削除") : "なし"}
           </span>
         </li>
       ))}
@@ -174,7 +175,7 @@ export function ImageMetadataRemoveTool() {
                   <MetadataRows report={report} />
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
                     {hasAnyMetadata(report)
-                      ? "「あり」の情報は、書き出した画像には含まれなくなります。"
+                      ? "「削除」の情報は、書き出した画像には含まれなくなります。"
                       : "この画像からは、取り除く対象の情報は検出されませんでした。"}
                     出力形式: {outputLabel}
                   </p>

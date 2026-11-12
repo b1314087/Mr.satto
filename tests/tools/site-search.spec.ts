@@ -83,14 +83,15 @@ test.describe("検索の仕組み: 作業目的からの検索", () => {
     ["MP4をH.264にしたい", "video-h264"],
     ["Excelの日付をまとめて変更したい", "excel-date-shift"],
     ["写真を切り抜きたい", "image-crop"],
-    // 動画編集 工程4
-    ["動画 サムネイル 複数", "video-thumbnail"],
+    // 動画編集 工程4（総合改修 13：まとめての抽出・連続キャプチャはやめ、一時停止した位置を抽出する方式に変えた）
+    ["動画 サムネイル", "video-thumbnail"],
     ["動画 画像 抽出", "video-thumbnail"],
     ["動画 フレーム 抽出", "video-thumbnail"],
-    ["動画 連続 キャプチャ", "video-thumbnail"],
+    ["動画 キャプチャ", "video-thumbnail"],
+    ["一時停止 画像", "video-thumbnail"],
     ["動画 モザイク 高速化", "video-mosaic"],
-    // 動画編集 工程3
-    ["動画 トリミング", "video-convert"],
+    // 動画編集 工程3（総合改修 30：不要な部分の削除（トリミング）は、動画の不要部分削除・結合ツールで行う）
+    ["動画 トリミング", "video-cut-merge"],
     ["動画 回転", "video-convert"],
   ];
   for (const [q, expected] of cases) {

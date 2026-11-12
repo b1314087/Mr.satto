@@ -1,6 +1,6 @@
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
-import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
+import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile, closeResultPopup } from "../helpers/tool-runner";
 
 /**
  * 画像ウォーターマーク: リアルタイムプレビュー・文字サイズのバー・大きい上限の検証。
@@ -124,7 +124,7 @@ test("image-watermark: 横・縦の位置（X/Y）のバーと文字の色を変
   expect(Math.abs(c.y - 0.2)).toBeLessThan(0.06);
 
   // プリセットの位置を押すと、バーの位置は解除される
-  await page.keyboard.press("Escape");
+  await closeResultPopup(page);
   await page.getByTestId("watermark-position").getByRole("button").first().click();
   await expect(page.getByTestId("watermark-custom-position")).toHaveCount(0);
 });

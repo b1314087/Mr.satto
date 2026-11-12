@@ -22,7 +22,8 @@ interface Box {
   hPct: number;
 }
 
-const DEFAULT_BOX: Box = { xPct: 10, yPct: 10, wPct: 80, hPct: 80 };
+// 総合改修 23：読み込んだ直後は画像全体（四隅まで）を選んだ状態にする
+const DEFAULT_BOX: Box = { xPct: 0, yPct: 0, wPct: 100, hPct: 100 };
 const MIN_SIZE_PCT = 5;
 
 /** 切り抜く形（縦長・横長のどちらも選べる） */
@@ -304,6 +305,7 @@ export function ImageCropTool() {
             <img src={imageUrl} alt="トリミング対象の画像" draggable={false} className="block h-auto w-auto max-w-full max-h-[min(70vh,40rem)] select-none" />
             <div
               onPointerDown={handleBoxPointerDown}
+              data-testid="crop-box"
               className="absolute cursor-move border-2 border-blue-400 bg-blue-400/10"
               style={{
                 left: `${box.xPct}%`,
@@ -317,14 +319,15 @@ export function ImageCropTool() {
                   key={corner}
                   onPointerDown={(e) => handleHandlePointerDown(e, corner)}
                   aria-label={`トリミング範囲の${corner}角をドラッグしてサイズ変更`}
-                  className={`absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-2 border-white bg-blue-500 shadow ${
+                  // 総合改修 23：範囲が画像の四隅まであるときも、つまみが画像の外に切れないよう、範囲の内側の角に置く
+                  className={`absolute h-6 w-6 touch-none rounded-full border-2 border-white bg-blue-500 shadow ${
                     corner === "nw"
                       ? "left-0 top-0 cursor-nwse-resize"
                       : corner === "ne"
-                        ? "left-full top-0 cursor-nesw-resize"
+                        ? "right-0 top-0 cursor-nesw-resize"
                         : corner === "sw"
-                          ? "left-0 top-full cursor-nesw-resize"
-                          : "left-full top-full cursor-nwse-resize"
+                          ? "bottom-0 left-0 cursor-nesw-resize"
+                          : "bottom-0 right-0 cursor-nwse-resize"
                   }`}
                 />
               ))}

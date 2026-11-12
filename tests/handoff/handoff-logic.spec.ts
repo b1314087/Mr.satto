@@ -196,6 +196,7 @@ test.describe("設定の整合", () => {
     "excel-transpose": "excel-transpose-tool.tsx",
     "excel-blank-remove": "excel-blank-remove-tool.tsx",
     "excel-extract": "excel-extract-tool.tsx",
+    "excel-space-remove": "excel-space-remove-tool.tsx",
     "excel-replace": "excel-replace-tool.tsx",
     "excel-date-shift": "excel-date-shift-tool.tsx",
     "word-paragraph-cleanup": "word-paragraph-cleanup-tool.tsx",

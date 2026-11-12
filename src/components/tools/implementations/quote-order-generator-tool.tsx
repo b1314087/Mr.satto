@@ -29,6 +29,7 @@ import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { runWithDownloadAccess } from "@/lib/download/download-gate";
 import { RunBar } from "@/components/ui/run-bar";
 import { StepHeading } from "@/components/ui/step-heading";
+import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 
 const inputClass =
   "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
@@ -53,15 +54,26 @@ function Heading({ n, children }: { n: number; children: React.ReactNode }) {
  * 見積書・注文書一体型。1回の入力で、A4 1枚の上半分に見積書、下半分に注文書を作る。
  * 注文書側は、宛先=自社(発行者)、注文者=見積書の宛先(お客様)に自動で入れ替わる。
  */
-export function QuoteOrderGeneratorTool() {
-  const [form, setForm] = useState<DocumentFormState>(() => createEmptyDocumentForm("estimate"));
+export function QuoteOrderGeneratorTool({
+  form: controlledForm,
+  onFormChange,
+  modeSwitch,
+}: {
+  /** 総合改修 10：「見積書・注文書・請求書作成」で書類を切り替えても、入力を引き継ぐため、外から渡せるようにした */
+  form?: DocumentFormState;
+  onFormChange?: (updater: (prev: DocumentFormState) => DocumentFormState) => void;
+  modeSwitch?: React.ReactNode;
+} = {}) {
+  const [ownForm, setOwnForm] = useState<DocumentFormState>(() => createEmptyDocumentForm("estimate"));
+  const form = controlledForm ?? ownForm;
   const [deliveryDate, setDeliveryDate] = useState("");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<QuoteOrderPdfOutput | null>(null);
 
   function patch(p: Partial<DocumentFormState>) {
-    setForm((prev) => ({ ...prev, ...p }));
+    if (onFormChange) onFormChange((prev) => ({ ...prev, ...p }));
+    else setOwnForm((prev) => ({ ...prev, ...p }));
   }
 
   const layout = useMemo(
@@ -199,45 +211,41 @@ export function QuoteOrderGeneratorTool() {
       </section>
       }
     >
+      {modeSwitch}
       <p className="text-sm text-neutral-500 dark:text-neutral-400">A4の1枚に「上=見積書」「下=注文書」を作ります。</p>
 
       <DocumentMemoImport form={form} onApply={patch} deliveryTextField onDeliveryText={setDeliveryDate} />
 
-      <section className="flex flex-col gap-3">
-        <Heading n={1}>基本情報（見積書・注文書に共通）</Heading>
-        <DocumentBasicForm form={form} onChange={patch} />
-        <label className="flex flex-col gap-1.5 text-sm sm:max-w-sm">
-          注文書に入れる納期（任意）
-          <input
-            value={deliveryDate}
-            onChange={(e) => setDeliveryDate(e.target.value)}
-            placeholder="例: 2026年11月30日 / 受注後2週間"
-            className={inputClass}
-          />
-        </label>
-      </section>
+      <SettingsStack testId="document-settings">
+        <SettingsSection n={1} title="基本情報（見積書・注文書に共通）" summary={[form.title || "見積書", form.issueDate].filter(Boolean).join("・")}>
+          <DocumentBasicForm form={form} onChange={patch} />
+          <label className="flex flex-col gap-1.5 text-sm sm:max-w-sm">
+            注文書に入れる納期（任意）
+            <input
+              value={deliveryDate}
+              onChange={(e) => setDeliveryDate(e.target.value)}
+              placeholder="例: 2026年11月30日 / 受注後2週間"
+              className={inputClass}
+            />
+          </label>
+        </SettingsSection>
 
-      <section className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-        <div className="flex flex-col gap-3">
-          <Heading n={2}>宛先（お客様）</Heading>
+        <SettingsSection n={2} title="宛先（お客様）" summary={form.recipient.companyName || form.recipient.contactName || "未入力"}>
           <PartyInfoForm label="宛先情報" party={form.recipient} onChange={(recipient) => patch({ recipient })} />
-        </div>
-        <div className="flex flex-col gap-3">
-          <Heading n={3}>発行者（自社情報）</Heading>
+        </SettingsSection>
+
+        <SettingsSection n={3} title="発行者（自社情報）" summary={form.issuer.companyName || form.issuer.contactName || "未入力"}>
           <PartyInfoForm label="発行者情報" party={form.issuer} onChange={(issuer) => patch({ issuer })} />
-        </div>
-      </section>
+        </SettingsSection>
 
-      <section className="flex flex-col gap-3">
-        <Heading n={4}>明細</Heading>
-        <LineItemsEditor items={form.items} onChange={(items) => patch({ items })} />
-      </section>
+        <SettingsSection n={4} title="明細" summary={`${form.items.filter((it) => it.name.trim() !== "").length}件`}>
+          <LineItemsEditor items={form.items} onChange={(items) => patch({ items })} />
+        </SettingsSection>
 
-      <section className="flex flex-col gap-3">
-        <Heading n={5}>税・金額</Heading>
-        <TaxSettings taxRatePercent={form.taxRatePercent} taxRounding={form.taxRounding} onChange={patch} />
-      </section>
-
+        <SettingsSection n={5} title="税・金額" summary={`消費税${form.taxRatePercent}%`}>
+          <TaxSettings taxRatePercent={form.taxRatePercent} taxRounding={form.taxRounding} onChange={patch} />
+        </SettingsSection>
+      </SettingsStack>
     </PreviewSplitLayout>
   );
 }

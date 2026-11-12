@@ -10,7 +10,9 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { usePdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { usePdfPageGeometry } from "@/components/tools/implementations/shared/pdf-overlay-preview";
-import { resizeContentRect, resizeTargetSize } from "@/lib/pdf/overlay-layout";
+import { CUSTOM_SIZE_MAX_MM, CUSTOM_SIZE_MIN_MM, PAGE_SIZE_GROUPS, customSizeError, pageSizeLabel, resizeContentRect, resizeTargetSize } from "@/lib/pdf/overlay-layout";
+import { usePdfPageCount } from "@/components/tools/implementations/shared/use-pdf-page-count";
+import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 import {
   PdfResizePagesProcessor,
   type PdfPageSizePreset,
@@ -21,14 +23,7 @@ import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
 
-const SIZE_OPTIONS: { value: PdfPageSizePreset; label: string }[] = [
-  { value: "a4", label: "A4" },
-  { value: "a3", label: "A3" },
-  { value: "letter", label: "Letter" },
-];
-
 const PT_TO_MM = 25.4 / 72;
-const SIZE_LABELS: Record<PdfPageSizePreset, string> = { a4: "A4", a3: "A3", letter: "Letter", original: "元のサイズ" };
 /** プレビューで一番大きい辺を何pxで表示するか(変更前・変更後で同じ縮尺にする) */
 const PREVIEW_LONGEST_SIDE_PX = 170;
 
@@ -41,22 +36,32 @@ function ResizePreview({
   pageSize,
   orientation,
   contentMode,
+  custom,
+  page,
+  pageCount,
+  onPage,
 }: {
   file: File;
   pageSize: PdfPageSizePreset;
   orientation: PdfPageOrientation;
   contentMode: PdfResizeContentMode;
+  custom: { widthMm: number; heightMm: number };
+  page: number;
+  pageCount: number | null;
+  onPage: (p: number) => void;
 }) {
-  const geo = usePdfPageGeometry(file, 1);
-  const thumbs = usePdfThumbnails(file, 1, 360);
-  const g = geo?.pages[1];
-  const imageUrl = thumbs.urls[1];
-  const target = resizeTargetSize(pageSize, orientation);
+  const geo = usePdfPageGeometry(file, page);
+  const thumbs = usePdfThumbnails(file, Math.max(page, 1), 360);
+  const g = geo?.pages[page];
+  const imageUrl = thumbs.urls[page];
+  const target = resizeTargetSize(pageSize, orientation, custom);
 
   let body: ReactNode;
   if (thumbs.error) {
     body = <p className="text-sm text-red-600 dark:text-red-400">{thumbs.error}</p>;
-  } else if (!g || !target || !imageUrl) {
+  } else if (!target) {
+    body = <p className="text-xs text-red-600 dark:text-red-400">{pageSize === "custom" ? customSizeError(custom) : "用紙を選んでください。"}</p>;
+  } else if (!g || !imageUrl) {
     body = <p className="text-xs text-neutral-400">読み込み中…</p>;
   } else {
     const oldW = g.media.width;
@@ -74,7 +79,7 @@ function ResizePreview({
               style={{ width: oldW * px, height: oldH * px }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageUrl} alt="変更前の1ページ目" className="block h-full w-full" />
+              <img src={imageUrl} alt={`変更前の${page}ページ目`} className="block h-full w-full" />
             </div>
             <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
               変更前({mm(oldW)}×{mm(oldH)}mm)
@@ -89,7 +94,7 @@ function ResizePreview({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={imageUrl}
-                alt="変更後の1ページ目"
+                alt={`変更後の${page}ページ目`}
                 className="absolute block bg-white"
                 style={{
                   left: rect.x * px,
@@ -101,7 +106,7 @@ function ResizePreview({
               />
             </div>
             <figcaption className="text-xs text-neutral-500 dark:text-neutral-400">
-              変更後: {SIZE_LABELS[pageSize]}・{orientation === "landscape" ? "横" : "縦"}({mm(target.width)}×{mm(target.height)}mm)
+              変更後: {pageSizeLabel(pageSize)}・{orientation === "landscape" ? "横" : "縦"}({mm(target.width)}×{mm(target.height)}mm)
             </figcaption>
           </figure>
         </div>
@@ -127,8 +132,17 @@ function ResizePreview({
       data-testid="tool-preview"
       className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
     >
-      <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー(1ページ目)</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（{page}ページ目{pageCount ? ` / ${pageCount}ページ` : ""}）</p>
+        {pageCount !== null && pageCount > 1 && (
+          <div className="flex items-center gap-1" data-testid="resize-preview-pager">
+            <button type="button" onClick={() => onPage(Math.max(1, page - 1))} disabled={page <= 1} aria-label="前のページ" className="rounded border border-neutral-300 px-2 py-0.5 text-xs disabled:opacity-30 dark:border-neutral-700">←</button>
+            <button type="button" onClick={() => onPage(Math.min(pageCount, page + 1))} disabled={page >= pageCount} aria-label="次のページ" className="rounded border border-neutral-300 px-2 py-0.5 text-xs disabled:opacity-30 dark:border-neutral-700">→</button>
+          </div>
+        )}
+      </div>
       {body}
+      {pageCount !== null && pageCount > 1 && <p className="text-xs text-neutral-500 dark:text-neutral-400">すべてのページ（{pageCount}ページ）を同じ用紙に変更します。ページごとに大きさが違うPDFも、それぞれ同じ計算で配置します。</p>}
     </section>
   );
 }
@@ -143,6 +157,10 @@ export function PdfResizePagesTool() {
   const [pageSize, setPageSize] = useState<PdfPageSizePreset>("a4");
   const [orientation, setOrientation] = useState<PdfPageOrientation>("portrait");
   const [contentMode, setContentMode] = useState<PdfResizeContentMode>("fit");
+  const [custom, setCustom] = useState<{ widthMm: number; heightMm: number }>({ widthMm: 210, heightMm: 297 });
+  const [previewPage, setPreviewPage] = useState(1);
+  const { pageCount } = usePdfPageCount(file);
+  const customProblem = pageSize === "custom" ? customSizeError(custom) : null;
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +182,7 @@ export function PdfResizePagesTool() {
         pageSize,
         orientation,
         contentMode,
+        custom: pageSize === "custom" ? custom : undefined,
       });
       setResult(output);
       setStatus("success");
@@ -180,7 +199,16 @@ export function PdfResizePagesTool() {
       previewWidth="md"
       preview={
         file ? (
-        <ResizePreview file={file} pageSize={pageSize} orientation={orientation} contentMode={contentMode} />
+        <ResizePreview
+          file={file}
+          pageSize={pageSize}
+          orientation={orientation}
+          contentMode={contentMode}
+          custom={custom}
+          page={Math.min(previewPage, pageCount ?? 1)}
+          pageCount={pageCount}
+          onPage={setPreviewPage}
+        />
         ) : (
           <div className="hidden rounded-xl border border-dashed border-neutral-300 p-6 text-center text-xs text-neutral-400 lg:block dark:border-neutral-700">
             PDFを選ぶと、ここにプレビューが表示されます
@@ -195,6 +223,7 @@ export function PdfResizePagesTool() {
         hint="またはタップして選択"
         onFilesSelected={(files) => {
           setFile(files[0]);
+          setPreviewPage(1);
           setResult(null);
           setError(null);
           setStatus("idle");
@@ -205,22 +234,54 @@ export function PdfResizePagesTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
-        <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <div className="flex flex-col gap-1.5">
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">変更後のサイズ</p>
-            <div className="ms-seg">
-              {SIZE_OPTIONS.map((opt) => (
-                <button aria-pressed={pageSize === opt.value}
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setPageSize(opt.value)}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
+        <SettingsStack testId="resize-settings">
+          <SettingsSection n={1} title="変更後の用紙" summary={pageSize === "custom" ? `カスタム ${custom.widthMm}×${custom.heightMm}mm` : pageSizeLabel(pageSize)}>
+            {PAGE_SIZE_GROUPS.map((g) => (
+              <div key={g.label} className="flex flex-col gap-1">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">{g.label}</p>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={g.label}>
+                  {g.options.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={pageSize === opt.value}
+                      title={opt.note}
+                      onClick={() => setPageSize(opt.value)}
+                      data-testid={`resize-size-${opt.value}`}
+                      className={`rounded-lg border px-2.5 py-1.5 text-sm ${pageSize === opt.value ? "border-blue-600 bg-blue-600 text-white" : "border-neutral-300 text-neutral-700 hover:border-blue-400 dark:border-neutral-700 dark:text-neutral-200"}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {pageSize === "custom" && (
+              <div className="flex flex-wrap items-end gap-3" data-testid="resize-custom">
+                {(["widthMm", "heightMm"] as const).map((k) => (
+                  <label key={k} className="flex flex-col gap-1 text-xs text-neutral-600 dark:text-neutral-300">
+                    {k === "widthMm" ? "幅（mm）" : "高さ（mm）"}
+                    <input
+                      type="number"
+                      min={CUSTOM_SIZE_MIN_MM}
+                      max={CUSTOM_SIZE_MAX_MM}
+                      step={0.1}
+                      value={Number.isFinite(custom[k]) ? custom[k] : ""}
+                      onChange={(e) => setCustom((c) => ({ ...c, [k]: e.target.value === "" ? NaN : Number(e.target.value) }))}
+                      data-testid={`resize-custom-${k === "widthMm" ? "width" : "height"}`}
+                      className="w-28 rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                    />
+                  </label>
+                ))}
+                <p className="w-full text-xs text-neutral-500 dark:text-neutral-400">
+                  {CUSTOM_SIZE_MIN_MM}〜{CUSTOM_SIZE_MAX_MM}mmで指定します。下の「向き」で横向きを選ぶと、幅と高さが入れ替わります。
+                </p>
+                {customProblem && <p className="w-full text-xs text-red-600 dark:text-red-400" data-testid="resize-custom-error">{customProblem}</p>}
+              </div>
+            )}
+          </SettingsSection>
+          <SettingsSection n={2} title="向きと内容の扱い" summary={`${orientation === "landscape" ? "横向き" : "縦向き"}・${contentMode === "fit" ? "内容も拡大縮小" : "ページサイズだけ"}`}>
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">向き</p>
             <div className="ms-seg">
@@ -271,7 +332,8 @@ export function PdfResizePagesTool() {
               </span>
             </label>
           </div>
-        </div>
+          </SettingsSection>
+        </SettingsStack>
       )}
 
       {file && (
@@ -279,7 +341,7 @@ export function PdfResizePagesTool() {
           <button
             type="button"
             onClick={handleRun}
-            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+            disabled={status === "processing" || customProblem !== null} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
             変更する

@@ -142,6 +142,8 @@ export function ImageMergeTool() {
           : null;
 
   const canProcess = files.length >= 2 && !settingsError;
+  // 総合改修 25：プレビューは1枚目を入れた時点から出す（結合の書き出しは2枚以上から）
+  const canPreview = files.length >= 1 && !settingsError;
 
   function buildInput(format: ImageMergeFormat): ImageMergeInput {
     return {
@@ -165,8 +167,8 @@ export function ImageMergeTool() {
   // 既存の別ロジック（CSSだけの近似レイアウト）を新たに作るのではなく、
   // 本番出力と全く同じ計算を使うことで、プレビューと結果のズレを防ぐ。
   useEffect(() => {
-    if (!canProcess) {
-      // 画像が2枚未満・設定エラー時はプレビューをクリアする
+    if (!canPreview) {
+      // 画像が無い・設定エラー時はプレビューをクリアする
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPreviewResult((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
@@ -180,7 +182,7 @@ export function ImageMergeTool() {
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const output = await new ImageMergeProcessor().process(buildInput("png"));
+          const output = await new ImageMergeProcessor().process({ ...buildInput("png"), allowSingle: true });
           if (previewRunIdRef.current !== runId) {
             // 設定がさらに変わり追い越された場合は、古い結果を使わず破棄する
             URL.revokeObjectURL(output.url);
@@ -210,7 +212,7 @@ export function ImageMergeTool() {
     gapPx,
     alignment,
     background,
-    canProcess,
+    canPreview,
   ]);
 
   async function handleSave(format: ImageMergeFormat) {
@@ -235,11 +237,11 @@ export function ImageMergeTool() {
   return (
     <PreviewSplitLayout
       preview={
-        files.length >= 2 && !settingsError ? (
+        // 総合改修 25：プレビューの枠は最初から出し、画像が無いうちは案内を出す
         <div data-testid="tool-preview" className="flex flex-col gap-2">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
             プレビュー
-            {previewResult && (
+            {previewResult && canPreview && (
               <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
                 {previewResult.width} × {previewResult.height}px
                 {previewLoading ? "・更新中…" : ""}
@@ -247,10 +249,10 @@ export function ImageMergeTool() {
             )}
           </p>
           <div
-            className="flex min-h-[8rem] items-center justify-center rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+            className="flex min-h-[10rem] items-center justify-center rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
             style={background === "transparent" ? CHECKER_STYLE : { backgroundColor: "#f5f5f5" }}
           >
-            {previewResult ? (
+            {previewResult && canPreview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={previewResult.url}
@@ -258,17 +260,19 @@ export function ImageMergeTool() {
                 className="max-h-[min(55vh,28rem)] max-w-full object-contain"
               />
             ) : (
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                {previewLoading ? "プレビューを作成しています…" : "設定を変更するとプレビューが表示されます"}
+              <p className="px-2 text-center text-xs text-neutral-500" data-testid="image-merge-preview-empty">
+                {files.length === 0
+                  ? "画像を追加すると、ここに結合後のイメージが表示されます。"
+                  : settingsError
+                    ? "設定を修正するとプレビューが表示されます。"
+                    : "プレビューを作成しています…"}
               </p>
             )}
           </div>
+          {files.length === 1 && canPreview && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">もう1枚以上追加すると、結合した画像を保存できます。</p>
+          )}
         </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-            {files.length >= 2 ? "設定を修正するとプレビューが表示されます。" : "画像を2枚以上追加すると、ここにプレビューが表示されます。"}
-          </div>
-        )
       }
       previewWidth="lg"
     >

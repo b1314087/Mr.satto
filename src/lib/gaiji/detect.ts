@@ -1,12 +1,15 @@
 /**
  * 外字・特殊文字チェックの判定ロジック（純粋な関数だけ。ブラウザの外でもテストできる）。
  *
- * 【何を判定するか】文字コード（Unicodeの番号）の範囲だけで判定する。次のような、受け取る側の環境しだいで
+ * 【何を判定するか】文字コード（Unicodeの番号）の範囲と、前後の文字（文脈）で判定する。次のような、受け取る側の環境しだいで
  * 文字化け・表示できない・照合できないといった問題が起きやすい文字を見つける。
  * - 私用領域の文字（外字の可能性が高い）、文字化けの跡（U+FFFD・〓）、制御文字
  * - 異体字セレクタ、互換漢字、結合文字（濁点が別の文字になったもの）、補助面の文字・絵文字
  * - 不可視の文字（ゼロ幅スペースなど）、特殊な空白（改行しない空白など）
  * - 「Shift_JIS（Windows系）で保存・取り込みする場合」に問題になる文字（機種依存文字・保存できない文字・別の文字に変わる文字・半角カナ）
+ * - 英字の中に混ざった、英字にそっくりなキリル文字・ギリシャ文字（Shift_JISでは標準の文字のため、範囲だけでは見逃していた。総合改修 4）
+ * 前後の文字を見るもの（総合改修 4）：絵文字の一部として使われる見えない文字（絵文字の表示指定・ゼロ幅接合子・キーキャップ・肌の色・国旗）は、
+ * 「異体字セレクタ」「不可視の文字」などではなく、絵文字の一部として数える（漢字の異体字の指定などと区別する）。
  *
  * 【判定できないこと（画面にも明記する）】
  * - 受け取る側のフォントで実際に表示できるかどうか。文字コードが標準でも、フォントに字形が無ければ表示されない。
@@ -25,6 +28,7 @@ export type GaijiCategory =
   | "combining"
   | "compat-ideograph"
   | "radical"
+  | "lookalike"
   | "emoji"
   | "supplementary"
   | "ext-dep"
@@ -68,7 +72,7 @@ export const CATEGORY_INFO: Record<GaijiCategory, CategoryInfo> = {
     label: "外字（私用領域）",
     severity: "high",
     summary: "そのパソコン・システムの中だけで字形が決まる文字（人名の異体字などの外字）",
-    advice: "別のパソコンやPDF・メール・Webでは表示されない、または別の文字になります。受け取る相手に正しく伝わる文字（通常の漢字・異体字セレクタつきの文字）に直すか、画像・PDFにして渡してください。",
+    advice: "別のパソコンやPDF・メール・Webでは、表示されない、または別の文字になることがあります。受け取る相手に正しく伝わる文字（通常の漢字・異体字セレクタつきの文字）に直すか、画像・PDFにして渡すことを検討してください。",
     shiftJisOnly: false,
   },
   "variation-selector": {
@@ -119,12 +123,20 @@ export const CATEGORY_INFO: Record<GaijiCategory, CategoryInfo> = {
     advice: "見た目は普通の漢字と同じでも、検索・並べ替え・照合で一致しません。普通の漢字に置き換えてください（康熙部首は、下の「整えたテキスト」で置き換えられます）。",
     shiftJisOnly: false,
   },
+  lookalike: {
+    id: "lookalike",
+    label: "英字にそっくりな別の文字",
+    severity: "mid",
+    summary: "英字（A・O・p・c など）とそっくりな形の、キリル文字・ギリシャ文字が、英字の単語の中に混ざったもの",
+    advice: "見た目は英字と同じでも、検索・照合・URL・メールアドレス・パスワードなどで別の文字として扱われます。英字に置き換えてください（置き換え案を参考にしてください）。",
+    shiftJisOnly: false,
+  },
   emoji: {
     id: "emoji",
     label: "絵文字・絵記号",
     severity: "mid",
     summary: "絵文字や、絵として表示される記号",
-    advice: "古いシステム・業務ソフト・Shift_JISのファイルでは、表示できない・文字化けすることがあります。必要なければ、通常の文字に置き換えてください。",
+    advice: "古いシステム・業務ソフト・Shift_JISのファイルでは、表示できない・文字化けすることがあります（表示できるかどうかは、相手の環境によります）。必要なければ、通常の文字に置き換えてください。",
     shiftJisOnly: false,
   },
   supplementary: {
@@ -132,7 +144,7 @@ export const CATEGORY_INFO: Record<GaijiCategory, CategoryInfo> = {
     label: "補助面の文字（𠮷など）",
     severity: "mid",
     summary: "基本の範囲を超えた番号をもつ文字（𠮷・𩸽など、2文字分として数えられる文字）",
-    advice: "古いシステムでは表示できない、文字数が合わない、保存で文字化けする原因になります。相手のシステムで使えるか確かめてください。",
+    advice: "古いシステムでは、表示できない・文字数が合わない・保存で文字化けする、といったことが起きる場合があります。相手のシステムで使えるか確かめてください。",
     shiftJisOnly: false,
   },
   "ext-dep": {
@@ -179,6 +191,7 @@ export const CATEGORY_ORDER: GaijiCategory[] = [
   "combining",
   "compat-ideograph",
   "radical",
+  "lookalike",
   "supplementary",
   "emoji",
   "ext-dep",
@@ -262,6 +275,52 @@ const PICTOGRAPHIC = /\p{Extended_Pictographic}/u;
 export function isPictographic(cp: number): boolean {
   return PICTOGRAPHIC.test(String.fromCodePoint(cp));
 }
+
+/** 肌の色の指定（絵文字の修飾） */
+export function isSkinTone(cp: number): boolean {
+  return cp >= 0x1f3fb && cp <= 0x1f3ff;
+}
+
+/** 国旗の絵文字を作る地域指示文字 */
+export function isRegionalIndicator(cp: number): boolean {
+  return cp >= 0x1f1e6 && cp <= 0x1f1ff;
+}
+
+/** タグ文字（地域の旗の絵文字などで使う、見えない文字） */
+export function isTagChar(cp: number): boolean {
+  return cp >= 0xe0020 && cp <= 0xe007f;
+}
+
+/** 絵文字の一部になる文字（絵文字本体・肌の色・地域指示文字・表示指定） */
+function isEmojiPart(cp: number | undefined): boolean {
+  if (cp === undefined) return false;
+  return isPictographic(cp) || isSkinTone(cp) || isRegionalIndicator(cp) || cp === 0xfe0f || cp === 0x20e3 || isTagChar(cp);
+}
+
+/** キーキャップの絵文字（1️⃣ #️⃣ など）の元になる文字 */
+function isKeycapBase(cp: number | undefined): boolean {
+  return cp !== undefined && ((cp >= 0x30 && cp <= 0x39) || cp === 0x23 || cp === 0x2a);
+}
+
+/**
+ * 英字にそっくりなキリル文字・ギリシャ文字と、そっくりな英字（総合改修 4）。
+ * 英字の単語の中（前後のどちらかが英字）に混ざったときだけ問題にする（ロシア語・ギリシャ語の文章は問題にしない）。
+ */
+export const LATIN_LOOKALIKE: ReadonlyMap<number, string> = new Map(
+  (
+    [
+      // キリル文字
+      ["А", "A"], ["В", "B"], ["Е", "E"], ["К", "K"], ["М", "M"], ["Н", "H"], ["О", "O"], ["Р", "P"], ["С", "C"], ["Т", "T"], ["Х", "X"],
+      ["Ѕ", "S"], ["І", "I"], ["Ј", "J"], ["а", "a"], ["е", "e"], ["о", "o"], ["р", "p"], ["с", "c"], ["у", "y"], ["х", "x"], ["ѕ", "s"],
+      ["і", "i"], ["ј", "j"], ["ԁ", "d"], ["ӏ", "l"],
+      // ギリシャ文字
+      ["Α", "A"], ["Β", "B"], ["Ε", "E"], ["Ζ", "Z"], ["Η", "H"], ["Ι", "I"], ["Κ", "K"], ["Μ", "M"], ["Ν", "N"], ["Ο", "O"], ["Ρ", "P"],
+      ["Τ", "T"], ["Υ", "Y"], ["Χ", "X"], ["ο", "o"],
+    ] as const
+  ).map(([from, to]) => [from.codePointAt(0)!, to])
+);
+
+const isAsciiLetter = (cp: number | undefined) => cp !== undefined && ((cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a));
 
 /**
  * JIS X 0208とWindows系Shift_JIS(CP932)で、変換のときに別の文字に変わりやすい文字（有名な変換のずれ）。
@@ -351,6 +410,8 @@ export function classifyCodePoint(cp: number, options: DetectOptions = DEFAULT_D
   if (isCombining(cp)) return "combining";
   if (isCompatIdeograph(cp)) return "compat-ideograph";
   if (isRadical(cp)) return "radical";
+  if (isSkinTone(cp) || isRegionalIndicator(cp)) return "emoji";
+  if (isTagChar(cp)) return "invisible";
   if (cp > 0xffff) return isPictographic(cp) ? "emoji" : "supplementary";
   if (isHalfwidthKana(cp)) return options.checkShiftJis ? "halfwidth-kana" : null;
   const sjis = options.checkShiftJis ? sjisClassOf(cp) : null;
@@ -361,6 +422,112 @@ export function classifyCodePoint(cp: number, options: DetectOptions = DEFAULT_D
     if (SJIS_MISMATCH_REPLACEMENT.has(cp)) return "sjis-mismatch";
     return "not-sjis";
   }
+  return null;
+}
+
+/**
+ * 前後の文字を見て分類する（総合改修 4）。prev・next は、前後の文字のコードポイント（無ければ undefined）。
+ * - 絵文字の一部として使われる、表示指定（U+FE0E・FE0F）・ゼロ幅接合子・キーキャップ・タグ文字は「絵文字」に数える。
+ * - 英字の単語の中の、英字にそっくりなキリル文字・ギリシャ文字は「英字にそっくりな別の文字」にする。
+ * それ以外は classifyCodePoint と同じ。
+ */
+export function classifyInContext(
+  cp: number,
+  prev: number | undefined,
+  next: number | undefined,
+  options: DetectOptions = DEFAULT_DETECT_OPTIONS
+): GaijiCategory | null {
+  if (cp === 0xfe0f || cp === 0xfe0e) {
+    if (isEmojiPart(prev) || isKeycapBase(prev) || (prev !== undefined && prev >= 0x2000 && prev <= 0x2bff)) return "emoji";
+  }
+  if (cp === 0x200d && (isEmojiPart(prev) || prev === 0xfe0f) && isEmojiPart(next)) return "emoji";
+  if (cp === 0x20e3 && (prev === 0xfe0f || isKeycapBase(prev))) return "emoji";
+  if (isTagChar(cp) && ((prev !== undefined && isTagChar(prev)) || prev === 0x1f3f4)) return "emoji";
+  if (LATIN_LOOKALIKE.has(cp) && (isAsciiLetter(prev) || isAsciiLetter(next))) return "lookalike";
+  return classifyCodePoint(cp, options);
+}
+
+/** 置き換えの候補（あれば）。画面の「置き換え案」に出す。字形が変わる場合があるため、自動では置き換えない */
+export function suggestReplacement(cp: number, category: GaijiCategory): string | null {
+  const ch = String.fromCodePoint(cp);
+  switch (category) {
+    case "sjis-mismatch":
+      return SJIS_MISMATCH_REPLACEMENT.get(cp) ?? null;
+    case "lookalike":
+      return LATIN_LOOKALIKE.get(cp) ?? null;
+    case "radical":
+    case "ext-dep":
+    case "halfwidth-kana": {
+      const n = ch.normalize("NFKC");
+      return n !== ch && n.trim() !== "" ? n : null;
+    }
+    case "compat-ideograph": {
+      const n = ch.normalize("NFC");
+      return n !== ch ? n : null;
+    }
+    case "unusual-space":
+      return "通常の半角スペース";
+    case "invisible":
+      return "削除";
+    default:
+      return null;
+  }
+}
+
+/** 文字の種類（Unicodeのブロック）の名前。文字名の代わりに、どんな種類の文字かを示す */
+const BLOCKS: readonly [number, number, string][] = [
+  [0x0000, 0x007f, "基本ラテン文字（半角英数字・記号）"],
+  [0x0080, 0x00ff, "ラテン1補助（欧文の記号・アクセント付き文字）"],
+  [0x0100, 0x024f, "ラテン文字拡張"],
+  [0x0300, 0x036f, "ダイアクリティカルマーク（結合文字）"],
+  [0x0370, 0x03ff, "ギリシャ文字"],
+  [0x0400, 0x052f, "キリル文字"],
+  [0x0590, 0x06ff, "ヘブライ文字・アラビア文字"],
+  [0x1100, 0x11ff, "ハングル字母"],
+  [0x2000, 0x206f, "一般句読点（空白・ダッシュ・見えない文字など）"],
+  [0x2070, 0x209f, "上付き・下付き文字"],
+  [0x20a0, 0x20cf, "通貨記号"],
+  [0x20d0, 0x20ff, "記号用の結合文字"],
+  [0x2100, 0x214f, "文字様記号（℡・№など）"],
+  [0x2150, 0x218f, "数字の形（ローマ数字・分数）"],
+  [0x2190, 0x21ff, "矢印"],
+  [0x2200, 0x22ff, "数学記号"],
+  [0x2300, 0x23ff, "その他の技術用記号"],
+  [0x2460, 0x24ff, "囲み英数字（①など）"],
+  [0x2500, 0x257f, "罫線"],
+  [0x25a0, 0x25ff, "幾何学模様（■・●など）"],
+  [0x2600, 0x26ff, "その他の記号"],
+  [0x2700, 0x27bf, "装飾記号"],
+  [0x2e80, 0x2eff, "CJK部首補助"],
+  [0x2f00, 0x2fdf, "康熙部首"],
+  [0x3000, 0x303f, "CJKの記号と句読点"],
+  [0x3040, 0x309f, "ひらがな"],
+  [0x30a0, 0x30ff, "カタカナ"],
+  [0x3200, 0x32ff, "囲みCJK文字（㈱など）"],
+  [0x3300, 0x33ff, "CJK互換用文字（㌔など）"],
+  [0x3400, 0x4dbf, "CJK統合漢字拡張A"],
+  [0x4e00, 0x9fff, "CJK統合漢字"],
+  [0xac00, 0xd7af, "ハングル音節"],
+  [0xe000, 0xf8ff, "私用領域"],
+  [0xf900, 0xfaff, "CJK互換漢字"],
+  [0xfe00, 0xfe0f, "異体字セレクタ"],
+  [0xfe20, 0xfe2f, "半角用の結合文字"],
+  [0xfe30, 0xfe4f, "CJK互換形"],
+  [0xff00, 0xffef, "半角・全角形"],
+  [0xfff0, 0xffff, "特殊用途文字"],
+  [0x1d400, 0x1d7ff, "数学用英数字記号"],
+  [0x1f000, 0x1faff, "絵文字・絵記号"],
+  [0x20000, 0x2a6df, "CJK統合漢字拡張B"],
+  [0x2a700, 0x2ebef, "CJK統合漢字拡張C〜F"],
+  [0x2f800, 0x2fa1f, "CJK互換漢字補助"],
+  [0x30000, 0x323af, "CJK統合漢字拡張G・H"],
+  [0xe0000, 0xe007f, "タグ文字"],
+  [0xe0100, 0xe01ef, "異体字セレクタ補助"],
+  [0xf0000, 0x10ffff, "補助私用領域"],
+];
+
+export function blockNameOf(cp: number): string | null {
+  for (const [from, to, name] of BLOCKS) if (cp >= from && cp <= to) return name;
   return null;
 }
 
@@ -389,6 +556,9 @@ const CHAR_NAMES: ReadonlyMap<number, string> = new Map([
   [0x202f, "狭い改行しない空白"],
   [0x205f, "中くらいの数式用空白"],
   [0x2060, "単語結合子"],
+  [0x20e3, "囲みキーキャップ（結合文字）"],
+  [0xfe0e, "文字の形で表示する指定（異体字セレクタ15）"],
+  [0xfe0f, "絵文字の形で表示する指定（異体字セレクタ16）"],
   [0x3099, "結合用の濁点"],
   [0x309a, "結合用の半濁点"],
   [0xfeff, "BOM(ゼロ幅の改行しない空白)"],
@@ -405,12 +575,16 @@ export function nameOfCodePoint(cp: number): string | null {
   if (isInvisible(cp)) return "不可視の文字";
   if (isPrivateUse(cp)) return "私用領域の文字";
   if (isCombining(cp)) return "結合文字";
+  if (isSkinTone(cp)) return "肌の色の指定（絵文字の修飾）";
+  if (isRegionalIndicator(cp)) return `国旗用の地域指示文字（${String.fromCharCode(0x41 + cp - 0x1f1e6)}）`;
+  if (isTagChar(cp)) return "タグ文字";
+  if (LATIN_LOOKALIKE.has(cp)) return `${cp < 0x400 ? "ギリシャ文字" : "キリル文字"}（英字の「${LATIN_LOOKALIKE.get(cp)}」に似た文字）`;
   return null;
 }
 
 /** 見えない文字・結合文字・外字（字形が出るとは限らない）は、文字そのものでなく、名前で見せる */
 export function shouldShowAsName(cp: number): boolean {
-  return isControl(cp) || isInvisible(cp) || isUnusualSpace(cp) || isVariationSelector(cp) || isCombining(cp);
+  return isControl(cp) || isInvisible(cp) || isUnusualSpace(cp) || isVariationSelector(cp) || isCombining(cp) || isTagChar(cp) || isSkinTone(cp);
 }
 
 export function formatCodePoint(cp: number): string {
@@ -441,7 +615,9 @@ export interface GaijiFinding {
   /** 場所の例を省いた（見つかった場所の数が、表示した数より多い） */
   moreLocations: boolean;
   name: string | null;
-  /** Shift_JISの保存で別の文字になるときの、置き換え案 */
+  /** 文字の種類（Unicodeのブロックの名前） */
+  block: string | null;
+  /** 置き換え案（Shift_JISで安全な文字・英字・通常の漢字など。字形が変わる場合がある） */
   replacement: string | null;
 }
 
@@ -461,15 +637,16 @@ export const SAMPLE_LOCATIONS = 6;
 export const SCAN_MAX_CHARS = 2_000_000;
 
 export function scanUnits(units: ScanUnit[], options: DetectOptions = DEFAULT_DETECT_OPTIONS): GaijiScanResult {
-  const found = new Map<number, GaijiFinding>();
+  const found = new Map<string, GaijiFinding>();
   const byCategory: Partial<Record<GaijiCategory, number>> = {};
   const classCache = new Map<number, GaijiCategory | null>();
   let totalChars = 0;
 
   for (const unit of units) {
-    let column = 0;
-    for (const ch of unit.text) {
-      column++;
+    const chars = Array.from(unit.text);
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      const column = i + 1;
       totalChars++;
       const cp = ch.codePointAt(0)!;
       if (cp < 0x20 && cp !== 0x0a && cp !== 0x0d && cp !== 0x09) {
@@ -477,14 +654,22 @@ export function scanUnits(units: ScanUnit[], options: DetectOptions = DEFAULT_DE
       } else if (cp < 0x7f) {
         continue; // ふつうの半角英数字・記号（高速化のため）
       }
-      let category = classCache.get(cp);
-      if (category === undefined) {
-        category = classifyCodePoint(cp, options);
-        classCache.set(cp, category);
+      // 前後の文字で分類が変わりうる文字（絵文字の部品・英字に似た文字）だけ、文脈を見る
+      let category: GaijiCategory | null | undefined;
+      if (cp === 0xfe0e || cp === 0xfe0f || cp === 0x200d || cp === 0x20e3 || isTagChar(cp) || LATIN_LOOKALIKE.has(cp)) {
+        category = classifyInContext(cp, chars[i - 1]?.codePointAt(0), chars[i + 1]?.codePointAt(0), options);
+      } else {
+        category = classCache.get(cp);
+        if (category === undefined) {
+          category = classifyCodePoint(cp, options);
+          classCache.set(cp, category);
+        }
       }
       if (category === null) continue;
       byCategory[category] = (byCategory[category] ?? 0) + 1;
-      let finding = found.get(cp);
+      // 同じ文字でも、文脈で分類が違うときは別に数える
+      const key = `${cp}:${category}`;
+      let finding = found.get(key);
       if (!finding) {
         finding = {
           codePoint: cp,
@@ -496,9 +681,10 @@ export function scanUnits(units: ScanUnit[], options: DetectOptions = DEFAULT_DE
           locations: [],
           moreLocations: false,
           name: nameOfCodePoint(cp),
-          replacement: SJIS_MISMATCH_REPLACEMENT.get(cp) ?? null,
+          block: blockNameOf(cp),
+          replacement: suggestReplacement(cp, category),
         };
-        found.set(cp, finding);
+        found.set(key, finding);
       }
       finding.count++;
       if (finding.locations.length < SAMPLE_LOCATIONS) finding.locations.push(`${unit.label}（${column}文字目）`);

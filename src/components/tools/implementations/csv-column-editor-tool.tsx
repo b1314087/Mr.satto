@@ -206,6 +206,9 @@ export function CsvColumnEditorTool() {
   }
 
   // プレビュー: 出力と同じ editCsvColumnRows で、現在の設定(残す列・順序・列名・行の範囲)を適用した表を作る
+  // 総合改修 19：以前は「編集前」の表にも行の削除・並び替えを先に当ててから出していたため、
+  // 削除する行が編集前の表から消えてしまい、赤い印（削除される）が付かなかった。
+  // いまは、編集前の表は元の並びのまま出し、削除する行・列に赤い印を付ける（削除する行が先頭10行より後でも、表に含めて出す）。
   const preview = useMemo(() => {
     if (!range.rows || !columns) return null;
     let all: string[][];
@@ -215,9 +218,10 @@ export function CsvColumnEditorTool() {
       all = range.rows;
     }
     const limited = all.length > PREVIEW_COMPUTE_ROWS;
-    const rows = limited ? all.slice(0, PREVIEW_COMPUTE_ROWS) : all;
+    const rowsAfterOrder = limited ? all.slice(0, PREVIEW_COMPUTE_ROWS) : all;
     const width = Math.max(columnCount, 0);
-    const padded = kind === "xlsx" ? rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? "")) : rows;
+    const pad = (list: string[][]) => (kind === "xlsx" ? list.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? "")) : list);
+    const padded = pad(rowsAfterOrder);
     const included = columns.filter((c) => c.included);
     const excluded = new Set(columns.filter((c) => !c.included).map((c) => c.originalIndex));
     const renames: Record<number, string> = {};
@@ -232,19 +236,33 @@ export function CsvColumnEditorTool() {
       afterError = e instanceof Error ? e.message : "プレビューを作成できませんでした";
     }
     const renamedCols = new Set(Object.keys(renames).map(Number));
+    // 編集前：元の並び。見出し・削除する行・先頭の行を、元の行番号の順に最大10行
+    const removedRows = new Set((rowsState?.key === rowKey ? rowsState.rows : []).filter((r) => !r.included).map((r) => r.index));
+    const firstRow = rowStart ?? 1;
+    const pick = new Set<number>();
+    if (hasHeader && range.rows.length > 0) pick.add(0);
+    for (const i of [...removedRows].sort((a, b) => a - b)) if (pick.size < 10) pick.add(i);
+    for (let i = 0; i < range.rows.length && pick.size < 10; i++) pick.add(i);
+    const beforeIdx = [...pick].sort((a, b) => a - b);
+    const beforeRows = pad(beforeIdx.map((i) => range.rows![i]));
+    const afterIdx = rowOrder ? rowOrder.slice(0, 10) : Array.from({ length: Math.min(10, rowsAfterOrder.length) }, (_, i) => i);
     return {
       limited,
       total: all.length,
-      before: toGridRows(padded.slice(0, 10), (_, c) => (excluded.has(c) ? "removed" : undefined)),
+      before: toGridRows(beforeRows, (r, c) => (removedRows.has(beforeIdx[r]) || excluded.has(c) ? "removed" : undefined)),
+      beforeRowLabels: beforeIdx.map((i) => i + firstRow),
       after: after
         ? toGridRows(after.slice(0, 10), (r, c) =>
             hasHeader && r === 0 && renamedCols.has(included[c]?.originalIndex) ? "changed" : undefined
           )
         : null,
+      afterRowLabels: afterIdx.map((i) => i + firstRow),
       afterError,
-      rowCount: rows.length,
+      rowCount: range.rows.length,
+      afterRowCount: rowsAfterOrder.length,
+      removedRowCount: removedRows.size,
     };
-  }, [range.rows, columns, columnCount, kind, hasHeader, rowOrder]);
+  }, [range.rows, columns, columnCount, kind, hasHeader, rowOrder, rowsState, rowKey, rowStart]);
 
   function toggleColumn(index: number) {
     updateColumns((prev) => prev.map((c, i) => (i === index ? { ...c, included: !c.included } : c)));
@@ -605,9 +623,11 @@ export function CsvColumnEditorTool() {
           maxRows={10}
           maxCols={8}
           totalRows={preview.rowCount}
-          afterTotalRows={preview.rowCount}
+          afterTotalRows={preview.afterRowCount}
+          beforeRowLabels={preview.beforeRowLabels}
+          afterRowLabels={preview.afterRowLabels}
           legend={[
-            { mark: "removed", label: "削除される列" },
+            { mark: "removed", label: preview.removedRowCount > 0 ? "削除される行・列" : "削除される列" },
             ...(hasHeader ? [{ mark: "changed" as const, label: "名前を変更する列" }] : []),
           ]}
           notes={[

@@ -151,6 +151,23 @@ function applyBlurRegion(
   ctx.drawImage(tempCanvas, sx - psx, sy - psy, sw, sh, sx, sy, sw, sh);
 }
 
+/**
+ * 元画像を描いたCanvasに、すべての範囲のモザイク・ぼかしをかける。
+ * 書き出し（ImageMosaicProcessor）と、画面のプレビューの両方でこの関数を使う（総合改修 21：
+ * プレビューと出力の位置・範囲・大きさ・見た目を一致させるため、同じ計算を同じ解像度で行う）。
+ */
+export function applyMosaicRegions(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, regions: MosaicRegion[]) {
+  for (const region of regions) {
+    const clamped = clampRegionToImage(region, canvas.width, canvas.height);
+    if (clamped.width <= 0 || clamped.height <= 0) continue;
+    if (region.kind === "blur") {
+      applyBlurRegion(ctx, canvas, clamped, region.level);
+    } else {
+      applyMosaicRegion(ctx, canvas, clamped, region.level);
+    }
+  }
+}
+
 export class ImageMosaicProcessor extends BrowserProcessor<ImageMosaicInput, ImageProcessorOutput> {
   async process({ file, regions, format }: ImageMosaicInput): Promise<ImageProcessorOutput> {
     const img = await loadImage(file);
@@ -178,15 +195,7 @@ export class ImageMosaicProcessor extends BrowserProcessor<ImageMosaicInput, Ima
     if (!ctx) throw new Error("Canvasの初期化に失敗しました");
     ctx.drawImage(img, 0, 0, width, height);
 
-    for (const region of regions) {
-      const clamped = clampRegionToImage(region, width, height);
-      if (clamped.width <= 0 || clamped.height <= 0) continue;
-      if (region.kind === "blur") {
-        applyBlurRegion(ctx, canvas, clamped, region.level);
-      } else {
-        applyMosaicRegion(ctx, canvas, clamped, region.level);
-      }
-    }
+    applyMosaicRegions(ctx, canvas, regions);
 
     const mimeType = format === "jpeg" ? "image/jpeg" : "image/png";
     let exportCanvas = canvas;

@@ -14,6 +14,12 @@ import {
   type PostcardOrientation,
   type PostcardText,
 } from "@/lib/print/postcard-layout";
+import {
+  layoutPostcardAddress,
+  postcardAddressSizePt,
+  validatePostcardAddress,
+  type PostcardAddressInput,
+} from "@/lib/print/postcard-address-layout";
 
 /**
  * ハガキ作成 Processor（次期機能追加 1）。
@@ -113,6 +119,67 @@ export class PostcardProcessor extends BrowserProcessor<PostcardInput, PostcardO
       }
     }
 
+    let bytes: Uint8Array;
+    try {
+      bytes = await doc.save();
+    } catch {
+      throw new Error("PDFの書き出しに失敗しました");
+    }
+    return { blob: new Blob([new Uint8Array(bytes)], { type: "application/pdf" }) };
+  }
+}
+
+/**
+ * ハガキ作成・宛名面（総合改修 28）。
+ * 配置の計算（郵便番号枠・宛先住所・宛先氏名・差出人）は src/lib/print/postcard-address-layout.ts にまとめ、プレビューと共通にしている。
+ * 文字は日本語フォントを埋め込み、1文字ずつ中央揃えで縦に並べる。郵便番号枠の線は、選んだときだけ朱色で描く。
+ */
+export class PostcardAddressProcessor extends BrowserProcessor<PostcardAddressInput, PostcardOutput> {
+  async process(input: PostcardAddressInput): Promise<PostcardOutput> {
+    const problem = validatePostcardAddress(input);
+    if (problem) throw new Error(problem);
+    await ensurePdfLib({ fontkit: true });
+    const page = postcardAddressSizePt();
+    const ops = layoutPostcardAddress(input);
+    let doc: PdfLibTypes.PDFDocument;
+    let font: PDFFont;
+    try {
+      doc = await pdfLib().PDFDocument.create();
+      let fontBytes: ArrayBuffer;
+      try {
+        fontBytes = await loadJapaneseFontBytes();
+      } catch {
+        throw new Error("日本語フォントの読み込みに失敗しました。通信環境をご確認の上、もう一度お試しください。");
+      }
+      doc.registerFontkit(fontkitLib());
+      font = await doc.embedFont(new Uint8Array(fontBytes), { subset: false });
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith("日本語フォント")) throw e;
+      throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
+    }
+    doc.setTitle("はがき 宛名面");
+    const pdfPage = doc.addPage([page.width, page.height]);
+    const black = pdfLib().rgb(0, 0, 0);
+    const vermilion = pdfLib().rgb(0.9, 0.25, 0.15); // 郵便番号枠の色（朱色）
+    for (const op of ops) {
+      if (op.kind === "rect") {
+        // 四角は「枠線の内側」の大きさ。線の太さの半分だけ外側に広げて描く
+        const half = op.lineWidth / 2;
+        pdfPage.drawRectangle({
+          x: op.x - half,
+          y: page.height - op.y - op.height - half,
+          width: op.width + op.lineWidth,
+          height: op.height + op.lineWidth,
+          borderColor: vermilion,
+          borderWidth: op.lineWidth,
+        });
+      } else if (op.kind === "line") {
+        pdfPage.drawLine({ start: { x: op.x1, y: page.height - op.y1 }, end: { x: op.x2, y: page.height - op.y2 }, thickness: op.lineWidth, color: vermilion });
+      } else {
+        const w = font.widthOfTextAtSize(op.text, op.size);
+        pdfPage.drawText(op.text, { x: op.x - w / 2, y: page.height - op.y, size: op.size, font, color: black });
+      }
+    }
     let bytes: Uint8Array;
     try {
       bytes = await doc.save();

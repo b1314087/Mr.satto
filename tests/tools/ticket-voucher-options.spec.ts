@@ -112,3 +112,29 @@ wb.save(sys.argv[1])`,
   const txt = pdfText(await makePdf(page));
   for (const s of ["金券", "引換券", "整理券", "500円", "1,000円", "A001", "A002", "A003"]) expect(txt).toContain(s);
 });
+
+test.describe("整理券・金券作成：設定の並び（総合改修 8・3-1・3-2）", () => {
+  test("Excel/CSVの読み込みが設定のいちばん上。各設定は見出しを押すと開閉する（閉じても入力は残る）", async ({ page }) => {
+    await page.goto("/tools/ticket-voucher");
+    const settings = page.getByTestId("ticket-settings");
+    await expect(settings).toBeVisible({ timeout: 40_000 });
+    const ids = await settings.locator(":scope > details").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+    expect(ids).toEqual([
+      "ticket-import-section",
+      "ticket-paper-section",
+      "ticket-content-section",
+      "ticket-size-section",
+      "ticket-cut-section",
+      "ticket-codes-section",
+    ]);
+    await expect(page.getByTestId("ticket-import-section").getByText("CSV/Excelをドラッグ&ドロップ")).toBeVisible();
+    const content = page.getByTestId("ticket-content-section");
+    await content.getByLabel("タイトル").first().fill("引換券");
+    await content.locator("summary").click();
+    await expect(content).not.toHaveAttribute("open", "");
+    await expect(page.getByTestId("ticket-paper-section")).toHaveAttribute("open", "");
+    await expect(page.getByTestId("tool-preview")).toContainText("引換券");
+    await content.locator("summary").click();
+    await expect(content.getByLabel("タイトル").first()).toHaveValue("引換券");
+  });
+});

@@ -438,3 +438,26 @@ test("video-mosaic（工程4）: 本物の Worker でも、追跡を途中で止
   await expect(page.getByTestId("vm-timeline")).toHaveCount(0);
   await expect(page.getByTestId("vm-track")).toBeEnabled();
 });
+
+test("video-mosaic（総合改修 12）: 「＋ モザイク追加」で、動かない範囲を真ん中に作れる。押すたびに少しずらして増え、選んだ範囲を動かせる", async ({ page }) => {
+  await openWithVideo(page);
+  await expect(page.getByTestId("vm-box")).toHaveCount(0);
+  await page.getByTestId("vm-add").click();
+  await expect(page.getByTestId("vm-box")).toHaveCount(1);
+  const a = await boxOf(page, 0);
+  near(a.w, Math.round(W * 0.25), 2);
+  near(a.h, Math.round(H * 0.25), 2);
+  near(a.x + a.w / 2, W / 2, 2); // 真ん中
+  near(a.y + a.h / 2, H / 2, 2);
+  await page.getByTestId("vm-add").click();
+  await expect(page.getByTestId("vm-box")).toHaveCount(2);
+  const b = await boxOf(page, 1);
+  expect(b.x).toBeGreaterThan(a.x); // 重ならないよう少しずらす
+  expect(b.y).toBeGreaterThan(a.y);
+  // 追加した範囲はドラッグで動かせる
+  const center = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  await dragVideo(page, center, { x: center.x - 20, y: center.y - 10 });
+  const moved = await boxOf(page, 1);
+  near(moved.x, b.x - 20, 3);
+  near(moved.y, b.y - 10, 3);
+});

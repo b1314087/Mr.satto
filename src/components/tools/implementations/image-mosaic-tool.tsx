@@ -9,8 +9,11 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
+import { SliderField } from "@/components/common/slider-field";
+import { loadImage } from "@/lib/processors/browser/image";
 import {
   ImageMosaicProcessor,
+  applyMosaicRegions,
   MIN_LEVEL,
   MAX_LEVEL,
   DEFAULT_LEVEL,
@@ -90,10 +93,6 @@ export function ImageMosaicTool() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImageProcessorOutput | null>(null);
 
-  const [previewResult, setPreviewResult] = useState<ImageProcessorOutput | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const previewRunIdRef = useRef(0);
-
   useEffect(() => {
     if (!file) {
       // ファイル選択解除時に関連stateをリセットする
@@ -134,54 +133,56 @@ export function ImageMosaicTool() {
     };
   }, [result]);
 
+  // --- プレビュー（総合改修 21）---
+  // 以前は、操作が止まって500ms後に書き出しと同じ処理をかけた画像を背景に出していたため、
+  // ドラッグ中や直後は「古い位置のモザイク」が見え、枠と結果がずれて見えていた。
+  // いまは、元画像を元の解像度のままCanvasに描き、書き出しと同じ関数（applyMosaicRegions）で
+  // 範囲を変えるたびにすぐ描き直す。表示は画面の倍率に縮めるだけなので、位置・範囲・大きさ・見た目が出力と一致する。
+  const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [baseReadyFor, setBaseReadyFor] = useState<File | null>(null);
+
   useEffect(() => {
+    baseCanvasRef.current = null;
+    if (!file) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const img = await loadImage(file);
+        if (cancelled) return;
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const ctx = c.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+        baseCanvasRef.current = c;
+        setBaseReadyFor(file);
+      } catch {
+        // 読み込みの失敗は、上の読み込み処理（loadError）で知らせる
+      }
+    })();
     return () => {
-      if (previewResult) URL.revokeObjectURL(previewResult.url);
+      cancelled = true;
     };
-  }, [previewResult]);
+  }, [file]);
 
-  const canProcess = !!file && !!naturalSize;
-
-  // ライブプレビュー: 範囲のドラッグ中は枠線の再描画だけ（軽量）に留め、
-  // 操作が止まって500ms経ってから実際のProcessorを1回だけ呼ぶ。
+  const baseReady = !!file && baseReadyFor === file;
   useEffect(() => {
-    // 範囲が1つもない場合は、Processorが例外を投げるようになった（保存時の
-    // 安全対策）ため、ここでも処理自体をスキップし、プレビューは元画像
-    // （stageImageUrlのフォールバック）にそのまま戻す。こうしないと、範囲を
-    // 最後の1つまで削除した際に、直前の（モザイク適用済みの）古いプレビュー画像が
-    // 残り続けてしまう。
-    if (!canProcess || !file || regions.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPreviewResult((prev) => {
-        if (prev) URL.revokeObjectURL(prev.url);
-        return null;
-      });
-      setPreviewLoading(false);
-      return;
-    }
-    const runId = ++previewRunIdRef.current;
-    setPreviewLoading(true);
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const output = await new ImageMosaicProcessor().process({ file, regions, format: "png" });
-          if (previewRunIdRef.current !== runId) {
-            // 追い越された古い結果は破棄する
-            URL.revokeObjectURL(output.url);
-            return;
-          }
-          setPreviewResult((prev) => {
-            if (prev) URL.revokeObjectURL(prev.url);
-            return output;
-          });
-          setPreviewLoading(false);
-        } catch {
-          if (previewRunIdRef.current === runId) setPreviewLoading(false);
-        }
-      })();
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [file, regions, canProcess]);
+    const base = baseCanvasRef.current;
+    const canvas = previewCanvasRef.current;
+    if (!baseReady || !base || !canvas) return;
+    const frame = requestAnimationFrame(() => {
+      if (canvas.width !== base.width) canvas.width = base.width;
+      if (canvas.height !== base.height) canvas.height = base.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(base, 0, 0);
+      applyMosaicRegions(ctx, canvas, regions);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [baseReady, regions, zoomPercent]);
 
   const selectedRegion = useMemo(
     () => regions.find((r) => r.id === selectedId) ?? null,
@@ -367,7 +368,6 @@ export function ImageMosaicTool() {
   const scale = zoomPercent / 100;
   const stageWidth = naturalSize ? Math.round(naturalSize.width * scale) : 0;
   const stageHeight = naturalSize ? Math.round(naturalSize.height * scale) : 0;
-  const stageImageUrl = previewResult?.url ?? imageUrl;
 
   return (
     <PreviewSplitLayout
@@ -388,16 +388,13 @@ export function ImageMosaicTool() {
               onPointerUp={handleStagePointerUp}
               onPointerCancel={handleStagePointerUp}
             >
-              {stageImageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={stageImageUrl}
-                  alt="モザイク編集対象の画像"
-                  draggable={false}
-                  className="pointer-events-none block select-none"
-                  style={{ width: stageWidth, height: stageHeight }}
-                />
-              )}
+              <canvas
+                ref={previewCanvasRef}
+                aria-label="モザイク編集対象の画像（プレビュー）"
+                data-testid="mosaic-preview-canvas"
+                className="pointer-events-none block select-none"
+                style={{ width: stageWidth, height: stageHeight }}
+              />
 
               {regions.map((region) => {
                 const selected = region.id === selectedId;
@@ -491,7 +488,6 @@ export function ImageMosaicTool() {
             </button>
             <span className="text-xs text-neutral-500 dark:text-neutral-400">
               {regions.length}個の範囲
-              {previewLoading ? "・プレビュー更新中…" : ""}
             </span>
           </div>
 
@@ -544,6 +540,16 @@ export function ImageMosaicTool() {
             ))}
           </div>
 
+          <SliderField
+            label="表示倍率（ズーム）"
+            value={zoomPercent}
+            min={MIN_ZOOM}
+            max={MAX_ZOOM}
+            unit="%"
+            onChange={zoomTo}
+            hint="表示の大きさだけが変わります（範囲の位置・大きさと、書き出す画像は変わりません）。"
+          />
+
           {regions.length > 0 && (
             <div className="ms-seg">
               {regions.map((region, index) => (
@@ -558,7 +564,7 @@ export function ImageMosaicTool() {
             </div>
           )}
 
-          {selectedRegion && (
+          {selectedRegion && naturalSize && (
             <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
               <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
                 選択中の範囲の設定
@@ -600,47 +606,43 @@ export function ImageMosaicTool() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                  X(px)
-                  <input
-                    type="number"
-                    value={Math.round(selectedRegion.x)}
-                    onChange={(e) => updateRegion(selectedRegion.id, { x: Number(e.target.value) })}
-                    className="rounded border border-neutral-300 px-2 py-1 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                  Y(px)
-                  <input
-                    type="number"
-                    value={Math.round(selectedRegion.y)}
-                    onChange={(e) => updateRegion(selectedRegion.id, { y: Number(e.target.value) })}
-                    className="rounded border border-neutral-300 px-2 py-1 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                  幅(px)
-                  <input
-                    type="number"
-                    value={Math.round(selectedRegion.width)}
-                    onChange={(e) =>
-                      updateRegion(selectedRegion.id, { width: Number(e.target.value) })
-                    }
-                    className="rounded border border-neutral-300 px-2 py-1 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-                  高さ(px)
-                  <input
-                    type="number"
-                    value={Math.round(selectedRegion.height)}
-                    onChange={(e) =>
-                      updateRegion(selectedRegion.id, { height: Number(e.target.value) })
-                    }
-                    className="rounded border border-neutral-300 px-2 py-1 text-sm text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                  />
-                </label>
+              {/* 総合改修 21：位置（X・Y）と大きさ（幅・高さ）をバーでも動かせる。数値でも確認・入力できる（元画像のピクセル） */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="mosaic-region-sliders">
+                {(
+                  [
+                    { key: "x", label: "X(px)", bar: "横の位置（X）", max: Math.max(0, naturalSize.width - selectedRegion.width), min: 0 },
+                    { key: "y", label: "Y(px)", bar: "縦の位置（Y）", max: Math.max(0, naturalSize.height - selectedRegion.height), min: 0 },
+                    { key: "width", label: "幅(px)", bar: "範囲の幅", max: naturalSize.width, min: MIN_REGION_SIZE_PX },
+                    { key: "height", label: "高さ(px)", bar: "範囲の高さ", max: naturalSize.height, min: MIN_REGION_SIZE_PX },
+                  ] as const
+                ).map((f) => (
+                  <div key={f.key} className="flex flex-col gap-1">
+                    <label className="flex items-center justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                      <span>{f.bar}</span>
+                      <span className="flex items-center gap-1">
+                        <span className="sr-only">{f.label}</span>
+                        <input
+                          type="number"
+                          aria-label={f.label}
+                          value={Math.round(selectedRegion[f.key])}
+                          onChange={(e) => updateRegion(selectedRegion.id, { [f.key]: Number(e.target.value) })}
+                          className="w-20 rounded border border-neutral-300 px-2 py-1 text-right text-sm text-neutral-900 tabular-nums dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                        />
+                        px
+                      </span>
+                    </label>
+                    <input
+                      type="range"
+                      aria-label={`${f.bar}のバー`}
+                      min={f.min}
+                      max={Math.max(f.min, f.max)}
+                      step={1}
+                      value={Math.round(selectedRegion[f.key])}
+                      onChange={(e) => updateRegion(selectedRegion.id, { [f.key]: Number(e.target.value) })}
+                      className="w-full"
+                    />
+                  </div>
+                ))}
               </div>
 
               <button

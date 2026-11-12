@@ -7,6 +7,11 @@ import { editXlsxColumns, loadXlsxForColumnEdit, type XlsxFormulaReport } from "
  * 選んだシートの中で、指定した文字を含むセルがある「行」または「列」だけを残し、Excelファイルとして書き出す。
  * - 検索は部分一致（セルの表示用の値に、指定した文字が含まれていれば一致）。日本語もそのまま検索できる。
  *   大文字・小文字は、既定では区別しない（「大文字・小文字を区別する」を選んだときだけ区別する）。
+ *   全角・半角も、既定では区別しない（総合改修 29：「Ａ」と「A」、「１」と「1」、「ｱ」と「ア」、全角と半角の空白を同じ文字として探す。
+ *   「全角・半角を区別する」を選んだときだけ区別する）。
+ * - 結合セル（総合改修 29）：結合したセルの値は左上のセルにだけ入っているため、結合セルが一致したときは、結合している範囲の行（列）を
+ *   すべて一致として残す（結合の途中で切れて、結合が外れたり、空の行だけが残ったりしないように）。
+ * - 空のセルは一致しない。値の入っていない行・列は、一致したセルが無いため残らない（見出しを残す場合の先頭の行・列を除く）。
  *   検索する文字は1つ（複数の条件・正規表現などは扱わない）。
  * - 対象はシート全体（値の入っている範囲）。数式のセルは、計算結果の値で検索する。
  * - 書き出しは、既存の列・行の編集（src/lib/excel/xlsx-column-edit.ts の editXlsxColumns）をそのまま使い、
@@ -24,8 +29,12 @@ export interface ExtractMatchInput {
   query: string;
   axis: ExtractAxis;
   caseSensitive: boolean;
+  /** 全角・半角を区別する（省略時は区別しない） */
+  widthSensitive?: boolean;
   /** 先頭の行（行の抽出）・先頭の列（列の抽出）を、一致しなくても残す */
   keepHeader: boolean;
+  /** 結合セルの範囲（0始まり）。一致したセルが結合の中にあれば、結合の範囲の行・列をすべて残す */
+  merges?: { r1: number; c1: number; r2: number; c2: number }[];
 }
 
 export interface ExtractMatchResult {
@@ -37,22 +46,42 @@ export interface ExtractMatchResult {
   matchedCells: Set<string>;
 }
 
-/** セルの値に検索する文字が含まれるか（部分一致） */
-export function cellMatches(value: string, query: string, caseSensitive: boolean): boolean {
+/** 全角・半角をそろえる（全角の英数字・記号→半角、全角の空白→半角の空白、半角カナ→全角カナ） */
+export function foldWidth(text: string): string {
+  return text
+    .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/\u3000/g, " ")
+    .replace(/[｡-ﾟ]+/g, (m) => m.normalize("NFKC"));
+}
+
+/** セルの値に検索する文字が含まれるか（部分一致）。widthSensitive が false のときは、全角・半角を区別しない */
+export function cellMatches(value: string, query: string, caseSensitive: boolean, widthSensitive = false): boolean {
   if (query === "") return false;
-  return caseSensitive ? value.includes(query) : value.toLowerCase().includes(query.toLowerCase());
+  let v = value;
+  let q = query;
+  if (!widthSensitive) {
+    v = foldWidth(v);
+    q = foldWidth(q);
+  }
+  return caseSensitive ? v.includes(q) : v.toLowerCase().includes(q.toLowerCase());
 }
 
 /** 残す行・列を求める（プレビューと書き出しで共通） */
-export function findExtractTargets({ rows, query, axis, caseSensitive, keepHeader }: ExtractMatchInput): ExtractMatchResult {
+export function findExtractTargets({ rows, query, axis, caseSensitive, widthSensitive = false, keepHeader, merges = [] }: ExtractMatchInput): ExtractMatchResult {
   const matchedCells = new Set<string>();
   const matchedLines = new Set<number>();
   if (query !== "") {
     rows.forEach((row, r) =>
       row.forEach((value, c) => {
-        if (!cellMatches(value, query, caseSensitive)) return;
+        if (!cellMatches(value, query, caseSensitive, widthSensitive)) return;
         matchedCells.add(`${r},${c}`);
         matchedLines.add(axis === "rows" ? r : c);
+        // 結合セルの中なら、結合している範囲の行（列）をすべて残す
+        for (const m of merges) {
+          if (r < m.r1 || r > m.r2 || c < m.c1 || c > m.c2) continue;
+          const [from, to] = axis === "rows" ? [m.r1, m.r2] : [m.c1, m.c2];
+          for (let i = from; i <= to; i++) matchedLines.add(i);
+        }
       })
     );
   }
@@ -71,6 +100,8 @@ export interface ExcelExtractInput {
   query: string;
   axis: ExtractAxis;
   caseSensitive: boolean;
+  /** 全角・半角を区別する（省略時は区別しない） */
+  widthSensitive?: boolean;
   keepHeader: boolean;
 }
 
@@ -87,7 +118,7 @@ export interface ExcelExtractOutput {
 }
 
 export class ExcelExtractProcessor extends BrowserProcessor<ExcelExtractInput, ExcelExtractOutput> {
-  async process({ file, sheetIndex, query, axis, caseSensitive, keepHeader }: ExcelExtractInput): Promise<ExcelExtractOutput> {
+  async process({ file, sheetIndex, query, axis, caseSensitive, widthSensitive = false, keepHeader }: ExcelExtractInput): Promise<ExcelExtractOutput> {
     if (query === "") throw new Error("検索する文字を入力してください。");
     const sheets = await loadXlsxForColumnEdit(file);
     const sheet = sheets[sheetIndex];
@@ -95,7 +126,7 @@ export class ExcelExtractProcessor extends BrowserProcessor<ExcelExtractInput, E
     if (sheet.rows.length === 0 || (sheet.rows[0]?.length ?? 0) === 0) {
       throw new Error(`シート「${sheet.name}」には値の入ったセルがありません。`);
     }
-    const { kept, matchedCount } = findExtractTargets({ rows: sheet.rows, query, axis, caseSensitive, keepHeader });
+    const { kept, matchedCount } = findExtractTargets({ rows: sheet.rows, query, axis, caseSensitive, widthSensitive, keepHeader, merges: sheet.merges });
     if (matchedCount === 0) {
       throw new Error(`シート「${sheet.name}」に「${query}」を含むセルが見つかりませんでした。`);
     }

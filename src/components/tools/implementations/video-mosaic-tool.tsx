@@ -266,6 +266,24 @@ export function VideoMosaicTool() {
     setDrag({ kind: "draw", x0: p.x, y0: p.y, box: { x: p.x, y: p.y, w: 0, h: 0 } });
   }
 
+  /**
+   * 「モザイク追加」（総合改修 12）：プレビューの真ん中に、動かない（固定の）モザイク範囲を1つ作る。
+   * 作った範囲は、ドラッグで移動・四隅で大きさを変更・一覧で強さの調整と削除ができる（自動追跡はしない）。
+   */
+  function addFixedRegion() {
+    if (W === 0 || regions.length >= MAX_REGIONS || tracking) return;
+    videoRef.current?.pause();
+    const w = Math.max(MIN_SIDE, Math.round(W * 0.25));
+    const h = Math.max(MIN_SIDE, Math.round(H * 0.25));
+    const offset = (regions.length % 5) * Math.round(Math.min(W, H) * 0.04);
+    const box = clampBox({ x: Math.round((W - w) / 2) + offset, y: Math.round((H - h) / 2) + offset, w, h }, W, H);
+    const id = newRegionId();
+    const region: MosaicRegion = { id, mode: "fixed", kind: "mosaic", level: 6, box, keyframes: [{ t: time, ...box }], track: [], from: null, to: null };
+    setRegions((prev) => [...prev, region]);
+    setSelectedId(id);
+    setResult(null);
+  }
+
   function onStageMove(e: ReactPointerEvent<HTMLDivElement>) {
     if (!drag) return;
     const p = toVideo(e);
@@ -442,9 +460,20 @@ export function VideoMosaicTool() {
 
       {file && previewUrl && (
         <section className="flex flex-col gap-2" data-testid="tool-preview">
-          <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="vm-help">
-            止めた場面で、隠したい所をドラッグ → 「追跡する」。範囲は動かす・角で大きさを変えられます。
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={addFixedRegion}
+              disabled={W === 0 || regions.length >= MAX_REGIONS || tracking !== null}
+              className="ms-focus-ring rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-40"
+              data-testid="vm-add"
+            >
+              ＋ モザイク追加
+            </button>
+            <p className="min-w-0 flex-1 text-xs text-neutral-600 dark:text-neutral-300" data-testid="vm-help">
+              「モザイク追加」で、動かない範囲を真ん中に作れます（ドラッグで移動・四隅で大きさを変更）。動くものを隠すときは、止めた場面で隠したい所をドラッグ →「追跡する」。
+            </p>
+          </div>
           <div className="mx-auto w-full" style={W > 0 ? { maxWidth: `min(100%, ${Math.round((60 * W) / H)}vh)` } : undefined}>
             <div
               ref={stageRef}

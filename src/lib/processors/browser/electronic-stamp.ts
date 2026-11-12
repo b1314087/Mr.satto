@@ -1033,17 +1033,43 @@ export function resizeCanvasByScale(source: HTMLCanvasElement, scalePercent: num
 
 export interface StampExportInput {
   canvas: HTMLCanvasElement;
+  /** 出力形式（総合改修 5-3）。PNG・WebPは透明、JPEGは白背景。省略時はPNG */
+  format?: "png" | "jpeg" | "webp";
 }
 
 /**
- * 完成した印影CanvasをPNG(Blob)として書き出す、共通の最終ステップ。
+ * 完成した印影Canvasを画像(Blob)として書き出す、共通の最終ステップ。
  * 文字から生成するモード・取り込みモードのどちらも、最後はこのProcessorを
  * 通してダウンロード用の出力を得る。
+ * - PNG：透明な背景のまま。
+ * - JPEG：透明にできない形式のため、白の背景に印影を重ねてから書き出す（黒くならないように）。
+ * - WebP：透明な背景のまま（劣化の少ない最高品質）。WebPで書き出せないブラウザでは、その旨を伝える。
  */
 export class StampExportProcessor extends BrowserProcessor<StampExportInput, ImageProcessorOutput> {
-  async process({ canvas }: StampExportInput): Promise<ImageProcessorOutput> {
+  async process({ canvas, format = "png" }: StampExportInput): Promise<ImageProcessorOutput> {
     if (canvas.width <= 0 || canvas.height <= 0) {
       throw new Error("印影画像の生成に失敗しました。内容を確認してください。");
+    }
+    if (format === "jpeg") {
+      const flat = document.createElement("canvas");
+      flat.width = canvas.width;
+      flat.height = canvas.height;
+      const ctx = flat.getContext("2d");
+      if (!ctx) throw new Error("印影画像の生成に失敗しました。");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, flat.width, flat.height);
+      ctx.drawImage(canvas, 0, 0);
+      const blob = await canvasToBlob(flat, "image/jpeg", 0.95);
+      flat.width = 0;
+      flat.height = 0;
+      return toOutput(blob, canvas.width, canvas.height);
+    }
+    if (format === "webp") {
+      const blob = await canvasToBlob(canvas, "image/webp", 1);
+      if (blob.type !== "image/webp") {
+        throw new Error("お使いのブラウザは、WebPでの書き出しに対応していません。PNGを選んでください（PNGも背景は透明です）。");
+      }
+      return toOutput(blob, canvas.width, canvas.height);
     }
     const blob = await canvasToBlob(canvas, "image/png");
     return toOutput(blob, canvas.width, canvas.height);

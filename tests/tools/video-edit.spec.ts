@@ -265,7 +265,7 @@ test.describe("設定の組み合わせ", () => {
     { name: "形式＋圧縮", tool: "video-compress", picks: ["WebM"], expectProbe: { format: "webm", width: 1280, height: 720, fps: 60 } },
     { name: "形式＋解像度＋fps", tool: "video-convert", picks: ["WebM", "480p", "30fps"], expectProbe: { format: "webm", width: 854, height: 480, fps: 30 } },
     { name: "圧縮＋解像度＋fps", tool: "video-compress", picks: ["高圧縮（強め）", "480p", "24fps"], expectProbe: { format: "mp4", width: 854, height: 480, fps: 24 } },
-    { name: "すべて同時（WebM・高圧縮・480p・15fps）", tool: "video-resize", picks: ["480p", "WebM", "高圧縮（強め）", "15fps"], expectProbe: { format: "webm", width: 854, height: 480, fps: 15 } },
+    { name: "すべて同時（WebM・高圧縮・480p・24fps）", tool: "video-resize", picks: ["480p", "WebM", "高圧縮（強め）", "24fps"], expectProbe: { format: "webm", width: 854, height: 480, fps: 24 } },
   ];
 
   for (const c of cases) {
@@ -284,6 +284,32 @@ test.describe("設定の組み合わせ", () => {
       expect(path.basename(out)).toMatch(new RegExp(`^src-1280x720-60${VIDEO_EDIT_PRESETS[c.tool].fileSuffix}\\.${p.format}$`));
     });
   }
+
+  test("総合改修 16：形式変換で MOV・MKV にも書き出せる（拡張子・中身の形式・音声）", async ({ page }) => {
+    await openWithVideo(page, "video-convert", src);
+    for (const label of ["MP4", "MOV", "WebM", "MKV"]) await expect(page.getByTestId("video-edit-settings").getByText(label, { exact: true })).toBeVisible();
+    await choose(page, "MOV");
+    const mov = await runAndDownload(page, "変換する");
+    expect(path.extname(mov)).toBe(".mov");
+    const brand = execFileSync("ffprobe", ["-v", "error", "-show_entries", "format_tags=major_brand", "-of", "csv=p=0", mov]).toString().trim();
+    expect(brand).toBe("qt");
+    expect(probe(mov)).toMatchObject({ width: 1280, height: 720, hasAudio: true });
+    await page.keyboard.press("Escape");
+    await choose(page, "MKV");
+    const mkv = await runAndDownload(page, "変換する");
+    expect(path.extname(mkv)).toBe(".mkv");
+    expect(fs.readFileSync(mkv).subarray(0, 64).toString("latin1")).toContain("matroska");
+    expect(probe(mkv)).toMatchObject({ width: 1280, height: 720, hasAudio: true });
+    // ほかの動画編集ページは、これまでどおり MP4・WebM だけ
+    await openWithVideo(page, "video-compress", src);
+    await expect(page.getByTestId("video-edit-settings").getByText("MOV", { exact: true })).toHaveCount(0);
+  });
+
+  test("総合改修 14：フレームレートの候補は24fps以上だけ（15fpsは選べない）", async ({ page }) => {
+    await openWithVideo(page, "video-frame-rate", src);
+    for (const label of ["60fps", "30fps", "24fps"]) await expect(page.getByTestId("video-edit-settings").getByText(label, { exact: true })).toBeVisible();
+    await expect(page.getByTestId("video-edit-settings").getByText("15fps", { exact: true })).toHaveCount(0);
+  });
 
   test("圧縮の設定が反映される：「高圧縮（強め）」は「高画質（弱め）」より小さくなる", async ({ page }) => {
     await openWithVideo(page, "video-compress", src);
@@ -341,22 +367,23 @@ test.describe("工程3：切り取り・音声を消す・回転", () => {
     src = makeVideo({ w: 640, h: 360, fps: 30, sec: 6 });
   });
 
-  test("4つのページとも、切り取り・回転・音声を消すの設定がある", async ({ page }) => {
+  test("4つのページとも回転・音声を消すの設定がある。切り取りは圧縮だけ（総合改修 14〜16：形式変換・解像度・fpsでは削除）", async ({ page }) => {
     for (const id of TOOLS) {
       await openWithVideo(page, id, src);
-      await expect(page.getByTestId("video-edit-trim")).toBeVisible();
+      if (id === "video-compress") await expect(page.getByTestId("video-edit-trim")).toBeVisible();
+      else await expect(page.getByTestId("video-edit-trim")).toHaveCount(0);
       await expect(page.getByTestId("video-edit-mute")).toBeVisible();
       await expect(page.getByTestId("video-edit-settings").getByText("右に90°", { exact: true })).toBeVisible();
     }
   });
 
   test("切り取り（正確）：2秒〜4.5秒を残すと、長さが約2.5秒になり、音声も残る", async ({ page }) => {
-    await openWithVideo(page, "video-convert", src);
+    await openWithVideo(page, "video-compress", src);
     await page.getByTestId("video-edit-trim-start").fill("0:02");
     await page.getByTestId("video-edit-trim-end").fill("4.5");
     await expect(page.getByTestId("video-edit-trim-summary")).toContainText("0:02.0 〜 0:04.5（0:02.5）を残します");
     await expect(page.getByTestId("tool-preview")).toContainText("0:02.5（0:02.0〜0:04.5）");
-    const out = await runAndDownload(page, "変換する");
+    const out = await runAndDownload(page, "圧縮する");
     const dur = probeDuration(out);
     expect(dur).toBeGreaterThan(2.3);
     expect(dur).toBeLessThan(2.75);
@@ -365,31 +392,32 @@ test.describe("工程3：切り取り・音声を消す・回転", () => {
   });
 
   test("切り取り（速さ優先）：作り直さずに切れ、長さは指定以上・元より短い", async ({ page }) => {
-    await openWithVideo(page, "video-convert", src);
+    await openWithVideo(page, "video-compress", src);
     await page.getByTestId("video-edit-trim-start").fill("2");
+    await choose(page, "元のまま");
     await page.getByTestId("video-edit-trim-fast").check();
-    const out = await runAndDownload(page, "変換する");
+    const out = await runAndDownload(page, "圧縮する");
     const dur = probeDuration(out);
     expect(dur).toBeGreaterThan(3.8);
     expect(dur).toBeLessThan(5.9);
   });
 
   test("切り取りの範囲がおかしいときは、理由を出して実行できない。「切り取りをやめる」で戻る", async ({ page }) => {
-    await openWithVideo(page, "video-convert", src);
+    await openWithVideo(page, "video-compress", src);
     await page.getByTestId("video-edit-trim-start").fill("5");
     await page.getByTestId("video-edit-trim-end").fill("3");
     await expect(page.getByTestId("video-edit-trim-error")).toContainText("開始より後");
-    await expect(page.getByRole("button", { name: "変換する", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "圧縮する", exact: true })).toBeDisabled();
     await page.getByTestId("video-edit-trim-end").fill("9");
     await expect(page.getByTestId("video-edit-trim-error")).toContainText("動画の長さ");
     await page.getByTestId("video-edit-trim-reset").click();
     await expect(page.getByTestId("video-edit-trim-error")).toHaveCount(0);
     await expect(page.getByTestId("video-edit-trim-start")).toHaveValue("");
-    await expect(page.getByRole("button", { name: "変換する", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "圧縮する", exact: true })).toBeEnabled();
   });
 
   test("「今の位置」：プレビューの再生位置が、開始に入る", async ({ page }) => {
-    await openWithVideo(page, "video-convert", src);
+    await openWithVideo(page, "video-compress", src);
     const video = page.getByTestId("tool-preview").locator("video");
     await video.evaluate(async (el: HTMLVideoElement) => {
       if (el.readyState < 1) await new Promise((r) => el.addEventListener("loadedmetadata", r, { once: true }));
@@ -422,15 +450,15 @@ test.describe("工程3：切り取り・音声を消す・回転", () => {
     expect(probe(webm)).toMatchObject({ format: "webm", width: 360, height: 640, hasAudio: true });
   });
 
-  test("組み合わせ：切り取り＋回転＋解像度＋音声を消すを、1回の変換でまとめて反映できる", async ({ page }) => {
+  test("組み合わせ：切り取り＋回転＋解像度＋音声を消すを、1回の変換でまとめて反映できる（圧縮のページ）", async ({ page }) => {
     const wide = makeVideo({ w: 1280, h: 720, fps: 30, sec: 6 });
-    await openWithVideo(page, "video-resize", wide);
+    await openWithVideo(page, "video-compress", wide);
     await choose(page, "480p");
     await choose(page, "右に90°");
     await page.getByTestId("video-edit-mute").check();
     await page.getByTestId("video-edit-trim-start").fill("1");
     await page.getByTestId("video-edit-trim-end").fill("3");
-    const out = await runAndDownload(page, "解像度を変更する");
+    const out = await runAndDownload(page, "圧縮する");
     const p = probe(out);
     expect(p.hasAudio).toBe(false);
     const dur = probeDuration(out);

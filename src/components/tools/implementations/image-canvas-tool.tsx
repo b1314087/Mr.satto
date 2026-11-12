@@ -119,8 +119,10 @@ const PREVIEW_DEBOUNCE_MS = 250;
 export function ImageCanvasTool() {
   const [compressKind, setCompressKind] = useState<CompressKind>("quality");
   // 新工程1：初期状態は「サイズを変更」だけを選んだ状態（圧縮は必要なときに利用者がオンにする）
-  const [useResize, setUseResize] = useState(true);
-  const [useCompress, setUseCompress] = useState(false);
+  // 総合改修 27：「サイズを変更」と「容量を圧縮」は、どちらか一方だけを選ぶ（同時に選ばれた状態を作らない）
+  const [op, setOp] = useState<"resize" | "compress">("resize");
+  const useResize = op === "resize";
+  const useCompress = op === "compress";
   const plan: ImageRunPlan = { resize: useResize, compress: useCompress, compressKind };
   const hasAction = useResize || useCompress;
   const actionLabel = actionLabelOf(plan);
@@ -154,12 +156,10 @@ export function ImageCanvasTool() {
     const mode = new URLSearchParams(window.location.search).get("mode");
     if (mode === "resize") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUseResize(true);
-      setUseCompress(false);
+      setOp("resize");
     } else if (mode === "size") {
       // 旧「指定KBまで圧縮」からの転送：圧縮（目標サイズの指定）だけを選んだ状態で開く（これまでと同じ）
-      setUseResize(false);
-      setUseCompress(true);
+      setOp("compress");
       setCompressKind("size");
     }
   }, []);
@@ -399,46 +399,44 @@ export function ImageCanvasTool() {
       ) : null}
     >
       <div className="flex flex-col gap-2" data-testid="image-ops">
-        {/* やること（サイズ変更・圧縮）。両方を選べるので、オン・オフの切り替えボタン（チェックボックスと同じ扱い） */}
+        {/* やること（サイズ変更・圧縮）。どちらか一方だけを選ぶ（もう一方を押すと、今の選択は自動で外れる） */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <p id="image-ops-label" className="text-sm font-medium text-ms-text">
-            やること<span className="ml-1 text-xs font-normal text-ms-muted">（両方も選べます）</span>
+            やること<span className="ml-1 text-xs font-normal text-ms-muted">（どちらか1つ）</span>
           </p>
-          <div className="ms-seg" role="group" aria-labelledby="image-ops-label">
+          <div className="ms-seg" role="radiogroup" aria-labelledby="image-ops-label">
             {(
               [
-                { id: "resize", label: "サイズを変更", checked: useResize, set: setUseResize, testId: "image-op-resize" },
-                { id: "compress", label: "容量を圧縮", checked: useCompress, set: setUseCompress, testId: "image-op-compress" },
+                { id: "resize", label: "サイズを変更", testId: "image-op-resize" },
+                { id: "compress", label: "容量を圧縮", testId: "image-op-compress" },
               ] as const
-            ).map((op) => (
+            ).map((o) => (
               <button
-                key={op.id}
+                key={o.id}
                 type="button"
-                role="checkbox"
-                aria-checked={op.checked}
-                data-testid={op.testId}
+                role="radio"
+                aria-checked={op === o.id}
+                data-testid={o.testId}
                 onClick={() => {
-                  op.set(!op.checked);
+                  if (op === o.id) return;
+                  setOp(o.id);
                   setResult(null);
                   setBatchItems([]);
                   setStatus("idle");
                   setError(null);
                 }}
               >
-                <span aria-hidden="true">{op.checked ? "✓" : "＋"}</span>
-                {op.label}
+                <span aria-hidden="true">{op === o.id ? "✓" : ""}</span>
+                {o.label}
               </button>
             ))}
           </div>
         </div>
-        {!hasAction && (
-          <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="image-op-none">
-            「サイズを変更」「容量を圧縮」の、少なくとも一方を選んでください。
-          </p>
-        )}
-        {useResize && useCompress && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">指定したサイズに変更してから圧縮します。</p>
-        )}
+        <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="image-op-note">
+          {useResize
+            ? "画像の縦横の大きさを変えます（画質の圧縮はしません）。"
+            : "縦横の大きさはそのままで、ファイルの容量を小さくします。"}
+        </p>
       </div>
 
       <FileDropzone

@@ -21,13 +21,13 @@ const toolDefinitions: Tool[] = [
   // 画像
   // ------------------------------------------------------------------
   {
-    // 工程3：画像リサイズ（旧 image-resize）を統合した。リサイズ・圧縮をそれぞれ単独でも、両方同時にも使える。
+    // 工程3：画像リサイズ（旧 image-resize）を統合した。総合改修 27：リサイズと圧縮はどちらか一方を選ぶ（排他）。
     // 旧URL /tools/image-resize は ?mode=resize（サイズの変更だけを選んだ状態）へ転送する（URLは /tools/image-compress のまま）
     id: "image-compress",
     name: "画像リサイズ・圧縮",
     category: "image",
     description:
-      "画像の縦横サイズの変更（リサイズ）と、ファイルサイズを小さくする圧縮（画質指定・目標KB指定）を、それぞれ単独でも同時にも行えます",
+      "画像の縦横サイズの変更（リサイズ）と、ファイルサイズを小さくする圧縮（画質指定・目標KB指定）を、切り替えて行えます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
@@ -899,6 +899,17 @@ const toolDefinitions: Tool[] = [
     keywords: ["抽出", "行抽出", "列抽出", "絞り込み", "フィルター", "検索", "含む行", "excel", "Excel 抽出", "特定の文字 行"],
   },
   {
+    // 総合改修 18：セル内の不要な空白（半角・全角、先頭・末尾・文字と文字の間）を整える。文字のセルだけを変え、書式・数式・結合セルは保つ
+    id: "excel-space-remove",
+    name: "Excelスペース削除",
+    category: "csv-excel",
+    description: "Excelのセルの中の不要な空白（半角・全角、先頭・末尾・文字と文字の間）を選んで削除し、新しいExcelファイルとして保存します。数式・日付・書式・結合セルは変えません",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["スペース削除", "空白削除", "全角スペース", "半角スペース", "trim", "前後の空白", "余分な空白", "excel 空白", "セル 空白 削除", "名簿 空白"],
+  },
+  {
     // 次工程・軽量便利ツール一括追加（Tool 6）
     id: "excel-replace",
     name: "Excel文字削除・置換",
@@ -1001,11 +1012,11 @@ const toolDefinitions: Tool[] = [
     id: "video-convert",
     name: "動画形式変換",
     category: "video",
-    description: "動画をMP4・WebM形式に変換します",
+    description: "動画をMP4・MOV・WebM・MKV形式に変換します",
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
-    keywords: ["動画変換", "mp4", "webm", "mov", "形式変換", "動画 トリミング", "動画 切り取り", "動画 カット", "動画 回転", "動画 音声を消す", "動画 ミュート"],
+    keywords: ["動画変換", "mp4", "webm", "mov", "mkv", "形式変換", "動画 回転", "動画 音声を消す", "動画 ミュート"],
   },
   {
     id: "video-compress",
@@ -1051,11 +1062,11 @@ const toolDefinitions: Tool[] = [
     id: "video-thumbnail",
     name: "動画サムネイル抽出",
     category: "video",
-    description: "動画の指定した時点の静止画をPNG・JPEGで書き出します。複数の時刻・一定の間隔・均等な枚数でまとめて取り出し、ZIPで保存することもできます",
+    description: "動画を再生して一時停止した位置の静止画を、PNG・JPEGで書き出します",
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
-    keywords: ["サムネイル", "静止画抽出", "フレーム抽出", "png", "jpeg", "動画 サムネイル 複数", "動画 画像 抽出", "動画 フレーム 抽出", "動画 連続 キャプチャ", "連続キャプチャ", "コマ切り出し", "一括抽出", "zip"],
+    keywords: ["サムネイル", "静止画抽出", "フレーム抽出", "png", "jpeg", "動画 画像 抽出", "動画 フレーム 抽出", "コマ切り出し", "一時停止 画像", "動画 キャプチャ"],
   },
   {
     // 次期機能追加 3：1本の動画の残したい区間だけをつなぐ（不要部分の削除）／複数の動画を1本に結合する
@@ -1091,16 +1102,16 @@ const toolDefinitions: Tool[] = [
     keywords: ["モザイク", "動画 モザイク", "ぼかし", "黒塗り", "追跡", "トラッキング", "顔隠し", "ナンバープレート", "個人情報", "プライバシー", "mosaic", "blur", "動画 モザイク 高速化", "高速"],
   },
   {
-    // 動画字幕追加：字幕を手入力し、動画とは別の字幕トラック（WebVTT）として入れた動画（MKV・WebM）を書き出す。
-    // 字幕は焼き付けない。字幕だけのファイル（.srt・.vtt）も保存できる。
+    // 動画字幕追加：字幕を手入力し、字幕ごとの見た目（フォント・縁取り・位置・フェード）とタイムラインで編集する（総合改修 11）。
+    // 映像に焼き付ける（MP4・WebM）か、字幕トラック（WebVTT）として入れる（MKV・WebM）かを選べる。字幕ファイル（.srt・.vtt）も保存できる。
     id: "video-subtitle",
     name: "動画字幕追加",
     category: "video",
-    description: "動画に字幕を手入力で追加します。字幕は焼き付けず、ON・OFFできる字幕トラックとして入れます（MKV・WebM）。字幕ファイル（.srt・.vtt）も保存できます",
+    description: "動画に字幕を追加します。字幕ごとにフォント・色・縁取り・位置・フェードを設定し、タイムラインで表示時間を調整できます。映像への焼き付けと、ON・OFFできる字幕トラックを選べます",
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
-    keywords: ["字幕", "字幕追加", "動画 字幕", "字幕トラック", "サブタイトル", "テロップ", "srt", "vtt", "WebVTT", "字幕ファイル", "subtitle", "caption", "MKV"],
+    keywords: ["字幕", "字幕追加", "動画 字幕", "字幕トラック", "字幕 焼き付け", "テロップ", "テロップ 縁取り", "フェード", "タイムライン", "サブタイトル", "srt", "vtt", "WebVTT", "字幕ファイル", "subtitle", "caption", "MKV"],
     relatedToolIds: ["video-convert", "video-mosaic"],
   },
 
@@ -1144,6 +1155,19 @@ const toolDefinitions: Tool[] = [
     featured: true,
   },
   {
+    // 総合改修 10：見積書作成・見積書注文書の一体作成・請求書作成・注文書作成の4ツールを1つに統合した総合ツール。
+    // 旧4ツールの個別URLは残し（mergedInto）、開くとその書類を選んだ状態で表示する。
+    id: "document-suite",
+    name: "見積書・注文書・請求書作成",
+    category: "generator",
+    description: "見積書・見積書と注文書の一体作成・請求書・注文書を、1つの画面で書類を選んで作成し、PDFで保存できます",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["見積書", "注文書", "請求書", "発注書", "帳票", "書類作成", "estimate", "invoice", "order", "見積書 注文書 一体"],
+    featured: true,
+  },
+  {
     id: "estimate-generator",
     name: "見積書作成",
     category: "generator",
@@ -1152,6 +1176,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["見積書", "estimate", "帳票"],
+    mergedInto: "document-suite",
   },
   {
     id: "quote-order-generator",
@@ -1162,6 +1187,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["見積書", "注文書", "一体", "複合", "帳票", "発注書"],
+    mergedInto: "document-suite",
   },
   {
     id: "invoice-generator",
@@ -1172,7 +1198,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["請求書", "invoice", "帳票"],
-    featured: true,
+    mergedInto: "document-suite",
   },
   {
     id: "order-generator",
@@ -1183,6 +1209,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "premium",
     processor: "browser",
     keywords: ["注文書", "order", "発注", "帳票"],
+    mergedInto: "document-suite",
   },
   {
     id: "envelope-address",
@@ -1215,15 +1242,26 @@ const toolDefinitions: Tool[] = [
     keywords: ["名簿", "一覧表", "出席簿", "台帳"],
   },
   {
+    // 総合改修 17：郵便番号 ⇔ 住所を調べる。住所データ（日本郵便の郵便番号データ）はサイト内に置き、ブラウザの中で検索する（外部APIは使わない）
+    id: "postal-search",
+    name: "郵便番号・住所検索",
+    category: "other",
+    description: "郵便番号から住所を、住所から郵便番号を調べてコピーできます。検索はブラウザの中で行い、入力した住所は外部へ送りません",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["郵便番号", "郵便番号検索", "住所検索", "住所から郵便番号", "郵便番号から住所", "〒", "zip", "宛名", "住所"],
+  },
+  {
     // 次期機能追加 1：はがき（100×148mm）に文字・画像を置いてPDFにする
     id: "postcard",
     name: "ハガキ作成",
     category: "generator",
-    description: "はがき（100×148mm）の縦向き・横向きに、文字と画像を置いて、位置・大きさ・文字の色を調整し、印刷用のPDFを作成します",
+    description: "はがき（100×148mm）の宛名面（郵便番号枠・住所・氏名・差出人を縦書き）と、文字と画像を置く面（縦向き・横向き）を作り、印刷用のPDFにします",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    keywords: ["はがき", "ハガキ", "葉書", "年賀状", "暑中見舞い", "案内状", "ポストカード", "はがき 印刷", "postcard"],
+    keywords: ["はがき", "ハガキ", "葉書", "年賀状", "暑中見舞い", "案内状", "ポストカード", "はがき 印刷", "postcard", "はがき 宛名", "宛名面", "郵便番号枠"],
   },
   {
     // 工程5：座席表・席順作成。用途（会議・グループワーク・授業・円卓・カスタム）を選び、名前と役職を入れると入力順に席へ入る。
@@ -1473,7 +1511,7 @@ const toolDefinitions: Tool[] = [
     id: "electronic-stamp-generator",
     name: "電子印鑑生成",
     category: "generator",
-    description: "文字から印影画像を作成したり、お手持ちの印鑑を画像・PDFから取り込んで透明PNGに整えたりできます",
+    description: "文字から印影画像を作成したり、お手持ちの印鑑を画像・PDFから取り込んで透明PNGに整えたり、固有ID付き（QRコードは任意）の印影を作ったりできます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",

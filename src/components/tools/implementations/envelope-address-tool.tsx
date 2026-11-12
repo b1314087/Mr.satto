@@ -1,7 +1,7 @@
 "use client";
 
 import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { EnvelopePreview } from "./shared/envelope-preview";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import {
@@ -44,6 +44,8 @@ import {
 import { parseTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { SettingsSection } from "@/components/ui/settings-section";
+import { usePrehydrationValue } from "@/lib/hooks/use-prehydration-value";
 import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT =
@@ -62,9 +64,12 @@ function AddressBox({
   onChange: (v: string) => void;
   onRemove?: () => void;
 }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  usePrehydrationValue(ref, value, onChange);
   return (
     <div className="flex items-start gap-2">
       <textarea
+        ref={ref}
         value={value}
         rows={3}
         aria-label={label}
@@ -95,28 +100,12 @@ function StepCard({
   testId: string;
   children: React.ReactNode;
 }) {
+  // 総合改修 3-1：全ツール共通の折りたたみ式の設定グループ（見出しを押すと開閉）
   return (
-    <section
-      data-testid={testId}
-      className="flex flex-col gap-5 rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800 sm:p-5"
-    >
-      <header className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white"
-        >
-          {step}
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold">
-            <span className="sr-only">手順{step}：</span>
-            {title}
-          </h2>
-          <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>
-        </div>
-      </header>
+    <SettingsSection n={step} title={title} testId={testId} bodyClassName="flex flex-col gap-5">
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>
       {children}
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -333,86 +322,8 @@ export function EnvelopeAddressTool() {
       </div>
 
       <div className="flex min-w-0 flex-col gap-5 pb-[42vh] lg:order-1 lg:pb-0">
-        <StepCard step={1} title="封筒を選ぶ" hint="まず、封筒の大きさと向きを決めます。" testId="envelope-step-size">
-          <div className="flex flex-wrap gap-x-8 gap-y-4">
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">
-              封筒サイズ
-            </span>
-            <div className="ms-seg">
-              {ENVELOPE_SIZE_IDS.map((id) => (
-                <button aria-pressed={envelopeSize === id}
-                  key={id}
-                  type="button"
-                  onClick={() => {
-                    setEnvelopeSize(id);
-                    clearResult();
-                  }}
-                >
-                  {ENVELOPE_SIZE_LABELS[id]}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">
-              封筒の向き
-            </span>
-            <div className="ms-seg">
-              {(["portrait", "landscape"] as const).map((o) => (
-                <button
-                  key={o}
-                  type="button"
-                  aria-pressed={orientation === o}
-                  onClick={() => {
-                    setOrientation(o);
-                    resetBlockPositions();
-                    clearResult();
-                  }}
-                >
-                  {o === "portrait" ? "縦向き" : "横向き"}
-                </button>
-              ))}
-            </div>
-          </div>
-          </div>
-        </StepCard>
-
-        <StepCard step={2} title="宛先を入れる" hint="郵便番号・住所・氏名を入力するか、Excel/CSVから読み込みます。" testId="envelope-step-input">
+        <StepCard step={1} title="Excel/CSVから宛先をまとめて読み込む（任意）" hint="郵便番号・住所・氏名の列があるExcel/CSVから、複数の宛先をまとめて入れられます。手で入れるときは使わなくてかまいません。" testId="envelope-step-import">
         <div className="flex flex-col gap-3">
-          <p className="text-sm font-medium">宛先を入力（{recipients.length}件）</p>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">郵便番号・住所・氏名を1つの枠に入力します（敬称は最後の行につきます）。</p>
-          {recipients.map((r, i) => (
-            <AddressBox
-              key={i}
-              value={r}
-              label={`宛先${i + 1}`}
-              onChange={(v) => {
-                const next = [...recipients];
-                next[i] = v;
-                setRecipients(next);
-                clearResult();
-              }}
-              onRemove={
-                recipients.length > 1
-                  ? () => setRecipients(recipients.filter((_, idx) => idx !== i))
-                  : undefined
-              }
-            />
-          ))}
-          <button
-            type="button"
-            onClick={() => setRecipients([...recipients, ""])}
-            className="w-fit rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
-          >
-            + 宛先を追加
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-3 border-t border-neutral-200 pt-5 dark:border-neutral-800">
-          <p className="text-sm font-medium">
-            または、Excel/CSVから複数の宛先をまとめて読み込む（任意）
-          </p>
           <FileDropzone
             compact={!!importedFile}
             accept={ACCEPT}
@@ -483,6 +394,84 @@ export function EnvelopeAddressTool() {
             </div>
           )}
         </div>
+        </StepCard>
+
+        <StepCard step={2} title="封筒を選ぶ" hint="封筒の大きさと向きを決めます。" testId="envelope-step-size">
+          <div className="flex flex-wrap gap-x-8 gap-y-4">
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-neutral-600 dark:text-neutral-300">
+              封筒サイズ
+            </span>
+            <div className="ms-seg">
+              {ENVELOPE_SIZE_IDS.map((id) => (
+                <button aria-pressed={envelopeSize === id}
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setEnvelopeSize(id);
+                    clearResult();
+                  }}
+                >
+                  {ENVELOPE_SIZE_LABELS[id]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-neutral-600 dark:text-neutral-300">
+              封筒の向き
+            </span>
+            <div className="ms-seg">
+              {(["portrait", "landscape"] as const).map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  aria-pressed={orientation === o}
+                  onClick={() => {
+                    setOrientation(o);
+                    resetBlockPositions();
+                    clearResult();
+                  }}
+                >
+                  {o === "portrait" ? "縦向き" : "横向き"}
+                </button>
+              ))}
+            </div>
+          </div>
+          </div>
+        </StepCard>
+
+        <StepCard step={3} title="宛先を入れる" hint="郵便番号・住所・氏名を入力します（Excel/CSVから読み込んだ宛先も、ここで直せます）。" testId="envelope-step-input">
+        <div className="flex flex-col gap-3">
+          <p className="text-sm font-medium">宛先を入力（{recipients.length}件）</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">郵便番号・住所・氏名を1つの枠に入力します（敬称は最後の行につきます）。</p>
+          {recipients.map((r, i) => (
+            <AddressBox
+              key={i}
+              value={r}
+              label={`宛先${i + 1}`}
+              onChange={(v) => {
+                const next = [...recipients];
+                next[i] = v;
+                setRecipients(next);
+                clearResult();
+              }}
+              onRemove={
+                recipients.length > 1
+                  ? () => setRecipients(recipients.filter((_, idx) => idx !== i))
+                  : undefined
+              }
+            />
+          ))}
+          <button
+            type="button"
+            onClick={() => setRecipients([...recipients, ""])}
+            className="w-fit rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
+          >
+            + 宛先を追加
+          </button>
+        </div>
+
 
           <div className="flex flex-wrap gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1 text-sm">
@@ -530,7 +519,7 @@ export function EnvelopeAddressTool() {
         </div>
         </StepCard>
 
-        <StepCard step={3} title="レイアウトを整える" hint="書字方向・文字の大きさ・位置を調整します。右（スマホは下）のプレビューで確かめられます。" testId="envelope-step-layout">
+        <StepCard step={4} title="レイアウトを整える" hint="書字方向・文字の大きさ・位置を調整します。右（スマホは下）のプレビューで確かめられます。" testId="envelope-step-layout">
           <div className="flex flex-wrap gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-neutral-600 dark:text-neutral-300">

@@ -32,7 +32,7 @@ import {
  *  - 固有番号の形式(MS-XXXX-XXXX-XXXX、見間違えやすい 0・1・I・L・O を使わない)・重複しない・暗号学的に安全な乱数を使う
  *  - QRコードに入れる文字列：「固有番号: …」の行は必ず、印鑑作成日・認証コードは入力したときだけ、入力どおりに入る
  *    (未入力の項目の行は入らない・ほかの情報は入らない)。認証コード・日付の入力の確認
- *  - 固有番号とQRコードを入れるときは、押印するPDFを選ばないと生成できない。印影は選んだページの、横(X)・縦(Y)の
+ *  - 固有ID・QRコードの設定は「固有ID付きで作る」のときだけ出す（総合改修 5-1）。QRコードを入れるときは、押印するPDFを選ばないと生成できない。印影は選んだページの、横(X)・縦(Y)の
  *    バーで決めた位置・大きさ(mm)に押し、PDFとして出力する(印影だけのPNGは出さない)。ページの回転(/Rotate)も反映する
  *  - 出力したPDFのページを画像にして、独立した2つの読み取りライブラリ(OpenCV・ZXing。入っている環境だけ)で読み取り、
  *    入れた文字列と一致すること・QRコードが選んだ隅(丸印は円の外側、角印は枠の内側)にあることを確かめる
@@ -223,11 +223,12 @@ async function expectStampedQr(pdf: string, c: PlacedCheck) {
 }
 
 async function enableQr(page: Page) {
-  // 画面の準備(読み込み直後)が終わる前に押すと、チェックだけが付いて欄が出ないことがあるので、欄が出るまで押し直す
+  // 固有ID付きで作る（総合改修 5-1）に切り替え、QRコードを入れる（既定でオン）。画面の準備が終わる前に押すと反映されないことがあるので、欄が出るまで押し直す
   await expect(async () => {
-    const box = page.getByLabel("固有番号とQRコードを入れる");
-    if (await box.isChecked()) await box.uncheck();
-    await box.check();
+    const idMode = page.getByTestId("stamp-mode").getByRole("button", { name: "固有ID付きで作る", exact: true });
+    if ((await idMode.getAttribute("aria-pressed")) !== "true") await idMode.click();
+    const box = page.getByLabel("QRコードを入れる", { exact: true });
+    if (!(await box.isChecked())) await box.check();
     await expect(page.getByTestId("stamp-pdf-target")).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: 15_000 });
 }
@@ -456,9 +457,10 @@ test.describe("固有番号とQRコード：文字から作る印影をPDFに押
     await expect(button).toBeEnabled();
   });
 
-  test("QRコードを入れない設定(既定)では、PDFは不要で、番号を発行せず、従来どおり印影のPNGになる", async ({ page }) => {
+  test("文字から作る（既定）では、固有ID・QRコードの欄を出さず、PDFは不要で、番号を発行せず、従来どおり印影のPNGになる", async ({ page }) => {
     await page.goto(TOOL_URL);
-    await expect(page.getByLabel("固有番号とQRコードを入れる")).not.toBeChecked();
+    await expect(page.getByTestId("stamp-mode").getByRole("button", { name: "文字から作る", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByLabel("QRコードを入れる", { exact: true })).toHaveCount(0);
     // 番号・作成日・認証コード・押印するPDFの欄は出さない
     await expect(page.getByTestId("stamp-created-date")).toHaveCount(0);
     await expect(page.getByTestId("stamp-auth-code")).toHaveCount(0);
@@ -566,4 +568,88 @@ test("固有番号とQRコード：PDFの読み込み・生成・ダウンロー
     expect(stored.local).not.toContain(v);
     expect(stored.session).not.toContain(v);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 作成方法の3種類と出力形式（総合改修 5-1・5-3）
+// ---------------------------------------------------------------------------
+
+test.describe("作成方法（文字から・取り込み・固有ID付き）と出力形式", () => {
+  test("固有ID付きでQRコードを外すと、PDFは不要で、固有IDを付けた印影画像になる（IDは結果とファイル名に出し、QRコードは入れない）", async ({ page }) => {
+    await page.goto(TOOL_URL);
+    await page.locator("#stamp-text-input").fill("山田");
+    await page.getByTestId("stamp-mode").getByRole("button", { name: "固有ID付きで作る", exact: true }).click();
+    await expect(page.locator("#stamp-text-input")).toHaveValue("山田"); // 切り替えても入力は残る
+    const box = page.getByLabel("QRコードを入れる", { exact: true });
+    await expect(box).toBeChecked(); // 固有ID付きでは、QRコードを入れるのが既定
+    await box.uncheck();
+    await expect(page.getByTestId("stamp-pdf-target")).toHaveCount(0);
+    await fillQrInfo(page, { createdDate: "2026-11-10", authCode: "ID-ONLY" });
+    await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
+    await waitForSuccess(page, "印影画像が完成しました");
+    const serial = (await page.getByTestId("stamp-serial").textContent())?.trim() ?? "";
+    expect(serial).toMatch(STAMP_SERIAL_PATTERN);
+    await expect(page.getByTestId("stamp-id-contents")).toContainText("QRコードは入れていません");
+    await expect(page.getByTestId("stamp-qr-contents")).toHaveCount(0);
+    await expect(page.getByTestId("stamp-qr-created-date")).toHaveText("2026-11-10");
+    await expect(page.getByTestId("stamp-qr-auth-code")).toHaveText("ID-ONLY");
+    const download = await clickAndDownload(page, "PNGをダウンロード");
+    expect(download.suggestedFilename()).toBe(`electronic-stamp-${serial}.png`);
+    const { path: file } = await assertDownloadedFile(download, { format: "png", minBytes: 100 });
+    const png = decodePng(file);
+    expect(png.width).toBe(300); // QRコードを入れないので、丸印でも印影サイズのまま
+    if (qrDecoders().opencv) expect(decodeQrFile(file)[0].opencv).toBe("");
+  });
+
+  test("文字から作る・印鑑を取り込むでは固有ID・QRコードの欄を出さない。固有ID付きに切り替えると出る", async ({ page }) => {
+    await page.goto(TOOL_URL);
+    const modes = page.getByTestId("stamp-mode");
+    await expect(modes.getByRole("button")).toHaveText(["文字から作る", "印鑑を取り込む", "固有ID付きで作る"]);
+    await expect(page.getByTestId("stamp-section-id")).toHaveCount(0);
+    await modes.getByRole("button", { name: "固有ID付きで作る", exact: true }).click();
+    await expect(page.getByTestId("stamp-section-id")).toBeVisible();
+    await expect(page.getByTestId("stamp-id-source")).toBeVisible();
+    await modes.getByRole("button", { name: "文字から作る", exact: true }).click();
+    await expect(page.getByTestId("stamp-section-id")).toHaveCount(0);
+    // 設定は折りたたみ式（見出しを押すと開閉）
+    const look = page.getByTestId("stamp-section-look");
+    await look.locator("summary").click();
+    await expect(look).not.toHaveAttribute("open", "");
+    await look.locator("summary").click();
+    await expect(look).toHaveAttribute("open", "");
+  });
+
+  test("出力形式：JPEGは白背景になることを先に案内し、白背景のJPEGで書き出す。WebPは透明のまま書き出す", async ({ page }) => {
+    await page.goto(TOOL_URL);
+    await expect(page.getByTestId("stamp-format-note")).toHaveText("背景は透明です。");
+    await page.getByTestId("stamp-format-jpeg").click();
+    await expect(page.getByTestId("stamp-format-note")).toContainText("背景は白になります");
+    await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
+    await waitForSuccess(page, "印影画像が完成しました");
+    await expect(page.getByTestId("stamp-result-summary")).toContainText("白背景のJPEG");
+    const jpg = await clickAndDownload(page, "JPEGをダウンロード");
+    expect(jpg.suggestedFilename()).toBe("electronic-stamp.jpg");
+    const jpgPath = test.info().outputPath("stamp.jpg");
+    await jpg.saveAs(jpgPath);
+    const head = fs.readFileSync(jpgPath).subarray(0, 3);
+    expect([...head]).toEqual([0xff, 0xd8, 0xff]);
+    // 四隅（印影の外）は白
+    const corner = execFileSync("ffmpeg", ["-v", "error", "-i", jpgPath, "-vf", "crop=4:4:0:0", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]);
+    expect(Math.min(...corner)).toBeGreaterThan(240);
+
+    await page.keyboard.press("Escape");
+    await page.getByTestId("stamp-format-webp").click();
+    await expect(page.getByTestId("stamp-format-note")).toHaveText("背景は透明です。");
+    await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
+    await waitForSuccess(page, "印影画像が完成しました");
+    const webp = await clickAndDownload(page, "WebPをダウンロード");
+    expect(webp.suggestedFilename()).toBe("electronic-stamp.webp");
+    const webpPath = test.info().outputPath("stamp.webp");
+    await webp.saveAs(webpPath);
+    const buf = fs.readFileSync(webpPath);
+    expect(buf.subarray(0, 4).toString()).toBe("RIFF");
+    expect(buf.subarray(8, 12).toString()).toBe("WEBP");
+    const alpha = execFileSync("ffmpeg", ["-v", "error", "-i", webpPath, "-vf", "crop=4:4:0:0", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]);
+    expect(alpha[3]).toBe(0); // 左上の画素は透明
+  });
 });

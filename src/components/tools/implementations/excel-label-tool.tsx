@@ -42,6 +42,7 @@ import { downloadBlob } from "@/lib/utils/format";
 import { approxWrap } from "./shared/approx-text";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { LABEL_IMPORT_ACCEPT, honorificLineFromHeader, readLabelImportFile, rowsToLabelListText, type LabelImportData } from "@/lib/label/import-file";
+import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 import { RunBar } from "@/components/ui/run-bar";
 
 type OutputFormat = "word" | "excel";
@@ -360,332 +361,328 @@ export function ExcelLabelTool() {
       </section>
       }
     >
-      <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <ChoiceButtons
-          label="出力するファイルの形式"
-          value={format}
-          options={[
-            { value: "word", label: "Word（おすすめ）" },
-            { value: "excel", label: "Excel" },
-          ]}
-          onChange={(v) => {
-            setFormat(v);
-            resetResult();
-          }}
-        />
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          {format === "word"
-            ? "Wordは用紙サイズ・余白・ラベルの大きさをmm通りに指定でき、ラベル用紙にそのまま印刷しやすい形式です。"
-            : "Excelは列幅が「文字数」という単位の近似になるため、mmの寸法が多少ずれます。用紙サイズはExcelの印刷設定で合わせてください。"}
-        </p>
-      </section>
-
-      <section className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">用紙とラベルの大きさ</p>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">よくあるラベル用紙から選ぶ</span>
-            <select
-              aria-label="よくあるラベル用紙から選ぶ"
-              value=""
-              onChange={(e) => {
-                const preset = LABEL_PRESETS.find((p) => p.id === e.target.value);
-                if (preset) updateGeometry(preset.geometry);
-              }}
-              className={FIELD_CLASS}
-            >
-              <option value="">（選択して寸法を入力）</option>
-              {LABEL_PRESETS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">用紙サイズ</span>
-            <select
-              aria-label="用紙サイズ"
-              value={geometry.paper}
-              onChange={(e) => updateGeometry({ paper: e.target.value as LabelGeometry["paper"] })}
-              className={FIELD_CLASS}
-            >
-              {LABEL_PAPERS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <ChoiceButtons
-            label="用紙の向き"
-            value={geometry.landscape ? "landscape" : "portrait"}
-            options={[
-              { value: "portrait", label: "縦" },
-              { value: "landscape", label: "横" },
-            ]}
-            onChange={(v) => updateGeometry({ landscape: v === "landscape" })}
+      <SettingsStack testId="label-settings">
+        <SettingsSection n={1} title="ラベルの内容（Excel・CSVの取り込み）" testId="label-section-content" bodyClassName="gap-3">
+          <FileDropzone
+            compact={!!importedFile}
+            accept={LABEL_IMPORT_ACCEPT}
+            label="Excel・CSVのファイルをドラッグ&ドロップ"
+            hint="またはタップして選択（.xlsx・.csv）。1行が1枚のラベルになり、横に並んだセルはラベルの中で改行されます"
+            onFilesSelected={handleImportFile}
+            onError={setImportError}
           />
-        </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <NumberField label="ラベル幅 (mm)" value={geometry.labelWidthMm} onChange={(v) => updateGeometry({ labelWidthMm: v })} />
-          <NumberField label="ラベル高さ (mm)" value={geometry.labelHeightMm} onChange={(v) => updateGeometry({ labelHeightMm: v })} />
-          <NumberField label="列数" value={geometry.columns} onChange={(v) => updateGeometry({ columns: Math.round(v) })} min={1} step={1} />
-          <NumberField label="行数" value={geometry.rows} onChange={(v) => updateGeometry({ rows: Math.round(v) })} min={1} step={1} />
-          <NumberField label="横の間隔 (mm)" value={geometry.gapHMm} onChange={(v) => updateGeometry({ gapHMm: v })} />
-          <NumberField label="縦の間隔 (mm)" value={geometry.gapVMm} onChange={(v) => updateGeometry({ gapVMm: v })} />
-          <NumberField label="上の余白 (mm)" value={geometry.marginTopMm} onChange={(v) => updateGeometry({ marginTopMm: v })} />
-          <NumberField label="左の余白 (mm)" value={geometry.marginLeftMm} onChange={(v) => updateGeometry({ marginLeftMm: v })} />
-        </div>
-        {used && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            1ページ {perPage}枚（{geometry.columns}列×{geometry.rows}行）。右の余り {Math.round((paper.widthMm - used.widthMm) * 10) / 10}mm・下の余り{" "}
-            {Math.round((paper.heightMm - used.heightMm) * 10) / 10}mm
-          </p>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">ラベルの内容</p>
-        <FileDropzone
-          compact={!!importedFile}
-          accept={LABEL_IMPORT_ACCEPT}
-          label="Excel・CSVのファイルをドラッグ&ドロップ"
-          hint="またはタップして選択（.xlsx・.csv）。1行が1枚のラベルになり、横に並んだセルはラベルの中で改行されます"
-          onFilesSelected={handleImportFile}
-          onError={setImportError}
-        />
-        <CsvEncodingControl files={[importedFile]} onChange={(f) => void handleImportFile([f])} />
-        {importError && <ErrorMessage message={importError} />}
-        {imported && (
-          <div className="flex flex-col gap-1.5 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300" data-testid="label-import-info">
-            <p>
-              「{imported.fileName}」{imported.sheetName ? `（シート: ${imported.sheetName}）` : ""}から
-              {rowsToLabelListText(imported.rows, skipHeader).count}件を読み込みました。読み込んだ内容は、下の欄で直せます。
-            </p>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={skipHeader}
-                onChange={(e) => {
-                  setSkipHeader(e.target.checked);
-                  applyImport(imported, e.target.checked);
-                }}
+          <CsvEncodingControl files={[importedFile]} onChange={(f) => void handleImportFile([f])} />
+          {importError && <ErrorMessage message={importError} />}
+          {imported && (
+            <div className="flex flex-col gap-1.5 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300" data-testid="label-import-info">
+              <p>
+                「{imported.fileName}」{imported.sheetName ? `（シート: ${imported.sheetName}）` : ""}から
+                {rowsToLabelListText(imported.rows, skipHeader).count}件を読み込みました。読み込んだ内容は、下の欄で直せます。
+              </p>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={skipHeader}
+                  onChange={(e) => {
+                    setSkipHeader(e.target.checked);
+                    applyImport(imported, e.target.checked);
+                  }}
+                />
+                1行目は見出し（「氏名」「住所」など）なので、ラベルにしない
+              </label>
+            </div>
+          )}
+          <ChoiceButtons
+            label="ラベルに入れる内容"
+            value={content.mode}
+            options={[
+              { value: "same", label: "全ラベル同じ内容" },
+              { value: "different", label: "ラベルごとに違う内容" },
+            ]}
+            onChange={(v) => {
+              updateContent({ mode: v });
+              setPageIndex(0);
+            }}
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ChoiceButtons<LabelHonorific>
+              label="敬称"
+              value={content.honorific ?? "none"}
+              options={[
+                { value: "none", label: "なし" },
+                { value: "sama", label: "様" },
+                { value: "onchu", label: "御中" },
+              ]}
+              onChange={(v) => updateContent({ honorific: v })}
+            />
+            {(content.honorific ?? "none") !== "none" && (
+              <ChoiceButtons<LabelHonorificLine>
+                label="敬称を付ける行"
+                value={content.honorificLine ?? "last"}
+                options={[
+                  { value: "last", label: "最後の行（〒・住所・名前の順）" },
+                  { value: "first", label: "1行目（名前・住所の順）" },
+                ]}
+                onChange={(v) => updateContent({ honorificLine: v })}
               />
-              1行目は見出し（「氏名」「住所」など）なので、ラベルにしない
+            )}
+          </div>
+          {(content.honorific ?? "none") !== "none" && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              個人あては「様」、会社・部署あては「御中」です。すでに「様」「御中」「殿」が付いている行には、重ねて付けません。
+            </p>
+          )}
+          <ChoiceButtons<LabelPostalCode>
+            label="郵便番号"
+            value={content.postalCode ?? "keep"}
+            options={[
+              { value: "keep", label: "入力のまま" },
+              { value: "mark", label: "〒マークを付ける" },
+              { value: "remove", label: "入れない" },
+            ]}
+            onChange={(v) => updateContent({ postalCode: v })}
+          />
+          {(content.postalCode ?? "keep") !== "keep" && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {content.postalCode === "mark"
+                ? "郵便番号の行（1000001・100-0001 など）を「〒100-0001」の形にそろえます。"
+                : "郵便番号の行（〒100-0001・1000001 など）をラベルに入れません。「〒100-0001 東京都…」のように住所と同じ行にあるときは、郵便番号の部分だけを除きます。"}
+            </p>
+          )}
+          {content.mode === "same" ? (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600 dark:text-neutral-300">ラベル内の文字（全ラベル共通）</span>
+              <textarea
+                aria-label="ラベル内の文字"
+                value={content.sameText}
+                onChange={(e) => updateContent({ sameText: e.target.value })}
+                rows={4}
+                className={FIELD_CLASS}
+              />
+            </label>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <ChoiceButtons<LabelContent["splitMode"]>
+                  label="ラベルの区切り方"
+                  value={content.splitMode}
+                  onChange={(v) => updateContent({ splitMode: v })}
+                  options={[
+                    { value: "blank", label: "空行で区切る" },
+                    { value: "line", label: "1行を1枚にする" },
+                  ]}
+                />
+                <NumberField
+                  label={`使い始める位置（1〜${perPage}枚目）`}
+                  value={content.startPosition}
+                  onChange={(v) => updateContent({ startPosition: Math.round(v) })}
+                  min={1}
+                  step={1}
+                />
+              </div>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-neutral-600 dark:text-neutral-300">
+                  ラベルごとの文字（{content.splitMode === "blank" ? "1枚ごとに空行を1つ入れて区切ります" : "1行が1枚のラベルになります"}）
+                </span>
+                <textarea
+                  aria-label="ラベルごとの文字"
+                  value={content.listText}
+                  onChange={(e) => updateContent({ listText: e.target.value })}
+                  rows={8}
+                  placeholder={
+                    content.splitMode === "blank"
+                      ? "〒100-0001\n東京都千代田区千代田1-1\n山田 太郎 様\n\n〒530-0001\n大阪府大阪市北区梅田1-1\n佐藤 花子 様"
+                      : "山田 太郎\t東京都千代田区千代田1-1\n佐藤 花子\t大阪府大阪市北区梅田1-1"
+                  }
+                  className={`${FIELD_CLASS} font-mono`}
+                />
+              </label>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">{entryCount}件のラベルを読み取りました{plan ? `（全${plan.pages.length}ページ）` : ""}</p>
+            </>
+          )}
+        </SettingsSection>
+        <SettingsSection n={2} title="用紙とラベルの大きさ" testId="label-section-paper" bodyClassName="gap-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600 dark:text-neutral-300">よくあるラベル用紙から選ぶ</span>
+              <select
+                aria-label="よくあるラベル用紙から選ぶ"
+                value=""
+                onChange={(e) => {
+                  const preset = LABEL_PRESETS.find((p) => p.id === e.target.value);
+                  if (preset) updateGeometry(preset.geometry);
+                }}
+                className={FIELD_CLASS}
+              >
+                <option value="">（選択して寸法を入力）</option>
+                {LABEL_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600 dark:text-neutral-300">用紙サイズ</span>
+              <select
+                aria-label="用紙サイズ"
+                value={geometry.paper}
+                onChange={(e) => updateGeometry({ paper: e.target.value as LabelGeometry["paper"] })}
+                className={FIELD_CLASS}
+              >
+                {LABEL_PAPERS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ChoiceButtons
+              label="用紙の向き"
+              value={geometry.landscape ? "landscape" : "portrait"}
+              options={[
+                { value: "portrait", label: "縦" },
+                { value: "landscape", label: "横" },
+              ]}
+              onChange={(v) => updateGeometry({ landscape: v === "landscape" })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <NumberField label="ラベル幅 (mm)" value={geometry.labelWidthMm} onChange={(v) => updateGeometry({ labelWidthMm: v })} />
+            <NumberField label="ラベル高さ (mm)" value={geometry.labelHeightMm} onChange={(v) => updateGeometry({ labelHeightMm: v })} />
+            <NumberField label="列数" value={geometry.columns} onChange={(v) => updateGeometry({ columns: Math.round(v) })} min={1} step={1} />
+            <NumberField label="行数" value={geometry.rows} onChange={(v) => updateGeometry({ rows: Math.round(v) })} min={1} step={1} />
+            <NumberField label="横の間隔 (mm)" value={geometry.gapHMm} onChange={(v) => updateGeometry({ gapHMm: v })} />
+            <NumberField label="縦の間隔 (mm)" value={geometry.gapVMm} onChange={(v) => updateGeometry({ gapVMm: v })} />
+            <NumberField label="上の余白 (mm)" value={geometry.marginTopMm} onChange={(v) => updateGeometry({ marginTopMm: v })} />
+            <NumberField label="左の余白 (mm)" value={geometry.marginLeftMm} onChange={(v) => updateGeometry({ marginLeftMm: v })} />
+          </div>
+          {used && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              1ページ {perPage}枚（{geometry.columns}列×{geometry.rows}行）。右の余り {Math.round((paper.widthMm - used.widthMm) * 10) / 10}mm・下の余り{" "}
+              {Math.round((paper.heightMm - used.heightMm) * 10) / 10}mm
+            </p>
+          )}
+        </SettingsSection>
+        <SettingsSection n={3} title="文字とレイアウト" testId="label-section-style" bodyClassName="gap-4">
+          <SliderField
+            label="文字の大きさ"
+            value={style.fontSizePt}
+            min={6}
+            max={72}
+            inputMax={300}
+            unit="pt"
+            onChange={(v) => updateStyle({ fontSizePt: v })}
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SliderField
+              label="行の間隔"
+              value={style.lineSpacingPct}
+              min={80}
+              max={200}
+              step={5}
+              unit="%"
+              onChange={(v) => updateStyle({ lineSpacingPct: v })}
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SliderField
+              label="文字の位置（横）"
+              value={style.offsetXMm}
+              min={-LABEL_OFFSET_MAX_MM}
+              max={LABEL_OFFSET_MAX_MM}
+              step={0.5}
+              unit="mm"
+              onChange={(v) => updateStyle({ offsetXMm: v })}
+              onReset={() => updateStyle({ offsetXMm: 0 })}
+              hint={
+                style.hAlign === "left"
+                  ? "左揃えのときは右（プラス）へだけ動かせます。"
+                  : style.hAlign === "right"
+                    ? "右揃えのときは左（マイナス）へだけ動かせます。"
+                    : "プラスで右へ、マイナスで左へ動きます。"
+              }
+            />
+            <SliderField
+              label="文字の位置（縦）"
+              value={style.offsetYMm}
+              min={-LABEL_OFFSET_MAX_MM}
+              max={LABEL_OFFSET_MAX_MM}
+              step={0.5}
+              unit="mm"
+              onChange={(v) => updateStyle({ offsetYMm: v })}
+              onReset={() => updateStyle({ offsetYMm: 0 })}
+              hint={
+                style.vAlign === "top"
+                  ? "上揃えのときは下（プラス）へだけ動かせます。"
+                  : style.vAlign === "bottom"
+                    ? "下揃えのときは上（マイナス）へだけ動かせます。"
+                    : "プラスで下へ、マイナスで上へ動きます。"
+              }
+            />
+          </div>
+          {format === "excel" && (style.offsetXMm !== 0 || style.offsetYMm !== 0) && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">文字の位置の調整は、Wordで作成したときだけ反映されます（Excelには反映されません）。</p>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ChoiceButtons<LabelStyle["fontKey"]>
+              label="書体"
+              value={style.fontKey}
+              onChange={(v) => updateStyle({ fontKey: v })}
+              options={LABEL_FONTS.map((f) => ({ value: f.key, label: f.label }))}
+            />
+            <label className="flex items-center gap-2 self-end pb-2 text-sm text-neutral-700 dark:text-neutral-200">
+              <input type="checkbox" checked={style.bold} onChange={(e) => updateStyle({ bold: e.target.checked })} />
+              太字にする
             </label>
           </div>
-        )}
-        <ChoiceButtons
-          label="ラベルに入れる内容"
-          value={content.mode}
-          options={[
-            { value: "same", label: "全ラベル同じ内容" },
-            { value: "different", label: "ラベルごとに違う内容" },
-          ]}
-          onChange={(v) => {
-            updateContent({ mode: v });
-            setPageIndex(0);
-          }}
-        />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <ChoiceButtons<LabelHonorific>
-            label="敬称"
-            value={content.honorific ?? "none"}
-            options={[
-              { value: "none", label: "なし" },
-              { value: "sama", label: "様" },
-              { value: "onchu", label: "御中" },
-            ]}
-            onChange={(v) => updateContent({ honorific: v })}
-          />
-          {(content.honorific ?? "none") !== "none" && (
-            <ChoiceButtons<LabelHonorificLine>
-              label="敬称を付ける行"
-              value={content.honorificLine ?? "last"}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ChoiceButtons<LabelHAlign>
+              label="横の位置"
+              value={style.hAlign}
               options={[
-                { value: "last", label: "最後の行（〒・住所・名前の順）" },
-                { value: "first", label: "1行目（名前・住所の順）" },
+                { value: "left", label: "左" },
+                { value: "center", label: "中央" },
+                { value: "right", label: "右" },
               ]}
-              onChange={(v) => updateContent({ honorificLine: v })}
+              onChange={(v) => updateStyle({ hAlign: v })}
             />
-          )}
-        </div>
-        {(content.honorific ?? "none") !== "none" && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            個人あては「様」、会社・部署あては「御中」です。すでに「様」「御中」「殿」が付いている行には、重ねて付けません。
-          </p>
-        )}
-        <ChoiceButtons<LabelPostalCode>
-          label="郵便番号"
-          value={content.postalCode ?? "keep"}
-          options={[
-            { value: "keep", label: "入力のまま" },
-            { value: "mark", label: "〒マークを付ける" },
-            { value: "remove", label: "入れない" },
-          ]}
-          onChange={(v) => updateContent({ postalCode: v })}
-        />
-        {(content.postalCode ?? "keep") !== "keep" && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            {content.postalCode === "mark"
-              ? "郵便番号の行（1000001・100-0001 など）を「〒100-0001」の形にそろえます。"
-              : "郵便番号の行（〒100-0001・1000001 など）をラベルに入れません。「〒100-0001 東京都…」のように住所と同じ行にあるときは、郵便番号の部分だけを除きます。"}
-          </p>
-        )}
-        {content.mode === "same" ? (
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600 dark:text-neutral-300">ラベル内の文字（全ラベル共通）</span>
-            <textarea
-              aria-label="ラベル内の文字"
-              value={content.sameText}
-              onChange={(e) => updateContent({ sameText: e.target.value })}
-              rows={4}
-              className={FIELD_CLASS}
+            <ChoiceButtons<LabelVAlign>
+              label="縦の位置"
+              value={style.vAlign}
+              options={[
+                { value: "top", label: "上" },
+                { value: "middle", label: "中央" },
+                { value: "bottom", label: "下" },
+              ]}
+              onChange={(v) => updateStyle({ vAlign: v })}
             />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+            <input type="checkbox" checked={style.border} onChange={(e) => updateStyle({ border: e.target.checked })} />
+            ラベルの枠線を印刷する（シールに直接印刷するときは外します）
           </label>
-        ) : (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <ChoiceButtons<LabelContent["splitMode"]>
-                label="ラベルの区切り方"
-                value={content.splitMode}
-                onChange={(v) => updateContent({ splitMode: v })}
-                options={[
-                  { value: "blank", label: "空行で区切る" },
-                  { value: "line", label: "1行を1枚にする" },
-                ]}
-              />
-              <NumberField
-                label={`使い始める位置（1〜${perPage}枚目）`}
-                value={content.startPosition}
-                onChange={(v) => updateContent({ startPosition: Math.round(v) })}
-                min={1}
-                step={1}
-              />
-            </div>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-neutral-600 dark:text-neutral-300">
-                ラベルごとの文字（{content.splitMode === "blank" ? "1枚ごとに空行を1つ入れて区切ります" : "1行が1枚のラベルになります"}）
-              </span>
-              <textarea
-                aria-label="ラベルごとの文字"
-                value={content.listText}
-                onChange={(e) => updateContent({ listText: e.target.value })}
-                rows={8}
-                placeholder={
-                  content.splitMode === "blank"
-                    ? "〒100-0001\n東京都千代田区千代田1-1\n山田 太郎 様\n\n〒530-0001\n大阪府大阪市北区梅田1-1\n佐藤 花子 様"
-                    : "山田 太郎\t東京都千代田区千代田1-1\n佐藤 花子\t大阪府大阪市北区梅田1-1"
-                }
-                className={`${FIELD_CLASS} font-mono`}
-              />
-            </label>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">{entryCount}件のラベルを読み取りました{plan ? `（全${plan.pages.length}ページ）` : ""}</p>
-          </>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">文字とレイアウト</p>
-        <SliderField
-          label="文字の大きさ"
-          value={style.fontSizePt}
-          min={6}
-          max={72}
-          inputMax={300}
-          unit="pt"
-          onChange={(v) => updateStyle({ fontSizePt: v })}
-        />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SliderField
-            label="行の間隔"
-            value={style.lineSpacingPct}
-            min={80}
-            max={200}
-            step={5}
-            unit="%"
-            onChange={(v) => updateStyle({ lineSpacingPct: v })}
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SliderField
-            label="文字の位置（横）"
-            value={style.offsetXMm}
-            min={-LABEL_OFFSET_MAX_MM}
-            max={LABEL_OFFSET_MAX_MM}
-            step={0.5}
-            unit="mm"
-            onChange={(v) => updateStyle({ offsetXMm: v })}
-            onReset={() => updateStyle({ offsetXMm: 0 })}
-            hint={
-              style.hAlign === "left"
-                ? "左揃えのときは右（プラス）へだけ動かせます。"
-                : style.hAlign === "right"
-                  ? "右揃えのときは左（マイナス）へだけ動かせます。"
-                  : "プラスで右へ、マイナスで左へ動きます。"
-            }
-          />
-          <SliderField
-            label="文字の位置（縦）"
-            value={style.offsetYMm}
-            min={-LABEL_OFFSET_MAX_MM}
-            max={LABEL_OFFSET_MAX_MM}
-            step={0.5}
-            unit="mm"
-            onChange={(v) => updateStyle({ offsetYMm: v })}
-            onReset={() => updateStyle({ offsetYMm: 0 })}
-            hint={
-              style.vAlign === "top"
-                ? "上揃えのときは下（プラス）へだけ動かせます。"
-                : style.vAlign === "bottom"
-                  ? "下揃えのときは上（マイナス）へだけ動かせます。"
-                  : "プラスで下へ、マイナスで上へ動きます。"
-            }
-          />
-        </div>
-        {format === "excel" && (style.offsetXMm !== 0 || style.offsetYMm !== 0) && (
-          <p className="text-xs text-amber-700 dark:text-amber-400">文字の位置の調整は、Wordで作成したときだけ反映されます（Excelには反映されません）。</p>
-        )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <ChoiceButtons<LabelStyle["fontKey"]>
-            label="書体"
-            value={style.fontKey}
-            onChange={(v) => updateStyle({ fontKey: v })}
-            options={LABEL_FONTS.map((f) => ({ value: f.key, label: f.label }))}
-          />
-          <label className="flex items-center gap-2 self-end pb-2 text-sm text-neutral-700 dark:text-neutral-200">
-            <input type="checkbox" checked={style.bold} onChange={(e) => updateStyle({ bold: e.target.checked })} />
-            太字にする
-          </label>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <ChoiceButtons<LabelHAlign>
-            label="横の位置"
-            value={style.hAlign}
+        </SettingsSection>
+        <SettingsSection n={4} title="出力するファイルの形式" testId="label-section-format" bodyClassName="gap-3">
+          <ChoiceButtons
+            label="出力するファイルの形式"
+            value={format}
             options={[
-              { value: "left", label: "左" },
-              { value: "center", label: "中央" },
-              { value: "right", label: "右" },
+              { value: "word", label: "Word（おすすめ）" },
+              { value: "excel", label: "Excel" },
             ]}
-            onChange={(v) => updateStyle({ hAlign: v })}
+            onChange={(v) => {
+              setFormat(v);
+              resetResult();
+            }}
           />
-          <ChoiceButtons<LabelVAlign>
-            label="縦の位置"
-            value={style.vAlign}
-            options={[
-              { value: "top", label: "上" },
-              { value: "middle", label: "中央" },
-              { value: "bottom", label: "下" },
-            ]}
-            onChange={(v) => updateStyle({ vAlign: v })}
-          />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-          <input type="checkbox" checked={style.border} onChange={(e) => updateStyle({ border: e.target.checked })} />
-          ラベルの枠線を印刷する（シールに直接印刷するときは外します）
-        </label>
-      </section>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            {format === "word"
+              ? "Wordは用紙サイズ・余白・ラベルの大きさをmm通りに指定でき、ラベル用紙にそのまま印刷しやすい形式です。"
+              : "Excelは列幅が「文字数」という単位の近似になるため、mmの寸法が多少ずれます。用紙サイズはExcelの印刷設定で合わせてください。"}
+          </p>
+        </SettingsSection>
+      </SettingsStack>
 
 
       {validationError && <ErrorMessage message={validationError} />}

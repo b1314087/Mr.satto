@@ -309,7 +309,7 @@ test.describe("動画を消したときの結果のリセット", () => {
   test("サムネイル抽出: 抽出後に動画を消すと、結果が消える", async ({ page }) => {
     await page.goto("/tools/video-thumbnail");
     await uploadFixture(page, fixtures.webm);
-    await page.getByRole("button", { name: "この時点を抽出する" }).click();
+    await page.getByRole("button", { name: "一時停止した位置を抽出する" }).click();
     await expect(page.getByTestId("result-popup")).toBeVisible({ timeout: 60_000 });
     await closeResultPopup(page);
     await page.getByRole("button", { name: "sample.webm を削除" }).click();

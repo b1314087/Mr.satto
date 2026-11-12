@@ -10,6 +10,9 @@ import {
   scanUnits,
   sjisClassOf,
   unitsFromText,
+  classifyInContext,
+  suggestReplacement,
+  blockNameOf,
   type CleanOptions,
 } from "../../src/lib/gaiji/detect";
 
@@ -195,4 +198,67 @@ test("gaiji: 康熙部首は、見た目が同じ普通の漢字に置き換え�
 test("gaiji: 整えたテキストは、互換漢字・補助面・外字を勝手に別の文字にしない", () => {
   const s = "﨑𠮷";
   expect(cleanText(s, DEFAULT_CLEAN_OPTIONS).text).toBe(s);
+});
+
+// ---------------------------------------------------------------------------
+// 総合改修 4：前後の文字を見た判定・置き換え案・文字の種類
+// ---------------------------------------------------------------------------
+
+test("gaiji: 絵文字の一部（表示指定・ゼロ幅接合子・キーキャップ・肌の色・国旗）は、異体字セレクタ・不可視の文字ではなく絵文字として数える", () => {
+  const r = scanUnits(unitsFromText("❤️ 👨‍👩‍👧 1️⃣ 👍🏽 🇯🇵"));
+  const byCp = (cp: number) => r.findings.filter((f) => f.codePoint === cp).map((f) => f.category);
+  expect(byCp(0xfe0f)).toEqual(["emoji"]);
+  expect(byCp(0x200d)).toEqual(["emoji"]);
+  expect(byCp(0x20e3)).toEqual(["emoji"]);
+  expect(byCp(0x1f3fd)).toEqual(["emoji"]);
+  expect(byCp(0x1f1ef)).toEqual(["emoji"]);
+  expect(r.byCategory["variation-selector"]).toBeUndefined();
+  expect(r.byCategory.invisible).toBeUndefined();
+  expect(r.byCategory.supplementary).toBeUndefined();
+});
+
+test("gaiji: 漢字の後ろの異体字セレクタ・文字の間のゼロ幅接合子は、これまでどおり検出する（同じ文字でも文脈で分ける）", () => {
+  const r = scanUnits(unitsFromText("葛\u{E0100}と山\u200d田と😀\ufe0f"));
+  const vs = r.findings.find((f) => f.codePoint === 0xe0100)!;
+  expect(vs.category).toBe("variation-selector");
+  const zwj = r.findings.find((f) => f.codePoint === 0x200d)!;
+  expect(zwj.category).toBe("invisible");
+  expect(zwj.replacement).toBe("削除");
+  expect(classifyInContext(0xfe0f, 0x1f600, undefined)).toBe("emoji");
+  expect(classifyInContext(0xfe00, 0x845b, undefined)).toBe("variation-selector");
+});
+
+test("gaiji: 英字の単語に混ざった、英字にそっくりなキリル文字・ギリシャ文字を検出し、英字の置き換え案を出す（ロシア語・ギリシャ語の文章は問題にしない）", () => {
+  const r = scanUnits(unitsFromText("Pаypal と ΑBC と Москва と αβγ"));
+  const look = r.findings.filter((f) => f.category === "lookalike");
+  expect(look.map((f) => f.char).sort()).toEqual(["а", "Α"].sort());
+  const a = look.find((f) => f.char === "а")!;
+  expect(a.replacement).toBe("a");
+  expect(a.name).toBe("キリル文字（英字の「a」に似た文字）");
+  expect(a.locations).toEqual(["1行目（2文字目）"]);
+  // 単語の中でないキリル文字（Москва）・ギリシャ文字（αβγ）は問題にしない
+  expect(r.findings.some((f) => f.char === "о" || f.char === "М")).toBe(false);
+  expect(CATEGORY_INFO.lookalike.severity).toBe("mid");
+});
+
+test("gaiji: 置き換え案（機種依存文字・半角カナ・康熙部首・互換漢字・特殊な空白）と、文字の種類（ブロック名）", () => {
+  expect(suggestReplacement(0x2460, "ext-dep")).toBe("1"); // ①
+  expect(suggestReplacement(0x3231, "ext-dep")).toBe("(株)"); // ㈱
+  expect(suggestReplacement(0x9ad9, "ext-dep")).toBeNull(); // 髙は置き換え先が無い
+  expect(suggestReplacement(0xff71, "halfwidth-kana")).toBe("ア");
+  expect(suggestReplacement(0x2f47, "radical")).toBe("日"); // ⽇
+  expect(suggestReplacement(0xfa19, "compat-ideograph")).toBe("神");
+  expect(suggestReplacement(0x00a0, "unusual-space")).toBe("通常の半角スペース");
+  expect(blockNameOf(0x20bb7)).toBe("CJK統合漢字拡張B"); // 𠮷
+  expect(blockNameOf(0xe000)).toBe("私用領域");
+  expect(blockNameOf(0x2f47)).toBe("康熙部首");
+  const r = scanUnits(unitsFromText("𠮷野家①"));
+  expect(r.findings.find((f) => f.char === "𠮷")!.block).toBe("CJK統合漢字拡張B");
+  expect(r.findings.find((f) => f.char === "①")!.replacement).toBe("1");
+});
+
+test("gaiji: 表示できる・できないを断定しない（対処の文に「表示されません」のような言い切りが無い）", () => {
+  for (const info of Object.values(CATEGORY_INFO)) {
+    expect(info.advice, info.id).not.toMatch(/表示されません|表示できません|必ず文字化け/);
+  }
 });

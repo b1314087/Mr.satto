@@ -71,6 +71,7 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "excel-transpose": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-blank-remove": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-extract": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
+  "excel-space-remove": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-replace": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-date-shift": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "word-paragraph-cleanup": { role: "edit", receive: { kinds: ["docx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["docx"] } },

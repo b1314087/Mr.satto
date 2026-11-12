@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { SliderField } from "@/components/common/slider-field";
+import { PositionSliders } from "@/components/common/position-sliders";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
+import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 import { TextColorField } from "@/components/common/text-color-field";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -183,7 +186,25 @@ export function ImageWatermarkTool() {
   const relativePercent = naturalSize ? Math.round((shownFontSize / Math.min(naturalSize.width, naturalSize.height)) * 100) : null;
 
   return (
-    <div className="flex flex-col gap-6">
+    // 総合改修 26：設定とプレビューを分け、設定を変えている間もプレビューが見える（PCは右に固定・スマホは上に固定）
+    <PreviewSplitLayout
+      previewWidth="lg"
+      mobileSticky
+      preview={
+        file ? (
+          <div data-testid="tool-preview" className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
+            {previewError && <ErrorMessage message={previewError} />}
+            <canvas
+              ref={previewCanvasRef}
+              aria-label="透かし入りプレビュー"
+              data-testid="watermark-preview"
+              className="mx-auto block h-auto w-auto max-h-[min(34vh,30rem)] max-w-full rounded-lg border border-neutral-200 bg-neutral-100 lg:max-h-[min(70vh,36rem)] dark:border-neutral-700 dark:bg-neutral-900"
+            />
+          </div>
+        ) : null
+      }
+    >
       <FileDropzone
         compact={!!file}
         accept="image/*"
@@ -201,94 +222,74 @@ export function ImageWatermarkTool() {
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 
       {file && (
-        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー</p>
-          {previewError && <ErrorMessage message={previewError} />}
-          <canvas
-            ref={previewCanvasRef}
-            aria-label="透かし入りプレビュー"
-            data-testid="watermark-preview"
-            className="mx-auto block h-auto w-auto max-h-[min(60vh,30rem)] max-w-full rounded-lg border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </div>
-      )}
-
-      {file && (
-        <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <label className="flex flex-col gap-1 text-sm">
-            透かしの文字
-            <input
-              type="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              maxLength={60}
-              className="w-full rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
+        <SettingsStack testId="watermark-settings">
+          <SettingsSection n={1} title="透かしの文字" summary={text}>
+            <label className="flex flex-col gap-1 text-sm">
+              透かしの文字
+              <input
+                type="text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                maxLength={60}
+                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </label>
+            <TextColorField value={color} onChange={setColor} testId="watermark-color" />
+            <SliderField
+              label="フォントサイズ"
+              value={shownFontSize}
+              min={WATERMARK_FONT_SIZE_MIN}
+              max={sliderMax}
+              inputMax={WATERMARK_FONT_SIZE_MAX}
+              unit="px"
+              onChange={setFontSize}
+              hint={
+                naturalSize
+                  ? `元画像(${naturalSize.width}×${naturalSize.height}px)に対する大きさです。画像の短辺の約${relativePercent}%。バーは画像に合わせて最大${sliderMax}pxまで、数値入力なら最大${WATERMARK_FONT_SIZE_MAX}pxまで指定できます。`
+                  : undefined
+              }
             />
-          </label>
+          </SettingsSection>
 
-          <div className="flex flex-col gap-1.5">
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">位置</p>
-            <div className="ms-seg" data-testid="watermark-position">
-              {POSITION_OPTIONS.map((opt) => (
-                <button aria-pressed={!customCenter && position === opt.value}
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    setPosition(opt.value);
-                    setCustomCenter(null);
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
+          <SettingsSection
+            n={2}
+            title="位置"
+            summary={customCenter ? `X ${customCenter.x}%・Y ${customCenter.y}%` : POSITION_OPTIONS.find((o) => o.value === position)?.label}
+          >
+            <div className="flex flex-col gap-1.5">
+              <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">よく使う位置</p>
+              <div className="ms-seg" data-testid="watermark-position">
+                {POSITION_OPTIONS.map((opt) => (
+                  <button aria-pressed={!customCenter && position === opt.value}
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      setPosition(opt.value);
+                      setCustomCenter(null);
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-ms-muted">
+                下のバーで、文字の中心を自由な位置に動かせます（0%＝左端・上端、100%＝右端・下端）。
+                {customCenter && <span data-testid="watermark-custom-position">いまは、バーで決めた位置に置いています。</span>}
+              </p>
             </div>
-            <p className="text-xs text-ms-muted">
-              下のバーで、文字の中心を自由な位置に動かせます（0%＝左端・上端、100%＝右端・下端）。
-              {customCenter && <span data-testid="watermark-custom-position">いまは、バーで決めた位置に置いています。</span>}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" data-testid="watermark-xy">
-            <SliderField
-              label="横の位置（X）"
-              value={shownCenter.x}
-              min={0}
-              max={100}
-              unit="%"
-              onChange={(x) => setCustomCenter({ x, y: shownCenter.y })}
+            <PositionSliders
+              testId="watermark-xy"
+              x={shownCenter.x}
+              y={shownCenter.y}
+              onChange={(p) => setCustomCenter(p)}
             />
-            <SliderField
-              label="縦の位置（Y）"
-              value={shownCenter.y}
-              min={0}
-              max={100}
-              unit="%"
-              onChange={(y) => setCustomCenter({ x: shownCenter.x, y })}
-            />
-          </div>
+          </SettingsSection>
 
-          <TextColorField value={color} onChange={setColor} testId="watermark-color" />
-
-          <SliderField
-            label="フォントサイズ"
-            value={shownFontSize}
-            min={WATERMARK_FONT_SIZE_MIN}
-            max={sliderMax}
-            inputMax={WATERMARK_FONT_SIZE_MAX}
-            unit="px"
-            onChange={setFontSize}
-            hint={
-              naturalSize
-                ? `元画像(${naturalSize.width}×${naturalSize.height}px)に対する大きさです。画像の短辺の約${relativePercent}%。バーは画像に合わせて最大${sliderMax}pxまで、数値入力なら最大${WATERMARK_FONT_SIZE_MAX}pxまで指定できます。`
-                : undefined
-            }
-          />
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <SettingsSection n={3} title="見た目" summary={`不透明度 ${opacity}%・回転 ${rotation}°`}>
             <SliderField label="不透明度" value={opacity} min={5} max={100} unit="%" onChange={setOpacity} />
             <SliderField label="回転角度" value={rotation} min={-90} max={90} unit="°" onChange={setRotation} />
-          </div>
-        </div>
+          </SettingsSection>
+        </SettingsStack>
       )}
 
       {file && (
@@ -315,6 +316,6 @@ export function ImageWatermarkTool() {
           <RewardedDownloadGate onDownload={() => downloadBlob(result.blob, downloadName)} />
         </ResultPopup>
       )}
-    </div>
+    </PreviewSplitLayout>
   );
 }

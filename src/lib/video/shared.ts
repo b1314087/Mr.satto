@@ -55,12 +55,54 @@ export const VIDEO_INPUT_ACCEPT =
   "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm";
 
 /** 出力コンテナ。実際に生成・再生確認が取れた2種類に限定する（開発指示書 17-18章） */
-export type OutputContainer = "mp4" | "webm";
+/**
+ * 書き出せる動画の形式。
+ * - mp4・webm：これまでの形式（ほとんどの動画ツール）
+ * - mov・mkv：総合改修 16 で「動画形式変換」に追加。どちらも mediabunny（MPL-2.0、導入済み）が標準で書き出せる入れ物（コンテナ）で、
+ *   新しいライブラリ・有料の部品は使わない。映像・音声の圧縮（エンコード）は、これまでどおりブラウザ標準の WebCodecs が行う。
+ *   MKV（Matroska）は仕様が公開・無償の形式。MOV は MP4 と同じ構造（ISOBMFF）の Apple の形式。
+ */
+export type OutputContainer = "mp4" | "webm" | "mov" | "mkv";
 
 export const OUTPUT_CONTAINER_OPTIONS: { value: OutputContainer; label: string; ext: string }[] = [
   { value: "mp4", label: "MP4", ext: "mp4" },
   { value: "webm", label: "WebM", ext: "webm" },
 ];
+
+/** 動画形式変換で選べる形式（総合改修 16：MOV・MKV を追加） */
+export const CONVERT_CONTAINER_OPTIONS: { value: OutputContainer; label: string; ext: string; note: string }[] = [
+  { value: "mp4", label: "MP4", ext: "mp4", note: "いちばん広く再生できる形式" },
+  { value: "mov", label: "MOV", ext: "mov", note: "Mac・iPhone・動画編集ソフト向け" },
+  { value: "webm", label: "WebM", ext: "webm", note: "Webページ向け（ブラウザで再生）" },
+  { value: "mkv", label: "MKV", ext: "mkv", note: "多くの形式を入れられる（再生ソフトによっては非対応）" },
+];
+
+const CONTAINER_LABEL: Record<OutputContainer, string> = { mp4: "MP4", webm: "WebM", mov: "MOV", mkv: "MKV" };
+const CONTAINER_MIME: Record<OutputContainer, string> = { mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska" };
+
+/** 形式の表示名（MP4・WebM・MOV・MKV） */
+export function containerLabel(container: OutputContainer): string {
+  return CONTAINER_LABEL[container];
+}
+
+/** MP4 と同じ構造（ISOBMFF）の形式か。再生情報（moov）を先頭へ移す処理の対象 */
+export function isIsobmffContainer(container: OutputContainer): boolean {
+  return container === "mp4" || container === "mov";
+}
+
+/** 書き出したファイルを読み直すときに使う読み取り形式 */
+export function inputFormatsForContainer(container: OutputContainer) {
+  switch (container) {
+    case "mp4":
+      return [mediabunny().MP4];
+    case "mov":
+      return [mediabunny().QTFF, mediabunny().MP4];
+    case "webm":
+      return [mediabunny().WEBM];
+    case "mkv":
+      return [mediabunny().MATROSKA, mediabunny().WEBM];
+  }
+}
 
 /**
  * 動画の読み込みサイズに上限は設けない(読み込みを止めない)。
@@ -157,7 +199,7 @@ export function toFriendlyVideoError(e: unknown): Error {
 
 /** 変換できずに外されたトラックの理由（mediabunny の DiscardedTrack.reason）を、日本語の案内にする */
 export function discardReasonMessage(kind: "video" | "audio", reason: string, container: OutputContainer): string {
-  const format = container === "mp4" ? "MP4" : "WebM";
+  const format = containerLabel(container);
   if (kind === "audio") {
     switch (reason) {
       case "no_encodable_target_codec":
@@ -185,11 +227,20 @@ export function discardReasonMessage(kind: "video" | "audio", reason: string, co
 export function outputFormatFor(container: OutputContainer) {
   // MP4は、書き出しの途中でデータをメモリにためないよう、再生情報（moov）を最後に書く（fastStart: false）。
   // 書き出し後に moov を先頭へ移す（stream-output.ts の moveMoovToFront）ため、できあがるファイルは従来と同じ並び。
-  return container === "mp4" ? new (mediabunny().Mp4OutputFormat)({ fastStart: false }) : new (mediabunny().WebMOutputFormat)();
+  switch (container) {
+    case "mp4":
+      return new (mediabunny().Mp4OutputFormat)({ fastStart: false });
+    case "mov":
+      return new (mediabunny().MovOutputFormat)({ fastStart: false });
+    case "mkv":
+      return new (mediabunny().MkvOutputFormat)();
+    default:
+      return new (mediabunny().WebMOutputFormat)();
+  }
 }
 
 export function mimeTypeFor(container: OutputContainer): string {
-  return container === "mp4" ? "video/mp4" : "video/webm";
+  return CONTAINER_MIME[container];
 }
 
 /**
@@ -496,7 +547,7 @@ export async function inspectOutputSummary(blob: Blob, container: OutputContaine
   await ensureMediabunny();
   const input = new (mediabunny().Input)({
     source: new (mediabunny().BlobSource)(blob),
-    formats: container === "mp4" ? [mediabunny().MP4] : [mediabunny().WEBM],
+    formats: inputFormatsForContainer(container),
   });
   try {
     const track = await input.getPrimaryVideoTrack();
@@ -692,7 +743,7 @@ export async function runConversion({
     }
 
     let blob = assembler.toBlob(mimeTypeFor(container));
-    if (container === "mp4") blob = await moveMoovToFront(blob);
+    if (isIsobmffContainer(container)) blob = await moveMoovToFront(blob);
     await verifyOutput(blob, container, sourceAudio !== null && !dropAudio);
     succeeded = true;
     return { blob, sizeBytes: blob.size };
@@ -709,7 +760,7 @@ export async function runConversion({
  */
 export async function verifyOutput(blob: Blob, container: OutputContainer, expectAudio: boolean): Promise<void> {
   await ensureMediabunny();
-  const check = new (mediabunny().Input)({ source: new (mediabunny().BlobSource)(blob), formats: container === "mp4" ? [mediabunny().MP4] : [mediabunny().WEBM] });
+  const check = new (mediabunny().Input)({ source: new (mediabunny().BlobSource)(blob), formats: inputFormatsForContainer(container) });
   try {
     const videoTrack = await check.getPrimaryVideoTrack().catch(() => null);
     if (!videoTrack) {

@@ -8,8 +8,9 @@ import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
 import { uploadFixture } from "../helpers/tool-runner";
 import { parseMkv, subtitleCuesOf } from "../helpers/mkv-subtitles";
+import { cueAlphaAt, effectiveFades } from "@/lib/video/subtitle-render";
 import {
-  DEFAULT_SUBTITLE_STYLE,
+  DEFAULT_CUE_LOOK,
   activeCuesAt,
   buildSrt,
   buildWebVtt,
@@ -75,6 +76,11 @@ async function addCue(page: Page, start: string, end: string, text: string) {
   await row.getByTestId("vs-cue-start").fill(start);
   await row.getByTestId("vs-cue-end").fill(end);
   await row.getByTestId("vs-cue-text").fill(text);
+}
+
+/** 書き出し方：字幕トラック（従来の方法） */
+async function chooseTrackMode(page: Page) {
+  await page.getByTestId("vs-mode").getByRole("radio", { name: /字幕トラック/ }).click();
 }
 
 async function exportAndSave(page: Page): Promise<string> {
@@ -149,16 +155,41 @@ plainTest.describe("字幕の時間・確認・ファイルの作成（画面な
     expect(activeCuesAt(shown, 3).map((c) => c.text)).toEqual([]);
   });
 
-  plainTest("WebVTT：表示設定（色・背景・透明度・文字サイズ・位置）を STYLE とキューの設定で書き、記号は安全な形にする。SRT は時間と文字だけ", () => {
-    const { resolved } = checkCues([cue("00:00:01.000", "00:00:03.000", "A&B <b>\n\n二行目"), cue("00:00:03.000", "00:00:06.000", "今日は旅行に来ています")], null);
-    const vtt = buildWebVtt(resolved, { fontSize: "large", color: "#ffff00", backgroundColor: "#000000", backgroundOpacity: 50, position: "top" });
+  plainTest("WebVTT：字幕ごとの見た目（文字色・大きさ・位置）と全体の背景を STYLE とキューの設定で書き、記号は安全な形にする。SRT は時間と文字だけ（総合改修 11）", () => {
+    const top = { ...DEFAULT_CUE_LOOK, color: "#ffff00", size: 7.8, x: 50, y: 5 };
+    const { resolved } = checkCues([{ ...cue("00:00:01.000", "00:00:03.000", "A&B <b>\n\n二行目"), look: top }, { ...cue("00:00:03.000", "00:00:06.000", "今日は旅行に来ています"), look: top }], null);
+    // 見た目が全部同じ：::cue にまとめ、文字に印を付けない
+    const vtt = buildWebVtt(resolved, { color: "#000000", opacity: 50 });
     expect(vtt.startsWith("WEBVTT\n\nSTYLE\n::cue { color: #ffff00; background-color: rgba(0,0,0,0.5); font-size: 130%; }\n\n")).toBe(true);
-    expect(vtt).toContain("00:00:01.000 --> 00:00:03.000 line:5% align:center\nA&amp;B &lt;b&gt;\n二行目\n");
-    expect(buildWebVtt(resolved, { ...DEFAULT_SUBTITLE_STYLE, position: "middle" })).toContain("line:50%");
-    expect(buildWebVtt(resolved, DEFAULT_SUBTITLE_STYLE)).toContain("00:00:03.000 --> 00:00:06.000 align:center\n");
+    expect(vtt).toContain("00:00:01.000 --> 00:00:03.000 line:5% position:50% align:center\nA&amp;B &lt;b&gt;\n二行目\n");
+    // 下の既定の位置は、位置の設定を書かない
+    const def = checkCues([cue("00:00:03.000", "00:00:06.000", "既定")], null).resolved;
+    expect(buildWebVtt(def)).toContain("00:00:03.000 --> 00:00:06.000 align:center\n既定");
+    // 字幕ごとに違う見た目：クラスを付けて、混ざらないようにする
+    const mixed = checkCues([{ ...cue("00:00:01.000", "00:00:02.000", "赤"), look: { ...DEFAULT_CUE_LOOK, color: "#e53935" } }, { ...cue("00:00:02.000", "00:00:03.000", "青"), look: { ...DEFAULT_CUE_LOOK, color: "#1e88e5", size: 12 } }], null).resolved;
+    const mv = buildWebVtt(mixed, { color: "#000000", opacity: 0 });
+    expect(mv).toContain("::cue(.s1) { color: #e53935; font-size: 100%; }");
+    expect(mv).toContain("::cue(.s2) { color: #1e88e5; font-size: 200%; }");
+    expect(mv).toContain("<c.s1>赤</c>");
+    expect(mv).toContain("<c.s2>青</c>");
     // 色に任意の文字は書かない
-    expect(buildWebVtt(resolved, { ...DEFAULT_SUBTITLE_STYLE, color: "red;} body{" })).toContain("color: #ffffff;");
+    const evil = checkCues([{ ...cue("00:00:01.000", "00:00:02.000", "x"), look: { ...DEFAULT_CUE_LOOK, color: "red;} body{" } }], null).resolved;
+    expect(buildWebVtt(evil)).toContain("color: #ffffff;");
     expect(buildSrt(resolved)).toBe("1\n00:00:01,000 --> 00:00:03,000\nA&B <b>\n二行目\n\n2\n00:00:03,000 --> 00:00:06,000\n今日は旅行に来ています\n");
+  });
+
+  plainTest("フェード：透明から徐々に表示し、徐々に透明にして消える。合計が表示時間を超えるときは表示時間に収める", () => {
+    const c = { startSec: 1, endSec: 3, look: { ...DEFAULT_CUE_LOOK, fadeIn: 0.5, fadeOut: 1 } };
+    expect(cueAlphaAt(c, 0.9)).toBe(0);
+    expect(cueAlphaAt(c, 1)).toBe(0);
+    expect(cueAlphaAt(c, 1.25)).toBeCloseTo(0.5, 5);
+    expect(cueAlphaAt(c, 1.6)).toBe(1);
+    expect(cueAlphaAt(c, 2.5)).toBeCloseTo(0.5, 5);
+    expect(cueAlphaAt(c, 3)).toBe(0);
+    const long = { startSec: 0, endSec: 1, look: { ...DEFAULT_CUE_LOOK, fadeIn: 2, fadeOut: 2 } };
+    const f = effectiveFades(long);
+    expect(f.fadeIn + f.fadeOut).toBeCloseTo(1, 5);
+    expect(cueAlphaAt(long, 0.5)).toBeCloseTo(1, 5);
   });
 
   plainTest("WebM は VP8・VP9・AV1 と Opus・Vorbis（または音声なし）のときだけ。字幕のずらし幅は、マイナスの先頭時間を0にする分", () => {
@@ -251,25 +282,80 @@ test.describe("動画字幕追加：字幕の編集とプレビュー", () => {
     await expect(page.getByTestId("vs-overlay-cue")).toHaveText(["こんにちは"], { timeout: 5_000 });
     await expect(page.getByTestId("vs-overlay-cue")).toHaveText(["今日は旅行に来ています"], { timeout: 5_000 });
     await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => v.pause());
-    // 表示設定
+    // 字幕ごとの見た目（総合改修 11）：1番目だけを上・大きく・黄色・縁取りなしにする。2番目は変わらない
     await seek(page, 1.0);
-    const overlay = page.getByTestId("vs-overlay");
-    await expect(overlay).toHaveAttribute("data-position", "bottom");
-    await page.getByTestId("vs-position-top").check();
-    await expect(overlay).toHaveAttribute("data-position", "top");
-    const before = await page.getByTestId("vs-overlay-cue").evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
-    await page.getByTestId("vs-size-xlarge").check();
-    await expect(overlay).toHaveAttribute("data-font-size", "160");
-    const after = await page.getByTestId("vs-overlay-cue").evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
-    expect(after).toBeGreaterThan(before * 1.4);
-    // 上に表示すると、字幕は動画の上半分にある
-    const box = await page.getByTestId("vs-overlay-cue").boundingBox();
-    const vbox = await page.getByTestId("vs-video").boundingBox();
-    expect(box!.y + box!.height / 2).toBeLessThan(vbox!.y + vbox!.height / 2);
-    await page.getByTestId("vs-color").fill("#ffff00");
-    await expect(page.getByTestId("vs-overlay-cue")).toHaveCSS("color", "rgb(255, 255, 0)");
-    await page.getByTestId("vs-bg-opacity").fill("0");
-    await expect(page.getByTestId("vs-overlay-cue")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    const row1 = page.getByTestId("vs-cue").nth(0);
+    await row1.getByTestId("vs-cue-look").locator("summary").click();
+    await row1.getByLabel("1番目の縦の位置（Y）の数値").fill("10");
+    await row1.getByLabel("1番目の縦の位置（Y）の数値").blur();
+    await row1.getByLabel("1番目の文字の大きさの数値").fill("12");
+    await row1.getByLabel("1番目の文字の大きさの数値").blur();
+    await row1.getByTestId("vs-cue-color-黄").click();
+    await row1.getByTestId("vs-cue-outline").uncheck();
+    const cueEl = page.getByTestId("vs-overlay-cue");
+    await expect(cueEl).toHaveAttribute("data-y", "10");
+    await expect(cueEl).toHaveAttribute("data-size", "12");
+    await expect(cueEl).toHaveAttribute("data-color", "#fdd835");
+    // キャンバスの上の方（y=10%付近）に黄色の文字が描かれ、下の方には描かれていない
+    const yellowRows = await page.getByTestId("vs-overlay-canvas").evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+      const ys: number[] = [];
+      for (let y = 0; y < c.height; y++) {
+        for (let x = 0; x < c.width; x++) {
+          const i = (y * c.width + x) * 4;
+          if (d[i + 3] > 200 && d[i] > 200 && d[i + 1] > 180 && d[i + 2] < 120) { ys.push(y / c.height); break; }
+        }
+      }
+      return ys;
+    });
+    expect(yellowRows.length).toBeGreaterThan(3);
+    expect(Math.max(...yellowRows)).toBeLessThan(0.3);
+    // 2番目の字幕の見た目は変わっていない（設定が混ざらない）
+    await page.getByTestId("vs-cue").nth(1).getByTestId("vs-cue-seek").click();
+    await expect(cueEl).toHaveAttribute("data-y", "88");
+    await expect(cueEl).toHaveAttribute("data-color", "#ffffff");
+    // 再生中でも、字幕の文字を編集できる（プレビューにすぐ出る）
+    await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => { v.muted = true; v.loop = true; return v.play(); });
+    await page.getByTestId("vs-cue").nth(1).getByTestId("vs-cue-text").fill("再生中に変更");
+    expect(await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => v.paused)).toBe(false);
+    await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => v.pause());
+    await seek(page, 2.5);
+    await expect(cueEl).toHaveText(["再生中に変更"]);
+  });
+
+  test("タイムライン：字幕ごとのバーの端・真ん中をドラッグして、表示時間を変えられる。目盛りを押すと再生位置が動く", async ({ page }) => {
+    await openWithVideo(page, video4s);
+    await addCue(page, "00:00:01.000", "00:00:02.000", "ドラッグ");
+    const row = page.getByTestId("vs-timeline-row");
+    await expect(row).toHaveCount(1);
+    await row.scrollIntoViewIfNeeded();
+    const lane = await row.locator("[data-timeline-lane]").boundingBox();
+    const end = await row.getByTestId("vs-timeline-row-end").boundingBox();
+    // 終了の端を、動画の 3秒 の位置までドラッグ
+    await page.mouse.move(end!.x + end!.width / 2, end!.y + end!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lane!.x + (lane!.width * 3) / 4, end!.y + end!.height / 2, { steps: 6 });
+    await page.mouse.up();
+    const endVal = parseSubtitleTime(await page.getByTestId("vs-cue-end").inputValue())!;
+    expect(endVal).toBeGreaterThan(2.8);
+    expect(endVal).toBeLessThan(3.2);
+    await expect(page.getByTestId("vs-cue-start")).toHaveValue("00:00:01.000");
+    // 真ん中をドラッグすると、長さを保ったまま動く
+    await row.scrollIntoViewIfNeeded();
+    const bar = await row.getByTestId("vs-timeline-row-bar").boundingBox();
+    await page.mouse.move(bar!.x + bar!.width / 2, bar!.y + bar!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bar!.x + bar!.width / 2 - lane!.width / 4, bar!.y + bar!.height / 2, { steps: 6 });
+    await page.mouse.up();
+    const s2 = parseSubtitleTime(await page.getByTestId("vs-cue-start").inputValue())!;
+    const e2 = parseSubtitleTime(await page.getByTestId("vs-cue-end").inputValue())!;
+    expect(s2).toBeLessThan(0.3);
+    expect(e2 - s2).toBeCloseTo(endVal - 1, 1);
+    // 目盛りを押すと、そこへ再生位置が動く
+    await page.getByTestId("vs-timeline-ruler").scrollIntoViewIfNeeded();
+    const ruler = await page.getByTestId("vs-timeline-ruler").boundingBox();
+    await page.mouse.click(ruler!.x + ruler!.width / 2, ruler!.y + ruler!.height / 2);
+    await expect.poll(async () => page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => v.currentTime)).toBeGreaterThan(1.8);
   });
 
   test("字幕ファイル（.srt・.vtt）を保存できる（時間順・表示設定入り）", async ({ page }) => {
@@ -289,7 +375,7 @@ test.describe("動画字幕追加：字幕の編集とプレビュー", () => {
     expect(srt.text).toBe("1\n00:00:00,500 --> 00:00:01,500\n一\n\n2\n00:00:02,000 --> 00:00:03,000\n二\n");
     const vtt = await save("vs-save-vtt");
     expect(vtt.name).toMatch(/\.vtt$/);
-    expect(vtt.text).toContain("WEBVTT\n\nSTYLE\n::cue { color: #ffffff; background-color: rgba(0,0,0,0.6); font-size: 100%; }");
+    expect(vtt.text).toContain("WEBVTT\n\nSTYLE\n::cue { color: #ffffff; background-color: rgba(0,0,0,0); font-size: 100%; }");
     expect(vtt.text).toContain("00:00:00.500 --> 00:00:01.500 align:center\n一");
   });
 });
@@ -303,13 +389,17 @@ test.describe("動画字幕追加：書き出し", () => {
   test("MP4（H.264＋AAC）→ MKV：映像・音声はそのまま、字幕は独立した字幕トラック（WebVTT）として正しい時間で入る", async ({ page }) => {
     const src = makeVideo({ sec: 4, audio: true });
     await openWithVideo(page, src);
+    await chooseTrackMode(page);
     // MP4 からは MKV だけを選べる
     await expect(page.getByTestId("vs-container-mkv")).toBeChecked();
     await expect(page.getByTestId("vs-container-webm")).toHaveCount(0);
     await addCue(page, "00:00:01.000", "00:00:03.000", "こんにちは");
     await addCue(page, "00:00:03.000", "00:00:03.900", "今日は旅行に来ています");
-    await page.getByTestId("vs-position-top").check();
-    await page.getByTestId("vs-color").fill("#ffff00");
+    for (const n of [0, 1]) {
+      const row = page.getByTestId("vs-cue").nth(n);
+      await row.getByTestId("vs-cue-look").locator("summary").click();
+      await row.getByTestId("vs-cue-color-黄").click();
+    }
     const out = await exportAndSave(page);
     expect(out).toMatch(/-subtitled\.mkv$/);
     await expect(page.getByTestId("vs-result-copy")).toContainText("映像：そのまま（再エンコードなし）・音声：そのまま（再エンコードなし）");
@@ -321,7 +411,7 @@ test.describe("動画字幕追加：書き出し", () => {
     expect(track?.codecId).toBe("S_TEXT/WEBVTT");
     expect(track?.language).toBe("jpn");
     expect(track?.name).toBe("日本語");
-    expect(track?.codecPrivate).toContain("::cue { color: #ffff00;");
+    expect(track?.codecPrivate).toContain("::cue { color: #fdd835;");
     expect(cues.map((c) => c.text)).toEqual(["こんにちは", "今日は旅行に来ています"]);
 
     // 映像・音声が残り、フレーム数も同じ。字幕の時間は、映像の最初のフレームとの差が入力どおり
@@ -340,6 +430,7 @@ test.describe("動画字幕追加：書き出し", () => {
   test("音声のない動画でも書き出せる（映像と字幕だけ）", async ({ page }) => {
     const src = makeVideo({ sec: 2, audio: false });
     await openWithVideo(page, src);
+    await chooseTrackMode(page);
     await addCue(page, "00:00:00.200", "00:00:01.800", "音声なし");
     const out = await exportAndSave(page);
     await expect(page.getByTestId("vs-result-copy")).toContainText("映像：そのまま（再エンコードなし）");
@@ -351,6 +442,7 @@ test.describe("動画字幕追加：書き出し", () => {
 
   test("WebM の動画は WebM でも書き出せる（映像はそのまま、字幕トラック入り）", async ({ page }) => {
     await openWithVideo(page, fixtures.webm);
+    await chooseTrackMode(page);
     await expect(page.getByTestId("vs-container-webm")).toBeVisible();
     await page.getByTestId("vs-container-webm").check();
     await addCue(page, "00:00:00.100", "00:00:00.900", "WebM の字幕");
@@ -368,6 +460,7 @@ test.describe("動画字幕追加：書き出し", () => {
   test("書き出し中にキャンセルすると、結果を出さずに止まり、そのあともう一度書き出せる", async ({ page }) => {
     const src = makeVideo({ sec: 20, audio: true, w: 640, h: 360, bitrate: "4M" });
     await openWithVideo(page, src);
+    await chooseTrackMode(page);
     await addCue(page, "00:00:01.000", "00:00:02.000", "キャンセル");
     // コピーだけの書き出しは速く終わるため、ファイルの読み込みを少し遅くして、書き出しの途中で止められるようにする
     await page.evaluate(() => {
@@ -389,6 +482,33 @@ test.describe("動画字幕追加：書き出し", () => {
     });
     const out = await exportAndSave(page);
     expect(subtitleCuesOf(fs.readFileSync(out)).cues.map((c) => c.text)).toEqual(["キャンセル"]);
+  });
+
+  test("映像に焼き付ける（既定）：プレビューと同じ位置・色で字幕が映像に描かれ、どの再生アプリでも見える。音声も残る", async ({ page }) => {
+    // 赤い色が入らない、灰色の動画（音声あり）
+    const src = path.join(tmp(), "gray.mp4");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=320x240:r=30:d=3", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "3", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", src]);
+    await openWithVideo(page, src);
+    await expect(page.getByTestId("vs-mode").getByRole("radio", { name: /焼き付ける/ })).toHaveAttribute("aria-checked", "true");
+    await addCue(page, "00:00:00.000", "00:00:02.500", "■■■■");
+    const row = page.getByTestId("vs-cue").nth(0);
+    await row.getByTestId("vs-cue-look").locator("summary").click();
+    await row.getByTestId("vs-cue-color-赤").click();
+    await row.getByTestId("vs-cue-outline").uncheck();
+    await row.getByLabel("1番目の文字の大きさの数値").fill("15");
+    await row.getByLabel("1番目の文字の大きさの数値").blur();
+    await row.getByLabel("1番目の縦の位置（Y）の数値").fill("20");
+    await row.getByLabel("1番目の縦の位置（Y）の数値").blur();
+    const out = await exportAndSave(page);
+    expect(out).toMatch(/-subtitled\.mp4$/);
+    const streams = probeStreams(out);
+    expect(streams.audio).not.toBeNull();
+    // 1秒の位置のコマを取り出し、赤い文字が上の方（y=20%付近）にあることを確かめる
+    const frame = path.join(tmp(), "frame.png");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "1", "-i", out, "-frames:v", "1", frame]);
+    const r = JSON.parse(execFileSync("python3", ["-c", "import sys,json\nfrom PIL import Image\nim=Image.open(sys.argv[1]).convert('RGB')\nw,h=im.size\nys=[y for y in range(h) for x in range(0,w,2) if (lambda p:p[0]>170 and p[1]<90 and p[2]<90)(im.getpixel((x,y)))]\nprint(json.dumps({'n':len(ys),'cy':(sum(ys)/len(ys)/h) if ys else -1}))", frame], { encoding: "utf8" }));
+    expect(r.n).toBeGreaterThan(30);
+    expect(Math.abs(r.cy - 0.2)).toBeLessThan(0.07);
   });
 
   test("動画として読み込めないファイルは、日本語のエラーを出す", async ({ page }) => {

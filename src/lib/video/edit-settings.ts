@@ -6,6 +6,7 @@ import {
   resolutionOptionsFor,
   type CompressionLevel,
   type OutputContainer,
+  isIsobmffContainer,
 } from "./shared";
 import { COMPRESSION_RATIO_RANGE, estimateFrameRateBytes, estimateResizedBytes, resizedDimensions } from "./estimate";
 
@@ -68,6 +69,11 @@ export interface VideoEditPreset {
   successLabel: string;
   /** 保存するファイル名の後ろに付ける文字（従来のツールと同じ。空なら付けない） */
   fileSuffix: string;
+  /**
+   * 切り取り（トリミング）を出すか。総合改修 14〜16：形式変換・解像度変更・フレームレート変更では外し、
+   * それぞれの変更に集中した画面にした（切り取りは「動画カット・結合」で行える）。圧縮は従来どおり。
+   */
+  trim: boolean;
 }
 
 /**
@@ -85,6 +91,7 @@ export const VIDEO_EDIT_PRESETS: Record<VideoEditToolId, VideoEditPreset> = {
     progressLabel: "変換中",
     successLabel: "変換が完了しました",
     fileSuffix: "",
+    trim: false,
   },
   "video-compress": {
     initial: { container: "mp4", quality: "medium", resolution: "original", fps: "original", ...EDIT_DEFAULTS },
@@ -93,6 +100,7 @@ export const VIDEO_EDIT_PRESETS: Record<VideoEditToolId, VideoEditPreset> = {
     progressLabel: "圧縮中",
     successLabel: "圧縮が完了しました",
     fileSuffix: "-compressed",
+    trim: true,
   },
   "video-resize": {
     initial: { container: "mp4", quality: "original", resolution: null, fps: "original", ...EDIT_DEFAULTS },
@@ -101,6 +109,7 @@ export const VIDEO_EDIT_PRESETS: Record<VideoEditToolId, VideoEditPreset> = {
     progressLabel: "変換中",
     successLabel: "解像度の変更が完了しました",
     fileSuffix: "-resized",
+    trim: false,
   },
   "video-frame-rate": {
     initial: { container: "mp4", quality: "original", resolution: "original", fps: null, ...EDIT_DEFAULTS },
@@ -109,6 +118,7 @@ export const VIDEO_EDIT_PRESETS: Record<VideoEditToolId, VideoEditPreset> = {
     progressLabel: "変換中",
     successLabel: "フレームレートの変更が完了しました",
     fileSuffix: "-fps",
+    trim: false,
   },
 };
 
@@ -134,8 +144,11 @@ export function resolutionChoicesFor(width: number, height: number): number[] {
 }
 
 /** 選べるフレームレート（元の動画より高いものは出さない） */
+/** 書き出せるフレームレートの下限（総合改修 14：24fps未満は選べない） */
+export const MIN_OUTPUT_FPS = 24;
+
 export function fpsChoicesFor(sourceFps: number): number[] {
-  return getAvailableFrameRates(sourceFps);
+  return getAvailableFrameRates(sourceFps).filter((fps) => fps >= MIN_OUTPUT_FPS);
 }
 
 /** まだ選んでいない設定があるか（解像度変更・フレームレート変更のページで、選ぶ前は実行できない） */
@@ -218,7 +231,7 @@ export function needsReencode(settings: VideoEditSettings): boolean {
     typeof settings.resolution === "number" ||
     typeof settings.fps === "number" ||
     (settings.trimStart > 0 && !settings.fastTrim) ||
-    (settings.rotate !== 0 && settings.container === "webm")
+    (settings.rotate !== 0 && !isIsobmffContainer(settings.container))
   );
 }
 

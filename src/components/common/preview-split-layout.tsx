@@ -20,6 +20,7 @@ export function PreviewSplitLayout({
   children,
   after,
   previewWidth = "md",
+  mobileSticky = false,
 }: {
   /** 右側(スマホでは下)に固定表示するプレビュー */
   preview: ReactNode;
@@ -29,6 +30,12 @@ export function PreviewSplitLayout({
   after?: ReactNode;
   /** プレビュー列の幅。sm=細め / md=標準 / lg=広め(画像など大きいプレビュー向け) */
   previewWidth?: "sm" | "md" | "lg";
+  /**
+   * スマホでも、設定を変えながらプレビューを見続けられるようにする（総合改修 3-4）。
+   * プレビューを設定より上に置き、画面の上に固定する（高さは画面の4割まで。中はスクロールできる）。
+   * 位置や色を動かして結果を見るツール（文字入れ・透かしなど）向け。
+   */
+  mobileSticky?: boolean;
 }) {
   const cols =
     previewWidth === "sm"
@@ -62,10 +69,13 @@ export function PreviewSplitLayout({
       </div>
     );
   }
+  const mobile = mobileSticky
+    ? "max-lg:order-first max-lg:sticky max-lg:top-14 max-lg:z-20 max-lg:max-h-[42vh] max-lg:self-start max-lg:overflow-y-auto max-lg:rounded-xl max-lg:bg-[var(--ms-surface-glass-solid)] max-lg:shadow-md max-lg:backdrop-blur"
+    : "";
   return (
-    <div className={`grid grid-cols-1 gap-6 ${cols} lg:items-start`} data-preview-split>
+    <div className={`grid grid-cols-1 gap-6 ${cols} lg:items-start`} data-preview-split data-mobile-sticky={mobileSticky || undefined}>
       <div className="flex min-w-0 flex-col gap-6">{children}</div>
-      <div className="min-w-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto">
+      <div className={`min-w-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto ${mobile}`}>
         {/* 「大きく表示」で、プレビューを画面いっぱいに広げられる（全ツール共通） */}
         <PreviewFullscreenFrame>{preview}</PreviewFullscreenFrame>
       </div>

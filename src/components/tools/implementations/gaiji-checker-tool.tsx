@@ -23,6 +23,7 @@ import {
 import { displayOfFinding } from "@/lib/gaiji/report";
 import { findVariantChars, fontLabel, loadMjVariantIndex, shortSjisLabel, sjisNoteOf, type MjVariantIndex, type VariantFinding } from "@/lib/gaiji/variants";
 import { RunBar } from "@/components/ui/run-bar";
+import { usePrehydrationValue } from "@/lib/hooks/use-prehydration-value";
 import { StepHeading } from "@/components/ui/step-heading";
 
 /** 戸籍・住民基本台帳などの字を、本来の形で出す書体（利用者のパソコンに入っているときだけ効く） */
@@ -77,6 +78,8 @@ interface Scanned {
 /** 外字・特殊文字チェック。文字・Word・Excel・PDFの文字を調べ、出力先で問題になりうる文字を見つける（ブラウザ内だけで処理） */
 export function GaijiCheckerTool() {
   const [text, setText] = useState("");
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  usePrehydrationValue(textRef, text, setText);
   const [checkShiftJis, setCheckShiftJis] = useState(true);
   const [scanned, setScanned] = useState<Scanned | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -283,6 +286,7 @@ export function GaijiCheckerTool() {
             <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">名簿・文章・Excelのセルなど</span>
           </label>
           <textarea
+            ref={textRef}
             id="gaiji-text-input"
             data-testid="gaiji-text"
             value={text}
@@ -513,7 +517,8 @@ function FindingRow({ finding: f }: { finding: GaijiFinding }) {
           </span>
           <span>件数：{f.count.toLocaleString("ja-JP")}か所</span>
           {!asName && f.name && <span className="text-neutral-500 dark:text-neutral-400">{f.name}</span>}
-          {f.replacement && <span>置き換え案：{f.replacement}</span>}
+          {f.block && <span className="text-neutral-500 dark:text-neutral-400" data-testid="gaiji-block">種類：{f.block}</span>}
+          {f.replacement && <span data-testid="gaiji-replacement">置き換え案：{f.replacement}</span>}
         </p>
         <p className="break-words text-neutral-600 [overflow-wrap:anywhere] dark:text-neutral-400">
           場所：{f.locations.join("、")}

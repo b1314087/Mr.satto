@@ -86,10 +86,11 @@ test.describe("書類作成ツール: 生成ツールへの集約（画面）", 
     }
   });
 
-  test("一覧の絞り込み「生成ツール」で7ツールが出て、「その他」では出ない", async ({ page }) => {
+  test("一覧の絞り込み「生成ツール」で書類作成ツールが出て、「その他」では出ない（総合改修 10：見積書・請求書などの4ツールは「見積書・注文書・請求書作成」1枚にまとめて出す）", async ({ page }) => {
     await page.goto("/tools?category=generator");
     const main = page.locator("main");
-    for (const { name } of DOCUMENT_TOOLS) {
+    const listed = [{ name: "見積書・注文書・請求書作成" }, ...DOCUMENT_TOOLS.filter(({ id }) => !getToolById(id)?.mergedInto)];
+    for (const { name } of listed) {
       await expect(main.getByRole("link", { name: new RegExp(name) }).first(), name).toBeVisible({ timeout: 30_000 });
     }
     await page.goto("/tools?category=other");

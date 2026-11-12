@@ -99,6 +99,8 @@ export interface XlsxSheetData {
   maxRow: number;
   maxCol: number;
   mergeCount: number;
+  /** 結合セルの範囲（"A1:B2" の形） */
+  merges: string[];
 }
 
 export interface XlsxBook {
@@ -221,8 +223,13 @@ export async function readXlsxBook(file: File, macro: boolean): Promise<XlsxBook
     let maxRow = 0;
     let maxCol = 0;
     let mergeCount = 0;
+    const merges: string[] = [];
     if (xml) {
       mergeCount = byLocal(xml, "mergeCell").length;
+      for (const mc of byLocal(xml, "mergeCell")) {
+        const ref = mc.getAttribute("ref");
+        if (ref && ref.includes(":")) merges.push(ref);
+      }
       // 共有数式（<f t="shared" si="0" ref="…">）は、元の数式の文字だけを使う（番地をずらした数式は作らない）
       const sharedFormulas = new Map<string, string>();
       for (const c of byLocal(xml, "c")) {
@@ -282,7 +289,7 @@ export async function readXlsxBook(file: File, macro: boolean): Promise<XlsxBook
         }
       }
     }
-    sheets.push({ name, hidden: state === "hidden" || state === "veryHidden", cells, maxRow, maxCol, mergeCount });
+    sheets.push({ name, hidden: state === "hidden" || state === "veryHidden", cells, maxRow, maxCol, mergeCount, merges });
   }
   if (sheets.length === 0) throw new Error(`${file.name}：読み取れるシートがありません。`);
   return { sheets, macro, definedNameCount };

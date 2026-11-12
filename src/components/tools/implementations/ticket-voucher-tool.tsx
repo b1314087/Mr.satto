@@ -28,6 +28,7 @@ import {
 import { parseTableFile, type ParsedTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
 import { TicketPreview } from "./shared/ticket-preview";
+import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 import { RunBar } from "@/components/ui/run-bar";
 
 const ACCEPT = ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
@@ -232,215 +233,222 @@ export function TicketVoucherTool() {
       </div>
       }
     >
-      <div className="flex flex-wrap gap-4">
-        <div className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600 dark:text-neutral-300">用紙サイズ</span>
-          <select aria-label="用紙サイズ" value={form.paperSizeId} onChange={(e) => update("paperSizeId", e.target.value as PaperSizeId)} className={inputClass}>
-            {PAPER_SIZE_IDS.map((id) => (
-              <option key={id} value={id}>{PAPER_SIZE_LABELS[id]}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600 dark:text-neutral-300">向き</span>
-          <div className="ms-seg">
-            {(["portrait", "landscape"] as PaperOrientation[]).map((o) => (
-              <button aria-pressed={form.orientation === o}
-                key={o}
+      <SettingsStack testId="ticket-settings">
+        <SettingsSection n={1} title="Excel/CSVから一括で読み込む（任意・1行=1枚）" testId="ticket-import-section" summary={usingRows ? `${form.rows?.length ?? 0}件を読み込み中` : "任意"}>
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">列ごとに「タイトル」「金額」などを割り当てます。</p>
+            <FileDropzone compact={!!importedFile} accept={ACCEPT} maxSizeMB={20} label="CSV/Excelをドラッグ&ドロップ" hint="またはタップして選択" onFilesSelected={handleImportFile} onError={setImportError} />
+            <CsvEncodingControl files={[importedFile]} onChange={(f) => void handleImportFile([f])} />
+            {importError && <ErrorMessage message={importError} />}
+            {table && (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {FIELD_LABELS.map((f) => (
+                    <label key={f.key} className="flex flex-col gap-1 text-xs text-neutral-500">
+                      {f.label}
+                      <select
+                        value={mapping[f.key]}
+                        aria-label={f.label}
+                        onChange={(e) => setMapping((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                        className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                      >
+                        <option value="">{f.common}</option>
+                        {table.headers.map((h, i) => (
+                          <option key={`${h}-${i}`} value={h}>{h}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={yenFormat} onChange={(e) => setYenFormat(e.target.checked)} />
+                  金額の数字を「1,000円」の形にする
+                </label>
+                <button type="button" onClick={applyImport} className="w-fit rounded-lg bg-neutral-800 px-4 py-2 text-sm font-medium text-white dark:bg-neutral-200 dark:text-neutral-900">
+                  読み込んだ{table.rows.length}件を券にする
+                </button>
+              </div>
+            )}
+          </div>
+        </SettingsSection>
+        <SettingsSection n={2} title="用紙" testId="ticket-paper-section" summary={`${PAPER_SIZE_LABELS[form.paperSizeId]}・${form.orientation === "portrait" ? "縦" : "横"}`}>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600 dark:text-neutral-300">用紙サイズ</span>
+              <select aria-label="用紙サイズ" value={form.paperSizeId} onChange={(e) => update("paperSizeId", e.target.value as PaperSizeId)} className={inputClass}>
+                {PAPER_SIZE_IDS.map((id) => (
+                  <option key={id} value={id}>{PAPER_SIZE_LABELS[id]}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600 dark:text-neutral-300">向き</span>
+              <div className="ms-seg">
+                {(["portrait", "landscape"] as PaperOrientation[]).map((o) => (
+                  <button aria-pressed={form.orientation === o}
+                    key={o}
+                    type="button"
+                    onClick={() => update("orientation", o)}
+                  >
+                    {o === "portrait" ? "縦" : "横"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </SettingsSection>
+        <SettingsSection n={3} title="券の内容" testId="ticket-content-section">
+          {usingRows ? (
+            <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                Excel/CSVから読み込んだ{form.rows?.length}件（1行=1枚）を使っています
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:w-1/2">
+                <NumberField
+                  label="開始番号（連番の列を使わないとき）"
+                  value={form.rowsSerialStart}
+                  onChange={(v) => update("rowsSerialStart", Math.round(v))}
+                  min={0}
+                />
+              </div>
+              <button
                 type="button"
-                onClick={() => update("orientation", o)}
+                onClick={() => update("rows", null)}
+                className="w-fit rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm dark:bg-neutral-800 dark:text-neutral-200"
               >
-                {o === "portrait" ? "縦" : "横"}
+                読み込みをやめて、手入力に戻す
               </button>
-            ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {form.groups.map((g, i) => {
+                const count = Number.isInteger(g.serialStart) && Number.isInteger(g.serialEnd) ? Math.max(0, g.serialEnd - g.serialStart + 1) : 0;
+                return (
+                  <div key={i} className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">券の種類{form.groups.length > 1 ? ` ${i + 1}` : ""}（{count}枚）</p>
+                      {form.groups.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => update("groups", form.groups.filter((_, idx) => idx !== i))}
+                          className="text-xs text-neutral-400 hover:text-red-500"
+                        >
+                          この種類を削除
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <TextField label="タイトル" value={g.title} onChange={(v) => updateGroup(i, { title: v })} placeholder="整理券 / 金券 / 引換券 など" />
+                      <TextField label="日付" value={g.date} onChange={(v) => updateGroup(i, { date: v })} placeholder="2026-09-30 など" />
+                      <TextField label="金額" value={g.amount} onChange={(v) => updateGroup(i, { amount: v })} placeholder="1,000円 など" />
+                      <TextField label="任意テキスト" value={g.freeText} onChange={(v) => updateGroup(i, { freeText: v })} placeholder="有効期限・注意事項など" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:w-1/2">
+                      <NumberField label="開始番号" value={g.serialStart} onChange={(v) => updateGroup(i, { serialStart: Math.round(v) })} min={0} />
+                      <NumberField label="終了番号" value={g.serialEnd} onChange={(v) => updateGroup(i, { serialEnd: Math.round(v) })} min={0} />
+                    </div>
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => {
+                  const last = form.groups[form.groups.length - 1];
+                  update("groups", [...form.groups, emptyGroup({ title: "", serialStart: last ? last.serialEnd + 1 : 1, serialEnd: last ? last.serialEnd + 10 : 10 })]);
+                }}
+                className="w-fit rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
+              >
+                + 別のタイトル・金額の券を追加
+              </button>
+            </div>
+          )}
+        </SettingsSection>
+        <SettingsSection n={4} title="1枚の大きさ・余白" testId="ticket-size-section" summary={`${form.cellWidthMm}×${form.cellHeightMm}mm`}>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <NumberField label="1枚の幅 (mm)" value={form.cellWidthMm} onChange={(v) => update("cellWidthMm", v)} step={0.5} />
+            <NumberField label="1枚の高さ (mm)" value={form.cellHeightMm} onChange={(v) => update("cellHeightMm", v)} step={0.5} />
+            <NumberField label="余白 (mm)" value={form.marginMm} onChange={(v) => update("marginMm", v)} step={0.5} />
+            <NumberField label="間隔 (mm)" value={form.gapMm} onChange={(v) => update("gapMm", v)} step={0.5} />
           </div>
-        </div>
-      </div>
-
-      {usingRows ? (
-        <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
-          <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-            Excel/CSVから読み込んだ{form.rows?.length}件（1行=1枚）を使っています
-          </p>
-          <div className="grid grid-cols-2 gap-3 sm:w-1/2">
-            <NumberField
-              label="開始番号（連番の列を使わないとき）"
-              value={form.rowsSerialStart}
-              onChange={(v) => update("rowsSerialStart", Math.round(v))}
-              min={0}
-            />
+        </SettingsSection>
+        <SettingsSection n={5} title="切り取り線・連番" testId="ticket-cut-section">
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.showCutLines} onChange={(e) => update("showCutLines", e.target.checked)} />
+              切り取り線を表示する
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.showSerial} onChange={(e) => update("showSerial", e.target.checked)} />
+              連番を表示する
+            </label>
+            <div className="grid grid-cols-2 gap-3 pl-6 sm:w-1/2">
+              <NumberField label="連番の桁数（0埋め）" value={form.serialDigits} onChange={(v) => update("serialDigits", Math.round(v))} min={1} />
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => update("rows", null)}
-            className="w-fit rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm dark:bg-neutral-800 dark:text-neutral-200"
-          >
-            読み込みをやめて、手入力に戻す
-          </button>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {form.groups.map((g, i) => {
-            const count = Number.isInteger(g.serialStart) && Number.isInteger(g.serialEnd) ? Math.max(0, g.serialEnd - g.serialStart + 1) : 0;
-            return (
-              <div key={i} className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">券の種類{form.groups.length > 1 ? ` ${i + 1}` : ""}（{count}枚）</p>
-                  {form.groups.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => update("groups", form.groups.filter((_, idx) => idx !== i))}
-                      className="text-xs text-neutral-400 hover:text-red-500"
-                    >
-                      この種類を削除
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextField label="タイトル" value={g.title} onChange={(v) => updateGroup(i, { title: v })} placeholder="整理券 / 金券 / 引換券 など" />
-                  <TextField label="日付" value={g.date} onChange={(v) => updateGroup(i, { date: v })} placeholder="2026-09-30 など" />
-                  <TextField label="金額" value={g.amount} onChange={(v) => updateGroup(i, { amount: v })} placeholder="1,000円 など" />
-                  <TextField label="任意テキスト" value={g.freeText} onChange={(v) => updateGroup(i, { freeText: v })} placeholder="有効期限・注意事項など" />
-                </div>
-                <div className="grid grid-cols-2 gap-3 sm:w-1/2">
-                  <NumberField label="開始番号" value={g.serialStart} onChange={(v) => updateGroup(i, { serialStart: Math.round(v) })} min={0} />
-                  <NumberField label="終了番号" value={g.serialEnd} onChange={(v) => updateGroup(i, { serialEnd: Math.round(v) })} min={0} />
+        </SettingsSection>
+        <SettingsSection n={6} title="二次元コード・バーコード" testId="ticket-codes-section">
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={codes.showQr} onChange={(e) => updateCodes({ showQr: e.target.checked })} />
+              二次元コードを表示する
+            </label>
+            {codes.showQr && (
+              <div className="flex flex-col gap-3 pl-6">
+                <TextField
+                  label="読み取ったときに表示される内容"
+                  value={codes.qrContent}
+                  onChange={(v) => updateCodes({ qrContent: v })}
+                  placeholder="例: 整理券 {n}番 / {title} {amount}"
+                />
+                <div className="grid grid-cols-2 gap-3 sm:w-2/3">
+                  <PlacementSelect label="二次元コードの場所" value={codes.qrPlacement} onChange={(v) => updateCodes({ qrPlacement: v })} />
+                  <NumberField
+                    label="大きさ（一辺・mm）"
+                    value={codes.qrSizeMm}
+                    onChange={(v) => updateCodes({ qrSizeMm: Number.isFinite(v) ? v : null })}
+                    step={0.5}
+                    placeholder="自動"
+                  />
                 </div>
               </div>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => {
-              const last = form.groups[form.groups.length - 1];
-              update("groups", [...form.groups, emptyGroup({ title: "", serialStart: last ? last.serialEnd + 1 : 1, serialEnd: last ? last.serialEnd + 10 : 10 })]);
-            }}
-            className="w-fit rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
-          >
-            + 別のタイトル・金額の券を追加
-          </button>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <p className="text-sm font-medium">Excel/CSVから一括で読み込む（任意・1行=1枚）</p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">列ごとに「タイトル」「金額」などを割り当てます。</p>
-        <FileDropzone compact={!!importedFile} accept={ACCEPT} maxSizeMB={20} label="CSV/Excelをドラッグ&ドロップ" hint="またはタップして選択" onFilesSelected={handleImportFile} onError={setImportError} />
-        <CsvEncodingControl files={[importedFile]} onChange={(f) => void handleImportFile([f])} />
-        {importError && <ErrorMessage message={importError} />}
-        {table && (
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {FIELD_LABELS.map((f) => (
-                <label key={f.key} className="flex flex-col gap-1 text-xs text-neutral-500">
-                  {f.label}
-                  <select
-                    value={mapping[f.key]}
-                    aria-label={f.label}
-                    onChange={(e) => setMapping((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                    className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                  >
-                    <option value="">{f.common}</option>
-                    {table.headers.map((h, i) => (
-                      <option key={`${h}-${i}`} value={h}>{h}</option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-            </div>
+            )}
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={yenFormat} onChange={(e) => setYenFormat(e.target.checked)} />
-              金額の数字を「1,000円」の形にする
+              <input type="checkbox" checked={codes.showBarcode} onChange={(e) => updateCodes({ showBarcode: e.target.checked })} />
+              バーコードを表示する（CODE128）
             </label>
-            <button type="button" onClick={applyImport} className="w-fit rounded-lg bg-neutral-800 px-4 py-2 text-sm font-medium text-white dark:bg-neutral-200 dark:text-neutral-900">
-              読み込んだ{table.rows.length}件を券にする
-            </button>
+            {codes.showBarcode && (
+              <div className="flex flex-col gap-3 pl-6">
+                <TextField
+                  label="読み取ったときに表示される内容（半角の英数字・記号のみ）"
+                  value={codes.barcodeContent}
+                  onChange={(v) => updateCodes({ barcodeContent: v })}
+                  placeholder="例: T-{n}"
+                />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <PlacementSelect label="バーコードの場所" value={codes.barcodePlacement} onChange={(v) => updateCodes({ barcodePlacement: v })} />
+                  <NumberField
+                    label="幅（mm）"
+                    value={codes.barcodeWidthMm}
+                    onChange={(v) => updateCodes({ barcodeWidthMm: Number.isFinite(v) ? v : null })}
+                    step={0.5}
+                    placeholder="自動"
+                  />
+                  <NumberField
+                    label="高さ（mm）"
+                    value={codes.barcodeHeightMm}
+                    onChange={(v) => updateCodes({ barcodeHeightMm: Number.isFinite(v) ? v : null })}
+                    step={0.5}
+                    placeholder="自動"
+                  />
+                </div>
+              </div>
+            )}
+            {(codes.showQr || codes.showBarcode) && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">使える記号: {"{n}"}（連番）・{"{title}"}・{"{date}"}・{"{amount}"}・{"{text}"}。Excel読み込み時は見出し名（例: {"{氏名}"}）も使えます。</p>
+            )}
           </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800 sm:grid-cols-4">
-        <NumberField label="1枚の幅 (mm)" value={form.cellWidthMm} onChange={(v) => update("cellWidthMm", v)} step={0.5} />
-        <NumberField label="1枚の高さ (mm)" value={form.cellHeightMm} onChange={(v) => update("cellHeightMm", v)} step={0.5} />
-        <NumberField label="余白 (mm)" value={form.marginMm} onChange={(v) => update("marginMm", v)} step={0.5} />
-        <NumberField label="間隔 (mm)" value={form.gapMm} onChange={(v) => update("gapMm", v)} step={0.5} />
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={form.showCutLines} onChange={(e) => update("showCutLines", e.target.checked)} />
-          切り取り線を表示する
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={form.showSerial} onChange={(e) => update("showSerial", e.target.checked)} />
-          連番を表示する
-        </label>
-        <div className="grid grid-cols-2 gap-3 pl-6 sm:w-1/2">
-          <NumberField label="連番の桁数（0埋め）" value={form.serialDigits} onChange={(v) => update("serialDigits", Math.round(v))} min={1} />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={codes.showQr} onChange={(e) => updateCodes({ showQr: e.target.checked })} />
-          二次元コードを表示する
-        </label>
-        {codes.showQr && (
-          <div className="flex flex-col gap-3 pl-6">
-            <TextField
-              label="読み取ったときに表示される内容"
-              value={codes.qrContent}
-              onChange={(v) => updateCodes({ qrContent: v })}
-              placeholder="例: 整理券 {n}番 / {title} {amount}"
-            />
-            <div className="grid grid-cols-2 gap-3 sm:w-2/3">
-              <PlacementSelect label="二次元コードの場所" value={codes.qrPlacement} onChange={(v) => updateCodes({ qrPlacement: v })} />
-              <NumberField
-                label="大きさ（一辺・mm）"
-                value={codes.qrSizeMm}
-                onChange={(v) => updateCodes({ qrSizeMm: Number.isFinite(v) ? v : null })}
-                step={0.5}
-                placeholder="自動"
-              />
-            </div>
-          </div>
-        )}
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={codes.showBarcode} onChange={(e) => updateCodes({ showBarcode: e.target.checked })} />
-          バーコードを表示する（CODE128）
-        </label>
-        {codes.showBarcode && (
-          <div className="flex flex-col gap-3 pl-6">
-            <TextField
-              label="読み取ったときに表示される内容（半角の英数字・記号のみ）"
-              value={codes.barcodeContent}
-              onChange={(v) => updateCodes({ barcodeContent: v })}
-              placeholder="例: T-{n}"
-            />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <PlacementSelect label="バーコードの場所" value={codes.barcodePlacement} onChange={(v) => updateCodes({ barcodePlacement: v })} />
-              <NumberField
-                label="幅（mm）"
-                value={codes.barcodeWidthMm}
-                onChange={(v) => updateCodes({ barcodeWidthMm: Number.isFinite(v) ? v : null })}
-                step={0.5}
-                placeholder="自動"
-              />
-              <NumberField
-                label="高さ（mm）"
-                value={codes.barcodeHeightMm}
-                onChange={(v) => updateCodes({ barcodeHeightMm: Number.isFinite(v) ? v : null })}
-                step={0.5}
-                placeholder="自動"
-              />
-            </div>
-          </div>
-        )}
-        {(codes.showQr || codes.showBarcode) && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">使える記号: {"{n}"}（連番）・{"{title}"}・{"{date}"}・{"{amount}"}・{"{text}"}。Excel読み込み時は見出し名（例: {"{氏名}"}）も使えます。</p>
-        )}
-      </div>
-
+        </SettingsSection>
+      </SettingsStack>
 
       {validationError && <ErrorMessage message={validationError} />}
 

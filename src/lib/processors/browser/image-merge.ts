@@ -22,6 +22,8 @@ export type ImageMergeFormat = "png" | "jpeg";
 
 export interface ImageMergeInput {
   files: File[];
+  /** プレビュー用：1枚だけでも、今の設定（大きさ・背景など）で描く（総合改修 25）。書き出しでは使わない */
+  allowSingle?: boolean;
   direction: ImageMergeDirection;
   /** direction === "grid" の場合のみ使用 */
   columns: number;
@@ -187,7 +189,7 @@ function drawFitted(
 
 export class ImageMergeProcessor extends BrowserProcessor<ImageMergeInput, ImageProcessorOutput> {
   async process(input: ImageMergeInput): Promise<ImageProcessorOutput> {
-    if (input.files.length < 2) {
+    if (input.files.length < (input.allowSingle ? 1 : 2)) {
       throw new Error("画像を2枚以上追加してください");
     }
 

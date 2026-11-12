@@ -497,10 +497,12 @@ async function makeBlankPdf(file: string, pageCount: number) {
 }
 
 async function enableQr(page: Page) {
+  // 固有ID付きで作る（総合改修 5-1）に切り替え、QRコードを入れる（既定でオン）。画面の準備が終わる前に押すと反映されないことがあるので、欄が出るまで押し直す
   await expect(async () => {
-    const box = page.getByLabel("固有番号とQRコードを入れる");
-    if (await box.isChecked()) await box.uncheck();
-    await box.check();
+    const idMode = page.getByTestId("stamp-mode").getByRole("button", { name: "固有ID付きで作る", exact: true });
+    if ((await idMode.getAttribute("aria-pressed")) !== "true") await idMode.click();
+    const box = page.getByLabel("QRコードを入れる", { exact: true });
+    if (!(await box.isChecked())) await box.check();
     await expect(page.getByTestId("stamp-pdf-target")).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: 15_000 });
 }

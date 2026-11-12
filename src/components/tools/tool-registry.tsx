@@ -178,20 +178,17 @@ const PdfCompressTool = dynamic(() =>
   import("./implementations/pdf-compress-tool").then((m) => m.PdfCompressTool),
   { loading: ToolLoading }
 );
-const EstimateGeneratorTool = dynamic(() =>
-  import("./implementations/estimate-generator-tool").then((m) => m.EstimateGeneratorTool),
+const ExcelSpaceRemoveTool = dynamic(() =>
+  import("./implementations/excel-space-remove-tool").then((m) => m.ExcelSpaceRemoveTool),
   { loading: ToolLoading }
 );
-const QuoteOrderGeneratorTool = dynamic(() =>
-  import("./implementations/quote-order-generator-tool").then((m) => m.QuoteOrderGeneratorTool),
+const PostalSearchTool = dynamic(() =>
+  import("./implementations/postal-search-tool").then((m) => m.PostalSearchTool),
   { loading: ToolLoading }
 );
-const InvoiceGeneratorTool = dynamic(() =>
-  import("./implementations/invoice-generator-tool").then((m) => m.InvoiceGeneratorTool),
-  { loading: ToolLoading }
-);
-const OrderGeneratorTool = dynamic(() =>
-  import("./implementations/order-generator-tool").then((m) => m.OrderGeneratorTool),
+// 総合改修 10：見積書・見積書注文書一体・請求書・注文書の4ツールを「見積書・注文書・請求書作成」に統合した
+const DocumentSuiteTool = dynamic(() =>
+  import("./implementations/document-suite-tool").then((m) => m.DocumentSuiteTool),
   { loading: ToolLoading }
 );
 const PdfToExcelTool = dynamic(() =>
@@ -523,14 +520,16 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <PdfCompressTool />;
     case "pdf-to-text":
       return <PdfToTextTool />;
+    // 総合改修 10：統合した「見積書・注文書・請求書作成」。旧4ツールのURLは、その書類を選んだ状態で開く
+    case "document-suite":
     case "estimate-generator":
-      return <EstimateGeneratorTool />;
+      return <DocumentSuiteTool initialMode="estimate" />;
     case "quote-order-generator":
-      return <QuoteOrderGeneratorTool />;
+      return <DocumentSuiteTool initialMode="quote-order" />;
     case "invoice-generator":
-      return <InvoiceGeneratorTool />;
+      return <DocumentSuiteTool initialMode="invoice" />;
     case "order-generator":
-      return <OrderGeneratorTool />;
+      return <DocumentSuiteTool initialMode="order" />;
     case "pdf-to-excel":
       return <PdfToExcelTool />;
     case "pdf-to-word":
@@ -626,6 +625,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelBlankRemoveTool />;
     case "excel-extract":
       return <ExcelExtractTool />;
+    case "excel-space-remove":
+      return <ExcelSpaceRemoveTool />;
+    case "postal-search":
+      return <PostalSearchTool />;
     case "video-cut-merge":
       return <VideoCutMergeTool />;
     case "postcard":

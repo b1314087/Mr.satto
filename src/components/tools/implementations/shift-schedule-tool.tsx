@@ -278,12 +278,9 @@ export function ShiftScheduleTool() {
             </select>
           </label>
         </div>
-        {/* 確認の目安は任意なので、ふだんは閉じておく（閉じていても今の値を出す） */}
-        <AdvancedSettings
-          title="確認の目安（任意）"
-          summary={`連続勤務 ${schedule.settings.maxConsecutive || "確認しない"}${schedule.settings.maxConsecutive ? "日" : ""}・勤務間 ${schedule.settings.minRestHours || "確認しない"}${schedule.settings.minRestHours ? "時間" : ""}・必要人数 ${schedule.settings.minStaffPerDay || "確認しない"}${schedule.settings.minStaffPerDay ? "人" : ""}`}
-          testId="shift-check-settings"
-        >
+        {/* 総合改修 6：確認の目安は、最初から見える位置に置く（折りたたまない） */}
+        <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="shift-check-settings">
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">確認の目安（任意）</h3>
           <div className="flex flex-wrap items-end gap-3">
             <label className={labelClass}>
               連続勤務の上限の目安（日。0は確認しない）
@@ -322,7 +319,7 @@ export function ShiftScheduleTool() {
               />
             </label>
           </div>
-        </AdvancedSettings>
+        </div>
         {ymError && <ErrorMessage message={ymError} />}
       </section>
 
@@ -533,7 +530,10 @@ export function ShiftScheduleTool() {
           </div>
         )}
 
-        <AdvancedSettings title="曜日を指定して、まとめて入れる" summary="土日・祝日をまとめて休みに など" testId="shift-bulk-settings">
+        {/* 総合改修 6：曜日の選択と「まとめて入れる」は、最初から見える位置に置く（折りたたまない） */}
+        <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800" data-testid="shift-bulk-settings">
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">曜日を指定して、まとめて入れる</h3>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">土日・祝日をまとめて休みにする、などに使えます。</p>
           <div className="flex flex-wrap items-end gap-3">
             <label className={labelClass}>
               対象
@@ -545,7 +545,7 @@ export function ShiftScheduleTool() {
               </select>
             </label>
             <fieldset className="flex flex-wrap items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
-              <legend className="sr-only">対象の曜日</legend>
+              <legend className="mb-1 w-full text-xs text-neutral-600 dark:text-neutral-300">対象の曜日</legend>
               {WEEKDAY_LABELS.map((w, i) => (
                 <label key={w} className="flex items-center gap-1">
                   <input
@@ -578,7 +578,7 @@ export function ShiftScheduleTool() {
             <button type="button" className={smallButton} data-testid="shift-bulk-run" onClick={runBulk}>まとめて入れる</button>
           </div>
           {bulkMessage && <p data-testid="shift-bulk-message" className="text-xs text-neutral-600 dark:text-neutral-300">{bulkMessage}</p>}
-        </AdvancedSettings>
+        </div>
 
         <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800" data-testid="shift-issues">
           <h3 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">確認（決めた目安に合わない箇所）</h3>

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { test as plainTest, expect as plainExpect } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { clickAndDownload, uploadFixture, waitForSuccess } from "../helpers/tool-runner";
-import { cellMatches, findExtractTargets } from "@/lib/processors/browser/excel-extract";
+import { cellMatches, findExtractTargets, foldWidth } from "@/lib/processors/browser/excel-extract";
 
 /**
  * Excel行・列抽出（次期機能追加 2）。
@@ -158,4 +158,89 @@ test.describe("Excel行・列抽出の画面", () => {
     await expect(page.getByTestId("excel-extract-run")).toBeDisabled();
     await expect(page.getByTestId("tool-preview")).toContainText("ほかのシートは変更せずに、そのまま書き出します");
   });
+});
+
+plainTest.describe("全角・半角と結合セル（総合改修 29）", () => {
+  plainTest("全角・半角：既定は区別しない（Ａ＝A、１＝1、ｱ＝ア、全角の空白＝半角の空白）。区別するを選ぶと区別する", () => {
+    plainExpect(foldWidth("ＡＢＣ１２３　ｱｲｳﾊﾞ")).toBe("ABC123 アイウバ");
+    plainExpect(cellMatches("ＡＢＣ商事", "abc", false)).toBe(true);
+    plainExpect(cellMatches("ABC商事", "ＡＢＣ", false)).toBe(true);
+    plainExpect(cellMatches("ｶﾞｽ代", "ガス", false)).toBe(true);
+    plainExpect(cellMatches("ＡＢＣ商事", "ABC", false, true)).toBe(false);
+    plainExpect(cellMatches("ＡＢＣ商事", "ＡＢＣ", false, true)).toBe(true);
+    // 大文字・小文字の区別と組み合わせる
+    plainExpect(cellMatches("ａｂｃ", "ABC", true)).toBe(false);
+    plainExpect(cellMatches("ａｂｃ", "abc", true)).toBe(true);
+  });
+
+  plainTest("結合セル：一致したセルが結合の中にあれば、結合している範囲の行（列）をまとめて残す。空のセル・空の行は一致しない", () => {
+    const rows = [
+      ["部署", "氏名"],
+      ["営業部", "山田"],
+      ["", "佐藤"], // A2:A3 が結合（営業部）
+      ["", ""], // 空の行
+      ["総務部", "鈴木"],
+    ];
+    const merges = [{ r1: 1, c1: 0, r2: 2, c2: 0 }];
+    plainExpect(findExtractTargets({ rows, query: "営業", axis: "rows", caseSensitive: false, keepHeader: true, merges }).kept).toEqual([0, 1, 2]);
+    // 結合を考えないと、結合の途中で切れてしまう
+    plainExpect(findExtractTargets({ rows, query: "営業", axis: "rows", caseSensitive: false, keepHeader: true }).kept).toEqual([0, 1]);
+    // 空の行は一致しない
+    plainExpect(findExtractTargets({ rows, query: "", axis: "rows", caseSensitive: false, keepHeader: false, merges }).kept).toEqual([]);
+  });
+});
+
+const MAKE_MERGED = `
+import sys
+from openpyxl import Workbook
+wb = Workbook()
+ws = wb.active
+ws.title = "名簿"
+ws.append(["部署", "氏名"])
+ws.append(["営業部", "山田"])
+ws.append([None, "佐藤"])
+ws.append([None, None])
+ws.append(["総務部", "鈴木"])
+ws.append(["ＥＩＧＹＯ", "田中"])
+ws.merge_cells("A2:A3")
+wb.save(sys.argv[1])
+`;
+
+test("結合セルが一致したときは、結合している行をまとめて書き出し、結合も保つ。全角の英字も、既定では半角で探せる", async ({ page }) => {
+  test.setTimeout(120_000);
+  const src = test.info().outputPath("merged.xlsx");
+  py(MAKE_MERGED, [src]);
+  await page.goto("/tools/excel-extract");
+  await uploadFixture(page, src);
+  await page.getByTestId("excel-extract-query").fill("営業");
+  await expect(page.getByTestId("excel-extract-count")).toContainText("見出しを含めて3行を書き出します");
+  await expect(page.getByTestId("excel-extract-match-note")).toContainText("全角と半角は同じ文字として探します");
+  await page.getByTestId("excel-extract-run").click();
+  await waitForSuccess(page, "抽出が完了しました");
+  const out = test.info().outputPath("merged-out.xlsx");
+  await (await clickAndDownload(page, "Excelファイルをダウンロード")).saveAs(out);
+  const r = JSON.parse(
+    py(
+      `
+import sys, json
+from openpyxl import load_workbook
+ws = load_workbook(sys.argv[1])["名簿"]
+print(json.dumps({"rows": [[c.value for c in r] for r in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=2)], "merged": [str(m) for m in ws.merged_cells.ranges]}, ensure_ascii=False))
+`,
+      [out]
+    )
+  );
+  expect(r.rows).toEqual([
+    ["部署", "氏名"],
+    ["営業部", "山田"],
+    [null, "佐藤"],
+  ]);
+  expect(r.merged).toEqual(["A2:A3"]);
+
+  // 全角の英字（ＥＩＧＹＯ）も、半角の「eigyo」で見つかる。区別するを選ぶと見つからない
+  await page.keyboard.press("Escape");
+  await page.getByTestId("excel-extract-query").fill("eigyo");
+  await expect(page.getByTestId("excel-extract-count")).toContainText("1行が「eigyo」を含みます");
+  await page.getByTestId("excel-extract-width").check();
+  await expect(page.getByTestId("excel-extract-count")).toContainText("ありません");
 });

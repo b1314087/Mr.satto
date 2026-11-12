@@ -58,35 +58,82 @@ plainTest.describe("区間の確認（ブラウザを使わない）", () => {
 });
 
 test.describe("動画カット・結合の画面", () => {
-  test("不要部分を削除：2つの区間（0.5〜1.5秒、2〜3秒）を残して1本にする。音声も同じ長さで残る", async ({ page }) => {
+  test("不要部分を削除（タイムライン）：数字を入れずに、赤い行のドラッグで1.0〜1.5秒を選んで削除し、残った2区間の順番をドラッグで入れ替えて書き出す", async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto("/tools/video-cut-merge");
-    await uploadFixture(page, FIXTURES.cutLandscapeWebm);
-    await expect(page.getByTestId("video-cut-segments")).toBeVisible();
-    await page.getByTestId("video-cut-start").first().fill("0.5");
-    await page.getByTestId("video-cut-end").first().fill("1.5");
-    await page.getByTestId("video-cut-add").click();
-    await page.getByTestId("video-cut-start").nth(1).fill("2");
-    await page.getByTestId("video-cut-end").nth(1).fill("3");
-    await expect(page.getByTestId("video-cut-summary")).toContainText("2区間・合計");
-    // 終了が開始より前なら、実行できず理由が出る
-    await page.getByTestId("video-cut-end").nth(1).fill("1");
-    await expect(page.getByTestId("video-cut-error")).toBeVisible();
-    await expect(page.getByTestId("video-cut-merge-run")).toBeDisabled();
-    await page.getByTestId("video-cut-end").nth(1).fill("3");
-    await expect(page.getByTestId("video-cut-merge-run")).toBeEnabled();
+    await uploadFixture(page, FIXTURES.cutLandscapeWebm); // 3秒
+    const bars = page.getByTestId("video-cut-segment");
+    await expect(bars).toHaveCount(1, { timeout: 30_000 }); // 最初は全体を残す1区間
+    await expect(page.getByTestId("video-cut-summary")).toContainText("1区間・合計0:03");
+    // 数字の入力欄は無い（タイムラインで操作する）
+    await expect(page.getByTestId("video-cut-start")).toHaveCount(0);
+
+    // 削除する範囲を、赤い行の 1/3（1.0秒）〜 1/2（1.5秒）でドラッグして選ぶ
+    await page.getByTestId("video-cut-timeline-select").scrollIntoViewIfNeeded();
+    const lane = (await page.getByTestId("video-cut-timeline-select").boundingBox())!;
+    await page.mouse.move(lane.x + lane.width / 3, lane.y + lane.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lane.x + lane.width / 2, lane.y + lane.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.getByTestId("video-cut-timeline-selection")).toBeVisible();
+    await page.getByTestId("video-cut-delete-range").click();
+    await expect(bars).toHaveCount(2);
+    await expect(page.getByTestId("video-cut-summary")).toContainText("2区間");
+    await expect(page.getByTestId("video-cut-order-item").nth(0)).toContainText("0:00.0〜0:01.0");
+
+    // 残す区間の順番を、つまみのドラッグで入れ替える（区間2を上へ）
+    const items = page.getByTestId("video-cut-order-item");
+    // 下にくっつく実行ボタンの帯に隠れないよう、画面の真ん中へ
+    await items.nth(1).evaluate((el) => el.scrollIntoView({ block: "center" }));
+    const firstBefore = await items.nth(0).textContent();
+    const handle = (await items.nth(1).getByTestId("video-cut-drag").boundingBox())!;
+    const target = (await items.nth(0).boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2, target.y + 2, { steps: 6 });
+    await page.mouse.up();
+    await expect(items.nth(0)).not.toHaveText(firstBefore ?? "");
+    await expect(items.nth(0)).toContainText("0:01.5〜0:03.0");
+
+    // つないだ結果を、書き出す前に再生して確かめられる
+    await page.getByTestId("video-cut-play-joined").click();
+    await expect(page.getByTestId("video-cut-play-joined")).toContainText("止める");
+    await page.getByTestId("video-cut-play-joined").click();
 
     const out = await runAndDownload(page, test.info().outputPath("x"));
     expect(path.basename(out)).toBe("cut-landscape_カット.mp4");
     const p = probe(out);
     expect(p.width).toBe(320);
     expect(p.height).toBe(240);
-    expect(p.formatSec).toBeGreaterThan(1.8);
-    expect(p.formatSec).toBeLessThan(2.3);
+    expect(p.formatSec).toBeGreaterThan(2.2);
+    expect(p.formatSec).toBeLessThan(2.8);
     expect(p.audioSec).not.toBeNull();
     expect(Math.abs((p.audioSec ?? 0) - p.videoSec)).toBeLessThan(0.15); // 映像と音声の長さがそろう（ずれない）
     await expect(page.getByTestId("video-cut-merge-result")).toContainText("320×240");
     await expect(page.getByTestId("video-cut-merge-result")).toContainText("音声あり");
+  });
+
+  test("不要部分を削除：残す区間のバーの端をドラッグして短くでき、再生位置で分けられる", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto("/tools/video-cut-merge");
+    await uploadFixture(page, FIXTURES.cutLandscapeWebm);
+    const bar = page.getByTestId("video-cut-segment");
+    await expect(bar).toHaveCount(1, { timeout: 30_000 });
+    await bar.scrollIntoViewIfNeeded();
+    const lane = (await bar.locator("[data-timeline-lane]").boundingBox())!;
+    const end = (await bar.getByTestId("video-cut-segment-end").boundingBox())!;
+    await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lane.x + (lane.width * 2) / 3, end.y + end.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect(page.getByTestId("video-cut-summary")).toContainText("合計0:02");
+    // 再生位置（1秒）で分ける
+    await page.getByTestId("video-cut-video").evaluate(async (v: HTMLVideoElement) => {
+      v.currentTime = 1;
+      await new Promise((r) => v.addEventListener("seeked", r, { once: true }));
+    });
+    await page.getByTestId("video-cut-split").click();
+    await expect(bar).toHaveCount(2);
   });
 
   test("複数の動画を結合：横向き・縦向き（fps違い）・音声なしを、順番を入れ替えて1本にする。大きさは1本目に合わせ、黒い余白を付ける", async ({ page }) => {
@@ -99,9 +146,16 @@ test.describe("動画カット・結合の画面", () => {
     await expect(list.nth(0)).toContainText("cut-portrait.webm");
     await expect(list.nth(0)).toContainText("240×320");
     await expect(list.nth(2)).toContainText("音声なし");
-    // 横向きの動画を1本目にする
-    await page.getByRole("button", { name: "cut-landscape.webm を上へ移動" }).click();
+    // 横向きの動画を1本目にする（つまみのドラッグで順番を変える）
+    await list.nth(1).getByTestId("video-merge-drag").scrollIntoViewIfNeeded();
+    const handle = (await list.nth(1).getByTestId("video-merge-drag").boundingBox())!;
+    const top = (await list.nth(0).boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2, top.y + 4, { steps: 6 });
+    await page.mouse.up();
     await expect(list.nth(0)).toContainText("cut-landscape.webm");
+    await expect(page.getByTestId("video-merge-timeline-clip")).toHaveCount(3);
     await expect(page.getByTestId("video-merge-summary")).toContainText("3本・合計");
     await expect(page.getByTestId("video-merge-size-note")).toContainText("320×240");
     // 書き出し形式：WebM

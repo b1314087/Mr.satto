@@ -8,8 +8,8 @@ import { waitForFileInputHydrated } from "./tool-runner";
  */
 export async function chooseCompressOnly(page: Page): Promise<void> {
   await waitForFileInputHydrated(page);
-  await page.getByTestId("image-op-compress").check();
-  await page.getByTestId("image-op-resize").uncheck();
+  // 総合改修 27：「容量を圧縮」を選ぶと「サイズを変更」は自動で外れる（どちらか一方だけ）
+  await page.getByTestId("image-op-compress").click();
   await expect(page.getByTestId("image-op-resize")).not.toBeChecked();
   await expect(page.getByTestId("image-op-compress")).toBeChecked();
 }

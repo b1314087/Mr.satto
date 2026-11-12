@@ -35,6 +35,7 @@ export function ExcelExtractTool() {
   const [axis, setAxis] = useState<ExtractAxis>("rows");
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const [widthSensitive, setWidthSensitive] = useState(false);
   const [keepHeader, setKeepHeader] = useState(true);
   const [sheetIndex, setSheetIndex] = useState(0);
   const [status, setStatus] = useState<ProcessingState>("idle");
@@ -47,7 +48,7 @@ export function ExcelExtractTool() {
 
   const preview = useMemo(() => {
     if (!sheet) return null;
-    const match = findExtractTargets({ rows: sheet.rows, query, axis, caseSensitive, keepHeader });
+    const match = findExtractTargets({ rows: sheet.rows, query, axis, caseSensitive, widthSensitive, keepHeader, merges: sheet.merges });
     const colCount = sheet.rows[0]?.length ?? 0;
     const mark = (r: number, c: number) => (match.matchedCells.has(`${r},${c}`) ? ("target" as const) : undefined);
     let grid: GridCell[][];
@@ -67,7 +68,7 @@ export function ExcelExtractTool() {
       rowLabels.unshift("");
     }
     return { match, grid, rowLabels, total: axis === "rows" ? sheet.rows.length : colCount };
-  }, [sheet, query, axis, caseSensitive, keepHeader]);
+  }, [sheet, query, axis, caseSensitive, widthSensitive, keepHeader]);
 
   function reset() {
     setResult(null);
@@ -87,7 +88,7 @@ export function ExcelExtractTool() {
     setError(null);
     setResult(null);
     try {
-      const output = await new ExcelExtractProcessor().process({ file, sheetIndex: activeSheet, query, axis, caseSensitive, keepHeader });
+      const output = await new ExcelExtractProcessor().process({ file, sheetIndex: activeSheet, query, axis, caseSensitive, widthSensitive, keepHeader });
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -196,6 +197,23 @@ export function ExcelExtractTool() {
               />
               大文字・小文字を区別する
             </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={widthSensitive}
+                onChange={(e) => {
+                  setWidthSensitive(e.target.checked);
+                  reset();
+                }}
+                data-testid="excel-extract-width"
+              />
+              全角・半角を区別する
+            </label>
+            <p className="text-xs text-ms-muted" data-testid="excel-extract-match-note">
+              {widthSensitive ? "全角と半角は別の文字として探します（「Ａ」と「A」は一致しません）。" : "全角と半角は同じ文字として探します（「Ａ」と「A」、「１」と「1」、「ｱ」と「ア」は一致します）。"}
+              {caseSensitive ? "大文字と小文字は区別します。" : "大文字と小文字は区別しません。"}
+              結合したセルが一致したときは、結合している範囲をまとめて残します。空のセルは一致しません。
+            </p>
           </div>
         </section>
       )}

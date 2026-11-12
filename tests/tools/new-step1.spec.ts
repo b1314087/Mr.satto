@@ -180,15 +180,14 @@ plainTest.describe("9：座席表", () => {
 // ===========================================================================
 
 test.describe("1：画像リサイズ・圧縮の初期状態", () => {
-  test("最初は「サイズを変更する」がオン・「圧縮する」がオフ。圧縮だけ・両方も選べる", async ({ page }) => {
+  test("最初は「サイズを変更する」がオン・「圧縮する」がオフ。圧縮に切り替えるとサイズの変更は外れる（総合改修 27）", async ({ page }) => {
     await page.goto("/tools/image-compress");
     await uploadFixture(page, fixtures.landscapeJpg);
     await expect(page.getByTestId("image-op-resize")).toBeChecked({ timeout: 20_000 });
     await expect(page.getByTestId("image-op-compress")).not.toBeChecked();
     await expect(page.getByRole("button", { name: "リサイズする", exact: true })).toBeVisible();
-    await page.getByTestId("image-op-compress").check();
-    await expect(page.getByRole("button", { name: "リサイズして圧縮する" })).toBeVisible();
-    await page.getByTestId("image-op-resize").uncheck();
+    await page.getByTestId("image-op-compress").click();
+    await expect(page.getByTestId("image-op-resize")).not.toBeChecked();
     await expect(page.getByRole("button", { name: "圧縮する", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "圧縮する", exact: true }).click();
     await waitForSuccess(page, "完了");
