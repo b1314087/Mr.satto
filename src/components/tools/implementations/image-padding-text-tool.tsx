@@ -8,11 +8,13 @@ import { FileDropzone } from "@/components/common/file-dropzone";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { SliderField } from "@/components/common/slider-field";
+import { TextColorField } from "@/components/common/text-color-field";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import {
   ImagePaddingTextProcessor,
+  paddingTextPresetPercent,
   type PaddingTextBandAlign,
   type PaddingTextEdge,
   type PaddingTextEdgeAlign,
@@ -51,6 +53,9 @@ interface EditableSettings {
   edge: PaddingTextEdge;
   edgeAlign: PaddingTextEdgeAlign;
   bandAlign: PaddingTextBandAlign;
+  /** X・Yの調整バーで決めた位置（余白の帯の中の割合 0〜100）。null のあいだは、上のボタンで選んだ位置 */
+  posX: number | null;
+  posY: number | null;
 }
 
 interface PerImageState {
@@ -73,6 +78,8 @@ const DEFAULT_SETTINGS: EditableSettings = {
   edge: "bottom",
   edgeAlign: "center",
   bandAlign: "center",
+  posX: null,
+  posY: null,
 };
 
 const EDGE_OPTIONS: { id: PaddingTextEdge; label: string }[] = [
@@ -142,6 +149,8 @@ function SettingsFields({
   unit: Unit;
 }) {
   const unitLabel = unit === "px" ? "px" : "mm";
+  // ボタンで選んだ位置を、X・Yのバーの値（余白の帯の中の割合）にしたもの
+  const presetPos = paddingTextPresetPercent(values.edge, values.edgeAlign, values.bandAlign);
   const [uniformValue, setUniformValue] = useState(0);
 
   function paddingField(key: "paddingTop" | "paddingBottom" | "paddingLeft" | "paddingRight", label: string) {
@@ -237,15 +246,6 @@ function SettingsFields({
           <div className="w-full sm:w-72">
             <SliderField label="文字サイズ" value={values.fontSize} min={6} max={MAX_FONT_SIZE} unit="px" onChange={(v) => onChange("fontSize", v)} />
           </div>
-          <label className="flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-300">
-            色
-            <input
-              type="color"
-              value={values.color}
-              onChange={(e) => onChange("color", e.target.value)}
-              className="h-8 w-10 cursor-pointer rounded border border-neutral-300 dark:border-neutral-700"
-            />
-          </label>
           <button
             type="button"
             onClick={() => onChange("bold", !values.bold)}
@@ -254,6 +254,7 @@ function SettingsFields({
             太字
           </button>
         </div>
+        <TextColorField value={values.color} onChange={(c) => onChange("color", c)} testId="padding-text-color" />
         <div className="flex flex-wrap gap-2">
           {TEXT_ALIGN_OPTIONS.map((opt) => (
             <button
@@ -273,7 +274,11 @@ function SettingsFields({
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => onChange("edge", opt.id)}
+                onClick={() => {
+                  onChange("edge", opt.id);
+                  onChange("posX", null);
+                  onChange("posY", null);
+                }}
                 className={toggleButtonClass(values.edge === opt.id, "xs")}
               >
                 {opt.label}
@@ -288,7 +293,11 @@ function SettingsFields({
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => onChange("edgeAlign", opt.id)}
+                onClick={() => {
+                  onChange("edgeAlign", opt.id);
+                  onChange("posX", null);
+                  onChange("posY", null);
+                }}
                 className={toggleButtonClass(values.edgeAlign === opt.id, "xs")}
               >
                 {opt.label}
@@ -303,7 +312,11 @@ function SettingsFields({
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => onChange("bandAlign", opt.id)}
+                onClick={() => {
+                  onChange("bandAlign", opt.id);
+                  onChange("posX", null);
+                  onChange("posY", null);
+                }}
                 className={toggleButtonClass(values.bandAlign === opt.id, "xs")}
               >
                 {opt.label}
@@ -311,6 +324,33 @@ function SettingsFields({
             ))}
           </div>
         </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="padding-text-xy">
+          <SliderField
+            label="横の位置（X）"
+            value={values.posX ?? presetPos.x}
+            min={0}
+            max={100}
+            unit="%"
+            onChange={(v) => {
+              onChange("posX", v);
+              if (values.posY === null) onChange("posY", presetPos.y);
+            }}
+          />
+          <SliderField
+            label="縦の位置（Y）"
+            value={values.posY ?? presetPos.y}
+            min={0}
+            max={100}
+            unit="%"
+            onChange={(v) => {
+              onChange("posY", v);
+              if (values.posX === null) onChange("posX", presetPos.x);
+            }}
+          />
+        </div>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          バーで、選んだ余白の中の文字の位置を細かく動かせます（0%＝余白の左端・上端、100%＝右端・下端）。上の位置のボタンを押すと、その位置に戻ります。
+        </p>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           選択した余白の幅・高さが0pxの場合、その余白には文字が表示されません。
         </p>
@@ -413,7 +453,7 @@ export function ImagePaddingTextTool() {
     setCommon((c) => ({ ...c, [key]: value }));
   }
 
-  // ライブプレビュー：現在表示中の1枚だけを対象に、設定変更後500msデバウンスして
+  // ライブプレビュー：現在表示中の1枚だけを対象に、設定変更後200msデバウンスして（位置のバーを動かしたときに、すぐ反映されるように）
   // 実際のProcessorを呼ぶ（画像結合ツールと同じ考え方。複数画像を毎回まとめて
   // 再処理しない設計にすることで、大量画像でも重い処理を繰り返さないようにする）。
   useEffect(() => {
@@ -450,7 +490,7 @@ export function ImagePaddingTextTool() {
           if (previewRunIdRef.current === runId) setPreviewLoading(false);
         }
       })();
-    }, 500);
+    }, 200);
     return () => clearTimeout(timer);
     // currentSettingsはレンダーのたびに新しいオブジェクト参照になるため、
     // 依存配列にはオブジェクトそのものではなく個々のプリミティブ値を並べる
@@ -472,6 +512,8 @@ export function ImagePaddingTextTool() {
     currentSettings?.edge,
     currentSettings?.edgeAlign,
     currentSettings?.bandAlign,
+    currentSettings?.posX,
+    currentSettings?.posY,
   ]);
 
   async function handleSaveCurrent() {

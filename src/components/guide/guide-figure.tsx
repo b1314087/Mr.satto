@@ -438,6 +438,22 @@ function Preview({ kind, caption, x, y, w, h, uid }: { kind: GuidePreviewKind; c
         </g>
       );
       break;
+    case "postcard": {
+      // はがき（縦長の白い紙）に、写真と2行の文字
+      const pw = Math.min(iw * 0.5, ih * 0.68);
+      const ph = pw * 1.48;
+      const px = ix + (iw - pw) / 2;
+      const py = iy + Math.max(0, (ih - ph) / 2);
+      inner = (
+        <g>
+          <rect x={px} y={py} width={pw} height={Math.min(ph, ih)} rx={3} className="gd-white-fill gd-box" />
+          <rect x={px + pw * 0.15} y={py + pw * 0.15} width={pw * 0.7} height={pw * 0.5} rx={3} className="gd-sky" />
+          <rect x={px + pw * 0.2} y={py + pw * 0.8} width={pw * 0.6} height={4} rx={2} className="gd-muted-fill" />
+          <rect x={px + pw * 0.28} y={py + pw * 0.8 + 9} width={pw * 0.44} height={4} rx={2} className="gd-muted-fill" />
+        </g>
+      );
+      break;
+    }
     case "envelope":
       inner = (
         <g>

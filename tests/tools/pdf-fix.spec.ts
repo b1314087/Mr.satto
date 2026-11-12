@@ -501,3 +501,46 @@ test.describe("共通アップロード欄: 同じファイルの選び直し（
     await expect(page.getByText(/multi-page\.pdf/).first()).toBeVisible({ timeout: 25_000 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 設定とプレビューの分離（次期機能追加 7）
+// ---------------------------------------------------------------------------
+test.describe("PDF修正: 設定は設定の列、プレビューはプレビューの列（重ならない）", () => {
+  const overlaps = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+    a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+  for (const vp of [
+    { name: "PC（1280px）", width: 1280, height: 800 },
+    { name: "スマホ（390px）", width: 390, height: 844 },
+  ]) {
+    test(`${vp.name}：やりたい操作のボタン・説明は設定の列の中にあり、PDFのプレビューに重ならない（スクロールしても）`, async ({ page }) => {
+      test.setTimeout(90_000);
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+      const inSettings = page.getByTestId("pdf-fix-operation-in-settings");
+      await expect(inSettings).toBeVisible();
+      await expect(inSettings.getByTestId("pdf-fix-operation")).toBeVisible();
+      await expect(inSettings.getByTestId("pdf-fix-current-operation")).toBeVisible();
+      // 以前の「プレビューに重ねる帯」は無い
+      await expect(page.getByTestId("pdf-fix-operation-near-preview")).toHaveCount(0);
+      await expect(page.getByTestId("pdf-fix-operation")).toHaveCount(1);
+      await choosePdfFixOperation(page, "テキスト");
+      const canvas = page.locator(CANVAS);
+      for (const scroll of [0, 300, 900]) {
+        await page.evaluate((y) => window.scrollTo(0, y), scroll);
+        const c = await canvas.boundingBox();
+        const o = await inSettings.boundingBox();
+        if (!c || !o) continue;
+        expect(overlaps(c, o)).toBe(false);
+      }
+      if (vp.width >= 1024) {
+        const c = (await canvas.boundingBox())!;
+        const o = (await inSettings.boundingBox())!;
+        expect(o.x + o.width).toBeLessThanOrEqual(c.x); // 設定は左・プレビューは右
+      }
+      // ページが横にはみ出さない
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      expect(overflow).toBeLessThanOrEqual(1);
+    });
+  }
+});

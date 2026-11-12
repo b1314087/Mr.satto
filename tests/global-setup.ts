@@ -60,6 +60,7 @@ export default async function globalSetup() {
     generateImages(),
     generateVideo(),
     generateVideoWithMetadata(),
+    generateCutMergeVideos(),
     generateAudio(),
   ]);
   await generateStampFixtures();
@@ -285,6 +286,25 @@ async function generateAudio() {
  * これらのメタデータタグが実際に消えている」ことをffprobeで検証できる
  * （ボタンを押せたかどうかだけでなく、実際の効果を確認する方針）。
  */
+/** 動画カット・結合の確認用の短い動画（向き・フレームレート・音声の有無が違う3本）。ffmpegで合成する */
+async function generateCutMergeVideos() {
+  const make = (out: string, size: string, rate: number, sec: number, color: string, audio: boolean) => {
+    const args = ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `testsrc2=s=${size}:d=${sec}:r=${rate}`];
+    if (audio) args.push("-f", "lavfi", "-i", `sine=frequency=${color === "a" ? 440 : 660}:duration=${sec}:sample_rate=48000`);
+    args.push("-c:v", "libvpx-vp9", "-b:v", "200k", "-deadline", "realtime", "-cpu-used", "8", "-pix_fmt", "yuv420p");
+    if (audio) args.push("-c:a", "libopus", "-b:a", "64k");
+    args.push("-shortest", out);
+    execFileSync("ffmpeg", args);
+  };
+  try {
+    make(fixtures.cutLandscapeWebm, "320x240", 30, 3, "a", true);
+    make(fixtures.cutPortraitWebm, "240x320", 15, 2, "b", true);
+    make(fixtures.cutSilentWebm, "320x240", 30, 2, "a", false);
+  } catch (e) {
+    console.warn("動画カット・結合用の動画を作れませんでした（ffmpegのVP9/Opusが無い環境では、その確認を省略します）", e);
+  }
+}
+
 async function generateVideoWithMetadata() {
   execFileSync(
     "ffmpeg",

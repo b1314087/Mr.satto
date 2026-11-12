@@ -52,6 +52,11 @@ export interface LayoutParams {
   tableLabels?: string[];
   /** グループワーク：机（島の長机）の向き（横＝席が机の上下に並ぶ／縦＝席が机の左右に並ぶ）。省略時は横（これまでの向き） */
   groupDesk?: GroupDirection;
+  /**
+   * グループワーク：机の片側だけに席を並べる（省略時・false は、これまでどおり机の両側に分けて並べる）。
+   * 横向きの机では机の下側（手前）に、縦向きの机では机の左側に、1島の席をすべて並べる。席の数・番号の付け方は変えない
+   */
+  groupOneSide?: boolean;
   /** 授業・カスタム：行（前から）と列 */
   rows: number;
   cols: number;
@@ -178,6 +183,7 @@ export const DEFAULT_PARAMS: LayoutParams = {
   deal: false,
   groupFlow: "auto",
   groupDesk: "horizontal",
+  groupOneSide: false,
   rows: 5,
   cols: 6,
   byColumn: false,
@@ -445,15 +451,17 @@ function islands(p: LayoutParams, round: boolean): LayoutGeometry {
       seatsByTable.push(list);
     }
   } else {
-    // 1つの島：机の片側に top 席、反対側に bottom 席
-    const top = Math.ceil(perTable / 2);
-    const bottom = perTable - top;
+    // 1つの島：机の片側に top 席、反対側に bottom 席。片側だけのときは、1つの側にすべての席を並べる
+    const oneSide = !!p.groupOneSide;
+    const top = oneSide ? perTable : Math.ceil(perTable / 2);
+    const bottom = oneSide ? 0 : perTable - top;
     const th = 56;
     const vertical = p.groupDesk === "vertical";
-    // 机の長さ（席が並ぶ方向）と、島1つ分の大きさ（机と両側の席を含む）
+    // 机の長さ（席が並ぶ方向）と、島1つ分の大きさ（机と席を含む）
     const along = vertical ? top * SEAT_H + (top - 1) * GAP + GAP * 2 : top * SEAT_W + (top - 1) * GAP + GAP * 2;
-    const islandW = vertical ? SEAT_W * 2 + th + GAP * 2 : along;
-    const islandH = vertical ? along : SEAT_H * 2 + th + GAP * 2;
+    const sideRows = oneSide ? 1 : 2;
+    const islandW = vertical ? SEAT_W * sideRows + th + GAP * sideRows : along;
+    const islandH = vertical ? along : SEAT_H * sideRows + th + GAP * sideRows;
     cellW = islandW + GAP * 5;
     cellH = islandH + GAP * 5;
     // 島の位置（[段, 列]）。増やす方向を選んでいなければ、これまでどおりの並び
@@ -464,10 +472,16 @@ function islands(p: LayoutParams, round: boolean): LayoutGeometry {
       const y0 = gy * cellH;
       const list: Seat[] = [];
       if (vertical) {
+        // 片側だけのときも、席は机の左側（両側のときの1つ目の側と同じ位置）
         const tableX = x0 + SEAT_W + GAP;
         shapes.push({ kind: "rect", x: tableX, y: y0, w: th, h: along, label: tableLabelOf(p, t, false) });
         for (let s = 0; s < top; s++) list.push({ x: x0, y: y0 + GAP + s * (SEAT_H + GAP), group: tableLabelOf(p, t, false) });
         for (let s = 0; s < bottom; s++) list.push({ x: tableX + th + GAP, y: y0 + GAP + s * (SEAT_H + GAP), group: tableLabelOf(p, t, false) });
+      } else if (oneSide) {
+        // 横向きの机で片側だけ：机を上に置き、席を机の下側（手前）に並べる
+        const tableY = y0;
+        shapes.push({ kind: "rect", x: x0, y: tableY, w: along, h: th, label: tableLabelOf(p, t, false) });
+        for (let s = 0; s < top; s++) list.push({ x: x0 + GAP + s * (SEAT_W + GAP), y: tableY + th + GAP, group: tableLabelOf(p, t, false) });
       } else {
         const tableY = y0 + SEAT_H + GAP;
         shapes.push({ kind: "rect", x: x0, y: tableY, w: along, h: th, label: tableLabelOf(p, t, false) });

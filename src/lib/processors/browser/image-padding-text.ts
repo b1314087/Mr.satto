@@ -48,7 +48,33 @@ export interface ImagePaddingTextInput {
   edge: PaddingTextEdge;
   edgeAlign: PaddingTextEdgeAlign;
   bandAlign: PaddingTextBandAlign;
+  /**
+   * 文字の位置を、余白の帯の中の割合（0〜100）で細かく決める（X・Yの調整バー）。
+   * posX は横（0＝帯の左端、100＝右端）、posY は縦（0＝帯の上端、100＝下端）。
+   * null・省略のときは、edgeAlign・bandAlign（始点・中央・終点などのボタン）で決めた位置に置く
+   */
+  posX?: number | null;
+  posY?: number | null;
   format: "png" | "jpeg";
+}
+
+/** 始点・中央・終点を、帯の中の割合（0・50・100）にする */
+function alignToPercent(align: "start" | "center" | "end"): number {
+  return align === "start" ? 0 : align === "end" ? 100 : 50;
+}
+
+/**
+ * ボタン（edgeAlign・bandAlign）で決めた位置を、X・Yの調整バーの値（帯の中の割合 0〜100）にする。
+ * 画面のバーに、いまの位置を出すために使う。
+ */
+export function paddingTextPresetPercent(
+  edge: PaddingTextEdge,
+  edgeAlign: PaddingTextEdgeAlign,
+  bandAlign: PaddingTextBandAlign
+): { x: number; y: number } {
+  const across = alignToPercent(bandAlignToOffsetAlign(edge, bandAlign));
+  const along = alignToPercent(edgeAlign);
+  return edge === "top" || edge === "bottom" ? { x: along, y: across } : { x: across, y: along };
 }
 
 const MAX_CANVAS_PIXELS = 40_000_000; // 過大なキャンバスでのブラウザ停止を防ぐ上限
@@ -126,7 +152,7 @@ function drawPaddingText(
   edge: PaddingTextEdge,
   input: Pick<
     ImagePaddingTextInput,
-    "text" | "fontSize" | "bold" | "color" | "textAlign" | "edgeAlign" | "bandAlign"
+    "text" | "fontSize" | "bold" | "color" | "textAlign" | "edgeAlign" | "bandAlign" | "posX" | "posY"
   >
 ) {
   const fontSize = input.fontSize;
@@ -146,12 +172,21 @@ function drawPaddingText(
   // どちらの軸に効くかを切り替える。
   const isHorizontalBand = edge === "top" || edge === "bottom";
   const bandOffsetAlign = bandAlignToOffsetAlign(edge, input.bandAlign);
-  const blockX = isHorizontalBand
-    ? band.x + alignOffset(band.width, blockWidth, input.edgeAlign)
-    : band.x + alignOffset(band.width, blockWidth, bandOffsetAlign);
-  const blockY = isHorizontalBand
-    ? band.y + alignOffset(band.height, blockHeight, bandOffsetAlign)
-    : band.y + alignOffset(band.height, blockHeight, input.edgeAlign);
+  // X・Yの調整バーで決めたときは、帯の中の割合で置く（0＝左端・上端、100＝右端・下端。文字が帯からはみ出さない範囲）
+  const byPercent = (start: number, size: number, item: number, percent: number) =>
+    start + (size - item) * (Math.min(100, Math.max(0, percent)) / 100);
+  const blockX =
+    typeof input.posX === "number"
+      ? byPercent(band.x, band.width, blockWidth, input.posX)
+      : isHorizontalBand
+        ? band.x + alignOffset(band.width, blockWidth, input.edgeAlign)
+        : band.x + alignOffset(band.width, blockWidth, bandOffsetAlign);
+  const blockY =
+    typeof input.posY === "number"
+      ? byPercent(band.y, band.height, blockHeight, input.posY)
+      : isHorizontalBand
+        ? band.y + alignOffset(band.height, blockHeight, bandOffsetAlign)
+        : band.y + alignOffset(band.height, blockHeight, input.edgeAlign);
 
   // 帯からのはみ出し（文字が大きすぎる場合）で写真本体を汚さないよう、
   // 帯の矩形でクリップしてから描画する。

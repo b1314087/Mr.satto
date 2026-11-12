@@ -707,7 +707,7 @@ export async function runConversion({
  * トラックがあることは中身が正常であることの保証ではないが、壊れたファイル・音声が抜けたファイルを
  * 完成した結果として渡さないための最低限の確認。
  */
-async function verifyOutput(blob: Blob, container: OutputContainer, expectAudio: boolean): Promise<void> {
+export async function verifyOutput(blob: Blob, container: OutputContainer, expectAudio: boolean): Promise<void> {
   await ensureMediabunny();
   const check = new (mediabunny().Input)({ source: new (mediabunny().BlobSource)(blob), formats: container === "mp4" ? [mediabunny().MP4] : [mediabunny().WEBM] });
   try {

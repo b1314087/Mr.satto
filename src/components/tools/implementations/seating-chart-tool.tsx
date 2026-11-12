@@ -649,6 +649,27 @@ export function SeatingChartTool() {
                         ))}
                       </select>
                     </FormRow>
+                    <FormRow
+                      label="席の並び"
+                      help={
+                        params.groupOneSide
+                          ? (params.groupDesk ?? "horizontal") === "vertical"
+                            ? "1島の席を、すべて机の左側に並べます。"
+                            : "1島の席を、すべて机の下側（手前）に並べます。"
+                          : undefined
+                      }
+                    >
+                      <Segmented
+                        ariaLabel="席の並び"
+                        testId="seat-group-one-side"
+                        value={params.groupOneSide ? "one" : "both"}
+                        onChange={(v) => updateParam("groupOneSide", v === "one")}
+                        options={[
+                          { value: "both", label: "机の両側" },
+                          { value: "one", label: "片側だけ" },
+                        ]}
+                      />
+                    </FormRow>
                   </>
                 )}
               </FormGroup>

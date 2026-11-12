@@ -117,7 +117,8 @@ test("image-padding-text: 背景色を白/黒/カスタムへ切り替えられ�
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [fixtures.png]);
 
-  const blackButton = page.getByRole("button", { name: "黒" });
+  // 「文字の色：黒」の色ボタンと区別するため、名前が「黒」だけのボタン（背景色）を選ぶ
+  const blackButton = page.getByRole("button", { name: "黒", exact: true });
   await blackButton.click();
   await expect(blackButton).toHaveClass(/bg-blue-600/);
 });
@@ -250,4 +251,55 @@ test("image-padding-text: モバイル幅(375px)でも横スクロールが発�
   await expect(page.getByRole("button", { name: "次へ →" })).toBeVisible();
   await expect(page.getByRole("button", { name: "この画像だけ保存" })).toBeVisible();
   await expect(page.getByText(/件を一括出力/)).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// X/Y のバーと文字の色（次期機能追加 6）
+// ---------------------------------------------------------------------------
+import { execFileSync } from "node:child_process";
+
+test("image-padding-text: 余白の文字を、横・縦の位置（X/Y）のバーで動かし、色を選べる。書き出した画像にも同じ位置・色で入る", async ({ page }) => {
+  test.setTimeout(90_000);
+  const src = test.info().outputPath("gray.png");
+  execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(300,100),(128,128,128)).save(sys.argv[1])", src]);
+  await page.goto("/tools/image-padding-text");
+  await uploadFixture(page, [src]);
+  await page.getByRole("spinbutton", { name: /^上/ }).first().fill("100");
+  await page.getByPlaceholder("余白に表示する文字（複数行可）").fill("ABC");
+  await page.getByLabel("サイズ", { exact: false }).first().fill("30");
+  await page.getByRole("button", { name: "上", exact: true }).click(); // 配置する余白: 上
+  await page.getByTestId("padding-text-color-赤").click();
+  await expect(page.getByTestId("padding-text-color-value")).toContainText(/#e53935/i);
+  const xy = page.getByTestId("padding-text-xy");
+  await xy.getByLabel("横の位置（X）の数値").fill("20");
+  await xy.getByLabel("横の位置（X）の数値").blur();
+  await xy.getByLabel("縦の位置（Y）の数値").fill("50");
+  await xy.getByLabel("縦の位置（Y）の数値").blur();
+  await expect(xy.getByRole("slider").first()).toHaveValue("20");
+
+  await page.getByRole("button", { name: "この画像だけ保存" }).click();
+  await waitForSuccess(page, "完了");
+  const out = test.info().outputPath("pad.png");
+  await (await clickAndDownload(page, "ダウンロード")).saveAs(out);
+  const r = JSON.parse(
+    execFileSync("python3", ["-c", `
+import sys, json
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+w, h = im.size
+px = im.load()
+sx = sy = n = 0
+for y in range(h):
+    for x in range(w):
+        r, g, b = px[x, y]
+        if r > 150 and r - g > 60 and r - b > 60:
+            sx += x; sy += y; n += 1
+print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n else -1, "n": n}))
+`, out], { encoding: "utf8" })
+  );
+  expect(r.w).toBe(300);
+  expect(r.h).toBe(260); // 上の余白100px + 元の画像100px（縮めない）+ 下の余白（既定60px）
+  expect(r.n).toBeGreaterThan(50);
+  expect(Math.abs(r.x / r.w - 0.2)).toBeLessThan(0.06); // 横20%
+  expect(Math.abs(r.y - 50)).toBeLessThan(10); // 上の余白（0〜100px）の真ん中
 });

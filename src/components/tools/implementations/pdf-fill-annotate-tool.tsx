@@ -206,8 +206,8 @@ export function PdfFillAnnotateTool({
   /** 新工程1：この画面を隠しているあいだ（PDF修正でページ番号・透かしを選んでいるとき）は true。ページ全体へのドロップの受け取り先にしない */
   inactive?: boolean;
   /**
-   * PDF修正の「やりたい操作」。PDFを表示しているときはプレビュー（PDFの表示）のすぐ上に、
-   * まだ表示していないときは画面の一番上に出す（どちらか1か所だけ）
+   * PDF修正の「やりたい操作」。PDFを表示しているときは設定の列（「記入・注釈を配置」の見出しのすぐ下）に、
+   * まだ表示していないときは画面の一番上に出す（どちらか1か所だけ。プレビューの上には重ねない）
    */
   operationSlot?: React.ReactNode;
   /** PDF修正の中で使うとき：墨消し（元の文字ごと消す）へ切り替える。無いときは墨消しのページへのリンクを出す */
@@ -1253,6 +1253,15 @@ export function PdfFillAnnotateTool({
           <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-1">
           <StepHeading n={2} as="h2">記入・注釈を配置</StepHeading>
 
+          {operationSlot && (
+            // PDF修正の「やりたい操作」は、設定の列（PCでは左、スマホではプレビューの上）に置く。
+            // 以前はプレビュー（PDFの表示）の上に重ねて貼り付けていたが、操作のボタンと説明がPDFを覆ってしまうため、
+            // 設定は設定の列、PDFの確認はプレビューの列、と役割を分けた（プレビューの上には何も重ねない）
+            <div className="flex flex-col gap-2" data-testid="pdf-fix-operation-in-settings">
+              {operationSlot}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-600 dark:text-neutral-300">
             <div className="flex items-center gap-2">
               <button
@@ -1631,14 +1640,6 @@ export function PdfFillAnnotateTool({
             data-testid="tool-preview"
             className="w-full min-w-0 overflow-x-auto lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
           >
-            {operationSlot && (
-              // PDF修正の「やりたい操作」：プレビューのすぐ上。画面の高さが十分あるときだけ、縦に動かしても見えるように上に貼り付ける。
-              // 低い画面（ノートPCの高さ720pxなど）で貼り付けると、操作のボタンと説明でプレビューの半分ほどが隠れ、
-              // PDFの上のほうに文字やチェックを置けなくなるため、貼り付けない（スクロールで上に戻れば、いつでも選べる）
-              <div className="left-0 top-0 z-20 mb-2 rounded-lg bg-white/90 p-2 shadow-sm backdrop-blur [@media(min-height:900px)]:sticky dark:bg-neutral-950/90" data-testid="pdf-fix-operation-near-preview">
-                {operationSlot}
-              </div>
-            )}
             <div
               data-testid="pdf-annotate-canvas"
               className="relative select-none border border-neutral-300 dark:border-neutral-700"

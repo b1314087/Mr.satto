@@ -431,6 +431,14 @@ export const toolGuides: Record<string, ToolGuide> = {
       ...finish("削除する", "空白を削除する", [file(XLSX), seg("空白の行・列を削除する", ["空白行のみ", "空白列のみ", "両方"], 2)], "Excelファイルをダウンロード"),
     ],
   },
+  "excel-extract": {
+    split: true,
+    steps: [
+      pick("Excelを選ぶ", "Excelファイル（.xlsx）をドラッグ&ドロップ"),
+      step("抽出の方法と文字を入れる", [file(XLSX), btns(["行を抽出", "列を抽出"], 0), input("検索する文字", "東京"), check("1行目（見出し）も残す"), preview("sheet")], 2),
+      ...finish("抽出する", "行を抽出する", [file(XLSX), input("検索する文字", "東京"), preview("sheet", "抽出結果のプレビュー")], "Excelファイルをダウンロード"),
+    ],
+  },
   "excel-replace": {
     steps: [
       pick("Excelを選ぶ", "Excelファイル（.xlsx）をドラッグ&ドロップ"),
@@ -493,6 +501,21 @@ export const toolGuides: Record<string, ToolGuide> = {
       pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),
       step("取り出す時点を決める", [file(MP4), seg(undefined, ["1枚（この時点）", "指定した時刻", "一定の間隔", "均等に"], 0), preview("video"), slider("抽出する時点", 0.4)], 3),
       ...finish("抽出する", "この時点を抽出する", [file(MP4), slider("抽出する時点", 0.4), seg(undefined, ["PNG", "JPEG"], 0)], "画像をダウンロード"),
+    ],
+  },
+  // 動画カット・結合：不要部分を削除（最初のモード）。結合は「video-cut-merge@merge」
+  "video-cut-merge": {
+    steps: [
+      pick("「不要部分を削除」を選んで動画を選ぶ", "動画をドラッグ&ドロップ", [seg(undefined, ["不要部分を削除", "複数の動画を結合"], 0)]),
+      step("残したい区間を入れる", [file(MP4), input2("区間1 開始", "0:05.0", "区間1 終了", "0:20.0"), btn("＋ 区間を追加"), preview("video")], 1),
+      ...finish("書き出す", "不要部分を削除して書き出す", [file(MP4), input2("区間1 開始", "0:05.0", "区間1 終了", "0:20.0"), btn("＋ 区間を追加")]),
+    ],
+  },
+  "video-cut-merge@merge": {
+    steps: [
+      pick("「複数の動画を結合」を選んで動画を選ぶ", "動画をドラッグ&ドロップ（複数可）", [seg(undefined, ["不要部分を削除", "複数の動画を結合"], 1)]),
+      step("順番を確かめる", [file(MP4, true), file("movie2.mp4"), btn("↑"), preview("video")], 2),
+      ...finish("結合する", "動画を結合する", [file(MP4, true), file("movie2.mp4")]),
     ],
   },
   "video-metadata-remove": {
@@ -603,6 +626,15 @@ export const toolGuides: Record<string, ToolGuide> = {
       step("宛先・明細を入れる", [head("宛先（お客様）", 2), input("会社名・屋号", "株式会社サンプル"), head("明細", 4), input2("明細1 品名", "作業費", "明細1 単価", "50,000"), preview("invoice")], 3),
       step("税・金額を選ぶ", [head("税・金額", 5), seg("消費税率", ["10%", "8%", "0%"], 0), seg("端数処理", ["切り捨て", "四捨五入", "切り上げ"], 0), preview("invoice")], 1),
       { title: "2つまとめて作る", parts: [head("PDF出力", 6), run("見積書・注文書を作成する"), preview("invoice", "プレビュー（上が見積書・下が注文書）")], focus: 1 },
+    ],
+  },
+  postcard: {
+    split: true,
+    steps: [
+      step("はがきの向きを選ぶ", [head("はがきの向き", 1), seg(undefined, ["縦向き", "横向き"], 0), preview("postcard")], 1),
+      step("文字を置く", [btn("＋ 文字を追加"), text("文字（改行できます）", ["あけまして", "おめでとうございます"]), slider("横の位置（X）", 0.5, "50%"), slider("縦の位置（Y）", 0.7, "70%"), preview("postcard")], 1),
+      step("画像を置く", [btn("＋ 画像を追加"), slider("画像の大きさ（はがきの幅に対する割合）", 0.3, "60%"), slider("縦の位置（Y）", 0.3, "30%"), preview("postcard")], 0),
+      { title: "PDFにして印刷する", parts: [head("PDFにして印刷する", 3), run("PDFを作成する"), preview("postcard")], focus: 1 },
     ],
   },
   "envelope-address": {
@@ -789,6 +821,10 @@ export const guideModes: Record<string, GuideModeOption[]> = {
     { mode: "excel-to-csv", label: "Excel → CSV", guideId: "excel-csv-convert" },
     { mode: "csv-to-excel", label: "CSV → Excel", guideId: "excel-csv-convert@csv-to-excel" },
   ],
+  "video-cut-merge": [
+    { mode: "cut", label: "不要部分を削除", guideId: "video-cut-merge" },
+    { mode: "merge", label: "複数の動画を結合", guideId: "video-cut-merge@merge" },
+  ],
   "csv-json-convert": [
     { mode: "csv-to-json", label: "CSV → JSON", guideId: "csv-json-convert" },
     { mode: "json-to-csv", label: "JSON → CSV", guideId: "csv-json-convert@json-to-csv" },
@@ -853,6 +889,10 @@ const descriptions: Record<string, Record<number, string>> = {
   "receipt-accounting-csv": { 3: "読み取った明細を表で確かめ、違うところは直します。" },
   "video-mosaic": { 2: "動画を止めて、隠したい所をプレビューの上でドラッグして囲みます。" },
   "audio-merge": { 2: "上から順に結合されます。「↑」などで順番を入れ替えられます。" },
+  "excel-extract": { 2: "「行を抽出」か「列を抽出」を選び、検索する文字を入れます。セルの中にその文字が含まれていれば一致し、残る行・列がプレビューに出ます。" },
+  "video-cut-merge": { 1: "上の「不要部分を削除」を選び、動画を選びます。", 2: "残したい部分の開始・終了を入れます。「＋ 区間を追加」で区間を増やせ、上から順につながります。" },
+  "video-cut-merge@merge": { 1: "上の「複数の動画を結合」を選び、動画を2本以上選びます。", 2: "上から順に結合されます。「↑」などで順番を入れ替えられ、それぞれ再生して確かめられます。" },
+  postcard: { 2: "「＋ 文字を追加」で文字を入れ、大きさ・色・位置（X・Y）を調整します。", 3: "「＋ 画像を追加」で写真やイラストを置き、大きさと位置を調整します。縦横比はそのままです。" },
   "seating-chart": { 3: "2人を選んで入れ替えたり、ドラッグで席を動かしたりできます。" },
   "shift-schedule": { 3: "勤務区分（早番・遅番など）を選んでから、表のマスを押して入れます。" },
   "unit-converter": { 3: "ほかの単位に換算した結果が一覧で表示されます。" },

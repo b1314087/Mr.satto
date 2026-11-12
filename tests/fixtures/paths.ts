@@ -54,6 +54,11 @@ export const fixtures = {
   // 処理後にffprobeでこれらのタグが実際に消えていることを確認する
   // （実在の人物・位置情報は一切使用しない、ダミー座標のみ）。
   videoWithMetadataMp4: path.join(GENERATED_DIR, "video-with-metadata.mp4"),
+  // 動画カット・結合の確認用（ffmpegで合成。実在の映像・音声は使わない）：
+  // 横長 320×240・30fps・3秒・音声あり ／ 縦長 240×320・15fps・2秒・音声あり ／ 横長 320×240・2秒・音声なし
+  cutLandscapeWebm: path.join(GENERATED_DIR, "cut-landscape.webm"),
+  cutPortraitWebm: path.join(GENERATED_DIR, "cut-portrait.webm"),
+  cutSilentWebm: path.join(GENERATED_DIR, "cut-silent.webm"),
 
   // Phase 16: 電子印鑑生成（印影取り込み）テスト用フィクスチャ。
   // 実在の印鑑・個人情報は一切使用せず、すべてCanvasで合成した架空の図形。

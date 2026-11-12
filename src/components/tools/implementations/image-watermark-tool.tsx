@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { SliderField } from "@/components/common/slider-field";
+import { TextColorField } from "@/components/common/text-color-field";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -12,8 +13,10 @@ import {
   ImageWatermarkProcessor,
   WATERMARK_FONT_SIZE_MAX,
   WATERMARK_FONT_SIZE_MIN,
+  WATERMARK_DEFAULT_COLOR,
   drawWatermarkText,
   loadImage,
+  watermarkCenterOf,
   type ImageWatermarkPosition,
 } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
@@ -60,6 +63,9 @@ export function ImageWatermarkTool() {
   const [opacity, setOpacity] = useState(50);
   const [fontSize, setFontSize] = useState(32);
   const [rotation, setRotation] = useState(0);
+  const [color, setColor] = useState(WATERMARK_DEFAULT_COLOR);
+  // X・Yの調整バーで決めた文字の中心（%）。null のあいだは、選んだ位置（左上・中央など）に置く
+  const [customCenter, setCustomCenter] = useState<{ x: number; y: number } | null>(null);
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -71,10 +77,24 @@ export function ImageWatermarkTool() {
   const [prepared, setPrepared] = useState<{ file: File; width: number; height: number } | null>(null);
   const [previewErrorFor, setPreviewErrorFor] = useState<{ file: File; message: string } | null>(null);
   const previewReady = file !== null && prepared?.file === file;
-  const naturalSize = previewReady && prepared ? { width: prepared.width, height: prepared.height } : null;
+  const naturalSize = useMemo(
+    () => (previewReady && prepared ? { width: prepared.width, height: prepared.height } : null),
+    [previewReady, prepared]
+  );
   const previewError = previewErrorFor && previewErrorFor.file === file ? previewErrorFor.message : null;
   const sliderMax = fontSizeSliderMax(naturalSize?.width ?? null, naturalSize?.height ?? null);
   const shownFontSize = fontSize;
+
+  // バーに出す位置（%）：自由に動かしたときはその値、位置のボタンを選んでいるときは、その位置に置いたときの文字の中心
+  const shownCenter = useMemo(() => {
+    if (customCenter) return customCenter;
+    if (!naturalSize || text.trim() === "" || typeof document === "undefined") return { x: 50, y: 50 };
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return { x: 50, y: 50 };
+    const c = watermarkCenterOf(ctx, naturalSize.width, naturalSize.height, { text, position, fontSize: shownFontSize });
+    return { x: Math.round(c.x * 100), y: Math.round(c.y * 100) };
+  }, [customCenter, naturalSize, text, position, shownFontSize]);
+  const centerOption = customCenter ? { x: customCenter.x / 100, y: customCenter.y / 100 } : undefined;
 
   useEffect(() => {
     return () => {
@@ -125,11 +145,13 @@ export function ImageWatermarkTool() {
           opacity: opacity / 100,
           fontSize: Math.max(1, shownFontSize * base.scale),
           rotation,
+          center: customCenter ? { x: customCenter.x / 100, y: customCenter.y / 100 } : undefined,
+          color,
         });
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [previewReady, text, position, opacity, shownFontSize, rotation]);
+  }, [previewReady, text, position, opacity, shownFontSize, rotation, customCenter, color]);
 
   async function handleRun() {
     if (!file) return;
@@ -143,6 +165,8 @@ export function ImageWatermarkTool() {
         opacity: opacity / 100,
         fontSize: shownFontSize,
         rotation,
+        center: centerOption,
+        color,
       });
       setResult(output);
       setStatus("success");
@@ -204,18 +228,46 @@ export function ImageWatermarkTool() {
 
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">位置</p>
-            <div className="ms-seg">
+            <div className="ms-seg" data-testid="watermark-position">
               {POSITION_OPTIONS.map((opt) => (
-                <button aria-pressed={position === opt.value}
+                <button aria-pressed={!customCenter && position === opt.value}
                   key={opt.value}
                   type="button"
-                  onClick={() => setPosition(opt.value)}
+                  onClick={() => {
+                    setPosition(opt.value);
+                    setCustomCenter(null);
+                  }}
                 >
                   {opt.label}
                 </button>
               ))}
             </div>
+            <p className="text-xs text-ms-muted">
+              下のバーで、文字の中心を自由な位置に動かせます（0%＝左端・上端、100%＝右端・下端）。
+              {customCenter && <span data-testid="watermark-custom-position">いまは、バーで決めた位置に置いています。</span>}
+            </p>
           </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" data-testid="watermark-xy">
+            <SliderField
+              label="横の位置（X）"
+              value={shownCenter.x}
+              min={0}
+              max={100}
+              unit="%"
+              onChange={(x) => setCustomCenter({ x, y: shownCenter.y })}
+            />
+            <SliderField
+              label="縦の位置（Y）"
+              value={shownCenter.y}
+              min={0}
+              max={100}
+              unit="%"
+              onChange={(y) => setCustomCenter({ x: shownCenter.x, y })}
+            />
+          </div>
+
+          <TextColorField value={color} onChange={setColor} testId="watermark-color" />
 
           <SliderField
             label="フォントサイズ"

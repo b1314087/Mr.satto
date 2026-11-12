@@ -1298,3 +1298,75 @@ test("プレビューの上で、座席表の名前（見出し）と島の名�
   await page.getByTestId("seat-purpose-meeting").click();
   await expect(preview.getByTestId("seat-preview-table-label")).toHaveCount(0);
 });
+
+// ---------------------------------------------------------------------------
+// グループワーク：片側席のみ（次期機能追加 5）
+// ---------------------------------------------------------------------------
+/** 机（長方形）の位置と大きさ。グループワークの机は長方形 */
+function rectOf(sh: ReturnType<typeof buildLayout>["shapes"][number]) {
+  if (sh.kind !== "rect") throw new Error("机が長方形ではありません");
+  return sh;
+}
+
+plainTest("グループワーク「片側だけ」：すべての席が机の同じ側に並ぶ（横向きの机は手前・縦向きの机は左）。席の数・島の名前は変わらない", () => {
+  const base = { ...DEFAULT_PARAMS, tables: 2, perTable: 4 };
+  const both = buildLayout("group", base);
+  const one = buildLayout("group", { ...base, groupOneSide: true });
+  plainExpect(one.seats).toHaveLength(both.seats.length);
+  plainExpect(one.shapes.map((s) => s.label)).toEqual(both.shapes.map((s) => s.label));
+  // 横向きの机：島1の席はすべて同じ高さで、机より下（手前）
+  const desk1 = rectOf(one.shapes[0]);
+  const seats1 = one.seats.filter((s) => s.group === "島1");
+  plainExpect(new Set(seats1.map((s) => s.y)).size).toBe(1);
+  plainExpect(seats1[0].y).toBeGreaterThan(desk1.y + desk1.h - 1);
+  // 両側のときは、上と下の2つの高さに分かれる
+  plainExpect(new Set(both.seats.filter((s) => s.group === "島1").map((s) => s.y)).size).toBe(2);
+  // 縦向きの机：島1の席はすべて同じ横位置で、机より左
+  const v = buildLayout("group", { ...base, groupOneSide: true, groupDesk: "vertical" });
+  const vSeats = v.seats.filter((s) => s.group === "島1");
+  plainExpect(new Set(vSeats.map((s) => s.x)).size).toBe(1);
+  plainExpect(vSeats[0].x + SEAT_W).toBeLessThanOrEqual(rectOf(v.shapes[0]).x + 1);
+  // 席どうし・席と机は重ならない
+  for (const g of [one, v]) {
+    for (const a of g.seats) {
+      for (const b of g.seats) {
+        if (a === b) continue;
+        plainExpect(Math.abs(a.x - b.x) >= SEAT_W || Math.abs(a.y - b.y) >= SEAT_H).toBe(true);
+      }
+      for (const sh of g.shapes.map(rectOf)) {
+        const overlap = a.x < sh.x + sh.w && a.x + SEAT_W > sh.x && a.y < sh.y + sh.h && a.y + SEAT_H > sh.y;
+        plainExpect(overlap).toBe(false);
+      }
+    }
+  }
+});
+
+test("グループワーク「片側だけ」：選ぶと席が机の片側に並び、名前・番号はそのまま。PDFにも出る。「机の両側」で戻る", async ({ page }) => {
+  test.setTimeout(120_000);
+  await openTool(page);
+  const kanji = ["山田", "佐藤", "鈴木", "高橋", "田中", "伊藤", "渡辺", "中村"];
+  await start(page, "group", kanji.map((n, i) => `${i + 1} ${n}`));
+  await openSeatPanel(page, "layout");
+  const seg = page.getByTestId("seat-group-one-side");
+  await expect(seg.getByRole("radio", { name: "机の両側" })).toHaveAttribute("aria-checked", "true");
+  const rowsOf = async () => {
+    const ys = await page.getByTestId("seat").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().y)));
+    return new Set(ys).size;
+  };
+  const before = await rowsOf();
+  const seatCount = await page.getByTestId("seat").count();
+  await seg.getByRole("radio", { name: "片側だけ" }).click();
+  await expect(seg.getByRole("radio", { name: "片側だけ" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("seat")).toHaveCount(seatCount); // 席の数は変わらない
+  expect(await rowsOf()).toBeLessThan(before); // 席の並ぶ高さ（段）が減る
+  // 名前と出席番号はそのまま
+  plainExpect((await seatNames(page)).slice(0, 2)).toEqual(["山田", "佐藤"]);
+  await expect(seat(page, 0).getByTestId("seat-number")).toHaveText("1");
+  await page.getByTestId("seat-format-pdf").click();
+  const pdf = await clickAndDownload(page, "PDFでダウンロード");
+  const content = await extractPdfContent((await assertDownloadedFile(pdf, { format: "pdf" })).path);
+  plainExpect(content.text).toContain("1 山田");
+  await openSeatPanel(page, "layout");
+  await seg.getByRole("radio", { name: "机の両側" }).click();
+  expect(await rowsOf()).toBe(before);
+});

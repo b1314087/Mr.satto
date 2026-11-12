@@ -888,6 +888,17 @@ const toolDefinitions: Tool[] = [
     keywords: ["空白行削除", "空白列削除", "excel", "クリーニング", "左に詰める", "上に詰める", "空白セル 詰める", "Excel空白行・空白列削除", "空白削除"],
   },
   {
+    // 次期機能追加 2：指定した文字を含む行・列だけを残して書き出す（書式・数式を保つ。xlsx-column-edit.ts の editXlsxColumns を使う）
+    id: "excel-extract",
+    name: "Excel行・列抽出",
+    category: "csv-excel",
+    description: "Excelファイルから、指定した文字を含む行または列だけを抜き出して、Excelファイルとして保存します。抜き出す前にプレビューで確かめられます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["抽出", "行抽出", "列抽出", "絞り込み", "フィルター", "検索", "含む行", "excel", "Excel 抽出", "特定の文字 行"],
+  },
+  {
     // 次工程・軽量便利ツール一括追加（Tool 6）
     id: "excel-replace",
     name: "Excel文字削除・置換",
@@ -1047,6 +1058,17 @@ const toolDefinitions: Tool[] = [
     keywords: ["サムネイル", "静止画抽出", "フレーム抽出", "png", "jpeg", "動画 サムネイル 複数", "動画 画像 抽出", "動画 フレーム 抽出", "動画 連続 キャプチャ", "連続キャプチャ", "コマ切り出し", "一括抽出", "zip"],
   },
   {
+    // 次期機能追加 3：1本の動画の残したい区間だけをつなぐ（不要部分の削除）／複数の動画を1本に結合する
+    id: "video-cut-merge",
+    name: "動画カット・結合",
+    category: "video",
+    description: "動画の不要な部分を削除し、残したい区間だけを順番につなぎます。複数の動画を、並べた順に1本に結合することもできます",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["動画カット", "動画 不要部分 削除", "動画結合", "動画 つなぐ", "動画 連結", "動画編集", "トリミング", "切り取り", "mp4 結合", "複数区間"],
+  },
+  {
     id: "video-metadata-remove",
     name: "動画メタデータ削除",
     category: "video",
@@ -1191,6 +1213,17 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     keywords: ["名簿", "一覧表", "出席簿", "台帳"],
+  },
+  {
+    // 次期機能追加 1：はがき（100×148mm）に文字・画像を置いてPDFにする
+    id: "postcard",
+    name: "ハガキ作成",
+    category: "generator",
+    description: "はがき（100×148mm）の縦向き・横向きに、文字と画像を置いて、位置・大きさ・文字の色を調整し、印刷用のPDFを作成します",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["はがき", "ハガキ", "葉書", "年賀状", "暑中見舞い", "案内状", "ポストカード", "はがき 印刷", "postcard"],
   },
   {
     // 工程5：座席表・席順作成。用途（会議・グループワーク・授業・円卓・カスタム）を選び、名前と役職を入れると入力順に席へ入る。

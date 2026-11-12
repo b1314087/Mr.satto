@@ -369,6 +369,18 @@ const ExcelBlankRemoveTool = dynamic(() =>
   import("./implementations/excel-blank-remove-tool").then((m) => m.ExcelBlankRemoveTool),
   { loading: ToolLoading }
 );
+const ExcelExtractTool = dynamic(() =>
+  import("./implementations/excel-extract-tool").then((m) => m.ExcelExtractTool),
+  { loading: ToolLoading }
+);
+const VideoCutMergeTool = dynamic(() =>
+  import("./implementations/video-cut-merge-tool").then((m) => m.VideoCutMergeTool),
+  { loading: ToolLoading }
+);
+const PostcardTool = dynamic(() =>
+  import("./implementations/postcard-tool").then((m) => m.PostcardTool),
+  { loading: ToolLoading }
+);
 const ExcelReplaceTool = dynamic(() =>
   import("./implementations/excel-replace-tool").then((m) => m.ExcelReplaceTool),
   { loading: ToolLoading }
@@ -612,6 +624,12 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelTransposeTool />;
     case "excel-blank-remove":
       return <ExcelBlankRemoveTool />;
+    case "excel-extract":
+      return <ExcelExtractTool />;
+    case "video-cut-merge":
+      return <VideoCutMergeTool />;
+    case "postcard":
+      return <PostcardTool />;
     case "excel-replace":
       return <ExcelReplaceTool />;
     case "excel-date-shift":

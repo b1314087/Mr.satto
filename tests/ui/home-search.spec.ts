@@ -17,7 +17,7 @@ plainTest.describe("検索品質（やりたい作業の言い方で探す）", 
     ["PDFまとめる", "pdf-edit"],
     ["PDFを画像に", "pdf-to-image"],
     ["写真の背景を消す", "background-remover"],
-    ["動画を短くする", "video-convert"],
+    ["動画を短くする", "video-cut-merge"], // 次期機能追加 3：不要部分の削除は「動画カット・結合」
     ["動画の容量を減らす", "video-compress"],
     ["Excelを比較", "office-compare"],
     ["Wordを比較", "office-compare"],
@@ -28,7 +28,7 @@ plainTest.describe("検索品質（やりたい作業の言い方で探す）", 
     // 入力欄の例
     ["PDFを圧縮したい", "pdf-compress"],
     ["画像の背景を消したい", "background-remover"],
-    ["動画を短くしたい", "video-convert"],
+    ["動画を短くしたい", "video-cut-merge"],
     ["Excelを比較したい", "office-compare"],
   ];
   for (const [q, id] of CASES) {

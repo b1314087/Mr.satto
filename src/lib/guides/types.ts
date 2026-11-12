@@ -25,6 +25,7 @@ export type GuidePreviewKind =
   | "shift"
   | "label"
   | "envelope"
+  | "postcard"
   | "ticket"
   | "stamp"
   | "gradient"

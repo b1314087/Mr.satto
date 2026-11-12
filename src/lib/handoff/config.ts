@@ -70,6 +70,7 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "csv-column-editor": { role: "edit", receive: { kinds: ["csv", "xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["csv", "xlsx"] } },
   "excel-transpose": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-blank-remove": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
+  "excel-extract": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-replace": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "excel-date-shift": { role: "edit", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
   "word-paragraph-cleanup": { role: "edit", receive: { kinds: ["docx"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["docx"] } },

@@ -566,6 +566,10 @@ export interface ImageWatermarkInput {
   fontSize: number;
   /** 度数（時計回り） */
   rotation: number;
+  /** 文字の中心の位置（画像の幅・高さに対する割合 0〜1）。指定すると position より優先する（X・Yの調整バー） */
+  center?: { x: number; y: number };
+  /** 文字の色（#rrggbb）。省略時は白 */
+  color?: string;
 }
 
 /** ウォーターマークの文字サイズ(px)の下限・上限。上限は4K〜8Kクラスの写真でも十分大きく出せる値 */
@@ -581,6 +585,69 @@ export interface WatermarkDrawOptions {
   fontSize: number;
   /** 度数（時計回り） */
   rotation: number;
+  /** 文字の中心の位置（キャンバスの幅・高さに対する割合 0〜1）。指定すると position より優先する */
+  center?: { x: number; y: number };
+  /** 文字の色（#rrggbb）。省略時は白 */
+  color?: string;
+}
+
+export const WATERMARK_DEFAULT_COLOR = "#ffffff";
+
+/** 文字の縁取りの色：明るい文字には暗い縁、暗い文字には明るい縁（どんな写真の上でも読めるように） */
+export function watermarkOutlineFor(color: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return "rgba(0, 0, 0, 0.5)";
+  const n = parseInt(m[1], 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? "rgba(0, 0, 0, 0.5)" : "rgba(255, 255, 255, 0.6)";
+}
+
+/**
+ * 文字の左端（x）とベースライン（y）の位置を求める。position（左上・中央など）か、center（X・Yの割合）から決める。
+ * 画面のX・Yの調整バーの値と、プリセットの位置の行き来にも使う（watermarkCenterOf）。
+ */
+function watermarkOrigin(
+  canvasWidth: number,
+  canvasHeight: number,
+  textWidth: number,
+  fontSize: number,
+  position: ImageWatermarkPosition,
+  center?: { x: number; y: number }
+): { x: number; y: number } {
+  if (center) {
+    return { x: center.x * canvasWidth - textWidth / 2, y: center.y * canvasHeight + fontSize / 2 };
+  }
+  const margin = Math.max(8, Math.round(Math.min(canvasWidth, canvasHeight) * 0.03));
+  switch (position) {
+    case "top-left":
+      return { x: margin, y: margin + fontSize };
+    case "top-right":
+      return { x: canvasWidth - margin - textWidth, y: margin + fontSize };
+    case "bottom-left":
+      return { x: margin, y: canvasHeight - margin };
+    case "bottom-right":
+      return { x: canvasWidth - margin - textWidth, y: canvasHeight - margin };
+    case "center":
+    default:
+      return { x: (canvasWidth - textWidth) / 2, y: (canvasHeight + fontSize) / 2 };
+  }
+}
+
+/** プリセットの位置（左上など）に置いたときの、文字の中心の位置（幅・高さに対する割合 0〜1）。X・Yの調整バーの表示に使う */
+export function watermarkCenterOf(
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  canvasHeight: number,
+  { text, position, fontSize }: { text: string; position: ImageWatermarkPosition; fontSize: number }
+): { x: number; y: number } {
+  ctx.font = `${fontSize}px sans-serif`;
+  const textWidth = ctx.measureText(text).width;
+  const o = watermarkOrigin(canvasWidth, canvasHeight, textWidth, fontSize, position);
+  return {
+    x: Math.min(1, Math.max(0, (o.x + textWidth / 2) / canvasWidth)),
+    y: Math.min(1, Math.max(0, (o.y - fontSize / 2) / canvasHeight)),
+  };
 }
 
 /**
@@ -591,37 +658,11 @@ export function drawWatermarkText(
   ctx: CanvasRenderingContext2D,
   canvasWidth: number,
   canvasHeight: number,
-  { text, position, opacity, fontSize, rotation }: WatermarkDrawOptions
+  { text, position, opacity, fontSize, rotation, center, color = WATERMARK_DEFAULT_COLOR }: WatermarkDrawOptions
 ): void {
   ctx.font = `${fontSize}px sans-serif`;
   const textWidth = ctx.measureText(text).width;
-  const margin = Math.max(8, Math.round(Math.min(canvasWidth, canvasHeight) * 0.03));
-
-  let x: number;
-  let y: number;
-  switch (position) {
-    case "top-left":
-      x = margin;
-      y = margin + fontSize;
-      break;
-    case "top-right":
-      x = canvasWidth - margin - textWidth;
-      y = margin + fontSize;
-      break;
-    case "bottom-left":
-      x = margin;
-      y = canvasHeight - margin;
-      break;
-    case "bottom-right":
-      x = canvasWidth - margin - textWidth;
-      y = canvasHeight - margin;
-      break;
-    case "center":
-    default:
-      x = (canvasWidth - textWidth) / 2;
-      y = (canvasHeight + fontSize) / 2;
-      break;
-  }
+  const { x, y } = watermarkOrigin(canvasWidth, canvasHeight, textWidth, fontSize, position, center);
 
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -630,8 +671,8 @@ export function drawWatermarkText(
   ctx.translate(-(x + textWidth / 2), -(y - fontSize / 2));
   ctx.font = `${fontSize}px sans-serif`;
   ctx.lineWidth = Math.max(1, fontSize / 16);
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = watermarkOutlineFor(color);
+  ctx.fillStyle = color;
   ctx.strokeText(text, x, y);
   ctx.fillText(text, x, y);
   ctx.restore();
@@ -648,7 +689,7 @@ export class ImageWatermarkProcessor extends BrowserProcessor<
   ImageWatermarkInput,
   ImageProcessorOutput
 > {
-  async process({ file, text, position, opacity, fontSize, rotation }: ImageWatermarkInput) {
+  async process({ file, text, position, opacity, fontSize, rotation, center, color }: ImageWatermarkInput) {
     if (text.trim() === "") {
       throw new Error("透かしの文字を入力してください");
     }
@@ -663,7 +704,10 @@ export class ImageWatermarkProcessor extends BrowserProcessor<
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvasの初期化に失敗しました");
 
-    drawWatermarkText(ctx, canvas.width, canvas.height, { text, position, opacity, fontSize, rotation });
+    if (center && (![center.x, center.y].every(Number.isFinite) || center.x < 0 || center.x > 1 || center.y < 0 || center.y > 1)) {
+      throw new Error("文字の位置は、画像の範囲の中で指定してください");
+    }
+    drawWatermarkText(ctx, canvas.width, canvas.height, { text, position, opacity, fontSize, rotation, center, color });
 
     const outType = file.type || "image/png";
     const blob = await canvasToBlob(canvas, outType, 0.92);
