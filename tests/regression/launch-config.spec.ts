@@ -136,7 +136,7 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
     expect(description).toContain("AIで読み取る場合");
     expect(description).toContain("外部のAIサービスへ送信");
     expect(visible).toContain("予定表のファイル（Excel・CSV・PDF・画像）を読み込めますか？");
-    expect(visible).toContain("Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）");
+    expect(visible).toContain("Excel（.xlsx・.xlsm）・CSV・PDF・画像（PNG・JPG）");
     expect(visible).toContain("AIで読み取る補助（プレミアムの機能）を使う場合に限り");
     // 構造化データのFAQは、画面のFAQと同じ内容
     expect(jsonLd).toContain("予定表のファイル（Excel・CSV・PDF・画像）を読み込めますか？");

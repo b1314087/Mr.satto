@@ -95,6 +95,48 @@ export function QuoteOrderGeneratorTool() {
   return (
     <PreviewSplitLayout
       previewWidth="lg"
+      // PDF出力は、プレビューを見てから行う（スマホでもプレビューの下に出す）
+      after={
+          <section className="flex flex-col gap-3">
+            <Heading n={7}>PDF出力</Heading>
+            <RunBar>
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={status === "processing"} aria-busy={status === "processing" || undefined}
+                title={preValidationError ?? undefined}
+                className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+              >
+                {status === "processing" ? "作成中..." : "見積書・注文書を作成する"}
+              </button>
+            </RunBar>
+            <ProcessingStatus state={status} processingLabel="PDFを作成中..." successLabel="PDFを作成しました" />
+            {error && <ErrorMessage message={error} />}
+            {result && (
+              <ResultPopup>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">1ページ ・ {formatBytes(result.sizeBytes)}</p>
+                <RewardedDownloadGate
+                  onDownload={() => downloadBlob(result.blob, buildQuoteOrderFileName(form))}
+                  label="PDFをダウンロード"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                  // 新しいタブで開くと、そこから保存できてしまうため、ダウンロードと同じ広告の関所を通す
+                  runWithDownloadAccess({
+                    key: result.url,
+                    label: "PDFを新しいタブで開く",
+                    run: () => window.open(result.url, "_blank", "noopener,noreferrer"),
+                  })
+                }
+                  className="text-xs text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+                >
+                  新しいタブでPDFを開く（印刷はこちらから）
+                </button>
+              </ResultPopup>
+            )}
+          </section>
+      }
       preview={
       <section className="flex flex-col gap-3">
         <Heading n={6}>プレビュー（上が見積書・下が注文書）</Heading>
@@ -196,45 +238,6 @@ export function QuoteOrderGeneratorTool() {
         <TaxSettings taxRatePercent={form.taxRatePercent} taxRounding={form.taxRounding} onChange={patch} />
       </section>
 
-      <section className="flex flex-col gap-3">
-        <Heading n={7}>PDF出力</Heading>
-        <RunBar>
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={status === "processing"} aria-busy={status === "processing" || undefined}
-            title={preValidationError ?? undefined}
-            className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            {status === "processing" ? "作成中..." : "見積書・注文書を作成する"}
-          </button>
-        </RunBar>
-        <ProcessingStatus state={status} processingLabel="PDFを作成中..." successLabel="PDFを作成しました" />
-        {error && <ErrorMessage message={error} />}
-        {result && (
-          <ResultPopup>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">1ページ ・ {formatBytes(result.sizeBytes)}</p>
-            <RewardedDownloadGate
-              onDownload={() => downloadBlob(result.blob, buildQuoteOrderFileName(form))}
-              label="PDFをダウンロード"
-            />
-            <button
-              type="button"
-              onClick={() =>
-              // 新しいタブで開くと、そこから保存できてしまうため、ダウンロードと同じ広告の関所を通す
-              runWithDownloadAccess({
-                key: result.url,
-                label: "PDFを新しいタブで開く",
-                run: () => window.open(result.url, "_blank", "noopener,noreferrer"),
-              })
-            }
-              className="text-xs text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
-            >
-              新しいタブでPDFを開く（印刷はこちらから）
-            </button>
-          </ResultPopup>
-        )}
-      </section>
     </PreviewSplitLayout>
   );
 }

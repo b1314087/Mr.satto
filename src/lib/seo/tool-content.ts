@@ -407,6 +407,14 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     ],
     faq: [
       { question: "アップロードしたPDFはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      {
+        question: "並び替えると、文字や画像の画質は落ちますか？",
+        answer: "落ちません。ページを画像にせず、元のページをそのまま新しい順番に並べ直すため、文字の選択や検索も、並び替え前と同じようにできます。",
+      },
+      {
+        question: "パスワードが付いたPDFも並び替えられますか？",
+        answer: "パスワードで保護されたPDFは読み込めません。パスワードを解除したPDFを選んでください。",
+      },
     ],
   },
   "pdf-rotate": {
@@ -422,6 +430,14 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     ],
     faq: [
       { question: "アップロードしたPDFはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      {
+        question: "回転すると、文字や画像の画質は落ちますか？",
+        answer: "落ちません。ページを画像にせず、ページの向きの情報だけを変えるため、文字の選択や検索も、回転前と同じようにできます。もともと回転が設定されているページは、その向きからさらに回転します。",
+      },
+      {
+        question: "パスワードが付いたPDFも回転できますか？",
+        answer: "パスワードで保護されたPDFは読み込めません。パスワードを解除したPDFを選んでください。",
+      },
     ],
   },
   "pdf-edit": {
@@ -507,12 +523,20 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     lead: "PDFの各ページを、画像ファイルとして書き出します。",
     howTo: [
       "PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB）。",
-      "書き出したいページと画像形式を選びます。",
+      "画像の形式（PNG・JPG）を選びます。PDFのすべてのページが、1ページずつ画像になります。",
       "「画像化する」を押すと処理されます。",
       "生成された画像をダウンロードします（複数ページの場合はまとめて取得できます）。",
     ],
     faq: [
       { question: "アップロードしたPDFはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      {
+        question: "PDFのページが多いときは、どのように保存されますか？",
+        answer: "1ページだけのPDFは画像1枚をそのまま、2ページ以上のPDFは、すべてのページの画像を1つのZIPファイルにまとめて保存します。画像のファイル名には、元のファイル名とページ番号が付きます。",
+      },
+      {
+        question: "PNGとJPGは、どちらを選べばよいですか？",
+        answer: "文字や図が中心の資料は、輪郭がくっきり残るPNGがおすすめです。写真が多いページは、ファイルが小さくなりやすいJPGが向いています。",
+      },
     ],
   },
   "image-to-pdf": {

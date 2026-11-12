@@ -15,6 +15,7 @@ const ZOOM_STEP = 0.25;
  * - 開いたときは、中身が画面に収まる大きさまで自動で拡大する（最大3倍）。「－」「＋」「画面に合わせる」で調整できる。
  * - 大きく表示している間は、後ろのページをスクロールさせない。
  * - 中の画像・動画は、ツールごとの高さの上限を外す（globals.css の .ms-preview-fs）。
+ * - 動画のプレビュー（.ms-fs-fill を付けた <video>）は、元の動画が小さくても、画面に収まる大きさまで広げる。
  */
 export function PreviewFullscreenFrame({ children, className = "" }: { children: ReactNode; className?: string }) {
   const [fullscreen, setFullscreen] = useState(false);
@@ -114,7 +115,9 @@ export function PreviewFullscreenFrame({ children, className = "" }: { children:
       <div
         ref={contentRef}
         // 大きく表示しているときは、中身の幅を中身に合わせ（画面より広くはしない）、倍率をかけて真ん中に置く
-        className={fullscreen ? "mx-auto max-w-full" : ""}
+        // 動画（.ms-fs-fill）を含むときは、中身を枠の幅いっぱいにして、動画そのものを画面に収まる大きさまで広げる
+        // （倍率だけでは、動画の下の長いファイル名などの文字の幅で倍率が決まり、小さな動画がほとんど大きくならないため）
+        className={fullscreen ? "ms-fs-content mx-auto max-w-full" : ""}
         style={fullscreen ? { width: "fit-content", zoom } : undefined}
       >
         {children}

@@ -5,7 +5,9 @@ import { formatLegalVersion, LEGAL_VERSIONS } from "@/lib/legal/versions";
 
 export const metadata: Metadata = {
   title: "プライバシーポリシー",
-  description: `${siteConfig.name}のプライバシーポリシーです。`,
+  description: featureFlags.billing
+    ? `${siteConfig.name}のプライバシーポリシーです。ファイルをブラウザの中で処理する仕組み、AIの補助を使うときに送る内容、アクセス情報・会員情報の取り扱いを説明します。`
+    : `${siteConfig.name}のプライバシーポリシーです。ファイルをブラウザの中で処理する仕組みと、アクセス情報の取り扱いを説明します。`,
   alternates: {
     canonical: "/privacy",
   },

@@ -14,14 +14,14 @@ test.describe("封筒宛名作成: 画面の順番", () => {
     const run = page.getByRole("button", { name: /PDFを作成|作成中/ });
     await expect(size).toBeVisible({ timeout: 40_000 });
 
-    const top = async (l: import("@playwright/test").Locator) => (await l.boundingBox())!.y;
-    const ySize = await top(size);
-    const yInput = await top(input);
-    const yLayout = await top(layout);
-    const yRun = await top(run);
-    expect(ySize).toBeLessThan(yInput);
-    expect(yInput).toBeLessThan(yLayout);
-    expect(yLayout).toBeLessThan(yRun);
+    // 画面上の並び（HTMLの順）で確かめる。作成ボタンは、設定が長いときに画面の下にくっつく実行バー（RunBar）の中にあり、
+    // 見えている位置（座標）はスクロールで変わるため、座標では比べない
+    const handles = await Promise.all([size, input, layout, run].map((l) => l.elementHandle()));
+    const order = await page.evaluate((els) => {
+      const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return [follows(els[0]!, els[1]!), follows(els[1]!, els[2]!), follows(els[2]!, els[3]!)];
+    }, handles);
+    expect(order).toEqual([true, true, true]);
 
     // 各手順の中身が、正しい手順に入っている
     await expect(size.getByText("封筒サイズ", { exact: true })).toBeVisible();

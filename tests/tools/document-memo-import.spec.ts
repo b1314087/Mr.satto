@@ -108,8 +108,8 @@ test.describe("メモから入力: 画面", () => {
 
     await expect(page.getByTestId("document-number")).toHaveValue("INV-20261101-001");
     await expect(page.locator('input[type="date"]').first()).toHaveValue("2026-11-01");
-    await expect(page.getByPlaceholder("会社名・屋号").nth(0)).toHaveValue("株式会社お客様商事");
-    await expect(page.getByPlaceholder("会社名・屋号").nth(1)).toHaveValue("株式会社テスト工務店");
+    await expect(page.getByLabel("会社名・屋号", { exact: true }).nth(0)).toHaveValue("株式会社お客様商事");
+    await expect(page.getByLabel("会社名・屋号", { exact: true }).nth(1)).toHaveValue("株式会社テスト工務店");
     await expect(page.getByPlaceholder("商品名・作業内容")).toHaveCount(2);
     await expect(page.getByPlaceholder("商品名・作業内容").nth(1)).toHaveValue("足場設置");
     const preview = page.getByTestId("tool-preview");
@@ -122,7 +122,7 @@ test.describe("メモから入力: 画面", () => {
     await openMemo(page, "estimate-generator");
     await page.getByTestId("memo-import-text").fill("宛先：株式会社テスト\n色：青\n発行日：来週");
     await page.getByTestId("memo-import-apply").click();
-    await expect(page.getByPlaceholder("会社名・屋号").nth(0)).toHaveValue("株式会社テスト");
+    await expect(page.getByLabel("会社名・屋号", { exact: true }).nth(0)).toHaveValue("株式会社テスト");
     const issues = page.getByTestId("memo-import-issues");
     await expect(issues).toContainText("2行");
     await expect(issues).toContainText("2行目「色：青」");

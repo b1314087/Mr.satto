@@ -84,7 +84,7 @@ test.describe("機能スイッチ: 広告オフ・課金オフ", () => {
     await page.goto("/tools");
     await expect(page.locator('a[href^="/tools/"]').first()).toBeVisible();
     const cards = page.locator('a[href^="/tools/"]');
-    await expect(cards.getByText("通常", { exact: true })).toHaveCount(0);
+    await expect(cards.getByText("無料で使える", { exact: true })).toHaveCount(0);
     await expect(cards.filter({ hasText: "スタンダード" })).toHaveCount(0);
     await expect(cards.filter({ hasText: "プレミアム" })).toHaveCount(0);
   });

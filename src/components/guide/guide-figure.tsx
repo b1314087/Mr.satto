@@ -13,7 +13,12 @@ import type { GuidePart, GuidePreviewKind, GuideStep } from "@/lib/guides/types"
 
 const SIZE = { pc: { w: 400, h: 260 }, sp: { w: 280, h: 400 } } as const;
 const PAD = 14;
-const TOP = 30; // 一番上の部品の位置（上に番号の丸を描く分をあける）
+const TOP = 18; // 一番上の部品の位置
+/**
+ * 番号の丸と矢印を描く、部品の右側の通り道の幅。
+ * 部品は、この幅をあけて並べる（番号の丸を、ほかの部品やボタンの文字に重ねないため。すべての図で同じ決まり）。
+ */
+const GUTTER = 32;
 const GAP = 8;
 const FS = 11; // 文字の大きさ
 
@@ -499,7 +504,8 @@ function layout(step: GuideStep, variant: "pc" | "sp", split: boolean): Placed[]
   const innerH = H - TOP - PAD;
   const previewIndex = step.parts.findIndex((p) => p.k === "preview");
   const twoCols = variant === "pc" && split && previewIndex >= 0;
-  const colW = twoCols ? innerW * 0.5 : innerW;
+  // 左の列（または1列）の右に、番号の丸の通り道（GUTTER）をあける
+  const colW = twoCols ? Math.round(innerW * 0.5) - GUTTER / 2 : innerW - GUTTER;
   const list = step.parts.map((p, i) => ({ p, i })).filter(({ i }) => !(twoCols && i === previewIndex));
   const focus = typeof step.focus === "number" ? step.focus : -1;
 
@@ -539,7 +545,7 @@ function layout(step: GuideStep, variant: "pc" | "sp", split: boolean): Placed[]
     const pv = step.parts[previewIndex];
     const leftBottom = y - GAP;
     const h = Math.max(leftBottom - PAD, 170);
-    placed.push({ p: pv, i: previewIndex, x: PAD + colW + 12, y: PAD, w: innerW - colW - 12, h });
+    placed.push({ p: pv, i: previewIndex, x: PAD + colW + GUTTER, y: PAD, w: innerW - colW - GUTTER, h });
   }
   return placed;
 }
@@ -573,16 +579,17 @@ export function GuideFigure({
   const popupY = (H - popupH) / 2;
   const target = step.focus === "popup" ? { x: popupX + popupW / 2 - popupBtnW / 2, y: popupY + 56, w: popupBtnW, h: 24 } : focused;
 
-  // 番号の丸と矢印：操作する部品の右上から、部品の右端に向けて描く
-  let badge: { cx: number; cy: number; ax: number; ay: number } | null = null;
+  // 番号の丸：操作する部品の右の通り道（GUTTER）に、部品の枠（gd-focus）のすぐ横に置く（矢印は、枠と丸が隣り合うので描かない）。
+  // 右に通り道がない部品（2列の図の右側のプレビュー）は、部品の右上の角の内側に丸だけを置く（ほかの部品には重ねない）。
+  let badge: { cx: number; cy: number } | null = null;
   if (target) {
     const right = target.x + target.w;
-    const roomRight = W - right > 34;
-    const cx = roomRight ? Math.min(right + 22, W - 14) : Math.max(target.x + Math.min(target.w, 160) - 4, 18);
-    const cy = roomRight ? target.y + Math.min(target.h, 26) / 2 - 2 : Math.max(target.y - 14, 13);
-    const ax = roomRight ? right + 4 : Math.max(target.x + Math.min(target.w, 160) - 22, target.x + 8);
-    const ay = roomRight ? target.y + Math.min(target.h, 26) / 2 : target.y - 2;
-    badge = { cx: roomRight ? cx : cx, cy, ax, ay };
+    const midY = target.y + Math.min(target.h, 26) / 2;
+    if (W - PAD - right >= GUTTER - 6) {
+      badge = { cx: right + 19, cy: midY };
+    } else {
+      badge = { cx: right - 16, cy: target.y + 16 };
+    }
   }
 
   return (
@@ -592,9 +599,6 @@ export function GuideFigure({
           <stop offset="0" stopColor="#6366f1" />
           <stop offset="1" stopColor="#ec4899" />
         </linearGradient>
-        <marker id={`gd-arrow-${uid}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0 0 L10 5 L0 10 z" className="gd-badge" />
-        </marker>
       </defs>
       <rect x={3} y={3} width={W - 6} height={H - 6} rx={16} className="gd-frame" />
       <g>
@@ -625,7 +629,6 @@ export function GuideFigure({
       )}
       {badge && (
         <g>
-          <line x1={badge.cx - (badge.ax < badge.cx ? 10 : 0)} y1={badge.cy + (badge.ax < badge.cx ? 0 : 10)} x2={badge.ax} y2={badge.ay} className="gd-arrow" markerEnd={`url(#gd-arrow-${uid})`} />
           <circle cx={badge.cx} cy={badge.cy} r={11} className="gd-badge" />
           <text x={badge.cx} y={badge.cy + 4} textAnchor="middle" className="gd-on-accent gd-bold" fontSize={12}>
             {index + 1}

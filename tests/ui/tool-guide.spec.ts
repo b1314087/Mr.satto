@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { tools, getToolById } from "@/lib/tools/data";
 import { AVAILABLE_TOOL_IDS } from "@/lib/tools/registry";
 import { toolSeoContent } from "@/lib/seo/tool-content";
-import { toolGuides } from "@/lib/guides/tool-guides";
+import { toolGuides, guideModes, pageGuides, initialGuideId } from "@/lib/guides/tool-guides";
 
 /**
  * 全ツール共通の「使い方」「よくある質問」の幕（src/components/tools/tool-guide.tsx）。
@@ -16,9 +16,9 @@ const availableIds = tools.filter((t) => AVAILABLE_TOOL_IDS.includes(t.id)).map(
 const listedIds = availableIds.filter((id) => !getToolById(id)?.mergedInto);
 
 test.describe("使い方の図のデータ", () => {
-  test("公開中の全ツール（統合済みの旧ツールはまとめ先）に、2〜4ステップの図がある", () => {
+  test("公開中の全ツール（統合済みの旧アドレスは、そのアドレスで開くモードの図）に、2〜4ステップの図がある", () => {
     for (const id of availableIds) {
-      const guideId = getToolById(id)?.mergedInto ?? id;
+      const guideId = initialGuideId(id, getToolById(id)?.mergedInto ?? id);
       const guide = toolGuides[guideId];
       expect(guide, `${id} の図がありません`).toBeTruthy();
       expect(guide.steps.length, `${id} のステップ数`).toBeGreaterThanOrEqual(2);
@@ -29,6 +29,25 @@ test.describe("使い方の図のデータ", () => {
         }
       }
     }
+  });
+
+  test("モードごとの図・統合済みの旧アドレスの図が、すべて用意されていて、モードごとに違う", () => {
+    for (const [hub, modes] of Object.entries(guideModes)) {
+      const keys = new Set<string>();
+      for (const m of modes) {
+        expect(toolGuides[m.guideId], `${hub} の ${m.mode} の図`).toBeTruthy();
+        keys.add(JSON.stringify(toolGuides[m.guideId].steps));
+      }
+      expect(keys.size, `${hub} のモードの図が使い回されています`).toBe(modes.length);
+    }
+    // 統合済みの旧アドレスは、すべて行き先の図がある（まとめ先の既定モードの図を流用していない）
+    const merged = availableIds.filter((id) => getToolById(id)?.mergedInto);
+    for (const id of merged) {
+      expect(pageGuides[id], `${id} の最初に出す図が決まっていません`).toBeTruthy();
+      expect(toolGuides[pageGuides[id]], `${id} の図`).toBeTruthy();
+    }
+    expect(pageGuides["pdf-split"]).toBe("pdf-edit@split");
+    expect(pageGuides["image-flip"]).toBe("image-rotate-flip@flip");
   });
 
   test("ツールごとに図が違う（同じ図の使い回しがない）", () => {
@@ -156,6 +175,52 @@ test.describe("使い方・よくある質問の幕", () => {
     expect(overflow).toBeLessThanOrEqual(1);
     await expect(page.locator(".gd-fig-sp").first()).toBeVisible();
     await expect(page.locator(".gd-fig-pc").first()).toBeHidden();
+  });
+
+  test("閉じている幕はモーダル扱いにしない（role=dialog・aria-modal は開いている間だけ）。背景を押すと閉じ、中身を押しても閉じない", async ({ page }) => {
+    await openTool(page, "image-compress");
+    const panel = page.getByTestId("guide-panel");
+    // 閉じている間：ページ全体へのドロップ（isModalOpen）が止まらないよう、モーダルの属性を付けない
+    await expect(panel).not.toHaveAttribute("role", "dialog");
+    await expect(panel).not.toHaveAttribute("aria-modal", "true");
+    expect(await page.evaluate(() => document.querySelectorAll('[role="dialog"][aria-modal="true"]').length)).toBe(0);
+
+    await page.getByTestId("guide-open-faq").click();
+    await expect(panel).toHaveAttribute("role", "dialog");
+    await expect(panel).toHaveAttribute("aria-modal", "true");
+    // 中身（質問）を押しても閉じない
+    await page.getByTestId("guide-faq").locator("summary").first().click();
+    await expect(panel).toBeInViewport();
+    // 背景（ガラスだけの所：見出しの行の余白）を押すと閉じ、ボタンにフォーカスが戻る
+    const head = page.locator(".ms-guide-head");
+    const box = (await head.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + 4);
+    await expect(panel).not.toBeInViewport();
+    await expect(page.getByTestId("guide-open-faq")).toBeFocused();
+    await expect(panel).not.toHaveAttribute("aria-modal", "true");
+
+    // 使い方を開いた状態でも、背景（スライドの下の余白）で閉じる
+    await page.getByTestId("guide-open-howto").click();
+    await expect(page.getByTestId("guide-figures")).toBeVisible();
+    await page.locator(".ms-guide-panel").click({ position: { x: 4, y: (page.viewportSize()!.height) - 4 } });
+    await expect(panel).not.toBeInViewport();
+  });
+
+  test("統合済みの旧アドレスは、そのモードの図から始まり、ツールでモードを切り替えると図も切り替わる", async ({ page }) => {
+    await openTool(page, "pdf-split");
+    await page.getByTestId("guide-open-howto").click();
+    await expect(page.locator('[data-testid="guide-step"][data-current]')).toContainText(toolGuides["pdf-edit@split"].steps[0].title);
+    await expect(page.getByTestId("guide-mode-split")).toHaveAttribute("aria-pressed", "true");
+    // 幕の中で、ほかのモードの使い方も見られる
+    await page.getByTestId("guide-mode-rotate").click();
+    await expect(page.locator('[data-testid="guide-step"][data-current]')).toContainText(toolGuides["pdf-edit@rotate"].steps[0].title);
+    await page.getByTestId("guide-close").click();
+
+    // ツールの画面で「ページ削除」に切り替えてから開くと、ページ削除の図
+    await page.getByTestId("pdf-edit-mode-delete").click();
+    await page.getByTestId("guide-open-howto").click();
+    await expect(page.locator('[data-testid="guide-step"][data-current]')).toContainText(toolGuides["pdf-edit@delete"].steps[0].title);
+    await expect(page.getByTestId("guide-count")).toHaveText(`1 / ${toolGuides["pdf-edit@delete"].steps.length}`);
   });
 
   test("使い方・よくある質問の文章は、閉じている間もHTMLに含まれる（検索エンジン向け）", async ({ request }) => {

@@ -7,8 +7,10 @@ import type { GuidePart, GuidePreviewKind, GuideStep, ToolGuide } from "@/lib/gu
  * （実装後の画面を自動で読み取った一覧と、src/components/tools/implementations/*.tsx を照らし合わせて作成）。
  * 画面の文字を変えたときは、ここも合わせて直すこと（tests/ui/tool-guide.spec.ts が、図の文字が画面にあるかを確かめる）。
  *
- * 統合済みの旧ツール（image-jpg-convert など。個別のアドレスは残し、まとめ先のツールの画面を出すもの）は、
- * まとめ先のツールの図を使う（src/components/guide/tool-guide-figures.tsx で引き当てる）。
+ * 1つの画面で操作（モード）を切り替えるツール（PDF編集の結合・分割など）は、モードごとに図を用意する
+ * （キーは「まとめ先のID@モード」。例：pdf-edit@split）。どのモードの図を出すかは guideModes・pageGuides で決める。
+ * 統合済みの旧ツール（pdf-split など。個別のアドレスは残し、まとめ先のツールを該当モードで開くもの）は、
+ * そのアドレスで開くモードの図を出す（pageGuides）。
  */
 
 // ---- 部品を作る小さな関数（データを読みやすくするため） ----
@@ -41,6 +43,9 @@ const finish = (runTitle: string, runLabel: string, context: GuidePart[], dl = "
   step(runTitle, [...context, run(runLabel)], context.length),
   { title: "ダウンロードする", parts: [...context, run(runLabel)], focus: "popup", popup: { label: dl } },
 ];
+
+/** PDF編集のモードのボタン（画面の並び順） */
+const PDF_MODES = ["結合", "分割", "ページ削除", "ページ抽出", "並び替え", "回転"];
 
 // よく使う見本のファイル名
 const IMG = "photo.jpg";
@@ -90,8 +95,24 @@ export const toolGuides: Record<string, ToolGuide> = {
     split: true,
     steps: [
       pick("画像を選ぶ", "画像をドラッグ&ドロップ"),
+      step("変換先の形式を選ぶ", [file("photo.png"), seg("変換先の形式", ["JPG", "PNG", "WebP"], 0), preview("image")], 1),
+      ...finish("変換する", "1件をJPGに変換する", [file("photo.png"), seg("変換先の形式", ["JPG", "PNG", "WebP"], 0)]),
+    ],
+  },
+  "image-format-convert@png": {
+    split: true,
+    steps: [
+      pick("画像を選ぶ", "画像をドラッグ&ドロップ"),
       step("変換先の形式を選ぶ", [file(IMG), seg("変換先の形式", ["JPG", "PNG", "WebP"], 1), preview("image")], 1),
       ...finish("変換する", "1件をPNGに変換する", [file(IMG), seg("変換先の形式", ["JPG", "PNG", "WebP"], 1)]),
+    ],
+  },
+  "image-format-convert@webp": {
+    split: true,
+    steps: [
+      pick("画像を選ぶ", "画像をドラッグ&ドロップ"),
+      step("変換先の形式を選ぶ", [file(IMG), seg("変換先の形式", ["JPG", "PNG", "WebP"], 2), preview("image")], 1),
+      ...finish("変換する", "1件をWebPに変換する", [file(IMG), seg("変換先の形式", ["JPG", "PNG", "WebP"], 2)]),
     ],
   },
   "pdf-to-image": {
@@ -116,6 +137,14 @@ export const toolGuides: Record<string, ToolGuide> = {
       pick("画像を選ぶ", "画像をドラッグ&ドロップ", [btns(["回転", "反転"], 0)]),
       step("向きを選ぶ", [btns(["回転", "反転"], 0), file(IMG), btns(["90°", "180°", "270°"], 0), preview("image")], 2),
       ...finish("回転する", "回転する", [btns(["回転", "反転"], 0), file(IMG), btns(["90°", "180°", "270°"], 0)]),
+    ],
+  },
+  "image-rotate-flip@flip": {
+    split: true,
+    steps: [
+      pick("「反転」を選んで画像を選ぶ", "画像をドラッグ&ドロップ", [btns(["回転", "反転"], 1)]),
+      step("反転の向きを選ぶ", [btns(["回転", "反転"], 1), file(IMG), btns(["左右反転", "上下反転"], 0), preview("image")], 2),
+      ...finish("反転する", "反転する", [btns(["回転", "反転"], 1), file(IMG), btns(["左右反転", "上下反転"], 0)]),
     ],
   },
   "image-adjust": {
@@ -186,13 +215,54 @@ export const toolGuides: Record<string, ToolGuide> = {
   },
 
   // ------------------------------------------------------------------ PDF
+  // PDF編集：結合（まとめ先の最初のモード）。ほかのモードは「pdf-edit@モード」
   "pdf-edit": {
     split: true,
     steps: [
-      step("やることを選ぶ", [btns(["結合", "分割", "ページ削除", "ページ抽出", "並び替え", "回転"], 0), drop("PDFをドラッグ&ドロップ（複数可）")], 0),
-      pick("PDFを選ぶ", "PDFをドラッグ&ドロップ（複数可）", [btns(["結合", "分割", "ページ削除", "ページ抽出", "並び替え", "回転"], 0)]),
+      step("やることを選ぶ", [btns(PDF_MODES, 0), drop("PDFをドラッグ&ドロップ（複数可）")], 0),
+      pick("PDFを選ぶ", "PDFをドラッグ&ドロップ（複数可）", [btns(PDF_MODES, 0)]),
       step("順番を確かめる", [file(PDF, true), file("document2.pdf"), btn("↑"), preview("pdf", "結合のプレビュー（上から順に結合）")], 1),
       ...finish("結合する", "2件のPDFを結合する", [file(PDF, true), file("document2.pdf")]).slice(0, 1),
+    ],
+  },
+  "pdf-edit@split": {
+    split: true,
+    steps: [
+      pick("「分割」を選んでPDFを選ぶ", "PDFをドラッグ&ドロップ", [btns(PDF_MODES, 1)]),
+      step("分け方を選ぶ", [file(PDF), seg(undefined, ["1ページごとに分割", "ページ範囲を指定"], 1), input("ページ範囲（カンマ区切りで複数指定可）", "1-3,5,8-10"), preview("pdf")], 1),
+      ...finish("分割する", "分割する", [file(PDF), seg(undefined, ["1ページごとに分割", "ページ範囲を指定"], 1), input("ページ範囲（カンマ区切りで複数指定可）", "1-3,5,8-10")], "ZIPでダウンロード"),
+    ],
+  },
+  "pdf-edit@delete": {
+    split: true,
+    steps: [
+      pick("「ページ削除」を選んでPDFを選ぶ", "PDFをドラッグ&ドロップ", [btns(PDF_MODES, 2)]),
+      step("削除するページを選ぶ", [file(PDF), btns(["1", "2", "3"], 1), preview("pdf")], 1),
+      ...finish("削除する", "1ページを削除する", [file(PDF), btns(["1", "2", "3"], 1)]),
+    ],
+  },
+  "pdf-edit@extract": {
+    split: true,
+    steps: [
+      pick("「ページ抽出」を選んでPDFを選ぶ", "PDFをドラッグ&ドロップ", [btns(PDF_MODES, 3)]),
+      step("抽出するページを入れる", [file(PDF), input("抽出するページ（全3ページ）", "1,3"), preview("pdf")], 1),
+      ...finish("抽出する", "ページを抽出する", [file(PDF), input("抽出するページ（全3ページ）", "1,3")]),
+    ],
+  },
+  "pdf-edit@reorder": {
+    split: true,
+    steps: [
+      pick("「並び替え」を選んでPDFを選ぶ", "PDFをドラッグ&ドロップ", [btns(PDF_MODES, 4)]),
+      step("順番を入れ替える", [file(PDF), btns(["↑", "↓"], 0), preview("pdf", "1番目・2番目・3番目")], 1),
+      ...finish("並び替える", "並び替えを適用する", [file(PDF), btns(["↑", "↓"], 0)]),
+    ],
+  },
+  "pdf-edit@rotate": {
+    split: true,
+    steps: [
+      pick("「回転」を選んでPDFを選ぶ", "PDFをドラッグ&ドロップ", [btns(PDF_MODES, 5)]),
+      step("回転の角度を選ぶ", [file(PDF), btns(["90°", "180°", "270°"], 0), preview("pdf")], 1),
+      ...finish("回転する", "回転する", [file(PDF), btns(["90°", "180°", "270°"], 0)]),
     ],
   },
   "pdf-fix": {
@@ -303,6 +373,13 @@ export const toolGuides: Record<string, ToolGuide> = {
       ...finish("変換する", "CSVに変換する", [btns(["Excel → CSV", "CSV → Excel"], 0), file(XLSX), table(4, 2)]),
     ],
   },
+  "excel-csv-convert@csv-to-excel": {
+    steps: [
+      pick("「CSV → Excel」を選んでCSVを選ぶ", "CSVファイルをドラッグ&ドロップ", [btns(["Excel → CSV", "CSV → Excel"], 1)]),
+      step("文字コードを選ぶ", [btns(["Excel → CSV", "CSV → Excel"], 1), file(CSV), select("文字コード", "自動判定"), table(4, 2)], 2),
+      ...finish("変換する", "Excelに変換する", [btns(["Excel → CSV", "CSV → Excel"], 1), file(CSV), select("文字コード", "自動判定")]),
+    ],
+  },
   "excel-merge": {
     steps: [
       step("結合するものを選ぶ", [btns(["Excelファイルを結合", "CSVファイルを結合"], 0), drop("Excel（.xlsx）・CSVをドラッグ&ドロップ（2〜20件）")], 0),
@@ -321,6 +398,13 @@ export const toolGuides: Record<string, ToolGuide> = {
       step("変換の向きを選ぶ", [btns(["CSV → JSON", "JSON → CSV"], 0), drop("CSVをドラッグ&ドロップ")], 0),
       pick("ファイルを選ぶ", "CSVをドラッグ&ドロップ", [btns(["CSV → JSON", "JSON → CSV"], 0)]),
       ...finish("変換する", "JSONに変換する", [btns(["CSV → JSON", "JSON → CSV"], 0), file(CSV), table(4, 2)]),
+    ],
+  },
+  "csv-json-convert@json-to-csv": {
+    steps: [
+      step("「JSON → CSV」を選んでJSONを貼り付ける", [btns(["CSV → JSON", "JSON → CSV"], 1), text("入力 (JSON配列)", ['[{"name": "Alice", "age": 30},', ' {"name": "Bob", "age": 25}]'])], 1),
+      step("CSVに変換する", [text("入力 (JSON配列)", ['[{"name": "Alice", "age": 30},', ' {"name": "Bob", "age": 25}]']), table(2, 2), run("CSVに変換する")], 2),
+      step("コピー・保存する", [text("変換結果（2行 × 2列）", ["name,age", "Alice,30", "Bob,25"]), btn("コピー"), btn(".csvをダウンロード")], 2),
     ],
   },
   "csv-replace": {
@@ -686,6 +770,65 @@ export const toolGuides: Record<string, ToolGuide> = {
   },
 };
 
+/** 1つの画面で操作（モード）を切り替えるツールの、モードごとの図（ツールの画面のボタンと同じ並び） */
+export type GuideModeOption = { mode: string; label: string; guideId: string };
+export const guideModes: Record<string, GuideModeOption[]> = {
+  "pdf-edit": [
+    { mode: "merge", label: "結合", guideId: "pdf-edit" },
+    { mode: "split", label: "分割", guideId: "pdf-edit@split" },
+    { mode: "delete", label: "ページ削除", guideId: "pdf-edit@delete" },
+    { mode: "extract", label: "ページ抽出", guideId: "pdf-edit@extract" },
+    { mode: "reorder", label: "並び替え", guideId: "pdf-edit@reorder" },
+    { mode: "rotate", label: "回転", guideId: "pdf-edit@rotate" },
+  ],
+  "image-rotate-flip": [
+    { mode: "rotate", label: "回転", guideId: "image-rotate-flip" },
+    { mode: "flip", label: "反転", guideId: "image-rotate-flip@flip" },
+  ],
+  "excel-csv-convert": [
+    { mode: "excel-to-csv", label: "Excel → CSV", guideId: "excel-csv-convert" },
+    { mode: "csv-to-excel", label: "CSV → Excel", guideId: "excel-csv-convert@csv-to-excel" },
+  ],
+  "csv-json-convert": [
+    { mode: "csv-to-json", label: "CSV → JSON", guideId: "csv-json-convert" },
+    { mode: "json-to-csv", label: "JSON → CSV", guideId: "csv-json-convert@json-to-csv" },
+  ],
+};
+
+/**
+ * 統合済みの旧アドレスで最初に出す図（そのアドレスで開くモード・形式の図）。
+ * ここにないアドレスは、そのツール（統合済みならまとめ先）の図を出す。
+ * src/components/tools/tool-registry.tsx の、旧アドレスごとの initialMode・initialFormat と合わせること。
+ */
+export const pageGuides: Record<string, string> = {
+  "pdf-merge": "pdf-edit",
+  "pdf-split": "pdf-edit@split",
+  "pdf-delete-pages": "pdf-edit@delete",
+  "pdf-extract-pages": "pdf-edit@extract",
+  "pdf-reorder-pages": "pdf-edit@reorder",
+  "pdf-rotate": "pdf-edit@rotate",
+  "image-rotate": "image-rotate-flip",
+  "image-flip": "image-rotate-flip@flip",
+  "image-jpg-convert": "image-format-convert",
+  "image-batch-convert": "image-format-convert",
+  "image-png-convert": "image-format-convert@png",
+  "image-webp-convert": "image-format-convert@webp",
+  "csv-to-excel": "excel-csv-convert@csv-to-excel",
+  "excel-to-csv": "excel-csv-convert",
+  "csv-to-json": "csv-json-convert",
+  "json-to-csv": "csv-json-convert@json-to-csv",
+};
+
+/** そのページで最初に出す図のID（hubId は、統合済みならまとめ先のID、そうでなければ自分のID） */
+export function initialGuideId(pageToolId: string, hubId: string): string {
+  return pageGuides[pageToolId] ?? hubId;
+}
+
+/** ツールの画面で選ばれているモードの図のID（モードの図がなければ null） */
+export function guideIdForMode(hubId: string, mode: string): string | null {
+  return guideModes[hubId]?.find((m) => m.mode === mode)?.guideId ?? null;
+}
+
 /**
  * 部品だけでは伝わりにくいステップの説明文（ツールID → ステップ番号（1から）→ 説明文）。
  * ほかのステップは、いま操作する部品から自動で作る（src/lib/guides/describe.ts）。
@@ -697,6 +840,14 @@ const descriptions: Record<string, Record<number, string>> = {
   "image-padding-text": { 3: "余白に表示する文字を入れ、文字の大きさと揃え方を選びます。" },
   "image-mosaic": { 2: "「＋ 範囲を追加」を押して、プレビューの枠を隠したい所に合わせます。" },
   "pdf-edit": { 3: "上から順に結合されます。「↑」などで順番を入れ替えられます。" },
+  "pdf-edit@split": { 1: "上の「分割」を選び、分けたいPDFを選びます。" },
+  "pdf-edit@delete": { 1: "上の「ページ削除」を選び、PDFを選びます。", 2: "プレビューで、削除するページを押して選びます。もう一度押すと選択が外れます。" },
+  "pdf-edit@extract": { 1: "上の「ページ抽出」を選び、PDFを選びます。", 2: "取り出すページを「1,3,5-7」のように入れます。入れた順番で出力されます。" },
+  "pdf-edit@reorder": { 1: "上の「並び替え」を選び、PDFを選びます。", 2: "「↑」「↓」で、ページの順番を入れ替えます。" },
+  "pdf-edit@rotate": { 1: "上の「回転」を選び、PDFを選びます。" },
+  "image-rotate-flip@flip": { 1: "上の「反転」を選び、画像を選びます。" },
+  "excel-csv-convert@csv-to-excel": { 1: "上の「CSV → Excel」を選び、CSVファイルを選びます。" },
+  "csv-json-convert@json-to-csv": { 1: "上の「JSON → CSV」を選び、JSONの配列を貼り付けます。", 3: "変換結果を「コピー」するか、「.csvをダウンロード」で保存します。" },
   "pdf-fix": { 3: "PDFの上を押すと、そこに置かれます。置いたあとはドラッグで動かせます。" },
   "pdf-to-excel": { 2: "読み取った表を確かめ、見出しのまとめ方やシートの分け方を選びます。" },
   "receipt-accounting-csv": { 3: "読み取った明細を表で確かめ、違うところは直します。" },

@@ -67,8 +67,8 @@ test.describe("画像圧縮の統合: 画面", () => {
     await page.getByTestId("compress-kind-size").click();
     await page.getByLabel("目標サイズ (KB)").fill("1");
     await expect(page.getByTestId("compress-target-missed")).toBeVisible({ timeout: 30_000 });
-    // 工程3：画像リサイズを統合したため、同じ画面の「サイズを変更する」を案内する
-    await expect(page.getByTestId("compress-target-missed")).toContainText("サイズを変更する");
+    // 工程3：画像リサイズを統合したため、同じ画面の「サイズを変更」を案内する（ボタン名と同じ）
+    await expect(page.getByTestId("compress-target-missed")).toContainText("「サイズを変更」で");
     await page.getByRole("button", { name: "圧縮する" }).click();
     await waitForSuccess(page, "完了");
     await expect(page.getByTestId("compress-result-missed")).toContainText("1KB");

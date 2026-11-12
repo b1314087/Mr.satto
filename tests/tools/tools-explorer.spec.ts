@@ -167,7 +167,7 @@ test("料金区分バッジ: 実装済みツールカードに通常/プレミ�
   // image-resize は requiredPlan: "standard"
   await main.getByRole("searchbox", { name: "ツールを検索" }).fill("画像リサイズ");
   const standardCard = main.getByRole("link", { name: "画像リサイズ" });
-  await expect(standardCard.getByText("通常", { exact: true })).toBeVisible();
+  await expect(standardCard.getByText("無料で使える", { exact: true })).toBeVisible();
 
   // PDF→Excel（元はプレミアム限定）のバッジは、ツール一覧データ（src/lib/tools/data.ts）の requiredPlan に従う。
   // 全ツールを一時的にスタンダード扱いにするスイッチ(ALL_TOOLS_STANDARD)が入っている間は
@@ -175,7 +175,7 @@ test("料金区分バッジ: 実装済みツールカードに通常/プレミ�
   // （工程4：以前はOCRで確かめていたが、OCRはPDF→テキスト（OCR対応）に統合したため、PDF→Excelで確かめる）
   const premiumTool = tools.find((t) => t.id === "pdf-to-excel");
   expect(premiumTool, "pdf-to-excel がツール一覧にない").toBeTruthy();
-  const expectedBadge = premiumTool!.requiredPlan === "premium" ? "プレミアム" : "通常";
+  const expectedBadge = premiumTool!.requiredPlan === "premium" ? "プレミアム" : "無料で使える";
   await main.getByRole("searchbox", { name: "ツールを検索" }).fill("PDF→Excel");
   const premiumCard = main.getByRole("link", { name: "PDF→Excel", exact: true });
   await expect(premiumCard.getByText(expectedBadge, { exact: true })).toBeVisible();

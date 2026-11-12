@@ -1306,6 +1306,21 @@ a[data-nav-pending="true"] {
   max-width: 100%;
 }
 /*
+ * 大きく表示：動画のプレビュー（.ms-fs-fill）は、元の動画が小さくても、画面に収まる大きさまで広げる。
+ * 中身を枠の幅いっぱいにし、動画の枠を「幅いっぱい・高さは画面に収まるまで」にする（映像は縦横比を保って、枠の中に収まる）。
+ */
+.ms-preview-fs .ms-fs-content:has(.ms-fs-fill) {
+  width: 100% !important;
+}
+.ms-preview-fs.ms-preview-fs video.ms-fs-fill {
+  width: 100%;
+  /* 上の操作バーと、動画の下のファイル名などの行の分をあける */
+  height: calc(100dvh - 15rem);
+  max-height: calc(100dvh - 15rem) !important;
+  object-fit: contain;
+  background-color: transparent;
+}
+/*
  * 大きく表示している枠の親（PreviewSplitLayout の sticky の列など）は、それだけで重なり順のまとまりを作るため、
  * そのままだと上の固定ヘッダー（z-40）の下に隠れる。大きく表示している間だけ、親も前に出す。
  */
@@ -2074,6 +2089,15 @@ a[data-nav-pending="true"] {
   .ms-guide-faq-scroll[hidden] {
     display: none;
   }
+  /* モードを切り替えるツール（PDF編集など）：どの操作の使い方を見るか */
+  .gd-modes {
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+  .gd-modes > button {
+    padding-inline: 0.75rem;
+    font-size: 0.8125rem;
+  }
   .ms-guide-loading {
     flex: 1 1 auto;
     display: flex;
@@ -2231,7 +2255,9 @@ a[data-nav-pending="true"] {
     grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
     align-items: center;
     gap: clamp(1.5rem, 4vw, 4rem);
-    padding: 0.5rem 0.25rem;
+    /* 隣のスライドの図の影が、いまのスライドの端にはみ出して見えないよう、スライドごとに切り取る（影の分の余白をとる） */
+    padding: 0.5rem 0.75rem;
+    overflow: hidden;
   }
   .gd-stage {
     min-width: 0;

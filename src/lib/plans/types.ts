@@ -28,9 +28,12 @@ export const OFFERED_PLAN_IDS = ["free", "premium"] as const satisfies readonly 
 /** Premiumの月額（税込・円）。表示と、Stripeの実際の価格との照合（src/lib/stripe/price-guard.ts）の両方がこの値を使う */
 export const PREMIUM_PRICE_YEN = 1100;
 
-/** 通常ツール（requiredPlan が "standard" のツール）の表示名。旧プラン名の「スタンダード」とは別の、ツールの区分の名前 */
+/**
+ * ツールの区分の表示名（ツールのカードのバッジ）。旧プラン名の「スタンダード」とは別の、ツールの区分の名前。
+ * requiredPlan が "standard" のツールは、無料プランで使える（以前の表示「通常」は、何が通常なのか伝わらなかったため変更）。
+ */
 export const TOOL_TIER_LABELS: Record<RequiredPlan, string> = {
-  standard: "通常",
+  standard: "無料で使える",
   premium: "プレミアム",
 };
 

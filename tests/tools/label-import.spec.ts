@@ -220,7 +220,8 @@ test.describe("Excel・CSVの読み込み", () => {
     const info = page.getByTestId("label-import-info");
     await expect(info).toContainText("「宛名リスト.xlsx」（シート: 宛名）から3件を読み込みました");
     await expect(page.getByRole("button", { name: "ラベルごとに違う内容" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByLabel("ラベルの区切り方")).toHaveValue("line");
+    // 区切り方は、プルダウンからセグメントボタンに変わった（押している状態は aria-pressed）
+    await expect(page.getByRole("button", { name: "1行を1枚にする", exact: true })).toHaveAttribute("aria-pressed", "true");
     const cells = page.getByTestId("label-cell");
     await expect(cells.nth(0)).toContainText("山田 太郎");
     await expect(cells.nth(0)).toContainText("東京都千代田区千代田1-1");

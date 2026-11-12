@@ -18,9 +18,8 @@ export const metadata: Metadata = {
   },
   description: siteConfig.description,
   applicationName: siteConfig.name,
-  alternates: {
-    canonical: "/",
-  },
+  // canonical は、各ページで自分のURLを指定する（ここで "/" を指定すると、指定のないページ（404・アカウント画面など）まで
+  // トップページを指してしまうため、トップページの canonical は src/app/page.tsx で指定する）
   openGraph: {
     type: "website",
     locale: siteConfig.locale,

@@ -745,7 +745,7 @@ export function ImageLayoutTool() {
 
       <div className="flex w-full flex-col gap-5 lg:w-80">
         <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">キャンバスサイズ</h3>
+          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">キャンバスサイズ</h2>
           <select
             aria-label="キャンバスサイズ"
             value={paperMode}
@@ -822,7 +822,7 @@ export function ImageLayoutTool() {
         </section>
 
         <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">グリッドに配置</h3>
+          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">グリッドに配置</h2>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">画像をマス目へ一括配置します。</p>
           <label className="flex items-center justify-between text-sm">
             <span>行数を自動計算</span>
@@ -907,7 +907,7 @@ export function ImageLayoutTool() {
         </section>
 
         <section className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">出力</h3>
+          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">出力</h2>
           <div className="ms-seg">
             {(["png", "jpeg", "pdf"] as ImageLayoutOutputFormat[]).map((fmt) => (
               <button aria-pressed={outputFormat === fmt}

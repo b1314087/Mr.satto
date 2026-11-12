@@ -4,7 +4,7 @@ import { uploadWhenReady } from "../helpers/tool-ready";
 import { NetworkRecorder, findLeakedRequests, findSuspiciousApiUploads, findSuspiciousExternalUploads } from "../helpers/network-guard";
 import { fieldDisplayId } from "@/lib/pdf-template/types";
 import { TEMPLATE_FIELDS } from "../fixtures/template-layout";
-import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
+import { choosePdfFixOperation, clickPdfCanvas } from "../helpers/pdf-fix-operation";
 
 /**
  * privacy回帰テスト（Phase 14）。
@@ -68,13 +68,13 @@ test("pdf-fill-annotate操作中、PDF・入力したテキスト・画像が自
 
   // テキスト
   await choosePdfFixOperation(page, "テキスト");
-  await page.locator('[data-testid="pdf-annotate-canvas"]').click({ position: { x: 50, y: 50 } });
+  await clickPdfCanvas(page, 50, 50);
   await page.locator('[data-testid="pdf-annotate-object-list"]').locator('textarea').first().fill(marker);
   await page.locator('[data-testid="pdf-annotate-object-list"]').locator('textarea').first().blur();
 
   // チェック
   await choosePdfFixOperation(page, "チェック");
-  await page.locator('[data-testid="pdf-annotate-canvas"]').click({ position: { x: 100, y: 100 } });
+  await clickPdfCanvas(page, 100, 100);
 
   // 手書き
   await choosePdfFixOperation(page, "手書き");
@@ -91,7 +91,7 @@ test("pdf-fill-annotate操作中、PDF・入力したテキスト・画像が自
   // 画像
   await choosePdfFixOperation(page, "画像");
   await page.locator('input[type="file"]').last().setInputFiles(fixtures.png);
-  await page.locator('[data-testid="pdf-annotate-canvas"]').click({ position: { x: 150, y: 200 } });
+  await clickPdfCanvas(page, 150, 200);
 
   // 書き出し・ダウンロード
   await page.getByRole("button", { name: "PDFを書き出す" }).click();
@@ -121,7 +121,7 @@ test("pdf-fill-annotate(Phase17: 図形・回転・複製・印影)操作中、�
 
   // 図形（矩形）を配置
   await choosePdfFixOperation(page, "図形");
-  await page.locator('[data-testid="pdf-annotate-canvas"]').click({ position: { x: 60, y: 60 } });
+  await clickPdfCanvas(page, 60, 60);
 
   // 配置した図形を複製
   await page.locator('[data-testid="pdf-annotate-object-list"]').getByRole("button", { name: "複製" }).first().click();
@@ -129,7 +129,7 @@ test("pdf-fill-annotate(Phase17: 図形・回転・複製・印影)操作中、�
   // 印影（電子印鑑生成PNGを画像オブジェクトとして取り込む）を配置し、回転させる
   await choosePdfFixOperation(page, "印影");
   await page.locator('input[type="file"]').last().setInputFiles(fixtures.stampTransparentPng);
-  await page.locator('[data-testid="pdf-annotate-canvas"]').click({ position: { x: 420, y: 420 } });
+  await clickPdfCanvas(page, 420, 420);
   const rotateButton = page
     .locator('[data-testid="pdf-annotate-object-list"]')
     .getByRole("button", { name: /回転/ })

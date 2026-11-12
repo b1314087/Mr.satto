@@ -7,12 +7,12 @@ import path from "node:path";
 
 async function fillBasic(page: import("@playwright/test").Page, rows = 2) {
   await page.getByRole("button", { name: "自動採番" }).click();
-  const company = page.getByPlaceholder("会社名・屋号");
+  const company = page.getByLabel("会社名・屋号", { exact: true });
   await company.nth(0).fill("株式会社お客様商事");
-  await page.getByPlaceholder("担当者名").nth(0).fill("山田 太郎");
-  await page.getByPlaceholder("住所").nth(0).fill("東京都千代田区1-1-1");
+  await page.getByLabel("担当者名", { exact: true }).nth(0).fill("山田 太郎");
+  await page.getByLabel("住所", { exact: true }).nth(0).fill("東京都千代田区1-1-1");
   await company.nth(1).fill("株式会社テスト工務店");
-  await page.getByPlaceholder("住所").nth(1).fill("大阪府大阪市2-2-2");
+  await page.getByLabel("住所", { exact: true }).nth(1).fill("大阪府大阪市2-2-2");
   await page.getByPlaceholder("商品名・作業内容").first().fill("外壁塗装工事");
   await page.getByPlaceholder("0", { exact: true }).first().fill("10000");
   for (let i = 1; i < rows; i++) {

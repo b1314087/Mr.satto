@@ -25,6 +25,8 @@ export const metadata: Metadata = {
   title: "アカウント",
   description: "現在のプラン・契約状況を確認できます。",
   robots: { index: false, follow: false },
+  // 検索には出さないが、canonical は自分のURLを指す（トップページを指さない）
+  alternates: { canonical: "/account" },
 };
 
 function formatDate(iso: string | null): string {

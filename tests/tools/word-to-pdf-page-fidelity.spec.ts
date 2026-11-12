@@ -19,14 +19,25 @@ const DIR = path.join(__dirname, "..", "fixtures", "static", "word-page-fidelity
 
 const files = fs.readdirSync(DIR).filter((f) => f.endsWith(".docx")).sort();
 
-test.describe.configure({ mode: "parallel" });
+const readExpect = (file: string): WordExpect => JSON.parse(fs.readFileSync(path.join(DIR, file.replace(".docx", ".expect.json")), "utf-8"));
 
-for (const file of files) {
-  const e: WordExpect = JSON.parse(fs.readFileSync(path.join(DIR, file.replace(".docx", ".expect.json")), "utf-8"));
+const run = (file: string, e: WordExpect) =>
   test(`${file.replace(".docx", "")} ${e.title}：ページ数・改ページの位置・欠落`, async ({ page }) => {
     test.setTimeout(180_000);
     const { pdf, screen } = await convert(page, path.join(DIR, file));
     const problems = audit(pdf, screen, e);
     expect(problems, problems.join("\n")).toEqual([]);
   });
-}
+
+test.describe("ページの境目が決まる文書（A・B・C）", () => {
+  test.describe.configure({ mode: "parallel" });
+  for (const file of files) if (readExpect(file).how !== "D") run(file, readExpect(file));
+});
+
+// 自然に流れる長い文書（D）は、変換と、出来上がったPDFの読み取りが特に重い。並べて同時に動かすと、
+// テストの道具（Playwright）の中の確認で止まることがあった（監査の「原因未確定」w22・w23。1つずつ動かすと、問題は0件）。
+// アプリの不具合ではないため、この2件は1つずつ順番に動かす
+test.describe("自然に流れる文書（D・参考）", () => {
+  test.describe.configure({ mode: "serial" });
+  for (const file of files) if (readExpect(file).how === "D") run(file, readExpect(file));
+});

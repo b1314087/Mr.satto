@@ -293,7 +293,8 @@ test("audio-extract: 音声のない動画では、分かりやすいエラー�
   await page.goto("/tools/audio-extract");
   await uploadAndWait(page, fixtures.webm);
   await page.getByRole("button", { name: "音声を取り出す" }).click();
-  await expect(page.getByText("音声が含まれていません", { exact: false }).first()).toBeVisible({ timeout: 30_000 });
+  // ツール本体のエラー表示を確かめる（同じ言葉が、閉じている「よくある質問」の幕にもあるため、ツールの枠の中に絞る）
+  await expect(page.locator(".ms-tool-panel").getByText("音声が含まれていません", { exact: false }).first()).toBeVisible({ timeout: 30_000 });
 });
 
 test("licenses: ライセンス表記ページが表示され、フッターからリンクされている", async ({ page }) => {

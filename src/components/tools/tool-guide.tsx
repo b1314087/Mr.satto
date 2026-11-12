@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ComponentType } from "react";
 import type { ToolFaqItem } from "@/lib/seo/tool-content";
+import { useToolMode } from "@/lib/guides/tool-mode";
+import type { GuideModeOption } from "@/lib/guides/tool-guides";
 
 /**
  * ツールページの「使い方」「よくある質問」（全ツール共通）。
@@ -12,13 +14,38 @@ import type { ToolFaqItem } from "@/lib/seo/tool-content";
  *   最後のページの「わかった」で閉じる。図とスライドの部品は、初めて開いたときに読み込む（ページの最初の読み込みを重くしない）。
  *   文章の手順（検索エンジン向けの説明でもある）は「文章で読む」に入れて、ページのHTMLにはそのまま含める。
  * - よくある質問：文字だけ。質問を押すと答えが開く（いくつでも同時に開ける）。内容は構造化データ（FAQPage）と同じ。
- * - 閉じる：「閉じる」・Escキー・（使い方の最後のページの）「わかった」。開いている間は後ろの画面を操作できない
+ * - 閉じる：「閉じる」・Escキー・幕の背景（図・文字・ボタンのない、ガラスだけの所）を押す・（使い方の最後のページの）「わかった」。
+ *   開いている間は後ろの画面を操作できない
  *   （フォーカスは幕の中だけを回る）。閉じると、押したボタンにフォーカスが戻る。
  *   幕はツールの外にあるので、開け閉めしてもツールの入力・ファイル・設定はそのまま。
  * - 幕の中身は、閉じている間もHTMLに含める（読み込みや検索で内容が分かるように）。閉じている間は見えず、操作もできない。
+ * - role="dialog" と aria-modal="true" は、開いている間だけ付ける。閉じている幕をモーダル扱いすると、
+ *   ページ全体へのファイルのドロップ（src/lib/drop/page-file-drop.ts の isModalOpen）が止まってしまうため。
+ * - 1つの画面で操作（モード）を切り替えるツール（PDF編集など）は、使い方の上にモードのボタンを出し、
+ *   幕を開いたときは、ツールの画面でいま選ばれているモードの図を出す（src/lib/guides/tool-mode.ts）。
+ *   統合済みの旧アドレス（/tools/pdf-split など）は、そのアドレスで開くモードの図から始める。
  * 見た目は src/app/globals.css の .ms-guide-* と .gd-*。
  */
 type Tab = "howto" | "faq";
+
+/** 押すと幕が閉じる「背景」：ガラスだけの所（並べるための入れ物）。図・文字・ボタンなどの中身を押したときは閉じない */
+const BACKDROP_SELECTOR = [
+  ".ms-guide-panel",
+  ".ms-guide-head",
+  ".ms-guide-heading",
+  ".ms-guide-actions",
+  ".ms-guide-section",
+  ".ms-guide-faq",
+  ".gd-slider",
+  ".gd-viewport",
+  ".gd-slides-track",
+  ".gd-slide",
+  ".gd-nav",
+].join(",");
+
+function isBackdrop(target: EventTarget | null): boolean {
+  return target instanceof Element && target.matches(BACKDROP_SELECTOR);
+}
 
 type SlidesProps = {
   toolId: string;
@@ -28,16 +55,43 @@ type SlidesProps = {
   onDone: () => void;
   active: boolean;
 };
-type SlidesModule = { Slides: ComponentType<SlidesProps>; count: (toolId: string) => number };
+type SlidesModule = {
+  Slides: ComponentType<SlidesProps>;
+  count: (guideId: string) => number;
+  initialGuideId: (pageToolId: string, hubId: string) => string;
+  guideIdForMode: (hubId: string, mode: string) => string | null;
+  modes: Record<string, GuideModeOption[]>;
+};
 
-export function ToolGuide({ toolId, toolName, howTo, faq }: { toolId: string; toolName: string; howTo: string[]; faq: ToolFaqItem[] }) {
+/**
+ * toolId：このページのツールID（統合済みの旧アドレスなら旧ID）。hubId：統合済みならまとめ先のID（そうでなければ toolId と同じ）
+ */
+export function ToolGuide({
+  toolId,
+  hubId = toolId,
+  toolName,
+  howTo,
+  faq,
+}: {
+  toolId: string;
+  hubId?: string;
+  toolName: string;
+  howTo: string[];
+  faq: ToolFaqItem[];
+}) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("howto");
   const [page, setPage] = useState(0);
   const [mod, setMod] = useState<SlidesModule | null>(null);
+  // ツールの画面で選ばれているモード（知らせないツールでは null）
+  const toolMode = useToolMode();
+  // 幕の中のモードのボタンで選んだ図（開くたびに解除して、ツールの画面のモードに合わせる）
+  const [pickedGuide, setPickedGuide] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const returnRef = useRef<HTMLButtonElement | null>(null);
+  // 背景で押し始めたか（中身で押し始めて背景で離したときは閉じない）
+  const downOnBackdropRef = useRef(false);
   const titleId = useId();
   const panelId = useId();
 
@@ -45,6 +99,7 @@ export function ToolGuide({ toolId, toolName, howTo, faq }: { toolId: string; to
     returnRef.current = from;
     setTab(next);
     if (next === "howto") setPage(0);
+    setPickedGuide(null);
     setOpen(true);
   };
 
@@ -59,7 +114,14 @@ export function ToolGuide({ toolId, toolName, howTo, faq }: { toolId: string; to
     if (!open || tab !== "howto" || mod) return;
     let alive = true;
     import("@/components/guide/tool-guide-figures").then((m) => {
-      if (alive) setMod({ Slides: m.ToolGuideSlides, count: m.guideStepCount });
+      if (alive)
+        setMod({
+          Slides: m.ToolGuideSlides,
+          count: m.guideStepCount,
+          initialGuideId: m.initialGuideId,
+          guideIdForMode: m.guideIdForMode,
+          modes: m.guideModes,
+        });
     });
     return () => {
       alive = false;
@@ -108,7 +170,12 @@ export function ToolGuide({ toolId, toolName, howTo, faq }: { toolId: string; to
     panelRef.current?.querySelector(".ms-guide-faq-scroll")?.scrollTo({ top: 0 });
   }, [tab]);
 
-  const total = mod ? mod.count(toolId) : 0;
+  // 出す図：幕で選んだモード → ツールの画面のモード → このページで最初に出す図
+  const guideId = mod
+    ? (pickedGuide ?? (toolMode ? mod.guideIdForMode(hubId, toolMode) : null) ?? mod.initialGuideId(toolId, hubId))
+    : toolId;
+  const modeOptions = mod?.modes[hubId] ?? [];
+  const total = mod ? mod.count(guideId) : 0;
   const Slides = mod?.Slides;
 
   return (
@@ -151,11 +218,18 @@ export function ToolGuide({ toolId, toolName, howTo, faq }: { toolId: string; to
         <div
           ref={panelRef}
           id={panelId}
-          role="dialog"
-          aria-modal="true"
+          role={open ? "dialog" : undefined}
+          aria-modal={open ? "true" : undefined}
           aria-labelledby={titleId}
           className="ms-guide-panel"
           data-testid="guide-panel"
+          onPointerDown={(e) => {
+            downOnBackdropRef.current = isBackdrop(e.target);
+          }}
+          onClick={(e) => {
+            if (open && downOnBackdropRef.current && isBackdrop(e.target)) close();
+            downOnBackdropRef.current = false;
+          }}
         >
           <div className="ms-guide-head">
             <div className="ms-guide-heading">
@@ -218,8 +292,34 @@ export function ToolGuide({ toolId, toolName, howTo, faq }: { toolId: string; to
             className="ms-guide-section ms-guide-howto"
             data-testid="guide-howto"
           >
+            {modeOptions.length > 0 && (
+              <div className="ms-seg gd-modes" role="group" aria-label="どの操作の使い方を見るか" data-testid="guide-modes">
+                {modeOptions.map((m) => (
+                  <button
+                    key={m.guideId}
+                    type="button"
+                    aria-pressed={guideId === m.guideId}
+                    data-testid={`guide-mode-${m.mode}`}
+                    onClick={() => {
+                      setPickedGuide(m.guideId);
+                      setPage(0);
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
             {Slides ? (
-              <Slides toolId={toolId} howTo={howTo} index={page} onIndex={setPage} onDone={close} active={open && tab === "howto"} />
+              <Slides
+                key={guideId}
+                toolId={guideId}
+                howTo={howTo}
+                index={page}
+                onIndex={setPage}
+                onDone={close}
+                active={open && tab === "howto"}
+              />
             ) : (
               <div className="ms-guide-loading" aria-hidden="true">
                 <span />

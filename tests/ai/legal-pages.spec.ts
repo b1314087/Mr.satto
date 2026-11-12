@@ -25,6 +25,10 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("通常の記入済みPDF→Excel（自動抽出・テンプレート）");
     expect(text).toContain("「AIで表を読み取る」は、PDF→Excelツールで");
     expect(text).toContain("通常のPDF→Excel、通常の記入済みPDF→Excel");
+    // PowerPoint白黒反転の「AIの判断で、きれいに反転する」（縮小した画像だけを送る・ファイルは送らない・利用枠は共通）
+    expect(text).toContain("「AIの判断で、きれいに反転する」は、PowerPoint白黒反転ツールで");
+    expect(text).toContain("PowerPointファイルそのもの、カラーの写真・イラスト、画像以外の文字や図形は送りません");
+    expect(text).toContain("第2条の2のすべてのAIの機能で共通です");
     expect(text).toContain("新規のお申し込みを終了");
     expect(text).toContain("移行が完了するまで");
     expect(text).not.toMatch(/スタンダードプランが月額|550円（税込）/);
@@ -79,6 +83,8 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("「記入済みPDF→Excel」は、1回1ページまで");
     expect(text).toContain("「記入済みPDF→Excel」の「AIで項目を読み取る」補助");
     expect(text).toContain("「PDF→Excel」の「AIで表を読み取る」補助");
+    expect(text).toContain("「PowerPoint白黒反転」の「AIの判断で、きれいに反転する」補助");
+    expect(text).toContain("スライドの中の画像を縮小したもので、ファイルそのものは送りません");
     expect(text).not.toContain("プレミアム対象ツール");
     expect(text).not.toContain("通常ツールを利用可能");
   });
@@ -88,6 +94,8 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     const text = await page.locator("main").innerText();
     expect(text).toContain("月額1,100円（税込）");
     expect(text).toContain("移行が完了するまで、ご契約時の料金で請求されます");
+    expect(text).toContain("PowerPoint白黒反転の「AIの判断で、きれいに反転する」補助");
+    expect(text).toContain("PowerPointファイルそのものは送りません");
     expect(text).not.toMatch(/スタンダードプラン: 月額/);
   });
 });

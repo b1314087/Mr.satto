@@ -100,7 +100,19 @@ export const AI_TRIAL_LIMIT_MICRO_USD = 600_000;
  */
 export type TrialOfferState = "guest" | "available" | "active" | "hidden";
 
-export function trialOfferState(args: { signedIn: boolean; subscriptionPremium: boolean; grantActive: boolean; trialUsed: boolean }): TrialOfferState {
+export function trialOfferState(args: {
+  signedIn: boolean;
+  subscriptionPremium: boolean;
+  grantActive: boolean;
+  trialUsed: boolean;
+  /**
+   * 会員登録・ログインが使える環境か（Supabaseの設定があるか。src/lib/supabase/config.ts の isSupabaseConfigured）。
+   * 使えない環境では、会員登録が「準備中」なので、「会員登録して無料でためす」は案内しない（hidden）。
+   * 省略時は使えるものとして扱う（本番の動作は変わらない）。
+   */
+  signupAvailable?: boolean;
+}): TrialOfferState {
+  if (args.signupAvailable === false) return "hidden";
   if (!args.signedIn) return "guest";
   if (args.subscriptionPremium) return "hidden";
   if (args.grantActive) return "active";

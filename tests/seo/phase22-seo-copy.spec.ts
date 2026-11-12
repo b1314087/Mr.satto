@@ -10,6 +10,7 @@ import { buildFaqPage, buildOfferDescription } from "@/lib/seo/structured-data";
 import { categories, getCategoryToolsLabel } from "@/lib/tools/categories";
 import { tools } from "@/lib/tools/data";
 import { OFFERED_PLAN_IDS } from "@/lib/plans/types";
+import { EVENT_FILE_ACCEPT } from "@/lib/calendar/event-file";
 
 /**
  * 工程10: ツール・カテゴリのSEO文（メタディスクリプション・FAQ・FAQPage構造化データ・カテゴリ紹介文）が、
@@ -150,7 +151,7 @@ test.describe("SEO文: 設定が変わったときの復活・既存の切り替
     const fiscal = allText(adaptToolSeoContentWith(toolSeoContent["fiscal-calendar"], off)).join("\n");
     expect(fiscal).not.toMatch(/AI|画像|外部/);
     // 課金オフでも、Excel・CSV・PDFの取り込みの説明は残る
-    expect(fiscal).toContain("Excel（.xlsx）・CSV・PDF");
+    expect(fiscal).toContain("Excel（.xlsx・.xlsm）・CSV・PDF");
   });
 });
 
@@ -170,7 +171,7 @@ test.describe("年度カレンダー: 通常のブラウザ内処理とAI利用�
     const faq = content().faq;
     const imp = faq.find((f) => f.question.startsWith("予定表のファイル"));
     expect(imp?.question).toBe("予定表のファイル（Excel・CSV・PDF・画像）を読み込めますか？");
-    expect(imp?.answer).toContain("Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）");
+    expect(imp?.answer).toContain("Excel（.xlsx・.xlsm）・CSV・PDF・画像（PNG・JPG）");
     expect(imp?.answer).toContain("同意したときだけ");
     expect(imp?.answer).toContain("外部のAIサービス");
     const upload = faq.find((f) => f.question === "作成したファイルはサーバーに送信されますか？");
@@ -183,14 +184,16 @@ test.describe("年度カレンダー: 通常のブラウザ内処理とAI利用�
 
   test("操作手順は、画像・スキャンPDFがAIで読まれること、同意したときだけ送ることを案内している", () => {
     const step = content().howTo.find((s) => s.startsWith("予定を入れたいとき"));
-    expect(step).toContain("Excel（.xlsx）・CSV・PDF・画像（PNG・JPG）");
+    expect(step).toContain("Excel（.xlsx・.xlsm）・CSV・PDF・画像（PNG・JPG）");
     expect(step).toContain("同意したときだけ");
   });
 
-  test("対応形式の記載は、実装が受け付けるファイルの種類と一致している", async () => {
-    const { EVENT_FILE_ACCEPT } = await import("@/lib/calendar/event-file");
+  test("対応形式の記載は、実装が受け付けるファイルの種類と一致している", () => {
     const ext = EVENT_FILE_ACCEPT.split(",").filter((s) => s.startsWith("."));
     expect(ext.sort()).toEqual([".csv", ".jpeg", ".jpg", ".pdf", ".png", ".xlsm", ".xlsx"]);
+    // 説明文（操作手順・FAQ）にも、受け付けるExcelの形式（.xlsx・.xlsm）が書かれている
+    const step = content().howTo.find((s) => s.startsWith("予定を入れたいとき"));
+    expect(step).toContain("Excel（.xlsx・.xlsm）");
   });
 
   test("FAQPage構造化データの内容が、画面に出すFAQと一致している", () => {

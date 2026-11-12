@@ -6,7 +6,7 @@ import type { CategoryId } from "@/lib/tools/types";
 
 export const metadata: Metadata = {
   title: "ツール一覧",
-  description: "画像・PDF・ファイル・CSV/Excelなど、全ツールを検索・カテゴリから探せます。",
+  description: "画像・PDF・Word・Excel・CSV・動画・音声・帳票など、Mr.Sattoの全ツールの一覧です。ツール名やキーワードで検索したり、カテゴリから探したりできます。ファイルはブラウザの中で処理します。",
   alternates: {
     canonical: "/tools",
   },

@@ -8,6 +8,8 @@ import { PreviewFullscreenFrame } from "./preview-fullscreen";
  *   設定を下までスクロールしても見え続ける。プレビューが画面より高いときは、枠の中でスクロールできる。
  * - プレビューがまだ無いとき（ファイルを選ぶ前など）は、右の列を空けず、左の入力欄を全幅に広げる。
  * - スマホ幅: これまでどおり、設定 → プレビューの順に縦へ並べる(固定しない)。
+ * - after（任意）: プレビューを見てから行う操作（PDF出力など）。PCでは左の列の設定の下、
+ *   スマホではプレビューの下に置く。手順の番号（…→プレビュー→出力）と、画面の並びを、PC・スマホの両方で一致させるため。
  *
  * 使い方: 設定やボタンなど「操作する部分」を children に、プレビュー部分を preview に渡す。
  * プレビュー側に data-testid="tool-preview" を付ける構造は、そのまま preview の中に置く。
@@ -16,12 +18,15 @@ import { PreviewFullscreenFrame } from "./preview-fullscreen";
 export function PreviewSplitLayout({
   preview,
   children,
+  after,
   previewWidth = "md",
 }: {
   /** 右側(スマホでは下)に固定表示するプレビュー */
   preview: ReactNode;
   /** 左側(スマホでは上)の、設定・入力・ボタンなど */
   children: ReactNode;
+  /** プレビューの後に行う操作（PDF出力など）。PCでは左の列の下、スマホではプレビューの下 */
+  after?: ReactNode;
   /** プレビュー列の幅。sm=細め / md=標準 / lg=広め(画像など大きいプレビュー向け) */
   previewWidth?: "sm" | "md" | "lg";
 }) {
@@ -37,6 +42,23 @@ export function PreviewSplitLayout({
     return (
       <div className="grid grid-cols-1 gap-6" data-preview-split data-preview-empty>
         <div className="flex min-w-0 flex-col gap-6">{children}</div>
+        {after && <div className="flex min-w-0 flex-col gap-6">{after}</div>}
+      </div>
+    );
+  }
+  if (after) {
+    // PC：左の列に「設定」と「出力」を上下に、右の列にプレビューを2段ぶち抜きで置く。
+    // 2段目を 1fr にして、プレビューが高いときの余りを2段目（出力の下）に回す（設定と出力の間を空けない）。
+    // スマホ：HTMLの順（設定 → プレビュー → 出力）にそのまま並ぶ。
+    return (
+      <div className={`grid grid-cols-1 gap-6 ${cols} lg:grid-rows-[auto_1fr] lg:items-start`} data-preview-split>
+        <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-1">{children}</div>
+        <div className="min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto">
+          <PreviewFullscreenFrame>{preview}</PreviewFullscreenFrame>
+        </div>
+        <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-2" data-preview-after>
+          {after}
+        </div>
       </div>
     );
   }

@@ -717,7 +717,10 @@ test.describe("4-1: 画像ホワイトボード", () => {
     const w = Number(await page.getByLabel("キャンバスの幅(px)").inputValue());
     expect(w).toBeGreaterThan(1200);
     // 書き出し（解像度 2倍）。出力の大きさは キャンバス×2
-    await page.getByTestId("whiteboard-export-scale").selectOption("2");
+    // 解像度は、プルダウンからセグメントボタン（role="radio"）に変わった
+    const scale2 = page.getByTestId("whiteboard-export-scale").getByRole("radio", { name: "2倍", exact: true });
+    await scale2.click();
+    await expect(scale2).toHaveAttribute("aria-checked", "true");
     const h = Number(await page.getByLabel("キャンバスの高さ(px)").inputValue());
     await expect(page.getByTestId("whiteboard-export-note")).toContainText(`${w * 2}×${h * 2}px`);
     await page.getByRole("button", { name: "書き出す", exact: true }).click();

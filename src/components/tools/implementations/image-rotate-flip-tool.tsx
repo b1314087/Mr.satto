@@ -13,6 +13,7 @@ import { useDownscaledImage, useObjectUrl } from "@/components/tools/implementat
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useAnnounceToolMode } from "@/lib/guides/tool-mode";
 
 /**
  * 画像の回転・反転の共通画面（画像回転ページ・画像反転ページで共用）。
@@ -44,6 +45,8 @@ function activeClass(active: boolean): string {
 export function ImageRotateFlipTool({ initialMode = "rotate" }: { initialMode?: TransformMode }) {
   const [file, setFile] = useState<File | null>(null);
   const [mode, setMode] = useState<TransformMode>(initialMode);
+  // 使い方の幕に、いま選ばれているモードを知らせる（幕を開くと、このモードの使い方の図が出る）
+  useAnnounceToolMode(mode);
   const [degrees, setDegrees] = useState<Degrees>(90);
   const [direction, setDirection] = useState<Direction>("horizontal");
 

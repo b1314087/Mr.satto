@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CsvToJsonTool } from "./csv-to-json-tool";
 import { JsonToCsvTool } from "./json-to-csv-tool";
 import { CSV_JSON_MODES, getCsvJsonMode, type CsvJsonMode } from "@/lib/tools/csv-json-modes";
+import { useAnnounceToolMode } from "@/lib/guides/tool-mode";
 
 /**
  * CSV・JSON変換の総合画面。「CSV → JSON」と「JSON → CSV」を、操作の切り替えで使い分ける。
@@ -29,6 +30,8 @@ function activeClass(active: boolean): string {
 
 export function CsvJsonConvertTool({ initialMode = "csv-to-json" }: CsvJsonConvertToolProps) {
   const [mode, setMode] = useState<CsvJsonMode>(initialMode);
+  // 使い方の幕に、いま選ばれているモードを知らせる（幕を開くと、このモードの使い方の図が出る）
+  useAnnounceToolMode(mode);
   const info = getCsvJsonMode(mode);
 
   return (

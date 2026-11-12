@@ -58,7 +58,17 @@ function showsAiBadge(tool: Tool): boolean {
  *   （ホバーで浮かない・枠の色も変えない。まだ使えない印象を与えないため）。
  * - カード全体が1つのリンク（<a>）。JavaScriptでの遷移には置き換えていない。
  */
-export function ToolCard({ tool, compact = false }: { tool: Tool; compact?: boolean }) {
+export function ToolCard({
+  tool,
+  compact = false,
+  headingLevel = "h3",
+}: {
+  tool: Tool;
+  compact?: boolean;
+  /** カードのツール名の見出しの階層。ページの見出し（h1）の直下に並べる一覧では h2 にする（h1 → h3 と飛ばさない） */
+  headingLevel?: "h2" | "h3";
+}) {
+  const Heading = headingLevel;
   const category = getCategory(tool.category);
   const isComingSoon = tool.status === "coming-soon";
 
@@ -89,13 +99,13 @@ export function ToolCard({ tool, compact = false }: { tool: Tool; compact?: bool
   // 1画面に並べられるツールの数を保ちつつ、用途が分かるようにするための、低いカード。
   // 説明は1行に収まらない分を「…」で省略する（カードの高さをそろえるため）。全文は title で確認できる。
   if (compact) {
-    // 「通常」は出さない（ほとんどのツールが通常のため、情報にならない）。出すのは、準備中・プレミアム限定・AI実装だけ。
+    // 「無料で使える」は出さない（ほとんどのツールが無料で使えるため、情報にならない）。出すのは、準備中・プレミアム限定・AI実装だけ。
     const showPlan = !isComingSoon && featureFlags.billing && tool.requiredPlan === "premium";
     return (
       <Link {...linkProps} className={cn("group relative flex h-full items-center gap-3 px-3 py-2.5", surface)}>
         <CategoryIcon id={category?.id ?? "other"} size="sm" />
         <div className="min-w-0 flex-1">
-          <h3 className={cn("text-sm font-semibold leading-snug", titleColor)}>{tool.name}</h3>
+          <Heading className={cn("text-sm font-semibold leading-snug", titleColor)}>{tool.name}</Heading>
           <p className="mt-0.5 truncate text-xs text-ms-muted" title={tool.description}>
             {tool.description}
           </p>
@@ -114,7 +124,7 @@ export function ToolCard({ tool, compact = false }: { tool: Tool; compact?: bool
         <CategoryIcon id={category?.id ?? "other"} size="md" />
         {badge}
       </div>
-      <h3 className={cn("font-semibold", titleColor)}>{tool.name}</h3>
+      <Heading className={cn("font-semibold", titleColor)}>{tool.name}</Heading>
       <p className="line-clamp-2 text-sm text-ms-muted">{tool.description}</p>
       <LinkPendingOverlay />
     </Link>

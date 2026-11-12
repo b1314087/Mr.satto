@@ -188,7 +188,8 @@ export function ToolsExplorer({
             )}
           </div>
 
-          <ToolGrid tools={availableFiltered} />
+          {/* ページの見出し（h1「ツール一覧」）の直下の一覧なので、カードの見出しは h2 */}
+          <ToolGrid tools={availableFiltered} headingLevel="h2" />
 
           {comingSoonFiltered.length > 0 && (
             <div className="mt-4">

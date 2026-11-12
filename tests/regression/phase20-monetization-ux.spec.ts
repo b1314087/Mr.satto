@@ -56,9 +56,11 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await expect(page.locator('input[type="file"]')).toBeAttached();
     await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
     // ダウンロード時に広告を1回見る必要があること・1時間は広告なしになることが事前に分かる
-    await expect(
-      page.getByText("無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。")
-    ).toBeVisible();
+    // 無料の利用条件は、UI・UX改善で、帯から右上の小さなバッジ（押すと全文が開く）に変わった。
+      // バッジが見えていて、全文が読み上げ用の名前（aria-label）として付いていることを確かめる
+      const adNotice = page.getByTestId("download-ad-notice");
+      await expect(adNotice).toBeVisible();
+      await expect(adNotice.locator("summary")).toHaveAttribute("aria-label", "無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。");
   });
 
   test("ダウンロード時の確認画面で、Premiumへの案内（料金プランへの導線）も分かる", async ({ page }) => {

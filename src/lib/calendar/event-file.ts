@@ -21,11 +21,16 @@ export function classifyEventFile(file: { name: string; type: string }): EventFi
   return "unsupported";
 }
 
-/** 選択ダイアログに渡す accept（画像は拡張子とMIMEの両方。スマートフォンでは、HEICの写真が自動でJPEGに変換される） */
-export const EVENT_FILE_ACCEPT = ".xlsx,.xlsm,.csv,.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+/**
+ * 選択ダイアログに渡す accept（画像は拡張子とMIMEの両方。スマートフォンでは、HEICの写真が自動でJPEGに変換される）。
+ * Excelは、通常のブック（.xlsx）とマクロ有効ブック（.xlsm）の両方を受け付ける（どちらも同じ形式で保存されたセルの値を読む。
+ * マクロは読み込まず、実行もしない）。説明文（src/lib/seo/fiscal-calendar-copy.ts）・プライバシーポリシーと合わせること。
+ */
+export const EVENT_FILE_ACCEPT =
+  ".xlsx,.xlsm,.csv,.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12";
 
 export const UNSUPPORTED_FILE_MESSAGE =
-  "このファイル形式には対応していません。Excel（.xlsx）・CSV・PDF・画像（PNG・JPG・JPEG）のいずれかを選んでください。";
+  "このファイル形式には対応していません。Excel（.xlsx・.xlsm）・CSV・PDF・画像（PNG・JPG・JPEG）のいずれかを選んでください。";
 export const LEGACY_EXCEL_MESSAGE = "古い形式（.xls）は読み込めません。Excelで「名前を付けて保存」から、Excelブック（.xlsx）にして選んでください。";
 
 /** CSVの文字コードを判定して文字にする。UTF-8（BOMつき含む）で読めなければ、Excelの日本語CSVに多いShift_JISとして読む */

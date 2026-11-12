@@ -148,12 +148,21 @@ async function warmUp(page: Page, ids: string[] = OLD_IDS) {
   }
 }
 
-/** 操作を切り替え、切り替え先の画面（ファイルを選ぶ欄）が表示されるまで待つ */
+/**
+ * 操作を切り替え、切り替え先の画面が表示されるまで待つ。
+ * PDFをまだ選んでいなければ、ファイルを選ぶ欄。選んだPDFを引き継いでいるときは、読み込み後の小さなファイルの行
+ * （「⇄ ファイルを変更」。UI・UX改善で、読み込み後は大きな枠の代わりにこの行を出すようになった）。
+ */
 async function switchMode(page: Page, mode: string) {
   await clickWhenReady(modeButton(page, mode));
   await expect(modeButton(page, mode)).toHaveAttribute("aria-pressed", "true");
+  const panel = page.locator(".ms-tool-panel");
   const dropzoneLabel = mode === "merge" ? "PDFをドラッグ&ドロップ（複数可）" : "PDFをドラッグ&ドロップ";
-  await expect(page.getByText(dropzoneLabel, { exact: true })).toBeVisible({ timeout: 25_000 });
+  const ready = panel
+    .getByText(dropzoneLabel, { exact: true })
+    .or(panel.getByTestId("dropzone-compact"))
+    .first();
+  await expect(ready).toBeVisible({ timeout: 25_000 });
 }
 
 async function openHub(page: Page, slug: string = PDF_EDIT_TOOL_ID) {
@@ -349,9 +358,11 @@ plainTest.describe("PDF編集: 広告ゲート（Freeプラン）", () => {
       await page.goto(`/tools/${slug}`);
       await plainExpect(page.getByTestId("pdf-edit-modes")).toBeVisible({ timeout: 25_000 });
       await plainExpect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
-      await plainExpect(
-        page.getByText("無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。")
-      ).toBeVisible();
+      // 無料の利用条件は、UI・UX改善で、帯から右上の小さなバッジ（押すと全文が開く）に変わった。
+      // バッジが見えていて、全文が読み上げ用の名前（aria-label）として付いていることを確かめる
+      const adNotice = page.getByTestId("download-ad-notice");
+      await plainExpect(adNotice).toBeVisible();
+      await plainExpect(adNotice.locator("summary")).toHaveAttribute("aria-label", "無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。");
 
       await page.getByTestId("pdf-edit-mode-rotate").click();
       await uploadWhenReady(page, fixtures.multiPagePdf, page.getByRole("button", { name: "回転する" }), { readyTimeoutMs: 25_000 });

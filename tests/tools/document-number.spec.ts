@@ -42,13 +42,21 @@ async function open(page: Page, slug: string) {
   await page.getByTestId("document-number-apply").waitFor({ timeout: 60_000 });
 }
 
-/** 画面の準備（ハイドレーション）が終わるまで押し直す */
-async function applyUntilFilled(page: Page) {
-  const input = page.getByTestId("document-number");
+/**
+ * 発行日を入れてから番号を入れる。
+ * 画面の準備（ハイドレーション）の前に入れた発行日は、準備が終わるときに初期値（今日）へ戻ることがある。
+ * そのまま番号を入れると、今日の日付で番号が作られ、今日の分の通し番号まで記録されてしまう（監査の「原因未確定」document-number）。
+ * そこで、発行日が画面の状態に入ったこと（プレビューの「発行日: …」に出たこと）を確かめてから、1回だけ押す。
+ */
+async function applyWithIssueDate(page: Page, isoDate: string) {
+  const dateInput = page.locator('input[type="date"]').first();
   await expect(async () => {
-    await page.getByTestId("document-number-apply").click();
-    await expect(input).not.toHaveValue("", { timeout: 1_500 });
-  }).toPass({ timeout: 20_000 });
+    await dateInput.fill(isoDate);
+    await expect(page.getByTestId("tool-preview")).toContainText(`発行日: ${isoDate}`, { timeout: 1_500 });
+  }).toPass({ timeout: 30_000 });
+  await page.getByTestId("document-number-apply").click();
+  const input = page.getByTestId("document-number");
+  await expect(input).not.toHaveValue("");
   return input.inputValue();
 }
 
@@ -56,8 +64,7 @@ test.describe("書類番号: 画面", () => {
   test("請求書: 発行日と通し番号で番号が入り、次は続きの番号が選ばれる。選び直しもできる", async ({ page }) => {
     test.setTimeout(120_000);
     await open(page, "invoice-generator");
-    await page.locator('input[type="date"]').first().fill("2026-11-01");
-    expect(await applyUntilFilled(page)).toBe("INV-20261101-001");
+    expect(await applyWithIssueDate(page, "2026-11-01")).toBe("INV-20261101-001");
 
     // 次は 002 が選ばれている。押すと 002
     const select = page.getByTestId("document-number-serial");
@@ -79,7 +86,11 @@ test.describe("書類番号: 画面", () => {
     // ページを開き直しても、続きの番号を覚えている（このブラウザの中だけ）
     await page.reload();
     await page.getByTestId("document-number-apply").waitFor();
-    await page.locator('input[type="date"]').first().fill("2026-11-01");
+    // 開き直した直後（画面の準備の前）に入れた発行日は戻ることがあるので、プレビューに出るまで入れ直す
+    await expect(async () => {
+      await page.locator('input[type="date"]').first().fill("2026-11-01");
+      await expect(page.getByTestId("tool-preview")).toContainText("発行日: 2026-11-01", { timeout: 1_500 });
+    }).toPass({ timeout: 30_000 });
     await expect(page.getByTestId("document-number-serial")).toHaveValue("11");
     const stored = await page.evaluate((k) => localStorage.getItem(k), DOCUMENT_SERIAL_STORAGE_KEY);
     expect(JSON.parse(stored ?? "{}")).toEqual({ "invoice:20261101": 10 });
@@ -102,10 +113,8 @@ test.describe("書類番号: 画面", () => {
   test("見積書と請求書の通し番号は別々に数える（同じ取引で末尾をそろえやすい）", async ({ page }) => {
     test.setTimeout(120_000);
     await open(page, "estimate-generator");
-    await page.locator('input[type="date"]').first().fill("2026-11-01");
-    expect(await applyUntilFilled(page)).toBe("EST-20261101-001");
+    expect(await applyWithIssueDate(page, "2026-11-01")).toBe("EST-20261101-001");
     await open(page, "invoice-generator");
-    await page.locator('input[type="date"]').first().fill("2026-11-01");
-    expect(await applyUntilFilled(page)).toBe("INV-20261101-001");
+    expect(await applyWithIssueDate(page, "2026-11-01")).toBe("INV-20261101-001");
   });
 });

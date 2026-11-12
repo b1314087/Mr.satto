@@ -440,7 +440,8 @@ test.describe("工程3：CSV・Excel行列編集（旧 CSV・Excel列編集）",
     fs.writeFileSync(xls, Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
     await page.goto("/tools/csv-column-editor");
     await page.locator('input[type="file"]').first().setInputFiles(xls);
-    await expect(page.getByText(/このファイル形式には対応していません|古い形式（\.xls）/).first()).toBeVisible({ timeout: 20_000 });
+    // ツール本体のエラー表示（同じ言葉が、閉じている「よくある質問」の幕にもあるため、ツールの枠の中に絞る）
+    await expect(page.locator(".ms-tool-panel").getByText(/このファイル形式には対応していません|古い形式（\.xls）/).first()).toBeVisible({ timeout: 20_000 });
   });
 });
 

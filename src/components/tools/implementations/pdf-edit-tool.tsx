@@ -8,6 +8,7 @@ import { PdfExtractPagesTool } from "./pdf-extract-pages-tool";
 import { PdfReorderPagesTool } from "./pdf-reorder-pages-tool";
 import { PdfRotateTool } from "./pdf-rotate-tool";
 import { PDF_EDIT_MODES, getPdfEditMode, type PdfEditMode } from "@/lib/tools/pdf-edit-modes";
+import { useAnnounceToolMode } from "@/lib/guides/tool-mode";
 
 /**
  * PDF編集の総合画面。結合・分割・ページ削除・ページ抽出・並び替え・回転を、操作の切り替えで使い分ける。
@@ -35,6 +36,8 @@ function activeClass(active: boolean): string {
 
 export function PdfEditTool({ initialMode = "merge" }: PdfEditToolProps) {
   const [mode, setMode] = useState<PdfEditMode>(initialMode);
+  // 使い方の幕に、いま選ばれているモードを知らせる（幕を開くと、このモードの使い方の図が出る）
+  useAnnounceToolMode(mode);
   // 1つのPDFを扱う操作の間で引き継ぐPDF
   const [sharedFile, setSharedFile] = useState<File | null>(null);
   const info = getPdfEditMode(mode);

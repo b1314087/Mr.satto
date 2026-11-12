@@ -33,7 +33,12 @@ async function gotoTool(page: Page) {
 }
 
 async function switchToImportMode(page: Page) {
-  await page.getByRole("button", { name: "印鑑を取り込む", exact: true }).click();
+  // 画面の準備（ハイドレーション）の前に押すと、切り替わらないことがある（読み込みが重いとき）。切り替わるまで押し直す
+  const button = page.getByRole("button", { name: "印鑑を取り込む", exact: true });
+  await expect(async () => {
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 async function dragCropHandle(page: Page, corner: "nw" | "ne" | "sw" | "se", dx: number, dy: number) {
@@ -69,9 +74,9 @@ test.describe("A. 文字から印影を生成", () => {
     await gotoTool(page);
     await expect(page.getByRole("button", { name: "文字から作る", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "印鑑を取り込む", exact: true })).toBeVisible();
-    // 電子署名ではないことの明示（ツール本体の注記。SEO用FAQにも同様の文言があり
-    // 両方存在しうるため、ページ内の最初の一致だけを確認する）
-    await expect(page.getByText("法的な効力を持つ電子署名", { exact: false }).first()).toBeVisible();
+    // 電子署名ではないことの明示（ツール本体の注記）。同じ言葉が、閉じている「よくある質問」の幕にもあるため、
+    // ツールの枠（.ms-tool-panel）の中に絞って確かめる
+    await expect(page.locator(".ms-tool-panel").getByText("法的な効力を持つ電子署名", { exact: false })).toBeVisible();
   });
 
   test("2. 文字を入力するとプレビューに反映される", async ({ page }) => {

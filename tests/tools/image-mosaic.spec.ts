@@ -57,7 +57,8 @@ test("image-mosaic: 範囲を追加するとデフォルトでモザイク・選
   await page.getByRole("button", { name: "＋ 範囲を追加" }).click();
   await expect(page.getByText("1個の範囲")).toBeVisible();
   await expect(page.getByText("選択中の範囲の設定")).toBeVisible();
-  await expect(page.getByRole("button", { name: "モザイク", exact: true })).toHaveClass(/bg-blue-600/);
+  // 選んでいる種類は、色のクラスではなく、押している状態（aria-pressed）で確かめる
+  await expect(page.getByRole("button", { name: "モザイク", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("image-mosaic: 複数の範囲を追加でき、個別に削除できる", async ({ page }) => {
@@ -79,7 +80,8 @@ test("image-mosaic: 種類をぼかしへ変更できる", async ({ page }) => {
   await page.getByRole("button", { name: "＋ 範囲を追加" }).click();
 
   await page.getByRole("button", { name: "ぼかし", exact: true }).click();
-  await expect(page.getByRole("button", { name: "ぼかし", exact: true })).toHaveClass(/bg-blue-600/);
+  await expect(page.getByRole("button", { name: "ぼかし", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "モザイク", exact: true })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByText("1: ぼかし")).toBeVisible();
 });
 

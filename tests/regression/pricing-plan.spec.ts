@@ -26,7 +26,10 @@ test("pricing: 現行の料金は ¥0 / ¥1,100 の2つだけ。旧Standard(¥55
   await expect(page.getByText("1,100円", { exact: false }).first()).toBeVisible();
   const text = await page.locator("main").innerText();
   expect(text).not.toMatch(/550|980|スタンダード/);
-  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(4); // 無料お試しの案内・無料・プレミアム・お支払い/解約
+  // 無料・プレミアム・お支払い/解約（＋会員登録できる環境では、無料お試しの案内）。
+  // 会員登録が準備中の環境（Supabaseの設定がない）では、無料お試しを案内しない（監査 C-9）
+  const trialShown = await page.getByTestId("trial-offer").count();
+  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(3 + trialShown);
 });
 
 test("filled-pdf-to-excel: free/standard/premiumで利用制限の表示が切り替わる（dev cookie経由）", async ({
@@ -37,10 +40,11 @@ test("filled-pdf-to-excel: free/standard/premiumで利用制限の表示が切�
   // free: 広告視聴が必要な旨の案内が表示される
   await setDevPlanOverride(context, "free", baseURL!);
   await page.goto("/tools/filled-pdf-to-excel");
-  await expect(page.getByText(/広告/).first()).toBeVisible();
+  // ツール本体の案内を確かめる（同じ言葉が、閉じている「よくある質問」の幕にもあるため、ツールの枠の中の、見えているものに絞る）
+  await expect(page.locator(".ms-tool-panel").getByText(/広告/).filter({ visible: true }).first()).toBeVisible();
 
   // premium: ページ数・回数の制限なく利用できる旨の案内が表示される
   await setDevPlanOverride(context, "premium", baseURL!);
   await page.reload();
-  await expect(page.getByText(/制限なく/).first()).toBeVisible();
+  await expect(page.locator(".ms-tool-panel").getByText(/制限なく/).filter({ visible: true }).first()).toBeVisible();
 });

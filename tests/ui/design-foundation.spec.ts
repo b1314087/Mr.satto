@@ -253,7 +253,7 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
 
       // 文字と、その下の背景（ガラスを下地に重ねた色）のコントラスト
       const bg = await effectiveBackground(page, sel);
-      const title = parseColor((await computed(page, `${sel} h3`, ["color"]))["color"]);
+      const title = parseColor((await computed(page, `${sel} :is(h2, h3)`, ["color"]))["color"]);
       const desc = parseColor((await computed(page, `${sel} p`, ["color"]))["color"]);
       expect(contrast(title, bg), "カード見出し").toBeGreaterThanOrEqual(4.5);
       expect(contrast(desc, bg), "カード説明").toBeGreaterThanOrEqual(4.5);

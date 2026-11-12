@@ -45,6 +45,15 @@ export function DocumentGeneratorTool({ type }: { type: DocumentType }) {
   return (
     <PreviewSplitLayout
       previewWidth="lg"
+      // PDF出力は、プレビューを見てから行う（スマホでもプレビューの下に出す）
+      after={
+        <section className="flex flex-col gap-3">
+          <StepHeading n={actionStep} as="h2">
+            PDF出力
+          </StepHeading>
+          <DocumentActions form={form} />
+        </section>
+      }
       preview={
       <section className="flex flex-col gap-3">
         <StepHeading n={previewStep} as="h2">
@@ -105,13 +114,6 @@ export function DocumentGeneratorTool({ type }: { type: DocumentType }) {
           </AdvancedSettings>
         </section>
       )}
-
-      <section className="flex flex-col gap-3">
-        <StepHeading n={actionStep} as="h2">
-          PDF出力
-        </StepHeading>
-        <DocumentActions form={form} />
-      </section>
     </PreviewSplitLayout>
   );
 }

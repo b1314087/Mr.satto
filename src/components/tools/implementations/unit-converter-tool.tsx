@@ -171,7 +171,8 @@ export function UnitConverterTool() {
         <h2 id="unit-table-heading" className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
           すべての単位への換算（基準: {category.baseLabel}）
         </h2>
-        <div className="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800">
+        {/* 桁の多い数値でも折り返さず、はみ出すときは表の中だけで横にスクロールする */}
+        <div className="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
           <table className="w-full text-left text-sm">
             <tbody>
               {table.map(({ unit, value }) => (
@@ -181,18 +182,20 @@ export function UnitConverterTool() {
                     unit.id === toId ? "bg-blue-50 dark:bg-blue-950/30" : ""
                   }`}
                 >
-                  <th scope="row" className="w-1/2 px-3 py-2 font-normal text-neutral-600 dark:text-neutral-300">
+                  <th scope="row" className="px-3 py-2 font-normal text-neutral-600 sm:w-1/2 dark:text-neutral-300">
                     {unit.label}（{unit.symbol}）
                   </th>
-                  <td className="px-3 py-2 tabular-nums">{value === null ? "—" : formatUnitNumber(value)}</td>
-                  <td className="w-16 px-3 py-2 text-right">
+                  <td className="whitespace-nowrap px-3 py-2 tabular-nums">{value === null ? "—" : formatUnitNumber(value)}</td>
+                  {/* 「コピー」が1文字ずつ縦に折り返さないよう、折り返さず、押しやすい大きさを確保する */}
+                  <td className="w-[4.5rem] whitespace-nowrap px-2 py-1 text-right">
                     {value !== null && (
                       <button
                         type="button"
                         onClick={() => copy(formatUnitNumber(value).replace(/,/g, ""), unit.id)}
-                        className="text-xs text-neutral-500 hover:text-blue-600 dark:text-neutral-400"
+                        aria-label={`${unit.label}の値をコピー`}
+                        className="inline-flex min-h-9 min-w-[3.5rem] items-center justify-center whitespace-nowrap rounded-md px-2 text-xs text-neutral-500 hover:text-blue-600 dark:text-neutral-400"
                       >
-                        {copied === unit.id ? "済" : "コピー"}
+                        {copied === unit.id ? "コピー済" : "コピー"}
                       </button>
                     )}
                   </td>

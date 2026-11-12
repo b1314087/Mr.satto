@@ -8,7 +8,7 @@ import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
 
 export const metadata: Metadata = {
   title: "特定商取引法に基づく表記",
-  description: `${siteConfig.name}の有料プランに関する、特定商取引法に基づく表記です。`,
+  description: `${siteConfig.name}の有料プランに関する、特定商取引法に基づく表記です。販売価格、お支払い方法と時期、サービスの提供時期、解約・返金の扱いを記載しています。`,
   alternates: {
     canonical: "/tokushoho",
   },
@@ -76,7 +76,7 @@ export default function TokushohoPage() {
             {premium.name}プラン: 月額{premium.priceYen.toLocaleString()}円（税込）
           </p>
           <p className="mt-1">
-            無料プランは0円です。{premium.name}プランには、年度カレンダー作成の「AIで読み取る」補助と、記入済みPDF→Excelの「AIで項目を読み取る」補助、PDF→Excelの「AIで表を読み取る」補助が含まれます（AIトークン単位の利用枠があり、追加の料金はかかりません）。各プランの内容は
+            無料プランは0円です。{premium.name}プランには、年度カレンダー作成の「AIで読み取る」補助と、記入済みPDF→Excelの「AIで項目を読み取る」補助、PDF→Excelの「AIで表を読み取る」補助、PowerPoint白黒反転の「AIの判断で、きれいに反転する」補助が含まれます（AIトークン単位の利用枠を4つの補助で共通に使い、追加の料金はかかりません）。AIの補助は、実行のたびに送信内容を確認し、同意したときだけ、選んだ内容（PowerPoint白黒反転では、スライドの中の画像を縮小したもの。PowerPointファイルそのものは送りません）を外部のAIサービス（OpenAI）へ送信して処理します。各プランの内容は
             <Link href="/pricing" className={`mx-1 ${LINK_CLASS}`}>
               料金プラン
             </Link>

@@ -27,8 +27,8 @@ export const FISCAL_CALENDAR_META_DESCRIPTION: OnOffCopy = {
 };
 
 export const FISCAL_CALENDAR_HOWTO_IMPORT: OnOffCopy = {
-  on: "予定を入れたいときは、「予定データ」で、日付・予定・開始時刻・終了時刻が並んだ予定表（Excel（.xlsx）・CSV・PDF・画像（PNG・JPG））を選びます。読み込んだ件数と、読み取れなかった行が表示されます。画像とスキャンしたPDFは、AI（プレミアムの機能）で読み取るため、内容を確認して同意したときだけ、縮小した画像を外部のAIサービスに送ります。",
-  off: "予定を入れたいときは、「予定データ」で、日付・予定・開始時刻・終了時刻が並んだ予定表（Excel（.xlsx）・CSV・PDF）を選びます。読み込んだ件数と、読み取れなかった行が表示されます。",
+  on: "予定を入れたいときは、「予定データ」で、日付・予定・開始時刻・終了時刻が並んだ予定表（Excel（.xlsx・.xlsm）・CSV・PDF・画像（PNG・JPG））を選びます。読み込んだ件数と、読み取れなかった行が表示されます。画像とスキャンしたPDFは、AI（プレミアムの機能）で読み取るため、内容を確認して同意したときだけ、縮小した画像を外部のAIサービスに送ります。",
+  off: "予定を入れたいときは、「予定データ」で、日付・予定・開始時刻・終了時刻が並んだ予定表（Excel（.xlsx・.xlsm）・CSV・PDF）を選びます。読み込んだ件数と、読み取れなかった行が表示されます。",
 };
 
 export const FISCAL_CALENDAR_IMPORT_QUESTION: OnOffCopy = {
@@ -37,8 +37,8 @@ export const FISCAL_CALENDAR_IMPORT_QUESTION: OnOffCopy = {
 };
 
 export const FISCAL_CALENDAR_IMPORT_ANSWER_FORMATS: OnOffCopy = {
-  on: "はい。日付・予定・開始時刻・終了時刻の列があるExcel（.xlsx）・CSV・PDF・画像（PNG・JPG）を読み込み、該当する日の予定欄に載せられます。",
-  off: "はい。日付・予定・開始時刻・終了時刻の列があるExcel（.xlsx）・CSV・PDFを読み込み、該当する日の予定欄に載せられます。",
+  on: "はい。日付・予定・開始時刻・終了時刻の列があるExcel（.xlsx・.xlsm）・CSV・PDF・画像（PNG・JPG）を読み込み、該当する日の予定欄に載せられます。",
+  off: "はい。日付・予定・開始時刻・終了時刻の列があるExcel（.xlsx・.xlsm）・CSV・PDFを読み込み、該当する日の予定欄に載せられます。",
 };
 
 export const FISCAL_CALENDAR_IMPORT_ANSWER_PRIVACY: OnOffCopy = {

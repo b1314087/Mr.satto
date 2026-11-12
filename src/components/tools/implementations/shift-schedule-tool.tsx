@@ -251,7 +251,7 @@ export function ShiftScheduleTool() {
       </p>
 
       <section className={sectionClass} aria-labelledby="shift-step1">
-        <StepHeading n={1} as="h3" id="shift-step1">年月と確認の目安</StepHeading>
+        <StepHeading n={1} as="h2" id="shift-step1">年月と確認の目安</StepHeading>
         <div className="flex flex-wrap items-end gap-3">
           <label className={labelClass}>
             タイトル（空なら年月から付けます）
@@ -327,11 +327,13 @@ export function ShiftScheduleTool() {
       </section>
 
       <section className={sectionClass} aria-labelledby="shift-step2">
-        <StepHeading n={2} as="h3" id="shift-step2">勤務区分（表に入れる種類）</StepHeading>
+        <StepHeading n={2} as="h2" id="shift-step2">勤務区分（表に入れる種類）</StepHeading>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           終了が開始より前なら翌日として数えます（夜勤。例：22:00〜06:00）。「休み」は実働に含めません。
         </p>
-        <div className="overflow-x-auto">
+        {/* relative：表の見出しの読み上げ用の文字（sr-only、position:absolute）が、この横スクロールの枠の外を基準にして
+            ページ全体を横にはみ出させないように、枠を基準にする */}
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[640px] text-xs">
             <thead>
               <tr className="text-left text-neutral-500 dark:text-neutral-400">
@@ -392,7 +394,7 @@ export function ShiftScheduleTool() {
       </section>
 
       <section className={sectionClass} aria-labelledby="shift-step3">
-        <StepHeading n={3} as="h3" id="shift-step3">スタッフ</StepHeading>
+        <StepHeading n={3} as="h2" id="shift-step3">スタッフ</StepHeading>
         <ul className="flex flex-col gap-1.5">
           {schedule.staff.map((s, i) => (
             <li key={s.id} className="flex items-center gap-2">
@@ -427,7 +429,7 @@ export function ShiftScheduleTool() {
 
       <PreviewFullscreenFrame>
       <section className={sectionClass} aria-labelledby="shift-step4" data-testid="tool-preview">
-        <StepHeading n={4} as="h3" id="shift-step4">勤務表（{schedule.year}年{schedule.month}月）</StepHeading>
+        <StepHeading n={4} as="h2" id="shift-step4">勤務表（{schedule.year}年{schedule.month}月）</StepHeading>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           勤務区分を選んで、表のマスを押すか、なぞって入れます（キーボードはマスでEnterかスペース）。
         </p>
@@ -579,7 +581,7 @@ export function ShiftScheduleTool() {
         </AdvancedSettings>
 
         <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800" data-testid="shift-issues">
-          <h4 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">確認（決めた目安に合わない箇所）</h4>
+          <h3 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">確認（決めた目安に合わない箇所）</h3>
           {typeProblems.length > 0 ? (
             <p className="text-xs text-neutral-500 dark:text-neutral-400">勤務区分に入力の不備があるため、確認は行っていません。上の「2. 勤務区分」を直してください。</p>
           ) : issues.length === 0 ? (
@@ -597,7 +599,7 @@ export function ShiftScheduleTool() {
       </PreviewFullscreenFrame>
 
       <section className={sectionClass} aria-labelledby="shift-step5">
-        <StepHeading n={5} as="h3" id="shift-step5">保存と書き出し</StepHeading>
+        <StepHeading n={5} as="h2" id="shift-step5">保存と書き出し</StepHeading>
         {problems.length > 0 && <ErrorMessage message={`入力に不備があるため、書き出せません：${problems[0]}${problems.length > 1 ? `（ほか${problems.length - 1}件）` : ""}`} testId="shift-export-blocked" />}
         <div className="flex flex-wrap items-center gap-3">
           <RewardedDownloadGate onDownload={() => exportAs("pdf")} label="PDFでダウンロード" disabled={exporting || problems.length > 0} />

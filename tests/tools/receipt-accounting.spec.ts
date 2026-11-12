@@ -358,6 +358,10 @@ test.setTimeout(240_000);
 test("receipt-accounting: 画像を読み込むとOCRで行が追加され、未確認のまま。確認済みがないとCSVは出せずに案内が出る", async ({ page }) => {
   await openTool(page);
   await expect(page.getByTestId("receipt-empty")).toBeVisible();
+  // 明細が0件のあいだは、仕訳プレビューの表は畳んでおく（読み込みの案内を覆わない）。開くと、空の案内が出る
+  await expect(page.getByTestId("receipt-preview-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByTestId("receipt-journal-preview")).not.toHaveAttribute("data-sticky", "true");
+  await page.getByTestId("receipt-preview-toggle").click();
   await expect(page.getByTestId("receipt-export-empty")).toBeVisible();
   const img = await makeImageFile(page, "receipt1.png", RECEIPT_TEXT);
   await loadFiles(page, [img], 1);

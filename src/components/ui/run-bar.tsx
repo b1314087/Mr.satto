@@ -20,10 +20,17 @@ export function RunBar({ children, note, className }: { children: ReactNode; not
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
-    // 帯は画面の下端から1px下にくっつく（bottom: -1px）。くっついている間は、全体が見えない（見える割合が1未満）
+    // 帯は画面の下端から1px下にくっつく（bottom: -1px）。くっついている間は、下の1pxだけが画面の外に出る
+    // （見える割合が0より大きく1未満で、帯の上端は画面の中）。
+    // 本来の位置にあるときは全体が見え（割合1）、上へスクロールして画面の上に出ていくときは、上端が画面の外（top < 0）。
+    // ※ isIntersecting は使わない。threshold が [1] だと、割合が1未満のときに false になるブラウザがあり、
+    //   くっついた状態をいつまでも検出できなかったため。0 と 1 の両方を境目にして、割合と位置だけで判断する。
     const io = new IntersectionObserver(
-      ([entry]) => setStuck(entry.intersectionRatio < 1 && entry.boundingClientRect.top > 0 && entry.isIntersecting),
-      { threshold: [1] }
+      ([entry]) => {
+        const rootTop = entry.rootBounds?.top ?? 0;
+        setStuck(entry.intersectionRatio > 0 && entry.intersectionRatio < 1 && entry.boundingClientRect.top > rootTop);
+      },
+      { threshold: [0, 1] }
     );
     io.observe(el);
     return () => io.disconnect();

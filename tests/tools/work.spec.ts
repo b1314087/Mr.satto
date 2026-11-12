@@ -29,7 +29,7 @@ async function fillMinimalDocumentForm(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "自動採番" }).click();
 
   // 宛先（1つ目）・発行者（2つ目）の会社名を入力
-  const companyNameInputs = page.getByPlaceholder("会社名・屋号");
+  const companyNameInputs = page.getByLabel("会社名・屋号", { exact: true });
   await companyNameInputs.nth(0).fill("テスト宛先株式会社");
   await companyNameInputs.nth(1).fill("テスト発行者株式会社");
 

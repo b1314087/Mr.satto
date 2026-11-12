@@ -1543,20 +1543,18 @@ function StampPdfTarget({
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           固有番号とQRコードを入れた印影は、PDFに押して出力します。PDFはこのブラウザの中だけで読み込み、どこにも送信しません。
         </p>
-        <label className="w-fit cursor-pointer rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+        {/* ファイルを選ぶボタンは、全ツール共通の部品（FilePickButton）を使う */}
+        <FilePickButton
+          accept="application/pdf,.pdf"
+          size="sm"
+          className="w-fit"
+          loading={loading}
+          inputLabel="押印するPDF"
+          inputTestId="stamp-target-pdf-input"
+          onFilesSelected={(files) => void pick(files[0])}
+        >
           {value ? "別のPDFを選ぶ" : "PDFを選ぶ"}
-          <input
-            type="file"
-            accept="application/pdf,.pdf"
-            className="sr-only"
-            data-testid="stamp-target-pdf-input"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) void pick(f);
-            }}
-          />
-        </label>
+        </FilePickButton>
         {loading && <span className="text-xs text-neutral-500">PDFを読み込んでいます…</span>}
         {loadError && <span className="text-xs text-red-600 dark:text-red-400">{loadError}</span>}
         {value && (

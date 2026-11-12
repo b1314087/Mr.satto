@@ -97,7 +97,8 @@ test.describe("ツール間の受け渡し：代表的な経路", () => {
 
     // 受け渡しは1回だけ：再読み込みしても、もう一度受け取ることはない
     await page.reload();
-    await expect(page.getByText("PDFをドラッグ&ドロップ").first()).toBeVisible({ timeout: 25_000 });
+    // ツール本体のファイル選択欄（同じ言葉が、閉じている「使い方」の幕の図にもあるため、ツールの枠の中に絞る）
+    await expect(page.locator(".ms-tool-panel").getByText("PDFをドラッグ&ドロップ").first()).toBeVisible({ timeout: 25_000 });
     await expect(page.getByTestId("handoff-received")).toHaveCount(0);
   });
 

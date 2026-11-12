@@ -72,7 +72,7 @@ export function VideoPreviewPanel({
           controls
           playsInline
           preload="metadata"
-          className="block mx-auto h-auto w-auto max-w-full max-h-[min(60vh,30rem)] rounded-lg bg-black"
+          className="ms-fs-fill block mx-auto h-auto w-auto max-w-full max-h-[min(60vh,30rem)] rounded-lg bg-black"
         />
       )}
       {children}
@@ -112,7 +112,7 @@ export function VideoOutputPlayer({ url }: { url: string }) {
         playsInline
         preload="metadata"
         data-testid="video-output-preview"
-        className="block mx-auto h-auto w-auto max-w-full max-h-[min(60vh,30rem)] rounded-lg bg-black"
+        className="ms-fs-fill block mx-auto h-auto w-auto max-w-full max-h-[min(60vh,30rem)] rounded-lg bg-black"
       />
     </div>
   );

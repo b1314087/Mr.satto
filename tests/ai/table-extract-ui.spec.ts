@@ -4,6 +4,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { test, expect } from "../fixtures/premium-test";
 import { FORM_CONSENT_VERSION } from "@/lib/ai/form-extract";
 import { fixtures } from "../fixtures/paths";
+import { waitForFileInputHydrated } from "../helpers/tool-runner";
 
 /**
  * PDF→Excel: 「AIで表を読み取る」パネルのE2Eテスト。
@@ -72,6 +73,8 @@ const RESULT_ROWS = [
 
 async function openAndUpload(page: Page, file: { name: string; mimeType: string; buffer: Buffer }) {
   await page.goto(SLUG);
+  // 画面の準備（ハイドレーション）の前にファイルを入れると、受け取られずに無視される。準備ができてから入れる
+  await waitForFileInputHydrated(page);
   await page.locator('input[type="file"]').first().setInputFiles(file);
   await expect(page.getByTestId("form-ai-panel")).toBeVisible({ timeout: 60_000 });
 }

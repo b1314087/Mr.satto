@@ -10,6 +10,7 @@ import { trialOfferState } from "@/lib/plans/grants";
 import { hasUsedTrial } from "@/lib/plans/grant-store";
 import { TrialCard } from "@/components/pricing/trial-card";
 import { isStripeConfigured } from "@/lib/stripe/config";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { verifyPremiumPrice } from "@/lib/stripe/price-guard-server";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { PricingActionButton } from "@/components/pricing/pricing-action-button";
@@ -19,7 +20,7 @@ import type React from "react";
 
 export const metadata: Metadata = {
   title: "料金プラン",
-  description: `${siteConfig.name}の料金プラン（無料・プレミアム）のご案内です。`,
+  description: `${siteConfig.name}の料金プラン（無料・プレミアム）のご案内です。無料プランとプレミアムプラン（月額${PLAN_DEFINITIONS.premium.priceYen.toLocaleString()}円・税込）でできること、AIの補助の利用枠、解約の方法を説明します。`,
   alternates: {
     canonical: "/pricing",
   },
@@ -103,6 +104,8 @@ export default async function PricingPage({
   // Stripeの契約でのプラン（無料付与・お試しによるプレミアムとは分ける。付与中の人も、通常どおり申し込める）
   const subscriptionPlan = resolveEffectivePlan(serverPlan.subscription);
   const trialState = trialOfferState({
+    // 会員登録が準備中の環境（Supabaseの設定がない）では、無料お試しを案内しない
+    signupAvailable: isSupabaseConfigured(),
     signedIn: serverPlan.userId !== null,
     subscriptionPremium: subscriptionPlan === "premium",
     grantActive: serverPlan.grantActive,
@@ -165,7 +168,7 @@ export default async function PricingPage({
               {id === "premium" && (
                 <div className="flex flex-col gap-2 border-t border-ms-border pt-3">
                   <p className="flex items-center gap-2 text-xs font-semibold text-ms-text">
-                    AIの読み取り補助 <PremiumTag kind="ai" /> <span className="font-normal text-ms-muted">利用枠あり</span>
+                    AIの補助 <PremiumTag kind="ai" /> <span className="font-normal text-ms-muted">利用枠あり</span>
                   </p>
                   <ul className="flex flex-col gap-1.5 text-sm text-ms-text">
                     <PlanItem>
@@ -177,6 +180,9 @@ export default async function PricingPage({
                     <PlanItem>
                       「PDF→Excel」の「AIで表を読み取る」補助<Sub>文字のPDF／5ページまで</Sub>
                     </PlanItem>
+                    <PlanItem>
+                      「PowerPoint白黒反転」の「AIの判断で、きれいに反転する」補助<Sub>スライドの中の画像／1回12枚まで</Sub>
+                    </PlanItem>
                   </ul>
                 </div>
               )}
@@ -186,7 +192,7 @@ export default async function PricingPage({
               </p>
               {id === "premium" && (
                 <p data-testid="pricing-ai-note" className="text-xs text-ms-muted">
-                  AIの利用枠は、請求期間ごとに上限があり、AIトークンという単位で残量を表示します。上限に達すると、次の請求期間までAIによる読み取りは利用できません。AIの読み取り結果は提案であり、内容は必ずご自身で確認してください。AIを使う場合は、同意のうえで、選んだ内容が外部のAIサービス（OpenAI）へ送信されます（詳しくは
+                  AIの利用枠は、請求期間ごとに上限があり、AIトークンという単位で残量を表示します。利用枠は、4つのAIの補助で共通です。上限に達すると、次の請求期間までAIの補助は利用できません。AIの結果は提案であり、内容は必ずご自身で確認してください。AIを使う場合は、同意のうえで、選んだ内容が外部のAIサービス（OpenAI）へ送信されます（PowerPoint白黒反転では、スライドの中の画像を縮小したもので、ファイルそのものは送りません。詳しくは
                   <Link href="/privacy" className="mx-1 text-ms-accent hover:underline dark:text-ms-focus">
                     プライバシーポリシー
                   </Link>

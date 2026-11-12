@@ -221,7 +221,8 @@ test.describe("ツールカード", () => {
     await page.goto("/tools");
     const first = main(page).locator('a[href^="/tools/"][aria-label]').first();
     expect(await first.evaluate((e) => e.tagName)).toBe("A");
-    await expect(first.locator("h3")).toHaveCount(1);
+    // ツール一覧では、ページの見出し（h1）の直下なので、カードの見出しは h2（h1 → h3 と飛ばさない）
+    await expect(first.locator("h2")).toHaveCount(1);
     await expect(first.locator("p")).toHaveCount(1);
     expect(read("src/components/tools/tool-card.tsx")).not.toMatch(/onClick|router\.push/);
   });
@@ -234,7 +235,7 @@ test.describe("ツールカード", () => {
     await expect(cards).toHaveCount(imageTools.length);
     // どのカードにも説明文（<p>）が1つずつあり、中身はそのツールの説明。全文は title でも確認できる
     expect(await cards.evaluateAll((els) => els.map((e) => e.querySelectorAll("p").length))).toEqual(imageTools.map(() => 1));
-    await expect(cards.first().locator("h3")).toHaveCount(1);
+    await expect(cards.first().locator("h2")).toHaveCount(1);
     await expect(cards.first()).toHaveAttribute("href", `/tools/${imageTools[0].id}`);
     await expect(cards.first().locator("p")).toHaveText(imageTools[0].description);
     await expect(cards.first().locator("p")).toHaveAttribute("title", imageTools[0].description);
@@ -250,10 +251,10 @@ test.describe("ツールカード", () => {
     await expect(main(page).locator('a[href^="/tools/"][aria-label]').first().locator("p")).toHaveCount(1);
   });
 
-  test("カテゴリ別一覧: 「通常」のバッジは出さず、AI機能が入っているツールにだけ「AI実装」が出る", async ({ page }) => {
+  test("カテゴリ別一覧: 「無料で使える」（旧「通常」）のバッジは出さず、AI機能が入っているツールにだけ「AI実装」が出る", async ({ page }) => {
     await page.goto("/tools/image");
     const cards = main(page).locator('a[href^="/tools/"][aria-label]');
-    await expect(cards.getByText("通常", { exact: true })).toHaveCount(0);
+    await expect(cards.getByText("無料で使える", { exact: true })).toHaveCount(0);
     // 工程2：背景透過のAIモードを削除したため、画像カテゴリにAIが入っているツールは無い
     const aiTools = getListedTools().filter((t) => t.category === "image" && t.hasAi && t.status === "available");
     expect(aiTools.map((t) => t.id)).toEqual([]);
@@ -380,7 +381,7 @@ for (const scheme of ["light", "dark"] as const) {
 
     test("ツール一覧のカード（見出し・説明・バッジ）が読める。ページ背景とカードは境界線・影で区別される", async ({ page }) => {
       await page.goto("/tools");
-      for (const sel of ['main a[aria-label] h3', 'main a[aria-label] p', 'main a[aria-label] span.rounded-full']) {
+      for (const sel of ['main a[aria-label] h2', 'main a[aria-label] p', 'main a[aria-label] span.rounded-full']) {
         const { fg, bg } = await colorsOf(page, sel);
         expect(contrast(fg, bg), sel).toBeGreaterThanOrEqual(4.5);
       }
@@ -420,7 +421,7 @@ for (const width of [390, 768, 1280]) {
         await page.goto(route);
         expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
         const rights = await page
-          .locator('main a[href^="/tools/"]:has(h3), main a[href^="/tools/"]:has(span.block)')
+          .locator('main a[href^="/tools/"]:has(h2, h3), main a[href^="/tools/"]:has(span.block)')
           .evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right })));
         for (const r of rights) {
           expect(r.l).toBeGreaterThanOrEqual(0);

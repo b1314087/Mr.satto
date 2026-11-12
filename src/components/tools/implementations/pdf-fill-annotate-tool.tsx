@@ -1632,8 +1632,10 @@ export function PdfFillAnnotateTool({
             className="w-full min-w-0 overflow-x-auto lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
           >
             {operationSlot && (
-              // PDF修正の「やりたい操作」：プレビューのすぐ上（縦に動かしても見えるように上に貼り付ける）
-              <div className="sticky left-0 top-0 z-20 mb-2 rounded-lg bg-white/90 p-2 shadow-sm backdrop-blur dark:bg-neutral-950/90" data-testid="pdf-fix-operation-near-preview">
+              // PDF修正の「やりたい操作」：プレビューのすぐ上。画面の高さが十分あるときだけ、縦に動かしても見えるように上に貼り付ける。
+              // 低い画面（ノートPCの高さ720pxなど）で貼り付けると、操作のボタンと説明でプレビューの半分ほどが隠れ、
+              // PDFの上のほうに文字やチェックを置けなくなるため、貼り付けない（スクロールで上に戻れば、いつでも選べる）
+              <div className="left-0 top-0 z-20 mb-2 rounded-lg bg-white/90 p-2 shadow-sm backdrop-blur [@media(min-height:900px)]:sticky dark:bg-neutral-950/90" data-testid="pdf-fix-operation-near-preview">
                 {operationSlot}
               </div>
             )}

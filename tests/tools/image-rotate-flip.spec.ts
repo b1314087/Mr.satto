@@ -300,7 +300,11 @@ premiumTest.describe("画像回転・反転: 既存URL・SEO・ツール登録�
 
   premiumTest("画像回転の説明に、反転への切り替えが書かれ、実際の画面と合っている", async ({ page }) => {
     await page.goto("/tools/image-rotate");
-    const body = await page.locator("main").innerText();
+    // 手順の文章は「使い方」の幕の「文章で読む」にある。幕を開いて、文章を開いてから確かめる
+    await page.getByTestId("guide-open-howto").click();
+    await page.getByTestId("guide-howto").locator("summary", { hasText: "文章で読む" }).click();
+    const body = await page.getByTestId("guide-howto").innerText();
+    await page.getByTestId("guide-close").click();
     expect(body).toContain("「反転」に切り替えて向きを選びます");
     // 説明どおり、同じ画面に反転のモードがある
     await expect(page.getByTestId("transform-mode-flip")).toBeVisible();

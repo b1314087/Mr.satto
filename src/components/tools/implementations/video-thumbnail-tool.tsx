@@ -390,7 +390,7 @@ export function VideoThumbnailTool() {
             controls
             playsInline
             preload="auto"
-            className="block mx-auto h-auto w-auto max-w-full max-h-[min(60vh,30rem)] rounded-lg bg-black"
+            className="ms-fs-fill block mx-auto h-auto w-auto max-w-full max-h-[min(60vh,30rem)] rounded-lg bg-black"
           />
 
           {meta && meta.durationSec > 0 && (

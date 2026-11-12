@@ -4,7 +4,14 @@ import { fixtures } from "../fixtures/paths";
 import { waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
 import { uploadWhenReady } from "../helpers/tool-ready";
 import { extractPdfContent, isValidPdfFile, getPageOpSummary } from "../helpers/pdf-inspect";
-import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
+import { choosePdfFixOperation, clickPdfCanvas } from "../helpers/pdf-fix-operation";
+
+/** 図形の種類を選ぶ（UI・UX改善で、プルダウンからセグメントボタン（role="radio"）に変わった） */
+async function chooseShapeKind(page: import("@playwright/test").Page, label: "矩形" | "円・楕円" | "直線") {
+  const radio = page.getByRole("radiogroup", { name: "種類" }).getByRole("radio", { name: label, exact: true });
+  await radio.click();
+  await expect(radio).toHaveAttribute("aria-checked", "true");
+}
 
 /**
  * PDF記入・注釈（Phase 17: 簡易PDFエディタへの強化）のE2Eテスト。
@@ -32,7 +39,8 @@ async function openToolWithPdf(page: Page, fixturePath: string) {
 }
 
 async function clickCanvasAt(page: Page, x: number, y: number) {
-  await page.locator(CANVAS).click({ position: { x, y } });
+  // 押したい位置を画面の真ん中にしてから押す（上端にくっつく操作の帯に隠れないように）
+  await clickPdfCanvas(page, x, y);
 }
 
 async function exportAndDownload(page: Page) {
@@ -58,7 +66,7 @@ test.describe("図形", () => {
   test("円・楕円を追加できる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     await choosePdfFixOperation(page, "図形");
-    await page.getByLabel("種類").selectOption("circle");
+    await chooseShapeKind(page, "円・楕円");
     await clickCanvasAt(page, 150, 150);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
   });
@@ -66,7 +74,7 @@ test.describe("図形", () => {
   test("直線を追加できる", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     await choosePdfFixOperation(page, "図形");
-    await page.getByLabel("種類").selectOption("line");
+    await chooseShapeKind(page, "直線");
     await clickCanvasAt(page, 150, 150);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
   });
@@ -106,7 +114,7 @@ test.describe("図形", () => {
   test("直線を回転すると座標が変わる（見た目上の回転として反映される）", async ({ page }) => {
     await openToolWithPdf(page, fixtures.singlePagePdf);
     await choosePdfFixOperation(page, "図形");
-    await page.getByLabel("種類").selectOption("line");
+    await chooseShapeKind(page, "直線");
     await clickCanvasAt(page, 150, 150);
 
     // 直線はrotationフィールドを持たず、回転操作のたびに始点・終点の座標そのものを
@@ -228,10 +236,10 @@ test.describe("生成PDFの検証", () => {
     await choosePdfFixOperation(page, "図形");
     await clickCanvasAt(page, 80, 80); // rectangle（既定）
     await choosePdfFixOperation(page, "図形");
-    await page.getByLabel("種類").selectOption("circle");
+    await chooseShapeKind(page, "円・楕円");
     await clickCanvasAt(page, 200, 200);
     await choosePdfFixOperation(page, "図形");
-    await page.getByLabel("種類").selectOption("line");
+    await chooseShapeKind(page, "直線");
     await clickCanvasAt(page, 300, 300);
     await expect(page.getByText("配置した注釈（3件）")).toBeVisible();
 

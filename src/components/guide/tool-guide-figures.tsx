@@ -3,6 +3,9 @@
 import { useEffect, useRef } from "react";
 import { GuideFigure } from "@/components/guide/guide-figure";
 import { toolGuides } from "@/lib/guides/tool-guides";
+
+// 幕（tool-guide.tsx）が、出す図を決めるのに使う（このモジュールと一緒に、初めて開いたときに読み込む）
+export { initialGuideId, guideIdForMode, guideModes } from "@/lib/guides/tool-guides";
 import { describeStep } from "@/lib/guides/describe";
 
 /**

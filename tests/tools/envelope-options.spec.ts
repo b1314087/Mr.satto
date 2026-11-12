@@ -13,12 +13,16 @@ async function setSlider(page: import("@playwright/test").Page, label: string, v
 }
 
 /** 封筒宛名: 封筒の向き(縦/横)・敬称(様/御中/なし)・文字サイズ・太字 */
+// 画面の準備を長めに待つ（fillRecipient）ため、1件あたりの制限時間も延ばす
+test.describe.configure({ timeout: 150_000 });
+
 async function fillRecipient(page: import("@playwright/test").Page) {
   // 初回表示直後は入力が反映されないことがあるため、プレビューに出るまで入力し直す
   await expect(async () => {
     await page.getByLabel("宛先1").fill("〒100-0001\n東京都千代田区千代田1-1\n山田商事");
     await expect(page.getByTestId("tool-preview").locator("svg")).toContainText("東", { timeout: 3000 });
-  }).toPass({ timeout: 40_000 });
+    // 開発サーバーで、ほかのテストと同時に動くときは、画面の準備に40秒以上かかることがあったため、長めに待つ
+  }).toPass({ timeout: 90_000 });
 }
 
 async function makePdf(page: import("@playwright/test").Page): Promise<string> {

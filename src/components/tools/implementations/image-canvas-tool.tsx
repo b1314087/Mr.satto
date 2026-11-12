@@ -24,11 +24,11 @@ import { RunBar } from "@/components/ui/run-bar";
 
 /**
  * 画像リサイズ・圧縮（工程3で、画像リサイズ（旧 image-resize）と画像圧縮（image-compress）を1つにまとめた）。
- * 「サイズを変更する」と「圧縮する」を、それぞれ独立して選べる（どちらか一方だけ・両方）。
+ * 「サイズを変更」と「容量を圧縮」を、それぞれ独立して選べる（どちらか一方だけ・両方）。
  * - サイズだけ：従来の画像リサイズと同じ処理（ImageResizeProcessor。形式は元のまま）
  * - 圧縮だけ：従来の画像圧縮と同じ処理（画質指定 ImageCompressProcessor／目標サイズ指定 ImageCompressToSizeProcessor）
  * - 両方：指定した大きさで描いた1枚の画像を、そのまま圧縮する（いったん書き出して読み直すことはしない。メモリを2重に使わない）
- * 旧「画像リサイズ」のアドレスからの転送（?mode=resize）では「サイズを変更する」だけを選んだ状態で、
+ * 旧「画像リサイズ」のアドレスからの転送（?mode=resize）では「サイズを変更」だけを選んだ状態で、
  * 旧「指定KBまで圧縮」からの転送（?mode=size）では「目標サイズ(KB)を指定して圧縮」を選んだ状態で開く。
  */
 
@@ -51,7 +51,7 @@ function actionLabelOf(plan: ImageRunPlan): string {
 /** 目標サイズに届かなかったときの案内（届いたときは null） */
 function missedTargetMessage(output: ImageProcessorOutput, targetKB: number): string | null {
   if (output.sizeBytes <= targetKB * 1024) return null;
-  return `目標の${targetKB}KBまで小さくできませんでした（現在 ${formatBytes(output.sizeBytes)}）。「サイズを変更する」で縦横のサイズも小さくしてから、もう一度お試しください。`;
+  return `目標の${targetKB}KBまで小さくできませんでした（現在 ${formatBytes(output.sizeBytes)}）。「サイズを変更」で縦横のサイズも小さくしてから、もう一度お試しください。`;
 }
 
 const EXT_BY_MIME: Record<string, string> = {
@@ -118,7 +118,7 @@ const PREVIEW_DEBOUNCE_MS = 250;
 
 export function ImageCanvasTool() {
   const [compressKind, setCompressKind] = useState<CompressKind>("quality");
-  // 新工程1：初期状態は「サイズを変更する」だけを選んだ状態（圧縮は必要なときに利用者がオンにする）
+  // 新工程1：初期状態は「サイズを変更」だけを選んだ状態（圧縮は必要なときに利用者がオンにする）
   const [useResize, setUseResize] = useState(true);
   const [useCompress, setUseCompress] = useState(false);
   const plan: ImageRunPlan = { resize: useResize, compress: useCompress, compressKind };
@@ -433,7 +433,7 @@ export function ImageCanvasTool() {
         </div>
         {!hasAction && (
           <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="image-op-none">
-            「サイズを変更する」「圧縮する」の、少なくとも一方を選んでください。
+            「サイズを変更」「容量を圧縮」の、少なくとも一方を選んでください。
           </p>
         )}
         {useResize && useCompress && (

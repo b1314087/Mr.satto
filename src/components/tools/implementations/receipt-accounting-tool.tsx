@@ -208,7 +208,8 @@ export function ReceiptAccountingTool() {
   const [defaults, setDefaults] = useState<ReceiptJournalDefaults>(EMPTY_RECEIPT_JOURNAL_DEFAULTS);
   // 読み取りの途中（コールバックの中）でも、最新の初期値を使うために ref にも持つ
   const defaultsRef = useRef<ReceiptJournalDefaults>(EMPTY_RECEIPT_JOURNAL_DEFAULTS);
-  const [previewOpen, setPreviewOpen] = useState(true);
+  // 仕訳プレビューの表を開くか。null のあいだは自動（明細があれば開き、0件なら畳む）。ユーザーが開け閉めしたら、その選択に従う
+  const [previewOpenChoice, setPreviewOpenChoice] = useState<boolean | null>(null);
 
   const docsRef = useRef<DocRow[]>([]);
   const queueRef = useRef<QueueItem[]>([]);
@@ -478,6 +479,8 @@ export function ReceiptAccountingTool() {
     });
     return { preview, exportRecords, problems };
   }, [docs, today]);
+  const hasJournalRows = plan.preview.length > 0;
+  const previewOpen = previewOpenChoice ?? hasJournalRows;
 
   const confirmedCount = docs.filter((d) => d.confirmed).length;
   const unconfirmedCount = docs.length - confirmedCount;
@@ -922,11 +925,13 @@ export function ReceiptAccountingTool() {
         )}
       </section>
 
-      {/* 画面の下に固定する仕訳プレビューと出力 */}
+      {/* 仕訳プレビューと出力。明細があるときだけ、画面の下に固定する（スマホ幅では固定しない）。
+          明細が0件のときや、スマホ幅で固定すると、読み込みの案内や明細を大きく覆ってしまうため */}
       <section
         aria-labelledby="receipt-preview-title"
         data-testid="receipt-journal-preview"
-        className="sticky bottom-0 z-20 flex flex-col gap-2 rounded-t-xl border border-neutral-300 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-neutral-700 dark:bg-neutral-950/95"
+        data-sticky={hasJournalRows ? "true" : undefined}
+        className={`${hasJournalRows ? "sm:sticky sm:bottom-0 sm:rounded-b-none" : ""} z-20 flex flex-col gap-2 rounded-xl border border-neutral-300 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-neutral-700 dark:bg-neutral-950/95`}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="receipt-preview-title" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
@@ -935,7 +940,7 @@ export function ReceiptAccountingTool() {
           <button
             type="button"
             className={smallButton}
-            onClick={() => setPreviewOpen((v) => !v)}
+            onClick={() => setPreviewOpenChoice(!previewOpen)}
             aria-expanded={previewOpen}
             data-testid="receipt-preview-toggle"
           >

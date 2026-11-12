@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ExcelToCsvTool } from "./excel-to-csv-tool";
 import { CsvToExcelTool } from "./csv-to-excel-tool";
 import { EXCEL_CSV_MODES, getExcelCsvMode, type ExcelCsvMode } from "@/lib/tools/excel-csv-modes";
+import { useAnnounceToolMode } from "@/lib/guides/tool-mode";
 
 /**
  * Excel・CSV変換の総合画面。「Excel → CSV」と「CSV → Excel」を、操作の切り替えで使い分ける。
@@ -29,6 +30,8 @@ function activeClass(active: boolean): string {
 
 export function ExcelCsvConvertTool({ initialMode = "excel-to-csv" }: ExcelCsvConvertToolProps) {
   const [mode, setMode] = useState<ExcelCsvMode>(initialMode);
+  // 使い方の幕に、いま選ばれているモードを知らせる（幕を開くと、このモードの使い方の図が出る）
+  useAnnounceToolMode(mode);
   const info = getExcelCsvMode(mode);
 
   return (

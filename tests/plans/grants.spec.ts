@@ -91,6 +91,11 @@ test.describe("applyGrantToPlan", () => {
 test.describe("trialOfferState", () => {
   const base = { signedIn: true, subscriptionPremium: false, grantActive: false, trialUsed: false };
   test("未ログインは会員登録の案内", () => expect(trialOfferState({ ...base, signedIn: false })).toBe("guest"));
+  test("会員登録が使えない環境（Supabaseの設定がない）では、会員登録の案内も含めて出さない", () => {
+    expect(trialOfferState({ ...base, signedIn: false, signupAvailable: false })).toBe("hidden");
+    expect(trialOfferState({ ...base, signupAvailable: false })).toBe("hidden");
+    expect(trialOfferState({ ...base, signedIn: false, signupAvailable: true })).toBe("guest");
+  });
   test("ログイン済みで未使用なら、ボタンを出す", () => expect(trialOfferState(base)).toBe("available"));
   test("使用済みなら出さない", () => expect(trialOfferState({ ...base, trialUsed: true })).toBe("hidden"));
   test("付与中は、利用中の表示", () => expect(trialOfferState({ ...base, grantActive: true })).toBe("active"));

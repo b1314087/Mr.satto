@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { featureFlags } from "@/lib/config/features";
 import Link from "next/link";
 import { HomeSearch } from "@/components/tools/home-search";
@@ -10,6 +11,11 @@ import { JsonLd } from "@/components/seo/json-ld";
 import { GlassCard } from "@/components/ui/glass-card";
 import { BrandMark } from "@/components/ui/brand-mark";
 import { buildOrganization, buildWebApplication, buildWebSite } from "@/lib/seo/structured-data";
+
+// トップページの canonical（以前は全ページ共通の設定（layout.tsx）にあった。指定のないページがトップを指さないよう、ここへ移した）
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 export default function Home() {
   // 一覧・検索に出るツール（総合ツールに統合済みの旧ツールは含まない）のうち、使えるもの

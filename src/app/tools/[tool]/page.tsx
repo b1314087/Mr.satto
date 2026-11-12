@@ -183,21 +183,23 @@ export default async function ToolPage({ params }: ToolPageProps) {
 
       <Breadcrumb items={breadcrumbItems} />
 
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="mb-2 flex items-center gap-3">
+      {/* 見出し：1行目にツール名とカテゴリ、2行目に説明文、3行目に「使い方」「よくある質問」。
+          説明文の長さやツール名の長さに関係なく、どのツールでも同じ並びにする */}
+      <div className="mb-6 flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <CategoryIcon id={tool.category} size="lg" />
-            <h1 className="text-2xl font-bold text-ms-text">{tool.name}</h1>
+            <h1 className="min-w-0 text-2xl font-bold text-ms-text [overflow-wrap:anywhere]">{tool.name}</h1>
           </div>
-          <p className="text-ms-muted">{seo?.lead ?? tool.description}</p>
+          <div className="shrink-0 pt-1">
+            <CategoryBadge category={tool.category} />
+          </div>
         </div>
-        <div className="flex flex-col items-end gap-2 max-sm:w-full max-sm:flex-row-reverse max-sm:items-center max-sm:justify-between">
-          <CategoryBadge category={tool.category} />
-          {seo && (
-            // 使い方・よくある質問（全ツール共通のパネル）。統合済みの旧ツールは、まとめ先のツールの図を使う
-            <ToolGuide toolId={tool.mergedInto ?? tool.id} toolName={tool.name} howTo={seo.howTo} faq={seo.faq} />
-          )}
-        </div>
+        <p className="text-ms-muted">{seo?.lead ?? tool.description}</p>
+        {seo && (
+          // 使い方・よくある質問（全ツール共通の幕）。統合済みの旧アドレスは、そのアドレスで開くモードの図から始める
+          <ToolGuide toolId={tool.id} hubId={tool.mergedInto ?? tool.id} toolName={tool.name} howTo={seo.howTo} faq={seo.faq} />
+        )}
       </div>
 
       <div className="ms-tool-panel p-4 sm:p-6">

@@ -1,9 +1,15 @@
 import type { Tool } from "@/lib/tools/types";
 import { ToolCard } from "./tool-card";
 
-export function ToolGrid({ tools, emptyMessage = "該当するツールが見つかりませんでした。別の言葉でも検索してみてください。" }: {
+export function ToolGrid({
+  tools,
+  emptyMessage = "該当するツールが見つかりませんでした。別の言葉でも検索してみてください。",
+  headingLevel = "h3",
+}: {
   tools: Tool[];
   emptyMessage?: string;
+  /** カードのツール名の見出しの階層（ToolCard の headingLevel） */
+  headingLevel?: "h2" | "h3";
 }) {
   if (tools.length === 0) {
     return (
@@ -16,7 +22,7 @@ export function ToolGrid({ tools, emptyMessage = "該当するツールが見つ
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {tools.map((tool) => (
-        <ToolCard key={tool.id} tool={tool} />
+        <ToolCard key={tool.id} tool={tool} headingLevel={headingLevel} />
       ))}
     </div>
   );
