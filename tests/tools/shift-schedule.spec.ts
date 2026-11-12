@@ -354,17 +354,17 @@ test("shift-schedule: 曜日を指定してまとめて入れる（土日・祝�
   await expect(page.getByTestId("shift-bulk-message")).toContainText("曜日を1つ以上");
 });
 
-test("shift-schedule: 連続勤務・休息時間・必要人数が目安に合わない箇所を、印と一覧で知らせる", async ({ page }) => {
+test("shift-schedule: 連続勤務・休息時間・必要人数が目安に合わない箇所を、表の上の印で知らせる（確認の一覧は無い：総合改修 6）", async ({ page }) => {
   await openTool(page);
-  await expect(page.getByTestId("shift-issues")).toContainText("未入力のセルが");
+  await expect(page.getByTestId("shift-issues")).toHaveCount(0);
+  await expect(page.getByText("確認（決めた目安に合わない箇所）")).toHaveCount(0);
   await page.getByTestId("shift-brush-日").click();
   for (let d = 1; d <= 7; d++) await cell(page, 0, d).click();
-  await expect(page.getByTestId("shift-issues")).toContainText("スタッフ1：7日連続の勤務です");
   await expect(cell(page, 0, 4)).toHaveAttribute("data-flagged", "true");
+  await expect(cell(page, 0, 4)).toHaveAttribute("aria-label", /（要確認）/);
   await expect(cell(page, 1, 4)).not.toHaveAttribute("data-flagged", "true");
   // 上限を7日にすると、問題でなくなる
   await page.getByTestId("shift-max-consecutive").fill("7");
-  await expect(page.getByTestId("shift-issues")).not.toContainText("連続の勤務です");
   await expect(cell(page, 0, 4)).not.toHaveAttribute("data-flagged", "true");
 
   // 遅番→翌日の早番は、10時間しかあかない
@@ -372,16 +372,22 @@ test("shift-schedule: 連続勤務・休息時間・必要人数が目安に合�
   await cell(page, 1, 10).click();
   await page.getByTestId("shift-brush-早").click();
   await cell(page, 1, 11).click();
-  await expect(page.getByTestId("shift-issues")).toContainText("スタッフ2：10月10日(土)の「遅番」の終了から、翌日の「早番」の開始まで、10:00しかあいていません");
   await expect(cell(page, 1, 11)).toHaveAttribute("data-flagged", "true");
 
-  // 必要人数
+  // 必要人数：足りない日の「出勤人数」に印が付く（足りている日には付かない）
+  await expect(page.getByTestId("shift-day-count-8")).not.toHaveAttribute("data-short", "true");
   await page.getByTestId("shift-min-staff").fill("2");
-  await expect(page.getByTestId("shift-issues")).toContainText("10月8日(木)：出勤が0人です（必要人数は2人）");
-  await expect(page.getByTestId("shift-issues")).toContainText("10月1日(木)：出勤が1人です");
+  await expect(page.getByTestId("shift-day-count-8")).toHaveAttribute("data-short", "true");
+  await expect(page.getByTestId("shift-day-count-8")).toHaveAttribute("title", "必要な人数（2人）に足りません");
+  await expect(page.getByTestId("shift-day-count-1")).toHaveAttribute("data-short", "true");
+  await page.getByTestId("shift-brush-日").click();
+  await cell(page, 1, 1).click();
+  await expect(page.getByTestId("shift-day-count-1")).not.toHaveAttribute("data-short", "true"); // 2人になった
+  await page.getByTestId("shift-min-staff").fill("0");
+  await expect(page.getByTestId("shift-day-count-8")).not.toHaveAttribute("data-short", "true");
 });
 
-test("shift-schedule: 勤務区分に不備があると、理由を示して書き出しを止め、確認も止める。直すと元に戻る", async ({ page }) => {
+test("shift-schedule: 勤務区分に不備があると、理由を示して書き出しを止め、表の上の印も止める。直すと元に戻る", async ({ page }) => {
   await openTool(page);
   await expect(page.getByRole("button", { name: "PDFでダウンロード" })).toBeEnabled();
   // 略称を重ねる
@@ -391,7 +397,7 @@ test("shift-schedule: 勤務区分に不備があると、理由を示して書�
   await expect(page.getByRole("button", { name: "PDFでダウンロード" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Excelでダウンロード" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "CSVでダウンロード" })).toBeDisabled();
-  await expect(page.getByTestId("shift-issues")).toContainText("確認は行っていません");
+  await expect(page.getByTestId("shift-cell-0-1")).not.toHaveAttribute("data-flagged", "true");
   await page.getByTestId("shift-type-code-1").fill("遅");
   await expect(page.getByTestId("shift-type-errors")).toHaveCount(0);
 
@@ -432,7 +438,7 @@ test("shift-schedule: 夜勤（日をまたぐ）を足すと、実働が計算�
   await cell(page, 1, 2).click();
   await page.getByTestId("shift-brush-日").click();
   await cell(page, 1, 3).click();
-  await expect(page.getByTestId("shift-issues")).toContainText("スタッフ2：10月2日(金)の「夜勤」の終了から、翌日の「日勤」の開始まで");
+  await expect(cell(page, 1, 3)).toHaveAttribute("data-flagged", "true"); // 夜勤→翌日の日勤は、休息が足りない
 
   await page.getByRole("button", { name: "夜勤を削除" }).click();
   await expect(cell(page, 0, 1)).toHaveAttribute("data-code", "");

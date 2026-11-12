@@ -110,6 +110,8 @@ export function ShiftScheduleTool() {
     }
     return set;
   }, [issues]);
+  // 必要な出勤人数に足りない日（総合改修 6：確認の一覧をなくしたため、表の「出勤人数」の行に印を付けて知らせる）
+  const shortDays = useMemo(() => new Set(issues.filter((i) => i.kind === "min-staff").flatMap((i) => i.days)), [issues]);
   const problems = [...(ymError ? [ymError] : []), ...typeProblems, ...staffProblems];
 
   function newId(prefix: string, used: Set<string>): string {
@@ -521,7 +523,16 @@ export function ShiftScheduleTool() {
                 <tr>
                   <th scope="row" className="sticky left-0 z-10 border border-neutral-300 bg-neutral-100 px-2 py-1 text-left font-medium dark:border-neutral-700 dark:bg-neutral-800">出勤人数</th>
                   {summary?.perDay.map((d, i) => (
-                    <td key={i} data-testid={`shift-day-count-${i + 1}`} className="border border-neutral-300 bg-neutral-50 text-center dark:border-neutral-700 dark:bg-neutral-900">{d.working}</td>
+                    <td
+                      key={i}
+                      data-testid={`shift-day-count-${i + 1}`}
+                      data-short={shortDays.has(i + 1) ? "true" : undefined}
+                      title={shortDays.has(i + 1) ? `必要な人数（${schedule.settings.minStaffPerDay}人）に足りません` : undefined}
+                      className={`border border-neutral-300 text-center dark:border-neutral-700 ${shortDays.has(i + 1) ? "bg-red-50 font-semibold text-red-700 outline outline-2 -outline-offset-2 outline-red-600 dark:bg-red-950/40 dark:text-red-300" : "bg-neutral-50 dark:bg-neutral-900"}`}
+                    >
+                      {d.working}
+                      {shortDays.has(i + 1) && <span className="sr-only">（必要な人数に足りません）</span>}
+                    </td>
                   ))}
                   <td colSpan={4} className="border border-neutral-300 dark:border-neutral-700" />
                 </tr>
@@ -580,21 +591,6 @@ export function ShiftScheduleTool() {
           {bulkMessage && <p data-testid="shift-bulk-message" className="text-xs text-neutral-600 dark:text-neutral-300">{bulkMessage}</p>}
         </div>
 
-        <div className="flex flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800" data-testid="shift-issues">
-          <h3 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">確認（決めた目安に合わない箇所）</h3>
-          {typeProblems.length > 0 ? (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">勤務区分に入力の不備があるため、確認は行っていません。上の「2. 勤務区分」を直してください。</p>
-          ) : issues.length === 0 ? (
-            <p data-testid="shift-issues-none" className="text-xs text-neutral-600 dark:text-neutral-300">目安に合わない箇所は見つかりませんでした。</p>
-          ) : (
-            <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-neutral-700 dark:text-neutral-200">
-              {issues.map((issue, i) => (
-                <li key={i} data-kind={issue.kind}>{issue.message}</li>
-              ))}
-            </ul>
-          )}
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">入力した目安との比較だけで、法令や就業規則に合っているかの判定ではありません。</p>
-        </div>
       </section>
       </PreviewFullscreenFrame>
 
