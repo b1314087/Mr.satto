@@ -144,7 +144,13 @@ export function detectPrefecture(text: string): { code: number; rest: string } |
 export async function searchByAddress(
   prefCode: number | null,
   query: string
-): Promise<{ results: PostalEntry[]; truncated: boolean; prefCode: number }> {
+): Promise<{
+  results: PostalEntry[];
+  truncated: boolean;
+  prefCode: number;
+  /** 町域まで一致した（番地まで入れた住所の町域、または市区町村＋町域がぴったり一致した）候補の郵便番号（重なりなし）。一括処理で「確定」かを決める */
+  confidentZips: string[];
+}> {
   let code = prefCode;
   let rest = query;
   const detected = detectPrefecture(query);
@@ -171,7 +177,8 @@ export async function searchByAddress(
   // 番地まで入れたときは、町域まで一致したものだけにする（ほかの候補を混ぜない）
   const exact = scored.filter((s) => s.score >= 1000);
   const list = exact.length > 0 ? exact : scored;
-  return { results: list.slice(0, POSTAL_RESULT_MAX).map((s) => s.e), truncated: list.length > POSTAL_RESULT_MAX, prefCode: code };
+  const confidentZips = [...new Set(scored.filter((s) => s.score >= 900 && s.e.town !== "").map((s) => s.e.zip))];
+  return { results: list.slice(0, POSTAL_RESULT_MAX).map((s) => s.e), truncated: list.length > POSTAL_RESULT_MAX, prefCode: code, confidentZips };
 }
 
 /** 住所を1行の文字にする（町域が空のときは市区町村まで） */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Segmented } from "@/components/ui/segmented";
 import { ErrorMessage } from "@/components/common/error-message";
 import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
@@ -14,6 +14,8 @@ import {
   type PostalEntry,
 } from "@/lib/postal/postal-search";
 import { useAnnounceToolMode } from "@/lib/guides/tool-mode";
+import { usePrehydrationValue } from "@/lib/hooks/use-prehydration-value";
+import { PostalBulkSection } from "./postal-bulk-section";
 
 type Mode = "zip-to-address" | "address-to-zip";
 
@@ -61,6 +63,8 @@ export function PostalSearchTool({ initialMode = "zip-to-address" }: { initialMo
   const [mode, setMode] = useState<Mode>(initialMode);
   useAnnounceToolMode(mode);
   const [zipText, setZipText] = useState("");
+  const zipRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  usePrehydrationValue(zipRef, zipText, setZipText);
   const [prefCode, setPrefCode] = useState<number | 0>(0);
   const [addressText, setAddressText] = useState("");
   const [results, setResults] = useState<PostalEntry[] | null>(null);
@@ -123,7 +127,8 @@ export function PostalSearchTool({ initialMode = "zip-to-address" }: { initialMo
               <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
                 郵便番号（7桁。上3桁以上でも探せます）
                 <input
-                  data-testid="postal-zip-input"
+                  ref={zipRef}
+            data-testid="postal-zip-input"
                   value={zipText}
                   onChange={(e) => setZipText(e.target.value)}
                   inputMode="numeric"
@@ -211,6 +216,8 @@ export function PostalSearchTool({ initialMode = "zip-to-address" }: { initialMo
           </ul>
         </section>
       )}
+
+      <PostalBulkSection direction={mode} />
 
       <p className="text-xs text-ms-muted" data-testid="postal-data-note">
         住所データ：日本郵便「郵便番号データ」{updated ? `（${updated}時点）` : ""}。検索はお使いのブラウザの中で行い、入力した郵便番号・住所は外部へ送りません。

@@ -219,6 +219,9 @@ const TEXT_RULES: TextRule[] = [
   // ---- 年度カレンダー作成（AIで読み取る機能は課金オンのときだけ提供。文言は fiscal-calendar-copy.ts）----
   // 課金オンの文言が元の文章。課金オフのときだけ、AI・画像に触れない文言へ差し替える。
   ...FISCAL_CALENDAR_COPY_PAIRS.map((pair): TextRule => ({ from: pair.on, resolve: (ctx) => (ctx.billing ? undefined : pair.off) })),
+  // 郵便番号・住所検索の「まとめて調べる」（プレミアム。課金オフの間は、だれでも使える）
+  { from: "「まとめて調べる」（プレミアム）で、", resolve: (ctx) => (ctx.billing ? undefined : "「まとめて調べる」で、") },
+  { from: "はい（プレミアムプランの機能）。", resolve: (ctx) => (ctx.billing ? undefined : "はい。") },
   // 複数ファイルの一括処理（課金オフの間は、プランがなく、だれでも使える）
   ...BATCH_COPY_PAIRS.map((pair): TextRule => ({ from: pair.on, resolve: (ctx) => (ctx.billing ? undefined : pair.off) })),
 ];
