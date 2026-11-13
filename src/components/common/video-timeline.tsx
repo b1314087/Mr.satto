@@ -2,6 +2,8 @@
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { cn } from "@/lib/utils/cn";
+import { snapTime } from "@/lib/video/cut-segments";
+import { SNAP_PX, TIMELINE_ZOOM, TimelineToolbar } from "@/components/common/timeline-toolbar";
 
 /**
  * 動画編集ソフトのようなタイムライン（総合改修 11・30）。
@@ -11,6 +13,9 @@ import { cn } from "@/lib/utils/cn";
  *   左右の端をドラッグすると開始・終了だけを変えられる。数字を入れなくても、ドラッグで表示時間・区間を調整できる。
  * - 端（つまみ）にはキーボードでも触れられる（←→で0.1秒、Shiftを押しながらで1秒）。
  * - スマホでも指で動かせるよう、つまみの当たり判定を広めにしている。
+ * - 2026-11：拡大・縮小（バー・＋－）で横に広げて細かく操作できる（横にスクロール。行の名前は左に残る）。
+ *   磁石（オン・オフ）：バーを動かすと、ほかの行のバーの端・再生位置・最初・最後の近くで吸い付く（黄色い線）。
+ *   再生位置を動かすときも、バーの端に吸い付く。
  */
 export interface TimelineRow {
   id: string;
@@ -55,6 +60,7 @@ export function VideoTimeline({
   selection,
   onSelectionChange,
   selectionLabel = "範囲を選ぶ",
+  tools = true,
 }: {
   duration: number;
   currentTime: number;
@@ -74,8 +80,13 @@ export function VideoTimeline({
   selection?: { start: number; end: number } | null;
   onSelectionChange?: (range: { start: number; end: number } | null) => void;
   selectionLabel?: string;
+  /** 拡大・縮小と磁石の切り替えを出す（既定：出す） */
+  tools?: boolean;
 }) {
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [zoom, setZoom] = useState<number>(TIMELINE_ZOOM.min);
+  const [snapOn, setSnapOn] = useState(true);
+  const [guide, setGuide] = useState<number | null>(null);
   const rulerRef = useRef<HTMLDivElement>(null);
   const seekingRef = useRef(false);
   const selectRef = useRef<{ x0: number; t0: number; left: number; width: number } | null>(null);
@@ -83,15 +94,33 @@ export function VideoTimeline({
   const pct = (t: number) => `${(Math.min(D, Math.max(0, t)) / D) * 100}%`;
   const round = (t: number) => Math.round(t * 1000) / 1000;
 
-  // 目盛り：長さに合わせて、5〜10本程度になる間隔
-  const step = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => D / s <= 10) ?? 600;
+  // 目盛り：表示している幅（倍率）に合わせて、画面の幅あたり 5〜10本程度になる間隔
+  const visibleSec = D / (zoom / 100);
+  const step = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => visibleSec / s <= 10) ?? 600;
   const ticks: number[] = [];
   for (let t = 0; t <= D + 1e-6; t += step) ticks.push(t);
+
+  // 磁石：吸い付く先（ほかの行のバーの端・最初・最後。exceptId の行は除く）
+  function edgesExcept(exceptId?: string): number[] {
+    const out = [0, D];
+    for (const r of rows) if (r.id !== exceptId) out.push(r.start, r.end);
+    return out;
+  }
+  function snapped(t: number, widthPx: number, candidates: number[]): number {
+    if (!snapOn || widthPx <= 0) {
+      setGuide(null);
+      return t;
+    }
+    const r = snapTime(t, candidates, (SNAP_PX / widthPx) * D);
+    setGuide(r.snappedTo);
+    return r.t;
+  }
 
   function seekFromEvent(e: ReactPointerEvent) {
     const r = rulerRef.current?.getBoundingClientRect();
     if (!r || r.width === 0) return;
-    onSeek(round(Math.min(D, Math.max(0, ((e.clientX - r.left) / r.width) * D))));
+    const t = Math.min(D, Math.max(0, ((e.clientX - r.left) / r.width) * D));
+    onSeek(round(snapped(t, r.width, edgesExcept())));
   }
 
   function beginDrag(e: ReactPointerEvent<HTMLElement>, row: TimelineRow, kind: DragKind) {
@@ -109,16 +138,37 @@ export function VideoTimeline({
     const dt = ((e.clientX - drag.x0) / drag.laneWidth) * D;
     let s = drag.start0;
     let en = drag.end0;
+    const candidates = [...edgesExcept(drag.id), currentTime];
     if (drag.kind === "move") {
       const len = drag.end0 - drag.start0;
       s = Math.min(D - len, Math.max(0, drag.start0 + dt));
+      // 左端・右端のうち、近いほうを吸い付ける
+      if (snapOn) {
+        const th = (SNAP_PX / drag.laneWidth) * D;
+        const a = snapTime(s, candidates, th);
+        const b = snapTime(s + len, candidates, th);
+        const da = a.snappedTo === null ? Infinity : Math.abs(a.t - s);
+        const db = b.snappedTo === null ? Infinity : Math.abs(b.t - (s + len));
+        if (da <= db && a.snappedTo !== null) {
+          s = a.t;
+          setGuide(a.snappedTo);
+        } else if (b.snappedTo !== null) {
+          s = b.t - len;
+          setGuide(b.snappedTo);
+        } else setGuide(null);
+        s = Math.min(D - len, Math.max(0, s));
+      }
       en = s + len;
     } else if (drag.kind === "start") {
-      s = Math.min(drag.end0 - minLength, Math.max(0, drag.start0 + dt));
+      s = Math.min(drag.end0 - minLength, Math.max(0, snapped(drag.start0 + dt, drag.laneWidth, candidates)));
     } else {
-      en = Math.max(drag.start0 + minLength, Math.min(D, drag.end0 + dt));
+      en = Math.max(drag.start0 + minLength, Math.min(D, snapped(drag.end0 + dt, drag.laneWidth, candidates)));
     }
     onChange(drag.id, round(s), round(en));
+  }
+  function stopDrag() {
+    setDrag(null);
+    setGuide(null);
   }
 
   function keyNudge(e: KeyboardEvent<HTMLElement>, row: TimelineRow, kind: "start" | "end") {
@@ -131,8 +181,12 @@ export function VideoTimeline({
 
   return (
     <div className="flex min-w-0 flex-col gap-1 select-none" data-testid={testId}>
+      {tools && <TimelineToolbar zoom={zoom} onZoom={setZoom} snap={snapOn} onSnap={setSnapOn} testId={testId} />}
+      {/* 拡大すると横に広がり、横にスクロールできる（行の名前の列は左に残る） */}
+      <div className="min-w-0 overflow-x-auto pb-1" data-testid={`${testId}-scroll`}>
+      <div className="relative flex flex-col gap-1" style={{ width: `calc(3rem + (100% - 3rem) * ${zoom / 100})` }} data-testid={`${testId}-inner`}>
       <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-end gap-2">
-        <span className="text-[10px] text-neutral-500 dark:text-neutral-400">時間</span>
+        <span className={cn("text-[10px] text-neutral-500 dark:text-neutral-400", STICKY)}>時間</span>
         <div
           ref={rulerRef}
           className="relative h-7 cursor-pointer touch-none rounded-md bg-neutral-100 dark:bg-neutral-800"
@@ -143,8 +197,14 @@ export function VideoTimeline({
             seekFromEvent(e);
           }}
           onPointerMove={(e) => seekingRef.current && seekFromEvent(e)}
-          onPointerUp={() => (seekingRef.current = false)}
-          onPointerCancel={() => (seekingRef.current = false)}
+          onPointerUp={() => {
+            seekingRef.current = false;
+            setGuide(null);
+          }}
+          onPointerCancel={() => {
+            seekingRef.current = false;
+            setGuide(null);
+          }}
           role="slider"
           aria-label="再生位置（タイムライン）"
           aria-valuemin={0}
@@ -168,7 +228,7 @@ export function VideoTimeline({
 
       {onSelectionChange && (
         <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-2">
-          <span className="text-[10px] leading-tight text-red-600 dark:text-red-400">{selectionLabel}</span>
+          <span className={cn("text-[10px] leading-tight text-red-600 dark:text-red-400", STICKY)}>{selectionLabel}</span>
           <div
             className="relative h-8 cursor-crosshair touch-none rounded-md border border-dashed border-red-300 bg-red-50/40 dark:border-red-800 dark:bg-red-950/20"
             data-testid={`${testId}-select`}
@@ -177,19 +237,25 @@ export function VideoTimeline({
               const r = e.currentTarget.getBoundingClientRect();
               if (r.width === 0) return;
               e.currentTarget.setPointerCapture(e.pointerId);
-              const t0 = Math.min(D, Math.max(0, ((e.clientX - r.left) / r.width) * D));
+              const t0 = snapped(Math.min(D, Math.max(0, ((e.clientX - r.left) / r.width) * D)), r.width, [...edgesExcept(), currentTime]);
               selectRef.current = { x0: e.clientX, t0, left: r.left, width: r.width };
               onSelectionChange(null);
             }}
             onPointerMove={(e) => {
               const st = selectRef.current;
               if (!st) return;
-              const t = Math.min(D, Math.max(0, ((e.clientX - st.left) / st.width) * D));
               if (Math.abs(e.clientX - st.x0) < 3) return;
+              const t = snapped(Math.min(D, Math.max(0, ((e.clientX - st.left) / st.width) * D)), st.width, [...edgesExcept(), currentTime]);
               onSelectionChange({ start: round(Math.min(st.t0, t)), end: round(Math.max(st.t0, t)) });
             }}
-            onPointerUp={() => (selectRef.current = null)}
-            onPointerCancel={() => (selectRef.current = null)}
+            onPointerUp={() => {
+              selectRef.current = null;
+              setGuide(null);
+            }}
+            onPointerCancel={() => {
+              selectRef.current = null;
+              setGuide(null);
+            }}
           >
             {selection && selection.end > selection.start && (
               <span
@@ -211,7 +277,7 @@ export function VideoTimeline({
             <button
               type="button"
               onClick={() => onSelect?.(row.id)}
-              className={cn("truncate rounded px-1 text-left text-xs", row.selected ? "font-bold text-blue-700 dark:text-blue-300" : "text-neutral-600 dark:text-neutral-300")}
+              className={cn("truncate rounded px-1 text-left text-xs", STICKY, row.selected ? "font-bold text-blue-700 dark:text-blue-300" : "text-neutral-600 dark:text-neutral-300")}
               title={row.label}
             >
               {row.label}
@@ -227,8 +293,8 @@ export function VideoTimeline({
                 style={{ left: pct(row.start), width: pct(row.end - row.start) }}
                 onPointerDown={(e) => beginDrag(e, row, "move")}
                 onPointerMove={moveDrag}
-                onPointerUp={() => setDrag(null)}
-                onPointerCancel={() => setDrag(null)}
+                onPointerUp={stopDrag}
+                onPointerCancel={stopDrag}
                 data-testid={`${rowTestId}-bar`}
                 aria-label={`${row.label}：${fmt(row.start)}〜${fmt(row.end)}（ドラッグで移動）`}
               >
@@ -243,7 +309,7 @@ export function VideoTimeline({
                   className="absolute inset-y-0 left-0 z-10 flex w-4 cursor-ew-resize items-center justify-center bg-black/25 focus-visible:outline-2 focus-visible:outline-white"
                   onPointerDown={(e) => beginDrag(e, row, "start")}
                   onPointerMove={moveDrag}
-                  onPointerUp={() => setDrag(null)}
+                  onPointerUp={stopDrag}
                   onKeyDown={(e) => keyNudge(e, row, "start")}
                   data-testid={`${rowTestId}-start`}
                 >
@@ -261,7 +327,7 @@ export function VideoTimeline({
                   className="absolute inset-y-0 right-0 z-10 flex w-4 cursor-ew-resize items-center justify-center bg-black/25 focus-visible:outline-2 focus-visible:outline-white"
                   onPointerDown={(e) => beginDrag(e, row, "end")}
                   onPointerMove={moveDrag}
-                  onPointerUp={() => setDrag(null)}
+                  onPointerUp={stopDrag}
                   onKeyDown={(e) => keyNudge(e, row, "end")}
                   data-testid={`${rowTestId}-end`}
                 >
@@ -272,6 +338,18 @@ export function VideoTimeline({
           </div>
         ))}
       </div>
+      {guide !== null && (
+        <span
+          className="pointer-events-none absolute inset-y-0 z-20 w-0.5 -translate-x-1/2 bg-yellow-400"
+          style={{ left: `calc(3rem + (100% - 3rem) * ${Math.min(1, Math.max(0, guide / D))})` }}
+          data-testid={`${testId}-guide`}
+        />
+      )}
+      </div>
+      </div>
     </div>
   );
 }
+
+/** 横にスクロールしても、行の名前の列が左に残るようにする */
+const STICKY = "sticky left-0 z-30 bg-white/90 backdrop-blur-sm dark:bg-neutral-900/90";

@@ -21,7 +21,8 @@ import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-vid
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useAnnounceToolMode } from "@/lib/guides/tool-mode";
 import { moveItem, useDragReorder } from "@/lib/hooks/use-drag-reorder";
-import { removeRangeFromSegments, type CutSegment as Segment } from "@/lib/video/cut-segments";
+import { outputToSource, removeOutputRange, sequenceStarts, splitAtOutputTime, type CutSegment as Segment } from "@/lib/video/cut-segments";
+import { SequenceTimeline } from "@/components/common/sequence-timeline";
 
 type Mode = "cut" | "merge";
 
@@ -66,8 +67,9 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
   const nextId = useRef(1);
   const newId = () => nextId.current++;
   const duration = meta?.durationSec ?? 0;
-  // つないだ結果の再生（区間の番号。null は止まっている）
-  const [seqIndex, setSeqIndex] = useState<number | null>(null);
+  // 2026-11：再生位置は「つないだあとの時間」で扱う。いま再生位置がある区間の番号（元の動画のどこを見ているかは、動画の再生位置）
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
   // ---- 複数の動画を結合 ----
   const [items, setItems] = useState<MergeItem[]>([]);
@@ -133,39 +135,63 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
     };
   }, [previewUrl]);
 
+  // 再生中は、区間の終わりで次の区間の始めへ移る（つないだ結果のとおりに再生する）。最後の区間の終わりで止める
+  const ai = Math.min(activeIndex, Math.max(0, segments.length - 1));
   useEffect(() => {
-    if (seqIndex === null) return;
     const v = videoRef.current;
-    const seg = segments[seqIndex];
+    const seg = segments[ai];
     if (!v || !seg) return;
-    if (currentTime >= seg.end - 0.04) {
-      const next = seqIndex + 1;
-      if (next >= segments.length) {
-        v.pause();
+    if (!v.paused && currentTime >= seg.end - 0.04) {
+      if (ai + 1 < segments.length) {
+        v.currentTime = segments[ai + 1].start;
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setSeqIndex(null);
-      } else {
-        v.currentTime = segments[next].start;
-        setSeqIndex(next);
-      }
+        setActiveIndex(ai + 1);
+      } else v.pause();
+      return;
     }
-  }, [currentTime, seqIndex, segments]);
+    // 動画の操作バーで、いまの区間の外へ動かしたときは、その時間を含む区間に合わせる
+    if (currentTime < seg.start - 0.05 || currentTime > seg.end + 0.05) {
+      const k = segments.findIndex((x) => currentTime >= x.start && currentTime <= x.end);
+      if (k >= 0) setActiveIndex(k);
+    }
+  }, [currentTime, ai, segments]);
 
-  function seek(t: number) {
+  useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    setSeqIndex(null);
-    v.currentTime = t;
-    setCurrentTime(t);
+    const on = () => setPlaying(true);
+    const off = () => setPlaying(false);
+    v.addEventListener("play", on);
+    v.addEventListener("pause", off);
+    v.addEventListener("ended", off);
+    return () => {
+      v.removeEventListener("play", on);
+      v.removeEventListener("pause", off);
+      v.removeEventListener("ended", off);
+    };
+  }, [previewUrl]);
+
+  const seqStarts = sequenceStarts(segments);
+  const outTotal = seqStarts[seqStarts.length - 1];
+  const activeSeg = segments[ai];
+  const outTime = activeSeg ? round(seqStarts[ai] + Math.min(activeSeg.end - activeSeg.start, Math.max(0, currentTime - activeSeg.start))) : 0;
+
+  /** つないだあとの時間 t へ移る */
+  function seek(t: number) {
+    const v = videoRef.current;
+    const hit = outputToSource(segments, t);
+    if (!v || !hit) return;
+    setActiveIndex(hit.index);
+    v.currentTime = hit.source;
+    setCurrentTime(hit.source);
   }
 
   function playJoined() {
     const v = videoRef.current;
     if (!v || segments.length === 0) return;
-    setSeqIndex(0);
-    v.currentTime = segments[0].start;
+    seek(0);
     v.muted = false;
-    void v.play().catch(() => setSeqIndex(null));
+    void v.play().catch(() => setPlaying(false));
   }
 
   function changeSegments(next: Segment[]) {
@@ -173,26 +199,27 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
     resetResult();
   }
 
+  // 削除する範囲（つないだあとの時間）を取り除く。うしろの区間は詰まる
   function deleteSelection() {
     if (!selection || selection.end - selection.start < 0.05) return;
-    changeSegments(removeRangeFromSegments(segments, selection, newId));
+    changeSegments(removeOutputRange(segments, selection, newId));
     setSelection(null);
   }
 
+  // 再生位置（つないだあとの時間）で区間を分ける。分けたうしろの区間を選んでおく（続けて削除・移動しやすいように）
   function splitAtPlayhead() {
-    const t = currentTime;
-    const i = segments.findIndex((s) => t - s.start >= MIN_CLIP_SEC && s.end - t >= MIN_CLIP_SEC);
-    if (i < 0) return;
-    const s = segments[i];
-    const next = [...segments];
-    next.splice(i, 1, { ...s, end: round(t) }, { id: newId(), start: round(t), end: s.end });
+    const next = splitAtOutputTime(segments, outTime, newId);
+    if (next === segments) return;
     changeSegments(next);
+    const hit = outputToSource(next, outTime + 0.001);
+    if (hit) setSelectedSeg(next[hit.index].id);
   }
+
 
   const cutReorder = useDragReorder(segments.length, (from, to) => changeSegments(moveItem(segments, from, to)));
   const clipsForCut = useMemo(() => (file ? segments.map((s) => ({ file, start: s.start, end: s.end, durationSec: duration })) : []), [file, segments, duration]);
   const keptSec = segments.reduce((sum, s) => sum + Math.max(0, s.end - s.start), 0);
-  const splittable = segments.some((s) => currentTime - s.start >= MIN_CLIP_SEC && s.end - currentTime >= MIN_CLIP_SEC);
+  const splittable = splitAtOutputTime(segments, outTime, () => -1) !== segments;
 
   // ---- 複数の動画を結合 ----
   async function addMergeFiles(files: File[]) {
@@ -365,7 +392,7 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
                 setFile(files[0]);
                 setSegments([]);
                 setSelection(null);
-                setSeqIndex(null);
+                setActiveIndex(0);
                 resetResult();
               }}
               onError={setError}
@@ -400,15 +427,16 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
               />
               {duration > 0 && (
                 <>
-                  <VideoTimeline
+                  <SequenceTimeline
                     testId="video-cut-timeline"
-                    rowTestId="video-cut-segment"
-                    duration={duration}
-                    currentTime={currentTime}
+                    clipTestId="video-cut-segment"
+                    clips={segments.map((x, i) => ({ id: String(x.id), label: `区間${i + 1}`, start: x.start, end: x.end, sourceDuration: duration, text: `${i + 1}` }))}
+                    currentTime={outTime}
                     onSeek={seek}
-                    rows={segments.map((s, i) => ({ id: String(s.id), label: `区間${i + 1}`, start: s.start, end: s.end, text: `${i + 1}`, selected: s.id === selectedSeg, colorClass: "bg-emerald-600" }))}
+                    selectedId={selectedSeg === null ? null : String(selectedSeg)}
                     onSelect={(id) => setSelectedSeg(Number(id))}
-                    onChange={(id, start, end) => changeSegments(segments.map((s) => (String(s.id) === id ? { ...s, start, end } : s)))}
+                    onTrim={(id, start, end) => changeSegments(segments.map((x) => (String(x.id) === id ? { ...x, start, end } : x)))}
+                    onReorder={(from, to) => changeSegments(moveItem(segments, from, to))}
                     minLength={MIN_CLIP_SEC}
                     selection={selection}
                     onSelectionChange={setSelection}
@@ -431,20 +459,20 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
                       data-testid="video-cut-split"
                       className="rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-neutral-200"
                     >
-                      再生位置（{formatTimeInput(currentTime)}）で分ける
+                      再生位置（{formatTimeInput(outTime)}）で分ける
                     </button>
                     <button
                       type="button"
-                      onClick={() => (seqIndex === null ? playJoined() : (videoRef.current?.pause(), setSeqIndex(null)))}
+                      onClick={() => (!playing ? playJoined() : videoRef.current?.pause())}
                       disabled={segments.length === 0}
                       data-testid="video-cut-play-joined"
                       className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
                     >
-                      {seqIndex === null ? "▶ つないだ結果を再生" : `■ 止める（区間${seqIndex + 1}を再生中）`}
+                      {!playing ? "▶ つないだ結果を再生" : `■ 止める（区間${ai + 1}を再生中）`}
                     </button>
                   </div>
                   <p className="text-xs text-ms-muted">
-                    赤い行をドラッグして不要な範囲を選び、「選んだ範囲を削除」を押します。緑のバー（残す区間）は、端をドラッグして長さを、真ん中をドラッグして位置を変えられます。
+                    区間はつないだ順に並びます（合計 {formatDuration(outTotal)}）。再生位置で「分ける」→ 下の一覧で不要な区間を「削除」すると、うしろが詰まります。端のドラッグで長さ、真ん中のドラッグで順番を変えられます。
                   </p>
                 </>
               )}
