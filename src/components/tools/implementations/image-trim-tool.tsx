@@ -19,23 +19,20 @@ import { ImagePassportPhotoTool } from "./image-passport-photo-tool";
 
 export type ImageTrimMode = "sns" | "crop" | "passport";
 
-export const IMAGE_TRIM_MODES: { mode: ImageTrimMode; label: string; description: string; formerToolId: string }[] = [
+export const IMAGE_TRIM_MODES: { mode: ImageTrimMode; label: string; formerToolId: string }[] = [
   {
     mode: "sns",
     label: "SNSサイズ",
-    description: "Instagram・X・YouTubeなど、SNSでよく使う大きさ（正方形・縦長・横長・ストーリー）に合わせて切り抜きます。",
     formerToolId: "image-sns-size",
   },
   {
     mode: "crop",
     label: "自由トリミング",
-    description: "画像の必要な部分だけを、ドラッグや縦横比の指定で切り抜きます。",
     formerToolId: "image-crop",
   },
   {
     mode: "passport",
     label: "証明写真",
-    description: "30×40mmなどの証明写真の寸法に合わせて切り抜き、画像として保存したり、A4用紙にまとめてPDFで印刷したりできます。",
     formerToolId: "image-passport-photo",
   },
 ];
@@ -50,7 +47,6 @@ function activeClass(active: boolean): string {
 
 export function ImageTrimTool() {
   const [mode, setMode] = useState<ImageTrimMode>(DEFAULT_MODE);
-  const info = IMAGE_TRIM_MODES.find((m) => m.mode === mode) ?? IMAGE_TRIM_MODES[1];
 
   // 旧アドレスから転送されてきたとき（?mode=sns / ?mode=passport）は、その目的を最初から選んでおく
   useEffect(() => {
@@ -77,9 +73,6 @@ export function ImageTrimTool() {
             </button>
           ))}
         </div>
-        <p data-testid="image-trim-mode-description" className="text-xs text-neutral-500 dark:text-neutral-400">
-          {info.description}
-        </p>
       </div>
 
       {/* key: 目的を切り替えたら、前の目的の状態（画像・設定・結果）を必ず捨てて作り直す */}

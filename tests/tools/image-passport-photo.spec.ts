@@ -174,3 +174,21 @@ test("passport-photo: モバイル幅(375px)でも横スクロールが発生せ
   await expect(page.getByRole("button", { name: "画像を書き出す" })).toBeVisible();
   await expect(page.getByRole("button", { name: "PDFを書き出す" })).toBeVisible();
 });
+
+test("画像トリミング：目的（SNSサイズ・自由トリミング・証明写真）の説明文と、証明写真の「提出先の規定」の注意書きは出さない（2026-11）", async ({ page }) => {
+  await page.goto("/tools/image-crop");
+  const removed = [
+    "SNSでよく使う大きさ（正方形・縦長・横長・ストーリー）に合わせて切り抜きます",
+    "画像の必要な部分だけを、ドラッグや縦横比の指定で切り抜きます",
+    "証明写真の寸法に合わせて切り抜き",
+    "提出先の規定を必ずご確認ください",
+  ];
+  const tool = page.getByTestId("image-trim-modes").locator("xpath=../..");
+  for (const mode of ["sns", "crop", "passport"]) {
+    await page.getByTestId(`image-trim-mode-${mode}`).click();
+    await expect(page.getByTestId(`image-trim-mode-${mode}`)).toHaveAttribute("aria-pressed", "true");
+    if (mode === "passport") await uploadFixture(page, [fixtures.jpg]);
+    for (const text of removed) await expect(tool.getByText(text)).toHaveCount(0);
+  }
+  await expect(page.getByTestId("image-trim-mode-description")).toHaveCount(0);
+});

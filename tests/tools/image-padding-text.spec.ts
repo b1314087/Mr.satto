@@ -130,10 +130,9 @@ test("image-padding-text: 文字を入力し、サイズ・色・太字・複数
   await page.getByPlaceholder("入れる文字（複数行可）").fill("1行目\n2行目");
   await page.getByLabel("サイズ", { exact: false }).first().fill("18");
   await page.getByRole("button", { name: "太字" }).click();
-  await page.getByRole("button", { name: "上", exact: true }).click(); // 配置する余白: 上
-  await page.getByRole("button", { name: "始点(左/上)" }).click();
-
-  await page.getByRole("spinbutton", { name: /^上/ }).first().fill("40"); // 上余白がないと文字が表示されないため
+  // 文字は写真の上に置く（2026-11）。位置は左上
+  await page.getByTestId("padding-text-across").getByRole("button", { name: "上", exact: true }).click();
+  await page.getByTestId("padding-text-along").getByRole("button", { name: "左", exact: true }).click();
 
   await page.getByRole("button", { name: "この画像だけ保存" }).click();
   await waitForSuccess(page, "完了");
@@ -258,7 +257,7 @@ test("image-padding-text: モバイル幅(375px)でも横スクロールが発�
 // ---------------------------------------------------------------------------
 import { execFileSync } from "node:child_process";
 
-test("image-padding-text: 余白の文字を、横・縦の位置（X/Y）のバーで動かし、色を選べる。書き出した画像にも同じ位置・色で入る", async ({ page }) => {
+test("image-padding-text: 写真の上の文字を、横・縦の位置（X/Y）のバーで動かし、色を選べる。書き出した画像にも同じ位置・色で入る（余白を足しても、文字は写真の上）", async ({ page }) => {
   test.setTimeout(90_000);
   const src = test.info().outputPath("gray.png");
   execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(300,100),(128,128,128)).save(sys.argv[1])", src]);
@@ -267,7 +266,6 @@ test("image-padding-text: 余白の文字を、横・縦の位置（X/Y）のバ
   await page.getByRole("spinbutton", { name: /^上/ }).first().fill("100");
   await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
   await page.getByLabel("サイズ", { exact: false }).first().fill("30");
-  await page.getByRole("button", { name: "上", exact: true }).click(); // 配置する余白: 上
   await page.getByTestId("padding-text-color-赤").click();
   await expect(page.getByTestId("padding-text-color-value")).toContainText(/#e53935/i);
   const xy = page.getByTestId("padding-text-xy");
@@ -301,10 +299,10 @@ print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n els
   expect(r.h).toBe(260); // 上の余白100px + 元の画像100px（縮めない）+ 下の余白（既定60px）
   expect(r.n).toBeGreaterThan(50);
   expect(Math.abs(r.x / r.w - 0.2)).toBeLessThan(0.06); // 横20%
-  expect(Math.abs(r.y - 50)).toBeLessThan(10); // 上の余白（0〜100px）の真ん中
+  expect(Math.abs(r.y - 150)).toBeLessThan(10); // 写真（上の余白100pxの下、100〜200px）の縦の真ん中
 });
 
-test("image-padding-text: 「写真の上」を選ぶと、余白が0pxでも写真に文字を重ねられ、位置を変えられる。縁取りも付けられる（2026-11）", async ({ page }) => {
+test("image-padding-text: 余白が0pxでも写真に文字を重ねられ、位置を変えられる。縁取りも付けられる（2026-11）", async ({ page }) => {
   test.setTimeout(90_000);
   const src = test.info().outputPath("gray-photo.png");
   execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(300,200),(128,128,128)).save(sys.argv[1])", src]);
@@ -315,9 +313,8 @@ test("image-padding-text: 「写真の上」を選ぶと、余白が0pxでも写
   await page.getByRole("spinbutton", { name: /^下/ }).first().blur();
   await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
   await page.getByLabel("サイズ", { exact: false }).first().fill("40");
-  await page.getByTestId("padding-text-place").getByRole("button", { name: "写真の上" }).click();
-  await expect(page.getByText("写真の上の横の位置")).toBeVisible();
-  // 写真の上では、位置のボタンが「左・中央・右」「上・中央・下」になる
+  // 文字を置く場所の選択は無い（いつも写真の上）。位置のボタンは「左・中央・右」「上・中央・下」
+  await expect(page.getByTestId("padding-text-place")).toHaveCount(0);
   await page.getByTestId("padding-text-along").getByRole("button", { name: "右", exact: true }).click();
   await page.getByTestId("padding-text-across").getByRole("button", { name: "上", exact: true }).click();
   await page.getByTestId("padding-text-color-赤").click();
@@ -362,7 +359,6 @@ test("image-padding-text: 位置のバーを動かしている最中（手を止
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [src]);
   await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
-  await page.getByTestId("padding-text-place").getByRole("button", { name: "写真の上" }).click();
   const img = page.getByRole("img", { name: "余白・文字入れ結果のプレビュー" });
   await expect(img).toBeVisible();
   // プレビューの画像が変わった回数を数える（ページの中で、src の変化を記録する）
@@ -387,4 +383,45 @@ test("image-padding-text: 位置のバーを動かしている最中（手を止
   await page.mouse.up();
   // 以前（止まってから作る）は、動かしている間は0回だった。いまは、動かしている間にも何度も変わる
   expect(duringDrag).toBeGreaterThanOrEqual(2);
+});
+
+test("image-padding-text: 文字の位置は写真の上だけ（余白に置く選択・長い説明文は出さない）。既定は写真の下の中央に入る（2026-11）", async ({ page }) => {
+  test.setTimeout(90_000);
+  const src = test.info().outputPath("gray-default.png");
+  execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(300,200),(128,128,128)).save(sys.argv[1])", src]);
+  await page.goto("/tools/image-padding-text");
+  await uploadFixture(page, [src]);
+  for (const removed of ["JPEGで保存する場合、透明は白背景", "写真の上の文字の位置を細かく動かせます", "写真の上に文字を重ねます", "配置する余白", "文字を置く場所"]) {
+    await expect(page.getByText(removed)).toHaveCount(0);
+  }
+  await expect(page.getByRole("button", { name: "写真の上" })).toHaveCount(0);
+  await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
+  await page.getByLabel("サイズ", { exact: false }).first().fill("30");
+  await page.getByTestId("padding-text-color-赤").click();
+  await page.getByRole("button", { name: "この画像だけ保存" }).click();
+  await waitForSuccess(page, "完了");
+  const out = test.info().outputPath("default-pos.png");
+  await (await clickAndDownload(page, "ダウンロード")).saveAs(out);
+  const r = JSON.parse(
+    execFileSync("python3", ["-c", `
+import sys, json
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+w, h = im.size
+px = im.load()
+sx = sy = n = 0
+for y in range(h):
+    for x in range(w):
+        r, g, b = px[x, y]
+        if r > 150 and r - g > 60 and r - b > 60:
+            sx += x; sy += y; n += 1
+print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n else -1, "n": n}))
+`, out], { encoding: "utf8" })
+  );
+  expect(r.w).toBe(300);
+  expect(r.h).toBe(260); // 写真200px + 既定の下の余白60px
+  expect(r.n).toBeGreaterThan(50);
+  expect(Math.abs(r.x / r.w - 0.5)).toBeLessThan(0.05); // 横は中央
+  expect(r.y).toBeGreaterThan(150); // 写真の下のほう
+  expect(r.y).toBeLessThan(200); // 余白（200px より下）には入らない
 });

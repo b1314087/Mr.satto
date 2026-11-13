@@ -585,9 +585,6 @@ export function ImagePassportPhotoTool() {
               カスタム
             </button>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            用途によって必要なサイズ・要件は異なります。提出先の規定を必ずご確認ください。
-          </p>
 
           {presetId === "custom" && (
             <div className="flex flex-wrap items-end gap-4">

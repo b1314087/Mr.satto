@@ -80,34 +80,15 @@ const DEFAULT_SETTINGS: EditableSettings = {
   outline: false,
   color: "#111111",
   textAlign: "center",
-  edge: "bottom",
+  // 2026-11：文字は「写真の上」だけに置く（余白に置く選択はやめた）。既定は写真の下の中央
+  edge: "image",
   edgeAlign: "center",
-  bandAlign: "center",
+  bandAlign: "far",
   posX: null,
   posY: null,
 };
 
-const EDGE_OPTIONS: { id: PaddingTextEdge; label: string }[] = [
-  { id: "top", label: "上" },
-  { id: "bottom", label: "下" },
-  { id: "left", label: "左" },
-  { id: "right", label: "右" },
-  { id: "image", label: "写真の上" },
-];
-
-const EDGE_ALIGN_OPTIONS: { id: PaddingTextEdgeAlign; label: string }[] = [
-  { id: "start", label: "始点(左/上)" },
-  { id: "center", label: "中央" },
-  { id: "end", label: "終点(右/下)" },
-];
-
-const BAND_ALIGN_OPTIONS: { id: PaddingTextBandAlign; label: string }[] = [
-  { id: "near", label: "写真に近い側" },
-  { id: "center", label: "中央" },
-  { id: "far", label: "外側" },
-];
-
-// 「写真の上」を選んだときの位置のボタン（横＝edgeAlign、縦＝bandAlign。near＝上・far＝下）
+// 文字の位置のボタン（文字は写真の上に置く。横＝edgeAlign、縦＝bandAlign。near＝上・far＝下）
 const IMAGE_X_OPTIONS: { id: PaddingTextEdgeAlign; label: string }[] = [
   { id: "start", label: "左" },
   { id: "center", label: "中央" },
@@ -190,10 +171,7 @@ function SettingsFields({
     );
   }
 
-  const onImage = values.edge === "image";
-  const edgeLabel = onImage ? "写真の上" : `${EDGE_OPTIONS.find((o) => o.id === values.edge)?.label ?? ""}の余白`;
-  const alongOptions = onImage ? IMAGE_X_OPTIONS : EDGE_ALIGN_OPTIONS;
-  const acrossOptions = onImage ? IMAGE_Y_OPTIONS : BAND_ALIGN_OPTIONS;
+  const presetLabel = `${IMAGE_Y_OPTIONS.find((o) => o.id === values.bandAlign)?.label ?? ""}・${IMAGE_X_OPTIONS.find((o) => o.id === values.edgeAlign)?.label ?? ""}`;
   // 総合改修 22：設定が多く読みにくかったので、内容ごとの折りたたみ（余白・背景・文字・文字色・文字の位置）に分けた
   return (
     <SettingsStack>
@@ -253,9 +231,6 @@ function SettingsFields({
             />
           </label>
         </div>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          JPEGで保存する場合、透明は白背景になります。
-        </p>
       </div>
       </SettingsSection>
 
@@ -311,32 +286,13 @@ function SettingsFields({
       <SettingsSection
         n={5}
         title="文字の位置"
-        summary={values.posX !== null || values.posY !== null ? `${edgeLabel}・X ${values.posX ?? presetPos.x}%・Y ${values.posY ?? presetPos.y}%` : edgeLabel}
+        summary={values.posX !== null || values.posY !== null ? `X ${values.posX ?? presetPos.x}%・Y ${values.posY ?? presetPos.y}%` : presetLabel}
       >
       <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-1">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">文字を置く場所</p>
-          <div className="flex flex-wrap gap-2" data-testid="padding-text-place">
-            {EDGE_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => {
-                  onChange("edge", opt.id);
-                  onChange("posX", null);
-                  onChange("posY", null);
-                }}
-                className={toggleButtonClass(values.edge === opt.id, "xs")}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">{onImage ? "写真の上の横の位置" : "余白内の位置（沿った方向）"}</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">横の位置</p>
           <div className="flex flex-wrap gap-2" data-testid="padding-text-along">
-            {alongOptions.map((opt) => (
+            {IMAGE_X_OPTIONS.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
@@ -353,9 +309,9 @@ function SettingsFields({
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">{onImage ? "写真の上の縦の位置" : "余白内の位置（縦位置・厚み方向）"}</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">縦の位置</p>
           <div className="flex flex-wrap gap-2" data-testid="padding-text-across">
-            {acrossOptions.map((opt) => (
+            {IMAGE_Y_OPTIONS.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
@@ -380,16 +336,6 @@ function SettingsFields({
             onChange("posY", p.y);
           }}
         />
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          {onImage
-            ? "バーで、写真の上の文字の位置を細かく動かせます（0%＝写真の左端・上端、100%＝右端・下端）。上の位置のボタンを押すと、その位置に戻ります。"
-            : "バーで、選んだ余白の中の文字の位置を細かく動かせます（0%＝余白の左端・上端、100%＝右端・下端）。上の位置のボタンを押すと、その位置に戻ります。"}
-        </p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          {onImage
-            ? "写真の上に文字を重ねます（余白が0pxでも入れられます）。写真の色によって読みにくいときは「縁取り」をオンにしてください。"
-            : "選択した余白の幅・高さが0pxの場合、その余白には文字が表示されません。写真に重ねたいときは「写真の上」を選んでください。"}
-        </p>
       </div>
       </SettingsSection>
     </SettingsStack>
