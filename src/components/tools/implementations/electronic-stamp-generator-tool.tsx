@@ -31,6 +31,7 @@ import {
   STAMP_QR_PLACEHOLDER_SERIAL,
   stampImageOntoPdf,
   stampPdfDrawRect,
+  stampPdfRect,
   STAMP_PDF_ROTATION_DEG,
   type StampPdfPageBox,
   validateStampAuthCode,
@@ -1625,6 +1626,31 @@ function StampPdfTarget({
     ctx.drawImage(rect.image, rect.x * k, rect.y * k, rect.w * k, rect.h * k);
   }, [page, stamp, value, imageWidthRatio]);
 
+  // 2026-11：PDFのプレビューをクリック・ドラッグすると、印影の中心がその場所に来るように動かす（枠の中に合わせやすくする）
+  const draggingRef = useRef(false);
+  function placeAtPointer(clientX: number, clientY: number) {
+    const view = viewRef.current;
+    if (!view || !page || !stamp || !value || !active || active.pageIndex !== page.index) return;
+    const r = view.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    // キャンバスは object-contain で表示しているので、実際に絵が描かれている範囲を求める
+    const scale = Math.min(r.width / view.width, r.height / view.height);
+    const drawnW = view.width * scale;
+    const drawnH = view.height * scale;
+    const left = r.left + (r.width - drawnW) / 2;
+    const top = r.top + (r.height - drawnH) / 2;
+    const px = ((clientX - left) / drawnW) * page.box.width;
+    const py = ((clientY - top) / drawnH) * page.box.height;
+    const base = stampPdfRect(page.box, { pageIndex: page.index, xRatio: 0, yRatio: 0, widthMm: active.widthMm }, imageWidthRatio, stamp.height / stamp.width);
+    const toPct = (center: number, size: number, pageSize: number) => {
+      const room = pageSize - size;
+      if (room <= 0) return 0;
+      const pct = ((center - size / 2) / room) * 100;
+      return Math.round(Math.min(100, Math.max(0, pct)) * 10) / 10;
+    };
+    updateActive({ xPct: toPct(px, base.w, page.box.width), yPct: toPct(py, base.h, page.box.height) });
+  }
+
   const isMulti = multiPage && multiMode && !!value && value.pageCount > 1;
   const stampedPages = value ? value.placements.map((p) => p.pageIndex + 1) : [];
 
@@ -1767,9 +1793,9 @@ function StampPdfTarget({
             value={active.xPct}
             min={0}
             max={100}
-            step={1}
+            step={0.1}
             unit="%"
-            hint="0%で左端、100%で右端"
+            hint="0%で左端、100%で右端（0.1%きざみ）"
             onChange={(v) => updateActive({ xPct: v })}
           />
           <SliderField
@@ -1778,9 +1804,9 @@ function StampPdfTarget({
             value={active.yPct}
             min={0}
             max={100}
-            step={1}
+            step={0.1}
             unit="%"
-            hint="0%で上端、100%で下端"
+            hint="0%で上端、100%で下端（0.1%きざみ）"
             onChange={(v) => updateActive({ yPct: v })}
           />
           <SliderField
@@ -1789,7 +1815,7 @@ function StampPdfTarget({
             value={active.widthMm}
             min={STAMP_PDF_SIZE_MM.min}
             max={STAMP_PDF_SIZE_MM.max}
-            step={1}
+            step={0.5}
             unit="mm"
             hint="丸印は円の直径、角印は枠の幅、取り込んだ印影は印影の幅"
             onChange={(v) => updateActive({ widthMm: v })}
@@ -1816,7 +1842,33 @@ function StampPdfTarget({
               <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">
                 {value.file.name}・{page ? page.index + 1 : 1}ページ目（印影の位置の確認）
               </p>
-              <canvas ref={viewRef} aria-label="PDFの上の印影の位置" className="h-auto max-h-[70vh] w-full object-contain" />
+              <canvas
+                ref={viewRef}
+                aria-label="PDFの上の印影の位置"
+                data-testid="stamp-pdf-canvas"
+                className={`h-auto max-h-[70vh] w-full touch-none object-contain ${active ? "cursor-crosshair" : ""}`}
+                onPointerDown={(e) => {
+                  if (!active) return;
+                  draggingRef.current = true;
+                  e.currentTarget.setPointerCapture?.(e.pointerId);
+                  placeAtPointer(e.clientX, e.clientY);
+                }}
+                onPointerMove={(e) => {
+                  if (draggingRef.current) placeAtPointer(e.clientX, e.clientY);
+                }}
+                onPointerUp={(e) => {
+                  draggingRef.current = false;
+                  e.currentTarget.releasePointerCapture?.(e.pointerId);
+                }}
+                onPointerCancel={() => {
+                  draggingRef.current = false;
+                }}
+              />
+              {active && (
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400" data-testid="stamp-pdf-drag-hint">
+                  押したい所をクリック（またはドラッグ）すると、印影の中心がそこに移動します。細かい調整は横・縦の位置の数値で（0.1%きざみ）。
+                </p>
+              )}
             </div>
           );
           // プレビューの列に、印影を重ねたPDFのページを出す（設定を変えながら、押す位置を見られるように）

@@ -58,6 +58,30 @@ test.describe("リンクを押したときの読み込み表示（サイト全�
     }
   });
 
+  test("ツールを開いてからブラウザの「戻る」で戻ると、上端のバー・押したリンクの光は出たままにならない（2026-11）", async ({ page }) => {
+    await page.goto("/tools");
+    const bar = page.getByTestId("nav-progress");
+    await expect(bar).toHaveAttribute("data-pending", "false");
+    const card = page.locator('main a[href^="/tools/"]').filter({ hasNot: page.locator('a[href="/tools"]') }).first();
+    const href = (await card.getAttribute("href"))!;
+    await card.click();
+    await page.waitForURL((u) => u.pathname === href.split("?")[0], { timeout: 60_000 });
+    await expect(bar).toHaveAttribute("data-pending", "false");
+    await page.goBack();
+    await page.waitForURL((u) => u.pathname === "/tools");
+    // 戻った画面で、読み込み中の表示が残らない（12秒の自動で消える時間を待たずに確かめる）
+    await expect(bar).toHaveAttribute("data-pending", "false", { timeout: 3000 });
+    await expect(bar).toHaveCSS("opacity", "0");
+    await expect(page.locator("[data-nav-pending], [data-nav-glow]")).toHaveCount(0);
+    // 少し待っても出てこない
+    await page.waitForTimeout(1500);
+    await expect(bar).toHaveAttribute("data-pending", "false");
+    // 戻った画面から、もう一度リンクを押せば、また正しく出て消える
+    await page.goForward();
+    await page.waitForURL((u) => u.pathname === href.split("?")[0]);
+    await expect(bar).toHaveAttribute("data-pending", "false", { timeout: 3000 });
+  });
+
   test("Ctrl（⌘）を押しながらのクリックでは、出さない", async ({ page }) => {
     await page.goto("/");
     const link = page.locator('header a[href="/pricing"]').first();

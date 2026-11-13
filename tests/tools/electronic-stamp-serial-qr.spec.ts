@@ -495,6 +495,53 @@ test.describe("固有番号とQRコード：文字から作る印影をPDFに押
 // 取り込んだ印影
 // ---------------------------------------------------------------------------
 
+test("固有番号とQRコード：PDFのプレビューをクリック・ドラッグすると印影の中心がそこへ動き、横・縦の位置は0.1%きざみで指定できる（2026-11）", async ({ page }) => {
+  test.setTimeout(120_000);
+  const src = await makePdf("drag.pdf", [A4]);
+  await page.goto(TOOL_URL);
+  await enableQr(page);
+  await attachPdf(page, src);
+  await setSlider(page, "PDF上の印影の大きさ", 50);
+  const canvas = page.getByTestId("stamp-pdf-canvas");
+  await canvas.scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("stamp-pdf-drag-hint")).toBeVisible();
+  const xSlider = page.getByRole("slider", { name: "印影の横の位置（X）" });
+  const ySlider = page.getByRole("slider", { name: "印影の縦の位置（Y）" });
+  const box = (await canvas.boundingBox())!;
+  // 真ん中をクリック → 印影の中心がページの中心（50%・50%）
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(xSlider).toHaveValue("50");
+  await expect(ySlider).toHaveValue("50");
+  // 左上の角へドラッグ → 0%・0%（ページからはみ出さない）
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3, { steps: 5 });
+  const midX = Number(await xSlider.inputValue());
+  plainExpect(midX).toBeGreaterThan(0);
+  plainExpect(midX).toBeLessThan(50);
+  await page.mouse.move(box.x + 1, box.y + 1, { steps: 5 });
+  await page.mouse.up();
+  await expect(xSlider).toHaveValue("0");
+  await expect(ySlider).toHaveValue("0");
+  // 右下の角をクリック → 100%・100%
+  await page.mouse.click(box.x + box.width - 1, box.y + box.height - 1);
+  await expect(xSlider).toHaveValue("100");
+  await expect(ySlider).toHaveValue("100");
+  // 数値は0.1%きざみで入れられる（誤差の出る値にならない）
+  const xInput = page.getByLabel("印影の横の位置（X）の数値");
+  await xInput.fill("12.3");
+  await xInput.press("Enter");
+  await expect(xSlider).toHaveValue("12.3");
+  const yInput = page.getByLabel("印影の縦の位置（Y）の数値");
+  await yInput.fill("40.7");
+  await yInput.press("Enter");
+  await expect(ySlider).toHaveValue("40.7");
+  // その位置でPDFに押せる
+  const serial = await generate(page);
+  const { file } = await downloadPdf(page);
+  await expectStampedQr(file, { payload: buildStampQrPayload({ serial }), pageNo: 1, xPct: 12.3, yPct: 40.7, widthMm: 50 });
+});
+
 test("固有番号とQRコード：取り込んだ印影の下にQRコードを並べ、選んだPDFに押す", async ({ page }) => {
   const src = await makePdf("import-target.pdf", [A4, A4]);
   await page.goto(TOOL_URL);

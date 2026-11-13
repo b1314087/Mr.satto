@@ -38,11 +38,18 @@ export function SliderField({
   hint?: string;
 }) {
   const id = useId();
+  // 小数の刻み（0.1など）のとき、計算の誤差（0.30000000000000004 など）が出ないよう、刻みの桁数で丸める
+  const decimals = (() => {
+    const s = String(step);
+    const i = s.indexOf(".");
+    return i < 0 ? 0 : s.length - i - 1;
+  })();
+  const roundToStep = (n: number) => Number((Math.round(n / step) * step).toFixed(decimals));
 
   function commit(raw: string) {
     const n = Number(raw);
     if (raw.trim() === "" || !Number.isFinite(n)) return;
-    onChange(Math.min(inputMax ?? max, Math.max(min, Math.round(n / step) * step)));
+    onChange(Math.min(inputMax ?? max, Math.max(min, roundToStep(n))));
   }
 
   return (
@@ -55,7 +62,7 @@ export function SliderField({
           <input
             key={value /* 外部(スライダー等)からの変更を数値欄へ反映する */}
             type="number"
-            inputMode="numeric"
+            inputMode={decimals > 0 ? "decimal" : "numeric"}
             aria-label={`${ariaLabel ?? label}の数値`}
             min={min}
             max={inputMax ?? max}
@@ -87,7 +94,7 @@ export function SliderField({
         max={max}
         step={step}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(roundToStep(Number(e.target.value)))}
         className="w-full"
       />
       {hint && <p className="text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>}

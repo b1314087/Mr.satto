@@ -15,6 +15,9 @@ import { usePathname, useSearchParams } from "next/navigation";
  * - 新しいタブで開くリンク・ダウンロード・外部サイト・同じページ内の移動（ページ内リンク・同じアドレス）では出さない。
  * - Ctrl/⌘/Shift/Alt を押しながらのクリック、右クリックでも出さない（ページが切り替わらないため）。
  * - 万一、移動が起きなかったときのために、一定時間（12秒）で自動的に消す。
+ * - 移動が終わったら「押した時点のアドレス」の記録も消す。ブラウザの「戻る」で元のアドレスに戻ったときに、
+ *   また読み込み中とみなしてバーが出たままになる不具合があったため（2026-11）。
+ *   戻る・進む（popstate）や、ブラウザが前のページをそのまま復元したとき（pageshow）も、表示を消す。
  * - 「動きを減らす」設定の人には、バーは動かさず、固定で出す（globals.css）。
  */
 const MAX_WAIT_MS = 12_000;
@@ -30,6 +33,12 @@ function NavigationFeedbackInner() {
   // 「押した時点のアドレス」。いまのアドレスと同じ間だけ、待っているとみなす（アドレスが変わったら自動で消える）
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // アドレスが変わったら（移動が終わったら）、押した時点のアドレスの記録を消す（描画中に前回の値と比べて直す、Reactの推奨のやり方）
+  const [lastKey, setLastKey] = useState(key);
+  if (lastKey !== key) {
+    setLastKey(key);
+    setStartedAt(null);
+  }
   const pending = startedAt !== null && startedAt === key;
 
   useEffect(() => {
@@ -70,9 +79,25 @@ function NavigationFeedbackInner() {
         });
       }, MAX_WAIT_MS);
     }
+    // 戻る・進む、またはブラウザが前のページをそのまま復元したときは、読み込み中の表示をすべて消す
+    function reset() {
+      setStartedAt(null);
+      if (timer.current) clearTimeout(timer.current);
+      document.querySelectorAll("[data-nav-pending]").forEach((el) => {
+        el.removeAttribute("data-nav-pending");
+        el.removeAttribute("data-nav-glow");
+      });
+    }
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) reset();
+    }
     document.addEventListener("click", onClick);
+    window.addEventListener("popstate", reset);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       document.removeEventListener("click", onClick);
+      window.removeEventListener("popstate", reset);
+      window.removeEventListener("pageshow", onPageShow);
       if (timer.current) clearTimeout(timer.current);
     };
   }, []);
@@ -80,9 +105,9 @@ function NavigationFeedbackInner() {
   // アドレスが変わった（移動が終わった）ら、押したリンクの印を外す
   useEffect(() => {
     document.querySelectorAll("[data-nav-pending]").forEach((el) => {
-          el.removeAttribute("data-nav-pending");
-          el.removeAttribute("data-nav-glow");
-        });
+      el.removeAttribute("data-nav-pending");
+      el.removeAttribute("data-nav-glow");
+    });
     if (timer.current) clearTimeout(timer.current);
   }, [key]);
 
