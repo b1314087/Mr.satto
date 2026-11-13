@@ -13,6 +13,7 @@ import type { DocumentBlock, RunInfo } from "@/lib/pdf/paragraph-reconstruction"
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 /** プレビューに出す先頭ページのブロック数の上限(重くならないよう先頭だけ) */
 const PREVIEW_MAX_BLOCKS = 30;
@@ -122,6 +123,7 @@ function WordPagePreview({ blocks }: { blocks: DocumentBlock[] }) {
  */
 export function PdfToWordTool() {
   const [file, setFile] = useState<File | null>(null);
+  const pageLimit = usePlanLimit("pdf-to-word");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfToWordOutput | null>(null);
@@ -162,6 +164,7 @@ export function PdfToWordTool() {
     try {
       const output = await new PdfToWordProcessor().process({
         file,
+        maxPages: pageLimit.limit,
         onPageProgress: (info) => {
           if (info.method === "ocr") {
             setProgressLabel(
@@ -200,6 +203,7 @@ export function PdfToWordTool() {
         onFilesSelected={handleSelect}
         onError={setError}
       />
+      <PlanLimitHint state={pageLimit} />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 

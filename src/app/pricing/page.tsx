@@ -15,6 +15,7 @@ import { verifyPremiumPrice } from "@/lib/stripe/price-guard-server";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { PricingActionButton } from "@/components/pricing/pricing-action-button";
 import { tools } from "@/lib/tools/data";
+import { BATCH_LIMITS } from "@/lib/batch/batch-config";
 import { PremiumTag } from "@/components/ui/premium-badge";
 import type React from "react";
 
@@ -153,7 +154,7 @@ export default async function PricingPage({
                 <PlanItem testId={`pricing-batch-${id}`}>
                   {id === "premium" ? (
                     <>
-                      複数ファイルの一括処理<Sub>画像圧縮・リサイズ・PDF圧縮・形式変換・背景透過など。最大10〜30ファイル</Sub>
+                      複数ファイルの一括処理<Sub>画像圧縮・リサイズ・PDF圧縮・形式変換・背景透過など。最大{Math.min(...Object.values(BATCH_LIMITS))}〜{Math.max(...Object.values(BATCH_LIMITS))}ファイル</Sub>
                     </>
                   ) : (
                     <>

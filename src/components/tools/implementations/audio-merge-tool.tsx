@@ -30,6 +30,7 @@ import {
 import { useWritableAudioKinds } from "@/lib/audio/use-audio-preview";
 import { useAudioJob } from "@/lib/audio/use-audio-job";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 /**
  * 音声結合。複数の音声ファイルを、並べた順番に1つのファイルへつなげる。
@@ -37,6 +38,7 @@ import { downloadBlob, formatBytes } from "@/lib/utils/format";
  */
 export function AudioMergeTool() {
   const [files, setFiles] = useState<File[]>([]);
+  const planLimit = usePlanLimit("audio-merge");
   const [rawChoice, setChoice] = useState<AudioOutputChoice>("mp3");
   const [bitrate, setBitrate] = useState(DEFAULT_AUDIO_BITRATE_KBPS);
   const [probes, setProbes] = useState<Map<File, AudioProbe | null>>(new Map());
@@ -64,7 +66,10 @@ export function AudioMergeTool() {
   const totalSec = files.reduce((sum, f) => sum + (probes.get(f)?.durationSec ?? 0), 0);
   const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
 
-  function handleSelect(selected: File[]) {
+  function handleSelect(picked: File[]) {
+    // 料金プランの上限（結合する音声の数）に収まる分だけを読み込む
+    const selected = planLimit.clampAdd(files.length, picked);
+    if (selected.length === 0) return;
     setFiles((prev) => [...prev, ...selected]);
     job.reset();
   }
@@ -101,6 +106,8 @@ export function AudioMergeTool() {
         onFilesSelected={handleSelect}
         onError={job.setError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
       {files.length < 2 && job.error && <ErrorMessage message={job.error} />}
 
       {files.length > 0 && (

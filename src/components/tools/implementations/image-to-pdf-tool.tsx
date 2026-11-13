@@ -15,6 +15,7 @@ import { useObjectUrl } from "@/components/tools/implementations/shared/image-li
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 type PageSize = ImageToPdfPageSize;
 
@@ -95,6 +96,7 @@ function PdfPageThumb({ file, index, pageSize, paper }: { file: File; index: num
 
 export function ImageToPdfTool() {
   const [files, setFiles] = useState<File[]>([]);
+  const planLimit = usePlanLimit("image-to-pdf");
   const [pageSize, setPageSize] = useState<PageSize>("fit");
   // 用紙サイズに収めるときの用紙と向き（2026-11：A4以外の用紙サイズも選べるようにした）
   const [paper, setPaper] = useState<ImageToPdfPaper>(DEFAULT_IMAGE_TO_PDF_PAPER);
@@ -112,7 +114,10 @@ export function ImageToPdfTool() {
     };
   }, [result]);
 
-  function addFiles(newFiles: File[]) {
+  function addFiles(picked: File[]) {
+    // 料金プランの上限（PDFにする画像の枚数）に収まる分だけを読み込む
+    const newFiles = planLimit.clampAdd(files.length, picked);
+    if (newFiles.length === 0) return;
     setFiles((prev) => [...prev, ...newFiles]);
     setResult(null);
     setStatus("idle");
@@ -172,6 +177,8 @@ export function ImageToPdfTool() {
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
 
       {files.length > 0 && (
         <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />

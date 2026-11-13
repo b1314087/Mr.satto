@@ -14,7 +14,9 @@
 import { adaptToolSeoContent } from "@/lib/seo/feature-copy";
 import { REDACT_MAX_PAGES, REDACT_MAX_REDACTED_PAGES } from "@/lib/pdf/redact";
 import { SEATING_MAX_PARTICIPANTS } from "@/lib/seating/participants";
-import { OCR_MAX_PAGES, PDF_TO_EXCEL_MAX_OCR_PAGES, PDF_TO_EXCEL_MAX_PAGES, PDF_TO_WORD_MAX_PAGES } from "@/lib/pdf/page-limits";
+import { PDF_TO_EXCEL_MAX_OCR_PAGES } from "@/lib/pdf/page-limits";
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
+import { PLAN_LIMIT_COPY } from "@/lib/seo/plan-limit-copy";
 import {
   FISCAL_CALENDAR_HOWTO_IMPORT,
   FISCAL_CALENDAR_IMPORT_ANSWER_FORMATS,
@@ -562,7 +564,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PDFからテキストを抽出できるツール。文字情報のあるページはそのまま取り出し、スキャンした画像のページや画像ファイルはOCR（文字認識）で読み取ります。ページごとの区切り付きでテキストファイルに保存できます。",
     lead: "PDFの文字を取り出します。スキャンした画像のページや画像ファイルは、OCRで文字を読み取ります。",
     howTo: [
-      `PDF、または画像（JPG・PNG・WebP）をドラッグ&ドロップ、もしくはタップして選択します（1ファイル・上限100MB。OCRで読み取るPDFは${OCR_MAX_PAGES}ページまで）。`,
+      `PDF、または画像（JPG・PNG・WebP）をドラッグ&ドロップ、もしくはタップして選択します（1ファイル・上限100MB。OCRで読み取るページは、${PLAN_LIMIT_COPY.ocrShort.on}）。`,
       "「テキストを抽出する」を押すと、ページごとに、文字情報があればそのまま取り出し、なければOCRで読み取ります。",
       "取り出したテキストと、ページごとの読み取り方（テキスト抽出・OCR）がその場に表示されます。",
       "コピー、またはページの区切り付きのテキストファイルとしてダウンロードします。",
@@ -586,7 +588,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       {
         question: "PDFのページ数に制限はありますか？",
-        answer: `OCRで読み取るPDFは、1回に${OCR_MAX_PAGES}ページまで処理できます。それを超えるとメッセージが表示され、処理は行われません。画像ファイルは1枚ずつ読み取ります。`,
+        answer: `OCRで読み取るページは、${PLAN_LIMIT_COPY.ocrLong.on}です。それを超えた、文字情報のないページは読み取らずに残します（文字情報のあるページは、ページ数に関係なく取り出せます）。画像ファイルは1枚ずつ読み取ります。`,
       },
       { question: "アップロードしたPDF・画像はサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
     ],
@@ -597,7 +599,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PDFに含まれる表をExcelファイル(.xlsx)に変換できるツール。スキャンしたPDFも文字認識(OCR)で読み取れます。通常の変換はブラウザ内で行い、ファイルはサーバーに送信されません。プレミアムプランで利用できます。",
     lead: "PDFの中にある表を認識して、Excelファイルとして書き出します。",
     howTo: [
-      `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB・${PDF_TO_EXCEL_MAX_PAGES}ページまで）。`,
+      `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB。${PLAN_LIMIT_COPY.pdfToExcelShort.on}）。`,
       "「Excelに変換する」を押すと、表として認識された内容が処理されます。",
       "変換結果を確認します。",
       "Excelファイル(.xlsx)としてダウンロードします。",
@@ -618,7 +620,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       {
         question: "PDFのページ数に制限はありますか？",
-        answer: `1回に変換できるのは${PDF_TO_EXCEL_MAX_PAGES}ページまでです。そのうち、文字情報のないページ（スキャンした画像）は文字認識(OCR)で読み取るため、${PDF_TO_EXCEL_MAX_OCR_PAGES}ページまでです。上限を超えるとメッセージが表示され、変換は行われません。`,
+        answer: `1回に変換できるのは、${PLAN_LIMIT_COPY.pdfToExcelLong.on}です。そのうち、文字情報のないページ（スキャンした画像）は文字認識(OCR)で読み取るため、${PDF_TO_EXCEL_MAX_OCR_PAGES}ページまでです。上限を超えるとメッセージが表示され、変換は行われません。`,
       },
       {
         question: "「記入済みPDF→Excel」とはどう違いますか？",
@@ -635,7 +637,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PDFをWord文書(.docx)に変換できるツール。見出し・表・画像・文字の色などの書式をできるだけ保って書き出します。プレミアムプランで利用できます。",
     lead: "PDFの内容を、見出し・箇条書き・表・画像・太字や文字色などの書式を保ってWord文書（.docx）として書き出します。",
     howTo: [
-      `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB・${PDF_TO_WORD_MAX_PAGES}ページまで）。`,
+      `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB。${PLAN_LIMIT_COPY.pdfToWordShort.on}）。`,
       "「Wordに変換する」を押すと処理されます。",
       "変換結果を確認します。",
       "Word文書(.docx)としてダウンロードします。",
@@ -651,7 +653,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       {
         question: "PDFのページ数に制限はありますか？",
-        answer: `1回に変換できるのは${PDF_TO_WORD_MAX_PAGES}ページまでです。それを超えるPDFを選ぶと、ページ数の上限を知らせるメッセージが表示され、変換は行われません。長いPDFは、先にPDF編集（分割・ページ抽出）でページを分けてからお試しください。`,
+        answer: `1回に変換できるのは、${PLAN_LIMIT_COPY.pdfToWordLong.on}です。それを超えるPDFを選ぶと、ページ数の上限を知らせるメッセージが表示され、変換は行われません。長いPDFは、先にPDF編集（分割・ページ抽出）でページを分けてからお試しください。`,
       },
       { question: "アップロードしたPDFはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
       { question: "無料プランでも使えますか？", answer: "このツールはプレミアムプラン専用の機能です。" },
@@ -2614,7 +2616,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       {
         question: "住所録からまとめて宛名を入れられますか？",
-        answer: "はい（プレミアムプランの機能）。郵便番号・住所・氏名（敬称は任意）の列があるExcel・CSVを読み込むと、1件1ページの宛名面PDFをまとめて作れます（最大500件）。住所が空の行は、郵便番号から住所を入れます。",
+        answer: `はい（プレミアムプランの機能）。郵便番号・住所・氏名（敬称は任意）の列があるExcel・CSVを読み込むと、1件1ページの宛名面PDFをまとめて作れます（最大${PLAN_LIMITS["postcard"].premium.toLocaleString("ja-JP")}件）。住所が空の行は、郵便番号から住所を入れます。`,
       },
       {
         question: "郵便番号から住所を入れられますか？",
@@ -2635,7 +2637,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "「PDFを作成」を押すと、1宛先1ページのPDFがまとめて作成されます。",
     ],
     faq: [
-      { question: "宛先を一度に何件まで作成できますか？", answer: "1回の処理で最大300件まで対応しています。" },
+      { question: "宛先を一度に何件まで作成できますか？", answer: `1回の処理で、${PLAN_LIMIT_COPY.envelopeLong.on}作成できます。` },
       { question: "縦書きの住所は、どのように表示されますか？", answer: "1文字ずつ縦方向に並べて描画します。半角数字は縦書きの見た目に合わせて全角数字に変換されます。複雑な縦中横（2桁数字の横並び表示）や禁則処理までは対応していません。" },
       { question: "Excel/CSVのどの列を宛先として使うか指定できますか？", answer: "はい。読み込んだファイルの列見出しから、郵便番号・住所・氏名として使う列をそれぞれ選択できます。" },
       { question: "アップロードしたファイルはサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
@@ -2656,7 +2658,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     faq: [
       { question: "整理券・金券・引換券を別々に作る必要がありますか？", answer: "いいえ。3種類とも同じ仕組み（用紙にサイズ指定の券を並べて連番や二次元コード・バーコードを付ける）で作成できるため、このツール1つでまとめて対応しています。" },
       { question: "二次元コード・バーコードの内容に連番を入れることはできますか？", answer: "はい。内容の入力欄に「{n}」と入力すると、その部分が各券の連番（0埋め桁数も指定可）に置き換わります。「{title}」「{amount}」などや、Excelの見出し名（例:「{氏名}」）も使えます。" },
-      { question: "何枚まで一度に作成できますか？", answer: "1回の処理で最大2000枚まで対応しています。用紙サイズとサイズ指定によって1ページに収まる枚数が決まり、自動的に複数ページへ分けて配置されます。" },
+      { question: "何枚まで一度に作成できますか？", answer: `1回の処理で、${PLAN_LIMIT_COPY.ticketLong.on}作成できます。用紙サイズとサイズ指定によって1ページに収まる枚数が決まり、自動的に複数ページへ分けて配置されます。` },
       { question: "作成したファイルはサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
     ],
   },
@@ -2772,7 +2774,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "勘定科目や課税区分は自動で入りますか？", answer: "書類の内容から推測して入れることはありません。はじめに決めた初期値が入り、明細ごとに変えられます。課税区分は、freee会計の公式資料にある仕入・経費の税区分（課対仕入10%・課対仕入8%（軽）など）から選び、一覧にない名前は「その他」から入力できます。使える税区分は、freeeの設定によって変わります。初期値や入力した内容は保存されません。" },
       { question: "どんな項目を読み取りますか？", answer: "日付・取引先・金額（合計）を読み取り、税率・消費税額・登録番号・品目も、課税区分を選ぶときの参考として表示します。読み取れない項目は空欄のままにし、推測で埋めません。金額と消費税額が合わないときは注意を表示します。" },
       { question: "どんなファイルを読み込めますか？", answer: "JPG・PNG・WebPの画像と、PDFです。HEICなどには対応していません。文字情報のあるPDFはその文字を使い、画像やスキャンしたPDFは、ブラウザ内の文字認識（OCR）で読み取ります。パスワードのかかったPDFは読み込めません。" },
-      { question: "枚数や大きさに上限はありますか？", answer: "画像は1枚15MBまで、PDFは1つ30MB・20ページまでです。一度に30ファイルまで追加でき、画面に並べられるのは60件までです。複数ページのPDFは、1ページを1件として扱います。書類は1件ずつ順に読み取るため、時間がかかることがあります。" },
+      { question: "枚数や大きさに上限はありますか？", answer: `画像は1枚15MBまで、PDFは1つ30MB・20ページまでです。一度に30ファイルまで追加でき、画面に並べられるのは、${PLAN_LIMIT_COPY.receiptLong.on}です。複数ページのPDFは、1ページを1件として扱います。書類は1件ずつ順に読み取るため、時間がかかることがあります。` },
       { question: "電子帳簿保存法に対応していますか？", answer: "いいえ。このツールは、領収書・レシートの内容を会計ソフト用のデータにする補助ツールで、電子帳簿保存法に対応した保存の仕組みではありません。書類の原本や画像の保存・管理は、制度に合わせて別途行ってください。会計・税務の助言でもありません。" },
       { question: "読み込んだ画像やPDFはサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
     ],

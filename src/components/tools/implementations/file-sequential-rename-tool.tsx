@@ -17,6 +17,7 @@ import type { NamedFileOutput } from "@/lib/processors/types";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 /**
  * ファイル連番リネーム。
@@ -27,6 +28,7 @@ import { RunBar } from "@/components/ui/run-bar";
  */
 export function FileSequentialRenameTool() {
   const [files, setFiles] = useState<File[]>([]);
+  const planLimit = usePlanLimit("file-sequential-rename");
   const [prefix, setPrefix] = useState("file");
   const [startNumberInput, setStartNumberInput] = useState("1");
   const [digitsInput, setDigitsInput] = useState("3");
@@ -67,7 +69,10 @@ export function FileSequentialRenameTool() {
     }
   }, [files, prefix, startNumberInput, digitsInput, suffix]);
 
-  function addFiles(newFiles: File[]) {
+  function addFiles(picked: File[]) {
+    // 料金プランの上限（名前を変えるファイルの数）に収まる分だけを読み込む
+    const newFiles = planLimit.clampAdd(files.length, picked);
+    if (newFiles.length === 0) return;
     setFiles((prev) => [...prev, ...newFiles]);
     setResults(null);
     setDownloadBlobData(null);
@@ -122,6 +127,8 @@ export function FileSequentialRenameTool() {
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
 
       {files.length > 0 && (
         <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />

@@ -28,6 +28,7 @@ import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { RunBar } from "@/components/ui/run-bar";
 import { StepHeading } from "@/components/ui/step-heading";
 import { Segmented } from "@/components/ui/segmented";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 /**
  * PDF差し込み印刷（旧名：フォーム回答から個別PDFを一括作成。Phase 11 ツール②。工程2で表示名を変更）。
@@ -96,6 +97,7 @@ export function FormToIndividualPdfsTool() {
 
   // --- データ(CSV/Excel・タブ区切り・貼り付け。工程4でデータソースを拡張) ---
   const [table, setTable] = useState<ParsedTable | null>(null);
+  const rowLimit = usePlanLimit("form-to-individual-pdfs");
   /** 読み込んだデータ（シート・見出しの行を選び直すときに使う） */
   const [dataSource, setDataSource] = useState<FormDataSource | null>(null);
   const [sheetIndex, setSheetIndex] = useState(0);
@@ -307,7 +309,8 @@ export function FormToIndividualPdfsTool() {
       return;
     }
     setError(null);
-    const parsedTable: ParsedTable = { headers: built.headers, rows: built.rows };
+    // 料金プランの上限（作成するPDFの件数）を超える行は使わない（超えたときは案内を出す）
+    const parsedTable: ParsedTable = { headers: built.headers, rows: rowLimit.clamp(built.rows) };
     setTable(parsedTable);
     setMapping(autoMapColumns(textFields, built.headers));
     setPhotoColumnMapping(autoMapColumns(photoFields, built.headers));
@@ -743,6 +746,8 @@ export function FormToIndividualPdfsTool() {
               {table.rows.length}件のデータ行を読み込みました（列: {table.headers.join(", ")}）
             </p>
           )}
+          <PlanLimitHint state={rowLimit} />
+          <PlanLimitNotice state={rowLimit} />
           {table && table.rows.length > FORM_DATA_LARGE_ROW_COUNT && (
             <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="form-data-large-warning">
               データが{table.rows.length}件あります。すべてブラウザの中で作るため、一括生成に時間がかかり、端末のメモリを多く使います。

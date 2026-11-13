@@ -15,6 +15,7 @@ import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { usePremiumFeature } from "@/lib/plans/use-premium-feature";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 /** 画面のプレビューで抽出するページ数・表示する文字数(重くならないよう先頭だけ) */
 const PREVIEW_PAGES = 2;
@@ -56,6 +57,7 @@ const METHOD_BADGE: Record<OcrPageMethod, string> = {
 export function PdfToTextTool() {
   // OCRは、もとはプレミアム限定のツール（旧OCR）の機能。元のツールと同じ条件で使える
   const premium = usePremiumFeature("premium-tool");
+  const ocrLimit = usePlanLimit("pdf-ocr");
   const [file, setFile] = useState<File | null>(null);
   const [language, setLanguage] = useState<OcrLanguageOption>("ja+en");
   const [status, setStatus] = useState<ProcessingState>("idle");
@@ -132,6 +134,7 @@ export function PdfToTextTool() {
         file,
         language,
         ocrAllowed,
+        maxOcrPages: ocrLimit.limit,
         isCancelled: () => cancelRef.current,
         onPageProgress: (info) => {
           const percent = Math.round(info.pageProgress * 100);
@@ -198,6 +201,7 @@ export function PdfToTextTool() {
             <Link href="/pricing" className="underline">料金プランを見る</Link>
           </p>
         )}
+        {premium.allowed && <PlanLimitHint state={ocrLimit} />}
       </div>
 
       <FileDropzone
@@ -331,7 +335,9 @@ export function PdfToTextTool() {
           )}
           {result.hasUnreadPages && (
             <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="pdf-text-unread-note">
-              文字情報のないページ（スキャンした画像など）は、読み取っていません。OCRでの読み取りはプレミアムプランの機能です。
+              {premium.allowed
+                ? `OCRで読み取れるのは1回${ocrLimit.limit}ページまでのため、それを超えた文字情報のないページ（スキャンした画像など）は、読み取っていません。`
+                : "文字情報のないページ（スキャンした画像など）は、読み取っていません。OCRでの読み取りはプレミアムプランの機能です。"}
             </p>
           )}
           {!hasAnyText && !result.hasUnreadPages && (

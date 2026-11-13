@@ -44,6 +44,7 @@ import { FileDropzone } from "@/components/common/file-dropzone";
 import { LABEL_IMPORT_ACCEPT, honorificLineFromHeader, readLabelImportFile, rowsToLabelListText, type LabelImportData } from "@/lib/label/import-file";
 import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 type OutputFormat = "word" | "excel";
 
@@ -200,6 +201,14 @@ export function ExcelLabelTool() {
       return null;
     }
   }, [geometry, content, geometryError, contentError]);
+
+  // 料金プランの上限（印刷するラベルのシート数）
+  const sheetLimit = usePlanLimit("excel-label");
+  const sheetError =
+    plan && plan.pages.length > sheetLimit.limit
+      ? `今のプランで作成できるのは${sheetLimit.limit}シート分までです（今は${plan.pages.length}シート分）。ラベルの数を減らしてください。`
+      : null;
+  const runError = validationError ?? sheetError;
 
   const paper = paperSizeMm(geometry.paper, geometry.landscape);
   const used = validateGeometry(geometry) ? null : usedSizeMm(geometry);
@@ -685,13 +694,14 @@ export function ExcelLabelTool() {
       </SettingsStack>
 
 
-      {validationError && <ErrorMessage message={validationError} />}
+      <PlanLimitHint state={sheetLimit} />
+      {runError && <ErrorMessage message={runError} />}
 
       <RunBar>
         <button
           type="button"
           onClick={handleRun}
-          disabled={status === "processing" || !!validationError} aria-busy={status === "processing" || undefined}
+          disabled={status === "processing" || !!runError} aria-busy={status === "processing" || undefined}
           className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {format === "word" ? "Wordを作成" : "Excelを作成"}

@@ -24,12 +24,14 @@ import {
   type TicketCodeSettings,
   type TicketGroup,
   type TicketRow,
+  buildTickets,
 } from "@/lib/tickets/ticket-layout";
 import { parseTableFile, type ParsedTableFile } from "@/lib/utils/table-file";
 import { downloadBlob } from "@/lib/utils/format";
 import { TicketPreview } from "./shared/ticket-preview";
 import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 const ACCEPT = ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
 
@@ -162,7 +164,12 @@ export function TicketVoucherTool() {
   }
 
   const usingRows = form.rows !== null && form.rows.length > 0;
-  const validationError = validateTicketVoucherInput(form);
+  const ticketLimit = usePlanLimit("ticket-voucher");
+  // 料金プランの上限（作成する券の枚数）。入力そのものに問題がないときだけ確かめる
+  const baseError = validateTicketVoucherInput(form);
+  const ticketCount = baseError ? 0 : buildTickets(form).length;
+  const validationError =
+    baseError ?? (ticketCount > ticketLimit.limit ? `今のプランで作成できる券は${ticketLimit.limit.toLocaleString("ja-JP")}枚までです（今は${ticketCount.toLocaleString("ja-JP")}枚）。` : null);
 
   async function handleImportFile(files: File[]) {
     setImportedFile(files[0] ?? null);
@@ -450,6 +457,7 @@ export function TicketVoucherTool() {
         </SettingsSection>
       </SettingsStack>
 
+      <PlanLimitHint state={ticketLimit} />
       {validationError && <ErrorMessage message={validationError} />}
 
       <RunBar>

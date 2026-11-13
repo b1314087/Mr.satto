@@ -34,11 +34,12 @@ import {
 import { duplicateKeys, parseAmountInput, validateRow } from "@/lib/accounting/receipt-validate";
 import { checkReceiptDetails, extractReceiptDetails, taxRateLabel, type ReceiptDetailValues } from "@/lib/accounting/receipt-details";
 import { downloadBlob } from "@/lib/utils/format";
-import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
+import { RECEIPT_PDF_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { ReceiptReadError, readReceiptFile, type ReadDocument } from "@/lib/processors/browser/receipt-ocr";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { StepHeading } from "@/components/ui/step-heading";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 /**
  * 領収書・レシートから会計CSV作成（工程8。新工程1で、freee会計向けに作り直した）。
@@ -197,6 +198,9 @@ export function ReceiptAccountingTool() {
   /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
   const csvExport = useCsvExport();
   const [docs, setDocs] = useState<DocRow[]>([]);
+  const docLimit = usePlanLimit("receipt-accounting-csv");
+  // 料金プランの上限（画面に並べて読み取る領収書の数）
+  const maxDocuments = docLimit.limit;
   const [jobs, setJobs] = useState<Job[]>([]);
   const [processing, setProcessing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -287,10 +291,10 @@ export function ReceiptAccountingTool() {
           updateJob(item.jobId, { status: "error", message: "読み取りを中止しました。", progress: null });
           continue;
         }
-        if (RECEIPT_LIMITS.maxDocuments - docsRef.current.length <= 0) {
+        if (maxDocuments - docsRef.current.length <= 0) {
           updateJob(item.jobId, {
             status: "error",
-            message: `画面に並べられる書類は${RECEIPT_LIMITS.maxDocuments}件までです。不要な行を削除してから、もう一度追加してください。`,
+            message: `画面に並べられる書類は${maxDocuments}件までです。不要な行を削除してから、もう一度追加してください。`,
             progress: null,
           });
           continue;
@@ -312,7 +316,7 @@ export function ReceiptAccountingTool() {
             },
             isCancelled: () => cancelRef.current || item.generation !== generationRef.current,
             remainingSlots: () => {
-              const left = RECEIPT_LIMITS.maxDocuments - docsRef.current.length;
+              const left = maxDocuments - docsRef.current.length;
               if (left <= 0) stoppedBySlots = true;
               return left;
             },
@@ -322,7 +326,7 @@ export function ReceiptAccountingTool() {
               status: "done",
               progress: null,
               message: stoppedBySlots
-                ? `書類は${RECEIPT_LIMITS.maxDocuments}件までのため、途中のページまでを読み込みました。`
+                ? `書類は${maxDocuments}件までのため、途中のページまでを読み込みました。`
                 : cancelRef.current
                   ? "読み取りを中止しました（読み取り済みの分は一覧にあります）。"
                   : null,
@@ -344,7 +348,7 @@ export function ReceiptAccountingTool() {
       cancelRef.current = false;
       setProcessing(false);
     }
-  }, [addDocument, updateJob]);
+  }, [addDocument, updateJob, maxDocuments]);
 
   const handleFiles = useCallback(
     async (files: File[]) => {
@@ -603,8 +607,9 @@ export function ReceiptAccountingTool() {
           onFilesSelected={(files) => void handleFiles(files)}
           onError={setNotice}
         />
+        <PlanLimitHint state={docLimit} />
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          JPG・PNG・WebP・PDF（画像は1枚{RECEIPT_LIMITS.maxImageMB}MB、PDFは{RECEIPT_LIMITS.maxPdfMB}MB・{OCR_MAX_PAGES}ページまで。並べられるのは{RECEIPT_LIMITS.maxDocuments}件まで）
+          JPG・PNG・WebP・PDF（画像は1枚{RECEIPT_LIMITS.maxImageMB}MB、PDFは{RECEIPT_LIMITS.maxPdfMB}MB・{RECEIPT_PDF_MAX_PAGES}ページまで。並べられるのは{maxDocuments}件まで）
         </p>
         {notice && (
           <div data-testid="receipt-notice">

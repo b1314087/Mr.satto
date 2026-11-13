@@ -329,9 +329,10 @@ test.describe("宛名面：初期画面・郵便番号から住所・Excelでま
     await expect(page.getByTestId("postcard-recipient-zip")).toBeVisible();
   });
 
-  test("スタンダードでは、Excelでまとめて作る機能はプレミアムと案内し、1枚ずつは作れる", async ({ page, context, baseURL }) => {
+  // 2026-11 料金プランの見直し：まとめて作る宛先は、無料1件（使えない）・旧スタンダード10件・プレミアム500件
+  test("無料では、Excelでまとめて作る機能はプレミアムと案内し、1枚ずつは作れる", async ({ page, context, baseURL }) => {
     const { setDevPlanOverride } = await import("../helpers/dev-plan");
-    await setDevPlanOverride(context, "standard", baseURL!);
+    await setDevPlanOverride(context, "free", baseURL!);
     await openPostcard(page, "宛名面");
     await expect(page.getByTestId("postcard-bulk-premium-note")).toBeVisible();
     await expect(page.getByTestId("postcard-bulk-section").locator("input[type=file]")).toHaveCount(0);

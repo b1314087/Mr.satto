@@ -21,6 +21,7 @@ import { writeXlsxSheets, mmToExcelColumnWidth } from "@/lib/excel/xlsx-simple-i
 import { sanitizeFileName } from "@/lib/utils/format";
 import type * as PdfLibTypes from "pdf-lib";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 
 export interface RosterColumnSetting {
   sourceHeader: string;
@@ -43,7 +44,8 @@ export interface RosterTemplateOutput {
 }
 
 const PAGE_MARGIN_MM = 15;
-const MAX_ROWS = 3000;
+/** データ行の上限（プレミアムでの上限。プラン別の上限は画面で守る：src/lib/plans/tool-limits.ts） */
+const MAX_ROWS: number = PLAN_LIMITS["roster-template"].premium;
 
 export function validateRosterTemplateInput(input: RosterTemplateInput): string | null {
   if (input.columns.length === 0) {

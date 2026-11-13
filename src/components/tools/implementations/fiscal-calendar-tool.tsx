@@ -33,6 +33,7 @@ import { CONFIRMED_THROUGH_YEAR, HOLIDAY_DATA_CHECKED_AT, HOLIDAY_DATA_SOURCES }
 import { downloadBlob } from "@/lib/utils/format";
 import { FiscalCalendarPreview } from "./shared/fiscal-calendar-preview";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 const YEARS = Array.from({ length: FISCAL_YEAR_UI_MAX - FISCAL_YEAR_UI_MIN + 1 }, (_, i) => FISCAL_YEAR_UI_MIN + i);
 
@@ -74,9 +75,17 @@ export function FiscalCalendarTool() {
   // 通常の読み取り結果 + 利用者がAIの提案から採用した予定
   const readEvents = eventImport?.result?.events;
   const aiEvents = eventImport?.aiEvents;
-  const importedEvents = useMemo(
+  const allImportedEvents = useMemo(
     () => (readEvents ? (aiEvents && aiEvents.length > 0 ? [...readEvents, ...aiEvents] : readEvents) : undefined),
     [readEvents, aiEvents],
+  );
+  // 料金プランの上限（取り込む予定の件数）。超えた予定は、カレンダーに入れない
+  const eventLimit = usePlanLimit("fiscal-calendar-import");
+  const eventCap = eventLimit.limit;
+  const droppedEvents = allImportedEvents ? Math.max(0, allImportedEvents.length - eventCap) : 0;
+  const importedEvents = useMemo(
+    () => (allImportedEvents && allImportedEvents.length > eventCap ? allImportedEvents.slice(0, eventCap) : allImportedEvents),
+    [allImportedEvents, eventCap],
   );
   const placed = useMemo(() => placeEvents(calendar, importedEvents ?? []), [calendar, importedEvents]);
 
@@ -364,6 +373,12 @@ export function FiscalCalendarTool() {
               resetResults();
             }}
           />
+          <PlanLimitHint state={eventLimit} />
+          {droppedEvents > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="plan-limit-events-dropped">
+              今のプランで取り込める予定は{eventCap.toLocaleString("ja-JP")}件までのため、超えた{droppedEvents.toLocaleString("ja-JP")}件はカレンダーに入れていません。
+            </p>
+          )}
         </div>
 
         {!lastConfirmed && (

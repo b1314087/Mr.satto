@@ -16,6 +16,7 @@ import type { NamedFileOutput } from "@/lib/processors/types";
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, getExtension, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 /**
  * ファイル一括リネーム。
@@ -27,6 +28,7 @@ import { RunBar } from "@/components/ui/run-bar";
  */
 export function FileBulkRenameTool() {
   const [files, setFiles] = useState<File[]>([]);
+  const planLimit = usePlanLimit("file-bulk-rename");
   const [newBaseNames, setNewBaseNames] = useState<string[]>([]);
   const [commonBase, setCommonBase] = useState("");
 
@@ -40,7 +42,10 @@ export function FileBulkRenameTool() {
   // 実際のリネームと同じ planFileRenames() でライブプレビューを作る
   const plan = useMemo(() => planFileRenames(files, newBaseNames), [files, newBaseNames]);
 
-  function addFiles(newFiles: File[]) {
+  function addFiles(picked: File[]) {
+    // 料金プランの上限（名前を変えるファイルの数）に収まる分だけを読み込む
+    const newFiles = planLimit.clampAdd(files.length, picked);
+    if (newFiles.length === 0) return;
     setFiles((prev) => [...prev, ...newFiles]);
     setNewBaseNames((prev) => [...prev, ...newFiles.map((f) => stripExtension(f.name))]);
     setResults(null);
@@ -107,6 +112,8 @@ export function FileBulkRenameTool() {
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
 
       {files.length > 0 && (
         <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">

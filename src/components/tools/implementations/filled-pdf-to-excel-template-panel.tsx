@@ -22,6 +22,7 @@ import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-
 import { downloadBlob, sanitizeFileName, stripExtension } from "@/lib/utils/format";
 import { useFilledPdfToExcelUsage, UsageGatePanel, describeConsumeFailure } from "./filled-pdf-to-excel/usage-gate";
 import { Segmented } from "@/components/ui/segmented";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 /**
  * 記入されたPDF→Excel「テンプレートモード」（Phase 18）。
@@ -99,6 +100,7 @@ export function FilledPdfToExcelTemplatePanel() {
   // --- 記入済みPDFアップロード・抽出 ---
   const [language, setLanguage] = useState<OcrLanguageOption>("ja+en");
   const [filledFiles, setFilledFiles] = useState<File[]>([]);
+  const fileLimit = usePlanLimit("filled-pdf-to-excel");
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [pageCountError, setPageCountError] = useState<string | null>(null);
   const [progressLabel, setProgressLabel] = useState("");
@@ -412,7 +414,9 @@ export function FilledPdfToExcelTemplatePanel() {
   // -----------------------------------------------------------------------
   // 4. 記入済みPDFのアップロード・抽出
   // -----------------------------------------------------------------------
-  function handleFilledSelect(selected: File[]) {
+  function handleFilledSelect(picked: File[]) {
+    // 料金プランの上限（読み取るPDFの数）に収まる分だけを読み込む
+    const selected = fileLimit.clamp(picked);
     setFilledFiles(selected);
     setError(null);
     setTotalPages(null);
@@ -912,6 +916,8 @@ export function FilledPdfToExcelTemplatePanel() {
             onFilesSelected={handleFilledSelect}
             onError={setError}
           />
+          <PlanLimitHint state={fileLimit} />
+          <PlanLimitNotice state={fileLimit} />
           {filledFiles.length > 0 && <FileList files={filledFiles} onRemove={handleFilledRemove} />}
           {pageCountError && <ErrorMessage message={pageCountError} />}
 

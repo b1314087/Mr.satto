@@ -7,9 +7,10 @@ import type { ParsedTableFile } from "@/lib/utils/table-file";
 import type { EnvelopeHonorific } from "./envelope-layout";
 import type { PostcardRecipient } from "./postcard-address-layout";
 import { entryAddress, normalizeZip, searchByZip } from "@/lib/postal/postal-search";
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 
 /** 一度に作れる枚数の上限（PDFが重くなりすぎないように） */
-export const POSTCARD_RECIPIENTS_MAX = 500;
+export const POSTCARD_RECIPIENTS_MAX: number = PLAN_LIMITS["postcard"].premium;
 
 export interface RecipientColumns {
   zip: number;

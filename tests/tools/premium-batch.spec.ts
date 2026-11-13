@@ -64,7 +64,7 @@ baseTest.describe("一括処理の仕組み", () => {
     expect(text).toContain(`最大${BATCH_LIMITS["background-remover"]}枚`);
     expect(text).toContain(`最大${BATCH_LIMITS["pdf-compress"]}個のPDF`);
     // 工程3：画像リサイズは画像圧縮に統合した（「画像リサイズ・圧縮」。上限は画像圧縮の設定を使う）
-    expect(BATCH_LIMITS["image-compress"]).toBe(30);
+    expect(BATCH_LIMITS["image-compress"]).toBe(50);
     expect("image-resize" in BATCH_LIMITS).toBe(false);
   });
 
@@ -162,7 +162,7 @@ premiumTest.describe("プレミアム: 一括処理", () => {
   premiumTest("画像圧縮: 3枚をまとめて圧縮し、ファイルごとに完了が出て、ZIPと1枚ずつの両方で保存できる", async ({ page }) => {
     await page.goto("/tools/image-compress");
     await chooseCompressOnly(page);
-    await expect(page.getByTestId("batch-hint")).toContainText("30枚まで");
+    await expect(page.getByTestId("batch-hint")).toContainText(`${BATCH_LIMITS["image-compress"]}枚まで`);
     await uploadFixture(page, [fixtures.png, fixtures.landscapeJpg, fixtures.portraitPng]);
     await expect(page.getByTestId("batch-notice")).toHaveCount(0);
     await page.getByRole("button", { name: "3枚をまとめて圧縮する" }).click();
@@ -208,15 +208,16 @@ premiumTest.describe("プレミアム: 一括処理", () => {
     expect(new Set(names).size).toBe(2);
   });
 
-  premiumTest("上限（30枚）を超えて選ぶと、30枚だけを読み込んで案内する", async ({ page }) => {
+  premiumTest("上限を超えて選ぶと、上限の枚数だけを読み込んで案内する", async ({ page }) => {
+    const limit = BATCH_LIMITS["image-compress"];
     await page.goto("/tools/image-compress");
     await chooseCompressOnly(page);
     const png = fs.readFileSync(fixtures.png);
-    const many = Array.from({ length: 31 }, (_, i) => ({ name: `img-${i + 1}.png`, mimeType: "image/png", buffer: png }));
+    const many = Array.from({ length: limit + 1 }, (_, i) => ({ name: `img-${i + 1}.png`, mimeType: "image/png", buffer: png }));
     await page.locator('input[type="file"]').first().setInputFiles(many);
-    await expect(page.getByTestId("batch-notice")).toContainText("30ファイルまで");
+    await expect(page.getByTestId("batch-notice")).toContainText(`${limit}ファイルまで`);
     await expect(page.getByTestId("batch-notice")).toContainText("超えた1ファイル");
-    await expect(page.getByRole("button", { name: "30枚をまとめて圧縮する" })).toBeVisible();
+    await expect(page.getByRole("button", { name: `${limit}枚をまとめて圧縮する` })).toBeVisible();
   });
 
   premiumTest("画像リサイズ: 縦横比を固定すると、指定した幅に合わせて画像ごとに高さが決まる", async ({ page }) => {
@@ -235,7 +236,7 @@ premiumTest.describe("プレミアム: 一括処理", () => {
 
   premiumTest("PDF圧縮: 2つのPDFをまとめて圧縮し、ZIPで保存できる", async ({ page }) => {
     await page.goto("/tools/pdf-compress");
-    await expect(page.getByTestId("batch-hint")).toContainText("10ファイルまで");
+    await expect(page.getByTestId("batch-hint")).toContainText(`${BATCH_LIMITS["pdf-compress"]}ファイルまで`);
     await uploadFixture(page, [fixtures.singlePagePdf, fixtures.multiPagePdf]);
     await page.getByTestId("compress-mode-quality").check();
     await expect(page.getByTestId("compress-run")).toHaveText("2つのPDFをまとめて圧縮する");

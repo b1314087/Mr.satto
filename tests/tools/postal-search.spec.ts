@@ -2,6 +2,7 @@ import { test as plainTest, expect as plainExpect } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { detectPrefecture, formatZip, normalizeAddress, normalizeZip, zipInputError } from "@/lib/postal/postal-search";
 import { clickAndDownload } from "../helpers/tool-runner";
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 /** ページを開き、画面の部品が動き出す（ハイドレーションが終わる）まで待つ。終わる前に押した操作は反映されないため */
 async function openPostal(page: import("@playwright/test").Page) {
   await page.goto("/tools/postal-search");
@@ -186,13 +187,22 @@ test.describe("まとめて調べる（プレミアム）", () => {
   });
 });
 
-test("まとめて調べる：スタンダードでは、プレミアムの機能と案内し、入力欄を出さない（1件ずつの検索は使える）", async ({ page, context, baseURL }) => {
+// 2026-11 料金プランの見直し：まとめて調べる件数は、無料1件（使えない）・旧スタンダード10件・プレミアム10,000件
+test("まとめて調べる：無料では、プレミアムの機能と案内し、入力欄を出さない（1件ずつの検索は使える）", async ({ page, context, baseURL }) => {
   const { setDevPlanOverride } = await import("../helpers/dev-plan");
-  await setDevPlanOverride(context, "standard", baseURL!);
+  await setDevPlanOverride(context, "free", baseURL!);
   await openPostal(page);
   await expect(page.getByTestId("postal-bulk-premium-note")).toBeVisible();
   await expect(page.getByTestId("postal-bulk-text")).toHaveCount(0);
   await page.getByTestId("postal-zip-input").fill("1000001");
   await page.getByTestId("postal-search").click();
   await expect(page.getByTestId("postal-result-address")).toHaveText("東京都千代田区千代田");
+});
+
+test("まとめて調べる：旧スタンダードでは、入力欄が出て、上限の件数を案内する", async ({ page, context, baseURL }) => {
+  const { setDevPlanOverride } = await import("../helpers/dev-plan");
+  await setDevPlanOverride(context, "standard", baseURL!);
+  await openPostal(page);
+  await expect(page.getByTestId("postal-bulk-premium-note")).toHaveCount(0);
+  await expect(page.getByTestId("plan-limit-hint")).toContainText(`${PLAN_LIMITS["postal-bulk"].standard}件まで`);
 });

@@ -14,6 +14,7 @@ import { PdfMergeProcessor, pdfOutputName } from "@/lib/processors/browser/pdf";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 // 並べ替えてもサムネイルを作り直さないよう、Fileごとに固定のキーを割り当てる
 const fileKeys = new WeakMap<File, number>();
@@ -36,7 +37,9 @@ export function PdfMergeTool({
   /** PDFの一覧が変わったときに呼ばれる（総合画面が、選んだPDFを覚えておくため） */
   onFilesChange?: (files: File[]) => void;
 } = {}) {
-  const [files, setFiles] = useState<File[]>(initialFiles);
+  const planLimit = usePlanLimit("pdf-merge");
+  // 料金プランの上限（結合するPDFの数）を超える分は、ほかのモードから引き継がない
+  const [files, setFiles] = useState<File[]>(() => initialFiles.slice(0, planLimit.limit));
   // 総合画面へ、いまのPDFの一覧を知らせる（操作を切り替えても、選んだPDFを引き継げるように）
   useEffect(() => {
     onFilesChange?.(files);
@@ -52,7 +55,10 @@ export function PdfMergeTool({
   const error = run.error ?? inputError;
   const status = run.status;
 
-  function addFiles(newFiles: File[]) {
+  function addFiles(picked: File[]) {
+    // 料金プランの上限（結合するPDFの数）に収まる分だけを読み込む
+    const newFiles = planLimit.clampAdd(files.length, picked);
+    if (newFiles.length === 0) return;
     setFiles((prev) => [...prev, ...newFiles]);
     setInputError(null);
   }
@@ -108,6 +114,8 @@ export function PdfMergeTool({
         onFilesSelected={addFiles}
         onError={setInputError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
 
       {files.length > 0 && (
         <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />

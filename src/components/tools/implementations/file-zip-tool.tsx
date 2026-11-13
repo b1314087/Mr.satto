@@ -10,6 +10,7 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { FileZipProcessor, planZipEntryNames } from "@/lib/processors/browser/file-ops";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 /** この合計サイズ以下なら、プレビューでも実際にZIPを作ってサイズを出す */
 const EXACT_ESTIMATE_MAX_BYTES = 20 * 1024 * 1024;
@@ -41,6 +42,7 @@ function roughZipEstimate(files: File[]): number {
  */
 export function FileZipTool() {
   const [files, setFiles] = useState<File[]>([]);
+  const planLimit = usePlanLimit("file-zip");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [zipBlob, setZipBlob] = useState<Blob | null>(null);
@@ -70,7 +72,10 @@ export function FileZipTool() {
   const exactSize = canMeasure && measured && measured.files === files ? measured.size : null;
   const zipEntryNames = planZipEntryNames(files);
 
-  function addFiles(newFiles: File[]) {
+  function addFiles(picked: File[]) {
+    // 料金プランの上限（ZIPにまとめるファイルの数）に収まる分だけを読み込む
+    const newFiles = planLimit.clampAdd(files.length, picked);
+    if (newFiles.length === 0) return;
     setFiles((prev) => [...prev, ...newFiles]);
     setZipBlob(null);
     setStatus("idle");
@@ -108,6 +113,8 @@ export function FileZipTool() {
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
 
       {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 

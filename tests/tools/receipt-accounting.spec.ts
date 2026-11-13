@@ -17,6 +17,7 @@ import { RECEIPT_LIMITS, type TextLine } from "@/lib/accounting/receipt-types";
 import { duplicateKeys, parseAmountInput, parseDateInput, sanitizeVendor, validateRow } from "@/lib/accounting/receipt-validate";
 import { isAdFreeToolPath } from "@/lib/tools/ad-free-tools";
 import { encryptPdfDocument } from "@/lib/pdf/encrypt";
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 
 /**
  * 領収書・レシートから会計CSV作成（receipt-accounting-csv）のテスト（工程8）。
@@ -693,15 +694,20 @@ test("receipt-accounting: 大きすぎる画像・PDFは、中身を読まずに
   await expect(page.locator('[data-testid="receipt-job"]').filter({ hasText: `junk-${RECEIPT_LIMITS.maxFilesPerAdd}.jpg` })).toHaveCount(0);
 });
 
-test("receipt-accounting: 画面に並べられる書類が60件に達したら、以降の追加は件数の上限のエラーになり、既存の行は残る", async ({ page }) => {
+// 2026-11 料金プランの見直し：並べられる書類の数はプラン別（無料3・旧スタンダード50・プレミアム200）。
+// プレミアムの200件まで読み込むと時間がかかるため、旧スタンダードの上限で確かめる
+test("receipt-accounting: 画面に並べられる書類がプランの上限に達したら、以降の追加は件数の上限のエラーになり、既存の行は残る", async ({ page, context, baseURL }) => {
+  const { setDevPlanOverride } = await import("../helpers/dev-plan");
+  await setDevPlanOverride(context, "standard", baseURL!);
+  const limit = PLAN_LIMITS["receipt-accounting-csv"].standard;
   const p20 = path.join(dir, "limit-20.pdf");
   fs.writeFileSync(p20, await buildTextPdfPages(20, "上限"));
   await openTool(page);
-  await loadFiles(page, [p20, p20, p20], 60);
-  await expect(page.getByTestId("receipt-summary")).toContainText("明細 60件");
+  await loadFiles(page, [p20, p20, p20], limit);
+  await expect(page.getByTestId("receipt-summary")).toContainText(`明細 ${limit}件`);
   const before = await page.getByTestId("receipt-row").count();
   await uploadFixture(page, [files.textPdf]);
-  const limitError = page.locator('[data-testid="receipt-job"][data-status="error"]').filter({ hasText: "60件まで" });
+  const limitError = page.locator('[data-testid="receipt-job"][data-status="error"]').filter({ hasText: `${limit}件まで` });
   await expect(limitError).toHaveCount(1, { timeout: 30_000 });
   await expect(page.getByTestId("receipt-row")).toHaveCount(before);
 });

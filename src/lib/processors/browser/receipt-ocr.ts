@@ -1,5 +1,5 @@
 import { getPositionedTextItems, loadPdfDocument, pageHasText, type PdfjsPage } from "@/lib/pdf/pdfjs-client";
-import { OCR_MAX_PAGES } from "@/lib/pdf/page-limits";
+import { RECEIPT_PDF_MAX_PAGES } from "@/lib/pdf/page-limits";
 import { recognizeImageWithWords, type OcrWord } from "@/lib/ocr/tesseract-client";
 import { extractReceipt, hasAnyCandidate } from "@/lib/accounting/receipt-extract";
 import { isTextLayerUsable, linesFromTextItems } from "@/lib/accounting/receipt-pdf-lines";
@@ -230,8 +230,8 @@ async function readPdfFile(file: File, options: ReadOptions): Promise<void> {
   }
   try {
     if (pdf.numPages === 0) throw new ReceiptReadError("このPDFにはページがありません。");
-    if (pdf.numPages > OCR_MAX_PAGES) {
-      throw new ReceiptReadError(`PDFは1つ${OCR_MAX_PAGES}ページまでです（このPDFは${pdf.numPages}ページあります）。ページを分けてからお試しください。`);
+    if (pdf.numPages > RECEIPT_PDF_MAX_PAGES) {
+      throw new ReceiptReadError(`PDFは1つ${RECEIPT_PDF_MAX_PAGES}ページまでです（このPDFは${pdf.numPages}ページあります）。ページを分けてからお試しください。`);
     }
 
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {

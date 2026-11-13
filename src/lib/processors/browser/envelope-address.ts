@@ -34,6 +34,7 @@ import {
 import { sanitizeFileName } from "@/lib/utils/format";
 import type * as PdfLibTypes from "pdf-lib";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 
 export type { EnvelopeBlocks, EnvelopeFreeText, EnvelopeHonorific, EnvelopeOrientation, EnvelopeWritingMode };
 
@@ -59,7 +60,8 @@ export interface EnvelopeAddressOutput {
   pageCount: number;
 }
 
-const MAX_RECIPIENTS = 300;
+/** 宛先の件数の上限（プレミアムでの上限。プラン別の上限は画面で守る：src/lib/plans/tool-limits.ts） */
+const MAX_RECIPIENTS: number = PLAN_LIMITS["envelope-address"].premium;
 
 function validSize(value: number | null): boolean {
   return value === null || (Number.isFinite(value) && value >= MIN_FONT_PT && value <= MAX_FONT_PT);

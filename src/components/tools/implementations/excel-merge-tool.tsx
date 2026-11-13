@@ -19,7 +19,7 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { cellToText, mergeTables, MERGE_MAX_SOURCES, MergeError, type MergeResult } from "@/lib/excel/merge-tables";
+import { cellToText, mergeTables, MergeError, type MergeResult } from "@/lib/excel/merge-tables";
 import {
   buildMergeSources,
   classifyMergeFile,
@@ -32,6 +32,7 @@ import {
 } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, formatBytes } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 /** 列の対応表に出す列数の上限（これ以上は省略して件数だけ示す） */
 const MAX_COLUMN_ROWS = 30;
@@ -65,6 +66,7 @@ export function ExcelMergeTool() {
   /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
   const csvExport = useCsvExport();
   const [files, setFiles] = useState<File[]>([]);
+  const planLimit = usePlanLimit("excel-merge");
   const [sheetChoice, setSheetChoice] = useState<Record<string, number>>({});
   const [addSourceColumn, setAddSourceColumn] = useState(false);
   const [removeDuplicates, setRemoveDuplicates] = useState(false);
@@ -116,11 +118,8 @@ export function ExcelMergeTool() {
       else if (kind === "unsupported") message = MERGE_UNSUPPORTED_MESSAGE;
       else accepted.push(f);
     }
-    const room = MERGE_MAX_SOURCES - files.length;
-    if (accepted.length > room) {
-      message = `一度に結合できるのは${MERGE_MAX_SOURCES}件までです。超えた分は追加していません。`;
-    }
-    setFiles((prev) => [...prev, ...accepted.slice(0, Math.max(room, 0))]);
+    // 料金プランの上限（結合するファイルの数）に収まる分だけを読み込む（超えたときは案内を出す）
+    setFiles((prev) => [...prev, ...planLimit.clampAdd(files.length, accepted)]);
     setResult(null);
     setStatus("idle");
     setError(message);
@@ -172,6 +171,8 @@ export function ExcelMergeTool() {
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
 
       {files.length > 0 && <ReorderableFileList files={files} onReorder={reorderFiles} onRemove={removeFile} />}
       {files.length > 0 && <CsvEncodingControl files={files} />}

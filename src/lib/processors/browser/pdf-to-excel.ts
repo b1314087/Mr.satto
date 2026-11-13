@@ -151,6 +151,8 @@ export interface PdfToExcelLayoutNotes {
 
 export interface PdfToExcelInput {
   file: File;
+  /** 1回に変換できるページ数の上限（料金プランによって変わる。省略時は MAX_PDF_TO_EXCEL_PAGES） */
+  maxPages?: number;
   /** スキャンページのOCR言語。省略時は日本語+英数字 */
   ocrLanguage?: OcrLanguageOption;
   /** 整形オプション。省略した項目は DEFAULT_PDF_TO_EXCEL_OPTIONS */
@@ -689,7 +691,7 @@ export async function extractPdfTextRows(
 }
 
 export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfToExcelOutput> {
-  async process({ file, ocrLanguage, options: optionsInput, onPageProgress }: PdfToExcelInput): Promise<PdfToExcelOutput> {
+  async process({ file, ocrLanguage, options: optionsInput, onPageProgress, maxPages = MAX_PDF_TO_EXCEL_PAGES }: PdfToExcelInput): Promise<PdfToExcelOutput> {
     if (file.size === 0) {
       throw new Error("空のファイルは処理できません。別のファイルを選択してください。");
     }
@@ -700,9 +702,9 @@ export class PdfToExcelProcessor extends BrowserProcessor<PdfToExcelInput, PdfTo
       if (pdf.numPages === 0) {
         throw new Error("このPDFにはページがありません");
       }
-      if (pdf.numPages > MAX_PDF_TO_EXCEL_PAGES) {
+      if (pdf.numPages > maxPages) {
         throw new Error(
-          `変換できるページ数の上限は${MAX_PDF_TO_EXCEL_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
+          `変換できるページ数の上限は${maxPages}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
         );
       }
 

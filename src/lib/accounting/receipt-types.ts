@@ -1,3 +1,4 @@
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 /**
  * 領収書・レシートから会計CSV作成ツール（工程8）で共通に使う型と上限。
  *
@@ -72,8 +73,8 @@ export const RECEIPT_LIMITS = {
   maxPdfMB: 30,
   /** 一度に追加できるファイル数 */
   maxFilesPerAdd: 30,
-  /** 画面に並べられる書類（画像1枚・PDF1ページ）の合計 */
-  maxDocuments: 60,
+  /** 画面に並べられる書類（画像1枚・PDF1ページ）の合計（プレミアムでの上限。プラン別は src/lib/plans/tool-limits.ts） */
+  maxDocuments: PLAN_LIMITS["receipt-accounting-csv"].premium,
   /** 画像の最大画素数（デコード後）。これを超える画像はメモリ保護のため読み込まない */
   maxImagePixels: 50_000_000,
 } as const;

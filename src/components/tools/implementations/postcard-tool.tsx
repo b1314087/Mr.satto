@@ -59,6 +59,7 @@ import {
   recipientColumnsError,
   type RecipientColumns,
 } from "@/lib/print/postcard-recipients";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 /** 置いた画像（ファイルと、プレビュー用のURL） */
 interface PlacedImage {
@@ -147,6 +148,10 @@ export function PostcardTool() {
   const [zipNote, setZipNote] = useState<{ recipient: string | null; sender: string | null }>({ recipient: null, sender: null });
   // Excel・CSVで読み込んだ複数の宛先（プレミアム）
   const premium = usePremiumFeature();
+  // 料金プランの上限（まとめて作る宛先の件数）。旧スタンダードは少ない件数で使え、無料（1件）は1枚ずつの作成だけ
+  const recipientLimit = usePlanLimit("postcard");
+  const bulkAllowed = premium.allowed || recipientLimit.limit > 1;
+  const maxRecipients = Math.min(POSTCARD_RECIPIENTS_MAX, recipientLimit.limit);
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkTable, setBulkTable] = useState<ParsedTableFile | null>(null);
   const [bulkColumns, setBulkColumns] = useState<RecipientColumns | null>(null);
@@ -288,9 +293,9 @@ export function PostcardTool() {
       setBulkError("宛先の行がありません（1行目は見出しとして扱います）。");
       return;
     }
-    if (built.recipients.length > POSTCARD_RECIPIENTS_MAX) {
+    if (built.recipients.length > maxRecipients) {
       setRecipients(null);
-      setBulkError(`一度に作れるのは${POSTCARD_RECIPIENTS_MAX}件までです（${built.recipients.length}件あります）。ファイルを分けてください。`);
+      setBulkError(`一度に作れるのは${maxRecipients}件までです（${built.recipients.length}件あります）。ファイルを分けてください。`);
       return;
     }
     setRecipients(built.recipients);
@@ -323,7 +328,7 @@ export function PostcardTool() {
     setError(null);
     setResult(null);
     try {
-      if (side === "address" && recipients && !(await premium.confirm())) {
+      if (side === "address" && recipients && premium.allowed && !(await premium.confirm())) {
         setError("Excel・CSVでまとめて作る機能は、プレミアムプランの機能です。");
         setStatus("error");
         return;
@@ -429,7 +434,7 @@ export function PostcardTool() {
       summary={recipients ? `${recipients.length}件` : "任意"}
       defaultOpen
     >
-      {!premium.allowed ? (
+      {!bulkAllowed ? (
         <p className="text-sm text-ms-text" data-testid="postcard-bulk-premium-note">
           Excel・CSVから複数の宛先を読み込んで、まとめて宛名面を作る機能は、プレミアムプランでご利用いただけます。1枚ずつの作成は、このまま無料でお使いいただけます。
         </p>
@@ -445,6 +450,7 @@ export function PostcardTool() {
             onError={setBulkError}
             pageDrop={false}
           />
+          <PlanLimitHint state={recipientLimit} />
           <CsvEncodingControl files={[bulkFile]} onChange={(f) => void loadBulkFile(f)} />
           {bulkTable && bulkColumns && (
             <div className="grid grid-cols-2 gap-2" data-testid="postcard-bulk-columns">

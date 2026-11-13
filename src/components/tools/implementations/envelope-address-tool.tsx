@@ -47,6 +47,7 @@ import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { SettingsSection } from "@/components/ui/settings-section";
 import { usePrehydrationValue } from "@/lib/hooks/use-prehydration-value";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 const ACCEPT =
   ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
@@ -120,6 +121,7 @@ export function EnvelopeAddressTool() {
   const [freeTexts, setFreeTexts] = useState<EnvelopeFreeText[]>([]);
   const [nextFreeId, setNextFreeId] = useState(1);
   const [recipients, setRecipients] = useState<string[]>([""]);
+  const recipientLimit = usePlanLimit("envelope-address");
   const [sender, setSender] = useState("");
   const [useSender, setUseSender] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
@@ -198,7 +200,9 @@ export function EnvelopeAddressTool() {
         name: nameIdx >= 0 ? (row[nameIdx] ?? "") : "",
       }),
     );
-    setRecipients(imported.length > 0 ? imported : [""]);
+    // 料金プランの上限（宛先の件数）を超える分は読み込まない
+    const kept = recipientLimit.clamp(imported);
+    setRecipients(kept.length > 0 ? kept : [""]);
     clearResult();
   }
 
@@ -463,9 +467,14 @@ export function EnvelopeAddressTool() {
               }
             />
           ))}
+          <PlanLimitHint state={recipientLimit} />
+          <PlanLimitNotice state={recipientLimit} />
           <button
             type="button"
-            onClick={() => setRecipients([...recipients, ""])}
+            onClick={() => {
+              if (recipientLimit.blockAdd(recipients.length)) return;
+              setRecipients([...recipients, ""]);
+            }}
             className="w-fit rounded-lg bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"
           >
             + 宛先を追加

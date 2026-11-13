@@ -5,6 +5,7 @@ import { toExcelWriteCell, type ExcelWriteCell } from "@/lib/pdf/cell-value";
 import { getFormFieldItems } from "@/lib/pdf/form-fields";
 import type { SheetData } from "write-excel-file/universal";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 
 /**
  * 記入済みPDF→Excel Processor（Phase 11 ツール①）。
@@ -46,7 +47,8 @@ import { recognizeImageWithWords, ocrWordsToPositionedTextItems, type OcrLanguag
  * 見出し行を挟みながら連結される。
  */
 
-const MAX_PAGES_HARD_LIMIT = 20;
+/** 1回に処理できる合計ページ数の上限（プレミアムで読み取れるファイル数と同じ。src/lib/plans/tool-limits.ts） */
+const MAX_PAGES_HARD_LIMIT: number = PLAN_LIMITS["filled-pdf-to-excel"].premium;
 const PDF_RENDER_SCALE = 2;
 /** OCR用に描画するページ画像の最長辺の上限(px)。スマートフォンでのメモリ超過を防ぐ */
 const MAX_OCR_DIMENSION = 2000;

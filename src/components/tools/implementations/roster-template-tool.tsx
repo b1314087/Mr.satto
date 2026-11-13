@@ -23,6 +23,7 @@ import { downloadBlob } from "@/lib/utils/format";
 import { RosterPreview } from "./shared/roster-preview";
 import { RosterScanPanel } from "./roster-scan-panel";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 const ACCEPT =
   ".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
@@ -35,6 +36,7 @@ export function RosterTemplateTool() {
   const [mode, setMode] = useState<"data" | "scan">("data");
   const [file, setFile] = useState<File | null>(null);
   const [table, setTable] = useState<ParsedTableFile | null>(null);
+  const rowLimit = usePlanLimit("roster-template");
   const [columns, setColumns] = useState<ColumnState[]>([]);
   const [rowHeightMm, setRowHeightMm] = useState(8);
   const [headerHeightMm, setHeaderHeightMm] = useState(10);
@@ -52,7 +54,8 @@ export function RosterTemplateTool() {
     setError(null);
     try {
       const parsed = await parseTableFile(files[0]);
-      setTable(parsed);
+      // 料金プランの上限（名簿の行数）を超える行は使わない（超えたときは案内を出す）
+      setTable({ ...parsed, rows: rowLimit.clamp(parsed.rows) });
       setColumns(
         parsed.headers.map((h) => ({
           sourceHeader: h,
@@ -175,6 +178,8 @@ export function RosterTemplateTool() {
             onFilesSelected={handleSelect}
             onError={setImportError}
           />
+          <PlanLimitHint state={rowLimit} />
+          <PlanLimitNotice state={rowLimit} />
           {file && (
             <FileList
               files={[file]}

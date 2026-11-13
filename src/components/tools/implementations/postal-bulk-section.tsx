@@ -24,6 +24,7 @@ import {
   type BulkDirection,
   type BulkRowResult,
 } from "@/lib/postal/postal-bulk";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 const ACCEPT = ".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const PREVIEW_ROWS = 50;
@@ -46,6 +47,10 @@ const STATUS_CLASS: Record<BulkRowResult["status"], string> = {
  */
 export function PostalBulkSection({ direction }: { direction: BulkDirection }) {
   const premium = usePremiumFeature();
+  // 料金プランの上限（まとめて調べる件数）。旧スタンダードは少ない件数で使え、無料（1件）は1件ずつの検索だけ
+  const bulkLimit = usePlanLimit("postal-bulk");
+  const bulkAllowed = premium.allowed || bulkLimit.limit > 1;
+  const maxRows = Math.min(BULK_MAX_ROWS, bulkLimit.limit);
   const [source, setSource] = useState<Source>("paste");
   const [text, setText] = useState("");
   const textRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
@@ -102,13 +107,13 @@ export function PostalBulkSection({ direction }: { direction: BulkDirection }) {
       setError(source === "paste" ? "調べる郵便番号・住所を、1行に1件ずつ貼り付けてください。" : "Excel・CSVのファイルを読み込んでください。");
       return;
     }
-    if (inputs.length > BULK_MAX_ROWS) {
-      setError(`一度に調べられるのは${BULK_MAX_ROWS.toLocaleString("ja-JP")}件までです（今は${inputs.length.toLocaleString("ja-JP")}件）。分けて調べてください。`);
+    if (inputs.length > maxRows) {
+      setError(`一度に調べられるのは${maxRows.toLocaleString("ja-JP")}件までです（今は${inputs.length.toLocaleString("ja-JP")}件）。分けて調べてください。`);
       return;
     }
     setRunning(true);
     try {
-      if (!(await premium.confirm())) {
+      if (premium.allowed && !(await premium.confirm())) {
         setError("まとめて調べる機能は、プレミアムプランの機能です。");
         return;
       }
@@ -158,7 +163,7 @@ export function PostalBulkSection({ direction }: { direction: BulkDirection }) {
     downloadBlob(csvRowsToBlob(outputRows()), `${baseName()}.csv`);
   }
 
-  if (!premium.allowed) {
+  if (!bulkAllowed) {
     return (
       <SettingsSection title={title} testId="postal-bulk" defaultOpen>
         <p className="text-sm text-ms-text" data-testid="postal-bulk-premium-note">
@@ -173,8 +178,9 @@ export function PostalBulkSection({ direction }: { direction: BulkDirection }) {
     <SettingsSection title={title} testId="postal-bulk" defaultOpen summary={zipMode ? "郵便番号→住所" : "住所→郵便番号"}>
       <p className="text-xs text-ms-muted">
         {zipMode ? "郵便番号の一覧から、住所をまとめて調べます。" : "住所の一覧から、郵便番号をまとめて調べます（住所は都道府県名から入れてください）。"}
-        調べる向きは、上の「{zipMode ? "郵便番号から住所" : "住所から郵便番号"}」の選択に合わせています。最大{BULK_MAX_ROWS.toLocaleString("ja-JP")}件まで。
+        調べる向きは、上の「{zipMode ? "郵便番号から住所" : "住所から郵便番号"}」の選択に合わせています。最大{maxRows.toLocaleString("ja-JP")}件まで。
       </p>
+      <PlanLimitHint state={bulkLimit} />
       <Segmented
         ariaLabel="まとめて調べる入力の方法"
         testId="postal-bulk-source"

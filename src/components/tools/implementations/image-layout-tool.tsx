@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
@@ -108,6 +109,7 @@ function isPdfOutput(
 
 export function ImageLayoutTool() {
   const [files, setFiles] = useState<File[]>([]);
+  const imageLimit = usePlanLimit("image-layout");
   const [fileUrls, setFileUrls] = useState<string[]>([]);
   const [items, setItems] = useState<ImageLayoutItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -219,7 +221,10 @@ export function ImageLayoutTool() {
     return items.reduce((max, i) => Math.max(max, i.zIndex), 0) + 1;
   }
 
-  function handleFilesAdded(newFiles: File[]) {
+  function handleFilesAdded(picked: File[]) {
+    if (picked.length === 0) return;
+    // 料金プランの上限（配置する画像の枚数）に収まる分だけを読み込む
+    const newFiles = imageLimit.clampAdd(items.filter((it) => it.kind === "image").length, picked);
     if (newFiles.length === 0) return;
     // 工程4：状態の更新の中で別の状態を更新しない（開発時のReactが更新を2回試すと、画像が2枚ずつ増えていたため）
     const startIndex = files.length;
@@ -282,6 +287,7 @@ export function ImageLayoutTool() {
 
   function duplicateSelected() {
     if (!selectedItem) return;
+    if (selectedItem.kind === "image" && imageLimit.blockAdd(items.filter((it) => it.kind === "image").length)) return;
     const id = `item-${nextItemIdRef.current++}`;
     const copy: ImageLayoutItem = {
       ...selectedItem,
@@ -562,6 +568,8 @@ export function ImageLayoutTool() {
           onFilesSelected={handleFilesAdded}
           onError={setError}
         />
+        <PlanLimitHint state={imageLimit} />
+        <PlanLimitNotice state={imageLimit} />
 
         {/* PC幅(lg以上)では、アイテム操作ボタン・キャンバス・選択中アイテムの設定をまとめて画面に固定し、
             右側の設定パネルを操作している間もキャンバスが見え続けるようにする（スマホ幅は固定しない）。 */}

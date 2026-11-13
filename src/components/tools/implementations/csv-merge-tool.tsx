@@ -24,11 +24,13 @@ import { CsvMergeProcessor, mergeCsvRowSets } from "@/lib/processors/browser/csv
 import { parseCsv } from "@/lib/utils/csv";
 import { formatBytes } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 export function CsvMergeTool() {
   /** CSVの書き出しの文字コード（UTF-8 BOM付き・BOMなし・Shift_JIS）を選んでダウンロードする */
   const csvExport = useCsvExport();
   const [files, setFiles] = useState<File[]>([]);
+  const planLimit = usePlanLimit("excel-merge");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ blob: Blob; rowCount: number; previewRows: string[][] } | null>(
@@ -70,7 +72,10 @@ export function CsvMergeTool() {
     }
   }, [fileRowSets]);
 
-  function addFiles(newFiles: File[]) {
+  function addFiles(picked: File[]) {
+    // 料金プランの上限（結合するファイルの数）に収まる分だけを読み込む
+    const newFiles = planLimit.clampAdd(files.length, picked);
+    if (newFiles.length === 0) return;
     setFiles((prev) => [...prev, ...newFiles]);
     setResult(null);
     setStatus("idle");
@@ -110,6 +115,8 @@ export function CsvMergeTool() {
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
 
       {files.length > 0 && (
         <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />

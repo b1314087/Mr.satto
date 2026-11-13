@@ -21,6 +21,7 @@ import { terminateOcrWorker } from "@/lib/ocr/tesseract-client";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
 
 type TablePreview =
   | { file: File; hasTextLayer: boolean; rows: string[][]; layout: PdfToExcelLayoutNotes | null }
@@ -121,6 +122,7 @@ function OptionCheckbox({
  */
 export function PdfToExcelTool() {
   const [file, setFile] = useState<File | null>(null);
+  const pageLimit = usePlanLimit("pdf-to-excel");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PdfToExcelOutput | null>(null);
@@ -176,6 +178,7 @@ export function PdfToExcelTool() {
     try {
       const output = await new PdfToExcelProcessor().process({
         file,
+        maxPages: pageLimit.limit,
         options,
         onPageProgress: (info) => {
           if (info.method === "ocr") {
@@ -216,6 +219,7 @@ export function PdfToExcelTool() {
         onFilesSelected={handleSelect}
         onError={setError}
       />
+      <PlanLimitHint state={pageLimit} />
 
       {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
 

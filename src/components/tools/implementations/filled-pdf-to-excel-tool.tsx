@@ -16,6 +16,7 @@ import { useFilledPdfToExcelUsage, UsageGatePanel, describeConsumeFailure } from
 import { FilledPdfToExcelTemplatePanel } from "./filled-pdf-to-excel-template-panel";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 const LANGUAGE_OPTIONS: { value: OcrLanguageOption; label: string }[] = [
   { value: "ja+en", label: "日本語＋英語" },
@@ -99,6 +100,7 @@ function ModeOption({
 
 function AutoExtractSection() {
   const [files, setFiles] = useState<File[]>([]);
+  const fileLimit = usePlanLimit("filled-pdf-to-excel");
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [pageCountError, setPageCountError] = useState<string | null>(null);
   const [language, setLanguage] = useState<OcrLanguageOption>("ja+en");
@@ -117,7 +119,9 @@ function AutoExtractSection() {
     };
   }, []);
 
-  function handleSelect(selected: File[]) {
+  function handleSelect(picked: File[]) {
+    // 料金プランの上限（読み取るPDFの数）に収まる分だけを読み込む
+    const selected = fileLimit.clamp(picked);
     setFiles(selected);
     setResult(null);
     setStatus("idle");
@@ -222,6 +226,8 @@ function AutoExtractSection() {
         onFilesSelected={handleSelect}
         onError={setError}
       />
+      <PlanLimitHint state={fileLimit} />
+      <PlanLimitNotice state={fileLimit} />
 
       {files.length > 0 && <FileList files={files} onRemove={handleRemove} />}
       {pageCountError && <ErrorMessage message={pageCountError} />}

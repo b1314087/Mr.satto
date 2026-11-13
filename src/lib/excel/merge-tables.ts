@@ -14,9 +14,10 @@
  * - 入力の表は書き換えない。
  */
 import { columnIndexToLetter, type XlsxCellValue } from "./xlsx-simple-io";
+import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 
 export const MERGE_MIN_SOURCES = 2;
-export const MERGE_MAX_SOURCES = 20;
+export const MERGE_MAX_SOURCES: number = PLAN_LIMITS["excel-merge"].premium;
 /** Excelの1シートの最大行数（1,048,576）から見出し行の分を引いた、結合後のデータ行の上限 */
 export const MERGE_MAX_ROWS = 1_048_575;
 /** Excelの1シートの最大列数 */

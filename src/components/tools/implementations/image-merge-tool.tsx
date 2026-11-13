@@ -20,6 +20,7 @@ import {
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
 
 // 透明背景をプレビューで分かりやすく示す市松模様。
 // electronic-stamp-generator-tool.tsx の CHECKER_STYLE と同じ配色・寸法を再利用する。
@@ -74,6 +75,7 @@ function toggleButtonClass(active: boolean): string {
 
 export function ImageMergeTool() {
   const [files, setFiles] = useState<File[]>([]);
+  const planLimit = usePlanLimit("image-merge");
 
   const [direction, setDirection] = useState<ImageMergeDirection>("horizontal");
   const [columns, setColumns] = useState(2);
@@ -106,7 +108,10 @@ export function ImageMergeTool() {
     };
   }, [previewResult]);
 
-  function addFiles(newFiles: File[]) {
+  function addFiles(picked: File[]) {
+    // 料金プランの上限（結合する画像の枚数）に収まる分だけを読み込む
+    const newFiles = planLimit.clampAdd(files.length, picked);
+    if (newFiles.length === 0) return;
     setFiles((prev) => [...prev, ...newFiles]);
     setResult(null);
     setStatus("idle");
@@ -287,6 +292,8 @@ export function ImageMergeTool() {
         onFilesSelected={addFiles}
         onError={setError}
       />
+      <PlanLimitHint state={planLimit} />
+      <PlanLimitNotice state={planLimit} />
 
       {files.length > 0 && (
         <ReorderableFileList files={files} onReorder={setFiles} onRemove={removeFile} />

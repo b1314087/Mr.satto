@@ -3,6 +3,7 @@ import { OFFERED_PLAN_IDS } from "@/lib/plans/types";
 import { tools } from "@/lib/tools/data";
 import { FISCAL_CALENDAR_COPY_PAIRS } from "@/lib/seo/fiscal-calendar-copy";
 import { BATCH_COPY_PAIRS } from "@/lib/seo/batch-copy";
+import { PLAN_LIMIT_COPY_PAIRS } from "@/lib/seo/plan-limit-copy";
 import type { ToolSeoContent } from "@/lib/seo/tool-content";
 import type { CategorySeoContent } from "@/lib/seo/category-content";
 
@@ -224,6 +225,8 @@ const TEXT_RULES: TextRule[] = [
   { from: "はい（プレミアムプランの機能）。", resolve: (ctx) => (ctx.billing ? undefined : "はい。") },
   // 複数ファイルの一括処理（課金オフの間は、プランがなく、だれでも使える）
   ...BATCH_COPY_PAIRS.map((pair): TextRule => ({ from: pair.on, resolve: (ctx) => (ctx.billing ? undefined : pair.off) })),
+  // 2026-11：プラン別の上限（src/lib/seo/plan-limit-copy.ts）。課金オフでは、プレミアムの上限だけを書く
+  ...PLAN_LIMIT_COPY_PAIRS.map((pair): TextRule => ({ from: pair.on, resolve: (ctx) => (ctx.billing ? undefined : pair.off) })),
 ];
 
 /** 課金オフのとき、まるごと取り除くFAQの質問 */

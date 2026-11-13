@@ -23,7 +23,7 @@ const PRODUCTION: CopyContext = { billing: true, ads: false, premiumOnly: false,
 test.describe("L1: PDFツールのページ数上限の説明", () => {
   test("上限の値は、実際の制限処理が使う定数と同じ（定数は一か所だけで定義）", () => {
     // 確認済みの現在値。値を変えたときは、このテストと説明文が一緒に更新されるのを確認すること。
-    expect([PDF_TO_WORD_MAX_PAGES, PDF_TO_EXCEL_MAX_PAGES, PDF_TO_EXCEL_MAX_OCR_PAGES, OCR_MAX_PAGES]).toEqual([50, 50, 20, 20]);
+    expect([PDF_TO_WORD_MAX_PAGES, PDF_TO_EXCEL_MAX_PAGES, PDF_TO_EXCEL_MAX_OCR_PAGES, OCR_MAX_PAGES]).toEqual([200, 200, 20, 200]);
 
     // 実際に制限をかける処理が、同じ定数を参照している（手書きの数字が別にない）
     const word = read("src/lib/processors/browser/pdf-to-word.ts");
@@ -31,15 +31,18 @@ test.describe("L1: PDFツールのページ数上限の説明", () => {
     const ocr = read("src/lib/processors/browser/ocr.ts");
     expect(word).toContain('from "@/lib/pdf/page-limits"');
     expect(word).toMatch(/const MAX_PDF_TO_WORD_PAGES = PDF_TO_WORD_MAX_PAGES;/);
-    expect(word).toMatch(/pdf\.numPages > MAX_PDF_TO_WORD_PAGES/);
+    // 2026-11：上限はプラン別。プランを渡さないときの既定値として、同じ定数を使う
+    expect(word).toMatch(/maxPages = MAX_PDF_TO_WORD_PAGES/);
+    expect(word).toMatch(/pdf\.numPages > maxPages/);
     expect(excel).toContain('from "@/lib/pdf/page-limits"');
     expect(excel).toMatch(/const MAX_PDF_TO_EXCEL_PAGES = PDF_TO_EXCEL_MAX_PAGES;/);
     expect(excel).toMatch(/const MAX_OCR_PAGES = PDF_TO_EXCEL_MAX_OCR_PAGES;/);
-    expect(excel).toMatch(/pdf\.numPages > MAX_PDF_TO_EXCEL_PAGES/);
+    expect(excel).toMatch(/maxPages = MAX_PDF_TO_EXCEL_PAGES/);
+    expect(excel).toMatch(/pdf\.numPages > maxPages/);
     expect(excel).toMatch(/ocrConfidences\.length >= MAX_OCR_PAGES/);
     expect(ocr).toContain('from "@/lib/pdf/page-limits"');
     expect(ocr).toMatch(/const MAX_OCR_PAGES = OCR_MAX_PAGES;/);
-    expect(ocr).toMatch(/pdf\.numPages > MAX_OCR_PAGES/);
+    expect(ocr).toMatch(/maxOcrPages = MAX_OCR_PAGES/);
   });
 
   test("PDF→Word・PDF→Excel・PDF→テキスト（OCR）: 操作説明とFAQに、実際の上限が書かれている", () => {
@@ -57,7 +60,7 @@ test.describe("L1: PDFツールのページ数上限の説明", () => {
 
     // 工程4：OCRは PDF→テキスト（OCR対応）に統合した。OCRのページ数の上限の説明は、統合先に移した
     const ocr = toolSeoContent["pdf-to-text"];
-    expect(ocr.howTo[0]).toContain(`OCRで読み取るPDFは${OCR_MAX_PAGES}ページまで`);
+    expect(ocr.howTo[0]).toContain(`プレミアムプランで${OCR_MAX_PAGES}ページまで`);
     const ocrAnswer = ocr.faq.find((f) => f.question === "PDFのページ数に制限はありますか？")?.answer ?? "";
     expect(ocrAnswer).toContain(`${OCR_MAX_PAGES}ページまで`);
     expect(ocrAnswer).not.toContain("あまりにページ数の多い");

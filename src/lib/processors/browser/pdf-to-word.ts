@@ -63,6 +63,8 @@ const MAX_TOTAL_IMAGES = 60;
 
 export interface PdfToWordInput {
   file: File;
+  /** 1回に変換できるページ数の上限（料金プランによって変わる。省略時は MAX_PDF_TO_WORD_PAGES） */
+  maxPages?: number;
   /** スキャンPDF（文字レイヤーの無いページ）を検出した場合にOCRする言語。省略時は"ja+en"。 */
   ocrLanguage?: OcrLanguageOption;
   onPageProgress?: (info: { currentPage: number; totalPages: number; method?: "text-layer" | "ocr"; ocrProgress?: number }) => void;
@@ -159,7 +161,7 @@ function summarizeFurniture(
 }
 
 export class PdfToWordProcessor extends BrowserProcessor<PdfToWordInput, PdfToWordOutput> {
-  async process({ file, ocrLanguage, onPageProgress }: PdfToWordInput): Promise<PdfToWordOutput> {
+  async process({ file, ocrLanguage, onPageProgress, maxPages = MAX_PDF_TO_WORD_PAGES }: PdfToWordInput): Promise<PdfToWordOutput> {
     if (file.size === 0) {
       throw new Error("空のファイルは処理できません。別のファイルを選択してください。");
     }
@@ -169,9 +171,9 @@ export class PdfToWordProcessor extends BrowserProcessor<PdfToWordInput, PdfToWo
       if (pdf.numPages === 0) {
         throw new Error("このPDFにはページがありません");
       }
-      if (pdf.numPages > MAX_PDF_TO_WORD_PAGES) {
+      if (pdf.numPages > maxPages) {
         throw new Error(
-          `変換できるページ数の上限は${MAX_PDF_TO_WORD_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
+          `変換できるページ数の上限は${maxPages}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
         );
       }
 

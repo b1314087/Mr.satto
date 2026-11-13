@@ -105,6 +105,11 @@ export interface OcrInput {
   isCancelled?: () => boolean;
   /** OCRを使ってよいか（省略時は true）。false のとき、OCRが必要なページは読み取らずに "needs-ocr" とする */
   ocrAllowed?: boolean;
+  /**
+   * OCRで読み取るページ数の上限（料金プランによって変わる。省略時は OCR_MAX_PAGES）。
+   * 超えた分のOCRが必要なページは、読み取らずに "needs-ocr" とする（文字情報のあるページは上限に数えない）。
+   */
+  maxOcrPages?: number;
 }
 
 export interface OcrOutput {
@@ -244,7 +249,7 @@ function cropRegion(page: PdfjsPage, rendered: { canvas: HTMLCanvasElement; scal
 }
 
 export class OcrProcessor extends BrowserProcessor<OcrInput, OcrOutput> {
-  async process({ file, language, onPageProgress, isCancelled, ocrAllowed = true }: OcrInput): Promise<OcrOutput> {
+  async process({ file, language, onPageProgress, isCancelled, ocrAllowed = true, maxOcrPages = MAX_OCR_PAGES }: OcrInput): Promise<OcrOutput> {
     if (file.size === 0) {
       throw new Error("空のファイルは処理できません。別のファイルを選択してください。");
     }
@@ -291,12 +296,8 @@ export class OcrProcessor extends BrowserProcessor<OcrInput, OcrOutput> {
       if (pdf.numPages === 0) {
         throw new Error("このPDFにはページがありません");
       }
-      // ページ数の上限はOCRの重さのためのもの。OCRを使わないとき（文字情報の抽出だけ）は上限を設けない（これまでのPDF→テキストと同じ）
-      if (ocrAllowed && pdf.numPages > MAX_OCR_PAGES) {
-        throw new Error(
-          `OCRで処理できるページ数の上限は${MAX_OCR_PAGES}ページです（このPDFは${pdf.numPages}ページあります）。ページ数を減らしてから再度お試しください。`
-        );
-      }
+      // OCRで読み取るページ数の上限（料金プラン）。文字情報だけで読めるページは数えない
+      let ocrPagesLeft = Math.max(0, maxOcrPages);
 
       const pages: OcrPageResult[] = [];
       const finish = (cancelled: boolean): OcrOutput => ({
@@ -324,20 +325,21 @@ export class OcrProcessor extends BrowserProcessor<OcrInput, OcrOutput> {
         const boxes = await getPageImageBoxes(page);
         const kind = classifyPage(layerChars, boxes, { x0: vx0, y0: vy0, width: vx1 - vx0, height: vy1 - vy0 });
 
-        if (kind.kind === "text-layer" || (kind.kind === "mixed" && !ocrAllowed)) {
+        if (kind.kind === "text-layer" || (kind.kind === "mixed" && (!ocrAllowed || ocrPagesLeft <= 0))) {
           // 文字情報のあるページはOCRしない（OCRを使えないときは、混在ページも文字情報の部分だけを使う）
           pages.push({ pageNumber, text: layerText, method: "text-layer", confidence: null });
           onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "text-layer", pageProgress: 1 });
           continue;
         }
 
-        if (!ocrAllowed) {
-          // OCRが必要なページ。わずかな文字情報（ページ番号など）があれば、それだけは残す
+        if (!ocrAllowed || ocrPagesLeft <= 0) {
+          // OCRが必要なページ（OCRを使えない・上限に達した）。わずかな文字情報（ページ番号など）があれば、それだけは残す
           pages.push({ pageNumber, text: layerText, method: "needs-ocr", confidence: null });
           onPageProgress?.({ currentPage: pageNumber, totalPages: pdf.numPages, method: "needs-ocr", pageProgress: 1 });
           continue;
         }
 
+        ocrPagesLeft -= 1;
         // 全ページ分の画像を同時に保持せず、1ページ処理するごとにcanvasの参照を手放す。
         let rendered: { canvas: HTMLCanvasElement; scale: number };
         try {
