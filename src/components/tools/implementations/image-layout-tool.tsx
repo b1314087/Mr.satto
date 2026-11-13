@@ -41,6 +41,8 @@ import { Segmented } from "@/components/ui/segmented";
  * - 書き出しの解像度（自動：配置した画像の元の解像度を落とさない倍率／2倍／3倍／4倍）と、書き出す画像の大きさの表示。
  * - 文字の折り返し・書体・行の高さを、画面の表示と書き出しでそろえた。
  * - Delete・Backspaceキーで、選んだアイテムを削除できる（入力欄にいるときは除く）。
+ * - 2026-11：写真を、ほかの写真の真ん中あたりへドラッグして離すと、2枚の写真が入れ替わる（枠の場所・大きさ・角度はそのまま、中の写真だけ入れ替える）。
+ *   入れ替わる写真は、ドラッグ中に黄色い枠で示す。写真の端のあたりで離したときは、今までどおり重ねて置ける。
  *
  * 以下は、もとの「画像レイアウト」の説明。
  *
@@ -133,6 +135,8 @@ export function ImageLayoutTool() {
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  // ドラッグ中の写真を離すと入れ替わる相手（黄色い枠で示す）
+  const [swapTargetId, setSwapTargetId] = useState<string | null>(null);
   const nextItemIdRef = useRef(1);
   const [displayScale, setDisplayScale] = useState(1);
 
@@ -369,6 +373,9 @@ export function ImageLayoutTool() {
       const dx = (e.clientX - drag.startClientX) / drag.pxPerCanvasPx;
       const dy = (e.clientY - drag.startClientY) / drag.pxPerCanvasPx;
       updateItem(drag.itemId, { x: drag.startItem.x + dx, y: drag.startItem.y + dy });
+      const target = findSwapTarget(e.clientX, e.clientY, drag);
+      const id = target?.id ?? null;
+      if (id !== swapTargetId) setSwapTargetId(id);
       return;
     }
 
@@ -408,8 +415,46 @@ export function ImageLayoutTool() {
     }
   }
 
+  /**
+   * 入れ替えの相手を探す：ドラッグしている写真のポインターが、ほかの写真の真ん中あたり（縦横それぞれ中央60%）にあれば、その写真。
+   * 重なっているときは、いちばん上の写真。回転している写真は、回転を戻して判定する。
+   */
+  function findSwapTarget(clientX: number, clientY: number, drag: DragState): ImageLayoutItem | null {
+    if (drag.startItem.kind !== "image") return null;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || drag.pxPerCanvasPx === 0) return null;
+    const px = (clientX - rect.left) / drag.pxPerCanvasPx;
+    const py = (clientY - rect.top) / drag.pxPerCanvasPx;
+    const candidates = items.filter((i) => i.id !== drag.itemId && i.kind === "image").sort((a, b) => b.zIndex - a.zIndex);
+    for (const it of candidates) {
+      const cx = it.x + it.width / 2;
+      const cy = it.y + it.height / 2;
+      const rad = (-it.rotation * Math.PI) / 180;
+      const lx = (px - cx) * Math.cos(rad) - (py - cy) * Math.sin(rad);
+      const ly = (px - cx) * Math.sin(rad) + (py - cy) * Math.cos(rad);
+      if (Math.abs(lx) <= it.width * 0.3 && Math.abs(ly) <= it.height * 0.3) return it;
+    }
+    return null;
+  }
+
   function onCanvasPointerUp() {
+    const drag = dragRef.current;
     dragRef.current = null;
+    if (drag?.mode === "move" && swapTargetId) {
+      const targetId = swapTargetId;
+      // 2枚の写真を入れ替える：ドラッグした写真の枠は元の場所に戻し、中の写真だけを相手と取りかえる
+      setItems((prev) => {
+        const target = prev.find((i) => i.id === targetId);
+        if (!target) return prev;
+        return prev.map((i) => {
+          if (i.id === drag.itemId) return { ...i, x: drag.startItem.x, y: drag.startItem.y, imageIndex: target.imageIndex };
+          if (i.id === targetId) return { ...i, imageIndex: drag.startItem.imageIndex };
+          return i;
+        });
+      });
+      setSelectedId(targetId);
+    }
+    if (swapTargetId !== null) setSwapTargetId(null);
   }
 
   // ---------------------------------------------------------------------
@@ -590,7 +635,10 @@ export function ImageLayoutTool() {
               <div
                 key={item.id}
                 onPointerDown={(e) => onItemPointerDown(e, item)}
-                className={`absolute cursor-move ${selected ? "outline outline-2 outline-blue-500" : ""}`}
+                data-testid={item.kind === "image" ? "whiteboard-image-item" : undefined}
+                data-image-index={item.imageIndex}
+                data-swap-target={item.id === swapTargetId ? "true" : undefined}
+                className={`absolute cursor-move ${item.id === swapTargetId ? "outline outline-4 outline-amber-400" : selected ? "outline outline-2 outline-blue-500" : ""}`}
                 style={{
                   left: `${(item.x / canvasWidthPx) * 100}%`,
                   top: `${(item.y / canvasHeightPx) * 100}%`,
