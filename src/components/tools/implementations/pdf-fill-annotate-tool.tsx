@@ -178,12 +178,6 @@ function normalizeRotation(deg: number): number {
   const r = deg % 360;
   return r < 0 ? r + 360 : r;
 }
-function formatDate(iso: string, style: "slash" | "kanji"): string {
-  const parts = iso.split("-").map(Number);
-  const [y, m, d] = parts;
-  if (!y || !m || !d) return "";
-  return style === "kanji" ? `${y}年${m}月${d}日` : `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
-}
 
 export function PdfFillAnnotateTool({
   initialFile = null,
@@ -1924,10 +1918,11 @@ export function PdfFillAnnotateTool({
 
                     {obj.type === "text" && (
                       <>
-                        <label className="flex items-center gap-1">
+                        {/* 2026-11：文字を打つ欄を、行いっぱいの幅・3行以上の高さに広げた（小さくて打ちにくかったため）。日付の挿入はやめた */}
+                        <label className="flex w-full basis-full items-center gap-1">
                           <span className="sr-only">テキスト内容</span>
                           <textarea
-                            rows={obj.text.includes("\n") ? Math.min(5, obj.text.split("\n").length) : 1}
+                            rows={Math.min(8, Math.max(3, obj.text.split("\n").length))}
                             value={obj.text}
                             onFocus={() => (textEditStartRef.current = { id: obj.id, text: obj.text })}
                             onChange={(e) =>
@@ -1944,10 +1939,10 @@ export function PdfFillAnnotateTool({
                               }
                             }}
                             placeholder="テキストを入力（Enterで改行）"
-                            className="w-40 resize-y rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                            className="w-full resize-y rounded border border-neutral-300 px-2.5 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                            data-testid="pdf-annotate-text-input"
                           />
                         </label>
-                        <DateInsertHelper onInsert={(text) => patchObjectWithHistory(obj.id, { text })} />
                         <div className="w-56">
                           <SliderField
                             label="文字サイズ"
@@ -2315,45 +2310,3 @@ function RotateButtons({ onRotate }: { onRotate: (deltaDeg: number) => void }) {
   );
 }
 
-function DateInsertHelper({ onInsert }: { onInsert: (text: string) => void }) {
-  const [dateValue, setDateValue] = useState("");
-  const [style, setStyle] = useState<"slash" | "kanji">("slash");
-
-  return (
-    <span className="flex items-center gap-1">
-      <label className="flex items-center gap-1">
-        <span className="sr-only">日付を選択して挿入</span>
-        <input
-          type="date"
-          value={dateValue}
-          onChange={(e) => setDateValue(e.target.value)}
-          className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-        />
-      </label>
-      <div className="flex items-center gap-1">
-        <Segmented
-          size="sm"
-          ariaLabel="日付の表示形式"
-          value={style}
-          onChange={(v) => setStyle(v)}
-          options={[
-            { value: "slash", label: "2026/09/27" },
-            { value: "kanji", label: "2026年9月27日" },
-          ]}
-        />
-      </div>
-      <button
-        type="button"
-        onClick={() => {
-          if (!dateValue) return;
-          const formatted = formatDate(dateValue, style);
-          if (formatted) onInsert(formatted);
-        }}
-        disabled={!dateValue}
-        className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300"
-      >
-        日付を挿入
-      </button>
-    </span>
-  );
-}

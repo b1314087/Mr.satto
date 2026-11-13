@@ -278,19 +278,25 @@ test("日本語のテキストが文字化けせずにPDFへ出力される", as
   expect(extracted.text).toContain("日本語テストABC123あいうえお");
 });
 
-// 日付挿入（現在日付の自動入力をしないこと、明示的に選んだ日付だけが反映されることの確認）
-test("日付は自動入力されず、選択した日付だけがテキストに反映される", async ({ page }) => {
+// 配置した注釈のテキスト欄（2026-11：日付の挿入はやめ、文字を打つ欄を大きくした）
+test("配置した注釈：文字を打つ欄は行いっぱいの幅で3行以上あり、自動で何も入らない。日付の挿入欄は無い", async ({ page }) => {
   await openToolWithPdf(page, fixtures.singlePagePdf);
   await choosePdfFixOperation(page, "テキスト");
   await clickCanvasAt(page, 50, 50);
 
   const row = page.locator(OBJECT_LIST).locator("li").first();
-  const textInput = row.locator('textarea').first();
+  const textInput = row.getByTestId("pdf-annotate-text-input");
   await expect(textInput).toHaveValue(""); // 自動入力されていないこと
-
-  await row.locator('input[type="date"]').fill("2026-09-27");
-  await row.getByRole("button", { name: "日付を挿入" }).click();
-  await expect(textInput).toHaveValue("2026/09/27");
+  await expect(row.locator('input[type="date"]')).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "日付を挿入" })).toHaveCount(0);
+  // 欄の大きさ：行（注釈の枠）の幅のほとんどを使い、3行以上の高さがある
+  const rowBox = (await row.boundingBox())!;
+  const inputBox = (await textInput.boundingBox())!;
+  expect(inputBox.width).toBeGreaterThan(rowBox.width * 0.85);
+  expect(await textInput.getAttribute("rows")).toBe("3");
+  // 改行を含む文章も打てて、行数に合わせて高くなる
+  await textInput.fill("1行目\n2行目\n3行目\n4行目");
+  await expect(textInput).toHaveAttribute("rows", "4");
 });
 
 // 座標変換の回帰確認（50%/100%/150%で、PDL上の「同じ相対位置」をクリックしたときの
