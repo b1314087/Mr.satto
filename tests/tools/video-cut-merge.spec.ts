@@ -92,15 +92,21 @@ test.describe("動画カット・結合の画面", () => {
     // 数字の入力欄は無い（タイムラインで操作する）
     await expect(page.getByTestId("video-cut-start")).toHaveCount(0);
 
-    // 削除する範囲を、赤い行の 1/3（1.0秒）〜 1/2（1.5秒）でドラッグして選ぶ
-    await page.getByTestId("video-cut-timeline-select").scrollIntoViewIfNeeded();
-    const lane = (await page.getByTestId("video-cut-timeline-select").boundingBox())!;
-    await page.mouse.move(lane.x + lane.width / 3, lane.y + lane.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(lane.x + lane.width / 2, lane.y + lane.height / 2, { steps: 6 });
-    await page.mouse.up();
-    await expect(page.getByTestId("video-cut-timeline-selection")).toBeVisible();
-    await page.getByTestId("video-cut-delete-range").click();
+    // 再生ヘッドを1.0秒・1.5秒に動かして分け、まん中のクリップを選んで「削除してうしろを詰める」
+    // （タイムラインは、うしろへ動かせるよう終わりのあとに余白がある：3秒の動画で目盛りは4秒ぶん）
+    const ruler = page.getByTestId("video-cut-timeline-ruler");
+    await ruler.scrollIntoViewIfNeeded();
+    const seekTo = async (sec: number) => {
+      const r = (await ruler.boundingBox())!;
+      await page.mouse.click(r.x + (r.width * sec) / 4, r.y + r.height / 2);
+    };
+    await seekTo(1);
+    await page.getByTestId("video-cut-split").click();
+    await seekTo(1.5);
+    await page.getByTestId("video-cut-split").click();
+    await expect(bars).toHaveCount(3);
+    await bars.nth(1).click();
+    await page.getByTestId("video-cut-delete-ripple").click();
     await expect(bars).toHaveCount(2);
     await expect(page.getByTestId("video-cut-summary")).toContainText("2区間");
     await expect(page.getByTestId("video-cut-order-item").nth(0)).toContainText("0:00.0〜0:01.0");
@@ -121,8 +127,9 @@ test.describe("動画カット・結合の画面", () => {
 
     // つないだ結果を、書き出す前に再生して確かめられる
     await page.getByTestId("video-cut-play-joined").click();
-    await expect(page.getByTestId("video-cut-play-joined")).toContainText("止める");
+    await expect(page.getByTestId("video-cut-play-joined")).toContainText("一時停止");
     await page.getByTestId("video-cut-play-joined").click();
+    await expect(page.getByTestId("video-cut-play-joined")).toContainText("再生");
 
     const out = await runAndDownload(page, test.info().outputPath("x"));
     expect(path.basename(out)).toBe("cut-landscape_カット.mp4");
@@ -148,7 +155,7 @@ test.describe("動画カット・結合の画面", () => {
     const end = (await bar.getByTestId("video-cut-segment-end").boundingBox())!;
     await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
     await page.mouse.down();
-    await page.mouse.move(lane.x + (lane.width * 2) / 3, end.y + end.height / 2, { steps: 6 });
+    await page.mouse.move(lane.x + (lane.width * 2) / 4, end.y + end.height / 2, { steps: 6 });
     await page.mouse.up();
     await expect(page.getByTestId("video-cut-summary")).toContainText("合計0:02");
     // 再生位置（1秒）で分ける
@@ -198,75 +205,70 @@ test.describe("動画カット・結合の画面", () => {
     await expect(page.getByTestId("result-popup")).toContainText("黒い余白を付けて大きさをそろえました");
   });
 
-  test("不要部分を削除（編集ソフトのように）：再生位置で分けて、選んだ区間を削除するとうしろが詰まる。端を短くしてもうしろが詰まる。拡大・縮小、磁石で再生位置に吸い付く（2026-11）", async ({ page }) => {
+  test("不要部分を削除（編集ソフトのように）：再生ヘッドで分け、選んだクリップを削除（空白が残る）・削除して詰める、元に戻す・やり直す、ドラッグで動かすと再生ヘッドに吸い付く、拡大・縮小（2026-11）", async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto("/tools/video-cut-merge");
     await uploadFixture(page, FIXTURES.cutLandscapeWebm); // 3秒
     const clips = page.getByTestId("video-cut-segment");
     await expect(clips).toHaveCount(1, { timeout: 30_000 });
-    const track = page.getByTestId("video-cut-timeline-track");
-    await track.scrollIntoViewIfNeeded();
     const ruler = page.getByTestId("video-cut-timeline-ruler");
-    const seekTo = async (frac: number) => {
+    await ruler.scrollIntoViewIfNeeded();
+    // 目盛りの長さ（秒）：終わりのあとに余白がある（max(1, 終わり×1.2, 終わり+1)）
+    const seekTo = async (sec: number, span: number) => {
       const r = (await ruler.boundingBox())!;
-      await page.mouse.click(r.x + r.width * frac, r.y + r.height / 2);
+      await page.mouse.click(r.x + (r.width * sec) / span, r.y + r.height / 2);
     };
-    // 1秒で分け、2秒で分ける → 3区間
-    await seekTo(1 / 3);
-    await page.getByTestId("video-cut-split").click();
-    await seekTo(2 / 3);
-    await page.getByTestId("video-cut-split").click();
-    await expect(clips).toHaveCount(3);
-    await expect(page.getByTestId("video-cut-summary")).toContainText("3区間・合計0:03");
-    // 真ん中の区間（1〜2秒）を一覧で削除 → うしろが詰まり、2区間・合計2秒。区間どうしに隙間が無い
-    await page.getByRole("button", { name: "区間2を削除" }).click();
-    await expect(clips).toHaveCount(2);
-    await expect(page.getByTestId("video-cut-summary")).toContainText("2区間・合計0:02");
-    await expect(page.getByTestId("video-cut-order-item").nth(1)).toContainText("0:02.0〜0:03.0");
     const gap = async () => {
       const a = (await clips.nth(0).boundingBox())!;
       const b = (await clips.nth(1).boundingBox())!;
-      return Math.abs(b.x - (a.x + a.width));
+      return b.x - (a.x + a.width);
     };
-    expect(await gap()).toBeLessThan(2);
+    await seekTo(1, 4);
+    await page.getByTestId("video-cut-split").click();
+    await seekTo(2, 4);
+    await page.getByTestId("video-cut-split").click();
+    await expect(clips).toHaveCount(3);
 
-    // 1つ目の区間の右端を短くする → 2つ目の区間が左に詰まる（隙間ができない）
-    const t = (await track.boundingBox())!;
-    const endHandle = (await clips.nth(0).getByTestId("video-cut-segment-end").boundingBox())!;
-    const before = (await clips.nth(1).boundingBox())!.x;
-    await page.mouse.move(endHandle.x + endHandle.width / 2, endHandle.y + endHandle.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(t.x + t.width * 0.3, endHandle.y + endHandle.height / 2, { steps: 6 });
-    await page.mouse.up();
-    expect((await clips.nth(1).boundingBox())!.x).toBeLessThan(before - 5);
-    expect(await gap()).toBeLessThan(2);
+    // まん中を選んで削除 → 空白が残る（うしろは動かない）
+    await clips.nth(1).click();
+    await page.getByTestId("video-cut-delete-clip").click();
+    await expect(clips).toHaveCount(2);
+    expect(await gap()).toBeGreaterThan(20);
+    // 元に戻す → 3つ、やり直す → 2つ
+    await page.getByTestId("video-cut-undo").click();
+    await expect(clips).toHaveCount(3);
+    await page.getByTestId("video-cut-redo").click();
+    await expect(clips).toHaveCount(2);
+    await page.getByTestId("video-cut-undo").click();
+    await expect(clips).toHaveCount(3);
+    // まん中を選んで「削除してうしろを詰める」 → 隙間なし
+    await clips.nth(1).click();
+    await page.getByTestId("video-cut-delete-ripple").click();
+    await expect(clips).toHaveCount(2);
+    expect(Math.abs(await gap())).toBeLessThan(2);
+    await expect(page.getByTestId("video-cut-summary")).toContainText("2区間・合計0:02");
 
-    // 磁石：再生位置（0.3秒あたり）の近くまで右端をのばすと、再生位置にぴったり吸い付く
-    await seekTo(0.25);
-    const playhead = (await page.getByTestId("video-cut-timeline-playhead").boundingBox())!;
-    const endH = (await clips.nth(0).getByTestId("video-cut-segment-end").boundingBox())!;
-    await page.mouse.move(endH.x + endH.width / 2, endH.y + endH.height / 2);
+    // 終わりは2秒 → 目盛りは3秒ぶん。再生ヘッドを2.5秒へ。2つ目（1秒から）を右へドラッグすると、左端が再生ヘッドに吸い付く
+    await seekTo(2.5, 3);
+    const ph = (await page.getByTestId("video-cut-timeline-playhead").boundingBox())!;
+    const b = (await clips.nth(1).boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
     await page.mouse.down();
-    await page.mouse.move(playhead.x + playhead.width / 2 + 4, endH.y + endH.height / 2, { steps: 6 });
+    await page.mouse.move(b.x + b.width / 2 + 10, b.y + b.height / 2, { steps: 3 });
+    await page.mouse.move(b.x + b.width / 2 + (ph.x + ph.width / 2 - b.x) - 4, b.y + b.height / 2, { steps: 6 });
     await expect(page.getByTestId("video-cut-timeline-guide")).toBeVisible();
     await page.mouse.up();
-    await expect(page.getByTestId("video-cut-timeline-guide")).toHaveCount(0);
-    const c0 = (await clips.nth(0).boundingBox())!;
-    const ph = (await page.getByTestId("video-cut-timeline-playhead").boundingBox())!;
-    expect(Math.abs(c0.x + c0.width - (ph.x + ph.width / 2))).toBeLessThan(2);
+    const c1 = (await clips.nth(1).boundingBox())!;
+    const ph2 = (await page.getByTestId("video-cut-timeline-playhead").boundingBox())!;
+    expect(Math.abs(c1.x - (ph2.x + ph2.width / 2))).toBeLessThan(2);
+    expect(await gap()).toBeGreaterThan(20); // 間に空白ができる
 
-    // 拡大：タイムラインが横に広がり、横にスクロールできる
-    const scroll = page.getByTestId("video-cut-timeline-scroll");
+    // 拡大：時間軸が横に広がり、横にスクロールできる
     const w0 = await page.getByTestId("video-cut-timeline-inner").evaluate((el) => el.getBoundingClientRect().width);
-    await page.getByTestId("video-cut-timeline-zoom-in").click();
-    await page.getByTestId("video-cut-timeline-zoom-in").click();
-    await expect(page.getByTestId("video-cut-timeline-zoom-value")).toHaveText("225%");
+    await page.getByTestId("video-cut-timeline-zoom").fill("300");
+    await expect(page.getByTestId("video-cut-timeline-zoom-value")).toHaveText("300%");
     const w1 = await page.getByTestId("video-cut-timeline-inner").evaluate((el) => el.getBoundingClientRect().width);
     expect(w1).toBeGreaterThan(w0 * 2);
-    expect(await scroll.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-    // 拡大・縮小はバーでもできる
-    await page.getByTestId("video-cut-timeline-zoom").fill("100");
-    await expect(page.getByTestId("video-cut-timeline-zoom-value")).toHaveText("100%");
   });
 
   test("処理中にキャンセルできる。キャンセル後はもう一度実行できる", async ({ page }) => {

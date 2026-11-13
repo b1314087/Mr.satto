@@ -29,6 +29,8 @@ export interface CueLook {
   /** フェードイン・フェードアウトの時間（秒。0で使わない） */
   fadeIn: number;
   fadeOut: number;
+  /** 縦書き（上から下へ、行は右から左へ）。省略・false は横書き（2026-11） */
+  vertical?: boolean;
 }
 
 export const SUBTITLE_SIZE_MIN = 2;
@@ -45,6 +47,7 @@ export const DEFAULT_CUE_LOOK: CueLook = {
   y: 88,
   fadeIn: 0,
   fadeOut: 0,
+  vertical: false,
 };
 
 /**
@@ -177,6 +180,7 @@ export function normalizeLook(look: CueLook | undefined): CueLook {
     y: clamp(l.y, 0, 100, 88),
     fadeIn: clamp(l.fadeIn, 0, SUBTITLE_FADE_MAX, 0),
     fadeOut: clamp(l.fadeOut, 0, SUBTITLE_FADE_MAX, 0),
+    vertical: l.vertical === true,
   };
 }
 
@@ -384,6 +388,8 @@ export function buildWebVtt(cues: ResolvedCue[], background: { color: string; op
 
 /** 字幕の位置を、WebVTT のキューの設定にする（下の既定の位置なら align だけ） */
 export function cueSettingsForLook(look: CueLook): string {
+  // 縦書きは WebVTT の vertical:rl（行は右から左へ）。位置は、縦書きでは line が横の位置・position が縦の位置になる
+  if (look.vertical) return `vertical:rl line:${Math.round(look.x)}% position:${Math.round(look.y)}% align:center`;
   const isDefault = Math.round(look.x) === DEFAULT_CUE_LOOK.x && Math.round(look.y) === DEFAULT_CUE_LOOK.y;
   if (isDefault) return "align:center";
   return `line:${Math.round(look.y)}% position:${Math.round(look.x)}% align:center`;

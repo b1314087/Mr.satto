@@ -111,6 +111,8 @@ export function VideoSubtitleTool() {
   const runIdRef = useRef(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
+  // 再生・一時停止のボタン（タイムラインのすぐ上）の表示
+  const [videoPlaying, setVideoPlaying] = useState(false);
 
   useRevokeObjectUrlOnChange(result?.url);
   useRevokeObjectUrlOnChange(burnResult?.url);
@@ -422,6 +424,9 @@ export function VideoSubtitleTool() {
               data-testid="vs-video"
               src={previewUrl}
               onLoadedMetadata={handleLoadedMetadata}
+              onPlay={() => setVideoPlaying(true)}
+              onPause={() => setVideoPlaying(false)}
+              onEnded={() => setVideoPlaying(false)}
               controls
               playsInline
               preload="metadata"
@@ -433,7 +438,7 @@ export function VideoSubtitleTool() {
           {/* いま表示している字幕（読み上げ・確認用） */}
           <ul className="sr-only" data-testid="vs-overlay" aria-live="polite">
             {active.map((cue) => (
-              <li key={cue.id} data-testid="vs-overlay-cue" data-x={cue.look.x} data-y={cue.look.y} data-size={cue.look.size} data-color={cue.look.color} data-font={cue.look.font}>
+              <li key={cue.id} data-testid="vs-overlay-cue" data-x={cue.look.x} data-y={cue.look.y} data-size={cue.look.size} data-color={cue.look.color} data-font={cue.look.font} data-vertical={cue.look.vertical ? "true" : "false"}>
                 {cue.text}
               </li>
             ))}
@@ -446,6 +451,23 @@ export function VideoSubtitleTool() {
               </>
             )}
           </p>
+          {durationSec !== null && durationSec > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const v = videoRef.current;
+                if (!v) return;
+                if (v.paused) void v.play().catch(() => setVideoPlaying(false));
+                else v.pause();
+              }}
+              aria-label={videoPlaying ? "一時停止" : "再生"}
+              data-testid="vs-play"
+              className="inline-flex w-fit min-w-28 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              <span aria-hidden="true">{videoPlaying ? "❚❚" : "▶"}</span>
+              {videoPlaying ? "一時停止" : "再生"}
+            </button>
+          )}
           {durationSec !== null && durationSec > 0 && (
             <VideoTimeline
               testId="vs-timeline"
@@ -572,7 +594,7 @@ export function VideoSubtitleTool() {
 
                         <SettingsSection
                           title={`${i + 1}番目の見た目`}
-                          summary={`${SUBTITLE_FONT_OPTIONS.find((f) => f.value === look.font)?.label}・${look.size}%・${look.outline ? "縁取りあり" : "縁取りなし"}${look.fadeIn || look.fadeOut ? "・フェード" : ""}`}
+                          summary={`${SUBTITLE_FONT_OPTIONS.find((f) => f.value === look.font)?.label}${look.vertical ? "・縦書き" : ""}・${look.size}%・${look.outline ? "縁取りあり" : "縁取りなし"}${look.fadeIn || look.fadeOut ? "・フェード" : ""}`}
                           defaultOpen={false}
                           testId="vs-cue-look"
                         >
@@ -591,6 +613,20 @@ export function VideoSubtitleTool() {
                               ))}
                             </select>
                           </label>
+                          <div className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
+                            文字の向き
+                            <Segmented
+                              ariaLabel={`${i + 1}番目の文字の向き`}
+                              size="sm"
+                              testId="vs-cue-writing"
+                              value={look.vertical ? "vertical" : "horizontal"}
+                              onChange={(v) => updateLook(cue.id, { vertical: v === "vertical" })}
+                              options={[
+                                { value: "horizontal", label: "横書き" },
+                                { value: "vertical", label: "縦書き" },
+                              ]}
+                            />
+                          </div>
                           <SliderField
                             label="文字の大きさ"
                             ariaLabel={`${i + 1}番目の文字の大きさ`}

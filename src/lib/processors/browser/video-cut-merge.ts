@@ -37,6 +37,8 @@ export interface VideoClip {
   /** 残す区間の開始・終了（秒） */
   start: number;
   end: number;
+  /** この区間の前に入れる空白（秒）。書き出すと黒い画面・無音になる（2026-11：タイムラインでクリップの間に空白を作れる） */
+  gapBefore?: number;
 }
 
 export interface VideoCutMergeInput {
@@ -168,12 +170,21 @@ export class VideoCutMergeProcessor extends BrowserProcessor<VideoCutMergeInput,
       if (audioSource) output.addAudioTrack(audioSource);
       await output.start();
 
-      const total = clips.reduce((sum, c) => sum + (c.end - c.start), 0);
+      const gapOf = (c: VideoClip) => (Number.isFinite(c.gapBefore) ? Math.max(0, c.gapBefore ?? 0) : 0);
+      const total = clips.reduce((sum, c) => sum + gapOf(c) + (c.end - c.start), 0);
       let offset = 0;
       let writtenAudioFrames = 0;
 
       for (const clip of clips) {
         checkCancel();
+        // 区間の前の空白：黒い画面を1コマ（空白の長さ）入れる。音声は、次の区間の開始位置まで無音で埋まる
+        const gap = gapOf(clip);
+        if (gap > 0) {
+          ctx.fillStyle = "#000000";
+          ctx.fillRect(0, 0, width, height);
+          await videoSource.add(offset, gap);
+          offset += gap;
+        }
         const src = opened.get(clip.file)!;
         const segDur = clip.end - clip.start;
         const segOffset = offset;

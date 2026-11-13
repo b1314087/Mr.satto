@@ -100,3 +100,90 @@ export function snapTime(t: number, candidates: readonly number[], threshold: nu
   }
   return best === null ? { t, snappedTo: null } : { t: best, snappedTo: best };
 }
+
+// ---------------------------------------------------------------------------
+// 自由に置けるクリップ（2026-11：クリップをドラッグして好きな位置に置き、間に空白を作れる）
+// at は、つないだあとのタイムライン上の開始位置（秒）。クリップどうしは重ならない（重なったら、うしろを右へ押し出す）。
+// 空白は、書き出すと黒い画面・無音になる。
+// ---------------------------------------------------------------------------
+
+export interface TimelineClip extends CutSegment {
+  at: number;
+}
+
+const clipLen = (c: { start: number; end: number }) => Math.max(0, c.end - c.start);
+
+/** タイムラインの終わり（いちばんうしろのクリップの終わり） */
+export function timelineEnd(clips: readonly TimelineClip[]): number {
+  return clips.reduce((m, c) => Math.max(m, c.at + clipLen(c)), 0);
+}
+
+/** 置いた位置の順に並べ、重なっているクリップは、前のクリップの終わりまで右へ押し出す */
+export function resolveOverlaps(clips: readonly TimelineClip[]): TimelineClip[] {
+  const sorted = [...clips].map((c) => ({ ...c, at: Math.max(0, c.at) })).sort((a, b) => a.at - b.at);
+  let prevEnd = 0;
+  return sorted.map((c) => {
+    const at = round(Math.max(c.at, prevEnd));
+    prevEnd = at + clipLen(c);
+    return { ...c, at };
+  });
+}
+
+/** 時間 t にあるクリップ（無ければ、t のあとにある最初のクリップを next に入れる） */
+export function clipAtTime(clips: readonly TimelineClip[], t: number): { index: number; source: number } | { index: -1; next: number } {
+  const i = clips.findIndex((c) => t >= c.at && t < c.at + clipLen(c));
+  if (i >= 0) return { index: i, source: round(clips[i].start + (t - clips[i].at)) };
+  return { index: -1, next: clips.findIndex((c) => c.at > t) };
+}
+
+/** 時間 t（再生ヘッド）でクリップを2つに分ける（クリップの外・短すぎる位置では、そのまま返す） */
+export function splitClipAt(clips: TimelineClip[], t: number, nextId: () => number): TimelineClip[] {
+  const hit = clipAtTime(clips, t);
+  if (!("source" in hit)) return clips;
+  const c = clips[hit.index];
+  const src = hit.source;
+  if (src - c.start < MIN_CLIP_SEC || c.end - src < MIN_CLIP_SEC) return clips;
+  const next = [...clips];
+  next.splice(hit.index, 1, { ...c, end: src }, { id: nextId(), start: src, end: c.end, at: round(c.at + (src - c.start)) });
+  return next;
+}
+
+/** クリップを消す。ripple のときは、うしろのクリップをその長さだけ前へ詰める */
+export function deleteClip(clips: TimelineClip[], id: number, ripple: boolean): TimelineClip[] {
+  const target = clips.find((c) => c.id === id);
+  if (!target) return clips;
+  const len = clipLen(target);
+  return clips.filter((c) => c.id !== id).map((c) => (ripple && c.at >= target.at ? { ...c, at: round(Math.max(0, c.at - len)) } : c));
+}
+
+/** 一覧で順番を入れ替える：空白の並びはそのままに、クリップの順番だけを入れ替える */
+export function moveClipOrder(clips: TimelineClip[], from: number, to: number): TimelineClip[] {
+  const sorted = resolveOverlaps(clips);
+  if (from === to || from < 0 || to < 0 || from >= sorted.length || to >= sorted.length) return sorted;
+  const gaps: number[] = [];
+  let prevEnd = 0;
+  for (const c of sorted) {
+    gaps.push(c.at - prevEnd);
+    prevEnd = c.at + clipLen(c);
+  }
+  const order = [...sorted];
+  const [moved] = order.splice(from, 1);
+  order.splice(to, 0, moved);
+  let pos = 0;
+  return order.map((c, k) => {
+    pos += gaps[k];
+    const at = round(pos);
+    pos += clipLen(c);
+    return { ...c, at };
+  });
+}
+
+/** 書き出し用：置いた順の区間と、それぞれの前の空白（秒） */
+export function clipsForExport(clips: readonly TimelineClip[]): { start: number; end: number; gapBefore: number }[] {
+  let prevEnd = 0;
+  return resolveOverlaps(clips).map((c) => {
+    const gapBefore = round(Math.max(0, c.at - prevEnd));
+    prevEnd = c.at + clipLen(c);
+    return { start: c.start, end: c.end, gapBefore };
+  });
+}

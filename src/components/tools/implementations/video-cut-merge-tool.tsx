@@ -21,7 +21,7 @@ import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-vid
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useAnnounceToolMode } from "@/lib/guides/tool-mode";
 import { moveItem, useDragReorder } from "@/lib/hooks/use-drag-reorder";
-import { outputToSource, removeOutputRange, sequenceStarts, splitAtOutputTime, type CutSegment as Segment } from "@/lib/video/cut-segments";
+import { clipAtTime, clipsForExport, deleteClip, moveClipOrder, splitClipAt, timelineEnd, type TimelineClip as Segment } from "@/lib/video/cut-segments";
 import { SequenceTimeline } from "@/components/common/sequence-timeline";
 
 type Mode = "cut" | "merge";
@@ -59,8 +59,14 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
   // ---- 不要部分を削除 ----
   const [file, setFile] = useState<File | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
-  const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [selectedSeg, setSelectedSeg] = useState<number | null>(null);
+  // 取り消し（Undo）・やり直し（Redo）の記録（分割・移動・長さの変更・削除・並べ替え）
+  const pastRef = useRef<Segment[][]>([]);
+  const futureRef = useRef<Segment[][]>([]);
+  const [, setHistoryVersion] = useState(0);
+  // 空白の部分を再生している（または再生ヘッドが空白にある）ときの、再生ヘッドの位置
+  const [gapHead, setGapHead] = useState<number | null>(null);
+  const gapRef = useRef<{ raf: number } | null>(null);
   const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(mode === "cut" ? file : null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -106,7 +112,7 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
   // 動画の長さが分かったら、最初は「全体を残す」1区間にする
   useEffect(() => {
     if (duration > 0 && segments.length === 0 && file) {
-      setSegments([{ id: nextId.current++, start: 0, end: round(duration) }]);
+      setSegments([{ id: nextId.current++, start: 0, end: round(duration), at: 0 }]);
     }
   }, [duration, segments.length, file]);
 
@@ -135,32 +141,46 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
     };
   }, [previewUrl]);
 
-  // 再生中は、区間の終わりで次の区間の始めへ移る（つないだ結果のとおりに再生する）。最後の区間の終わりで止める
+  // 再生中は、クリップの終わりで次のクリップへ移る。間に空白があるときは、空白のあいだ黒い画面のまま進み、次のクリップから再生を続ける
   const ai = Math.min(activeIndex, Math.max(0, segments.length - 1));
   useEffect(() => {
     const v = videoRef.current;
     const seg = segments[ai];
-    if (!v || !seg) return;
+    if (!v || !seg || gapHead !== null) return;
     if (!v.paused && currentTime >= seg.end - 0.04) {
-      if (ai + 1 < segments.length) {
-        v.currentTime = segments[ai + 1].start;
+      const next = segments[ai + 1];
+      if (!next) {
+        v.pause();
+        return;
+      }
+      const segEnd = seg.at + (seg.end - seg.start);
+      if (next.at - segEnd > 0.03) startGap(segEnd);
+      else {
+        v.currentTime = next.start;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setActiveIndex(ai + 1);
-      } else v.pause();
+      }
       return;
     }
-    // 動画の操作バーで、いまの区間の外へ動かしたときは、その時間を含む区間に合わせる
+    // 動画の操作バーで、いまのクリップの外へ動かしたときは、その時間を使っているクリップに合わせる
     if (currentTime < seg.start - 0.05 || currentTime > seg.end + 0.05) {
       const k = segments.findIndex((x) => currentTime >= x.start && currentTime <= x.end);
       if (k >= 0) setActiveIndex(k);
     }
-  }, [currentTime, ai, segments]);
+    // startGap は、レンダーごとに作り直す関数なので、依存に入れない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTime, ai, segments, gapHead]);
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const on = () => setPlaying(true);
-    const off = () => setPlaying(false);
+    const on = () => {
+      stopGap();
+      setPlaying(true);
+    };
+    const off = () => {
+      if (!gapRef.current) setPlaying(false);
+    };
     v.addEventListener("play", on);
     v.addEventListener("pause", off);
     v.addEventListener("ended", off);
@@ -170,56 +190,179 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
       v.removeEventListener("ended", off);
     };
   }, [previewUrl]);
+  useEffect(() => () => stopGap(), []);
 
-  const seqStarts = sequenceStarts(segments);
-  const outTotal = seqStarts[seqStarts.length - 1];
+  const outTotal = timelineEnd(segments);
   const activeSeg = segments[ai];
-  const outTime = activeSeg ? round(seqStarts[ai] + Math.min(activeSeg.end - activeSeg.start, Math.max(0, currentTime - activeSeg.start))) : 0;
+  const outTime = gapHead ?? (activeSeg ? round(activeSeg.at + Math.min(activeSeg.end - activeSeg.start, Math.max(0, currentTime - activeSeg.start))) : 0);
 
-  /** つないだあとの時間 t へ移る */
+  function stopGap() {
+    if (gapRef.current) cancelAnimationFrame(gapRef.current.raf);
+    gapRef.current = null;
+  }
+  /** 空白（from 秒から、次のクリップの始まりまで）を再生する。黒い画面のまま時間だけ進める */
+  function startGap(from: number) {
+    const v = videoRef.current;
+    stopGap();
+    const k = segments.findIndex((c) => c.at >= from - 0.001);
+    if (!v || k < 0) {
+      setGapHead(from);
+      setPlaying(false);
+      return;
+    }
+    const target = segments[k];
+    const t0 = performance.now();
+    gapRef.current = { raf: 0 };
+    v.pause();
+    setPlaying(true);
+    setGapHead(from);
+    const step = () => {
+      if (!gapRef.current) return;
+      const h = from + (performance.now() - t0) / 1000;
+      if (h >= target.at) {
+        gapRef.current = null;
+        setGapHead(null);
+        setActiveIndex(k);
+        v.currentTime = target.start;
+        setCurrentTime(target.start);
+        void v.play().catch(() => setPlaying(false));
+        return;
+      }
+      setGapHead(h);
+      gapRef.current.raf = requestAnimationFrame(step);
+    };
+    gapRef.current.raf = requestAnimationFrame(step);
+  }
+
+  /** タイムラインの位置 t へ再生ヘッドを動かす（クリップの外なら、黒い画面） */
   function seek(t: number) {
     const v = videoRef.current;
-    const hit = outputToSource(segments, t);
-    if (!v || !hit) return;
-    setActiveIndex(hit.index);
-    v.currentTime = hit.source;
-    setCurrentTime(hit.source);
+    if (!v) return;
+    const wasPlaying = playing;
+    stopGap();
+    const hit = clipAtTime(segments, t);
+    if ("source" in hit) {
+      setGapHead(null);
+      setActiveIndex(hit.index);
+      v.currentTime = hit.source;
+      setCurrentTime(hit.source);
+      return;
+    }
+    if (hit.next >= 0) setActiveIndex(hit.next);
+    if (wasPlaying) startGap(t);
+    else {
+      v.pause();
+      setGapHead(t);
+    }
   }
 
-  function playJoined() {
+  function play() {
     const v = videoRef.current;
     if (!v || segments.length === 0) return;
-    seek(0);
     v.muted = false;
+    if (outTime >= outTotal - 0.05) {
+      seek(0);
+      const first = segments[0];
+      if (first.at > 0) return startGap(0);
+      void v.play().catch(() => setPlaying(false));
+      return;
+    }
+    if (gapHead !== null) return startGap(gapHead);
     void v.play().catch(() => setPlaying(false));
   }
+  function pause() {
+    stopGap();
+    videoRef.current?.pause();
+    setPlaying(false);
+  }
 
-  function changeSegments(next: Segment[]) {
+  // ---- 編集（取り消し・やり直しの記録つき） ----
+  /** 1回の操作として記録して変える */
+  function commitSegments(next: Segment[]) {
+    pastRef.current.push(segments);
+    futureRef.current = [];
+    setHistoryVersion((n) => n + 1);
     setSegments(next);
     resetResult();
   }
-
-  // 削除する範囲（つないだあとの時間）を取り除く。うしろの区間は詰まる
-  function deleteSelection() {
-    if (!selection || selection.end - selection.start < 0.05) return;
-    changeSegments(removeOutputRange(segments, selection, newId));
-    setSelection(null);
+  /** ドラッグ中の変更（記録は、ドラッグを始めたときに1回だけ） */
+  function liveSegments(next: Segment[]) {
+    setSegments(next);
+    resetResult();
   }
+  function editStart() {
+    pastRef.current.push(segments);
+    futureRef.current = [];
+    setHistoryVersion((n) => n + 1);
+  }
+  function undo() {
+    const prev = pastRef.current.pop();
+    if (!prev) return;
+    futureRef.current.push(segments);
+    setHistoryVersion((n) => n + 1);
+    setSegments(prev);
+    resetResult();
+  }
+  function redo() {
+    const next = futureRef.current.pop();
+    if (!next) return;
+    pastRef.current.push(segments);
+    setHistoryVersion((n) => n + 1);
+    setSegments(next);
+    resetResult();
+  }
+  function resetHistory() {
+    pastRef.current = [];
+    futureRef.current = [];
+    setHistoryVersion((n) => n + 1);
+  }
+  // キーボード：⌘Z / Ctrl+Z で取り消し、⇧⌘Z / Ctrl+Y でやり直し（文字の入力中は、入力欄の取り消しを優先）
+  const undoRef = useRef({ undo, redo });
+  useEffect(() => {
+    undoRef.current = { undo, redo };
+  });
+  useEffect(() => {
+    if (mode !== "cut" || !file) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undoRef.current.undo();
+      } else if ((k === "z" && e.shiftKey) || k === "y") {
+        e.preventDefault();
+        undoRef.current.redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, file]);
 
-  // 再生位置（つないだあとの時間）で区間を分ける。分けたうしろの区間を選んでおく（続けて削除・移動しやすいように）
+  // 再生ヘッドの位置でクリップを分ける。分けたうしろのクリップを選んでおく（続けて削除・移動しやすいように）
   function splitAtPlayhead() {
-    const next = splitAtOutputTime(segments, outTime, newId);
+    const next = splitClipAt(segments, outTime, newId);
     if (next === segments) return;
-    changeSegments(next);
-    const hit = outputToSource(next, outTime + 0.001);
-    if (hit) setSelectedSeg(next[hit.index].id);
+    commitSegments(next);
+    const hit = clipAtTime(next, outTime + 0.001);
+    if ("source" in hit) setSelectedSeg(next[hit.index].id);
+  }
+  /** 選んだクリップを削除する（ripple：うしろのクリップを前へ詰める） */
+  function deleteSelected(ripple: boolean, id = selectedSeg) {
+    if (id === null || segments.length <= 1 || !segments.some((x) => x.id === id)) return;
+    commitSegments(deleteClip(segments, id, ripple));
+    setSelectedSeg(null);
   }
 
-
-  const cutReorder = useDragReorder(segments.length, (from, to) => changeSegments(moveItem(segments, from, to)));
-  const clipsForCut = useMemo(() => (file ? segments.map((s) => ({ file, start: s.start, end: s.end, durationSec: duration })) : []), [file, segments, duration]);
+  const cutReorder = useDragReorder(segments.length, (from, to) => commitSegments(moveClipOrder(segments, from, to)));
+  const clipsForCut = useMemo(
+    () => (file ? clipsForExport(segments).map((c) => ({ file, start: c.start, end: c.end, gapBefore: c.gapBefore, durationSec: duration })) : []),
+    [file, segments, duration]
+  );
   const keptSec = segments.reduce((sum, s) => sum + Math.max(0, s.end - s.start), 0);
-  const splittable = splitAtOutputTime(segments, outTime, () => -1) !== segments;
+  const splittable = splitClipAt(segments, outTime, () => -1) !== segments;
+  const canDeleteSelected = selectedSeg !== null && segments.length > 1 && segments.some((x) => x.id === selectedSeg);
 
   // ---- 複数の動画を結合 ----
   async function addMergeFiles(files: File[]) {
@@ -314,7 +457,7 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
   const canRun = status !== "processing" && (mode === "cut" ? !!file && duration > 0 && segments.length > 0 && !cutProblem : mergeReady && !mergeProblem);
 
   async function handleRun() {
-    const clips = mode === "cut" ? clipsForCut.map(({ file: f, start, end }) => ({ file: f, start, end })) : mergeClips.map(({ file: f, start, end }) => ({ file: f, start, end }));
+    const clips = mode === "cut" ? clipsForCut.map(({ file: f, start, end, gapBefore }) => ({ file: f, start, end, gapBefore })) : mergeClips.map(({ file: f, start, end }) => ({ file: f, start, end }));
     videoRef.current?.pause();
     mergePreviewRef.current?.pause();
     const controller = new AbortController();
@@ -391,8 +534,10 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
               onFilesSelected={(files) => {
                 setFile(files[0]);
                 setSegments([]);
-                setSelection(null);
                 setActiveIndex(0);
+                setGapHead(null);
+                setSelectedSeg(null);
+                resetHistory();
                 resetResult();
               }}
               onError={setError}
@@ -403,6 +548,8 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
                 onRemove={() => {
                   setFile(null);
                   setSegments([]);
+                  setGapHead(null);
+                  resetHistory();
                   resetResult();
                 }}
               />
@@ -415,43 +562,75 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
               <StepHeading n={2} as="h2">
                 タイムラインで不要な部分を削除
               </StepHeading>
-              <video
-                ref={videoRef}
-                src={previewUrl}
-                onLoadedMetadata={handleLoadedMetadata}
-                controls
-                playsInline
-                preload="metadata"
-                data-testid="video-cut-video"
-                className="mx-auto block h-auto max-h-[min(50vh,26rem)] w-auto max-w-full rounded-lg bg-black"
-              />
+              <div className="relative mx-auto w-fit max-w-full">
+                <video
+                  ref={videoRef}
+                  src={previewUrl}
+                  onLoadedMetadata={handleLoadedMetadata}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  data-testid="video-cut-video"
+                  className="block h-auto max-h-[min(50vh,26rem)] w-auto max-w-full rounded-lg bg-black"
+                />
+                {/* 再生ヘッドがクリップの間の空白にあるときは、書き出したときと同じ黒い画面を出す */}
+                {gapHead !== null && <div className="absolute inset-0 rounded-lg bg-black" data-testid="video-cut-gap-cover" aria-hidden="true" />}
+              </div>
               {duration > 0 && (
                 <>
-                  <SequenceTimeline
-                    testId="video-cut-timeline"
-                    clipTestId="video-cut-segment"
-                    clips={segments.map((x, i) => ({ id: String(x.id), label: `区間${i + 1}`, start: x.start, end: x.end, sourceDuration: duration, text: `${i + 1}` }))}
-                    currentTime={outTime}
-                    onSeek={seek}
-                    selectedId={selectedSeg === null ? null : String(selectedSeg)}
-                    onSelect={(id) => setSelectedSeg(Number(id))}
-                    onTrim={(id, start, end) => changeSegments(segments.map((x) => (String(x.id) === id ? { ...x, start, end } : x)))}
-                    onReorder={(from, to) => changeSegments(moveItem(segments, from, to))}
-                    minLength={MIN_CLIP_SEC}
-                    selection={selection}
-                    onSelectionChange={setSelection}
-                    selectionLabel="削除する範囲"
-                  />
+                  {/* 再生・一時停止と、取り消し・やり直し（タイムラインのすぐ上） */}
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={deleteSelection}
-                      disabled={!selection || selection.end - selection.start < 0.05}
-                      data-testid="video-cut-delete-range"
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
+                      onClick={() => (playing ? pause() : play())}
+                      disabled={segments.length === 0}
+                      aria-label={playing ? "一時停止" : "再生"}
+                      data-testid="video-cut-play-joined"
+                      className="inline-flex min-w-28 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
                     >
-                      選んだ範囲を削除{selection && selection.end > selection.start ? `（${formatTimeInput(selection.start)}〜${formatTimeInput(selection.end)}）` : ""}
+                      <span aria-hidden="true">{playing ? "❚❚" : "▶"}</span>
+                      {playing ? "一時停止" : "再生"}
                     </button>
+                    <span className="font-mono text-xs tabular-nums text-ms-muted" data-testid="video-cut-time">
+                      {formatTimeInput(outTime)} / {formatTimeInput(outTotal)}
+                    </span>
+                    <span className="ml-auto flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={undo}
+                        disabled={pastRef.current.length === 0}
+                        title="元に戻す（⌘Z / Ctrl+Z）"
+                        data-testid="video-cut-undo"
+                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                      >
+                        ↶ 元に戻す
+                      </button>
+                      <button
+                        type="button"
+                        onClick={redo}
+                        disabled={futureRef.current.length === 0}
+                        title="やり直す（⇧⌘Z / Ctrl+Y）"
+                        data-testid="video-cut-redo"
+                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+                      >
+                        ↷ やり直す
+                      </button>
+                    </span>
+                  </div>
+                  <SequenceTimeline
+                    testId="video-cut-timeline"
+                    clipTestId="video-cut-segment"
+                    clips={segments.map((x, i) => ({ ...x, label: `区間${i + 1}`, sourceDuration: duration, text: `${i + 1}` }))}
+                    currentTime={outTime}
+                    onSeek={seek}
+                    selectedId={selectedSeg}
+                    onSelect={setSelectedSeg}
+                    onChange={liveSegments}
+                    onEditStart={editStart}
+                    onDelete={(id) => deleteSelected(false, id)}
+                    minLength={MIN_CLIP_SEC}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={splitAtPlayhead}
@@ -463,16 +642,25 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
                     </button>
                     <button
                       type="button"
-                      onClick={() => (!playing ? playJoined() : videoRef.current?.pause())}
-                      disabled={segments.length === 0}
-                      data-testid="video-cut-play-joined"
-                      className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+                      onClick={() => deleteSelected(false)}
+                      disabled={!canDeleteSelected}
+                      data-testid="video-cut-delete-clip"
+                      className="rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-red-700 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-red-300"
                     >
-                      {!playing ? "▶ つないだ結果を再生" : `■ 止める（区間${ai + 1}を再生中）`}
+                      選んだクリップを削除
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteSelected(true)}
+                      disabled={!canDeleteSelected}
+                      data-testid="video-cut-delete-ripple"
+                      className="rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-red-700 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-red-300"
+                    >
+                      削除してうしろを詰める
                     </button>
                   </div>
                   <p className="text-xs text-ms-muted">
-                    区間はつないだ順に並びます（合計 {formatDuration(outTotal)}）。再生位置で「分ける」→ 下の一覧で不要な区間を「削除」すると、うしろが詰まります。端のドラッグで長さ、真ん中のドラッグで順番を変えられます。
+                    再生ヘッドを動かして「分ける」→ 不要なクリップを押して選び「削除」します。クリップは真ん中のドラッグで好きな位置へ動かせ、離して置くと間が空白（書き出すと黒い画面・無音）になります。端のドラッグで長さを変えられます。
                   </p>
                 </>
               )}
@@ -501,13 +689,13 @@ export function VideoCutMergeTool({ initialMode = "cut" }: { initialMode?: Mode 
                       {formatTimeInput(s.start)}〜{formatTimeInput(s.end)}（{formatDuration(s.end - s.start)}）
                     </span>
                     <span className="ml-auto flex items-center gap-1">
-                      <button type="button" onClick={() => changeSegments(moveItem(segments, i, i - 1))} disabled={i === 0} aria-label={`区間${i + 1}を上へ移動`} className="rounded-md border border-neutral-300 px-2 py-0.5 text-xs disabled:opacity-30 dark:border-neutral-700">
+                      <button type="button" onClick={() => commitSegments(moveClipOrder(segments, i, i - 1))} disabled={i === 0} aria-label={`区間${i + 1}を上へ移動`} className="rounded-md border border-neutral-300 px-2 py-0.5 text-xs disabled:opacity-30 dark:border-neutral-700">
                         ↑
                       </button>
-                      <button type="button" onClick={() => changeSegments(moveItem(segments, i, i + 1))} disabled={i === segments.length - 1} aria-label={`区間${i + 1}を下へ移動`} className="rounded-md border border-neutral-300 px-2 py-0.5 text-xs disabled:opacity-30 dark:border-neutral-700">
+                      <button type="button" onClick={() => commitSegments(moveClipOrder(segments, i, i + 1))} disabled={i === segments.length - 1} aria-label={`区間${i + 1}を下へ移動`} className="rounded-md border border-neutral-300 px-2 py-0.5 text-xs disabled:opacity-30 dark:border-neutral-700">
                         ↓
                       </button>
-                      <button type="button" onClick={() => changeSegments(segments.filter((x) => x.id !== s.id))} disabled={segments.length === 1} aria-label={`区間${i + 1}を削除`} className="rounded-md px-2 py-0.5 text-xs text-red-600 disabled:opacity-30 dark:text-red-400">
+                      <button type="button" onClick={() => commitSegments(deleteClip(segments, s.id, false))} disabled={segments.length === 1} aria-label={`区間${i + 1}を削除`} className="rounded-md px-2 py-0.5 text-xs text-red-600 disabled:opacity-30 dark:text-red-400">
                         削除
                       </button>
                     </span>
