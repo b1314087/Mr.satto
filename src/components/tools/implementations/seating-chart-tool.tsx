@@ -43,6 +43,7 @@ import { exportChart, PAPER_SIZES, usesRedNumbers, type ExportFormat, type Paper
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 import { Segmented } from "@/components/ui/segmented";
+import { SettingsSection } from "@/components/ui/settings-section";
 
 /** 人数に合わせて自動で変わる項目（手で変えると「人数に合わせる」を外す） */
 const AUTO_FIELDS: Record<Purpose, (keyof LayoutParams)[]> = {
@@ -454,11 +455,8 @@ export function SeatingChartTool() {
     updateParam("tableLabels", next);
   }
 
-  const step1 = (
-      <section className={sectionClass} aria-labelledby="seat-step1">
-        <h2 id="seat-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          {purpose ? "用途を選ぶ" : "1. 用途を選ぶ"}
-        </h2>
+  // 用途のボタン（用途を選ぶ前は大きく出し、選んだあとは右のメニューの「用途」の欄（開閉できる）に入れる）
+  const purposeGrid = (
         <div role="radiogroup" aria-label="用途" className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${purpose ? "lg:grid-cols-2" : ""}`}>
           {PURPOSES.map((p) => (
             <button
@@ -482,6 +480,13 @@ export function SeatingChartTool() {
             </button>
           ))}
         </div>
+  );
+  const step1 = (
+      <section className={sectionClass} aria-labelledby="seat-step1">
+        <h2 id="seat-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+          1. 用途を選ぶ
+        </h2>
+        {purposeGrid}
       </section>
   );
 
@@ -490,10 +495,7 @@ export function SeatingChartTool() {
   const isTables = purpose === "group" || purpose === "round";
   const tableNoun = purpose === "round" ? "テーブル" : "島";
   const layoutSection = (
-      <section className={sectionClass} aria-labelledby="seat-layout-heading">
-        <h2 id="seat-layout-heading" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-          座席のレイアウト
-        </h2>
+      <SettingsSection title="座席のレイアウト" testId="seat-fold-layout" bodyClassName="flex flex-col gap-3">
         {purpose && params && (
           <div className="flex flex-col gap-4" data-testid="seat-settings">
             <FormGroup title="見出し">
@@ -712,7 +714,7 @@ export function SeatingChartTool() {
             )}
           </div>
         )}
-      </section>
+      </SettingsSection>
   );
 
   return (
@@ -725,17 +727,19 @@ export function SeatingChartTool() {
         <div data-preview-split className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
           <div className="contents lg:order-2 lg:flex lg:min-w-0 lg:flex-col lg:gap-4" data-testid="seat-menu">
 
-      {/* 2026-11：「表示する設定」のプルダウン（1つずつ切り替え）をやめ、設定をすべて縦に並べて、いつも表示する */}
-      <div data-testid="seat-panel-purpose">{step1}</div>
+      {/* 2026-11：「表示する設定」のプルダウンをやめ、設定を縦に並べた。それぞれ見出しを押して開閉できる（入力した内容は、閉じても残る）。
+          最初に開いておくのは、よく使う「座席のレイアウト」と「名前を入れる」。書き出しは、いつも開いたまま */}
+      <div data-testid="seat-panel-purpose">
+        <SettingsSection title="用途" testId="seat-fold-purpose" defaultOpen={false} summary={PURPOSES.find((p) => p.id === purpose)?.name}>
+          {purposeGrid}
+        </SettingsSection>
+      </div>
       <div data-testid="seat-panel-layout">{layoutSection}</div>
 
       {purpose && (
         <div data-testid="seat-panel-names">
-        <section className={sectionClass} aria-labelledby="seat-step2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 id="seat-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-              名前を入れる
-            </h2>
+        <SettingsSection title="名前を入れる" testId="seat-fold-names" summary={`${participants.length}人`} bodyClassName="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <div className="flex items-center gap-2">
               <input
                 ref={fileRef}
@@ -806,17 +810,20 @@ export function SeatingChartTool() {
               }}
             />
           )}
-        </section>
+        </SettingsSection>
         </div>
       )}
 
       {purpose && model && (
         // 鍵の印の表示（プレビューの欄には置かない。生徒に見せる画面に、切り替えのスイッチを出さないため）
         <div data-testid="seat-panel-marks">
-        <section className={sectionClass} aria-labelledby="seat-marks-heading" data-testid="seat-marks-section">
-          <h2 id="seat-marks-heading" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-            鍵をかけた席の確認
-          </h2>
+        <SettingsSection
+          title="鍵をかけた席の確認"
+          testId="seat-marks-section"
+          defaultOpen={false}
+          summary={showMarks ? "印を表示中" : lockedSet.size > 0 ? `鍵 ${lockedSet.size}席` : undefined}
+          bodyClassName="flex flex-col gap-3"
+        >
           <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
             <input type="checkbox" checked={showMarks} onChange={(e) => setShowMarks(e.target.checked)} className="mt-1" data-testid="seat-show-marks" />
             <span>
@@ -831,7 +838,7 @@ export function SeatingChartTool() {
               鍵をかけた席：{lockedSet.size}席
             </p>
           )}
-        </section>
+        </SettingsSection>
         </div>
       )}
 
@@ -1496,15 +1503,22 @@ function ConditionsPanel({
   );
 
   return (
-    <section className={sectionClass} aria-label="席の条件" data-testid="seat-conditions">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-        席の条件
-        {warn && (
-          <span className="rounded-full bg-amber-400 px-1.5 text-[10px] font-bold text-amber-950" title="満たしていない条件があります" data-testid="seat-conditions-warn">
-            ！
-          </span>
-        )}
-      </h2>
+    <SettingsSection
+      testId="seat-conditions"
+      defaultOpen={false}
+      summary={rules.length > 0 ? `${rules.length}件` : "なし"}
+      bodyClassName="flex flex-col gap-3"
+      title={
+        <span className="inline-flex items-center gap-2">
+          席の条件
+          {warn && (
+            <span className="rounded-full bg-amber-400 px-1.5 text-[10px] font-bold text-amber-950" title="満たしていない条件があります" data-testid="seat-conditions-warn">
+              ！
+            </span>
+          )}
+        </span>
+      }
+    >
       <>
         <div className="flex flex-col gap-2" data-testid="seat-conditions-body">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -1608,7 +1622,7 @@ function ConditionsPanel({
           )}
         </div>
       </>
-    </section>
+    </SettingsSection>
   );
 }
 

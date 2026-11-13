@@ -1,8 +1,8 @@
 import type { Page } from "@playwright/test";
 
 /**
- * 座席表の右のメニュー：2026-11 から、設定はプルダウンで切り替えず、すべて縦に並べていつも表示する。
- * 以前のテストとの互換のために残している（プルダウンが無いときは何もしない）。
+ * 座席表の右のメニュー：2026-11 から、設定は縦に並び、それぞれ見出しを押して開閉できる（用途・鍵の確認・席の条件は最初は閉じている）。
+ * テストで設定を操作する前に、その設定の欄を開く。用途を選ぶ前（欄が無いとき）は何もしない。
  */
 export type SeatPanel = "purpose" | "layout" | "names" | "marks" | "conditions";
 
@@ -21,7 +21,7 @@ export function seatPanelOf(testId: string): SeatPanel | null {
 export async function openSeatPanel(page: Page, panelOrTestId: SeatPanel | string): Promise<void> {
   const panel = (["purpose", "layout", "names", "marks", "conditions"] as string[]).includes(panelOrTestId) ? (panelOrTestId as SeatPanel) : seatPanelOf(panelOrTestId);
   if (!panel) return;
-  const select = page.getByTestId("seat-panel");
-  if ((await select.count()) === 0) return;
-  if ((await select.inputValue()) !== panel) await select.selectOption(panel);
+  const details = page.getByTestId(`seat-panel-${panel}`).locator("details").first();
+  if ((await details.count()) === 0) return;
+  if (!(await details.evaluate((el) => (el as HTMLDetailsElement).open))) await details.locator("summary").first().click();
 }

@@ -539,7 +539,7 @@ async function seatGrid(page: Page) {
   );
 }
 
-test("seating-chart: 席の条件は、たたまずにいつも表示する。満たしていない条件があると「！」が出る。条件はプレビュー・印の表示には出ない", async ({ page }) => {
+test("seating-chart: 席の条件の欄を開くと条件の一覧が出る（中でさらに折りたたまない）。満たしていない条件があると「！」が出る。条件はプレビュー・印の表示には出ない", async ({ page }) => {
   await openTool(page);
   await start(page, "classroom", Array.from({ length: 12 }, (_, i) => `N${i + 1}`));
   await openSeatPanel(page, "conditions");
@@ -1244,28 +1244,48 @@ test("座席表の名前（見出し）を座席のレイアウトで決めら�
 });
 
 // ---------------------------------------------------------------------------
-// 右のメニュー：設定はプルダウンで切り替えず、すべていつも表示（2026-11）
+// 右のメニュー：設定は縦に並び、それぞれ見出しを押して開閉できる（2026-11）
 // ---------------------------------------------------------------------------
-test("メニュー：「表示する設定」のプルダウンは無く、用途・座席のレイアウト・名前・鍵の確認・席の条件・書き出しが、すべて同時に見える。入力は消えない", async ({ page }) => {
+test("メニュー：設定は見出しを押して開閉でき、最初はレイアウト・名前だけ開いている。閉じても入力は消えず、書き出しはいつも見える", async ({ page }) => {
   await openTool(page);
   await page.getByTestId("seat-purpose-classroom").click();
   await expect(page.getByTestId("seat-panel")).toHaveCount(0);
-  await expect(page.getByText("表示する設定")).toHaveCount(0);
-  await page.getByTestId("seat-names").fill("一郎\n二郎\n三郎");
-  for (const id of ["seat-purpose-meeting", "seat-settings", "seat-names", "seat-show-marks", "seat-conditions", "seat-format-pdf"]) {
-    await page.getByTestId(id).scrollIntoViewIfNeeded();
-    await expect(page.getByTestId(id)).toBeVisible();
-  }
+  const fold = (id: string) => page.getByTestId(id);
+  const isOpen = (id: string) => fold(id).evaluate((el) => (el as HTMLDetailsElement).open);
+  // 最初に開いているのは「座席のレイアウト」と「名前を入れる」
+  plainExpect(await isOpen("seat-fold-layout")).toBe(true);
+  plainExpect(await isOpen("seat-fold-names")).toBe(true);
+  plainExpect(await isOpen("seat-fold-purpose")).toBe(false);
+  plainExpect(await isOpen("seat-marks-section")).toBe(false);
+  plainExpect(await isOpen("seat-conditions")).toBe(false);
+  // 閉じていても、見出しに今の値が出る
+  await expect(fold("seat-fold-purpose").locator("summary")).toContainText("授業");
+  await expect(fold("seat-conditions").locator("summary")).toContainText("なし");
+  // 書き出しは開閉の欄に入れず、いつも見える
+  await expect(page.getByTestId("seat-format-pdf")).toBeVisible();
   await expect(page.getByRole("button", { name: "画像（PNG）でダウンロード" })).toBeVisible();
-  // 設定の並び順：用途 → レイアウト → 名前 → 鍵の確認 → 席の条件
-  const order = await page.evaluate(() =>
-    ["purpose", "layout", "names", "marks", "conditions"].map((k) => document.querySelector(`[data-testid="seat-panel-${k}"]`)!.getBoundingClientRect().top)
-  );
-  plainExpect([...order].sort((x, y) => x - y)).toEqual(order);
-  await page.getByTestId("seat-title").fill("同時に見える確認");
-  await expect(page.getByTestId("seat-names")).toHaveValue("一郎\n二郎\n三郎");
-  await expect(page.getByTestId("seat-title")).toHaveValue("同時に見える確認");
+
+  await page.getByTestId("seat-names").fill("一郎\n二郎\n三郎");
+  await page.getByTestId("seat-title").fill("開閉の確認");
+  // 見出しを押すと閉じ、中身が見えなくなる。もう一度押すと開き、入力はそのまま
+  for (const [id, inner] of [["seat-fold-names", "seat-names"], ["seat-fold-layout", "seat-title"]] as const) {
+    await fold(id).locator("summary").first().click();
+    await expect(page.getByTestId(inner)).toBeHidden();
+    plainExpect(await isOpen(id)).toBe(false);
+  }
+  await expect(fold("seat-fold-names").locator("summary")).toContainText("3人");
   plainExpect((await seatNames(page)).slice(0, 3)).toEqual(["一郎", "二郎", "三郎"]);
+  for (const [id, inner] of [["seat-fold-names", "seat-names"], ["seat-fold-layout", "seat-title"]] as const) {
+    await fold(id).locator("summary").first().click();
+    await expect(page.getByTestId(inner)).toBeVisible();
+  }
+  await expect(page.getByTestId("seat-names")).toHaveValue("一郎\n二郎\n三郎");
+  await expect(page.getByTestId("seat-title")).toHaveValue("開閉の確認");
+  // 閉じていた用途・鍵・条件も、見出しを押すと開く
+  for (const [id, inner] of [["seat-fold-purpose", "seat-purpose-meeting"], ["seat-marks-section", "seat-show-marks"], ["seat-conditions", "seat-conditions-body"]] as const) {
+    await fold(id).locator("summary").first().click();
+    await expect(page.getByTestId(inner)).toBeVisible();
+  }
 });
 
 test("プレビューの上で、座席表の名前（見出し）と島の名前を直接入力でき、右のメニュー・ダウンロードにも同じ名前が入る", async ({ page }) => {
@@ -1363,20 +1383,14 @@ test("グループワーク「片側だけ」：選ぶと席が机の片側に�
   expect(await rowsOf()).toBe(before);
 });
 
-test("設定は折りたたまない：見出しを押して閉じる欄（プルダウン）は無く、設定はいつも見えている（2026-11）", async ({ page }) => {
+test("設定の開閉は、5つの欄（用途・レイアウト・名前・鍵・条件）ごとだけで、欄の中はさらに折りたたまない（2026-11）", async ({ page }) => {
   await openTool(page);
   await start(page, "meeting", PEOPLE);
-  await openSeatPanel(page, "layout");
-  await expect(page.getByTestId("seat-settings")).toBeVisible();
-  // 設定を切り替えるプルダウン（表示する設定）も無い
   await expect(page.getByTestId("seat-panel")).toHaveCount(0);
-  // ツールの設定・メニューの中だけを見る（ページ下のよくある質問の開閉は対象外）
-  const menu = page.locator('[data-testid="seat-menu"], [data-testid^="seat-panel"]');
-  await expect(page.getByTestId("seat-panel-layout").locator("details, summary")).toHaveCount(0);
-  await expect(menu.locator("details")).toHaveCount(0);
-  await expect(menu.locator("summary")).toHaveCount(0);
-  await openSeatPanel(page, "names");
-  await expect(page.getByTestId("seat-panel-names")).toBeVisible();
-  await expect(menu.locator("details")).toHaveCount(0);
+  for (const panel of ["purpose", "layout", "names", "marks", "conditions"]) {
+    // 各欄は開閉の欄（details）がちょうど1つで、その中に入れ子の開閉は無い
+    await expect(page.getByTestId(`seat-panel-${panel}`).locator("details")).toHaveCount(1);
+    await expect(page.getByTestId(`seat-panel-${panel}`).locator("details details")).toHaveCount(0);
+  }
   expect(await seatNames(page)).toContain(MARKER);
 });
