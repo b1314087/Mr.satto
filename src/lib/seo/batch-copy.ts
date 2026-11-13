@@ -79,6 +79,67 @@ export const PDF_COMPRESS_BATCH_ANSWER: OnOffCopy = {
   off: `はい。最大${BATCH_LIMITS["pdf-compress"]}個のPDFを同じ設定で1つずつ順番に圧縮し、圧縮したPDFをZIPでまとめて保存できます。`,
 };
 
+// ---------------------------------------------------------------------------
+// 2026-11：一括処理を15ツールに追加（よくある質問の答え）
+// ---------------------------------------------------------------------------
+
+/** 一括処理のよくある質問の答え（課金オンはプレミアムの機能だと書き、課金オフではプランの話をしない） */
+function batchAnswer(limitText: string, body: string, note = ""): OnOffCopy {
+  return {
+    on: `はい。プレミアムプランでは、最大${limitText}を${body}、ZIPでまとめて保存できます。${note}無料プランでは1つずつ処理できます。`,
+    off: `はい。最大${limitText}を${body}、ZIPでまとめて保存できます。${note}`,
+  };
+}
+
+export const PDF_TO_IMAGE_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["pdf-to-image"]}個のPDF`,
+  "同じ形式（PNG・JPG）で1つずつ順番に画像にして"
+);
+export const IMAGE_CROP_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["image-crop"]}枚の画像`,
+  "まとめて切り抜いて",
+  "自由トリミングでは1枚目で決めた範囲を同じ割合の位置で、SNSサイズでは画像ごとに中央を切り抜いて同じサイズにします。"
+);
+export const IMAGE_ROTATE_FLIP_BATCH_ANSWER = batchAnswer(`${BATCH_LIMITS["image-rotate-flip"]}枚の画像`, "同じ角度・向きでまとめて回転・反転して");
+export const IMAGE_METADATA_REMOVE_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["image-metadata-remove"]}枚の画像`,
+  "1枚ずつ順番に撮影日時・位置情報などを取り除いて"
+);
+export const IMAGE_WATERMARK_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["image-watermark"]}枚の画像`,
+  "同じ文字・位置の透かしでまとめて処理して",
+  "文字の大きさは、画像ごとの大きさに合わせて同じ割合にそろえます。"
+);
+export const IMAGE_TILE_SPLIT_BATCH_ANSWER = batchAnswer(`${BATCH_LIMITS["image-tile-split"]}枚の画像`, "同じ行数・列数でまとめて分割して");
+export const IMAGE_MOSAIC_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["image-mosaic"]}枚の画像`,
+  "1枚目で決めた範囲と同じ割合の位置で、まとめてモザイク・ぼかしをかけて",
+  "同じ大きさの画像（スクリーンショットなど）なら、同じ位置になります。"
+);
+export const PDF_FIX_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["pdf-fix"]}個のPDF`,
+  "同じ設定でまとめてページ番号や透かしを入れて",
+  "文字・図形などを置く操作と墨消しは、PDFごとに場所が違うため1つずつ行います。"
+);
+export const WORD_TO_PDF_BATCH_ANSWER = batchAnswer(`${BATCH_LIMITS["word-to-pdf"]}個のWord文書`, "1つずつ順番にPDFに変換して");
+export const EXCEL_TO_PDF_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["excel-to-pdf"]}個のExcelファイル`,
+  "同じ向き・ページの収め方で1つずつ順番にPDFに変換して",
+  "まとめて変換するときは、ファイルごとに、表示されているシートをすべてPDFにします。"
+);
+export const PDF_PASSWORD_PROTECT_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["pdf-password-protect"]}個のPDF`,
+  "同じパスワード・同じ許可で1つずつ順番に保護して"
+);
+export const PDF_RESIZE_PAGES_BATCH_ANSWER = batchAnswer(`${BATCH_LIMITS["pdf-resize-pages"]}個のPDF`, "同じ用紙サイズ・同じ方法でまとめて変更して");
+export const PDF_METADATA_REMOVE_BATCH_ANSWER = batchAnswer(`${BATCH_LIMITS["pdf-metadata-remove"]}個のPDF`, "1つずつ順番にメタデータを削除して");
+export const PDF_CROP_PAGES_BATCH_ANSWER = batchAnswer(`${BATCH_LIMITS["pdf-crop-pages"]}個のPDF`, "同じ余白でまとめて調整して");
+export const FILE_UNZIP_BATCH_ANSWER = batchAnswer(
+  `${BATCH_LIMITS["file-unzip"]}個のZIP`,
+  "1つずつ順番に解凍して",
+  "まとめて保存するときは、どのZIPの中身か分かるよう、ファイル名の前に元のZIPの名前を付けます。"
+);
+
 export const BATCH_COPY_PAIRS: OnOffCopy[] = [
   FORMAT_CONVERT_META_BATCH,
   FORMAT_CONVERT_LEAD_BATCH,
@@ -95,4 +156,19 @@ export const BATCH_COPY_PAIRS: OnOffCopy[] = [
   IMAGE_COMPRESS_BATCH_ANSWER,
   IMAGE_RESIZE_BATCH_ANSWER,
   PDF_COMPRESS_BATCH_ANSWER,
+  PDF_TO_IMAGE_BATCH_ANSWER,
+  IMAGE_CROP_BATCH_ANSWER,
+  IMAGE_ROTATE_FLIP_BATCH_ANSWER,
+  IMAGE_METADATA_REMOVE_BATCH_ANSWER,
+  IMAGE_WATERMARK_BATCH_ANSWER,
+  IMAGE_TILE_SPLIT_BATCH_ANSWER,
+  IMAGE_MOSAIC_BATCH_ANSWER,
+  PDF_FIX_BATCH_ANSWER,
+  WORD_TO_PDF_BATCH_ANSWER,
+  EXCEL_TO_PDF_BATCH_ANSWER,
+  PDF_PASSWORD_PROTECT_BATCH_ANSWER,
+  PDF_RESIZE_PAGES_BATCH_ANSWER,
+  PDF_METADATA_REMOVE_BATCH_ANSWER,
+  PDF_CROP_PAGES_BATCH_ANSWER,
+  FILE_UNZIP_BATCH_ANSWER,
 ];

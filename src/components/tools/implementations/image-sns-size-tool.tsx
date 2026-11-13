@@ -11,12 +11,16 @@ import { ResultPopup } from "@/components/common/result-popup";
 import {
   ImageCropProcessor,
   computeCenterCropForAspect,
+  loadImage,
   resolveCropRect,
 } from "@/lib/processors/browser/image";
 import { useLoadedImage, useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun } from "@/components/common/use-batch-run";
 
 interface SizePreset {
   id: string;
@@ -43,7 +47,12 @@ const EXT_BY_MIME: Record<string, string> = {
 const RESULT_PREVIEW_MAX_SIDE = 360;
 
 export function ImageSnsSizeTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだ画像。2枚以上のとき（プレミアムの一括処理）は、同じサイズで1枚ずつ順番に、中央を切り抜いて変換する（画像トリミングの上限を使う）
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("image-crop");
+  const batchRun = useBatchRun();
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [presetId, setPresetId] = useState<string>("square");
   const [customWidth, setCustomWidth] = useState(1080);
@@ -113,11 +122,61 @@ export function ImageSnsSizeTool() {
   }, [loadedImg, cropX, cropY, cropW, cropH, targetWidth, targetHeight]);
   const upscaled = cropRect !== null && (cropRect.width < targetWidth || cropRect.height < targetHeight);
 
+  // 設定を変えたら、前の設定でまとめて処理した結果は捨てる（違う設定の結果を保存させない）
+  const resetBatch = batchRun.reset;
+  useEffect(() => {
+    resetBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetWidth, targetHeight]);
+
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    batchRun.reset();
+    setResult(null);
+    setError(null);
+    setStatus("idle");
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    batchRun.reset();
+    setResult(null);
+    setStatus("idle");
+  }
+
+  /** 一括処理：選んだ全部の画像を、同じサイズで1枚ずつ（画像ごとに中央を切り抜いて）変換する */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const width = targetWidth;
+    const height = targetHeight;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const img = await loadImage(target);
+      const crop = computeCenterCropForAspect(img.naturalWidth, img.naturalHeight, width / height);
+      const output = await new ImageCropProcessor().process({ file: target, crop, targetWidth: width, targetHeight: height });
+      URL.revokeObjectURL(output.url);
+      return {
+        blob: output.blob,
+        outputName: `${stripExtension(target.name)}-sns.${EXT_BY_MIME[output.mimeType] ?? "jpg"}`,
+        detail: `${output.width}×${output.height}px`,
+      };
+    });
+    const summary = summarizeBatch(items, "すべての画像で変換に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file || !naturalSize) return;
     if (targetWidth <= 0 || targetHeight <= 0) {
       setError("幅と高さは1以上を指定してください");
       setStatus("error");
+      return;
+    }
+    if (isBatch) {
+      await handleRunBatch();
       return;
     }
     setStatus("processing");
@@ -201,15 +260,24 @@ export function ImageSnsSizeTool() {
       ) : null}
     >
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
-        onFilesSelected={(files) => setFile(files[0])}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+      {isBatch && (
+        <p data-testid="batch-sns-note" className="text-xs text-ms-muted">
+          プレビューは1枚目の画像です。ほかの画像も、画像ごとに中央を切り抜いて同じサイズにします。
+        </p>
+      )}
 
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -284,15 +352,21 @@ export function ImageSnsSizeTool() {
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            変換する
+            {isBatch ? `${files.length}枚をまとめて変換する` : "変換する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="変換が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("変換しています") : undefined}
+        successLabel="変換が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "images") || "images"}-sns.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

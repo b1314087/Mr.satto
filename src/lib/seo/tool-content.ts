@@ -41,6 +41,21 @@ import {
   PADDING_TEXT_LEAD_NOTE,
   PADDING_TEXT_META_BATCH,
   PDF_COMPRESS_BATCH_ANSWER,
+  EXCEL_TO_PDF_BATCH_ANSWER,
+  FILE_UNZIP_BATCH_ANSWER,
+  IMAGE_CROP_BATCH_ANSWER,
+  IMAGE_METADATA_REMOVE_BATCH_ANSWER,
+  IMAGE_MOSAIC_BATCH_ANSWER,
+  IMAGE_ROTATE_FLIP_BATCH_ANSWER,
+  IMAGE_TILE_SPLIT_BATCH_ANSWER,
+  IMAGE_WATERMARK_BATCH_ANSWER,
+  PDF_CROP_PAGES_BATCH_ANSWER,
+  PDF_FIX_BATCH_ANSWER,
+  PDF_METADATA_REMOVE_BATCH_ANSWER,
+  PDF_PASSWORD_PROTECT_BATCH_ANSWER,
+  PDF_RESIZE_PAGES_BATCH_ANSWER,
+  PDF_TO_IMAGE_BATCH_ANSWER,
+  WORD_TO_PDF_BATCH_ANSWER,
 } from "@/lib/seo/batch-copy";
 
 export interface ToolFaqItem {
@@ -240,6 +255,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
         answer: "はい。用紙サイズ・余白・写真間隔を指定すると、配置できる最大枚数を自動計算し、PDFとして書き出せます。",
       },
       { question: "アップロードした画像はサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数の画像をまとめてトリミングできますか？", answer: IMAGE_CROP_BATCH_ANSWER.on },
     ],
   },
   "image-batch-convert": {
@@ -285,6 +301,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "スマホで撮った写真の向きがおかしい場合も直せますか？", answer: "はい。90度単位で回転できるので、横向きになってしまった写真を正しい向きに直せます。" },
       { question: "元の画像は上書きされますか？", answer: "いいえ。処理の結果は新しい画像として生成されるため、選択した元のファイル自体が書き換わることはありません。" },
       { question: "アップロードした画像はサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数の画像をまとめて回転・反転できますか？", answer: IMAGE_ROTATE_FLIP_BATCH_ANSWER.on },
     ],
   },
   "image-rotate": {
@@ -302,6 +319,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "回転と反転を同時に行えますか？", answer: "一度の処理では、回転か反転のどちらか一方を選びます。両方行いたい場合は、処理後の画像をダウンロードして、もう一度アップロードし、もう一方を実行してください。" },
       { question: "スマホで撮った写真の向きがおかしい場合も直せますか？", answer: "はい。90度単位で回転できるので、横向きになってしまった写真を正しい向きに直せます。" },
       { question: "アップロードした画像はサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数の画像をまとめて回転・反転できますか？", answer: IMAGE_ROTATE_FLIP_BATCH_ANSWER.on },
     ],
   },
   "image-flip": {
@@ -319,6 +337,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "元の画像は上書きされますか？", answer: "いいえ。反転処理の結果は新しい画像として生成されるため、選択した元のファイル自体が書き換わることはありません。" },
       { question: "左右反転と上下反転を同時に行えますか？", answer: "一度の処理では左右反転・上下反転のどちらか一方を選びます。両方行いたい場合は、反転後の画像を再度アップロードしてもう一方の反転を実行してください。" },
       { question: "アップロードした画像はサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数の画像をまとめて回転・反転できますか？", answer: IMAGE_ROTATE_FLIP_BATCH_ANSWER.on },
     ],
   },
   "image-adjust": {
@@ -491,6 +510,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "ページの結合・分割・並び替え・回転はできますか？", answer: "PDF修正ではできません。PDF編集で行い、ダウンロードしたPDFをPDF修正で選んでください。" },
       { question: "操作を切り替えると、選んだPDFはどうなりますか？", answer: "選んだPDFはそのまま引き継がれます。PDFの上に置いた文字・図形なども、ほかの操作に切り替えて戻ってきたときに残っています。ページ番号・透かし・墨消しは、それぞれ別のPDFとして書き出すので、続けて別の修正をしたいときは、ダウンロードしたPDFを選び直してください。" },
       { question: "アップロードしたPDFはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数のPDFにまとめてページ番号や透かしを入れられますか？", answer: PDF_FIX_BATCH_ANSWER.on },
     ],
   },
   "pdf-compress": {
@@ -539,6 +559,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
         question: "PNGとJPGは、どちらを選べばよいですか？",
         answer: "文字や図が中心の資料は、輪郭がくっきり残るPNGがおすすめです。写真が多いページは、ファイルが小さくなりやすいJPGが向いています。",
       },
+      { question: "複数のPDFをまとめて画像にできますか？", answer: PDF_TO_IMAGE_BATCH_ANSWER.on },
     ],
   },
   "image-to-pdf": {
@@ -683,6 +704,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       { question: "アップロードしたWordファイルはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
       { question: "無料プランでも使えますか？", answer: "このツールはプレミアムプラン専用の機能です。" },
+      { question: "複数のWord文書をまとめてPDFにできますか？", answer: WORD_TO_PDF_BATCH_ANSWER.on },
     ],
   },
   "excel-to-pdf": {
@@ -711,6 +733,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       },
       { question: "アップロードしたExcelファイルはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
       { question: "無料プランでも使えますか？", answer: "このツールはプレミアムプラン専用の機能です。" },
+      { question: "複数のExcelファイルをまとめてPDFにできますか？", answer: EXCEL_TO_PDF_BATCH_ANSWER.on },
     ],
   },
   // ------------------------------------------------------------------
@@ -1932,6 +1955,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "PDFやパスワードはサーバーに送られますか？", answer: "いいえ。暗号化はブラウザの中で行われ、ファイルもパスワードも外部へ送信されません。" },
       { question: "印刷やコピーの制限は確実に守られますか？", answer: "これらの制限はPDFビューアが守ることで成り立つ設定です。対応していないソフトでは無視されることがあるため、機密性が必要な場合は「開くためのパスワード」を設定してください。" },
       { question: "どのソフトで開けますか？", answer: "Acrobat X以降、macOSのプレビュー、Chromeなどのブラウザ、PDF.jsなど、AES-256に対応した主要なビューアで開けます。非常に古いビューアでは開けないことがあります。" },
+      { question: "複数のPDFにまとめてパスワードを設定できますか？", answer: PDF_PASSWORD_PROTECT_BATCH_ANSWER.on },
     ],
   },
 
@@ -2067,6 +2091,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "パスワード付きZIPは解凍できますか？", answer: "対応していません。パスワードを解除したZIPファイルをご利用ください。" },
       { question: "巨大なZIPファイルでも解凍できますか？", answer: "ブラウザのメモリ消費を抑えるため、ファイル数・展開後の合計サイズ・1ファイルあたりのサイズに上限を設けています。上限を超えたファイルはスキップされ、その旨が表示されます。" },
       { question: "アップロードしたZIPファイルはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数のZIPをまとめて解凍できますか？", answer: FILE_UNZIP_BATCH_ANSWER.on },
     ],
   },
   "file-hash": {
@@ -2104,6 +2129,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "「内容も拡大縮小する」と「ページサイズだけ変更する」の違いは？", answer: "「内容も拡大縮小する」は、縦横比を保ったまま内容を新しいページサイズに合わせて拡大縮小し中央に配置します。「ページサイズだけ変更する」は内容の大きさをそのまま維持するため、拡大時は余白が増え、縮小時は内容の一部が見切れる場合があります。" },
       { question: "画質は劣化しますか？", answer: "内容の再描画（ラスタライズ）は行わず、PDF内部の座標情報を変換するだけのため、画質は劣化しません。" },
       { question: "アップロードしたPDFはサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数のPDFのページサイズをまとめて変更できますか？", answer: PDF_RESIZE_PAGES_BATCH_ANSWER.on },
     ],
   },
   "pdf-metadata-remove": {
@@ -2121,6 +2147,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "完全に匿名化できますか？", answer: "本ツールはPDFの標準的な文書情報（タイトル・作成者・件名・キーワード・アプリケーション・PDF変換ツール）を削除します。一部のPDF編集ソフトが別途埋め込むことがあるメタデータについては削除できるとは限らないため、「完全に匿名化される」ことは保証していません。" },
       { question: "本当に削除されたか確認できますか？", answer: "はい。処理後に保存されたPDFを実際に読み込み直して確認した結果を画面に表示しています。" },
       { question: "アップロードしたPDFはサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数のPDFのメタデータをまとめて削除できますか？", answer: PDF_METADATA_REMOVE_BATCH_ANSWER.on },
     ],
   },
   "pdf-crop-pages": {
@@ -2137,6 +2164,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "内容自体は削除されますか？", answer: "いいえ。PDFの表示・印刷範囲（CropBox）だけを変更するため、内容自体（MediaBoxの中身）は削除・再描画されません。" },
       { question: "余白を大きくしすぎるとどうなりますか？", answer: "指定した余白の合計がページサイズを超える場合はエラーになり、処理は実行されません。" },
       { question: "アップロードしたPDFはサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数のPDFの余白をまとめて調整できますか？", answer: PDF_CROP_PAGES_BATCH_ANSWER.on },
     ],
   },
 
@@ -2158,6 +2186,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       { question: "元の画像形式のまま出力されますか？", answer: "JPG・PNG・WebPのいずれかで出力されます。ブラウザが再エンコードに対応していない形式の場合はPNG形式で出力されます。" },
       { question: "すべての種類のメタデータを確実に除去できますか？", answer: "Canvas上への再描画で実際に取り除ける範囲のメタデータを対象としており、あらゆる形式のメタデータを完全に除去することを保証するものではありません。" },
       { question: "アップロードした画像はサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数の画像のメタデータをまとめて削除できますか？", answer: IMAGE_METADATA_REMOVE_BATCH_ANSWER.on },
     ],
   },
   "image-watermark": {
@@ -2174,6 +2203,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     faq: [
       { question: "元の画像は上書きされますか？", answer: "いいえ。元のファイルは変更されず、透かしを追加した新しい画像が生成されます。" },
       { question: "アップロードした画像はサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数の画像にまとめて透かしを入れられますか？", answer: IMAGE_WATERMARK_BATCH_ANSWER.on },
     ],
   },
   // 工程4：「画像ホワイトボード」に改称（URLは同じ）
@@ -2335,6 +2365,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
           "画像結合・画像ホワイトボードは複数の画像を1枚へまとめるツールです。画像タイル分割はその逆で、1枚の画像を複数の画像へ分割する専用ツールです。",
       },
       { question: "アップロードした画像はサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数の画像をまとめて分割できますか？", answer: IMAGE_TILE_SPLIT_BATCH_ANSWER.on },
     ],
   },
   "image-mosaic": {
@@ -2372,6 +2403,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
           "今回のツールは静止画の矩形選択のみに対応しています。動画のモザイク・トラッキングや、AIによる顔の自動検出・自動追跡には対応していません。",
       },
       { question: "アップロードした画像はサーバーに送信されますか？", answer: NO_UPLOAD_ANSWER },
+      { question: "複数の画像にまとめてモザイクをかけられますか？", answer: IMAGE_MOSAIC_BATCH_ANSWER.on },
     ],
   },
   "csv-column-editor": {

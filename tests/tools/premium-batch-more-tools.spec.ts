@@ -8,6 +8,8 @@ import { setDevPlanOverride } from "../helpers/dev-plan";
 import { clickAndDownload, assertDownloadedFile } from "../helpers/tool-runner";
 import { waitForFileInputHydrated } from "../helpers/tool-ready";
 import { BATCH_LIMITS } from "@/lib/batch/batch-config";
+import { getToolSeoContent } from "@/lib/seo/tool-content";
+import { adaptToolSeoContentWith } from "@/lib/seo/feature-copy";
 
 /**
  * プレミアムの一括処理を15ツールに追加（2026-11 料金プランの見直し）のテスト。
@@ -315,3 +317,73 @@ for (const plan of ["free", "standard"] as const) {
     }
   });
 }
+
+// ---------------------------------------------------------------------------
+// 追加：画像トリミングのSNSサイズにも一括処理・説明文（よくある質問）
+// ---------------------------------------------------------------------------
+
+premiumTest("画像トリミング（SNSサイズ）：形の違う画像も、画像ごとに中央を切り抜いて同じサイズにまとめて変換する", async ({ page }) => {
+  await page.goto("/tools/image-crop?mode=sns");
+  await expect(page.getByTestId("batch-hint")).toContainText(`${BATCH_LIMITS["image-crop"]}枚まで`);
+  await upload(page, image2());
+  await expect(page.getByTestId("batch-sns-note")).toBeVisible();
+  await page.getByRole("button", { name: "2枚をまとめて変換する" }).click();
+  await expect(page.getByTestId("batch-summary")).toHaveText("2ファイル中 2ファイルが完了", { timeout: 60_000 });
+  await expect(page.getByTestId("batch-row").nth(0)).toContainText("1080×1080px");
+  await expect(page.getByTestId("batch-row").nth(1)).toContainText("1080×1080px");
+  const zip = await clickAndDownload(page, "完了した2ファイルをZIPで保存");
+  const { path: zipPath } = await assertDownloadedFile(zip, { format: "zip" });
+  expect(zipEntries(zipPath).sort()).toEqual(["landscape-sns.jpg", "sample-sns.png"]);
+});
+
+baseTest("無料：SNSサイズでも、2枚選ぶと1枚目だけを読み込む", async ({ page, baseURL }) => {
+  await setDevPlanOverride(page.context(), "free", baseURL!);
+  await page.goto("/tools/image-crop?mode=sns");
+  await upload(page, image2());
+  await expect(page.getByTestId("batch-notice")).toContainText("一度に処理できるのは1ファイルです");
+  await expect(page.getByRole("button", { name: "変換する", exact: true })).toBeVisible();
+});
+
+const SEO_IDS = [
+  "pdf-to-image",
+  "image-crop",
+  "image-rotate-flip",
+  "image-rotate",
+  "image-flip",
+  "image-metadata-remove",
+  "image-watermark",
+  "image-tile-split",
+  "image-mosaic",
+  "pdf-fix",
+  "word-to-pdf",
+  "excel-to-pdf",
+  "pdf-password-protect",
+  "pdf-resize-pages",
+  "pdf-metadata-remove",
+  "pdf-crop-pages",
+  "file-unzip",
+];
+
+baseTest("説明文：15ツールのよくある質問に、一括処理の質問があり、上限の数が実際と一致している", () => {
+  for (const id of SEO_IDS) {
+    const content = getToolSeoContent(id)!;
+    const on = adaptToolSeoContentWith(content, { billing: true, ads: false, premiumOnly: false, standardOffered: false });
+    const faq = on.faq.find((f) => f.question.startsWith("複数の"));
+    expect(faq, id).toBeTruthy();
+    expect(faq!.answer, id).toContain("プレミアムプラン");
+    expect(faq!.answer, id).toMatch(/最大\d+(枚|個)/);
+    const limit = Number(faq!.answer.match(/最大(\d+)/)![1]);
+    expect(Object.values(BATCH_LIMITS), id).toContain(limit);
+  }
+});
+
+baseTest("説明文：課金オフの間は、一括処理の質問からプレミアムの話がなくなる", () => {
+  for (const id of SEO_IDS) {
+    const content = getToolSeoContent(id)!;
+    const off = adaptToolSeoContentWith(content, { billing: false, ads: false, premiumOnly: false, standardOffered: false });
+    const faq = off.faq.find((f) => f.question.startsWith("複数の"));
+    expect(faq, id).toBeTruthy();
+    expect(faq!.answer, id).not.toContain("プレミアム");
+    expect(faq!.answer, id).not.toContain("無料プラン");
+  }
+});
