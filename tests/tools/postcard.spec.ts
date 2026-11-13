@@ -338,4 +338,31 @@ test.describe("宛名面：初期画面・郵便番号から住所・Excelでま
     await page.getByTestId("postcard-recipient-name").fill("山田太郎");
     await expect(page.getByTestId("postcard-run")).toBeEnabled();
   });
+
+  test("宛名面の長い説明文は出さない。「標準に戻す」は枠付きのボタンで目立ち、押すと大きさが戻る（2026-11）", async ({ page }) => {
+    await openPostcard(page, "宛名面");
+    const settings = page.locator("main");
+    for (const removed of ["1行目を見出しにして", "改行すると、次の列に移ります", "縦書きに合わせて全角", "日本郵便の定める枠の位置", "いちばん右の列の中心", "試しに普通紙へ印刷して"]) {
+      await expect(settings.getByText(removed)).toHaveCount(0);
+    }
+    const reset = page.getByTestId("postcard-block-reset-name");
+    await expect(reset).toBeVisible();
+    await expect(reset).toContainText("宛先の氏名を標準に戻す");
+    // 枠線と背景色があり、文字も小さすぎない（目立つボタン）
+    const style = await reset.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { border: cs.borderTopWidth, bg: cs.backgroundColor, font: parseFloat(cs.fontSize) };
+    });
+    plainExpect(style.border).not.toBe("0px");
+    plainExpect(style.bg).not.toBe("rgba(0, 0, 0, 0)");
+    plainExpect(style.font).toBeGreaterThanOrEqual(14);
+
+    const size = page.getByTestId("postcard-block-name").getByLabel("宛先の氏名の文字の大きさの数値");
+    const before = await size.inputValue();
+    await size.fill("30");
+    await size.blur();
+    await expect(size).toHaveValue("30");
+    await reset.click();
+    await expect(size).toHaveValue(before);
+  });
 });

@@ -435,9 +435,6 @@ export function PostcardTool() {
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          <p className="text-xs text-ms-muted">
-            1行目を見出しにして、郵便番号・住所・氏名（敬称は任意）の列があるExcel・CSVを読み込むと、1件1ページのPDFをまとめて作ります（最大{POSTCARD_RECIPIENTS_MAX}件）。住所が空の行は、郵便番号から住所を入れます。差出人・文字の位置などは、下の設定が全ページに使われます。
-          </p>
           <FileDropzone
             compact={!!bulkFile}
             accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -505,7 +502,7 @@ export function PostcardTool() {
               </p>
             )}
             <label className="flex flex-col gap-1 text-xs font-medium text-neutral-600 dark:text-neutral-300">
-              住所（改行すると、次の列に移ります。建物名などを分けたいときに）
+              住所
               <textarea
                 value={address.recipientAddress}
                 onChange={(e) => updateAddress({ recipientAddress: e.target.value })}
@@ -535,7 +532,6 @@ export function PostcardTool() {
             onChange={(v: EnvelopeHonorific) => updateAddress({ honorific: v })}
             options={(["sama", "onchu", "none"] as const).map((h) => ({ value: h, label: HONORIFIC_LABELS[h] }))}
           />
-          <p className="text-xs text-ms-muted">数字は縦書きに合わせて全角にし、番地の「-」は縦の線（｜）にします。</p>
         </div>
       </SettingsSection>
 
@@ -584,9 +580,6 @@ export function PostcardTool() {
             <input type="checkbox" checked={address.printZipFrames} onChange={(e) => updateAddress({ printZipFrames: e.target.checked })} data-testid="postcard-print-frames" />
             郵便番号枠の線も印刷する（枠が印刷されていない用紙のとき）
           </label>
-          <p className="text-xs text-ms-muted">
-            郵便番号は、日本郵便の定める枠の位置（はがきの上端から12mm・右端から8mm、1けた5.7×8mm）に1けたずつ入れます。郵便はがき（官製はがき）など、枠が印刷済みのはがきでは、線は印刷しないでください。
-          </p>
         </div>
       </SettingsSection>
 
@@ -616,13 +609,14 @@ export function PostcardTool() {
                     xAriaLabel={`${label}の横の位置`}
                     yAriaLabel={`${label}の縦の位置`}
                     onChange={({ x, y }) => updateAddressBlock(id, { x, y })}
-                    hint="横はいちばん右の列の中心、縦は文字の上端の位置です（0%＝左端・上端）。"
                   />
                   <button
                     type="button"
                     onClick={() => updateAddressBlock(id, { ...DEFAULT_POSTCARD_ADDRESS_BLOCKS[id] })}
-                    className="w-fit rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                    className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-900/50"
+                    data-testid={`postcard-block-reset-${id}`}
                   >
+                    <span aria-hidden="true">↺</span>
                     {label}を標準に戻す
                   </button>
                 </div>
@@ -646,9 +640,6 @@ export function PostcardTool() {
             onChange={({ x, y }) => updateAddress({ offsetXmm: x, offsetYmm: y })}
             testId="postcard-offset"
           />
-          <p className="text-xs text-ms-muted">
-            試しに普通紙へ印刷して、はがきと重ねて確かめ、ずれていた分だけ動かします。文字と枠がすべて同じだけ動きます。印刷するときは、用紙を「はがき」、倍率を「実際のサイズ（100%）」にしてください。
-          </p>
         </div>
       </SettingsSection>
     </SettingsStack>
