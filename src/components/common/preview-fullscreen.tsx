@@ -1,5 +1,6 @@
 "use client";
 
+import { ZoomSlider } from "@/components/common/zoom-slider";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 const ZOOM_MIN = 0.5;
@@ -87,6 +88,15 @@ export function PreviewFullscreenFrame({ children, className = "" }: { children:
             <button type="button" className={zoomButton} onClick={() => setZoom((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100))} disabled={zoom <= ZOOM_MIN} aria-label="小さくする" data-testid="preview-zoom-out">
               －
             </button>
+            <ZoomSlider
+              value={Math.round(zoom * 100)}
+              min={Math.round(ZOOM_MIN * 100)}
+              max={Math.round(ZOOM_MAX * 100)}
+              step={5}
+              onChange={(p) => setZoom(p / 100)}
+              testId="preview-zoom-slider"
+              className="w-40"
+            />
             <span className="w-12 text-center text-xs tabular-nums text-neutral-600 dark:text-neutral-300" data-testid="preview-zoom">
               {Math.round(zoom * 100)}%
             </span>

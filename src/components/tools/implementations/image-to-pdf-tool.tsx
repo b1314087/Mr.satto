@@ -9,7 +9,8 @@ import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { ImagesToPdfProcessor } from "@/lib/processors/browser/pdf";
-import { computeImagePageLayout, type ImageToPdfPageSize } from "@/lib/processors/browser/image-to-pdf-layout";
+import { computeImagePageLayout, DEFAULT_IMAGE_TO_PDF_PAPER, type ImageToPdfPageSize, type ImageToPdfPaper } from "@/lib/processors/browser/image-to-pdf-layout";
+import { PAPER_SIZE_IDS, PAPER_SIZE_LABELS, type PaperSizeId } from "@/lib/print/paper-sizes";
 import { useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
@@ -26,7 +27,7 @@ const THUMB_BOX = { width: 132, height: 176 };
  * 1ページ分のプレビュー。ページの形・画像の置かれ方は、PDF書き出しと同じ
  * computeImagePageLayout で計算する(A4なら余白つきで中央、画像サイズのままなら画像と同じ形のページ)。
  */
-function PdfPageThumb({ file, index, pageSize }: { file: File; index: number; pageSize: PageSize }) {
+function PdfPageThumb({ file, index, pageSize, paper }: { file: File; index: number; pageSize: PageSize; paper: ImageToPdfPaper }) {
   const url = useObjectUrl(file);
   const [loaded, setLoaded] = useState<{ file: File; width: number; height: number; failed: boolean } | null>(null);
   const size = loaded && loaded.file === file ? loaded : null;
@@ -34,7 +35,7 @@ function PdfPageThumb({ file, index, pageSize }: { file: File; index: number; pa
   let frame: { width: number; height: number } | null = null;
   let imageBox: { left: number; top: number; width: number; height: number } | null = null;
   if (size && !size.failed) {
-    const layout = computeImagePageLayout(size.width, size.height, pageSize);
+    const layout = computeImagePageLayout(size.width, size.height, pageSize, paper);
     const scale = Math.min(THUMB_BOX.width / layout.pageWidth, THUMB_BOX.height / layout.pageHeight);
     frame = { width: layout.pageWidth * scale, height: layout.pageHeight * scale };
     imageBox = {
@@ -95,6 +96,9 @@ function PdfPageThumb({ file, index, pageSize }: { file: File; index: number; pa
 export function ImageToPdfTool() {
   const [files, setFiles] = useState<File[]>([]);
   const [pageSize, setPageSize] = useState<PageSize>("fit");
+  // 用紙サイズに収めるときの用紙と向き（2026-11：A4以外の用紙サイズも選べるようにした）
+  const [paper, setPaper] = useState<ImageToPdfPaper>(DEFAULT_IMAGE_TO_PDF_PAPER);
+  const paperLabel = PAPER_SIZE_LABELS[paper.id];
 
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -124,7 +128,7 @@ export function ImageToPdfTool() {
     setStatus("processing");
     setError(null);
     try {
-      const output = await new ImagesToPdfProcessor().process({ files, pageSize });
+      const output = await new ImagesToPdfProcessor().process({ files, pageSize, paper });
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -144,11 +148,11 @@ export function ImageToPdfTool() {
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            プレビュー（{files.length}ページ・{pageSize === "a4" ? "A4に収める" : "画像サイズのまま"}）
+            プレビュー（{files.length}ページ・{pageSize === "fit" ? "画像サイズのまま" : `${paperLabel}に収める`}）
           </p>
           <ul className="flex flex-wrap gap-3">
             {files.slice(0, MAX_PREVIEW_PAGES).map((file, index) => (
-              <PdfPageThumb key={`${file.name}-${file.size}-${file.lastModified}-${index}`} file={file} index={index} pageSize={pageSize} />
+              <PdfPageThumb key={`${file.name}-${file.size}-${file.lastModified}-${index}`} file={file} index={index} pageSize={pageSize} paper={paper} />
             ))}
           </ul>
           {files.length > MAX_PREVIEW_PAGES && (
@@ -192,16 +196,48 @@ export function ImageToPdfTool() {
             </button>
             <button
               type="button"
-              onClick={() => setPageSize("a4")}
+              onClick={() => setPageSize("paper")}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                pageSize === "a4"
+                pageSize !== "fit"
                   ? "bg-blue-600 text-white"
                   : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
               }`}
             >
-              A4に収める
+              {paperLabel}に収める
             </button>
           </div>
+          {pageSize !== "fit" && (
+            <div className="flex flex-wrap items-center gap-3 text-sm" data-testid="image-to-pdf-paper">
+              <label className="flex items-center gap-2">
+                <span className="text-neutral-600 dark:text-neutral-300">用紙サイズ</span>
+                <select
+                  aria-label="用紙サイズ"
+                  value={paper.id}
+                  onChange={(e) => setPaper((p) => ({ ...p, id: e.target.value as PaperSizeId }))}
+                  className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  {PAPER_SIZE_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {PAPER_SIZE_LABELS[id]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="text-neutral-600 dark:text-neutral-300">向き</span>
+                <select
+                  aria-label="用紙の向き"
+                  value={paper.orientation}
+                  onChange={(e) => setPaper((p) => ({ ...p, orientation: e.target.value as ImageToPdfPaper["orientation"] }))}
+                  className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  <option value="portrait">縦</option>
+                  <option value="landscape">横</option>
+                  <option value="auto">画像に合わせる</option>
+                </select>
+              </label>
+            </div>
+          )}
         </div>
       )}
 

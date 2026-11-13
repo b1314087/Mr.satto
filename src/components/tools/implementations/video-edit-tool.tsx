@@ -22,7 +22,6 @@ import {
   inspectVideoFile,
   type OutputContainer,
   CONVERT_CONTAINER_OPTIONS,
-  isIsobmffContainer,
 } from "@/lib/video/shared";
 import {
   QUALITY_CHOICES,
@@ -40,7 +39,6 @@ import {
   resolutionChoicesFor,
   trimError,
   type QualityChoice,
-  type RotateChoice,
   type VideoEditFocus,
   type VideoEditSettings,
   type VideoEditToolId,
@@ -49,7 +47,6 @@ import { formatDuration, resizedDimensions } from "@/lib/video/estimate";
 import { useRevokeObjectUrlOnChange, useVideoPreview } from "@/lib/video/use-video-preview";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
-import { AdvancedSettings } from "@/components/ui/advanced-settings";
 
 /** 選んだ動画を調べた結果（解像度・fps・音声の有無・映像のコーデック・書き出せる形式） */
 interface SourceInfo {
@@ -263,6 +260,12 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
   const needsTranscode = needsReencode(settings);
   const containerAvailable = (c: OutputContainer) =>
     !source || source.encodable[c] || (!needsTranscode && canCopyVideoInto(c, source.codec));
+  // 出力形式を選ぶ欄が無いページ（圧縮・解像度・フレームレート）では、選んでいる形式（MP4）を書き出せないとき、
+  // 書き出せる形式（WebM）へ自動で切り替える（詳細設定を無くしたため、利用者が形式を選び直せない）
+  if (preset.focus !== "container" && source && !containerAvailable(settings.container)) {
+    const alternative = OUTPUT_CONTAINER_OPTIONS.map((o) => o.value).find((c) => containerAvailable(c));
+    if (alternative && alternative !== settings.container) setSettings((cur) => ({ ...cur, container: alternative }));
+  }
   const selectedContainerUnavailable = !containerAvailable(settings.container);
   const missing = missingChoice(settings);
   const resolutionOptions = source ? resolutionChoicesFor(source.width, source.height) : [];
@@ -395,38 +398,6 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     ),
   };
 
-  // 工程3：音声・回転（どのページでも「あわせて変えられる設定」に置く）
-  const editSections = (
-    <>
-      <ChoiceGroup
-        key="rotate"
-        legend="回転"
-        name={`${toolId}-rotate`}
-        options={[
-          { value: "0", label: "回転しない" },
-          { value: "90", label: "右に90°" },
-          { value: "180", label: "180°" },
-          { value: "270", label: "左に90°" },
-        ]}
-        value={String(settings.rotate)}
-        onChange={(v) => update({ rotate: Number(v) as RotateChoice })}
-        note={settings.rotate !== 0 && isIsobmffContainer(settings.container) ? "MP4・MOVは向きの情報を付けて回転します（速く、画質も変わりません）。" : undefined}
-      />
-      <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-        <input
-          type="checkbox"
-          checked={settings.muted}
-          disabled={source?.hasAudio === false}
-          onChange={(e) => update({ muted: e.target.checked })}
-          data-testid="video-edit-mute"
-        />
-        音声を消す（無音の動画にする）
-        {source?.hasAudio === false && <span className="text-xs text-neutral-500 dark:text-neutral-400">（元の動画に音声がありません）</span>}
-      </label>
-    </>
-  );
-  const otherSections = (["container", "quality", "resolution", "fps"] as const).filter((k) => k !== preset.focus);
-
   // 変換後の予定（目安）。実際の結果は、書き出したあとに読み直して表示する
   const planRows = (() => {
     if (!file || !source) return undefined;
@@ -453,29 +424,6 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     ];
   })();
 
-  // 詳細設定の見出しの横に出す、今の値の要約（例：「MP4・元の解像度・元のfps・回転なし・音声あり」）
-  const advancedSummary = [
-    ...otherSections.map((k) =>
-      k === "container"
-        ? settings.container.toUpperCase()
-        : k === "quality"
-          ? (QUALITY_CHOICES.find((o) => o.value === settings.quality)?.label ?? "")
-          : k === "resolution"
-            ? settings.resolution === null
-              ? "解像度を選んでください"
-              : settings.resolution === "original"
-                ? "元の解像度"
-                : `${settings.resolution}p`
-            : settings.fps === null
-              ? "fpsを選んでください"
-              : settings.fps === "original"
-                ? "元のfps"
-                : `${settings.fps}fps`
-    ),
-    settings.rotate === 0 ? "回転なし" : settings.rotate === 90 ? "右に90°" : settings.rotate === 180 ? "180°" : "左に90°",
-    settings.muted ? "音声なし" : "音声あり",
-  ].join("・");
-
   const busy = status === "processing";
 
   return (
@@ -499,17 +447,6 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
           <div className="flex flex-col gap-2 rounded-xl border border-blue-200 bg-blue-50/40 p-4 dark:border-blue-900 dark:bg-blue-950/20" data-testid={`video-edit-focus-${preset.focus}`}>
             {sections[preset.focus]}
           </div>
-          {/* あわせて変えられる設定は「詳細設定」にまとめ、ふだんは閉じておく。閉じていても今の値を右に出す。
-              値は閉じても消えず、書き出しのときにまとめて反映する */}
-          <AdvancedSettings
-            title="詳細設定"
-            summary={advancedSummary}
-            testId="video-edit-advanced"
-            defaultOpen={otherSections.some((k) => (k === "resolution" && settings.resolution === null) || (k === "fps" && settings.fps === null))}
-          >
-            {otherSections.map((k) => sections[k])}
-            {editSections}
-          </AdvancedSettings>
         </div>
       )}
 
@@ -548,7 +485,11 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
             </p>
           )}
           {source && selectedContainerUnavailable && (
-            <p className="text-xs text-amber-700 dark:text-amber-400">選んだ出力形式は、この設定では書き出せません。別の形式を選んでください。</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {preset.focus === "container"
+                ? "選んだ出力形式は、この設定では書き出せません。別の形式を選んでください。"
+                : "このブラウザでは、この動画を書き出せません（MP4・WebMのどちらも書き出せません）。別のブラウザ（Chrome・Edgeなど）でお試しください。"}
+            </p>
           )}
         </div>
       )}

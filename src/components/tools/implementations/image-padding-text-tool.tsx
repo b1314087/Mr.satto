@@ -155,20 +155,22 @@ function SettingsFields({
   const presetPos = paddingTextPresetPercent(values.edge, values.edgeAlign, values.bandAlign);
   const [uniformValue, setUniformValue] = useState(0);
 
+  // 2026-11：余白はバー（スライダー）と数値入力の両方で調整できるようにした。バーは0〜1000px（mmは換算）、数値入力は最大4000pxまで
+  const barMax = unit === "px" ? 1000 : Math.round(ptToMm(1000));
+  const inputMax = unit === "px" ? MAX_PADDING_PX : Math.round(ptToMm(MAX_PADDING_PX));
   function paddingField(key: "paddingTop" | "paddingBottom" | "paddingLeft" | "paddingRight", label: string) {
     return (
-      <label className="flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-300">
-        {label}
-        <input
-          type="number"
-          min={0}
-          max={unit === "px" ? MAX_PADDING_PX : Math.round(ptToMm(MAX_PADDING_PX))}
-          value={pxToDisplay(values[key], unit)}
-          onChange={(e) => onChange(key, displayToPx(Number(e.target.value), unit))}
-          className="w-20 rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-        />
-        {unitLabel}
-      </label>
+      <SliderField
+        label={label}
+        ariaLabel={`${label}`}
+        value={pxToDisplay(values[key], unit)}
+        min={0}
+        max={barMax}
+        inputMax={inputMax}
+        step={1}
+        unit={unitLabel}
+        onChange={(v) => onChange(key, displayToPx(v, unit))}
+      />
     );
   }
 
@@ -182,21 +184,16 @@ function SettingsFields({
         summary={`上${pxToDisplay(values.paddingTop, unit)}・下${pxToDisplay(values.paddingBottom, unit)}・左${pxToDisplay(values.paddingLeft, unit)}・右${pxToDisplay(values.paddingRight, unit)}${unitLabel}`}
       >
       <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="padding-sliders">
           {paddingField("paddingTop", "上")}
           {paddingField("paddingBottom", "下")}
           {paddingField("paddingLeft", "左")}
           {paddingField("paddingRight", "右")}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            value={uniformValue}
-            onChange={(e) => setUniformValue(Number(e.target.value))}
-            className="w-20 rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-          />
-          <span className="text-xs text-neutral-500 dark:text-neutral-400">{unitLabel}</span>
+        <div className="flex flex-wrap items-end gap-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+          <div className="min-w-48 flex-1">
+            <SliderField label="4辺まとめて" value={uniformValue} min={0} max={barMax} inputMax={inputMax} step={1} unit={unitLabel} onChange={setUniformValue} />
+          </div>
           <button
             type="button"
             onClick={() => {

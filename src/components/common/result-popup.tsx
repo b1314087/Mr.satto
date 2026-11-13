@@ -24,8 +24,14 @@ export function ResultPopup({
   title = "できあがりました",
   size = "md",
   testId,
+  headerAction,
 }: {
   children: ReactNode;
+  /**
+   * 見出しの右（閉じるボタンの左）に置く操作（例：ダウンロード）。見出しは上に固定され、
+   * 結果が長くスクロールしても、いつでも押せる（2026-11：PowerPoint白黒反転の結果画面）
+   */
+  headerAction?: ReactNode;
   title?: string;
   /** md: 通常（28rem）、lg: プレビューや一覧が入る時（42rem） */
   size?: "md" | "lg";
@@ -77,7 +83,14 @@ export function ResultPopup({
       panelTestId="result-popup"
       panelProps={size === "lg" ? { style: { maxWidth: "42rem" } } : undefined}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div
+        className={
+          headerAction
+            ? "sticky -top-6 z-10 -mx-6 -mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ms-border)] bg-[var(--ms-surface-strong)] px-6 pb-3 pt-6"
+            : "flex items-center justify-between gap-3"
+        }
+        data-testid={headerAction ? "result-popup-header" : undefined}
+      >
         <h2 id={titleId} className="flex items-center gap-2 text-base font-semibold text-ms-text">
           <span className="ms-status-icon text-ms-success" aria-hidden="true">
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -86,6 +99,8 @@ export function ResultPopup({
           </span>
           {title}
         </h2>
+        <div className="ml-auto flex items-center gap-2">
+        {headerAction && <div data-testid="result-popup-header-action">{headerAction}</div>}
         <button
           type="button"
           onClick={close}
@@ -96,6 +111,7 @@ export function ResultPopup({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+        </div>
       </div>
       <div data-testid={testId} className="flex flex-col items-start gap-3">
         {children}

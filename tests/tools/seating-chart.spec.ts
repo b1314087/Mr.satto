@@ -943,7 +943,7 @@ test("seating-chart: PDFの用紙（B6などJISのA・B列ぜんぶ）と向き�
   await start(page, "classroom", ["前の左", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "後ろの右"]);
   await page.getByTestId("seat-format-pdf").click();
   const options = await page.getByTestId("seat-paper").locator("option").evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
-  plainExpect(options).toEqual(["A3", "A4", "A5", "A6", "B4", "B5", "B6", "Letter", "Legal"]);
+  plainExpect(options).toEqual(["A0", "A1", "A2", "A3", "A4", "A5", "A6", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "Letter", "Legal", "Ledger", "Executive", "Postcard"]);
 
   const download = async () => {
     const pdf = await clickAndDownload(page, "PDFでダウンロード");
@@ -1371,26 +1371,18 @@ test("グループワーク「片側だけ」：選ぶと席が机の片側に�
   expect(await rowsOf()).toBe(before);
 });
 
-test("設定は折りたたみ式：設定のまとまりごとに見出しがあり、見出しを押すとそのまとまりだけが開閉する（閉じても値は残る）（総合改修 7-1）", async ({ page }) => {
+test("設定は折りたたまない：見出しを押して閉じる欄（プルダウン）は無く、設定はいつも見えている（2026-11）", async ({ page }) => {
   await openTool(page);
   await start(page, "meeting", PEOPLE);
   await openSeatPanel(page, "layout");
-  const layout = page.getByTestId("seat-section-layout");
-  await expect(layout).toHaveAttribute("open", "");
-  const groups = layout.locator("details[data-testid^='seat-group-']");
-  expect(await groups.count()).toBeGreaterThan(1);
-  const first = groups.first();
-  const second = groups.nth(1);
-  await expect(first).toHaveAttribute("open", "");
-  await first.locator("summary").first().click();
-  await expect(first).not.toHaveAttribute("open", "");
-  await expect(second).toHaveAttribute("open", ""); // ほかのまとまりは開いたまま
-  await first.locator("summary").first().click();
-  await expect(first).toHaveAttribute("open", "");
-  // 名前の欄を閉じても、入れた名前は席に残る
+  await expect(page.getByTestId("seat-settings")).toBeVisible();
+  // ツールの設定・メニューの中だけを見る（ページ下のよくある質問の開閉は対象外）
+  const menu = page.locator('[data-testid="seat-menu"], [data-testid^="seat-panel"]');
+  await expect(page.getByTestId("seat-panel-layout").locator("details, summary")).toHaveCount(0);
+  await expect(menu.locator("details")).toHaveCount(0);
+  await expect(menu.locator("summary")).toHaveCount(0);
   await openSeatPanel(page, "names");
-  const names = page.getByTestId("seat-section-names");
-  await names.locator("summary").first().click();
-  await expect(names).not.toHaveAttribute("open", "");
+  await expect(page.getByTestId("seat-panel-names")).toBeVisible();
+  await expect(menu.locator("details")).toHaveCount(0);
   expect(await seatNames(page)).toContain(MARKER);
 });

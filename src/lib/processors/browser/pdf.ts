@@ -1,7 +1,7 @@
 
 import { BrowserProcessor, type PdfProcessorOutput, type NamedFileOutput } from "../types";
 import { loadImage, canvasToBlob } from "./image";
-import { computeImagePageLayout } from "./image-to-pdf-layout";
+import { computeImagePageLayout, type ImageToPdfPageSize, type ImageToPdfPaper } from "./image-to-pdf-layout";
 import { stripExtension } from "@/lib/utils/format";
 import { assertValidPageRange, parsePageSelection, rangeToIndices } from "@/lib/pdf/page-selection";
 import { loadJapaneseFontBytes } from "@/lib/pdf/japanese-font";
@@ -511,12 +511,14 @@ async function toEmbeddableImage(
 export interface ImageToPdfInput {
   /** PDFに追加する順序 = 配列の順序 */
   files: File[];
-  /** "fit" = 画像サイズそのままの1ページ / "a4" = A4中央配置 */
-  pageSize?: "fit" | "a4";
+  /** "fit" = 画像サイズそのままの1ページ / "a4" = A4中央配置 / "paper" = 選んだ用紙サイズ・向きに中央配置 */
+  pageSize?: ImageToPdfPageSize;
+  /** pageSize が "paper" のときの用紙と向き */
+  paper?: ImageToPdfPaper;
 }
 
 export class ImagesToPdfProcessor extends BrowserProcessor<ImageToPdfInput, PdfProcessorOutput> {
-  async process({ files, pageSize = "fit" }: ImageToPdfInput) {
+  async process({ files, pageSize = "fit", paper }: ImageToPdfInput) {
     await ensurePdfLib();
     if (files.length === 0) {
       throw new Error("PDF化する画像を選択してください");
@@ -542,7 +544,7 @@ export class ImagesToPdfProcessor extends BrowserProcessor<ImageToPdfInput, PdfP
       const shownH = swap ? image.width : image.height;
 
       // ページ配置はライブプレビュー(image-to-pdf-tool)と共通の計算を使う（表示したときの幅・高さで計算する）
-      const layout = computeImagePageLayout(shownW, shownH, pageSize);
+      const layout = computeImagePageLayout(shownW, shownH, pageSize, paper);
       const page = doc.addPage([layout.pageWidth, layout.pageHeight]);
       if (orientation === 1) {
         page.drawImage(image, { x: layout.x, y: layout.y, width: layout.width, height: layout.height });

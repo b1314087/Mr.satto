@@ -43,7 +43,6 @@ import { exportChart, PAPER_SIZES, usesRedNumbers, type ExportFormat, type Paper
 import { classifyMergeFile, loadMergeFile, MERGE_LEGACY_EXCEL_MESSAGE, MERGE_UNSUPPORTED_MESSAGE } from "@/lib/processors/browser/excel-merge";
 import { downloadBlob, sanitizeFileName } from "@/lib/utils/format";
 import { Segmented } from "@/components/ui/segmented";
-import { SettingsSection } from "@/components/ui/settings-section";
 
 /** 人数に合わせて自動で変わる項目（手で変えると「人数に合わせる」を外す） */
 const AUTO_FIELDS: Record<Purpose, (keyof LayoutParams)[]> = {
@@ -104,6 +103,7 @@ const PURPOSE_ICON: Record<Purpose, string> = {
 const inputClass = "w-20 rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
 const smallButton =
   "ms-focus-ring rounded-lg bg-neutral-100 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700";
+const sectionClass = "flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800";
 
 
 /**
@@ -466,7 +466,10 @@ export function SeatingChartTool() {
   }
 
   const step1 = (
-      <SettingsSection title={purpose ? "用途を選ぶ" : "1. 用途を選ぶ"} testId="seat-section-purpose" bodyClassName="gap-3">
+      <section className={sectionClass} aria-labelledby="seat-step1">
+        <h2 id="seat-step1" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+          {purpose ? "用途を選ぶ" : "1. 用途を選ぶ"}
+        </h2>
         <div role="radiogroup" aria-label="用途" className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${purpose ? "lg:grid-cols-2" : ""}`}>
           {PURPOSES.map((p) => (
             <button
@@ -490,7 +493,7 @@ export function SeatingChartTool() {
             </button>
           ))}
         </div>
-      </SettingsSection>
+      </section>
   );
 
   // 座席のレイアウト（見出し・席の数・並び方・島の名前・通路・卓や机。用途を選んだあとに出す）
@@ -498,7 +501,10 @@ export function SeatingChartTool() {
   const isTables = purpose === "group" || purpose === "round";
   const tableNoun = purpose === "round" ? "テーブル" : "島";
   const layoutSection = (
-      <SettingsSection title="座席のレイアウト" testId="seat-section-layout" bodyClassName="gap-3">
+      <section className={sectionClass} aria-labelledby="seat-layout-heading">
+        <h2 id="seat-layout-heading" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+          座席のレイアウト
+        </h2>
         {purpose && params && (
           <div className="flex flex-col gap-4" data-testid="seat-settings">
             <FormGroup title="見出し">
@@ -717,7 +723,7 @@ export function SeatingChartTool() {
             )}
           </div>
         )}
-      </SettingsSection>
+      </section>
   );
 
   return (
@@ -752,8 +758,11 @@ export function SeatingChartTool() {
 
       {purpose && (
         <div hidden={panel !== "names"} data-testid="seat-panel-names">
-        <SettingsSection title="名前を入れる" testId="seat-section-names" bodyClassName="gap-3">
+        <section className={sectionClass} aria-labelledby="seat-step2">
           <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 id="seat-step2" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+              名前を入れる
+            </h2>
             <div className="flex items-center gap-2">
               <input
                 ref={fileRef}
@@ -824,14 +833,17 @@ export function SeatingChartTool() {
               }}
             />
           )}
-        </SettingsSection>
+        </section>
         </div>
       )}
 
       {purpose && model && (
         // 鍵の印の表示（プレビューの欄には置かない。生徒に見せる画面に、切り替えのスイッチを出さないため）
         <div hidden={panel !== "marks"} data-testid="seat-panel-marks">
-        <SettingsSection title="鍵をかけた席の確認" testId="seat-marks-section" bodyClassName="gap-3">
+        <section className={sectionClass} aria-labelledby="seat-marks-heading" data-testid="seat-marks-section">
+          <h2 id="seat-marks-heading" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+            鍵をかけた席の確認
+          </h2>
           <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-200">
             <input type="checkbox" checked={showMarks} onChange={(e) => setShowMarks(e.target.checked)} className="mt-1" data-testid="seat-show-marks" />
             <span>
@@ -846,7 +858,7 @@ export function SeatingChartTool() {
               鍵をかけた席：{lockedSet.size}席
             </p>
           )}
-        </SettingsSection>
+        </section>
         </div>
       )}
 
@@ -870,7 +882,10 @@ export function SeatingChartTool() {
       )}
 
       {purpose && model && (
-        <SettingsSection title="書き出す" testId="seat-section-export" bodyClassName="gap-3">
+        <section className={sectionClass} aria-labelledby="seat-step3">
+          <h2 id="seat-step3" className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+            書き出す
+          </h2>
           <div className="flex flex-col gap-2.5">
             <FormRow label="形式">
               <div role="radiogroup" aria-label="書き出す形式" className="ms-seg">
@@ -923,7 +938,7 @@ export function SeatingChartTool() {
           </div>
           <RewardedDownloadGate onDownload={download} label={`${FORMATS.find((f) => f.value === format)!.label}でダウンロード`} disabled={participants.length === 0} />
           {exportError && <ErrorMessage message={exportError} />}
-        </SettingsSection>
+        </section>
       )}
           </div>
           <div className="contents lg:order-1 lg:block lg:min-w-0 lg:self-start lg:sticky lg:top-20">
@@ -1508,20 +1523,15 @@ function ConditionsPanel({
   );
 
   return (
-    <SettingsSection
-      testId="seat-conditions"
-      bodyClassName="gap-3"
-      title={
-        <span className="flex items-center gap-2">
-            席の条件
-            {warn && (
-              <span className="rounded-full bg-amber-400 px-1.5 text-[10px] font-bold text-amber-950" title="満たしていない条件があります" data-testid="seat-conditions-warn">
-                ！
-              </span>
-            )}
-        </span>
-      }
-    >
+    <section className={sectionClass} aria-label="席の条件" data-testid="seat-conditions">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+        席の条件
+        {warn && (
+          <span className="rounded-full bg-amber-400 px-1.5 text-[10px] font-bold text-amber-950" title="満たしていない条件があります" data-testid="seat-conditions-warn">
+            ！
+          </span>
+        )}
+      </h2>
       <>
         <div className="flex flex-col gap-2" data-testid="seat-conditions-body">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -1625,7 +1635,7 @@ function ConditionsPanel({
           )}
         </div>
       </>
-    </SettingsSection>
+    </section>
   );
 }
 
@@ -1858,12 +1868,13 @@ function TableLabelEditor({ round, count, labels, onChange }: { round: boolean; 
   );
 }
 
-/** 設定のまとまり（総合改修 7-1：見出しを押すと、そのまとまりだけを開閉できる） */
+/** 設定のまとまり（小見出しと、その下の行） */
 function FormGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <SettingsSection title={title} testId={`seat-group-${title}`} bodyClassName="gap-2.5">
+    <fieldset className="flex flex-col gap-2.5 border-t border-neutral-100 pt-3 first:border-t-0 first:pt-0 dark:border-neutral-800">
+      <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">{title}</legend>
       {children}
-    </SettingsSection>
+    </fieldset>
   );
 }
 

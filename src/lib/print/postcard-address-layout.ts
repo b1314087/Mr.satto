@@ -75,6 +75,20 @@ export interface PostcardAddressInput {
   offsetYmm: number;
 }
 
+/** Excel・CSVから読み込んだ、1件分の宛先 */
+export interface PostcardRecipient {
+  zip: string;
+  address: string;
+  name: string;
+  /** 敬称（列が無いときは、画面で選んだ敬称を使う） */
+  honorific?: EnvelopeHonorific;
+}
+
+/** 画面の設定（差出人・位置など）に、1件分の宛先を当てはめる */
+export function applyRecipient(base: PostcardAddressInput, r: PostcardRecipient): PostcardAddressInput {
+  return { ...base, recipientZip: r.zip, recipientAddress: r.address, recipientName: r.name, honorific: r.honorific ?? base.honorific };
+}
+
 export function defaultPostcardAddress(): PostcardAddressInput {
   return {
     recipientZip: "",

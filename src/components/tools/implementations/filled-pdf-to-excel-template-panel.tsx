@@ -1,5 +1,6 @@
 "use client";
 
+import { ZoomSlider } from "@/components/common/zoom-slider";
 import { useEffect, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
@@ -566,6 +567,10 @@ export function FilledPdfToExcelTemplatePanel() {
 
             <div className="flex items-center gap-1" role="group" aria-label="表示倍率">
               <span className="text-xs text-neutral-500 dark:text-neutral-400">表示倍率:</span>
+              <ZoomSlider value={zoomPercent} min={50} max={300} step={10} onChange={(p) => void handleZoomChange(p)} testId="template-zoom-slider" className="w-32" />
+              <span className="w-10 text-right text-xs tabular-nums" data-testid="template-zoom-value">
+                {zoomPercent}%
+              </span>
               {ZOOM_LEVELS.map((level) => (
                 <button
                   key={level}

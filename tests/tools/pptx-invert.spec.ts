@@ -162,7 +162,12 @@ test.describe("PowerPoint白黒反転: 画面", () => {
     });
     await expect(page.getByTestId("pptx-result")).toHaveAttribute("data-notes", /テーマの色/);
 
-    // ダウンロード
+    // ダウンロード：結果画面の右上（上に固定した見出し）にある（2026-11）。画像の一覧を下までスクロールしても見えている
+    const headerAction = page.getByTestId("result-popup-header-action");
+    await expect(headerAction.getByRole("button", { name: "PowerPointファイルをダウンロード" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "PowerPointファイルをダウンロード" })).toHaveCount(1);
+    await page.getByTestId("result-popup").evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await expect(headerAction.getByRole("button", { name: "PowerPointファイルをダウンロード" })).toBeInViewport();
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "PowerPointファイルをダウンロード" }).click();
     const download = await downloadPromise;

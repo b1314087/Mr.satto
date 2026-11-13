@@ -49,6 +49,7 @@ import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob } from "@/lib/utils/format";
 import { SliderField } from "@/components/common/slider-field";
 import { usePremiumFeature } from "@/lib/plans/use-premium-feature";
+import { createPortal } from "react-dom";
 import { RunBar } from "@/components/ui/run-bar";
 import { usePrehydrationValue } from "@/lib/hooks/use-prehydration-value";
 import { Segmented } from "@/components/ui/segmented";
@@ -451,6 +452,10 @@ function TextStampPanel({
     setWithQr(idMode);
     setTarget(null);
   }
+  /** 印影を重ねたPDFのページを出す、プレビューの列の場所 */
+  const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
+  /** 押印するPDFの欄を先頭に出すときの、見出しの番号のずれ */
+  const pdfOffset = idMode && withQr ? 1 : 0;
   // 未入力の項目はQRコードに入れない(空のときは渡さない)
   const qrOptional = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
 
@@ -620,8 +625,11 @@ function TextStampPanel({
 
   return (
     <PreviewSplitLayout
+      mobileSticky={idMode && withQr && !!target}
       preview={
       <div className="flex flex-col items-center justify-center gap-2">
+        {/* 押印するPDFを選んだら、印影を重ねたPDFのページをここに出す（StampPdfTarget から） */}
+        {idMode && withQr && <div ref={setPdfSlot} className="w-full empty:hidden" data-testid="stamp-pdf-preview-slot" />}
         <div data-testid="tool-preview" className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700" style={CHECKER_STYLE}>
           <canvas ref={previewRef} aria-label="印影のプレビュー" className="max-h-72 max-w-full" />
         </div>
@@ -629,7 +637,20 @@ function TextStampPanel({
       }
     >
       <SettingsStack className="flex-1" testId="stamp-text-settings">
-        <SettingsSection n={1} title="文字" testId="stamp-section-text" summary={text}>
+        {/* 2026-11：固有ID付きでQRコードを入れるときは、押印するPDFをいちばん上で選ぶ */}
+        {idMode && withQr && (
+          <SettingsSection n={1} title="押印するPDF" testId="stamp-section-pdf">
+            <StampPdfTarget
+              value={target}
+              onChange={setTarget}
+              stamp={placementStamp}
+              imageWidthRatio={placementStamp ? placementStamp.width / stampSizePx : 1}
+              multiPage={premium.allowed}
+              viewSlot={pdfSlot}
+            />
+          </SettingsSection>
+        )}
+        <SettingsSection n={1 + pdfOffset} title="文字" testId="stamp-section-text" summary={text}>
           <div>
             <label htmlFor="stamp-text-input" className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-200">
               文字
@@ -653,7 +674,7 @@ function TextStampPanel({
         </SettingsSection>
 
         <SettingsSection
-          n={2}
+          n={2 + pdfOffset}
           title="形・色・大きさ"
           testId="stamp-section-look"
           summary={`${shape === "round" ? "丸印" : "角印"}・${layout === "vertical" ? "縦書き" : "横書き"}・${COLOR_OPTIONS.find((c) => c.id === color)?.label ?? ""}`}
@@ -730,7 +751,7 @@ function TextStampPanel({
           <SliderField label="文字サイズ" value={Math.round(fontScale * 100)} min={50} max={150} step={5} unit="%" onChange={(v) => setFontScale(v / 100)} />
         </SettingsSection>
 
-        <SettingsSection n={3} title="フォント" testId="stamp-section-font" summary={customFont ? customFont.fileName : "標準（ゴシック体）"} bodyClassName="flex flex-col gap-2">
+        <SettingsSection n={3 + pdfOffset} title="フォント" testId="stamp-section-font" summary={customFont ? customFont.fileName : "標準（ゴシック体）"} bodyClassName="flex flex-col gap-2">
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             標準はゴシック体です。篆書体・印相体などを使うときは、お手持ちのフォントファイル（.ttf / .otf / .woff / .woff2）を選んでください（ブラウザの中だけで使います）。
           </p>
@@ -760,7 +781,7 @@ function TextStampPanel({
           )}
         </SettingsSection>
 
-        <SettingsSection n={4} title="詳細設定（枠の太さ・余白・文字の位置）" testId="stamp-section-detail" defaultOpen={false} bodyClassName="flex flex-col gap-3 text-sm">
+        <SettingsSection n={4 + pdfOffset} title="詳細設定（枠の太さ・余白・文字の位置）" testId="stamp-section-detail" defaultOpen={false} bodyClassName="flex flex-col gap-3 text-sm">
           <label className="flex flex-col gap-1 text-neutral-700 dark:text-neutral-200">
             枠の太さ
             <input type="range" min={0.01} max={0.1} step={0.005} value={borderWidthRatio} onChange={(e) => setBorderWidthRatio(Number(e.target.value))} />
@@ -786,7 +807,7 @@ function TextStampPanel({
         </SettingsSection>
 
         {idMode && (
-          <SettingsSection n={5} title="固有ID・QRコード" testId="stamp-section-id" summary={withQr ? "QRコードあり" : "QRコードなし"} bodyClassName="flex flex-col gap-3">
+          <SettingsSection n={5 + pdfOffset} title="固有ID・QRコード" testId="stamp-section-id" summary={withQr ? "QRコードあり" : "QRコードなし"} bodyClassName="flex flex-col gap-3">
             <QrOption
               checked={withQr}
               onChange={(v) => {
@@ -823,19 +844,7 @@ function TextStampPanel({
           </SettingsSection>
         )}
 
-        {idMode && withQr ? (
-          <SettingsSection n={6} title="押印するPDF" testId="stamp-section-pdf">
-            <StampPdfTarget
-              value={target}
-              onChange={setTarget}
-              stamp={placementStamp}
-              imageWidthRatio={placementStamp ? placementStamp.width / stampSizePx : 1}
-              multiPage={premium.allowed}
-            />
-          </SettingsSection>
-        ) : (
-          <OutputFormatSection n={idMode ? 6 : 5} value={format} onChange={onFormat} />
-        )}
+        {!(idMode && withQr) && <OutputFormatSection n={idMode ? 6 : 5} value={format} onChange={onFormat} />}
 
         <RunBar>
           <button
@@ -919,6 +928,9 @@ function ImportStampPanel({
     setWithQr(idMode);
     setTarget(null);
   }
+  /** 印影を重ねたPDFのページを出す、プレビューの列の場所 */
+  const [pdfSlot, setPdfSlot] = useState<HTMLDivElement | null>(null);
+  const pdfOffset = idMode && withQr ? 1 : 0;
   /** 調整後の印影(PDFの上の位置を見せるため。finalCanvasRef と同じもの) */
   const [finalCanvas, setFinalCanvas] = useState<HTMLCanvasElement | null>(null);
   const optionalInfo = { ...(createdDate ? { createdDate } : {}), ...(authCode ? { authCode } : {}) };
@@ -1245,8 +1257,10 @@ function ImportStampPanel({
 
       {step === "adjust" && (
         <PreviewSplitLayout
+          mobileSticky={idMode && withQr && !!target}
           preview={
           <div className="flex flex-col items-center justify-center gap-2">
+            {idMode && withQr && <div ref={setPdfSlot} className="w-full empty:hidden" data-testid="stamp-pdf-preview-slot" />}
             <div data-testid="tool-preview" className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700" style={CHECKER_STYLE}>
               <canvas ref={finalPreviewRef} data-testid="stamp-final-preview" aria-label="調整後の印影プレビュー" className="max-h-72 max-w-full" />
             </div>
@@ -1254,7 +1268,19 @@ function ImportStampPanel({
           }
         >
           <SettingsStack className="flex-1" testId="stamp-import-settings">
-            <SettingsSection n={1} title="背景と余白" testId="stamp-section-background" summary={removalEnabled ? "背景を透明にする" : "背景をそのまま"} bodyClassName="flex flex-col gap-3">
+            {idMode && withQr && (
+              <SettingsSection n={1} title="押印するPDF" testId="stamp-section-pdf">
+                <StampPdfTarget
+                  value={target}
+                  onChange={setTarget}
+                  stamp={placementStamp}
+                  imageWidthRatio={placementStamp && finalCanvas ? placementStamp.width / finalCanvas.width : 1}
+                  multiPage={premium.allowed}
+                  viewSlot={pdfSlot}
+                />
+              </SettingsSection>
+            )}
+            <SettingsSection n={1 + pdfOffset} title="背景と余白" testId="stamp-section-background" summary={removalEnabled ? "背景を透明にする" : "背景をそのまま"} bodyClassName="flex flex-col gap-3">
               <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
                 <input type="checkbox" checked={removalEnabled} onChange={(e) => setRemovalEnabled(e.target.checked)} />
                 背景を自動的に透明化する
@@ -1279,7 +1305,7 @@ function ImportStampPanel({
               {trimMessage && <p className="text-xs text-amber-700 dark:text-amber-400">{trimMessage}</p>}
             </SettingsSection>
 
-            <SettingsSection n={2} title="出力サイズ" testId="stamp-section-scale" summary={`${scalePercent}%`}>
+            <SettingsSection n={2 + pdfOffset} title="出力サイズ" testId="stamp-section-scale" summary={`${scalePercent}%`}>
               <div className="ms-seg" role="group" aria-label="出力サイズ">
                 {[50, 100, 150, 200].map((p) => (
                   <button key={p} type="button" aria-pressed={scalePercent === p} onClick={() => setScalePercent(p)}>
@@ -1290,7 +1316,7 @@ function ImportStampPanel({
             </SettingsSection>
 
             {idMode && (
-              <SettingsSection n={3} title="固有ID・QRコード" testId="stamp-section-id" summary={withQr ? "QRコードあり" : "QRコードなし"} bodyClassName="flex flex-col gap-3">
+              <SettingsSection n={3 + pdfOffset} title="固有ID・QRコード" testId="stamp-section-id" summary={withQr ? "QRコードあり" : "QRコードなし"} bodyClassName="flex flex-col gap-3">
                 <QrOption
                   checked={withQr}
                   onChange={(v) => {
@@ -1304,19 +1330,7 @@ function ImportStampPanel({
               </SettingsSection>
             )}
 
-            {idMode && withQr ? (
-              <SettingsSection n={4} title="押印するPDF" testId="stamp-section-pdf">
-                <StampPdfTarget
-                  value={target}
-                  onChange={setTarget}
-                  stamp={placementStamp}
-                  imageWidthRatio={placementStamp && finalCanvas ? placementStamp.width / finalCanvas.width : 1}
-                  multiPage={premium.allowed}
-                />
-              </SettingsSection>
-            ) : (
-              <OutputFormatSection n={idMode ? 4 : 3} value={format} onChange={onFormat} />
-            )}
+            {!(idMode && withQr) && <OutputFormatSection n={idMode ? 4 : 3} value={format} onChange={onFormat} />}
 
             <RunBar>
               <button
@@ -1465,12 +1479,15 @@ function StampPdfTarget({
   stamp,
   imageWidthRatio,
   multiPage = false,
+  viewSlot = null,
 }: {
   value: StampPdfTargetValue | null;
   onChange: (v: StampPdfTargetValue | null) => void;
   stamp: HTMLCanvasElement | null;
   imageWidthRatio: number;
   multiPage?: boolean;
+  /** 印影を重ねたPDFのページを表示する場所（プレビューの列）。無いときは、この欄の下に出す */
+  viewSlot?: HTMLElement | null;
 }) {
   const pdfRef = useRef<Awaited<ReturnType<typeof loadStampPdf>> | null>(null);
   const viewRef = useRef<HTMLCanvasElement>(null);
@@ -1620,18 +1637,19 @@ function StampPdfTarget({
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           固有番号とQRコードを入れた印影は、PDFに押して出力します。PDFはこのブラウザの中だけで読み込み、どこにも送信しません。
         </p>
-        {/* ファイルを選ぶボタンは、全ツール共通の部品（FilePickButton）を使う */}
-        <FilePickButton
+        {/* 2026-11：ドラッグ&ドロップで選べるようにし、ページのどこへ落としても受け取る（ほかに受け取り欄が無いとき）。枠は小さめ */}
+        <FileDropzone
           accept="application/pdf,.pdf"
           size="sm"
-          className="w-fit"
-          loading={loading}
-          inputLabel="押印するPDF"
+          compact={!!value}
+          label="押印するPDFをドラッグ&ドロップ"
+          hint="またはタップして選択（画面のどこへドロップしても受け取ります）"
           inputTestId="stamp-target-pdf-input"
-          onFilesSelected={(files) => void pick(files[0])}
-        >
-          {value ? "別のPDFを選ぶ" : "PDFを選ぶ"}
-        </FilePickButton>
+          acceptHandoff={false}
+          pageDrop
+          onFilesSelected={(files) => files[0] && void pick(files[0])}
+          onError={setLoadError}
+        />
         {loading && <span className="text-xs text-neutral-500">PDFを読み込んでいます…</span>}
         {loadError && <span className="text-xs text-red-600 dark:text-red-400">{loadError}</span>}
         {value && (
@@ -1791,11 +1809,19 @@ function StampPdfTarget({
           )}
         </>
       )}
-      {value && (
-        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-900">
-          <canvas ref={viewRef} aria-label="PDFの上の印影の位置" className="h-auto w-full" />
-        </div>
-      )}
+      {value &&
+        (() => {
+          const view = (
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-2 dark:border-neutral-700 dark:bg-neutral-900" data-testid="stamp-pdf-view">
+              <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">
+                {value.file.name}・{page ? page.index + 1 : 1}ページ目（印影の位置の確認）
+              </p>
+              <canvas ref={viewRef} aria-label="PDFの上の印影の位置" className="h-auto max-h-[70vh] w-full object-contain" />
+            </div>
+          );
+          // プレビューの列に、印影を重ねたPDFのページを出す（設定を変えながら、押す位置を見られるように）
+          return viewSlot ? createPortal(view, viewSlot) : view;
+        })()}
     </div>
   );
 }

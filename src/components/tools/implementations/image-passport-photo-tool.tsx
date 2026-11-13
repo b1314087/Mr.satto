@@ -1,5 +1,6 @@
 "use client";
 
+import { ZoomSlider } from "@/components/common/zoom-slider";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -484,6 +485,23 @@ export function ImagePassportPhotoTool() {
             </div>
           </div>
 
+          {/* 拡大率のバー：切り抜き枠の幅が写真の幅いっぱいのとき100%、半分のとき200%（枠が小さいほど大きく写る） */}
+          {naturalSize && (
+            <div className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200" data-testid="passport-zoom">
+              <span className="whitespace-nowrap">拡大率</span>
+              <ZoomSlider
+                label="拡大率"
+                value={Math.round(10000 / Math.max(1, box.wPct))}
+                min={100}
+                max={500}
+                step={5}
+                onChange={(z) => setBox((b) => boxWithWidthPct(b, 10000 / z, ratio, naturalSize))}
+                testId="passport-zoom-slider"
+                className="w-48"
+              />
+              <span className="w-12 text-right tabular-nums">{Math.round(10000 / Math.max(1, box.wPct))}%</span>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"

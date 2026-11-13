@@ -60,12 +60,12 @@ const MP3 = "voice.mp3";
 const AUDIO_FORMATS = ["元の形式のまま", "MP3", "WAV", "OGG（Opus）"];
 
 /** 動画の編集ツール（圧縮・形式変換・解像度・フレームレート）共通：主の設定・詳細設定・実行 */
-const videoEdit = (mainLabel: string, options: string[], on: number, advSummary: string, runLabel: string): ToolGuide => ({
+const videoEdit = (mainLabel: string, options: string[], on: number, runLabel: string): ToolGuide => ({
   split: false,
   steps: [
     pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),
-    step("設定を選ぶ", [file(MP4), seg(mainLabel, options, on), adv("詳細設定", advSummary), preview("video")], 1),
-    ...finish("書き出す", runLabel, [file(MP4), seg(mainLabel, options, on), adv("詳細設定", advSummary)]),
+    step("設定を選ぶ", [file(MP4), seg(mainLabel, options, on), preview("video")], 1),
+    ...finish("書き出す", runLabel, [file(MP4), seg(mainLabel, options, on)]),
   ],
 });
 
@@ -485,10 +485,10 @@ export const toolGuides: Record<string, ToolGuide> = {
   },
 
   // ------------------------------------------------------------------ 動画・音声
-  "video-convert": videoEdit("出力形式", ["MP4", "MOV", "WebM", "MKV"], 0, "元のまま・元の解像度・元のfps・回転なし・音声あり", "変換する"),
-  "video-compress": videoEdit("画質・圧縮", ["元のまま", "高画質（弱め）", "標準", "高圧縮（強め）"], 2, "MP4・元の解像度・元のfps・回転なし・音声あり", "圧縮する"),
-  "video-resize": videoEdit("解像度", ["元の解像度", "1080p", "720p", "480p"], 2, "MP4・元のまま・元のfps・回転なし・音声あり", "解像度を変更する"),
-  "video-frame-rate": videoEdit("フレームレート", ["元のフレームレート", "60fps", "30fps", "24fps"], 2, "MP4・元のまま・元の解像度・回転なし・音声あり", "フレームレートを変更する"),
+  "video-convert": videoEdit("出力形式", ["MP4", "MOV", "WebM", "MKV"], 0, "変換する"),
+  "video-compress": videoEdit("画質・圧縮", ["元のまま", "高画質（弱め）", "標準", "高圧縮（強め）"], 2, "圧縮する"),
+  "video-resize": videoEdit("解像度", ["元の解像度", "1080p", "720p", "480p"], 2, "解像度を変更する"),
+  "video-frame-rate": videoEdit("フレームレート", ["元のフレームレート", "60fps", "30fps", "24fps"], 2, "フレームレートを変更する"),
   "video-h264": {
     steps: [
       pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),
@@ -516,6 +516,13 @@ export const toolGuides: Record<string, ToolGuide> = {
       { title: "調べる向きを選ぶ", parts: [seg(undefined, ["郵便番号から住所", "住所から郵便番号"], 0)], focus: 0 },
       { title: "郵便番号か住所を入れる", parts: [seg(undefined, ["郵便番号から住所", "住所から郵便番号"], 0), input("郵便番号", "100-0001"), btn("住所を調べる")], focus: 1 },
       { title: "結果をコピーする", parts: [input("〒100-0001", "東京都千代田区千代田"), btn("コピー")], focus: 1 },
+    ],
+  },
+  "postal-search@address": {
+    steps: [
+      { title: "「住所から郵便番号」を選ぶ", parts: [seg(undefined, ["郵便番号から住所", "住所から郵便番号"], 1)], focus: 0 },
+      { title: "住所の一部を入れる", parts: [seg(undefined, ["郵便番号から住所", "住所から郵便番号"], 1), input("住所", "千代田区丸の内"), btn("郵便番号を調べる")], focus: 1 },
+      { title: "郵便番号をコピーする", parts: [input("東京都千代田区丸の内", "〒100-0005"), btn("コピー")], focus: 1 },
     ],
   },
   "video-cut-merge": {
@@ -647,10 +654,9 @@ export const toolGuides: Record<string, ToolGuide> = {
   postcard: {
     split: true,
     steps: [
-      step("作る面とはがきの向きを選ぶ", [seg("作る面", ["文字・画像の面", "宛名面"], 0), head("はがきの向き", 1), seg(undefined, ["縦向き", "横向き"], 0), preview("postcard")], 2),
-      step("文字を置く", [btn("＋ 文字を追加"), text("文字（改行できます）", ["あけまして", "おめでとうございます"]), slider("横の位置（X）", 0.5, "50%"), slider("縦の位置（Y）", 0.7, "70%"), preview("postcard")], 1),
+      step("宛名面に宛先を入れる（郵便番号で住所が入る）", [seg("作る面", ["宛名面", "文字・画像の面"], 0), head("宛先", 2), input("郵便番号（7けた）", "100-0001"), text("住所", ["東京都千代田区千代田1-1"]), input("氏名", "山田 太郎"), preview("postcard")], 2),
+      step("文字を置く", [seg("作る面", ["宛名面", "文字・画像の面"], 1), btn("＋ 文字を追加"), text("文字（改行できます）", ["あけまして", "おめでとうございます"]), slider("横の位置（X）", 0.5, "50%"), preview("postcard")], 1),
       step("画像を置く", [btn("＋ 画像を追加"), slider("画像の大きさ（はがきの幅に対する割合）", 0.3, "60%"), slider("縦の位置（Y）", 0.3, "30%"), preview("postcard")], 0),
-      step("宛名面を作るとき", [seg("作る面", ["文字・画像の面", "宛名面"], 1), head("宛先", 1), input("郵便番号（7けた）", "100-0001"), text("住所", ["東京都千代田区千代田1-1"]), input("氏名", "山田 太郎")], 2),
       { title: "PDFにして印刷する", parts: [head("PDFにして印刷する", 3), run("PDFを作成する"), preview("postcard")], focus: 1 },
     ],
   },
@@ -840,7 +846,7 @@ export const guideModes: Record<string, GuideModeOption[]> = {
   ],
   "postal-search": [
     { mode: "zip-to-address", label: "郵便番号から住所", guideId: "postal-search" },
-    { mode: "address-to-zip", label: "住所から郵便番号", guideId: "postal-search" },
+    { mode: "address-to-zip", label: "住所から郵便番号", guideId: "postal-search@address" },
   ],
   "document-suite": [
     { mode: "estimate", label: "見積書", guideId: "estimate-generator" },
@@ -880,6 +886,11 @@ export const pageGuides: Record<string, string> = {
   "excel-to-csv": "excel-csv-convert",
   "csv-to-json": "csv-json-convert",
   "json-to-csv": "csv-json-convert@json-to-csv",
+  // 帳票（document-suite）：旧4ツールのアドレスは、その書類を選んだ状態で開くため、その書類の図を出す
+  "estimate-generator": "estimate-generator",
+  "quote-order-generator": "quote-order-generator",
+  "invoice-generator": "invoice-generator",
+  "order-generator": "order-generator",
 };
 
 /** そのページで最初に出す図のID（hubId は、統合済みならまとめ先のID、そうでなければ自分のID） */

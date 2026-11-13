@@ -33,6 +33,10 @@ interface FileDropzoneProps {
   compact?: boolean;
   /** 小さな表示のときのボタンの意味。add＝今のファイルに足す、replace＝選び直す（既定） */
   compactAction?: "add" | "replace";
+  /** sm＝ファイルを選ぶ前の枠を小さめに出す（ほかの設定の上に置く、補助的な欄向け）。既定は md */
+  size?: "md" | "sm";
+  /** ファイル入力欄の data-testid（テスト用） */
+  inputTestId?: string;
 }
 
 /**
@@ -63,6 +67,8 @@ export function FileDropzone({
   pageDrop,
   compact = false,
   compactAction = "replace",
+  size = "md",
+  inputTestId,
 }: FileDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -158,6 +164,7 @@ export function FileDropzone({
       ref={inputRef}
       type="file"
       aria-label={label}
+      data-testid={inputTestId}
       accept={accept}
       multiple={multiple}
       className="hidden"
@@ -215,10 +222,10 @@ export function FileDropzone({
         }
       }}
       {...dragHandlers}
-      className="ms-dropzone"
+      className={size === "sm" ? "ms-dropzone !min-h-0 !gap-1 !py-3" : "ms-dropzone"}
     >
       <svg
-        className="h-10 w-10 text-ms-accent dark:text-ms-focus"
+        className={size === "sm" ? "h-6 w-6 text-ms-accent dark:text-ms-focus" : "h-10 w-10 text-ms-accent dark:text-ms-focus"}
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -236,7 +243,7 @@ export function FileDropzone({
         {isDragging ? "ここでマウスを離すと選択されます" : hint}
       </p>
       {/* 見た目だけの「ファイルを選択」ボタン（文字は CSS で出す。操作は枠全体のクリック・キー操作が担う） */}
-      <span aria-hidden="true" className="ms-dropzone-cta" />
+      {size !== "sm" && <span aria-hidden="true" className="ms-dropzone-cta" />}
       {input}
       {pageDropOverlay}
     </div>

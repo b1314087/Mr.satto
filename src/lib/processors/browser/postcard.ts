@@ -15,7 +15,9 @@ import {
   type PostcardText,
 } from "@/lib/print/postcard-layout";
 import {
+  applyRecipient,
   layoutPostcardAddress,
+  type PostcardRecipient,
   postcardAddressSizePt,
   validatePostcardAddress,
   type PostcardAddressInput,
@@ -134,13 +136,19 @@ export class PostcardProcessor extends BrowserProcessor<PostcardInput, PostcardO
  * 配置の計算（郵便番号枠・宛先住所・宛先氏名・差出人）は src/lib/print/postcard-address-layout.ts にまとめ、プレビューと共通にしている。
  * 文字は日本語フォントを埋め込み、1文字ずつ中央揃えで縦に並べる。郵便番号枠の線は、選んだときだけ朱色で描く。
  */
-export class PostcardAddressProcessor extends BrowserProcessor<PostcardAddressInput, PostcardOutput> {
-  async process(input: PostcardAddressInput): Promise<PostcardOutput> {
-    const problem = validatePostcardAddress(input);
-    if (problem) throw new Error(problem);
+export class PostcardAddressProcessor extends BrowserProcessor<PostcardAddressInput & { recipients?: PostcardRecipient[] }, PostcardOutput> {
+  /**
+   * recipients を渡したときは、宛先ごとに1ページずつ作る（Excel・CSVでまとめて作る。プレミアム）。
+   * 差出人・文字の大きさ・位置・郵便番号枠・微調整は、すべてのページで共通。
+   */
+  async process(input: PostcardAddressInput & { recipients?: PostcardRecipient[] }): Promise<PostcardOutput> {
+    const pages = input.recipients && input.recipients.length > 0 ? input.recipients.map((r) => applyRecipient(input, r)) : [input];
+    for (let i = 0; i < pages.length; i++) {
+      const problem = validatePostcardAddress(pages[i]);
+      if (problem) throw new Error(pages.length > 1 ? `${i + 1}件目：${problem}` : problem);
+    }
     await ensurePdfLib({ fontkit: true });
     const page = postcardAddressSizePt();
-    const ops = layoutPostcardAddress(input);
     let doc: PdfLibTypes.PDFDocument;
     let font: PDFFont;
     try {
@@ -158,10 +166,11 @@ export class PostcardAddressProcessor extends BrowserProcessor<PostcardAddressIn
       throw new Error("PDFの生成に失敗しました（フォントの埋め込みでエラーが発生しました）");
     }
     doc.setTitle("はがき 宛名面");
-    const pdfPage = doc.addPage([page.width, page.height]);
     const black = pdfLib().rgb(0, 0, 0);
     const vermilion = pdfLib().rgb(0.9, 0.25, 0.15); // 郵便番号枠の色（朱色）
-    for (const op of ops) {
+    for (const pageInput of pages) {
+    const pdfPage = doc.addPage([page.width, page.height]);
+    for (const op of layoutPostcardAddress(pageInput)) {
       if (op.kind === "rect") {
         // 四角は「枠線の内側」の大きさ。線の太さの半分だけ外側に広げて描く
         const half = op.lineWidth / 2;
@@ -179,6 +188,7 @@ export class PostcardAddressProcessor extends BrowserProcessor<PostcardAddressIn
         const w = font.widthOfTextAtSize(op.text, op.size);
         pdfPage.drawText(op.text, { x: op.x - w / 2, y: page.height - op.y, size: op.size, font, color: black });
       }
+    }
     }
     let bytes: Uint8Array;
     try {

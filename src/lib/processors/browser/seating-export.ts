@@ -40,17 +40,28 @@ export function seatLabel(model: Pick<SeatingChartModel, "numbers">, person: Par
   return model.numbers && person.number ? `${person.number} ${person.name}` : person.name;
 }
 
-/** 用紙（JISのA列・B列と、レター・リーガル） */
+/** 用紙（JISのA列・B列と、レター・リーガルなど） */
+// 2026-11：JIS・国際の主な用紙サイズをすべて選べるようにした
 export const PAPER_SIZES = [
+  { value: "A0", label: "A0（841×1189mm）", mm: [841, 1189] },
+  { value: "A1", label: "A1（594×841mm）", mm: [594, 841] },
+  { value: "A2", label: "A2（420×594mm）", mm: [420, 594] },
   { value: "A3", label: "A3（297×420mm）", mm: [297, 420] },
   { value: "A4", label: "A4（210×297mm）", mm: [210, 297] },
   { value: "A5", label: "A5（148×210mm）", mm: [148, 210] },
   { value: "A6", label: "A6（105×148mm）", mm: [105, 148] },
+  { value: "B0", label: "B0（1030×1456mm）", mm: [1030, 1456] },
+  { value: "B1", label: "B1（728×1030mm）", mm: [728, 1030] },
+  { value: "B2", label: "B2（515×728mm）", mm: [515, 728] },
+  { value: "B3", label: "B3（364×515mm）", mm: [364, 515] },
   { value: "B4", label: "B4（257×364mm）", mm: [257, 364] },
   { value: "B5", label: "B5（182×257mm）", mm: [182, 257] },
   { value: "B6", label: "B6（128×182mm）", mm: [128, 182] },
   { value: "Letter", label: "レター（216×279mm）", mm: [215.9, 279.4] },
   { value: "Legal", label: "リーガル（216×356mm）", mm: [215.9, 355.6] },
+  { value: "Ledger", label: "タブロイド（279×432mm）", mm: [279.4, 431.8] },
+  { value: "Executive", label: "エグゼクティブ（184×267mm）", mm: [184.15, 266.7] },
+  { value: "Postcard", label: "はがき（100×148mm）", mm: [100, 148] },
 ] as const;
 export type PaperSize = (typeof PAPER_SIZES)[number]["value"];
 const PT_PER_MM = 72 / 25.4;

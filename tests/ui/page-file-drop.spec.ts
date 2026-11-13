@@ -265,3 +265,16 @@ plainTest.describe("全画面のドロップ：判定（画面なし）", () => 
     }
   });
 });
+
+test("電子印鑑（固有ID付き）：押印するPDFは、ページのどこへドロップしても受け取り、プレビューに印影を重ねたPDFが出る（2026-11）", async ({ page }) => {
+  await page.goto("/tools/electronic-stamp-generator");
+  await waitForFileInputHydrated(page);
+  await page.getByTestId("stamp-mode").getByRole("button", { name: "固有ID付きで作る", exact: true }).click();
+  // 押印するPDFの欄は、設定のいちばん上
+  const firstSection = page.getByTestId("stamp-text-settings").locator(":scope > details").first();
+  await expect(firstSection).toHaveAttribute("data-testid", "stamp-section-pdf");
+  await dragOn(page, ["dragenter", "dragover", "drop"], [file(fixtures.japanesePdf, "keiyaku.pdf", "application/pdf")]);
+  await expect(page.getByTestId("stamp-target-pdf-name")).toContainText("keiyaku.pdf", { timeout: 20_000 });
+  // 印影を重ねたPDFのページは、プレビューの列に出る
+  await expect(page.getByTestId("stamp-pdf-preview-slot").getByTestId("stamp-pdf-view")).toBeVisible();
+});

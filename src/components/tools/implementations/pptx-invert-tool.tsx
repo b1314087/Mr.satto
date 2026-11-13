@@ -244,7 +244,12 @@ export function PptxInvertTool() {
       {error && <ErrorMessage message={error} />}
 
       {result && imageSummary && (
-        <ResultPopup testId="tool-preview" size="lg">
+        <ResultPopup
+          testId="tool-preview"
+          size="lg"
+          // 2026-11：ダウンロードは結果画面の右上に固定（変換前・後の画像が長く続いても、すぐ押せるように）
+          headerAction={<RewardedDownloadGate onDownload={handleDownload} label="PowerPointファイルをダウンロード" />}
+        >
           {/* 結果の画面は、プレビューとダウンロードだけ。件数や判定の説明は、データ属性にだけ残す（自動テスト用） */}
           <div
             className="flex w-full flex-col gap-3"
@@ -267,7 +272,6 @@ export function PptxInvertTool() {
               </div>
             ))}
           </div>
-          <RewardedDownloadGate onDownload={handleDownload} label="PowerPointファイルをダウンロード" />
           {file && featureFlags.billing && <PptxInvertAiPanel key={runId} file={file} result={result} />}
         </ResultPopup>
       )}

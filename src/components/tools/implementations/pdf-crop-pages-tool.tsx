@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
+import { SliderField } from "@/components/common/slider-field";
 import { FileList } from "@/components/common/file-list";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
@@ -110,19 +111,20 @@ export function PdfCropPagesTool() {
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {/* 2026-11：余白はバー（スライダー）と数値入力の両方で調整できる。バーは0〜100mm、数値入力は500mmまで */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="pdf-crop-sliders">
             {marginFields.map((f) => (
-              <label key={f.key} className="flex flex-col gap-1 text-sm">
-                {f.label}の余白 (mm)
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={margins[f.key]}
-                  onChange={(e) => updateMargin(f.key, Number(e.target.value))}
-                  className="w-full rounded-md border border-neutral-300 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900"
-                />
-              </label>
+              <SliderField
+                key={f.key}
+                label={`${f.label}の余白`}
+                value={margins[f.key]}
+                min={0}
+                max={100}
+                inputMax={500}
+                step={1}
+                unit="mm"
+                onChange={(v) => updateMargin(f.key, v)}
+              />
             ))}
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">表示・印刷の範囲を狭めます（内容は削除されません）。</p>

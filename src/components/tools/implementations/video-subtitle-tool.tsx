@@ -59,7 +59,7 @@ import {
 } from "@/lib/video/subtitles";
 import { drawSubtitles, type SubtitleBackground } from "@/lib/video/subtitle-render";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
-import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
+import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
 import { RunBar } from "@/components/ui/run-bar";
 import { Segmented } from "@/components/ui/segmented";
@@ -403,6 +403,65 @@ export function VideoSubtitleTool() {
     return [{ id: c.id, label: String(i + 1), start: s, end: e, text: c.text || "（未入力）", selected: c.id === selectedId }];
   });
 
+  // プレビュー（動画・字幕の重ね表示・タイムライン）。PCでは右に固定し、スマホでは上に固定して、字幕を入力しながら見られるようにする
+  const previewNode =
+    file && previewUrl && probeState?.result ? (
+        <section
+        data-testid="tool-preview"
+        aria-label="字幕のプレビュー"
+        // 動画の高さ：PCは画面の5割まで、スマホは上に固定したプレビューにタイムラインも収まるよう、画面の2割5分まで
+        className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-3 [--vs-video-h:25vh] lg:[--vs-video-h:50vh] dark:border-neutral-800"
+      >
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（再生しながら字幕を編集できます）</p>
+          <div
+            className="relative mx-auto w-full overflow-hidden rounded-lg bg-black"
+            style={{ maxWidth: meta && meta.width > 0 && meta.height > 0 ? `calc(min(var(--vs-video-h), 28rem) * ${meta.width / meta.height})` : undefined }}
+          >
+            <video
+              ref={videoRef}
+              data-testid="vs-video"
+              src={previewUrl}
+              onLoadedMetadata={handleLoadedMetadata}
+              controls
+              playsInline
+              preload="metadata"
+              className="block h-auto max-h-[min(var(--vs-video-h),28rem)] w-full"
+            />
+            {/* 動画の上に重ねる字幕（書き出しと同じ描画）。操作バーの上でも邪魔にならないよう、クリックは下の動画に通す */}
+            <canvas ref={overlayRef} aria-hidden="true" data-testid="vs-overlay-canvas" className="pointer-events-none absolute inset-0 h-full w-full" style={{ height: "calc(100% - 0px)" }} />
+          </div>
+          {/* いま表示している字幕（読み上げ・確認用） */}
+          <ul className="sr-only" data-testid="vs-overlay" aria-live="polite">
+            {active.map((cue) => (
+              <li key={cue.id} data-testid="vs-overlay-cue" data-x={cue.look.x} data-y={cue.look.y} data-size={cue.look.size} data-color={cue.look.color} data-font={cue.look.font}>
+                {cue.text}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-neutral-600 dark:text-neutral-300">
+            現在の時間：<span data-testid="vs-current-time" className="font-mono">{formatSubtitleTime(currentTime)}</span>
+            {durationSec !== null && (
+              <>
+                {" "}／ 動画の長さ：<span className="font-mono">{formatSubtitleTime(durationSec)}</span>
+              </>
+            )}
+          </p>
+          {durationSec !== null && durationSec > 0 && (
+            <VideoTimeline
+              testId="vs-timeline"
+              rowTestId="vs-timeline-row"
+              duration={durationSec}
+              currentTime={currentTime}
+              onSeek={seekTo}
+              rows={timelineRows}
+              onSelect={setSelectedId}
+              onChange={(id, s, e) => updateCue(id, { start: formatSubtitleTime(s), end: formatSubtitleTime(e) })}
+              emptyText="字幕を追加すると、ここに字幕ごとのバーが出ます。バーの端をドラッグして表示時間を変えられます。"
+            />
+          )}
+        </section>
+    ) : null;
+
   return (
     <div className="flex flex-col gap-6">
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -424,329 +483,279 @@ export function VideoSubtitleTool() {
       {probing && <p className="text-sm text-neutral-500 dark:text-neutral-400">動画の情報を調べています…</p>}
       {probeState?.error && <ErrorMessage message={probeState.error} />}
 
-      {file && previewUrl && probeState?.result && (
-        <PreviewFullscreenFrame>
-          <section data-testid="tool-preview" aria-label="字幕のプレビュー" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
-            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（再生しながら字幕を編集できます）</p>
-            <div
-              className="relative mx-auto w-full overflow-hidden rounded-lg bg-black"
-              style={{ maxWidth: meta && meta.width > 0 && meta.height > 0 ? `calc(min(55vh, 28rem) * ${meta.width / meta.height})` : undefined }}
-            >
-              <video
-                ref={videoRef}
-                data-testid="vs-video"
-                src={previewUrl}
-                onLoadedMetadata={handleLoadedMetadata}
-                controls
-                playsInline
-                preload="metadata"
-                className="block h-auto max-h-[min(55vh,28rem)] w-full"
-              />
-              {/* 動画の上に重ねる字幕（書き出しと同じ描画）。操作バーの上でも邪魔にならないよう、クリックは下の動画に通す */}
-              <canvas ref={overlayRef} aria-hidden="true" data-testid="vs-overlay-canvas" className="pointer-events-none absolute inset-0 h-full w-full" style={{ height: "calc(100% - 0px)" }} />
-            </div>
-            {/* いま表示している字幕（読み上げ・確認用） */}
-            <ul className="sr-only" data-testid="vs-overlay" aria-live="polite">
-              {active.map((cue) => (
-                <li key={cue.id} data-testid="vs-overlay-cue" data-x={cue.look.x} data-y={cue.look.y} data-size={cue.look.size} data-color={cue.look.color} data-font={cue.look.font}>
-                  {cue.text}
-                </li>
-              ))}
-            </ul>
-            <p className="text-xs text-neutral-600 dark:text-neutral-300">
-              現在の時間：<span data-testid="vs-current-time" className="font-mono">{formatSubtitleTime(currentTime)}</span>
-              {durationSec !== null && (
-                <>
-                  {" "}／ 動画の長さ：<span className="font-mono">{formatSubtitleTime(durationSec)}</span>
-                </>
-              )}
-            </p>
-            {durationSec !== null && durationSec > 0 && (
-              <VideoTimeline
-                testId="vs-timeline"
-                rowTestId="vs-timeline-row"
-                duration={durationSec}
-                currentTime={currentTime}
-                onSeek={seekTo}
-                rows={timelineRows}
-                onSelect={setSelectedId}
-                onChange={(id, s, e) => updateCue(id, { start: formatSubtitleTime(s), end: formatSubtitleTime(e) })}
-                emptyText="字幕を追加すると、ここに字幕ごとのバーが出ます。バーの端をドラッグして表示時間を変えられます。"
-              />
-            )}
-          </section>
-        </PreviewFullscreenFrame>
-      )}
+      {ready && previewNode && (
+        <PreviewSplitLayout previewWidth="lg" mobileSticky preview={previewNode}>
+          {ready && (
+            <section aria-label="字幕の一覧" className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-bold text-neutral-800 dark:text-neutral-100">字幕（{cues.length}件）</h2>
+                <button type="button" data-testid="vs-add" onClick={addCue} disabled={cues.length >= SUBTITLE_CUES_MAX} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                  ＋ 字幕を追加
+                </button>
+                <button type="button" data-testid="vs-sort" onClick={() => changeCues(sortCuesByTime(cues))} disabled={cues.length < 2} className="rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
+                  時間順に並べ替え
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                表示時間は、タイムラインのバーをドラッグするか、「時:分:秒.ミリ秒」（例：00:00:01.500）で入れられます。動画を止めて「今の時間」でも入れられます。
+              </p>
 
-      {ready && (
-        <section aria-label="字幕の一覧" className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-bold text-neutral-800 dark:text-neutral-100">字幕（{cues.length}件）</h2>
-            <button type="button" data-testid="vs-add" onClick={addCue} disabled={cues.length >= SUBTITLE_CUES_MAX} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-              ＋ 字幕を追加
-            </button>
-            <button type="button" data-testid="vs-sort" onClick={() => changeCues(sortCuesByTime(cues))} disabled={cues.length < 2} className="rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
-              時間順に並べ替え
-            </button>
-          </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            表示時間は、タイムラインのバーをドラッグするか、「時:分:秒.ミリ秒」（例：00:00:01.500）で入れられます。動画を止めて「今の時間」でも入れられます。
-          </p>
+              {cues.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+                  まだ字幕がありません。「字幕を追加」を押して入力してください。
+                </p>
+              ) : (
+                <ol className="flex flex-col gap-3" data-testid="vs-cues">
+                  {cues.map((cue, i) => {
+                    const bad = problemsById.get(cue.id);
+                    const showBad = (field: string) => showProblems && bad?.has(field);
+                    const startSec = parseSubtitleTime(cue.start);
+                    const endSec = parseSubtitleTime(cue.end);
+                    const cueDur = startSec !== null && endSec !== null && endSec > startSec ? endSec - startSec : SUBTITLE_FADE_MAX;
+                    const look = normalizeLook(cue.look);
+                    const fadeMax = Math.max(0.1, Math.min(SUBTITLE_FADE_MAX, Math.floor(cueDur * 10) / 10));
+                    const selected = cue.id === selectedId;
+                    return (
+                      <li
+                        key={cue.id}
+                        data-testid="vs-cue"
+                        data-selected={selected || undefined}
+                        onFocusCapture={() => setSelectedId(cue.id)}
+                        onPointerDown={() => setSelectedId(cue.id)}
+                        className={`flex flex-col gap-2 rounded-xl border p-3 ${selected ? "border-blue-400 ring-1 ring-blue-300 dark:border-blue-600" : "border-neutral-200 dark:border-neutral-800"}`}
+                      >
+                        <div className="flex flex-wrap items-end gap-2">
+                          <span className="w-8 text-sm font-semibold text-neutral-500">{i + 1}</span>
+                          <label className="flex flex-col text-xs text-neutral-600 dark:text-neutral-300">
+                            開始時間
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              data-testid="vs-cue-start"
+                              value={cue.start}
+                              onChange={(e) => updateCue(cue.id, { start: e.target.value })}
+                              aria-invalid={showBad("start") || undefined}
+                              className={`ms-focus-ring w-36 rounded-md border px-2 py-1 font-mono text-sm dark:bg-neutral-900 ${showBad("start") ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"}`}
+                            />
+                          </label>
+                          <button type="button" onClick={() => setCueTimeToCurrent(cue.id, "start")} className="rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800">今の時間</button>
+                          <label className="flex flex-col text-xs text-neutral-600 dark:text-neutral-300">
+                            終了時間
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              data-testid="vs-cue-end"
+                              value={cue.end}
+                              onChange={(e) => updateCue(cue.id, { end: e.target.value })}
+                              aria-invalid={showBad("end") || undefined}
+                              className={`ms-focus-ring w-36 rounded-md border px-2 py-1 font-mono text-sm dark:bg-neutral-900 ${showBad("end") ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"}`}
+                            />
+                          </label>
+                          <button type="button" onClick={() => setCueTimeToCurrent(cue.id, "end")} className="rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800">今の時間</button>
+                          {startSec !== null && (
+                            <button type="button" data-testid="vs-cue-seek" onClick={() => seekTo(startSec)} className="rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800">この字幕へ移動</button>
+                          )}
+                        </div>
+                        <label className="flex flex-col text-xs text-neutral-600 dark:text-neutral-300">
+                          字幕
+                          <textarea
+                            data-testid="vs-cue-text"
+                            value={cue.text}
+                            maxLength={SUBTITLE_TEXT_MAX}
+                            rows={2}
+                            onChange={(e) => updateCue(cue.id, { text: e.target.value })}
+                            aria-invalid={showBad("text") || undefined}
+                            placeholder="例）こんにちは"
+                            className={`ms-focus-ring rounded-md border px-2 py-1 text-base dark:bg-neutral-900 ${showBad("text") ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"}`}
+                          />
+                        </label>
 
-          {cues.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-              まだ字幕がありません。「字幕を追加」を押して入力してください。
-            </p>
-          ) : (
-            <ol className="flex flex-col gap-3" data-testid="vs-cues">
-              {cues.map((cue, i) => {
-                const bad = problemsById.get(cue.id);
-                const showBad = (field: string) => showProblems && bad?.has(field);
-                const startSec = parseSubtitleTime(cue.start);
-                const endSec = parseSubtitleTime(cue.end);
-                const cueDur = startSec !== null && endSec !== null && endSec > startSec ? endSec - startSec : SUBTITLE_FADE_MAX;
-                const look = normalizeLook(cue.look);
-                const fadeMax = Math.max(0.1, Math.min(SUBTITLE_FADE_MAX, Math.floor(cueDur * 10) / 10));
-                const selected = cue.id === selectedId;
-                return (
-                  <li
-                    key={cue.id}
-                    data-testid="vs-cue"
-                    data-selected={selected || undefined}
-                    onFocusCapture={() => setSelectedId(cue.id)}
-                    onPointerDown={() => setSelectedId(cue.id)}
-                    className={`flex flex-col gap-2 rounded-xl border p-3 ${selected ? "border-blue-400 ring-1 ring-blue-300 dark:border-blue-600" : "border-neutral-200 dark:border-neutral-800"}`}
-                  >
-                    <div className="flex flex-wrap items-end gap-2">
-                      <span className="w-8 text-sm font-semibold text-neutral-500">{i + 1}</span>
-                      <label className="flex flex-col text-xs text-neutral-600 dark:text-neutral-300">
-                        開始時間
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          data-testid="vs-cue-start"
-                          value={cue.start}
-                          onChange={(e) => updateCue(cue.id, { start: e.target.value })}
-                          aria-invalid={showBad("start") || undefined}
-                          className={`ms-focus-ring w-36 rounded-md border px-2 py-1 font-mono text-sm dark:bg-neutral-900 ${showBad("start") ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"}`}
-                        />
-                      </label>
-                      <button type="button" onClick={() => setCueTimeToCurrent(cue.id, "start")} className="rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800">今の時間</button>
-                      <label className="flex flex-col text-xs text-neutral-600 dark:text-neutral-300">
-                        終了時間
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          data-testid="vs-cue-end"
-                          value={cue.end}
-                          onChange={(e) => updateCue(cue.id, { end: e.target.value })}
-                          aria-invalid={showBad("end") || undefined}
-                          className={`ms-focus-ring w-36 rounded-md border px-2 py-1 font-mono text-sm dark:bg-neutral-900 ${showBad("end") ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"}`}
-                        />
-                      </label>
-                      <button type="button" onClick={() => setCueTimeToCurrent(cue.id, "end")} className="rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800">今の時間</button>
-                      {startSec !== null && (
-                        <button type="button" data-testid="vs-cue-seek" onClick={() => seekTo(startSec)} className="rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800">この字幕へ移動</button>
-                      )}
-                    </div>
-                    <label className="flex flex-col text-xs text-neutral-600 dark:text-neutral-300">
-                      字幕
-                      <textarea
-                        data-testid="vs-cue-text"
-                        value={cue.text}
-                        maxLength={SUBTITLE_TEXT_MAX}
-                        rows={2}
-                        onChange={(e) => updateCue(cue.id, { text: e.target.value })}
-                        aria-invalid={showBad("text") || undefined}
-                        placeholder="例）こんにちは"
-                        className={`ms-focus-ring rounded-md border px-2 py-1 text-base dark:bg-neutral-900 ${showBad("text") ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"}`}
-                      />
-                    </label>
-
-                    <SettingsSection
-                      title={`${i + 1}番目の見た目`}
-                      summary={`${SUBTITLE_FONT_OPTIONS.find((f) => f.value === look.font)?.label}・${look.size}%・${look.outline ? "縁取りあり" : "縁取りなし"}${look.fadeIn || look.fadeOut ? "・フェード" : ""}`}
-                      defaultOpen={false}
-                      testId="vs-cue-look"
-                    >
-                      <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
-                        フォント
-                        <select
-                          data-testid="vs-cue-font"
-                          value={look.font}
-                          onChange={(e) => updateLook(cue.id, { font: e.target.value as CueLook["font"] })}
-                          className="w-fit rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                        <SettingsSection
+                          title={`${i + 1}番目の見た目`}
+                          summary={`${SUBTITLE_FONT_OPTIONS.find((f) => f.value === look.font)?.label}・${look.size}%・${look.outline ? "縁取りあり" : "縁取りなし"}${look.fadeIn || look.fadeOut ? "・フェード" : ""}`}
+                          defaultOpen={false}
+                          testId="vs-cue-look"
                         >
-                          {SUBTITLE_FONT_OPTIONS.map((f) => (
-                            <option key={f.value} value={f.value}>
-                              {f.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <SliderField
-                        label="文字の大きさ"
-                        ariaLabel={`${i + 1}番目の文字の大きさ`}
-                        value={look.size}
-                        min={SUBTITLE_SIZE_MIN}
-                        max={SUBTITLE_SIZE_MAX}
-                        step={0.5}
-                        unit="%"
-                        onChange={(v) => updateLook(cue.id, { size: v })}
-                        hint="動画の高さに対する文字の高さです。"
-                      />
-                      <TextColorField label="文字の色" value={look.color} onChange={(c) => updateLook(cue.id, { color: c })} testId="vs-cue-color" />
-                      <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
-                        <input type="checkbox" data-testid="vs-cue-outline" checked={look.outline} onChange={(e) => updateLook(cue.id, { outline: e.target.checked })} />
-                        縁取りを付ける
-                      </label>
-                      {look.outline && (
-                        <TextColorField label="縁取りの色" value={look.outlineColor} onChange={(c) => updateLook(cue.id, { outlineColor: c })} testId="vs-cue-outline-color" />
-                      )}
-                      <PositionSliders
-                        testId="vs-cue-xy"
-                        x={look.x}
-                        y={look.y}
-                        xAriaLabel={`${i + 1}番目の横の位置（X）`}
-                        yAriaLabel={`${i + 1}番目の縦の位置（Y）`}
-                        onChange={(p) => updateLook(cue.id, p)}
-                        hint="文字のまとまりの中心の位置です（0%＝左端・上端、100%＝右端・下端）。"
-                      />
-                      <SliderField
-                        label="フェードイン"
-                        ariaLabel={`${i + 1}番目のフェードイン`}
-                        value={Math.min(look.fadeIn, fadeMax)}
-                        min={0}
-                        max={fadeMax}
-                        step={0.1}
-                        unit="秒"
-                        onChange={(v) => updateLook(cue.id, { fadeIn: v })}
-                      />
-                      <SliderField
-                        label="フェードアウト"
-                        ariaLabel={`${i + 1}番目のフェードアウト`}
-                        value={Math.min(look.fadeOut, fadeMax)}
-                        min={0}
-                        max={fadeMax}
-                        step={0.1}
-                        unit="秒"
-                        onChange={(v) => updateLook(cue.id, { fadeOut: v })}
-                        hint="透明から徐々に表示し、徐々に透明にして消します。合計が表示時間より長いときは、表示時間に収まるよう短くします。"
-                      />
-                    </SettingsSection>
+                          <label className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
+                            フォント
+                            <select
+                              data-testid="vs-cue-font"
+                              value={look.font}
+                              onChange={(e) => updateLook(cue.id, { font: e.target.value as CueLook["font"] })}
+                              className="w-fit rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                            >
+                              {SUBTITLE_FONT_OPTIONS.map((f) => (
+                                <option key={f.value} value={f.value}>
+                                  {f.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <SliderField
+                            label="文字の大きさ"
+                            ariaLabel={`${i + 1}番目の文字の大きさ`}
+                            value={look.size}
+                            min={SUBTITLE_SIZE_MIN}
+                            max={SUBTITLE_SIZE_MAX}
+                            step={0.5}
+                            unit="%"
+                            onChange={(v) => updateLook(cue.id, { size: v })}
+                            hint="動画の高さに対する文字の高さです。"
+                          />
+                          <TextColorField label="文字の色" value={look.color} onChange={(c) => updateLook(cue.id, { color: c })} testId="vs-cue-color" />
+                          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                            <input type="checkbox" data-testid="vs-cue-outline" checked={look.outline} onChange={(e) => updateLook(cue.id, { outline: e.target.checked })} />
+                            縁取りを付ける
+                          </label>
+                          {look.outline && (
+                            <TextColorField label="縁取りの色" value={look.outlineColor} onChange={(c) => updateLook(cue.id, { outlineColor: c })} testId="vs-cue-outline-color" />
+                          )}
+                          <PositionSliders
+                            testId="vs-cue-xy"
+                            x={look.x}
+                            y={look.y}
+                            xAriaLabel={`${i + 1}番目の横の位置（X）`}
+                            yAriaLabel={`${i + 1}番目の縦の位置（Y）`}
+                            onChange={(p) => updateLook(cue.id, p)}
+                            hint="文字のまとまりの中心の位置です（0%＝左端・上端、100%＝右端・下端）。"
+                          />
+                          <SliderField
+                            label="フェードイン"
+                            ariaLabel={`${i + 1}番目のフェードイン`}
+                            value={Math.min(look.fadeIn, fadeMax)}
+                            min={0}
+                            max={fadeMax}
+                            step={0.1}
+                            unit="秒"
+                            onChange={(v) => updateLook(cue.id, { fadeIn: v })}
+                          />
+                          <SliderField
+                            label="フェードアウト"
+                            ariaLabel={`${i + 1}番目のフェードアウト`}
+                            value={Math.min(look.fadeOut, fadeMax)}
+                            min={0}
+                            max={fadeMax}
+                            step={0.1}
+                            unit="秒"
+                            onChange={(v) => updateLook(cue.id, { fadeOut: v })}
+                            hint="透明から徐々に表示し、徐々に透明にして消します。合計が表示時間より長いときは、表示時間に収まるよう短くします。"
+                          />
+                        </SettingsSection>
 
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <button type="button" data-testid="vs-cue-up" aria-label={`${i + 1}番目の字幕を上へ`} onClick={() => moveCue(i, -1)} disabled={i === 0} className="rounded bg-neutral-100 px-2 py-1 disabled:opacity-40 dark:bg-neutral-800">↑ 上へ</button>
-                      <button type="button" data-testid="vs-cue-down" aria-label={`${i + 1}番目の字幕を下へ`} onClick={() => moveCue(i, 1)} disabled={i === cues.length - 1} className="rounded bg-neutral-100 px-2 py-1 disabled:opacity-40 dark:bg-neutral-800">↓ 下へ</button>
-                      <button type="button" data-testid="vs-cue-duplicate" onClick={() => duplicateCue(i)} className="rounded bg-neutral-100 px-2 py-1 dark:bg-neutral-800">複製</button>
-                      <button type="button" data-testid="vs-cue-delete" onClick={() => removeCue(cue.id)} className="rounded bg-red-50 px-2 py-1 text-red-700 dark:bg-red-950/40 dark:text-red-300">削除</button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          <button type="button" data-testid="vs-cue-up" aria-label={`${i + 1}番目の字幕を上へ`} onClick={() => moveCue(i, -1)} disabled={i === 0} className="rounded bg-neutral-100 px-2 py-1 disabled:opacity-40 dark:bg-neutral-800">↑ 上へ</button>
+                          <button type="button" data-testid="vs-cue-down" aria-label={`${i + 1}番目の字幕を下へ`} onClick={() => moveCue(i, 1)} disabled={i === cues.length - 1} className="rounded bg-neutral-100 px-2 py-1 disabled:opacity-40 dark:bg-neutral-800">↓ 下へ</button>
+                          <button type="button" data-testid="vs-cue-duplicate" onClick={() => duplicateCue(i)} className="rounded bg-neutral-100 px-2 py-1 dark:bg-neutral-800">複製</button>
+                          <button type="button" data-testid="vs-cue-delete" onClick={() => removeCue(cue.id)} className="rounded bg-red-50 px-2 py-1 text-red-700 dark:bg-red-950/40 dark:text-red-300">削除</button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
 
-          {check.overlaps.length > 0 && (
-            <p data-testid="vs-overlap-warning" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
-              表示時間が重なっている字幕があります（{check.overlaps.map((o) => `${o.a}番目と${o.b}番目`).join("、")}）。重なった時間は、字幕が同時に表示されます。意図したものであれば、このまま書き出せます。
-            </p>
-          )}
-          {check.outOfOrder && (
-            <p data-testid="vs-order-note" className="text-xs text-neutral-600 dark:text-neutral-300">
-              一覧が時間順になっていません。書き出すときは、開始時間の順に並べて保存します（「時間順に並べ替え」で一覧もそろえられます）。
-            </p>
-          )}
-          {showProblems && check.errors.length > 0 && (
-            <ul data-testid="vs-errors" role="alert" className="flex flex-col gap-1 text-xs text-red-700 dark:text-red-400">
-              {check.errors.map((p, k) => (
-                <li key={`${p.id}-${p.field}-${k}`}>{p.message}</li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {ready && (
-        <SettingsStack>
-          <SettingsSection title="字幕の背景（すべての字幕に共通）" summary={background.opacity > 0 ? `${background.color}・${background.opacity}%` : "なし"} defaultOpen={false} testId="vs-background">
-            <div className="flex flex-wrap items-center gap-4 text-sm">
-              <label className="flex items-center gap-2">
-                背景色
-                <input type="color" data-testid="vs-bg-color" value={background.color} onChange={(e) => changeBackground({ color: e.target.value })} className="h-8 w-12" />
-              </label>
-              <label className="flex items-center gap-2">
-                背景の濃さ
-                <input type="range" min={0} max={100} step={5} data-testid="vs-bg-opacity" value={background.opacity} onChange={(e) => changeBackground({ opacity: Number(e.target.value) })} />
-                <span className="w-10 text-xs">{background.opacity}%</span>
-              </label>
-            </div>
-          </SettingsSection>
-
-          <SettingsSection title="書き出し" testId="vs-output">
-            <Segmented ariaLabel="書き出し方" size="sm" testId="vs-mode" value={mode} onChange={(v) => setMode(v)} options={OUTPUT_MODE_OPTIONS} />
-            {mode === "burn" ? (
-              <>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  プレビューの見た目（フォント・縁取り・位置・フェード）のまま、字幕を映像に描き込みます。どの再生アプリ・SNSでも表示されます（字幕のON・OFFはできません）。映像は作り直すため、時間がかかります。
+              {check.overlaps.length > 0 && (
+                <p data-testid="vs-overlap-warning" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+                  表示時間が重なっている字幕があります（{check.overlaps.map((o) => `${o.a}番目と${o.b}番目`).join("、")}）。重なった時間は、字幕が同時に表示されます。意図したものであれば、このまま書き出せます。
                 </p>
-                <fieldset className="flex flex-wrap items-center gap-3 text-sm">
-                  <legend className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">出力形式</legend>
-                  {OUTPUT_CONTAINER_OPTIONS.map((o) => (
-                    <label key={o.value} className="flex items-center gap-1">
-                      <input type="radio" name="vs-burn-container" data-testid={`vs-burn-container-${o.value}`} checked={burnContainer === o.value} onChange={() => setBurnContainer(o.value)} />
-                      {o.label}
-                    </label>
-                  ))}
-                </fieldset>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  映像・音声は作り直さずにそのまま使い、ON・OFFできる字幕トラックとして入れます（VLCなどで表示。ブラウザ・SNSでは表示されません）。文字色・大きさ・位置・背景は字幕トラックに書きますが、フォント・縁取り・フェードは表せません。
+              )}
+              {check.outOfOrder && (
+                <p data-testid="vs-order-note" className="text-xs text-neutral-600 dark:text-neutral-300">
+                  一覧が時間順になっていません。書き出すときは、開始時間の順に並べて保存します（「時間順に並べ替え」で一覧もそろえられます）。
                 </p>
-                <fieldset className="flex flex-wrap items-center gap-3 text-sm">
-                  <legend className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">出力形式</legend>
-                  {SUBTITLE_CONTAINER_OPTIONS.filter((o) => containers.includes(o.value)).map((o) => (
-                    <label key={o.value} className="flex items-center gap-1">
-                      <input type="radio" name="vs-container" data-testid={`vs-container-${o.value}`} checked={container === o.value} onChange={() => setContainer(o.value)} />
-                      {o.label}
-                    </label>
+              )}
+              {showProblems && check.errors.length > 0 && (
+                <ul data-testid="vs-errors" role="alert" className="flex flex-col gap-1 text-xs text-red-700 dark:text-red-400">
+                  {check.errors.map((p, k) => (
+                    <li key={`${p.id}-${p.field}-${k}`}>{p.message}</li>
                   ))}
-                  {!containers.includes("webm") && <span className="text-xs text-neutral-500 dark:text-neutral-400">WebM は、元の動画が WebM のときに選べます。</span>}
-                </fieldset>
-                <div className="flex items-center gap-2 text-sm">
-                  <span aria-hidden="true">字幕の言語</span>
-                  <Segmented
-                    ariaLabel="字幕の言語"
-                    size="sm"
-                    testId="vs-language"
-                    value={language}
-                    onChange={(v) => setLanguage(v)}
-                    options={SUBTITLE_LANGUAGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                  />
+                </ul>
+              )}
+            </section>
+          )}
+
+          {ready && (
+            <SettingsStack>
+              <SettingsSection title="字幕の背景（すべての字幕に共通）" summary={background.opacity > 0 ? `${background.color}・${background.opacity}%` : "なし"} defaultOpen={false} testId="vs-background">
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <label className="flex items-center gap-2">
+                    背景色
+                    <input type="color" data-testid="vs-bg-color" value={background.color} onChange={(e) => changeBackground({ color: e.target.value })} className="h-8 w-12" />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    背景の濃さ
+                    <input type="range" min={0} max={100} step={5} data-testid="vs-bg-opacity" value={background.opacity} onChange={(e) => changeBackground({ opacity: Number(e.target.value) })} />
+                    <span className="w-10 text-xs">{background.opacity}%</span>
+                  </label>
                 </div>
-              </>
-            )}
-          </SettingsSection>
-        </SettingsStack>
-      )}
+              </SettingsSection>
 
-      {ready && (
-        <section aria-label="書き出しの実行" className="flex flex-col gap-2">
-          <RunBar>
-            <button type="button" data-testid="vs-run" onClick={() => handleRun()} disabled={busy} aria-busy={busy || undefined} className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50">
-              字幕つきの動画を書き出す
-            </button>
-            <button type="button" data-testid="vs-save-srt" onClick={() => downloadSubtitleFile("srt")} disabled={busy} className="rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
-              字幕ファイル（.srt）を保存
-            </button>
-            <button type="button" data-testid="vs-save-vtt" onClick={() => downloadSubtitleFile("vtt")} disabled={busy} className="rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
-              字幕ファイル（.vtt）を保存
-            </button>
-          </RunBar>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">.srt は YouTube などに字幕としてアップロードできます（時間と文字だけ）。</p>
-        </section>
+              <SettingsSection title="書き出し" testId="vs-output">
+                <Segmented ariaLabel="書き出し方" size="sm" testId="vs-mode" value={mode} onChange={(v) => setMode(v)} options={OUTPUT_MODE_OPTIONS} />
+                {mode === "burn" ? (
+                  <>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      プレビューの見た目（フォント・縁取り・位置・フェード）のまま、字幕を映像に描き込みます。どの再生アプリ・SNSでも表示されます（字幕のON・OFFはできません）。映像は作り直すため、時間がかかります。
+                    </p>
+                    <fieldset className="flex flex-wrap items-center gap-3 text-sm">
+                      <legend className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">出力形式</legend>
+                      {OUTPUT_CONTAINER_OPTIONS.map((o) => (
+                        <label key={o.value} className="flex items-center gap-1">
+                          <input type="radio" name="vs-burn-container" data-testid={`vs-burn-container-${o.value}`} checked={burnContainer === o.value} onChange={() => setBurnContainer(o.value)} />
+                          {o.label}
+                        </label>
+                      ))}
+                    </fieldset>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      映像・音声は作り直さずにそのまま使い、ON・OFFできる字幕トラックとして入れます（VLCなどで表示。ブラウザ・SNSでは表示されません）。文字色・大きさ・位置・背景は字幕トラックに書きますが、フォント・縁取り・フェードは表せません。
+                    </p>
+                    <fieldset className="flex flex-wrap items-center gap-3 text-sm">
+                      <legend className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">出力形式</legend>
+                      {SUBTITLE_CONTAINER_OPTIONS.filter((o) => containers.includes(o.value)).map((o) => (
+                        <label key={o.value} className="flex items-center gap-1">
+                          <input type="radio" name="vs-container" data-testid={`vs-container-${o.value}`} checked={container === o.value} onChange={() => setContainer(o.value)} />
+                          {o.label}
+                        </label>
+                      ))}
+                      {!containers.includes("webm") && <span className="text-xs text-neutral-500 dark:text-neutral-400">WebM は、元の動画が WebM のときに選べます。</span>}
+                    </fieldset>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span aria-hidden="true">字幕の言語</span>
+                      <Segmented
+                        ariaLabel="字幕の言語"
+                        size="sm"
+                        testId="vs-language"
+                        value={language}
+                        onChange={(v) => setLanguage(v)}
+                        options={SUBTITLE_LANGUAGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                      />
+                    </div>
+                  </>
+                )}
+              </SettingsSection>
+            </SettingsStack>
+          )}
+
+          {ready && (
+            <section aria-label="書き出しの実行" className="flex flex-col gap-2">
+              <RunBar>
+                <button type="button" data-testid="vs-run" onClick={() => handleRun()} disabled={busy} aria-busy={busy || undefined} className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50">
+                  字幕つきの動画を書き出す
+                </button>
+                <button type="button" data-testid="vs-save-srt" onClick={() => downloadSubtitleFile("srt")} disabled={busy} className="rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
+                  字幕ファイル（.srt）を保存
+                </button>
+                <button type="button" data-testid="vs-save-vtt" onClick={() => downloadSubtitleFile("vtt")} disabled={busy} className="rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
+                  字幕ファイル（.vtt）を保存
+                </button>
+              </RunBar>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">.srt は YouTube などに字幕としてアップロードできます（時間と文字だけ）。</p>
+            </section>
+          )}
+        </PreviewSplitLayout>
       )}
 
       <ProcessingStatus

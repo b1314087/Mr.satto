@@ -16,7 +16,8 @@ import { useAnnounceToolMode } from "@/lib/guides/tool-mode";
  * 各操作の中身は、これまでの個別ツールの画面をそのまま使う（処理も表示も変えない）。
  * この画面が足すのは「操作の切り替え」と「選択中のPDFの引き継ぎ」だけ。
  * - 操作を切り替えると、前の操作の結果・選択・入力はリセットされる（古い結果をダウンロードさせない）。
- * - 1つのPDFを扱う操作どうしの間では、選んだPDFを引き継ぐ（結合だけは複数のPDFを扱うため引き継がない）。
+ * - 選んだPDFは、操作を切り替えても引き継ぐ（2026-11：PDFを入れたあとでも操作を変えられるように）。
+ *   結合で複数のPDFを選んでいたときは、1つのPDFを扱う操作には先頭のPDFを渡し、結合に戻ると全部が戻る。
  * - 個別URL（/tools/pdf-split など）で開いたときは、その操作を選んだ状態で表示する（initialMode）。
  * 処理はすべてブラウザ内で行い、PDFは送信しない。
  * 操作の画面は、切り替えたときに読み込みで待たされないよう、まとめて読み込む（個別の動的読み込みにはしない）。
@@ -38,11 +39,15 @@ export function PdfEditTool({ initialMode = "merge" }: PdfEditToolProps) {
   const [mode, setMode] = useState<PdfEditMode>(initialMode);
   // 使い方の幕に、いま選ばれているモードを知らせる（幕を開くと、このモードの使い方の図が出る）
   useAnnounceToolMode(mode);
-  // 1つのPDFを扱う操作の間で引き継ぐPDF
-  const [sharedFile, setSharedFile] = useState<File | null>(null);
+  // 操作の間で引き継ぐPDF（結合では全部、1つのPDFを扱う操作では先頭の1つを使う）
+  const [sharedFiles, setSharedFiles] = useState<File[]>([]);
   const info = getPdfEditMode(mode);
 
-  const singleFileProps = { initialFile: sharedFile, onFileChange: setSharedFile };
+  const singleFileProps = {
+    initialFile: sharedFiles[0] ?? null,
+    // 1つのPDFを扱う操作でPDFを選び直したら、先頭を入れ替える（外したら先頭を外す）
+    onFileChange: (f: File | null) => setSharedFiles((prev) => (f ? [f, ...prev.slice(1)] : prev.slice(1))),
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,7 +73,7 @@ export function PdfEditTool({ initialMode = "merge" }: PdfEditToolProps) {
 
       {/* key: 操作を切り替えたら、前の操作の状態（結果・選択・入力）を必ず捨てて作り直す */}
       <div key={mode}>
-        {mode === "merge" && <PdfMergeTool />}
+        {mode === "merge" && <PdfMergeTool initialFiles={sharedFiles} onFilesChange={setSharedFiles} />}
         {mode === "split" && <PdfSplitTool {...singleFileProps} />}
         {mode === "delete" && <PdfDeletePagesTool {...singleFileProps} />}
         {mode === "extract" && <PdfExtractPagesTool {...singleFileProps} />}

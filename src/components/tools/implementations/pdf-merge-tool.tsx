@@ -1,7 +1,7 @@
 "use client";
 
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import { ReorderableFileList } from "@/components/tools/implementations/shared/reorderable-file-list";
@@ -27,8 +27,21 @@ function fileKey(file: File): number {
   return key;
 }
 
-export function PdfMergeTool() {
-  const [files, setFiles] = useState<File[]>([]);
+export function PdfMergeTool({
+  initialFiles = [],
+  onFilesChange,
+}: {
+  /** 最初から選択済みにするPDF（PDF編集の総合画面で、ほかの操作から切り替えたときに引き継ぐ） */
+  initialFiles?: File[];
+  /** PDFの一覧が変わったときに呼ばれる（総合画面が、選んだPDFを覚えておくため） */
+  onFilesChange?: (files: File[]) => void;
+} = {}) {
+  const [files, setFiles] = useState<File[]>(initialFiles);
+  // 総合画面へ、いまのPDFの一覧を知らせる（操作を切り替えても、選んだPDFを引き継げるように）
+  useEffect(() => {
+    onFilesChange?.(files);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files]);
   const [inputError, setInputError] = useState<string | null>(null);
 
   // 結果は「どのファイルを・どの順序で結合したか」と一緒に持つ。いまのファイル・順序と違う古い結果は、

@@ -1,5 +1,6 @@
 "use client";
 
+import { ZoomSlider } from "@/components/common/zoom-slider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
@@ -239,7 +240,9 @@ export function PdfRedactTool({ initialFile = null, onFileChange }: SharedPdfFil
       }
     : null;
   const cssWidth = (BASE_WIDTH_PX * zoom) / 100;
-  const zoomIndex = ZOOM_STEPS.indexOf(zoom);
+  // バーで細かく変えた倍率からも、ボタンで前後の決まった倍率へ動けるようにする
+  const zoomDownTo = [...ZOOM_STEPS].reverse().find((z) => z < zoom);
+  const zoomUpTo = ZOOM_STEPS.find((z) => z > zoom);
 
   return (
     <div className="flex flex-col gap-6">
@@ -312,19 +315,20 @@ export function PdfRedactTool({ initialFile = null, onFileChange }: SharedPdfFil
             <span className="mx-2 text-neutral-300">|</span>
             <button
               type="button"
-              onClick={() => zoomIndex > 0 && setZoom(ZOOM_STEPS[zoomIndex - 1])}
-              disabled={zoomIndex <= 0}
+              onClick={() => zoomDownTo !== undefined && setZoom(zoomDownTo)}
+              disabled={zoomDownTo === undefined}
               className="rounded-lg bg-neutral-100 px-3 py-1.5 font-medium text-neutral-600 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-neutral-300"
             >
               縮小
             </button>
+            <ZoomSlider value={zoom} min={ZOOM_STEPS[0]} max={ZOOM_STEPS[ZOOM_STEPS.length - 1]} step={5} onChange={setZoom} testId="pdf-redact-zoom-slider" className="w-32" />
             <span data-testid="pdf-redact-zoom" className="w-12 text-center text-neutral-600 dark:text-neutral-300">
               {zoom}%
             </span>
             <button
               type="button"
-              onClick={() => zoomIndex < ZOOM_STEPS.length - 1 && setZoom(ZOOM_STEPS[zoomIndex + 1])}
-              disabled={zoomIndex >= ZOOM_STEPS.length - 1}
+              onClick={() => zoomUpTo !== undefined && setZoom(zoomUpTo)}
+              disabled={zoomUpTo === undefined}
               className="rounded-lg bg-neutral-100 px-3 py-1.5 font-medium text-neutral-600 hover:bg-neutral-200 disabled:opacity-40 dark:bg-neutral-800 dark:text-neutral-300"
             >
               拡大

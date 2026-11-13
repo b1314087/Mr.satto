@@ -307,9 +307,12 @@ test.describe("PDF編集: 操作の切り替えと古い結果の無効化", () 
     await expect(downloadButton(page)).toHaveCount(0);
     await expect(page.getByText("結合が完了しました")).toHaveCount(0);
 
-    // 結合 → 分割へ切り替え: 結合で選んだPDFは引き継がれない（分割は自分でPDFを選ぶ）
+    // 結合 → 分割へ切り替え（2026-11）：PDFを入れたあとでも操作を変えられるよう、結合で選んだPDFの先頭を引き継ぐ
     await switchMode(page, "split");
-    await expect(page.getByText("このPDFは")).toHaveCount(0);
+    await expect(page.getByText("このPDFは")).toBeVisible({ timeout: 20_000 });
+    // 結合に戻すと、選んでいたPDFの一覧（a.pdf・残りのPDF）が戻る
+    await switchMode(page, "merge");
+    await expect(page.getByRole("button", { name: "a.pdf を削除" })).toBeVisible();
   });
 
   test("壊れたファイルを選ぶと、操作を切り替えても安全にエラー表示され、結果は出ない", async ({ page }) => {

@@ -71,7 +71,7 @@ export interface VideoEditPreset {
   fileSuffix: string;
   /**
    * 切り取り（トリミング）を出すか。総合改修 14〜16：形式変換・解像度変更・フレームレート変更では外し、
-   * それぞれの変更に集中した画面にした（切り取りは「動画カット・結合」で行える）。圧縮は従来どおり。
+   * それぞれの変更に集中した画面にした（切り取りは「動画カット・結合」で行える）。圧縮も外した（2026-11：利用者の指示）。
    */
   trim: boolean;
 }
@@ -100,7 +100,7 @@ export const VIDEO_EDIT_PRESETS: Record<VideoEditToolId, VideoEditPreset> = {
     progressLabel: "圧縮中",
     successLabel: "圧縮が完了しました",
     fileSuffix: "-compressed",
-    trim: true,
+    trim: false,
   },
   "video-resize": {
     initial: { container: "mp4", quality: "original", resolution: null, fps: "original", ...EDIT_DEFAULTS },

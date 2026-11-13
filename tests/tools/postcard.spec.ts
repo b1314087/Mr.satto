@@ -39,6 +39,7 @@ print(json.dumps({
   "w": round(float(p.mediabox.width), 2),
   "h": round(float(p.mediabox.height), 2),
   "text": p.extract_text(),
+  "all_text": "".join(pg.extract_text() for pg in r.pages),
   "images": imgs,
 }, ensure_ascii=False))
 `;
@@ -70,10 +71,24 @@ plainTest.describe("配置の計算（プレビューとPDFで共通）", () => 
   });
 });
 
+/** ページを開き、画面の部品が動き出すまで待ってから、作る面を選ぶ（初期画面は宛名面） */
+async function openPostcard(page: import("@playwright/test").Page, side: "宛名面" | "文字・画像の面") {
+  await page.goto("/tools/postcard");
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector('[data-testid="postcard-run"]');
+      return !!el && Object.keys(el).some((k) => k.startsWith("__reactProps$"));
+    },
+    null,
+    { timeout: 60_000 }
+  );
+  await page.getByTestId("postcard-side").getByRole("radio", { name: side }).click();
+}
+
 test.describe("ハガキ作成の画面", () => {
   test("文字と画像を置いて、はがきサイズのPDFにする（縦向き）。色・位置がプレビューに出て、画像は縦横比を保つ", async ({ page }) => {
     test.setTimeout(120_000);
-    await page.goto("/tools/postcard");
+    await openPostcard(page, "文字・画像の面");
     const preview = page.getByTestId("postcard-preview");
     await expect(preview).toHaveAttribute("data-orientation", "portrait");
     await expect(preview).toHaveAttribute("viewBox", /^0 0 283\.4\d* 419\.5\d*$/);
@@ -121,7 +136,7 @@ test.describe("ハガキ作成の画面", () => {
 
   test("横向きにすると、プレビューもPDFも横長になる。文字・画像の面には宛名・住所・郵便番号の入力欄は無い", async ({ page }) => {
     test.setTimeout(120_000);
-    await page.goto("/tools/postcard");
+    await openPostcard(page, "文字・画像の面");
     await page.getByTestId("postcard-orientation").getByRole("radio", { name: "横向き" }).click();
     const preview = page.getByTestId("postcard-preview");
     await expect(preview).toHaveAttribute("data-orientation", "landscape");
@@ -190,11 +205,10 @@ plainTest.describe("宛名面の配置の計算（総合改修 28）", () => {
 test.describe("宛名面の画面（総合改修 28）", () => {
   test("郵便番号・住所・氏名・差出人を入れると、プレビューに縦書きで出て、PDFは100×148mmで同じ文字が入る", async ({ page }) => {
     test.setTimeout(120_000);
-    await page.goto("/tools/postcard");
-    await page.getByTestId("postcard-side").getByRole("radio", { name: "宛名面" }).click();
+    await openPostcard(page, "宛名面");
     const settings = page.getByTestId("postcard-address-settings");
     const ids = await settings.locator(":scope > details").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
-    expect(ids).toEqual(["postcard-recipient-section", "postcard-sender-section", "postcard-zip-section", "postcard-layout-section", "postcard-offset-section"]);
+    expect(ids).toEqual(["postcard-bulk-section", "postcard-recipient-section", "postcard-sender-section", "postcard-zip-section", "postcard-layout-section", "postcard-offset-section"]);
     await expect(page.getByTestId("postcard-run")).toBeDisabled();
     await page.getByTestId("postcard-recipient-zip").fill("100-0001");
     await page.getByTestId("postcard-recipient-address").fill("東京都千代田区千代田1-1");
@@ -239,8 +253,7 @@ test.describe("宛名面の画面（総合改修 28）", () => {
   });
 
   test("郵便番号が7けたでないときは、理由を出してPDFを作れない。面を切り替えても、入れた内容は残る", async ({ page }) => {
-    await page.goto("/tools/postcard");
-    await page.getByTestId("postcard-side").getByRole("radio", { name: "宛名面" }).click();
+    await openPostcard(page, "宛名面");
     await page.getByTestId("postcard-recipient-name").fill("山田太郎");
     await page.getByTestId("postcard-recipient-zip").fill("12345");
     await expect(page.getByTestId("postcard-problem")).toContainText("7けた");
@@ -249,5 +262,80 @@ test.describe("宛名面の画面（総合改修 28）", () => {
     await expect(page.getByTestId("postcard-preview")).toBeVisible();
     await page.getByTestId("postcard-side").getByRole("radio", { name: "宛名面" }).click();
     await expect(page.getByTestId("postcard-recipient-name")).toHaveValue("山田太郎");
+  });
+});
+
+test.describe("宛名面：初期画面・郵便番号から住所・Excelでまとめて作る（2026-11）", () => {
+  test("初期画面は宛名面。作る面の選択は「宛名面」が左（先）", async ({ page }) => {
+    await page.goto("/tools/postcard");
+    const side = page.getByTestId("postcard-side");
+    await expect(side.getByRole("radio")).toHaveText(["宛名面", "文字・画像の面"]);
+    await expect(side.getByRole("radio", { name: "宛名面" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("postcard-address-settings")).toBeVisible();
+  });
+
+  test("郵便番号を入れると、住所（都道府県〜町域）が自動で入る。書き換えた住所は上書きしない。差出人も同じ", async ({ page }) => {
+    await openPostcard(page, "宛名面");
+    await page.getByTestId("postcard-recipient-zip").fill("100-0001");
+    await expect(page.getByTestId("postcard-recipient-address")).toHaveValue("東京都千代田区千代田");
+    await expect(page.getByTestId("postcard-recipient-zip-note")).toContainText("番地・建物名を続けて入力");
+    // 番地を足す → 別の郵便番号を入れても、書いた住所は上書きしない
+    await page.getByTestId("postcard-recipient-address").fill("東京都千代田区千代田1-1");
+    await page.getByTestId("postcard-recipient-zip").fill("650-0001");
+    await page.waitForTimeout(500);
+    await expect(page.getByTestId("postcard-recipient-address")).toHaveValue("東京都千代田区千代田1-1");
+    // 差出人
+    await page.getByTestId("postcard-use-sender").check();
+    await page.getByTestId("postcard-sender-zip").fill("0600001");
+    await expect(page.getByTestId("postcard-sender-address")).toHaveValue(/^北海道札幌市中央区/);
+  });
+
+  test("Excelで複数の宛先を読み込むと、プレビューで1件ずつ確かめられ、1件1ページのPDFになる。住所が空の行は郵便番号から入れる", async ({ page }) => {
+    test.setTimeout(120_000);
+    const src = test.info().outputPath("atena.xlsx");
+    py(
+      "import sys\nfrom openpyxl import Workbook\nwb=Workbook();ws=wb.active\nws.append(['郵便番号','住所','住所2','氏名','敬称'])\nws.append(['100-0001','東京都千代田区千代田1-1','','山田太郎',''])\nws.append(['650-0001','','○○ビル3階','株式会社サンプル','御中'])\nws.append([None,None,None,None,None])\nws.append(['530-0001','大阪府大阪市北区梅田1-2-3','','佐藤花子','様'])\nwb.save(sys.argv[1])",
+      [src]
+    );
+    await openPostcard(page, "宛名面");
+    const bulk = page.getByTestId("postcard-bulk-section");
+    await bulk.locator("input[type=file]").setInputFiles(src);
+    await expect(page.getByTestId("postcard-bulk-info")).toContainText("3件の宛先を読み込みました");
+    await expect(page.getByTestId("postcard-bulk-info")).toContainText("郵便番号から住所を入れました");
+    await expect(page.getByTestId("postcard-bulk-col-zip")).toHaveValue("0");
+    await expect(page.getByTestId("postcard-bulk-col-name")).toHaveValue("3");
+    await expect(page.getByTestId("postcard-recipient-zip")).toHaveCount(0); // 1枚ずつの入力欄は隠す
+    const preview = page.getByTestId("postcard-address-preview");
+    const nameText = async () => (await preview.getByTestId("postcard-address-text-name").allTextContents()).join("");
+    await expect(page.getByTestId("postcard-bulk-pager-label")).toHaveText("1 / 3件目");
+    expect(await nameText()).toBe("山田太郎様");
+    await page.getByRole("button", { name: "次の宛先" }).click();
+    await expect(page.getByTestId("postcard-bulk-pager-label")).toHaveText("2 / 3件目");
+    expect(await nameText()).toBe("株式会社サンプル御中");
+    expect((await preview.getByTestId("postcard-address-text-address").allTextContents()).join("")).toMatch(/^兵庫県神戸市中央区.*○○ビル３階$/);
+    await page.getByTestId("postcard-run").click();
+    await expect(page.getByTestId("result-popup")).toBeVisible({ timeout: 60_000 });
+    const download = await clickAndDownload(page, "PDFをダウンロード");
+    expect(download.suggestedFilename()).toBe("はがき_宛名面_3件.pdf");
+    const out = test.info().outputPath("atena-3.pdf");
+    await download.saveAs(out);
+    const r = JSON.parse(py(READ_PDF, [out]));
+    expect(r.pages).toBe(3);
+    const text = (r.all_text as string).replace(/\s+/g, "");
+    for (const t of ["山", "太", "郎", "株", "式", "会", "社", "御", "中", "佐", "藤", "花", "子"]) expect(text).toContain(t);
+    // 読み込みをやめると、1枚ずつの入力に戻る
+    await page.keyboard.press("Escape");
+    await page.getByTestId("postcard-bulk-clear").click();
+    await expect(page.getByTestId("postcard-recipient-zip")).toBeVisible();
+  });
+
+  test("スタンダードでは、Excelでまとめて作る機能はプレミアムと案内し、1枚ずつは作れる", async ({ page, context, baseURL }) => {
+    const { setDevPlanOverride } = await import("../helpers/dev-plan");
+    await setDevPlanOverride(context, "standard", baseURL!);
+    await openPostcard(page, "宛名面");
+    await expect(page.getByTestId("postcard-bulk-premium-note")).toBeVisible();
+    await expect(page.getByTestId("postcard-bulk-section").locator("input[type=file]")).toHaveCount(0);
+    await page.getByTestId("postcard-recipient-name").fill("山田太郎");
+    await expect(page.getByTestId("postcard-run")).toBeEnabled();
   });
 });

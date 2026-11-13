@@ -51,6 +51,7 @@ import {
 } from "@/lib/pdf-annotate/whiteout";
 import Link from "next/link";
 import { SliderField } from "@/components/common/slider-field";
+import { ZoomSlider } from "@/components/common/zoom-slider";
 import { RunBar } from "@/components/ui/run-bar";
 import { Segmented } from "@/components/ui/segmented";
 import { StepHeading } from "@/components/ui/step-heading";
@@ -1313,7 +1314,11 @@ export function PdfFillAnnotateTool({
               )}
             </div>
 
-            <div className="flex items-center gap-1" role="group" aria-label="表示倍率">
+            <div className="flex flex-wrap items-center gap-1" role="group" aria-label="表示倍率">
+              <ZoomSlider value={zoom} min={50} max={300} step={5} onChange={handleZoomChange} testId="fill-zoom-slider" className="w-32" />
+              <span className="w-10 text-right tabular-nums" data-testid="fill-zoom-value">
+                {zoom}%
+              </span>
               {ZOOM_LEVELS.map((z) => (
                 <button
                   key={z}

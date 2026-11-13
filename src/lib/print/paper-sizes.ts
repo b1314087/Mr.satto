@@ -24,14 +24,18 @@ export type PaperSizeId =
   | "A3"
   | "A4"
   | "A5"
+  | "A6"
   | "B0"
   | "B1"
   | "B2"
   | "B3"
   | "B4"
   | "B5"
+  | "B6"
   | "Letter"
   | "Legal"
+  | "Ledger"
+  | "Executive"
   | "Postcard";
 
 export interface PaperSizePt {
@@ -47,14 +51,20 @@ export const PAPER_SIZES_PT: Record<PaperSizeId, PaperSizePt> = {
   A3: { width: 841.89, height: 1190.55 },
   A4: { width: 595.28, height: 841.89 },
   A5: { width: 419.53, height: 595.28 },
+  A6: { width: 297.64, height: 419.53 },
   B0: { width: 2920.63, height: 4127.24 },
   B1: { width: 2063.62, height: 2920.63 },
   B2: { width: 1460.31, height: 2063.62 },
   B3: { width: 1031.81, height: 1460.31 },
   B4: { width: 728.5, height: 1031.81 },
   B5: { width: 515.91, height: 728.5 },
+  B6: { width: 362.83, height: 515.91 },
   Letter: { width: 612, height: 792 },
   Legal: { width: 612, height: 1008 },
+  /** タブロイド（11×17インチ） */
+  Ledger: { width: 792, height: 1224 },
+  /** エグゼクティブ（7.25×10.5インチ） */
+  Executive: { width: 522, height: 756 },
   /** 日本の官製はがき（100mm × 148mm） */
   Postcard: { width: 283.46, height: 419.53 },
 };
@@ -66,14 +76,18 @@ export const PAPER_SIZE_LABELS: Record<PaperSizeId, string> = {
   A3: "A3",
   A4: "A4",
   A5: "A5",
+  A6: "A6",
   B0: "B0",
   B1: "B1",
   B2: "B2",
   B3: "B3",
   B4: "B4",
   B5: "B5",
+  B6: "B6",
   Letter: "Letter",
   Legal: "Legal",
+  Ledger: "タブロイド（Ledger）",
+  Executive: "エグゼクティブ",
   Postcard: "はがき",
 };
 
@@ -110,13 +124,17 @@ export const PAPER_SIZE_IDS: PaperSizeId[] = [
   "A3",
   "A4",
   "A5",
+  "A6",
   "B0",
   "B1",
   "B2",
   "B3",
   "B4",
   "B5",
+  "B6",
   "Letter",
   "Legal",
+  "Ledger",
+  "Executive",
   "Postcard",
 ];
