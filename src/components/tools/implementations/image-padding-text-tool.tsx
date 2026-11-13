@@ -50,6 +50,8 @@ interface EditableSettings {
   text: string;
   fontSize: number;
   bold: boolean;
+  /** 文字の縁取り（写真の上でも読みやすくする） */
+  outline: boolean;
   color: string;
   textAlign: PaddingTextHAlign;
   edge: PaddingTextEdge;
@@ -75,6 +77,7 @@ const DEFAULT_SETTINGS: EditableSettings = {
   text: "",
   fontSize: 24,
   bold: false,
+  outline: false,
   color: "#111111",
   textAlign: "center",
   edge: "bottom",
@@ -89,6 +92,7 @@ const EDGE_OPTIONS: { id: PaddingTextEdge; label: string }[] = [
   { id: "bottom", label: "下" },
   { id: "left", label: "左" },
   { id: "right", label: "右" },
+  { id: "image", label: "写真の上" },
 ];
 
 const EDGE_ALIGN_OPTIONS: { id: PaddingTextEdgeAlign; label: string }[] = [
@@ -101,6 +105,18 @@ const BAND_ALIGN_OPTIONS: { id: PaddingTextBandAlign; label: string }[] = [
   { id: "near", label: "写真に近い側" },
   { id: "center", label: "中央" },
   { id: "far", label: "外側" },
+];
+
+// 「写真の上」を選んだときの位置のボタン（横＝edgeAlign、縦＝bandAlign。near＝上・far＝下）
+const IMAGE_X_OPTIONS: { id: PaddingTextEdgeAlign; label: string }[] = [
+  { id: "start", label: "左" },
+  { id: "center", label: "中央" },
+  { id: "end", label: "右" },
+];
+const IMAGE_Y_OPTIONS: { id: PaddingTextBandAlign; label: string }[] = [
+  { id: "near", label: "上" },
+  { id: "center", label: "中央" },
+  { id: "far", label: "下" },
 ];
 
 const TEXT_ALIGN_OPTIONS: { id: PaddingTextHAlign; label: string }[] = [
@@ -174,7 +190,10 @@ function SettingsFields({
     );
   }
 
-  const edgeLabel = EDGE_OPTIONS.find((o) => o.id === values.edge)?.label ?? "";
+  const onImage = values.edge === "image";
+  const edgeLabel = onImage ? "写真の上" : `${EDGE_OPTIONS.find((o) => o.id === values.edge)?.label ?? ""}の余白`;
+  const alongOptions = onImage ? IMAGE_X_OPTIONS : EDGE_ALIGN_OPTIONS;
+  const acrossOptions = onImage ? IMAGE_Y_OPTIONS : BAND_ALIGN_OPTIONS;
   // 総合改修 22：設定が多く読みにくかったので、内容ごとの折りたたみ（余白・背景・文字・文字色・文字の位置）に分けた
   return (
     <SettingsStack>
@@ -245,7 +264,7 @@ function SettingsFields({
         <textarea
           value={values.text}
           onChange={(e) => onChange("text", e.target.value)}
-          placeholder="余白に表示する文字（複数行可）"
+          placeholder="入れる文字（複数行可）"
           rows={2}
           className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
         />
@@ -259,6 +278,15 @@ function SettingsFields({
             className={toggleButtonClass(values.bold, "xs")}
           >
             太字
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange("outline", !values.outline)}
+            aria-pressed={values.outline}
+            className={toggleButtonClass(values.outline, "xs")}
+            data-testid="padding-text-outline"
+          >
+            縁取り
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -283,12 +311,12 @@ function SettingsFields({
       <SettingsSection
         n={5}
         title="文字の位置"
-        summary={values.posX !== null || values.posY !== null ? `${edgeLabel}の余白・X ${values.posX ?? presetPos.x}%・Y ${values.posY ?? presetPos.y}%` : `${edgeLabel}の余白`}
+        summary={values.posX !== null || values.posY !== null ? `${edgeLabel}・X ${values.posX ?? presetPos.x}%・Y ${values.posY ?? presetPos.y}%` : edgeLabel}
       >
       <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-1">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">配置する余白</p>
-          <div className="flex flex-wrap gap-2">
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">文字を置く場所</p>
+          <div className="flex flex-wrap gap-2" data-testid="padding-text-place">
             {EDGE_OPTIONS.map((opt) => (
               <button
                 key={opt.id}
@@ -306,9 +334,9 @@ function SettingsFields({
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">余白内の位置（沿った方向）</p>
-          <div className="flex flex-wrap gap-2">
-            {EDGE_ALIGN_OPTIONS.map((opt) => (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">{onImage ? "写真の上の横の位置" : "余白内の位置（沿った方向）"}</p>
+          <div className="flex flex-wrap gap-2" data-testid="padding-text-along">
+            {alongOptions.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
@@ -325,9 +353,9 @@ function SettingsFields({
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">余白内の位置（縦位置・厚み方向）</p>
-          <div className="flex flex-wrap gap-2">
-            {BAND_ALIGN_OPTIONS.map((opt) => (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">{onImage ? "写真の上の縦の位置" : "余白内の位置（縦位置・厚み方向）"}</p>
+          <div className="flex flex-wrap gap-2" data-testid="padding-text-across">
+            {acrossOptions.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
@@ -353,10 +381,14 @@ function SettingsFields({
           }}
         />
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          バーで、選んだ余白の中の文字の位置を細かく動かせます（0%＝余白の左端・上端、100%＝右端・下端）。上の位置のボタンを押すと、その位置に戻ります。
+          {onImage
+            ? "バーで、写真の上の文字の位置を細かく動かせます（0%＝写真の左端・上端、100%＝右端・下端）。上の位置のボタンを押すと、その位置に戻ります。"
+            : "バーで、選んだ余白の中の文字の位置を細かく動かせます（0%＝余白の左端・上端、100%＝右端・下端）。上の位置のボタンを押すと、その位置に戻ります。"}
         </p>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          選択した余白の幅・高さが0pxの場合、その余白には文字が表示されません。
+          {onImage
+            ? "写真の上に文字を重ねます（余白が0pxでも入れられます）。写真の色によって読みにくいときは「縁取り」をオンにしてください。"
+            : "選択した余白の幅・高さが0pxの場合、その余白には文字が表示されません。写真に重ねたいときは「写真の上」を選んでください。"}
         </p>
       </div>
       </SettingsSection>
@@ -512,6 +544,7 @@ export function ImagePaddingTextTool() {
     currentSettings?.text,
     currentSettings?.fontSize,
     currentSettings?.bold,
+    currentSettings?.outline,
     currentSettings?.color,
     currentSettings?.textAlign,
     currentSettings?.edge,

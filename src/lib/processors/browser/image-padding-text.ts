@@ -7,7 +7,9 @@ import { loadImage, canvasToBlob, toOutput } from "./image";
  * 「画像レイアウト」（自由配置キャンバス）・「画像結合」（複数画像を1枚にまとめる）
  * とは明確に役割を分ける。このツールは1枚の画像を単位とし、
  * 元画像自体は一切リサイズ・トリミングせず、周囲のキャンバスだけを拡張して
- * 余白を追加し、その余白部分にのみ文字を配置する（開発指示書8・12章）。
+ * 余白を追加し、その余白部分に文字を配置する（開発指示書8・12章）。
+ * 2026-11：文字は「写真の上」（元画像の範囲）にも置けるようにした（edge = "image"）。
+ * 元画像のピクセルサイズは変えず、その上に文字を重ねて描くだけ。
  *
  * 複数画像の一括処理はUI側で1枚ずつこのProcessorを呼び出す方式にしている
  * （src/components/tools/implementations/image-batch-convert-tool.tsxと同じ
@@ -19,7 +21,8 @@ import { loadImage, canvasToBlob, toOutput } from "./image";
  * （image-layout.ts自体は変更していない。別ファイルでの独立実装）。
  */
 
-export type PaddingTextEdge = "top" | "bottom" | "left" | "right";
+/** 文字を置く場所：上下左右の余白、または写真の上（image） */
+export type PaddingTextEdge = "top" | "bottom" | "left" | "right" | "image";
 /** 帯（余白）の長辺方向における文字ブロックの位置 */
 export type PaddingTextEdgeAlign = "start" | "center" | "end";
 /**
@@ -48,6 +51,8 @@ export interface ImagePaddingTextInput {
   edge: PaddingTextEdge;
   edgeAlign: PaddingTextEdgeAlign;
   bandAlign: PaddingTextBandAlign;
+  /** 文字に縁取りをつける（写真の上でも読みやすくする）。縁の色は文字色に合わせて白か黒を自動で選ぶ */
+  outline?: boolean;
   /**
    * 文字の位置を、余白の帯の中の割合（0〜100）で細かく決める（X・Yの調整バー）。
    * posX は横（0＝帯の左端、100＝右端）、posY は縦（0＝帯の上端、100＝下端）。
@@ -74,7 +79,12 @@ export function paddingTextPresetPercent(
 ): { x: number; y: number } {
   const across = alignToPercent(bandAlignToOffsetAlign(edge, bandAlign));
   const along = alignToPercent(edgeAlign);
-  return edge === "top" || edge === "bottom" ? { x: along, y: across } : { x: across, y: along };
+  return isHorizontalEdge(edge) ? { x: along, y: across } : { x: across, y: along };
+}
+
+/** 横に長い帯として扱う場所（上下の余白・写真の上）。edgeAlign が横、bandAlign が縦に効く */
+function isHorizontalEdge(edge: PaddingTextEdge): boolean {
+  return edge === "top" || edge === "bottom" || edge === "image";
 }
 
 const MAX_CANVAS_PIXELS = 40_000_000; // 過大なキャンバスでのブラウザ停止を防ぐ上限
@@ -96,7 +106,8 @@ interface Rect {
 
 /**
  * 選択された辺の余白帯（矩形）を求める。その辺の余白が0pxの場合は
- * 描画先が存在しないため null を返す（文字が写真本体へはみ出さないようにする）。
+ * 描画先が存在しないため null を返す（余白を選んだときに、文字が写真本体へはみ出さないようにする）。
+ * 「写真の上」（image）のときは、元画像の範囲を返す。
  */
 function getPaddingBand(
   edge: PaddingTextEdge,
@@ -108,6 +119,8 @@ function getPaddingBand(
   padRight: number
 ): Rect | null {
   switch (edge) {
+    case "image":
+      return { x: padLeft, y: padTop, width: canvasWidth - padLeft - padRight, height: canvasHeight - padTop - padBottom };
     case "top":
       return padTop > 0 ? { x: 0, y: 0, width: canvasWidth, height: padTop } : null;
     case "bottom":
@@ -141,6 +154,8 @@ function bandAlignToOffsetAlign(
   bandAlign: PaddingTextBandAlign
 ): "start" | "center" | "end" {
   if (bandAlign === "center") return "center";
+  // 写真の上：near＝上、far＝下として扱う（画面では「上・中央・下」と表示する）
+  if (edge === "image") return bandAlign === "near" ? "start" : "end";
   const photoIsAtBandEnd = edge === "top" || edge === "left";
   if (bandAlign === "near") return photoIsAtBandEnd ? "end" : "start";
   return photoIsAtBandEnd ? "start" : "end"; // far
@@ -152,7 +167,7 @@ function drawPaddingText(
   edge: PaddingTextEdge,
   input: Pick<
     ImagePaddingTextInput,
-    "text" | "fontSize" | "bold" | "color" | "textAlign" | "edgeAlign" | "bandAlign" | "posX" | "posY"
+    "text" | "fontSize" | "bold" | "color" | "textAlign" | "edgeAlign" | "bandAlign" | "posX" | "posY" | "outline"
   >
 ) {
   const fontSize = input.fontSize;
@@ -170,7 +185,7 @@ function drawPaddingText(
   // 帯の向き（上下＝長辺は横方向、左右＝長辺は縦方向）によって、
   // edgeAlign（帯に沿った位置）・bandAlign（帯の厚み方向の位置＝縦位置）が
   // どちらの軸に効くかを切り替える。
-  const isHorizontalBand = edge === "top" || edge === "bottom";
+  const isHorizontalBand = isHorizontalEdge(edge);
   const bandOffsetAlign = bandAlignToOffsetAlign(edge, input.bandAlign);
   // X・Yの調整バーで決めたときは、帯の中の割合で置く（0＝左端・上端、100＝右端・下端。文字が帯からはみ出さない範囲）
   const byPercent = (start: number, size: number, item: number, percent: number) =>
@@ -195,13 +210,34 @@ function drawPaddingText(
   ctx.rect(band.x, band.y, band.width, band.height);
   ctx.clip();
 
+  const color = input.color || DEFAULT_TEXT_COLOR;
+  if (input.outline) {
+    // 縁取り：文字色が明るければ黒、暗ければ白の縁にする（写真の上でも読めるように）
+    ctx.strokeStyle = outlineColorFor(color);
+    ctx.lineWidth = Math.max(2, fontSize * 0.14);
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+  }
   lines.forEach((line, i) => {
     const lineWidth = lineWidths[i];
     const lineX = blockX + alignOffset(blockWidth, lineWidth, textAlignToOffsetAlign(input.textAlign));
+    if (input.outline) ctx.strokeText(line, lineX, blockY + i * lineHeight);
     ctx.fillText(line, lineX, blockY + i * lineHeight);
   });
 
   ctx.restore();
+}
+
+/** 文字色（#rrggbb）の明るさから、縁取りの色（黒か白）を決める */
+export function outlineColorFor(color: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  return luminance > 140 ? "#000000" : "#ffffff";
 }
 
 function textAlignToOffsetAlign(textAlign: PaddingTextHAlign): "start" | "center" | "end" {
@@ -272,8 +308,8 @@ export class ImagePaddingTextProcessor extends BrowserProcessor<
       if (band) {
         drawPaddingText(ctx, band, input.edge, { ...input, text });
       }
-      // 選択した辺の余白が0pxの場合、描画先の帯が存在しないため文字は描画しない
-      // （写真本体の上へ文字が乗ってしまうことを避けるため、意図的に何もしない）。
+      // 余白を選んでいて、その余白が0pxの場合、描画先の帯が存在しないため文字は描画しない
+      // （写真の上に置きたいときは「写真の上」を選ぶ）。
     }
 
     const mimeType = input.format === "jpeg" ? "image/jpeg" : "image/png";

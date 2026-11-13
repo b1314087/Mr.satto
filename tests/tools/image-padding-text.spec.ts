@@ -127,7 +127,7 @@ test("image-padding-text: 文字を入力し、サイズ・色・太字・複数
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [fixtures.png]);
 
-  await page.getByPlaceholder("余白に表示する文字（複数行可）").fill("1行目\n2行目");
+  await page.getByPlaceholder("入れる文字（複数行可）").fill("1行目\n2行目");
   await page.getByLabel("サイズ", { exact: false }).first().fill("18");
   await page.getByRole("button", { name: "太字" }).click();
   await page.getByRole("button", { name: "上", exact: true }).click(); // 配置する余白: 上
@@ -265,7 +265,7 @@ test("image-padding-text: 余白の文字を、横・縦の位置（X/Y）のバ
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [src]);
   await page.getByRole("spinbutton", { name: /^上/ }).first().fill("100");
-  await page.getByPlaceholder("余白に表示する文字（複数行可）").fill("ABC");
+  await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
   await page.getByLabel("サイズ", { exact: false }).first().fill("30");
   await page.getByRole("button", { name: "上", exact: true }).click(); // 配置する余白: 上
   await page.getByTestId("padding-text-color-赤").click();
@@ -302,4 +302,55 @@ print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n els
   expect(r.n).toBeGreaterThan(50);
   expect(Math.abs(r.x / r.w - 0.2)).toBeLessThan(0.06); // 横20%
   expect(Math.abs(r.y - 50)).toBeLessThan(10); // 上の余白（0〜100px）の真ん中
+});
+
+test("image-padding-text: 「写真の上」を選ぶと、余白が0pxでも写真に文字を重ねられ、位置を変えられる。縁取りも付けられる（2026-11）", async ({ page }) => {
+  test.setTimeout(90_000);
+  const src = test.info().outputPath("gray-photo.png");
+  execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(300,200),(128,128,128)).save(sys.argv[1])", src]);
+  await page.goto("/tools/image-padding-text");
+  await uploadFixture(page, [src]);
+  // 余白はすべて0px（既定の下60pxも0にする）
+  await page.getByRole("spinbutton", { name: /^下/ }).first().fill("0");
+  await page.getByRole("spinbutton", { name: /^下/ }).first().blur();
+  await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
+  await page.getByLabel("サイズ", { exact: false }).first().fill("40");
+  await page.getByTestId("padding-text-place").getByRole("button", { name: "写真の上" }).click();
+  await expect(page.getByText("写真の上の横の位置")).toBeVisible();
+  // 写真の上では、位置のボタンが「左・中央・右」「上・中央・下」になる
+  await page.getByTestId("padding-text-along").getByRole("button", { name: "右", exact: true }).click();
+  await page.getByTestId("padding-text-across").getByRole("button", { name: "上", exact: true }).click();
+  await page.getByTestId("padding-text-color-赤").click();
+  await page.getByTestId("padding-text-outline").click();
+  await expect(page.getByTestId("padding-text-outline")).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "この画像だけ保存" }).click();
+  await waitForSuccess(page, "完了");
+  const out = test.info().outputPath("on-photo.png");
+  await (await clickAndDownload(page, "ダウンロード")).saveAs(out);
+  const r = JSON.parse(
+    execFileSync("python3", ["-c", `
+import sys, json
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+w, h = im.size
+px = im.load()
+sx = sy = n = white = 0
+for y in range(h):
+    for x in range(w):
+        r, g, b = px[x, y]
+        if r > 150 and r - g > 60 and r - b > 60:
+            sx += x; sy += y; n += 1
+        if r > 240 and g > 240 and b > 240:
+            white += 1
+print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n else -1, "n": n, "white": white}))
+`, out], { encoding: "utf8" })
+  );
+  // 余白0px：画像の大きさは元のまま（文字は写真の上に重なる）
+  expect(r.w).toBe(300);
+  expect(r.h).toBe(200);
+  expect(r.n).toBeGreaterThan(50);
+  expect(r.x / r.w).toBeGreaterThan(0.6); // 右寄せ
+  expect(r.y / r.h).toBeLessThan(0.35); // 上寄せ
+  expect(r.white).toBeGreaterThan(30); // 赤い文字には白い縁取りが付く
 });

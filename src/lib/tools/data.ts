@@ -289,7 +289,7 @@ const toolDefinitions: Tool[] = [
     id: "image-padding-text",
     name: "画像一括余白・文字入れ",
     category: "image",
-    description: "複数の画像の周囲に余白を追加し、余白部分に文字（キャプション等）を入れて一括で書き出します（元画像はリサイズしません）",
+    description: "複数の画像の周囲に余白を追加し、余白や写真の上に文字（キャプション等）を入れて一括で書き出します（元画像はリサイズしません）",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
