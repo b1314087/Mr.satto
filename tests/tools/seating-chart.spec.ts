@@ -1244,35 +1244,27 @@ test("座席表の名前（見出し）を座席のレイアウトで決めら�
 });
 
 // ---------------------------------------------------------------------------
-// 右のメニュー：設定はプルダウンで切り替え、書き出しはいつも表示
+// 右のメニュー：設定はプルダウンで切り替えず、すべていつも表示（2026-11）
 // ---------------------------------------------------------------------------
-test("メニュー：「表示する設定」のプルダウンで、用途・座席のレイアウト・名前・鍵の確認・席の条件を切り替え、書き出しはいつも見える。切り替えても入力は消えない", async ({ page }) => {
+test("メニュー：「表示する設定」のプルダウンは無く、用途・座席のレイアウト・名前・鍵の確認・席の条件・書き出しが、すべて同時に見える。入力は消えない", async ({ page }) => {
   await openTool(page);
-  // 用途を選ぶ前は、用途の一覧だけ（プルダウンはまだ出さない）
-  await expect(page.getByTestId("seat-panel")).toHaveCount(0);
   await page.getByTestId("seat-purpose-classroom").click();
-  const select = page.getByTestId("seat-panel");
-  const values = await select.locator("option").evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).textContent));
-  plainExpect(values).toEqual(["用途を選ぶ", "座席のレイアウト", "名前を入れる", "鍵をかけた席の確認", "席の条件"]);
-  // 用途を選んだあとは、名前の入力が出ている
-  await expect(select).toHaveValue("names");
+  await expect(page.getByTestId("seat-panel")).toHaveCount(0);
+  await expect(page.getByText("表示する設定")).toHaveCount(0);
   await page.getByTestId("seat-names").fill("一郎\n二郎\n三郎");
-  const panels = { purpose: "seat-purpose-meeting", layout: "seat-settings", names: "seat-names", marks: "seat-show-marks", conditions: "seat-conditions" } as const;
-  for (const [panel, id] of Object.entries(panels)) {
-    await select.selectOption(panel);
+  for (const id of ["seat-purpose-meeting", "seat-settings", "seat-names", "seat-show-marks", "seat-conditions", "seat-format-pdf"]) {
+    await page.getByTestId(id).scrollIntoViewIfNeeded();
     await expect(page.getByTestId(id)).toBeVisible();
-    for (const [other, otherId] of Object.entries(panels)) if (other !== panel) await expect(page.getByTestId(otherId)).toBeHidden();
-    // 書き出しは、どの設定を表示していても見える
-    await expect(page.getByTestId("seat-format-pdf")).toBeVisible();
-    await expect(page.getByRole("button", { name: "画像（PNG）でダウンロード" })).toBeVisible();
   }
-  // 切り替えても、入力した名前・設定は残る
-  await select.selectOption("layout");
-  await page.getByTestId("seat-title").fill("切り替えの確認");
-  await select.selectOption("names");
+  await expect(page.getByRole("button", { name: "画像（PNG）でダウンロード" })).toBeVisible();
+  // 設定の並び順：用途 → レイアウト → 名前 → 鍵の確認 → 席の条件
+  const order = await page.evaluate(() =>
+    ["purpose", "layout", "names", "marks", "conditions"].map((k) => document.querySelector(`[data-testid="seat-panel-${k}"]`)!.getBoundingClientRect().top)
+  );
+  plainExpect([...order].sort((x, y) => x - y)).toEqual(order);
+  await page.getByTestId("seat-title").fill("同時に見える確認");
   await expect(page.getByTestId("seat-names")).toHaveValue("一郎\n二郎\n三郎");
-  await select.selectOption("layout");
-  await expect(page.getByTestId("seat-title")).toHaveValue("切り替えの確認");
+  await expect(page.getByTestId("seat-title")).toHaveValue("同時に見える確認");
   plainExpect((await seatNames(page)).slice(0, 3)).toEqual(["一郎", "二郎", "三郎"]);
 });
 
@@ -1376,6 +1368,8 @@ test("設定は折りたたまない：見出しを押して閉じる欄（プ�
   await start(page, "meeting", PEOPLE);
   await openSeatPanel(page, "layout");
   await expect(page.getByTestId("seat-settings")).toBeVisible();
+  // 設定を切り替えるプルダウン（表示する設定）も無い
+  await expect(page.getByTestId("seat-panel")).toHaveCount(0);
   // ツールの設定・メニューの中だけを見る（ページ下のよくある質問の開閉は対象外）
   const menu = page.locator('[data-testid="seat-menu"], [data-testid^="seat-panel"]');
   await expect(page.getByTestId("seat-panel-layout").locator("details, summary")).toHaveCount(0);
