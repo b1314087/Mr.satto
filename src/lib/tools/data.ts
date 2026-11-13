@@ -287,7 +287,7 @@ const toolDefinitions: Tool[] = [
   },
   {
     id: "image-padding",
-    name: "画像一括余白",
+    name: "画像余白",
     category: "image",
     description: "複数の画像の周囲（上下左右）に余白を追加し、一括で書き出します（元画像はリサイズしません。背景は白・黒・透明・好きな色）",
     status: "available",
@@ -297,7 +297,7 @@ const toolDefinitions: Tool[] = [
   },
   {
     id: "image-padding-text",
-    name: "画像一括文字入れ",
+    name: "画像文字入れ",
     category: "image",
     description: "複数の画像の上に文字（キャプション・クレジット等）を入れて一括で書き出します（改行・縁取り・位置の調整ができます。元画像はリサイズしません）",
     status: "available",

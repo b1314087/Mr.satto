@@ -64,8 +64,8 @@ interface EditableSettings {
 
 /**
  * 2026-11：1つのツールだった「画像一括余白・文字入れ」を、2つのツールに分けた。
- * - padding：画像一括余白（余白・背景だけ。文字は入れない）
- * - text：画像一括文字入れ（写真の上に文字を入れるだけ。余白は付けない）
+ * - padding：画像余白（余白・背景だけ。文字は入れない）
+ * - text：画像文字入れ（写真の上に文字を入れるだけ。余白は付けない）
  * 画面・処理（ImagePaddingTextProcessor）は共通で、使う設定だけを出し分ける。
  */
 export type PaddingTextVariant = "padding" | "text";
@@ -248,7 +248,7 @@ function SettingsFields({
   );
 }
 
-/** 画像一括文字入れの設定（文字・文字色・文字の位置） */
+/** 画像文字入れの設定（文字・文字色・文字の位置） */
 function TextSettingsFields({
   values,
   onChange,

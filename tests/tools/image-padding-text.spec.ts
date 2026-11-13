@@ -21,7 +21,7 @@ import {
 
 test("image-padding-text: ページが表示され、画像を1枚アップロードすると設定UIが出る", async ({ page }) => {
   await page.goto("/tools/image-padding-text");
-  await expect(page.getByRole("heading", { name: "画像一括文字入れ" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "画像文字入れ" })).toBeVisible();
 
   await uploadFixture(page, [fixtures.png]);
 
@@ -75,7 +75,7 @@ test("image-padding-text: 上下ボタンで画像の順序を入れ替えられ
 });
 
 test("image-padding: 余白を追加しても元画像はリサイズされず、キャンバスだけ拡張される", async ({ page }) => {
-  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像余白」に分けた
   await uploadFixture(page, [fixtures.png]); // 64x64
 
   await page.getByRole("spinbutton", { name: /^上/ }).first().fill("10");
@@ -95,7 +95,7 @@ test("image-padding: 余白を追加しても元画像はリサイズされず�
 });
 
 test("image-padding: 「4辺を同じ値にする」で上下左右へ一括反映できる", async ({ page }) => {
-  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像余白」に分けた
   await uploadFixture(page, [fixtures.png]);
 
   // 「4辺を同じ値にする」ボタンと同じ行にある数値入力を使う
@@ -114,7 +114,7 @@ test("image-padding: 「4辺を同じ値にする」で上下左右へ一括反�
 });
 
 test("image-padding: 背景色を白/黒/カスタムへ切り替えられる", async ({ page }) => {
-  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像余白」に分けた
   await uploadFixture(page, [fixtures.png]);
 
   // 「文字の色：黒」の色ボタンと区別するため、名前が「黒」だけのボタン（背景色）を選ぶ
@@ -149,7 +149,7 @@ test("image-padding-text: 特定の画像だけ「文字なし」にできる", 
 });
 
 test("image-padding: 個別設定に切り替えると共通設定と独立して変更できる", async ({ page }) => {
-  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像余白」に分けた
   await uploadFixture(page, [fixtures.png, fixtures.jpg]);
 
   const toggle = page.getByRole("button", { name: /共通設定を使用中|個別設定を使用中/ });
@@ -162,7 +162,7 @@ test("image-padding: 個別設定に切り替えると共通設定と独立し�
 });
 
 test("image-padding: 共通設定を変更しても個別設定した画像の値は維持される", async ({ page }) => {
-  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像余白」に分けた
   await uploadFixture(page, [fixtures.png, fixtures.jpg]);
 
   // 1枚目を個別設定にし、上余白を100にする
@@ -421,11 +421,11 @@ print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n els
   expect(r.y).toBeGreaterThan(150); // 写真の下のほう
 });
 
-test("2つのツールに分けた（2026-11）：画像一括余白は余白・背景だけ、画像一括文字入れは文字だけ。文字はEnterで改行でき、複数行で入る", async ({ page }) => {
+test("2つのツールに分けた（2026-11）：画像余白は余白・背景だけ、画像文字入れは文字だけ。文字はEnterで改行でき、複数行で入る", async ({ page }) => {
   test.setTimeout(90_000);
   // 余白
   await page.goto("/tools/image-padding");
-  await expect(page.getByRole("heading", { name: "画像一括余白" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "画像余白" })).toBeVisible();
   await uploadFixture(page, [fixtures.png]);
   await expect(page.getByTestId("padding-sliders")).toBeVisible();
   await expect(page.getByPlaceholder("入れる文字（複数行可）")).toHaveCount(0);
