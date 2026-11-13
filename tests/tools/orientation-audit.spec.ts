@@ -25,6 +25,7 @@ const IMAGE_TOOLS = [
   "image-layout",
   "image-merge",
   "image-padding-text",
+  "image-padding",
   "image-tile-split",
   "image-mosaic",
   "background-remover",

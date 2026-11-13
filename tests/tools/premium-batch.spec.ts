@@ -69,7 +69,7 @@ baseTest.describe("一括処理の仕組み", () => {
   });
 
   baseTest("課金オフの間は、説明文からプレミアムの話がなくなる（だれでも一括処理を使えるため）", () => {
-    for (const id of ["image-format-convert", "image-batch-convert", "background-remover", "image-padding-text", "image-compress", "pdf-compress"]) {
+    for (const id of ["image-format-convert", "image-batch-convert", "background-remover", "image-padding-text", "image-padding", "image-compress", "pdf-compress"]) {
       const content = getToolSeoContent(id)!;
       const off = adaptToolSeoContentWith(content, { billing: false, ads: false, premiumOnly: false, standardOffered: false });
       const all = [off.metaTitle, off.metaDescription, off.lead, ...off.howTo, ...off.faq.flatMap((f) => [f.question, f.answer])].join("\n");

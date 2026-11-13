@@ -62,6 +62,14 @@ interface EditableSettings {
   posY: number | null;
 }
 
+/**
+ * 2026-11：1つのツールだった「画像一括余白・文字入れ」を、2つのツールに分けた。
+ * - padding：画像一括余白（余白・背景だけ。文字は入れない）
+ * - text：画像一括文字入れ（写真の上に文字を入れるだけ。余白は付けない）
+ * 画面・処理（ImagePaddingTextProcessor）は共通で、使う設定だけを出し分ける。
+ */
+export type PaddingTextVariant = "padding" | "text";
+
 interface PerImageState {
   noText: boolean;
   /** 空オブジェクトの場合は「共通設定を使用」を意味する */
@@ -142,10 +150,12 @@ function SettingsFields({
   values,
   onChange,
   unit,
+  variant,
 }: {
   values: EditableSettings;
   onChange: <K extends keyof EditableSettings>(key: K, value: EditableSettings[K]) => void;
   unit: Unit;
+  variant: PaddingTextVariant;
 }) {
   const unitLabel = unit === "px" ? "px" : "mm";
   // ボタンで選んだ位置を、X・Yのバーの値（余白の帯の中の割合）にしたもの
@@ -171,8 +181,8 @@ function SettingsFields({
     );
   }
 
-  const presetLabel = `${IMAGE_Y_OPTIONS.find((o) => o.id === values.bandAlign)?.label ?? ""}・${IMAGE_X_OPTIONS.find((o) => o.id === values.edgeAlign)?.label ?? ""}`;
   // 総合改修 22：設定が多く読みにくかったので、内容ごとの折りたたみ（余白・背景・文字・文字色・文字の位置）に分けた
+  if (variant === "text") return <TextSettingsFields values={values} onChange={onChange} presetPos={presetPos} />;
   return (
     <SettingsStack>
       <SettingsSection
@@ -234,15 +244,34 @@ function SettingsFields({
       </div>
       </SettingsSection>
 
-      <SettingsSection n={3} title="文字" summary={values.text.trim() ? values.text.split("\n")[0] : "（未入力）"}>
+    </SettingsStack>
+  );
+}
+
+/** 画像一括文字入れの設定（文字・文字色・文字の位置） */
+function TextSettingsFields({
+  values,
+  onChange,
+  presetPos,
+}: {
+  values: EditableSettings;
+  onChange: <K extends keyof EditableSettings>(key: K, value: EditableSettings[K]) => void;
+  presetPos: { x: number; y: number };
+}) {
+  const presetLabel = `${IMAGE_Y_OPTIONS.find((o) => o.id === values.bandAlign)?.label ?? ""}・${IMAGE_X_OPTIONS.find((o) => o.id === values.edgeAlign)?.label ?? ""}`;
+  return (
+    <SettingsStack>
+      <SettingsSection n={1} title="文字" summary={values.text.trim() ? values.text.split("\n")[0] : "（未入力）"}>
       <div className="flex flex-col gap-2">
         <textarea
           value={values.text}
           onChange={(e) => onChange("text", e.target.value)}
           placeholder="入れる文字（複数行可）"
-          rows={2}
-          className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+          rows={3}
+          className="w-full resize-y rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+          data-testid="padding-text-input"
         />
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">Enterキーで改行できます（改行した行は、そのまま複数行で入ります）。</p>
         <div className="flex flex-wrap items-center gap-3">
           <div className="w-full sm:w-72">
             <SliderField label="文字サイズ" value={values.fontSize} min={6} max={MAX_FONT_SIZE} unit="px" onChange={(v) => onChange("fontSize", v)} />
@@ -279,12 +308,12 @@ function SettingsFields({
       </div>
       </SettingsSection>
 
-      <SettingsSection n={4} title="文字色" summary={values.color}>
+      <SettingsSection n={2} title="文字色" summary={values.color}>
         <TextColorField value={values.color} onChange={(c) => onChange("color", c)} testId="padding-text-color" />
       </SettingsSection>
 
       <SettingsSection
-        n={5}
+        n={3}
         title="文字の位置"
         summary={values.posX !== null || values.posY !== null ? `X ${values.posX ?? presetPos.x}%・Y ${values.posY ?? presetPos.y}%` : presetLabel}
       >
@@ -342,10 +371,17 @@ function SettingsFields({
   );
 }
 
-export function ImagePaddingTextTool() {
+/** 使う設定だけにそろえる（余白のツールでは文字なし、文字入れのツールでは余白なし） */
+function forVariant(s: EditableSettings, variant: PaddingTextVariant): EditableSettings {
+  return variant === "padding" ? { ...s, text: "" } : { ...s, paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 };
+}
+
+export function ImagePaddingTextTool({ variant = "text" }: { variant?: PaddingTextVariant } = {}) {
+  const toolId = variant === "padding" ? "image-padding" : "image-padding-text";
+  const suffix = variant === "padding" ? "余白" : "文字入れ";
   const [files, setFiles] = useState<File[]>([]);
   // 複数の画像をまとめて処理する一括処理は、プレミアムプランの機能（無料・旧スタンダードは1枚ずつ）
-  const batch = useBatchSelection("image-padding-text");
+  const batch = useBatchSelection(toolId);
   const [common, setCommon] = useState<EditableSettings>(DEFAULT_SETTINGS);
   const [perImage, setPerImage] = useState<Map<File, PerImageState>>(new Map());
   // 画像削除等でfiles.lengthが縮んだ場合に範囲外を指さないよう、
@@ -394,7 +430,7 @@ export function ImagePaddingTextTool() {
     const state = getState(file);
     const merged = { ...common, ...state.overrides };
     if (state.noText) merged.text = "";
-    return merged;
+    return forVariant(merged, variant);
   }
 
   const currentFile: File | undefined = files[currentIndex];
@@ -526,7 +562,7 @@ export function ImagePaddingTextTool() {
       });
       URL.revokeObjectURL(output.url);
       const ext = format === "jpeg" ? "jpg" : "png";
-      const name = `${stripExtension(currentFile.name)}_余白文字入れ.${ext}`;
+      const name = `${stripExtension(currentFile.name)}_${suffix}.${ext}`;
       setCurrentResult({ blob: output.blob, name });
       setStatus("success");
     } catch (e) {
@@ -551,7 +587,7 @@ export function ImagePaddingTextTool() {
           format,
         });
         URL.revokeObjectURL(output.url);
-        outputs.push({ name: `${stripExtension(file.name)}_余白文字入れ.${ext}`, blob: output.blob });
+        outputs.push({ name: `${stripExtension(file.name)}_${suffix}.${ext}`, blob: output.blob });
       }
 
       const uniqueNames = dedupeFileNames(outputs.map((o) => o.name));
@@ -561,7 +597,7 @@ export function ImagePaddingTextTool() {
       } else {
         const entries: ZipEntry[] = outputs.map((o, i) => ({ name: uniqueNames[i], blob: o.blob }));
         const zipBlob = await createZip(entries);
-        const zipName = `${stripExtension(files[0].name) || "images"}_余白文字入れ.zip`;
+        const zipName = `${stripExtension(files[0].name) || "images"}_${suffix}.zip`;
         setBatchResult({ blob: zipBlob, name: zipName, count: outputs.length });
       }
       setStatus("success");
@@ -592,7 +628,7 @@ export function ImagePaddingTextTool() {
           >
             {previewResult ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={previewResult.url} alt="余白・文字入れ結果のプレビュー" className="max-h-[min(30vh,28rem)] max-w-full object-contain lg:max-h-[min(55vh,28rem)]" />
+              <img src={previewResult.url} alt={`${suffix}の結果のプレビュー`} className="max-h-[min(30vh,28rem)] max-w-full object-contain lg:max-h-[min(55vh,28rem)]" />
             ) : (
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 {previewLoading ? "プレビューを作成しています…" : "設定を変更するとプレビューが表示されます"}
@@ -652,6 +688,7 @@ export function ImagePaddingTextTool() {
         <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">共通設定（全画像に適用）</p>
+            {variant === "padding" && (
             <div className="flex gap-2">
               <button
                 type="button"
@@ -668,8 +705,9 @@ export function ImagePaddingTextTool() {
                 mm
               </button>
             </div>
+            )}
           </div>
-          <SettingsFields values={common} onChange={updateCommonField} unit={unit} />
+          <SettingsFields values={common} onChange={updateCommonField} unit={unit} variant={variant} />
         </div>
       )}
 
@@ -680,6 +718,7 @@ export function ImagePaddingTextTool() {
               {currentIndex + 1}枚目の個別設定
             </p>
             <div className="flex flex-wrap items-center gap-2">
+              {variant === "text" && (
               <label className="flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-300">
                 <input
                   type="checkbox"
@@ -688,6 +727,7 @@ export function ImagePaddingTextTool() {
                 />
                 この画像は文字なし
               </label>
+              )}
               <button
                 type="button"
                 onClick={() => setUseIndividual(!isIndividual)}
@@ -698,7 +738,7 @@ export function ImagePaddingTextTool() {
             </div>
           </div>
           {isIndividual && currentSettings && (
-            <SettingsFields values={currentSettings} onChange={updateIndividualField} unit={unit} />
+            <SettingsFields values={currentSettings} onChange={updateIndividualField} unit={unit} variant={variant} />
           )}
         </div>
       )}

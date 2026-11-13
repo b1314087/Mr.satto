@@ -29,7 +29,7 @@ const CASES: [string, Input][] = [
   ...(["pdf-merge", "pdf-split", "pdf-delete-pages", "pdf-reorder-pages", "pdf-rotate", "pdf-extract-pages", "pdf-fix?mode=page-numbers", "pdf-fix?mode=watermark", "pdf-fix?mode=redact", "pdf-resize-pages", "pdf-crop-pages", "pdf-compress", "pdf-metadata-remove", "pdf-to-text", "pdf-to-word", "pdf-to-excel", "filled-pdf-to-excel"] as const).map((id) => [id, pdf] as [string, Input]),
   // 画像
   // 工程3：統合した旧ツールは、統合先でその機能を選んだ状態（?mode=）で確かめる
-  ...(["image-crop?mode=sns", "image-crop", "image-batch-convert", "image-format-convert", "image-rotate-flip", "image-to-pdf", "image-flip", "image-adjust?mode=grayscale", "image-metadata-remove", "image-layout", "image-crop?mode=passport", "image-padding-text", "image-tile-split", "image-mosaic", "image-compress?mode=resize", "image-compress", "image-rotate"] as const).map((id) => [id, img] as [string, Input]),
+  ...(["image-crop?mode=sns", "image-crop", "image-batch-convert", "image-format-convert", "image-rotate-flip", "image-to-pdf", "image-flip", "image-adjust?mode=grayscale", "image-metadata-remove", "image-layout", "image-crop?mode=passport", "image-padding-text", "image-padding", "image-tile-split", "image-mosaic", "image-compress?mode=resize", "image-compress", "image-rotate"] as const).map((id) => [id, img] as [string, Input]),
   ["image-merge", { kind: "file", files: [fixtures.png, fixtures.jpg] }],
   ["excel-merge", { kind: "file", files: [fixtures.csv, fixtures.csvForMerge] }],
   ["csv-format", { kind: "text", text: "a, b ,c\n 1,2 ,3\n\n4,5,6" }],

@@ -570,8 +570,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ImageLayoutTool />;
     case "image-merge":
       return <ImageMergeTool />;
+    case "image-padding":
+      return <ImagePaddingTextTool variant="padding" />;
     case "image-padding-text":
-      return <ImagePaddingTextTool />;
+      return <ImagePaddingTextTool variant="text" />;
     case "image-tile-split":
       return <ImageTileSplitTool />;
     case "image-mosaic":

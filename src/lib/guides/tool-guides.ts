@@ -181,12 +181,20 @@ export const toolGuides: Record<string, ToolGuide> = {
       { title: "結合して保存する", parts: [btns(["横結合", "縦結合", "グリッド"], 0), btns(["白", "黒", "透明"], 0), preview("image")], focus: "popup" },
     ],
   },
-  "image-padding-text": {
+  "image-padding": {
     split: true,
     steps: [
       pick("画像を選ぶ", "画像をドラッグ&ドロップ"),
       step("余白を決める", [file(IMG, true), btns(["px", "mm"], 0), input2("上 px", "0", "下 px", "60"), btns(["白", "黒", "透明"], 0), preview("image")], 2),
-      step("文字を入れる", [text(undefined, ["入れる文字（複数行可）"]), slider("文字サイズ", 0.3), btns(["左揃え", "中央揃え", "右揃え"], 1), preview("image")], 0),
+      { title: "保存する", parts: [btns(["PNG", "JPEG"], 0), run("この画像だけ保存"), run("1件を一括出力"), preview("image")], focus: 2 },
+    ],
+  },
+  "image-padding-text": {
+    split: true,
+    steps: [
+      pick("画像を選ぶ", "画像をドラッグ&ドロップ"),
+      step("文字を入れる", [file(IMG, true), text(undefined, ["入れる文字（複数行可）"]), slider("文字サイズ", 0.3), btns(["左揃え", "中央揃え", "右揃え"], 1), preview("image")], 1),
+      step("位置を決める", [btns(["左", "中央", "右"], 1), btns(["上", "中央", "下"], 2), preview("image")], 1),
       { title: "保存する", parts: [btns(["PNG", "JPEG"], 0), run("この画像だけ保存"), run("1件を一括出力"), preview("image")], focus: 2 },
     ],
   },
@@ -911,7 +919,7 @@ const descriptions: Record<string, Record<number, string>> = {
   "image-compress": { 1: "「サイズを変更」「容量を圧縮」から、やりたいことを1つ選びます。もう一方を押すと選択が切り替わります。" },
   "image-crop": { 3: "比率を選び、プレビューの枠をドラッグして、切り抜く範囲を決めます。" },
   "image-layout": { 2: "画像はドラッグで好きな位置に動かせます。「文字を追加」で文字も入れられます。" },
-  "image-padding-text": { 3: "写真の上に入れる文字と大きさ・揃え方を選びます。「文字の位置」で、写真の上のどこに置くかを決めます。" },
+  "image-padding-text": { 2: "写真の上に入れる文字と大きさ・揃え方を選びます。Enterキーで改行できます。" },
   "image-mosaic": { 2: "「＋ 範囲を追加」を押して、プレビューの枠を隠したい所に合わせます。" },
   "pdf-edit": { 3: "上から順に結合されます。「↑」などで順番を入れ替えられます。" },
   "pdf-edit@split": { 1: "上の「分割」を選び、分けたいPDFを選びます。" },

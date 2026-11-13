@@ -26,6 +26,7 @@ export const BATCH_LIMITS = {
   "image-format-convert": 30,
   "image-adjust": 30,
   "image-padding-text": 30,
+  "image-padding": 30,
   // 元の解像度で全画素を計算するため、1枚ごとの処理が重い（工程2でAIのモードは削除した）
   "background-remover": 10,
   // PDF（1ファイルが大きく、処理にも時間がかかる）

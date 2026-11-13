@@ -21,7 +21,7 @@ import {
 
 test("image-padding-text: ページが表示され、画像を1枚アップロードすると設定UIが出る", async ({ page }) => {
   await page.goto("/tools/image-padding-text");
-  await expect(page.getByRole("heading", { name: "画像一括余白・文字入れ" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "画像一括文字入れ" })).toBeVisible();
 
   await uploadFixture(page, [fixtures.png]);
 
@@ -74,8 +74,8 @@ test("image-padding-text: 上下ボタンで画像の順序を入れ替えられ
   await expect(page.getByRole("button", { name: /下へ移動/ }).nth(1)).toBeDisabled();
 });
 
-test("image-padding-text: 余白を追加しても元画像はリサイズされず、キャンバスだけ拡張される", async ({ page }) => {
-  await page.goto("/tools/image-padding-text");
+test("image-padding: 余白を追加しても元画像はリサイズされず、キャンバスだけ拡張される", async ({ page }) => {
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
   await uploadFixture(page, [fixtures.png]); // 64x64
 
   await page.getByRole("spinbutton", { name: /^上/ }).first().fill("10");
@@ -94,8 +94,8 @@ test("image-padding-text: 余白を追加しても元画像はリサイズされ
   expect(dims.height).toBe(94); // 64 + 10(上) + 20(下)
 });
 
-test("image-padding-text: 「4辺を同じ値にする」で上下左右へ一括反映できる", async ({ page }) => {
-  await page.goto("/tools/image-padding-text");
+test("image-padding: 「4辺を同じ値にする」で上下左右へ一括反映できる", async ({ page }) => {
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
   await uploadFixture(page, [fixtures.png]);
 
   // 「4辺を同じ値にする」ボタンと同じ行にある数値入力を使う
@@ -113,8 +113,8 @@ test("image-padding-text: 「4辺を同じ値にする」で上下左右へ一�
   expect(dims.height).toBe(94); // 64 + 15 + 15
 });
 
-test("image-padding-text: 背景色を白/黒/カスタムへ切り替えられる", async ({ page }) => {
-  await page.goto("/tools/image-padding-text");
+test("image-padding: 背景色を白/黒/カスタムへ切り替えられる", async ({ page }) => {
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
   await uploadFixture(page, [fixtures.png]);
 
   // 「文字の色：黒」の色ボタンと区別するため、名前が「黒」だけのボタン（背景色）を選ぶ
@@ -148,8 +148,8 @@ test("image-padding-text: 特定の画像だけ「文字なし」にできる", 
   await expect(page.getByLabel("この画像は文字なし")).toBeChecked();
 });
 
-test("image-padding-text: 個別設定に切り替えると共通設定と独立して変更できる", async ({ page }) => {
-  await page.goto("/tools/image-padding-text");
+test("image-padding: 個別設定に切り替えると共通設定と独立して変更できる", async ({ page }) => {
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
   await uploadFixture(page, [fixtures.png, fixtures.jpg]);
 
   const toggle = page.getByRole("button", { name: /共通設定を使用中|個別設定を使用中/ });
@@ -161,8 +161,8 @@ test("image-padding-text: 個別設定に切り替えると共通設定と独立
   await expect(page.getByRole("spinbutton", { name: /^上/ })).toHaveCount(2);
 });
 
-test("image-padding-text: 共通設定を変更しても個別設定した画像の値は維持される", async ({ page }) => {
-  await page.goto("/tools/image-padding-text");
+test("image-padding: 共通設定を変更しても個別設定した画像の値は維持される", async ({ page }) => {
+  await page.goto("/tools/image-padding"); // 2026-11：余白は「画像一括余白」に分けた
   await uploadFixture(page, [fixtures.png, fixtures.jpg]);
 
   // 1枚目を個別設定にし、上余白を100にする
@@ -257,13 +257,12 @@ test("image-padding-text: モバイル幅(375px)でも横スクロールが発�
 // ---------------------------------------------------------------------------
 import { execFileSync } from "node:child_process";
 
-test("image-padding-text: 写真の上の文字を、横・縦の位置（X/Y）のバーで動かし、色を選べる。書き出した画像にも同じ位置・色で入る（余白を足しても、文字は写真の上）", async ({ page }) => {
+test("image-padding-text: 写真の上の文字を、横・縦の位置（X/Y）のバーで動かし、色を選べる。書き出した画像にも同じ位置・色で入る（余白は付かない）", async ({ page }) => {
   test.setTimeout(90_000);
   const src = test.info().outputPath("gray.png");
   execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(300,100),(128,128,128)).save(sys.argv[1])", src]);
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [src]);
-  await page.getByRole("spinbutton", { name: /^上/ }).first().fill("100");
   await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
   await page.getByLabel("サイズ", { exact: false }).first().fill("30");
   await page.getByTestId("padding-text-color-赤").click();
@@ -296,10 +295,10 @@ print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n els
 `, out], { encoding: "utf8" })
   );
   expect(r.w).toBe(300);
-  expect(r.h).toBe(260); // 上の余白100px + 元の画像100px（縮めない）+ 下の余白（既定60px）
+  expect(r.h).toBe(100); // 文字入れでは余白を付けない（元の画像のまま）
   expect(r.n).toBeGreaterThan(50);
   expect(Math.abs(r.x / r.w - 0.2)).toBeLessThan(0.06); // 横20%
-  expect(Math.abs(r.y - 150)).toBeLessThan(10); // 写真（上の余白100pxの下、100〜200px）の縦の真ん中
+  expect(Math.abs(r.y - 50)).toBeLessThan(10); // 写真の縦の真ん中
 });
 
 test("image-padding-text: 余白が0pxでも写真に文字を重ねられ、位置を変えられる。縁取りも付けられる（2026-11）", async ({ page }) => {
@@ -308,9 +307,6 @@ test("image-padding-text: 余白が0pxでも写真に文字を重ねられ、位
   execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(300,200),(128,128,128)).save(sys.argv[1])", src]);
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [src]);
-  // 余白はすべて0px（既定の下60pxも0にする）
-  await page.getByRole("spinbutton", { name: /^下/ }).first().fill("0");
-  await page.getByRole("spinbutton", { name: /^下/ }).first().blur();
   await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
   await page.getByLabel("サイズ", { exact: false }).first().fill("40");
   // 文字を置く場所の選択は無い（いつも写真の上）。位置のボタンは「左・中央・右」「上・中央・下」
@@ -359,13 +355,13 @@ test("image-padding-text: 位置のバーを動かしている最中（手を止
   await page.goto("/tools/image-padding-text");
   await uploadFixture(page, [src]);
   await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
-  const img = page.getByRole("img", { name: "余白・文字入れ結果のプレビュー" });
+  const img = page.getByRole("img", { name: "文字入れの結果のプレビュー" });
   await expect(img).toBeVisible();
   // プレビューの画像が変わった回数を数える（ページの中で、src の変化を記録する）
   await page.evaluate(() => {
     const w = window as unknown as { __srcChanges: number };
     w.__srcChanges = 0;
-    const el = document.querySelector('img[alt="余白・文字入れ結果のプレビュー"]')!;
+    const el = document.querySelector('img[alt="文字入れの結果のプレビュー"]')!;
     new MutationObserver(() => (w.__srcChanges += 1)).observe(el, { attributes: true, attributeFilter: ["src"] });
   });
   const slider = page.getByTestId("padding-text-xy").getByRole("slider").first();
@@ -419,9 +415,58 @@ print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n els
 `, out], { encoding: "utf8" })
   );
   expect(r.w).toBe(300);
-  expect(r.h).toBe(260); // 写真200px + 既定の下の余白60px
+  expect(r.h).toBe(200); // 文字入れでは余白を付けない
   expect(r.n).toBeGreaterThan(50);
   expect(Math.abs(r.x / r.w - 0.5)).toBeLessThan(0.05); // 横は中央
   expect(r.y).toBeGreaterThan(150); // 写真の下のほう
-  expect(r.y).toBeLessThan(200); // 余白（200px より下）には入らない
+});
+
+test("2つのツールに分けた（2026-11）：画像一括余白は余白・背景だけ、画像一括文字入れは文字だけ。文字はEnterで改行でき、複数行で入る", async ({ page }) => {
+  test.setTimeout(90_000);
+  // 余白
+  await page.goto("/tools/image-padding");
+  await expect(page.getByRole("heading", { name: "画像一括余白" })).toBeVisible();
+  await uploadFixture(page, [fixtures.png]);
+  await expect(page.getByTestId("padding-sliders")).toBeVisible();
+  await expect(page.getByPlaceholder("入れる文字（複数行可）")).toHaveCount(0);
+  await expect(page.getByTestId("padding-text-xy")).toHaveCount(0);
+  await expect(page.getByText("この画像は文字なし")).toHaveCount(0);
+  // 文字入れ
+  await page.goto("/tools/image-padding-text");
+  await uploadFixture(page, [fixtures.png]);
+  await expect(page.getByTestId("padding-sliders")).toHaveCount(0);
+  await expect(page.getByRole("spinbutton", { name: /^上/ })).toHaveCount(0);
+  const ta = page.getByTestId("padding-text-input");
+  await expect(ta).toHaveAttribute("rows", "3");
+  await expect(page.getByText("Enterキーで改行できます（改行した行は、そのまま複数行で入ります）。")).toBeVisible();
+  await ta.click();
+  await page.keyboard.type("ABC");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("DEF");
+  await expect(ta).toHaveValue("ABC\nDEF");
+  // 2行で入る：赤い文字の縦の広がりが、1行のときの倍近くになる
+  await page.getByLabel("サイズ", { exact: false }).first().fill("30");
+  await page.getByTestId("padding-text-color-赤").click();
+  const measure = async (name: string) => {
+    await page.getByRole("button", { name: "この画像だけ保存" }).click();
+    await waitForSuccess(page, "完了");
+    const out = test.info().outputPath(name);
+    await (await clickAndDownload(page, "ダウンロード")).saveAs(out);
+    await page.keyboard.press("Escape");
+    return Number(
+      execFileSync("python3", ["-c", `
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+w, h = im.size
+px = im.load()
+ys = [y for y in range(h) for x in range(w) if px[x, y][0] > 150 and px[x, y][0] - px[x, y][1] > 60 and px[x, y][0] - px[x, y][2] > 60]
+print(max(ys) - min(ys) if ys else 0)
+`, out], { encoding: "utf8" })
+    );
+  };
+  const two = await measure("two-lines.png");
+  await ta.fill("ABC");
+  const one = await measure("one-line.png");
+  expect(two).toBeGreaterThan(one * 1.6);
 });
