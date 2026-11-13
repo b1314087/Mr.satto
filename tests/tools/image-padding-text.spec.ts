@@ -354,3 +354,37 @@ print(json.dumps({"w": w, "h": h, "x": sx / n if n else -1, "y": sy / n if n els
   expect(r.y / r.h).toBeLessThan(0.35); // 上寄せ
   expect(r.white).toBeGreaterThan(30); // 赤い文字には白い縁取りが付く
 });
+
+test("image-padding-text: 位置のバーを動かしている最中（手を止める前）から、プレビューが付いてきて変わる（2026-11）", async ({ page }) => {
+  test.setTimeout(90_000);
+  const src = test.info().outputPath("gray-live.png");
+  execFileSync("python3", ["-c", "import sys\nfrom PIL import Image\nImage.new('RGB',(600,400),(128,128,128)).save(sys.argv[1])", src]);
+  await page.goto("/tools/image-padding-text");
+  await uploadFixture(page, [src]);
+  await page.getByPlaceholder("入れる文字（複数行可）").fill("ABC");
+  await page.getByTestId("padding-text-place").getByRole("button", { name: "写真の上" }).click();
+  const img = page.getByRole("img", { name: "余白・文字入れ結果のプレビュー" });
+  await expect(img).toBeVisible();
+  // プレビューの画像が変わった回数を数える（ページの中で、src の変化を記録する）
+  await page.evaluate(() => {
+    const w = window as unknown as { __srcChanges: number };
+    w.__srcChanges = 0;
+    const el = document.querySelector('img[alt="余白・文字入れ結果のプレビュー"]')!;
+    new MutationObserver(() => (w.__srcChanges += 1)).observe(el, { attributes: true, attributeFilter: ["src"] });
+  });
+  const slider = page.getByTestId("padding-text-xy").getByRole("slider").first();
+  await slider.scrollIntoViewIfNeeded();
+  const box = (await slider.boundingBox())!;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + 4, y);
+  await page.mouse.down();
+  // ボタンを押したまま、少しずつ右へ動かし続ける（途中で止めない）
+  for (let i = 1; i <= 20; i++) {
+    await page.mouse.move(box.x + 4 + ((box.width - 8) * i) / 20, y);
+    await page.waitForTimeout(60);
+  }
+  const duringDrag = await page.evaluate(() => (window as unknown as { __srcChanges: number }).__srcChanges);
+  await page.mouse.up();
+  // 以前（止まってから作る）は、動かしている間は0回だった。いまは、動かしている間にも何度も変わる
+  expect(duringDrag).toBeGreaterThanOrEqual(2);
+});

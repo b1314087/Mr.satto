@@ -418,6 +418,9 @@ export function ImagePaddingTextTool() {
   const [previewResult, setPreviewResult] = useState<ImageProcessorOutput | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewRunIdRef = useRef(0);
+  // プレビューを作っている最中か・作り終わったら次に作る設定（いちばん新しいものだけ）
+  const previewBusyRef = useRef(false);
+  const previewNextRef = useRef<{ runId: number; input: Parameters<ImagePaddingTextProcessor["process"]>[0] } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -490,12 +493,43 @@ export function ImagePaddingTextTool() {
     setCommon((c) => ({ ...c, [key]: value }));
   }
 
-  // ライブプレビュー：現在表示中の1枚だけを対象に、設定変更後200msデバウンスして（位置のバーを動かしたときに、すぐ反映されるように）
-  // 実際のProcessorを呼ぶ（画像結合ツールと同じ考え方。複数画像を毎回まとめて
-  // 再処理しない設計にすることで、大量画像でも重い処理を繰り返さないようにする）。
+  // ライブプレビュー：現在表示中の1枚だけを対象に、実際のProcessorを呼ぶ（複数画像を毎回まとめて再処理しない）。
+  // 2026-11：以前は「設定が変わってから200ms止まったら作る」（デバウンス）だったため、位置のバーを動かし続けている間は
+  // 一度も更新されず、手を止めるまで反映されなかった。いまは、作っている最中に設定が変わったら、いちばん新しい設定だけを覚えておき、
+  // 作り終わったらすぐ次を作る（動かしている間も、処理が追いつく速さで、プレビューが付いてくる）。
+  function runPreview(runId: number, input: Parameters<ImagePaddingTextProcessor["process"]>[0]) {
+    previewBusyRef.current = true;
+    void (async () => {
+      try {
+        const output = await new ImagePaddingTextProcessor().process(input);
+        // 画像を切り替えた・消したあとに届いた古い画像の結果は使わない（同じ画像の途中の結果は、動きが見えるように出す）
+        const next = previewNextRef.current;
+        const stale = runId !== previewRunIdRef.current && (!next || next.input.file !== input.file);
+        if (stale) URL.revokeObjectURL(output.url);
+        else
+          setPreviewResult((prev) => {
+            if (prev) URL.revokeObjectURL(prev.url);
+            return output;
+          });
+      } catch {
+        // 途中の設定（入力中の値など）で失敗したときは、前のプレビューのままにする
+      }
+      const next = previewNextRef.current;
+      previewNextRef.current = null;
+      if (next) {
+        runPreview(next.runId, next.input);
+        return;
+      }
+      previewBusyRef.current = false;
+      if (runId === previewRunIdRef.current) setPreviewLoading(false);
+    })();
+  }
+
   useEffect(() => {
     if (!currentFile || !currentSettings) {
       // 画像未選択時はプレビューをクリアする
+      previewRunIdRef.current += 1;
+      previewNextRef.current = null;
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPreviewResult((prev) => {
         if (prev) URL.revokeObjectURL(prev.url);
@@ -505,33 +539,13 @@ export function ImagePaddingTextTool() {
       return;
     }
     const runId = ++previewRunIdRef.current;
+    const input = { file: currentFile, ...currentSettings, format };
     setPreviewLoading(true);
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const output = await new ImagePaddingTextProcessor().process({
-            file: currentFile,
-            ...currentSettings,
-            format,
-          });
-          if (previewRunIdRef.current !== runId) {
-            URL.revokeObjectURL(output.url);
-            return;
-          }
-          setPreviewResult((prev) => {
-            if (prev) URL.revokeObjectURL(prev.url);
-            return output;
-          });
-          setPreviewLoading(false);
-        } catch {
-          if (previewRunIdRef.current === runId) setPreviewLoading(false);
-        }
-      })();
-    }, 200);
-    return () => clearTimeout(timer);
+    if (previewBusyRef.current) previewNextRef.current = { runId, input };
+    else runPreview(runId, input);
     // currentSettingsはレンダーのたびに新しいオブジェクト参照になるため、
     // 依存配列にはオブジェクトそのものではなく個々のプリミティブ値を並べる
-    // （参照が毎回変わることでデバウンスタイマーが無駄にリセットされるのを防ぐ）。
+    // （参照が毎回変わることで、同じ設定のプレビューを無駄に作り直さないようにする）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentFile,
