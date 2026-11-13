@@ -16,6 +16,9 @@ import { loadDocxPackage } from "@/lib/word/docx-text-ops";
 import { WordToPdfProcessor, type WordToPdfOutput } from "@/lib/processors/browser/word-to-pdf";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 async function loadDocxBodyTexts(file: File): Promise<string[]> {
   const pkg = await loadDocxPackage(file);
@@ -30,7 +33,12 @@ async function loadDocxBodyTexts(file: File): Promise<string[]> {
  * 実用的な精度でPDF化することを目的にしている。
  */
 export function WordToPdfTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだWord文書。2つ以上のとき（プレミアムの一括処理）は、1つずつ順番にPDFにする
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("word-to-pdf");
+  const batchRun = useBatchRun();
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WordToPdfOutput | null>(null);
@@ -46,15 +54,46 @@ export function WordToPdfTool() {
     [bodyTexts]
   );
 
-  function handleSelect(files: File[]) {
-    setFile(files[0]);
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
     setResult(null);
+    batchRun.reset();
     setStatus("idle");
     setError(null);
   }
 
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setResult(null);
+    batchRun.reset();
+    setStatus("idle");
+  }
+
+  /** 一括処理：選んだ全部のWord文書を、1つずつ順番にPDFにする */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const output = await new WordToPdfProcessor().process({ file: target });
+      return {
+        blob: output.blob,
+        outputName: `${stripExtension(target.name)}.pdf`,
+        detail: output.warnings.length > 0 ? `注意：${output.warnings.join(" ")}` : undefined,
+      };
+    });
+    const summary = summarizeBatch(items, "すべての文書でPDFへの変換に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     setResult(null);
@@ -79,18 +118,22 @@ export function WordToPdfTool() {
       <p className="text-xs text-neutral-500 dark:text-neutral-400">複雑なレイアウトは、元のWordと一致しない場合があります。</p>
 
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         maxSizeMB={30}
         label="Word文書(.docx)をドラッグ&ドロップ"
         hint="またはタップして選択（上限30MB）"
+        multiple
         onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 
-      {file && (bodyTexts || previewError || loading || resultPdf) && (
+      {file && !isBatch && (bodyTexts || previewError || loading || resultPdf) && (
         <PreviewShell
           title="変換内容のプレビュー"
           loading={loading}
@@ -116,15 +159,21 @@ export function WordToPdfTool() {
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            PDFに変換する
+            {isBatch ? `${countFiles(files.length)}の文書をまとめてPDFに変換する` : "PDFに変換する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} processingLabel="変換中..." successLabel="PDFの生成が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("変換しています") : "変換中..."}
+        successLabel="PDFの生成が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "documents") || "documents"}-pdf.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           {result.warnings.length > 0 && (
             <div className="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">

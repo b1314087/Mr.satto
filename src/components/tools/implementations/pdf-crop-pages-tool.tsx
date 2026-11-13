@@ -14,6 +14,9 @@ import { PdfCropPagesProcessor, type PdfCropMargins } from "@/lib/processors/bro
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 const PRESETS: { label: string; mm: number }[] = [
   { label: "0mm", mm: 0 },
@@ -28,7 +31,12 @@ const PRESETS: { label: string; mm: number }[] = [
  * （ページ内容自体は再描画しない。開発指示書■10）。
  */
 export function PdfCropPagesTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだPDF。2つ以上のとき（プレミアムの一括処理）は、同じ余白で1つずつ順番に調整する
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("pdf-crop-pages");
+  const batchRun = useBatchRun();
   const [margins, setMargins] = useState<PdfCropMargins>({
     topMm: 10,
     bottomMm: 10,
@@ -54,8 +62,51 @@ export function PdfCropPagesTool() {
     setMargins({ topMm: mm, bottomMm: mm, leftMm: mm, rightMm: mm });
   }
 
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    batchRun.reset();
+    setResult(null);
+    setError(null);
+    setStatus("idle");
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    batchRun.reset();
+    setResult(null);
+    setStatus("idle");
+  }
+
+  // 設定を変えたら、前の設定でまとめて処理した結果は捨てる（違う設定の結果を保存させない）
+  const resetBatch = batchRun.reset;
+  useEffect(() => {
+    resetBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [margins]);
+
+  /** 一括処理：選んだ全部のファイルを、同じ設定で1つずつ順番に処理する */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const usedMargins = margins;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const output = await new PdfCropPagesProcessor().process({ file: target, margins: usedMargins });
+      URL.revokeObjectURL(output.url);
+      return { blob: output.blob, outputName: `${stripExtension(target.name)}-cropped.pdf`, detail: `${output.pageCount}ページ` };
+    });
+    const summary = summarizeBatch(items, "すべてのPDFで余白の調整に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -80,20 +131,25 @@ export function PdfCropPagesTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
-        onFilesSelected={(files) => {
-          setFile(files[0]);
-          setResult(null);
-          setError(null);
-          setStatus("idle");
-        }}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
+
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+      {isBatch && (
+        <p data-testid="batch-note" className="text-xs text-ms-muted">
+          プレビューは1つ目のPDFです。ほかのPDFも同じ余白で調整します。
+        </p>
+      )}
 
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -189,15 +245,17 @@ export function PdfCropPagesTool() {
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            余白を調整する
+            {isBatch ? `${countFiles(files.length)}のPDFの余白をまとめて調整する` : "余白を調整する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="余白の調整が完了しました" />
+      <ProcessingStatus state={status} processingLabel={isBatch ? batchRun.progressLabel("余白を調整しています") : undefined} successLabel="余白の調整が完了しました" />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "pdf") || "pdf"}-cropped.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.pageCount}ページ ・ {formatBytes(result.sizeBytes)}

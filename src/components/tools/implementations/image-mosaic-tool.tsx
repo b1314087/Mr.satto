@@ -24,6 +24,9 @@ import {
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun } from "@/components/common/use-batch-run";
 
 /**
  * 画像モザイク（Step 8）。
@@ -76,8 +79,30 @@ function clampRegionBox(region: MosaicRegion, imgWidth: number, imgHeight: numbe
   return { ...region, x, y, width, height };
 }
 
+/**
+ * 一括処理で、1枚目の画像で決めた範囲を、ほかの画像に当てはめる。
+ * 範囲は1枚目の画像のピクセルで持っているので、画像の幅・高さの比で伸び縮みさせ、同じ割合の位置にする
+ * （同じ大きさの画像なら、まったく同じ位置になる）。
+ */
+export function scaleMosaicRegions(
+  regions: readonly MosaicRegion[],
+  base: { width: number; height: number },
+  target: { width: number; height: number }
+): MosaicRegion[] {
+  const sx = target.width / Math.max(1, base.width);
+  const sy = target.height / Math.max(1, base.height);
+  return regions.map((r) =>
+    clampRegionBox({ ...r, x: r.x * sx, y: r.y * sy, width: r.width * sx, height: r.height * sy }, target.width, target.height)
+  );
+}
+
 export function ImageMosaicTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだ画像。2枚以上のとき（プレミアムの一括処理）は、1枚目で決めた範囲を、ほかの画像にも同じ割合の位置で当てはめる
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("image-mosaic");
+  const batchRun = useBatchRun();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -348,10 +373,56 @@ export function ImageMosaicTool() {
     zoomTo(fitZoomPercent(naturalSize));
   }
 
+  // 範囲を変えたら、前の範囲でまとめて処理した結果は捨てる（違う設定の結果を保存させない）
+  const resetBatch = batchRun.reset;
+  useEffect(() => {
+    resetBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regions]);
+
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    batchRun.reset();
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    batchRun.reset();
+    setStatus("idle");
+  }
+
+  /** 一括処理：1枚目で決めた範囲を、すべての画像に同じ割合の位置で当てはめて、1枚ずつモザイクをかける */
+  async function handleSaveBatch(format: "png" | "jpeg") {
+    if (!naturalSize) return;
+    if (!(await batch.confirmBatch(files.length))) return;
+    const base = naturalSize;
+    const usedRegions = regions;
+    setStatus("processing");
+    setError(null);
+    const items = await batchRun.run(files, async (target) => {
+      const img = await loadImage(target);
+      const size = { width: img.naturalWidth, height: img.naturalHeight };
+      const output = await new ImageMosaicProcessor().process({ file: target, regions: scaleMosaicRegions(usedRegions, base, size), format });
+      URL.revokeObjectURL(output.url);
+      return {
+        blob: output.blob,
+        outputName: `${stripExtension(target.name)}_mosaic.${output.mimeType === "image/png" ? "png" : "jpg"}`,
+        detail: `${output.width}×${output.height}px`,
+      };
+    });
+    const summary = summarizeBatch(items, "すべての画像でモザイク処理に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleSave(format: "png" | "jpeg") {
     if (!file) return;
     if (regions.length === 0) {
       setError("モザイク領域を1つ以上指定してください");
+      return;
+    }
+    if (isBatch) {
+      await handleSaveBatch(format);
       return;
     }
     setStatus("processing");
@@ -464,15 +535,24 @@ export function ImageMosaicTool() {
       previewWidth="lg"
     >
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）。隠したい範囲は1枚の画像に複数指定できます"
-        onFilesSelected={(files) => setFile(files[0])}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+      {isBatch && (
+        <p data-testid="batch-mosaic-note" className="text-xs text-ms-muted">
+          1枚目の画像で決めた範囲を、ほかの画像にも同じ割合の位置で当てはめます（同じ大きさの画像なら、同じ位置になります）。
+        </p>
+      )}
       {loadError && <ErrorMessage message={loadError} />}
 
       {file && imageUrl && naturalSize && (
@@ -669,7 +749,7 @@ export function ImageMosaicTool() {
               disabled={status === "processing" || regions.length === 0} aria-busy={status === "processing" || undefined}
               className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             >
-              PNGで保存
+              {isBatch ? `${files.length}枚をまとめてPNGで保存` : "PNGで保存"}
             </button>
             <button
               type="button"
@@ -677,16 +757,22 @@ export function ImageMosaicTool() {
               disabled={status === "processing" || regions.length === 0} aria-busy={status === "processing" || undefined}
               className="w-fit rounded-lg bg-neutral-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
             >
-              JPEGで保存
+              {isBatch ? `${files.length}枚をまとめてJPEGで保存` : "JPEGで保存"}
             </button>
           </RunBar>
         </div>
       )}
 
-      <ProcessingStatus state={status} successLabel="モザイク処理が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("モザイクをかけています") : undefined}
+        successLabel="モザイク処理が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${baseName}_mosaic.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

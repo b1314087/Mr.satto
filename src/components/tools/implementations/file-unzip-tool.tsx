@@ -18,6 +18,9 @@ import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useObjectUrl } from "@/lib/utils/use-object-url";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 /** プレビュー用の画像サムネイル（Object URLはこのコンポーネントが破棄する） */
 function ZipEntryThumb({ blob, alt }: { blob: Blob; alt: string }) {
@@ -56,7 +59,12 @@ function ZipListingRow({ entry }: { entry: ZipListingEntry }) {
  * （多数のファイルを含むZIPで1件ごとに広告が出るのは体験として適切でないため）。
  */
 export function FileUnzipTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだZIP。2つ以上のとき（プレミアムの一括処理）は、1つずつ順番に解凍する
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("file-unzip");
+  const batchRun = useBatchRun();
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<UnzippedFileEntry[] | null>(null);
@@ -85,8 +93,44 @@ export function FileUnzipTool() {
 
   const currentListing = file && listing && listing.file === file ? listing : null;
 
-  function handleSelect(files: File[]) {
-    setFile(files[0]);
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setEntries(null);
+    batchRun.reset();
+    setStatus("idle");
+  }
+
+  /**
+   * 一括処理：選んだ全部のZIPを、1つずつ解凍する。
+   * 「保存」ではZIPごとに中身をまとめたZIPを保存し、全体の「ZIPで保存」では、どのZIPの中身か分かるよう
+   * ファイル名の前に元のZIPの名前を付けて1つのZIPに入れる。
+   */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    setStatus("processing");
+    setError(null);
+    setEntries(null);
+    const items = await batchRun.run(files, async (target) => {
+      const output = await new FileUnzipProcessor().process({ file: target });
+      const base = stripExtension(target.name) || "zip";
+      const inner = output.entries.map((e) => ({ name: e.name, blob: e.blob }));
+      const notes = [`${inner.length}件`];
+      if (output.skippedEntryCount > 0) notes.push(`${output.skippedEntryCount}件はスキップ`);
+      return {
+        blob: await createZip(inner),
+        outputName: `${base}-extracted.zip`,
+        entries: inner.map((e) => ({ name: `${base}_${e.name}`, blob: e.blob })),
+        detail: notes.join("・"),
+      };
+    });
+    const summary = summarizeBatch(items, "すべてのZIPで解凍に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    batchRun.reset();
     setEntries(null);
     setSkippedCount(0);
     setStatus("idle");
@@ -95,6 +139,10 @@ export function FileUnzipTool() {
 
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     setEntries(null);
@@ -118,16 +166,20 @@ export function FileUnzipTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="application/zip,.zip,application/x-zip-compressed"
         maxSizeMB={200}
         label="ZIPファイルをドラッグ&ドロップ"
         hint="またはタップして選択"
+        multiple
         onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 
       {file && (
         <div
@@ -135,7 +187,7 @@ export function FileUnzipTool() {
           className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-            ZIPの中身
+            {isBatch ? "1つ目のZIPの中身" : "ZIPの中身"}
             {currentListing?.data ? `（${currentListing.data.entries.length}件）` : ""}
           </p>
           {!currentListing && <p className="text-xs text-neutral-500 dark:text-neutral-400">中身を読み込み中...</p>}
@@ -171,15 +223,21 @@ export function FileUnzipTool() {
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            解凍する
+            {isBatch ? `${countFiles(files.length)}のZIPをまとめて解凍する` : "解凍する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} processingLabel="解凍中..." successLabel="解凍が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("解凍しています") : "解凍中..."}
+        successLabel="解凍が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {entries && entries.length > 0 && (
+      <BatchRunResults items={batchRun.items} zipName={"extracted.zip"} />
+
+      {entries && entries.length > 0 && !isBatch && (
         <ResultPopup size="lg">
           {skippedCount > 0 && (
             <p className="text-xs text-amber-600 dark:text-amber-400">

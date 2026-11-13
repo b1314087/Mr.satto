@@ -27,6 +27,9 @@ import {
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { ExcelChartPageCheck, type ChartPageCheckState } from "@/components/tools/implementations/excel-chart-page-check";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 /**
  * Excel（XLSX）→ PDF（Phase 9、Phase 18.2 B節で大幅改修）。
@@ -70,8 +73,25 @@ function describePrintSummary(summary: SheetPrintSummary): string {
   return `— ${parts.join("・")}`;
 }
 
+/** 最初に選んでおくシート：Excelで非表示にしているシートは、印刷でも出さないのが普通なので選ばない（全部が非表示なら全部） */
+async function defaultSheetNames(file: File, sheets: RawExcelSheet[]): Promise<string[]> {
+  let hidden = new Set<string>();
+  try {
+    hidden = await readHiddenSheetNames(file);
+  } catch {
+    hidden = new Set();
+  }
+  const visible = sheets.filter((s) => !hidden.has(s.name));
+  return (visible.length > 0 ? visible : sheets).map((s) => s.name);
+}
+
 export function ExcelToPdfTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだExcelファイル。2つ以上のとき（プレミアムの一括処理）は、同じ向き・収め方で1つずつ順番にPDFにする
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("excel-to-pdf");
+  const batchRun = useBatchRun();
   const [sheets, setSheets] = useState<RawExcelSheet[] | null>(null);
   const [selectedSheets, setSelectedSheets] = useState<Set<string>>(new Set());
   const [orientation, setOrientation] = useState<OrientationOption>("auto");
@@ -115,12 +135,57 @@ export function ExcelToPdfTool() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartCheckKey]);
 
-  async function handleSelect(files: File[]) {
-    const selected = files[0];
-    setFile(selected);
+  function handleSelect(incoming: File[]) {
+    const next = batch.pick(files, incoming, "append");
+    setFiles(next);
+    batchRun.reset();
     setResult(null);
     setStatus("idle");
     setError(null);
+    // 1つ目のファイルが変わったときだけ、シートを読み直す（2つ目以降を足したときは、1つ目の設定をそのまま使う）
+    if (next[0] && next[0] !== files[0]) void loadFirstFile(next[0]);
+  }
+
+  function removeFile(index: number) {
+    const next = files.filter((_, i) => i !== index);
+    setFiles(next);
+    batchRun.reset();
+    setResult(null);
+    setStatus("idle");
+    if (next.length === 0) setSheets(null);
+    else if (next[0] !== files[0]) void loadFirstFile(next[0]);
+  }
+
+  // 設定を変えたら、前の設定でまとめて処理した結果は捨てる（違う設定の結果を保存させない）
+  const resetBatch = batchRun.reset;
+  useEffect(() => {
+    resetBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orientation, fitMode, repeatHeaderRow]);
+
+  /** 一括処理：選んだ全部のExcelファイルを、同じ向き・収め方で1つずつPDFにする（シートはファイルごとに、表示されているシートをすべて） */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const settings = { orientation, fitMode, repeatHeaderRow };
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const targetSheets = await readExcelSheets(target);
+      const names = await defaultSheetNames(target, targetSheets);
+      const output = await new ExcelToPdfProcessor().process({ file: target, sheets: targetSheets, selectedSheetNames: names, ...settings });
+      return {
+        blob: output.blob,
+        outputName: `${stripExtension(target.name)}.pdf`,
+        detail: `${names.length}シート${output.warnings.length > 0 ? `・注意：${output.warnings.join(" ")}` : ""}`,
+      };
+    });
+    const summary = summarizeBatch(items, "すべてのファイルでPDFへの変換に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
+  async function loadFirstFile(selected: File) {
     setSheets(null);
     setSelectedSheets(new Set());
     setPrintSummaries(new Map());
@@ -129,19 +194,13 @@ export function ExcelToPdfTool() {
       const readSheets = await readExcelSheets(selected);
       setSheets(readSheets);
       // Excelで非表示にしているシートは、印刷でも出さないのが普通なので、最初は選ばない(必要ならチェックを入れる)
-      let hidden = new Set<string>();
-      try {
-        hidden = await readHiddenSheetNames(selected);
-      } catch {
-        hidden = new Set();
-      }
+      const names = await defaultSheetNames(selected, readSheets);
       // 用紙・向きなどの表示用。読めなくても変換はできるので、失敗しても何も出さないだけにする
       setPrintSummaries(await readSheetPrintSummaries(selected).catch(() => new Map<string, SheetPrintSummary>()));
-      const visible = readSheets.filter((s) => !hidden.has(s.name));
-      setSelectedSheets(new Set((visible.length > 0 ? visible : readSheets).map((s) => s.name)));
+      setSelectedSheets(new Set(names));
     } catch (e) {
       setError(e instanceof Error ? e.message : "読み込みに失敗しました");
-      setFile(null);
+      setFiles((prev) => prev.filter((f) => f !== selected));
     } finally {
       setLoadingSheets(false);
     }
@@ -170,6 +229,10 @@ export function ExcelToPdfTool() {
 
   async function handleRun() {
     if (!file || !sheets) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     setResult(null);
@@ -201,21 +264,30 @@ export function ExcelToPdfTool() {
       <p className="text-xs text-neutral-500 dark:text-neutral-400">対応形式は.xlsxのみです。数式は再計算せず、保存されている値を表示します。</p>
 
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         maxSizeMB={30}
         label="Excelファイル(.xlsx)をドラッグ&ドロップ"
         hint="またはタップして選択（上限30MB）"
-        onFilesSelected={(files) => void handleSelect(files)}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => { setFile(null); setSheets(null); }} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 
       {loadingSheets && <p className="text-xs text-neutral-500 dark:text-neutral-400">シート情報を読み込み中...</p>}
 
       {sheets && sheets.length > 0 && (
         <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-950">
+          {isBatch ? (
+            <p data-testid="batch-note" className="text-xs text-ms-muted">
+              まとめて変換するときは、ファイルごとに、表示されているシート（Excelで非表示にしていないシート）をすべてPDFにします。向き・ページの収め方は、下の設定をすべてのファイルに使います。
+            </p>
+          ) : (
           <div>
             <p className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-200">変換するシート</p>
             <div className="flex flex-col gap-1.5">
@@ -238,6 +310,7 @@ export function ExcelToPdfTool() {
               ))}
             </div>
           </div>
+          )}
 
           <div className="flex flex-wrap gap-6">
             <div>
@@ -321,7 +394,7 @@ export function ExcelToPdfTool() {
       )}
 
       {/* 変換の前の確認なので、変換中・変換の後は表示しない(変換の結果の注意書きと混ざらないように) */}
-      {sheets && sheetsHaveCharts && status !== "processing" && status !== "success" && (
+      {sheets && !isBatch && sheetsHaveCharts && status !== "processing" && status !== "success" && (
         <ExcelChartPageCheck
           check={!chartCheckKey ? { state: "idle" } : chartCheck.key === chartCheckKey ? chartCheck.value : { state: "running" }}
           enabled={chartCheckEnabled}
@@ -334,18 +407,24 @@ export function ExcelToPdfTool() {
           <button
             type="button"
             onClick={handleRun}
-            disabled={status === "processing" || selectedSheets.size === 0} aria-busy={status === "processing" || undefined}
+            disabled={status === "processing" || (!isBatch && selectedSheets.size === 0)} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            PDFに変換する
+            {isBatch ? `${countFiles(files.length)}のファイルをまとめてPDFに変換する` : "PDFに変換する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} processingLabel="変換中..." successLabel="PDFの生成が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("変換しています") : "変換中..."}
+        successLabel="PDFの生成が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "excel") || "excel"}-pdf.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
 
           {result.warnings.length > 0 && (

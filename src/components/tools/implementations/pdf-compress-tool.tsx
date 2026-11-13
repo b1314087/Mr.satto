@@ -13,6 +13,7 @@ import { PdfCompressProcessor, checkPdfReadable, compressPdfToTarget } from "@/l
 import type { PdfCompressOutput, PdfCompressToTargetOutput } from "@/lib/processors/browser/pdf";
 import { dedupeFileNames, downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { countFiles } from "@/components/common/use-batch-run";
 import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
 import { BatchResultList, type BatchResultRow } from "@/components/common/batch-result-list";
 import { runBatchSequentially, type BatchItem } from "@/lib/batch/run-batch";
@@ -404,7 +405,7 @@ export function PdfCompressTool() {
             disabled={status === "processing" || !canRun} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            {isBatch ? `${files.length}つのPDFをまとめて圧縮する` : "圧縮する"}
+            {isBatch ? `${countFiles(files.length)}のPDFをまとめて圧縮する` : "圧縮する"}
           </button>
         </RunBar>
       )}

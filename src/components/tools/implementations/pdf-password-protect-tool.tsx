@@ -11,6 +11,9 @@ import { PdfPasswordProtectProcessor, type PdfProtectOutput } from "@/lib/proces
 import { getPdfjs, withPdfDocument, PDFJS_ASSET_OPTIONS, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 const inputClass =
   "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900";
@@ -21,7 +24,12 @@ const inputClass =
  * 実際に確かめた結果を表示する。すべてブラウザ内で処理され、PDFもパスワードも送信されない。
  */
 export function PdfPasswordProtectTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだPDF。2つ以上のとき（プレミアムの一括処理）は、同じパスワード・同じ許可で1つずつ順番に保護する
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("pdf-password-protect");
+  const batchRun = useBatchRun();
   const [userPassword, setUserPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [ownerPassword, setOwnerPassword] = useState("");
@@ -74,18 +82,65 @@ export function PdfPasswordProtectTool() {
     };
   }, [file]);
 
-  function handleFiles(files: File[]) {
-    setFile(files[0] ?? null);
+  function handleFiles(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
     setResult(null);
+    batchRun.reset();
     setStatus("idle");
     setError(null);
   }
 
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setResult(null);
+    batchRun.reset();
+    setStatus("idle");
+  }
+
+  // 設定を変えたら、前の設定でまとめて処理した結果は捨てる（違う設定の結果を保存させない）
+  const resetBatch = batchRun.reset;
+  useEffect(() => {
+    resetBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userPassword, ownerPassword, allowPrint, allowCopy, allowModify]);
+
   const mismatch = confirmPassword !== "" && confirmPassword !== userPassword;
   const canRun = file !== null && userPassword !== "" && confirmPassword === userPassword && status !== "processing";
 
+  /** 一括処理：選んだ全部のPDFを、同じパスワード・同じ許可で1つずつ保護する（1つずつ開けることを確かめる） */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const settings = {
+      userPassword,
+      ownerPassword: ownerPassword || undefined,
+      permissions: { print: allowPrint, copy: allowCopy, modify: allowModify },
+    };
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const output = await new PdfPasswordProtectProcessor().process({ file: target, ...settings });
+      URL.revokeObjectURL(output.url);
+      return {
+        blob: output.blob,
+        outputName: `${stripExtension(target.name)}-protected.pdf`,
+        detail:
+          output.rejectsWithoutPassword && output.verifiedWithPassword
+            ? `${output.pageCount}ページ・パスワードなしでは開けず、パスワードで開けることを確認`
+            : `${output.pageCount}ページ`,
+      };
+    });
+    const summary = summarizeBatch(items, "すべてのPDFで暗号化に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file || !canRun) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     setResult(null);
@@ -142,20 +197,25 @@ export function PdfPasswordProtectTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="application/pdf,.pdf"
         maxSizeMB={100}
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
+        multiple
         onFilesSelected={handleFiles}
         onError={setError}
       />
-      {file && <FileList files={[file]} onRemove={() => handleFiles([])} />}
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 
       {file && (
         <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
             先頭ページのプレビュー{pages ? `(全${pages}ページ)` : ""}
+            {isBatch ? `・1つ目のPDF（ほかの${files.length - 1}つも同じパスワードで保護します）` : ""}
           </p>
           {previewMessage && <ErrorMessage message={previewMessage} />}
           <canvas
@@ -247,15 +307,21 @@ export function PdfPasswordProtectTool() {
             aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            パスワードを設定する
+            {isBatch ? `${countFiles(files.length)}のPDFにまとめてパスワードを設定する` : "パスワードを設定する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} processingLabel="暗号化しています..." successLabel="パスワードを設定しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("暗号化しています") : "暗号化しています..."}
+        successLabel="パスワードを設定しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "pdf") || "pdf"}-protected.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           <ul className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
             <li>✔ パスワードなしでは開けないことを確認しました</li>

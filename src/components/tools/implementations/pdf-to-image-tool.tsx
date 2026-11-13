@@ -11,13 +11,21 @@ import { PdfToImageProcessor, type PdfToImageOutputItem } from "@/lib/processors
 import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, packEntries, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 type OutputFormat = "image/png" | "image/jpeg";
 
 const THUMBNAIL_LIMIT = 12;
 
 export function PdfToImageTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだPDF。2つ以上のとき（プレミアムの一括処理）は、同じ形式で1つずつ順番に画像にする
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("pdf-to-image");
+  const batchRun = useBatchRun();
   const [format, setFormat] = useState<OutputFormat>("image/png");
 
   const [status, setStatus] = useState<ProcessingState>("idle");
@@ -42,8 +50,50 @@ export function PdfToImageTool() {
     };
   }, []);
 
+  function clearOutputs() {
+    setOutputs(null);
+    setZipBlob(null);
+    batchRun.reset();
+    setError(null);
+    setStatus("idle");
+  }
+
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    clearOutputs();
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    clearOutputs();
+  }
+
+  /** 一括処理：選んだ全部のPDFを、同じ形式で1つずつ画像にする */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    setStatus("processing");
+    setError(null);
+    setOutputs(null);
+    setZipBlob(null);
+    const items = await batchRun.run(files, async (target) => {
+      const pages = await new PdfToImageProcessor().process({ file: target, mimeType: format });
+      const packed = await packEntries(
+        pages.map((page) => ({ name: page.suggestedName, blob: page.blob })),
+        `${stripExtension(target.name)}-images.zip`
+      );
+      return { ...packed, detail: `${pages.length}ページ` };
+    });
+    const summary = summarizeBatch(items, "すべてのPDFで画像化に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     setOutputs(null);
@@ -79,15 +129,19 @@ export function PdfToImageTool() {
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
-        onFilesSelected={(files) => setFile(files[0])}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 
       {file && (
         <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -97,7 +151,11 @@ export function PdfToImageTool() {
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setFormat("image/png")}
+              aria-pressed={format === "image/png"}
+              onClick={() => {
+                setFormat("image/png");
+                batchRun.reset();
+              }}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
                 format === "image/png"
                   ? "bg-blue-600 text-white"
@@ -108,7 +166,11 @@ export function PdfToImageTool() {
             </button>
             <button
               type="button"
-              onClick={() => setFormat("image/jpeg")}
+              aria-pressed={format === "image/jpeg"}
+              onClick={() => {
+                setFormat("image/jpeg");
+                batchRun.reset();
+              }}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
                 format === "image/jpeg"
                   ? "bg-blue-600 text-white"
@@ -129,15 +191,21 @@ export function PdfToImageTool() {
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            画像化する
+            {isBatch ? `${countFiles(files.length)}のPDFをまとめて画像化する` : "画像化する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="画像化が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("画像化しています") : undefined}
+        successLabel="画像化が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {outputs && outputs.length > 0 && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "pdf") || "pdf"}-images.zip`} />
+
+      {outputs && outputs.length > 0 && !isBatch && (
         <ResultPopup size="lg">
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
             {thumbUrls.map((url, i) => (

@@ -11,7 +11,10 @@ import { ImageMetadataRemoveProcessor, resolveMetadataRemoveOutputType } from "@
 import { inspectImageMetadata, hasAnyMetadata, type ImageMetadataReport } from "@/lib/utils/image-metadata";
 import { useObjectUrl } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes, replaceExtension, stripExtension } from "@/lib/utils/format";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun } from "@/components/common/use-batch-run";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { RunBar } from "@/components/ui/run-bar";
 
@@ -70,7 +73,12 @@ function MetadataRows({ report }: { report: ImageMetadataReport }) {
  * いずれかになることをUI上で明示する（開発指示書■11・■44）。
  */
 export function ImageMetadataRemoveTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだ画像。2枚以上のとき（プレミアムの一括処理）は、1枚ずつ順番に情報を取り除く
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("image-metadata-remove");
+  const batchRun = useBatchRun();
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImageProcessorOutput | null>(null);
@@ -116,8 +124,47 @@ export function ImageMetadataRemoveTool() {
   const resultReport = result && inspectedResult?.blob === result.blob ? inspectedResult.report : null;
   const outputLabel = file ? FORMAT_LABEL[resolveMetadataRemoveOutputType(file.type)] : null;
 
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    setResult(null);
+    batchRun.reset();
+    setError(null);
+    setStatus("idle");
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    batchRun.reset();
+    setStatus("idle");
+  }
+
+  /** 一括処理：選んだ全部の画像から、1枚ずつ情報を取り除く。書き出した画像も検査して結果に出す */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const output = await new ImageMetadataRemoveProcessor().process({ file: target });
+      URL.revokeObjectURL(output.url);
+      const after = await inspectImageMetadata(output.blob).catch(() => null);
+      return {
+        blob: output.blob,
+        outputName: replaceExtension(target.name, EXT_BY_MIME[output.mimeType] ?? "png"),
+        detail: `${FORMAT_LABEL[output.mimeType] ?? output.mimeType}${after && !hasAnyMetadata(after) ? "・撮影日時・GPS・EXIFなし" : ""}`,
+      };
+    });
+    const summary = summarizeBatch(items, "すべての画像で処理に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -138,20 +185,19 @@ export function ImageMetadataRemoveTool() {
     <div className="flex flex-col gap-6">
 
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
-        onFilesSelected={(files) => {
-          setFile(files[0]);
-          setResult(null);
-          setError(null);
-          setStatus("idle");
-        }}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
 
       {file && (
         <PreviewFullscreenFrame>
@@ -160,6 +206,11 @@ export function ImageMetadataRemoveTool() {
           className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
         >
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">取り除かれる情報</p>
+          {isBatch && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              1枚目の画像の情報です。ほかの{files.length - 1}枚も同じように取り除きます。
+            </p>
+          )}
           <div className="grid gap-4 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
             {previewUrl && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -198,15 +249,21 @@ export function ImageMetadataRemoveTool() {
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            メタデータを削除する
+            {isBatch ? `${files.length}枚のメタデータをまとめて削除する` : "メタデータを削除する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="処理が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("メタデータを削除しています") : undefined}
+        successLabel="処理が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "images") || "images"}-no-metadata.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

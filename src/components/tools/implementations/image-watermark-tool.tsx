@@ -23,7 +23,10 @@ import {
   type ImageWatermarkPosition,
 } from "@/lib/processors/browser/image";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
-import { downloadBlob, formatBytes, replaceExtension } from "@/lib/utils/format";
+import { downloadBlob, formatBytes, replaceExtension, stripExtension } from "@/lib/utils/format";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun } from "@/components/common/use-batch-run";
 import { RunBar } from "@/components/ui/run-bar";
 
 const POSITION_OPTIONS: { value: ImageWatermarkPosition; label: string }[] = [
@@ -59,8 +62,27 @@ function fontSizeSliderMax(naturalWidth: number | null, naturalHeight: number | 
  * 文字サイズは「元画像のピクセル」で指定する(プレビューでは縮小率を掛けて同じ見た目にする)。
  * スライダーの上限は画像の大きさに合わせて広がる。
  */
+/**
+ * 一括処理で、ほかの画像に使う文字の大きさ。
+ * 文字の大きさは1枚目の画像のピクセルで決めているので、画像の短辺の長さに合わせて同じ割合にそろえる
+ * （大きな写真で文字が小さくなりすぎたり、小さな画像ではみ出したりしないようにする）。
+ */
+export function scaleWatermarkFontSize(
+  fontSize: number,
+  base: { width: number; height: number },
+  target: { width: number; height: number }
+): number {
+  const scaled = (fontSize * Math.min(target.width, target.height)) / Math.max(1, Math.min(base.width, base.height));
+  return Math.min(WATERMARK_FONT_SIZE_MAX, Math.max(WATERMARK_FONT_SIZE_MIN, Math.round(scaled)));
+}
+
 export function ImageWatermarkTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだ画像。2枚以上のとき（プレミアムの一括処理）は、同じ透かしを1枚ずつ順番に入れる
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("image-watermark");
+  const batchRun = useBatchRun();
   const [text, setText] = useState("CONFIDENTIAL");
   const [position, setPosition] = useState<ImageWatermarkPosition>("bottom-right");
   const [opacity, setOpacity] = useState(50);
@@ -156,8 +178,58 @@ export function ImageWatermarkTool() {
     return () => cancelAnimationFrame(frame);
   }, [previewReady, text, position, opacity, shownFontSize, rotation, customCenter, color]);
 
+  // 設定を変えたら、前の設定でまとめて処理した結果は捨てる（違う設定の結果を保存させない）
+  const resetBatch = batchRun.reset;
+  useEffect(() => {
+    resetBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, position, opacity, fontSize, rotation, color, customCenter]);
+
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    setResult(null);
+    batchRun.reset();
+    setError(null);
+    setStatus("idle");
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    batchRun.reset();
+    setStatus("idle");
+  }
+
+  /** 一括処理：選んだ全部の画像に、同じ透かしを1枚ずつ入れる */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const base = naturalSize;
+    const settings = { text, position, opacity: opacity / 100, rotation, center: centerOption, color };
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const img = await loadImage(target);
+      const size = { width: img.naturalWidth, height: img.naturalHeight };
+      const size1 = base ? scaleWatermarkFontSize(shownFontSize, base, size) : shownFontSize;
+      const output = await new ImageWatermarkProcessor().process({ file: target, ...settings, fontSize: size1 });
+      URL.revokeObjectURL(output.url);
+      return {
+        blob: output.blob,
+        outputName: replaceExtension(target.name, EXT_BY_MIME[output.mimeType] ?? "png"),
+        detail: `${output.width}×${output.height}px・文字${size1}px`,
+      };
+    });
+    const summary = summarizeBatch(items, "すべての画像で透かしの追加に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -206,20 +278,24 @@ export function ImageWatermarkTool() {
       }
     >
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
-        onFilesSelected={(files) => {
-          setFile(files[0]);
-          setResult(null);
-          setError(null);
-          setStatus("idle");
-        }}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+      {isBatch && (
+        <p data-testid="batch-watermark-note" className="text-xs text-ms-muted">
+          プレビューは1枚目の画像です。ほかの画像にも同じ位置に入れ、文字の大きさは画像の大きさに合わせて同じ割合にそろえます。
+        </p>
+      )}
 
       {file && (
         <SettingsStack testId="watermark-settings">
@@ -300,15 +376,21 @@ export function ImageWatermarkTool() {
             disabled={status === "processing" || !text.trim()} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            透かしを追加する
+            {isBatch ? `${files.length}枚にまとめて透かしを追加する` : "透かしを追加する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="処理が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("透かしを追加しています") : undefined}
+        successLabel="処理が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "images") || "images"}-watermarked.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.width} × {result.height}px ・ {formatBytes(result.sizeBytes)}

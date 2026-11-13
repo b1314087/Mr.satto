@@ -22,6 +22,9 @@ import {
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 const PT_TO_MM = 25.4 / 72;
 /** プレビューで一番大きい辺を何pxで表示するか(変更前・変更後で同じ縮尺にする) */
@@ -153,7 +156,12 @@ function ResizePreview({
  * はっきり分けて選ばせる（開発指示書■9：どちらの動作かを曖昧にしない）。
  */
 export function PdfResizePagesTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだPDF。2つ以上のとき（プレミアムの一括処理）は、同じ用紙・同じ方法で1つずつ順番に変更する
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("pdf-resize-pages");
+  const batchRun = useBatchRun();
   const [pageSize, setPageSize] = useState<PdfPageSizePreset>("a4");
   const [orientation, setOrientation] = useState<PdfPageOrientation>("portrait");
   const [contentMode, setContentMode] = useState<PdfResizeContentMode>("fit");
@@ -172,8 +180,52 @@ export function PdfResizePagesTool() {
     };
   }, [result]);
 
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    batchRun.reset();
+    setResult(null);
+    setError(null);
+    setStatus("idle");
+    if (files.length === 0) setPreviewPage(1);
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    batchRun.reset();
+    setResult(null);
+    setStatus("idle");
+  }
+
+  // 設定を変えたら、前の設定でまとめて処理した結果は捨てる（違う設定の結果を保存させない）
+  const resetBatch = batchRun.reset;
+  useEffect(() => {
+    resetBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageSize, orientation, contentMode, custom]);
+
+  /** 一括処理：選んだ全部のファイルを、同じ設定で1つずつ順番に処理する */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const settings = { pageSize, orientation, contentMode, custom: pageSize === "custom" ? custom : undefined };
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const output = await new PdfResizePagesProcessor().process({ file: target, ...settings });
+      URL.revokeObjectURL(output.url);
+      return { blob: output.blob, outputName: `${stripExtension(target.name)}-resized.pdf`, detail: `${output.pageCount}ページ` };
+    });
+    const summary = summarizeBatch(items, "すべてのPDFでページサイズの変更に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -217,21 +269,25 @@ export function PdfResizePagesTool() {
       }
     >
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
-        onFilesSelected={(files) => {
-          setFile(files[0]);
-          setPreviewPage(1);
-          setResult(null);
-          setError(null);
-          setStatus("idle");
-        }}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
+
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+      {isBatch && (
+        <p data-testid="batch-note" className="text-xs text-ms-muted">
+          プレビューは1つ目のPDFです。ほかのPDFも同じ用紙・同じ方法で変更します。
+        </p>
+      )}
 
       {file && (
         <SettingsStack testId="resize-settings">
@@ -344,15 +400,17 @@ export function PdfResizePagesTool() {
             disabled={status === "processing" || customProblem !== null} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            変更する
+            {isBatch ? `${countFiles(files.length)}のPDFをまとめて変更する` : "変更する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="ページサイズの変更が完了しました" />
+      <ProcessingStatus state={status} processingLabel={isBatch ? batchRun.progressLabel("ページサイズを変更しています") : undefined} successLabel="ページサイズの変更が完了しました" />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "pdf") || "pdf"}-resized.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.pageCount}ページ ・ {formatBytes(result.sizeBytes)}

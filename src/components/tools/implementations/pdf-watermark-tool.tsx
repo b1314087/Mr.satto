@@ -19,6 +19,9 @@ import type { PdfProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import type { SharedPdfFileProps } from "@/components/tools/implementations/shared/pdf-file-props";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 const POSITIONS: { value: WatermarkPosition; label: string }[] = [
   { value: "center", label: "中央" },
@@ -106,7 +109,13 @@ function WatermarkPreview({
 }
 
 export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdfFileProps = {}) {
-  const [file, setFile] = useState<File | null>(initialFile);
+  // 選んだPDF。2つ以上のとき（プレミアムの一括処理）は、同じ透かしを1つずつ順番に入れる
+  // PDF修正の一括処理の上限（1回20ファイル）を使う。ほかの操作に切り替えたときは、1つ目のPDFを引き継ぐ
+  const [files, setFiles] = useState<File[]>(initialFile ? [initialFile] : []);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("pdf-fix");
+  const batchRun = useBatchRun();
   const [text, setText] = useState("CONFIDENTIAL");
   const [opacityPercent, setOpacityPercent] = useState(30);
   const [fontSize, setFontSize] = useState(48);
@@ -125,16 +134,61 @@ export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdf
     };
   }, [result]);
 
-  function handleFile(files: File[]) {
-    setFile(files[0]);
-    onFileChange?.(files[0] ?? null);
+  function handleFile(selected: File[]) {
+    const next = batch.pick(files, selected, "append");
+    setFiles(next);
+    onFileChange?.(next[0] ?? null);
+    batchRun.reset();
     setResult(null);
     setError(null);
     setStatus("idle");
   }
 
+  function removeFile(index: number) {
+    const next = files.filter((_, i) => i !== index);
+    setFiles(next);
+    onFileChange?.(next[0] ?? null);
+    batchRun.reset();
+    setResult(null);
+    setStatus("idle");
+  }
+
+  // 設定を変えたら、前の設定でまとめて処理した結果は捨てる（違う設定の結果を保存させない）
+  const resetBatch = batchRun.reset;
+  useEffect(() => {
+    resetBatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, opacityPercent, fontSize, position, rotation]);
+
+  /** 一括処理：選んだ全部のPDFに、同じ設定で1つずつ入れる */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const output = await new PdfWatermarkProcessor().process({
+        file: target,
+        text,
+        opacity: opacityPercent / 100,
+        fontSize,
+        position,
+        rotation,
+      });
+      URL.revokeObjectURL(output.url);
+      return { blob: output.blob, outputName: `${stripExtension(target.name)}-watermarked.pdf`, detail: `${output.pageCount}ページ` };
+    });
+    const summary = summarizeBatch(items, "すべてのPDFで透かしの追加に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file || text.trim() === "") return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -159,18 +213,24 @@ export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdf
   return (
     <div className="flex flex-col gap-6">
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
+        multiple
         onFilesSelected={handleFile}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => {
-          setFile(null);
-          onFileChange?.(null);
-        }} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+      {isBatch && (
+        <p data-testid="batch-note" className="text-xs text-ms-muted">
+          プレビューは1つ目のPDFです。ほかのPDFにも同じ設定で入れます。
+        </p>
+      )}
 
       {file && (
         <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -250,15 +310,21 @@ export function PdfWatermarkTool({ initialFile = null, onFileChange }: SharedPdf
             disabled={status === "processing" || text.trim() === ""} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            透かしを追加する
+            {isBatch ? `${countFiles(files.length)}のPDFにまとめて透かしを追加する` : "透かしを追加する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="追加が完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("透かしを追加しています") : undefined}
+        successLabel="追加が完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "pdf") || "pdf"}-watermarked.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {result.pageCount}ページ ・ {formatBytes(result.sizeBytes)}

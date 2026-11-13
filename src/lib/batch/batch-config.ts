@@ -31,6 +31,27 @@ export const BATCH_LIMITS = {
   "background-remover": 20,
   // PDF（1ファイルが大きく、処理にも時間がかかる）
   "pdf-compress": 20,
+
+  // 2026-11 料金プランの見直し：プレミアムの一括処理を15ツールに追加
+  // 1回50枚（画像1枚ずつの処理が軽い。PDF→画像は1つのPDFから複数の画像ができるが、描画は1ページずつ）
+  "pdf-to-image": 50,
+  "image-crop": 50,
+  "image-rotate-flip": 50,
+  "image-metadata-remove": 50,
+  "image-watermark": 50,
+  // 1回30枚（1枚から多数の画像ができる・全画素を計算するため重め）
+  "image-tile-split": 30,
+  "image-mosaic": 30,
+  // 1回20ファイル
+  "pdf-fix": 20,
+  // 1回10ファイル（変換・暗号化などで、1ファイルあたりの処理が重い）
+  "word-to-pdf": 10,
+  "excel-to-pdf": 10,
+  "pdf-password-protect": 10,
+  "pdf-resize-pages": 10,
+  "pdf-metadata-remove": 10,
+  "pdf-crop-pages": 10,
+  "file-unzip": 10,
 } as const satisfies Record<string, number>;
 
 export type BatchToolKey = keyof typeof BATCH_LIMITS;

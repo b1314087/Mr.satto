@@ -17,6 +17,9 @@ import {
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun, countFiles } from "@/components/common/use-batch-run";
 
 const FIELD_LABELS: { key: keyof PdfMetadataInfo; label: string }[] = [
   { key: "title", label: "タイトル" },
@@ -34,7 +37,12 @@ const FIELD_LABELS: { key: keyof PdfMetadataInfo; label: string }[] = [
  * 実測値をそのまま見せる（開発指示書■8）。
  */
 export function PdfMetadataRemoveTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだPDF。2つ以上のとき（プレミアムの一括処理）は、1つずつ順番にメタデータを削除する
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("pdf-metadata-remove");
+  const batchRun = useBatchRun();
   const [before, setBefore] = useState<PdfMetadataInfo | null>(null);
   const [beforeError, setBeforeError] = useState<string | null>(null);
 
@@ -73,8 +81,48 @@ export function PdfMetadataRemoveTool() {
     };
   }, [file]);
 
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    batchRun.reset();
+    setResult(null);
+    setError(null);
+    setStatus("idle");
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    batchRun.reset();
+    setResult(null);
+    setStatus("idle");
+  }
+
+  /** 一括処理：選んだ全部のファイルを、同じ設定で1つずつ順番に処理する */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const output = await new PdfMetadataRemoveProcessor().process({ file: target });
+      URL.revokeObjectURL(output.url);
+      const remaining = FIELD_LABELS.filter((f) => output.remainingMetadata[f.key]).map((f) => f.label);
+      return {
+        blob: output.blob,
+        outputName: `${stripExtension(target.name)}-no-metadata.pdf`,
+        detail: remaining.length === 0 ? "標準的なメタデータをすべて削除" : `残った項目：${remaining.join("・")}`,
+      };
+    });
+    const summary = summarizeBatch(items, "すべてのPDFでメタデータの削除に失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -96,15 +144,25 @@ export function PdfMetadataRemoveTool() {
       <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">XMPなど一部のメタデータは、削除できない場合があります。</div>
 
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="application/pdf,.pdf"
         label="PDFをドラッグ&ドロップ"
         hint="またはタップして選択"
-        onFilesSelected={(files) => setFile(files[0])}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
+
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+      {isBatch && (
+        <p data-testid="batch-note" className="text-xs text-ms-muted">
+          表示は1つ目のPDFのメタデータです。ほかのPDFも同じように削除します。
+        </p>
+      )}
 
       {beforeError && <ErrorMessage message={beforeError} />}
 
@@ -155,15 +213,17 @@ export function PdfMetadataRemoveTool() {
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            メタデータを削除する
+            {isBatch ? `${countFiles(files.length)}のPDFのメタデータをまとめて削除する` : "メタデータを削除する"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="メタデータの削除が完了しました" />
+      <ProcessingStatus state={status} processingLabel={isBatch ? batchRun.progressLabel("メタデータを削除しています") : undefined} successLabel="メタデータの削除が完了しました" />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "pdf") || "pdf"}-no-metadata.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           {hasAnyRemainingValue ? (
             <ul className="flex flex-col gap-1 text-sm text-red-600 dark:text-red-400">

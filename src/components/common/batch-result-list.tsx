@@ -15,6 +15,12 @@ export interface BatchResultRow {
   /** 補足（例:「元の45%」「目標サイズに届きませんでした」） */
   detail?: string;
   error?: string;
+  /**
+   * 1つのファイルから複数のファイルができるとき（PDF→画像・タイル分割・ZIP解凍など）の中身。
+   * 「保存」では blob（このファイルの分をまとめたZIP）を保存し、全体のZIPには中身を1つずつ入れる
+   * （ZIPの中にZIPが入らないようにする）。
+   */
+  entries?: { name: string; blob: Blob }[];
 }
 
 const STATUS_LABEL: Record<BatchItemStatus, string> = {
@@ -49,7 +55,7 @@ export function BatchResultList({ rows, zipName }: { rows: BatchResultRow[]; zip
     setZipping(true);
     setZipError(null);
     try {
-      const zip = await createZip(done.map((r) => ({ name: r.outputName!, blob: r.blob! })));
+      const zip = await createZip(done.flatMap((r) => r.entries ?? [{ name: r.outputName!, blob: r.blob! }]));
       downloadBlob(zip, zipName);
     } catch (e) {
       setZipError(e instanceof Error ? e.message : "ZIPファイルを作成できませんでした");

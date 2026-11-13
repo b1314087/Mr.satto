@@ -9,11 +9,14 @@ import { ProcessingStatus, type ProcessingState } from "@/components/common/proc
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
-import { ImageCropProcessor, resolveCropRect, type CropRegion } from "@/lib/processors/browser/image";
+import { ImageCropProcessor, loadImage, resolveCropRect, type CropRegion } from "@/lib/processors/browser/image";
 import { useLoadedImage } from "@/components/tools/implementations/shared/image-live-preview";
 import type { ImageProcessorOutput } from "@/lib/processors/types";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
+import { useBatchSelection } from "@/components/common/use-batch-selection";
+import { BatchNoticeMessage, BatchPlanHint } from "@/components/common/batch-notice";
+import { BatchRunResults, summarizeBatch, useBatchRun } from "@/components/common/use-batch-run";
 
 interface Box {
   xPct: number;
@@ -66,8 +69,31 @@ function clampBox(next: Box): Box {
   return { xPct, yPct, wPct, hPct };
 }
 
+/**
+ * 一括処理で、ほかの画像に同じ切り抜き範囲を当てはめる。
+ * 範囲は割合（%）で持っているので、そのまま使えば同じ位置になる。形（1:1など）を選んでいるときは、
+ * 画像ごとに縦横の長さが違うため、範囲の中心を保ったまま、その画像で選んだ形になるよう作り直す。
+ */
+export function fitBoxToImage(box: Box, ratio: number | null, size: { width: number; height: number }): Box {
+  if (!ratio) return box;
+  const cx = box.xPct + box.wPct / 2;
+  const cy = box.yPct + box.hPct / 2;
+  let wPct = box.wPct;
+  let hPct = (wPct * size.width) / (ratio * size.height);
+  if (hPct > 100) {
+    hPct = 100;
+    wPct = (hPct * ratio * size.height) / size.width;
+  }
+  return clampBox({ xPct: cx - wPct / 2, yPct: cy - hPct / 2, wPct, hPct });
+}
+
 export function ImageCropTool() {
-  const [file, setFile] = useState<File | null>(null);
+  // 選んだ画像。2枚以上のとき（プレミアムの一括処理）は、1枚目で決めた範囲を、ほかの画像にも同じ割合で当てはめる
+  const [files, setFiles] = useState<File[]>([]);
+  const file = files[0] ?? null;
+  const isBatch = files.length > 1;
+  const batch = useBatchSelection("image-crop");
+  const batchRun = useBatchRun();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [box, setBox] = useState<Box>(DEFAULT_BOX);
@@ -214,6 +240,7 @@ export function ImageCropTool() {
     let next = clampBox({ xPct, yPct, wPct, hPct });
     if (ratio) next = applyRatio(next, ratio);
     setBox(next);
+    batchRun.reset();
   }
 
   function handlePointerUp() {
@@ -225,8 +252,50 @@ export function ImageCropTool() {
     if (r) setBox((b) => applyRatio(b, r));
   }
 
+  function handleSelect(selected: File[]) {
+    setFiles(batch.pick(files, selected, "append"));
+    batchRun.reset();
+    setResult(null);
+    setError(null);
+    setStatus("idle");
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    batchRun.reset();
+    setStatus("idle");
+  }
+
+  /** 一括処理：1枚目で決めた範囲を、すべての画像に同じ割合で当てはめて切り抜く */
+  async function handleRunBatch() {
+    if (!(await batch.confirmBatch(files.length))) return;
+    const usedBox = box;
+    const usedRatio = ratio;
+    setStatus("processing");
+    setError(null);
+    setResult(null);
+    const items = await batchRun.run(files, async (target) => {
+      const img = await loadImage(target);
+      const size = { width: img.naturalWidth, height: img.naturalHeight };
+      const output = await new ImageCropProcessor().process({ file: target, crop: boxToCrop(fitBoxToImage(usedBox, usedRatio, size), size) });
+      URL.revokeObjectURL(output.url);
+      return {
+        blob: output.blob,
+        outputName: `${stripExtension(target.name)}-crop.${EXT_BY_MIME[output.mimeType] ?? "jpg"}`,
+        detail: `${output.width}×${output.height}px`,
+      };
+    });
+    const summary = summarizeBatch(items, "すべての画像でトリミングに失敗しました");
+    setStatus(summary.status);
+    setError(summary.error);
+  }
+
   async function handleRun() {
     if (!file || !naturalSize) return;
+    if (isBatch) {
+      await handleRunBatch();
+      return;
+    }
     setStatus("processing");
     setError(null);
     try {
@@ -268,15 +337,25 @@ export function ImageCropTool() {
       ) : null}
     >
       <FileDropzone
-        compact={!!file}
+        compact={files.length > 0}
+        compactAction={batch.batchAllowed ? "add" : "replace"}
         accept="image/*"
         label="画像をドラッグ&ドロップ"
         hint="またはタップして選択（JPG・PNG・WebPなど）"
-        onFilesSelected={(files) => setFile(files[0])}
+        multiple
+        onFilesSelected={handleSelect}
         onError={setError}
       />
+      <BatchPlanHint batchAllowed={batch.batchAllowed} limit={batch.limit} unit="枚" />
+      <BatchNoticeMessage notice={batch.notice} onClose={batch.clearNotice} />
 
-      {file && <FileList files={[file]} onRemove={() => setFile(null)} />}
+      {files.length > 0 && <FileList files={files} onRemove={removeFile} />}
+      {isBatch && (
+        <p data-testid="batch-crop-note" className="text-xs text-ms-muted">
+          1枚目の画像で決めた範囲を、ほかの画像にも同じ割合の位置で当てはめます
+          {ratio ? "（形は画像ごとに、選んだ比率にそろえます）" : ""}。
+        </p>
+      )}
 
       {file && imageUrl && naturalSize && (
         <div className="flex flex-col gap-3">
@@ -285,7 +364,10 @@ export function ImageCropTool() {
               <button aria-pressed={ratio === preset.ratio}
                 key={preset.label}
                 type="button"
-                onClick={() => handleRatioSelect(preset.ratio)}
+                onClick={() => {
+                  handleRatioSelect(preset.ratio);
+                  batchRun.reset();
+                }}
                 title={preset.hint}
               >
                 {preset.label}
@@ -345,15 +427,21 @@ export function ImageCropTool() {
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            トリミングする
+            {isBatch ? `${files.length}枚をまとめてトリミングする` : "トリミングする"}
           </button>
         </RunBar>
       )}
 
-      <ProcessingStatus state={status} successLabel="トリミングが完了しました" />
+      <ProcessingStatus
+        state={status}
+        processingLabel={isBatch ? batchRun.progressLabel("トリミングしています") : undefined}
+        successLabel="トリミングが完了しました"
+      />
       {error && <ErrorMessage message={error} />}
 
-      {result && (
+      <BatchRunResults items={batchRun.items} zipName={`${stripExtension(batchRun.items[0]?.file.name ?? "images") || "images"}-crop.zip`} />
+
+      {result && !isBatch && (
         <ResultPopup>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
