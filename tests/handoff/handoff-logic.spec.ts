@@ -21,6 +21,7 @@ import { getToolById, isListedTool, tools } from "@/lib/tools/data";
 import { hasImplementation } from "@/lib/tools/registry";
 import { downloadBlob } from "@/lib/utils/format";
 import { matchesAccept } from "@/lib/utils/file-accept";
+import { MAX_OFFICE_FILE_MB } from "@/lib/office-convert/file-check";
 
 /**
  * 工程16：ツール間のファイル受け渡しの、判定・置き場・種類の判別・設定の整合のテスト（画面を使わない）。
@@ -204,9 +205,11 @@ test.describe("設定の整合", () => {
     "file-hash": "file-hash-tool.tsx",
     "file-zip": "file-zip-tool.tsx",
     "file-unzip": "file-unzip-tool.tsx",
+    "excel-to-word": "excel-to-word-tool.tsx",
+    "word-to-excel": "word-to-excel-tool.tsx",
   };
   // 別ファイルで定義された定数（ファイル内の const で解決できないもの）
-  const IMPORTED: Record<string, string | number> = {};
+  const IMPORTED: Record<string, string | number> = { MAX_OFFICE_FILE_MB };
 
   function resolve(code: string, raw: string | undefined): string | number | undefined {
     if (raw === undefined) return undefined;

@@ -34,32 +34,34 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
     receive: { kinds: [...IMAGES, "gif"], maxFiles: MULTI, maxFileSizeMB: 50 },
     send: { kinds: [...IMAGES, "zip"] },
   },
-  "image-crop": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
-  "image-rotate-flip": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
+  "image-crop": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-crop"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
+  "image-rotate-flip": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-rotate-flip"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
   // 工程3：画像グレースケールは、色調補正（image-adjust）に統合した（受け取りも統合先で行う。複数枚の一括処理に対応）
   "image-adjust": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-adjust"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
-  "image-metadata-remove": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
-  "image-watermark": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
-  "image-mosaic": { role: "edit", receive: { kinds: IMAGES, maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
+  "image-metadata-remove": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-metadata-remove"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
+  "image-watermark": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-watermark"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
+  "image-mosaic": { role: "edit", receive: { kinds: IMAGES, maxFiles: BATCH_LIMITS["image-mosaic"], maxFileSizeMB: 50 }, send: { kinds: IMAGES } },
 
   // ---------------- PDF ----------------
   // PDF編集は、開いた直後が「結合」（複数のPDFが前提）のため、受け取りは設定しない。結果の送り出しだけ行う
   "pdf-edit": { role: "edit", send: { kinds: ["pdf", "zip"] } },
   "pdf-fix": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
   "pdf-compress": { role: "edit", receive: { kinds: ["pdf"], maxFiles: BATCH_LIMITS["pdf-compress"], maxFileSizeMB: 100 }, send: { kinds: ["pdf"] } },
-  "pdf-metadata-remove": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
-  "pdf-resize-pages": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
-  "pdf-crop-pages": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
+  "pdf-metadata-remove": { role: "edit", receive: { kinds: ["pdf"], maxFiles: BATCH_LIMITS["pdf-metadata-remove"], maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
+  "pdf-resize-pages": { role: "edit", receive: { kinds: ["pdf"], maxFiles: BATCH_LIMITS["pdf-resize-pages"], maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
+  "pdf-crop-pages": { role: "edit", receive: { kinds: ["pdf"], maxFiles: BATCH_LIMITS["pdf-crop-pages"], maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
   // パスワード付きにしたPDFは、他のツールで開けないため送り出さない
-  "pdf-password-protect": { role: "edit", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 100 } },
+  "pdf-password-protect": { role: "edit", receive: { kinds: ["pdf"], maxFiles: BATCH_LIMITS["pdf-password-protect"], maxFileSizeMB: 100 } },
   "image-to-pdf": { role: "convert", receive: { kinds: IMAGES, maxFiles: MULTI, maxFileSizeMB: 50 }, send: { kinds: ["pdf"] } },
-  "pdf-to-image": { role: "convert", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["png", "jpeg", "zip"] } },
+  "pdf-to-image": { role: "convert", receive: { kinds: ["pdf"], maxFiles: BATCH_LIMITS["pdf-to-image"], maxFileSizeMB: 50 }, send: { kinds: ["png", "jpeg", "zip"] } },
   // 工程4：OCRを統合し、画像も受け取る（旧 ocr の設定は削除）
   "pdf-to-text": { role: "convert", receive: { kinds: ["pdf", ...IMAGES], maxFiles: 1, maxFileSizeMB: 100 }, send: { kinds: ["txt"] } },
   "pdf-to-word": { role: "convert", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["docx"] } },
   "pdf-to-excel": { role: "convert", receive: { kinds: ["pdf"], maxFiles: 1, maxFileSizeMB: 50 }, send: { kinds: ["xlsx"] } },
-  "word-to-pdf": { role: "convert", receive: { kinds: ["docx"], maxFiles: 1, maxFileSizeMB: 30 }, send: { kinds: ["pdf"] } },
-  "excel-to-pdf": { role: "convert", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 30 }, send: { kinds: ["pdf"] } },
+  "word-to-pdf": { role: "convert", receive: { kinds: ["docx"], maxFiles: BATCH_LIMITS["word-to-pdf"], maxFileSizeMB: 30 }, send: { kinds: ["pdf"] } },
+  "excel-to-word": { role: "convert", receive: { kinds: ["xlsx"], maxFiles: 1, maxFileSizeMB: 30 }, send: { kinds: ["docx"] } },
+  "word-to-excel": { role: "convert", receive: { kinds: ["docx"], maxFiles: 1, maxFileSizeMB: 30 }, send: { kinds: ["xlsx"] } },
+  "excel-to-pdf": { role: "convert", receive: { kinds: ["xlsx"], maxFiles: BATCH_LIMITS["excel-to-pdf"], maxFileSizeMB: 30 }, send: { kinds: ["pdf"] } },
 
   // ---------------- CSV・Excel・Word・PowerPoint ----------------
   // Excel/CSV変換は、開いた直後が「Excel→CSV」のため、Excelを受け取る
@@ -80,7 +82,7 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   // ---------------- 調べる・まとめる ----------------
   "file-hash": { role: "inspect", receive: { kinds: "any", maxFiles: 1, maxFileSizeMB: 200 } },
   "file-zip": { role: "convert", receive: { kinds: "any", maxFiles: MULTI, maxFileSizeMB: 200 }, send: { kinds: ["zip"] } },
-  "file-unzip": { role: "convert", receive: { kinds: ["zip"], maxFiles: 1, maxFileSizeMB: 200 } },
+  "file-unzip": { role: "convert", receive: { kinds: ["zip"], maxFiles: BATCH_LIMITS["file-unzip"], maxFileSizeMB: 200 } },
 
   // ---------------- 生成（受け取らない。作ったファイルは送り出せる） ----------------
   "qr-generator": { role: "generate", send: { kinds: ["png"] } },

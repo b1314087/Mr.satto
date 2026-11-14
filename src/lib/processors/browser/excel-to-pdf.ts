@@ -155,7 +155,7 @@ export async function readExcelSheets(file: File): Promise<RawExcelSheet[]> {
   return sheetsData.map((s) => ({ name: s.sheet, rows: s.data as RawCellValue[][] }));
 }
 
-function cellToDisplayString(
+export function cellToDisplayString(
   value: RawCellValue,
   dateFormatCode: string | null = null,
   numFormatCode: string | null = null,

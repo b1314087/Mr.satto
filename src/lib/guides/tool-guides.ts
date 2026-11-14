@@ -318,6 +318,20 @@ export const toolGuides: Record<string, ToolGuide> = {
   "word-to-pdf": {
     steps: [pick("Wordを選ぶ", "Word文書(.docx)をドラッグ&ドロップ"), ...finish("変換する", "PDFに変換する", [file(DOCX)], "PDFをダウンロード")],
   },
+  "excel-to-word": {
+    steps: [
+      pick("Excelを選ぶ", "Excelファイル(.xlsx・.xlsm)をドラッグ&ドロップ"),
+      step("シートを選ぶ", [file(XLSX), check("Sheet1"), check("Sheet2"), check("表が縦向きのページに収まらないときは、横向きのページにする")], 1),
+      ...finish("変換する", "Wordに変換する", [file(XLSX), table(4, 2)], "Word文書をダウンロード"),
+    ],
+  },
+  "word-to-excel": {
+    steps: [
+      pick("Wordを選ぶ", "Word文書(.docx)をドラッグ&ドロップ"),
+      step("表を確かめる", [file(DOCX), table(4, 3)], 1),
+      ...finish("変換する", "Excelに変換する", [file(DOCX), table(4, 2)], "Excelファイルをダウンロード"),
+    ],
+  },
   "excel-to-pdf": {
     steps: [
       pick("Excelを選ぶ", "Excelファイル(.xlsx)をドラッグ&ドロップ"),

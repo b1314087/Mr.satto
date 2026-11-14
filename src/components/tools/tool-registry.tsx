@@ -199,6 +199,14 @@ const PdfToWordTool = dynamic(() =>
   import("./implementations/pdf-to-word-tool").then((m) => m.PdfToWordTool),
   { loading: ToolLoading }
 );
+const ExcelToWordTool = dynamic(() =>
+  import("./implementations/excel-to-word-tool").then((m) => m.ExcelToWordTool),
+  { loading: ToolLoading }
+);
+const WordToExcelTool = dynamic(() =>
+  import("./implementations/word-to-excel-tool").then((m) => m.WordToExcelTool),
+  { loading: ToolLoading }
+);
 const WordToPdfTool = dynamic(() =>
   import("./implementations/word-to-pdf-tool").then((m) => m.WordToPdfTool),
   { loading: ToolLoading }
@@ -538,6 +546,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <WordToPdfTool />;
     case "excel-to-pdf":
       return <ExcelToPdfTool />;
+    case "excel-to-word":
+      return <ExcelToWordTool />;
+    case "word-to-excel":
+      return <WordToExcelTool />;
     case "pdf-extract-pages":
       return <PdfEditTool initialMode="extract" />;
     case "image-flip":

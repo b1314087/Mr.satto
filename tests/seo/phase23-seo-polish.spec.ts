@@ -191,9 +191,11 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
     //   → 工程2: CSV結合は Excel・CSV結合（excel-merge）に統合。PDF記入・注釈は PDF修正に統合
     // 新規ツール：動画字幕追加（video-subtitle）から、近い用途の動画変換・動画モザイクを案内
     // 内部リンク改善の工程: Google未登録だった重要ページ（PDF→Excel・PDF→Word・PDF編集・画像圧縮）に、使う場面が近いツールを案内
+    // Excel→Word・Word→Excel：互いと、近い用途のOffice変換（Excel→PDF・Word→PDF・PDF→Excel）を案内
     expect(withPins.map((t) => t.id).sort()).toEqual([
       "excel-merge",
       "excel-to-pdf",
+      "excel-to-word",
       "image-compress",
       "pdf-edit",
       "pdf-fix",
@@ -203,6 +205,7 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
       "receipt-accounting-csv",
       "seating-chart",
       "video-subtitle",
+      "word-to-excel",
       "word-to-pdf",
     ]);
     for (const t of withPins) {
