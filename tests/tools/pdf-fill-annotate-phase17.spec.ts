@@ -275,8 +275,19 @@ test("複数行のテキストを入力し、整列を変更できる", async ({
   await clickCanvasAt(page, 50, 150);
 
   const textarea = page.locator(OBJECT_LIST).locator("textarea").first();
+  const preview = page.getByTestId("pdf-annotate-text-object").first();
+  await textarea.fill("1行目");
+  const oneLine = (await preview.boundingBox())!;
   await textarea.fill("1行目\n2行目あいうえお");
   await textarea.blur();
+  // 2026-11：画面の表示でも改行が反映される（以前は1行につながって見えていた）
+  await expect(preview).toHaveAttribute("data-lines", "2");
+  const twoLines = (await preview.boundingBox())!;
+  expect(twoLines.height).toBeGreaterThan(oneLine.height * 1.8);
+  // 最後の行の位置は変わらず、上に1行ぶん伸びる（書き出しと同じ並び方）
+  expect(Math.abs(twoLines.y + twoLines.height - (oneLine.y + oneLine.height))).toBeLessThan(2);
+  const lines = await preview.evaluate((el) => (el as HTMLElement).innerText.split("\n"));
+  expect(lines).toEqual(["1行目", "2行目あいうえお"]);
 
   const alignSelect = page.locator(OBJECT_LIST).locator('label:has-text("整列") select');
   await alignSelect.selectOption("center");

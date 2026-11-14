@@ -168,7 +168,9 @@ function objectBoundsForClamp(obj: AnnotationObject): { minX: number; maxX: numb
   if (obj.type === "text") {
     const longest = Math.max(1, ...obj.text.split("\n").map((l) => l.length));
     const width = obj.width ?? Math.max(20, longest * obj.fontSize * 0.62);
-    return { minX: obj.x, maxX: obj.x + width, minY: obj.y - obj.fontSize * 0.3, maxY: obj.y + obj.fontSize };
+    // 改行があるときは、上の行の分（行間×行数）もページの中に収める
+    const extraLines = obj.text.split("\n").length - 1;
+    return { minX: obj.x, maxX: obj.x + width, minY: obj.y - obj.fontSize * 0.3, maxY: obj.y + obj.fontSize + extraLines * obj.fontSize * 1.3 };
   }
   if (obj.type === "checkbox") return { minX: obj.x, maxX: obj.x + obj.size, minY: obj.y, maxY: obj.y + obj.size };
   return { minX: obj.x, maxX: obj.x + obj.width, minY: obj.y, maxY: obj.y + obj.height };
@@ -1406,7 +1408,7 @@ export function PdfFillAnnotateTool({
                   options={(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => ({ value: a, label: ALIGN_LABELS[a] }))}
                 />
               </div>
-              <span className="text-neutral-500 dark:text-neutral-400">改行はShift+Enter</span>
+              <span className="text-neutral-500 dark:text-neutral-400">改行はEnter</span>
             </div>
           )}
 
@@ -1679,8 +1681,13 @@ export function PdfFillAnnotateTool({
               {pageObjects.map((obj) => {
                 const isActive = activeObjectId === obj.id;
                 if (obj.type === "text") {
-                  const width = Math.max(20, obj.text.length * obj.fontSize * 0.62) * pageRenderScale;
-                  const height = obj.fontSize * 1.3 * pageRenderScale;
+                  // 2026-11：改行した文字が、画面では1行につながって見えていた（書き出したPDFは複数行だった）。
+                  // 書き出しと同じく、obj.y を最後の行の位置とし、それより上の行を行間（文字サイズ×1.3）ずつ積み上げて表示する
+                  const lines = obj.text.split("\n");
+                  const longest = Math.max(1, ...lines.map((l) => l.length));
+                  const width = Math.max(20, longest * obj.fontSize * 0.62) * pageRenderScale;
+                  const lineHeight = obj.fontSize * 1.3 * pageRenderScale;
+                  const height = lineHeight * lines.length;
                   return (
                     <div
                       key={obj.id}
@@ -1688,14 +1695,18 @@ export function PdfFillAnnotateTool({
                       onPointerMove={handleObjectPointerMove}
                       onPointerUp={handleObjectPointerUp}
                       onClick={handleObjectInertClick}
-                      className={`absolute flex items-center whitespace-nowrap px-0.5 text-left ${
+                      data-testid="pdf-annotate-text-object"
+                      data-lines={lines.length}
+                      className={`absolute whitespace-pre px-0.5 ${
                         isActive ? "outline outline-2 outline-blue-500" : "outline outline-1 outline-dashed outline-neutral-400/60"
                       }`}
                       style={{
                         left: pdfToScreenX(obj.x, pageRenderScale),
-                        top: pdfToScreenY(obj.y, obj.fontSize * 0.3, currentPageInfo.height, pageRenderScale) - height * 0.55,
+                        top: pdfToScreenY(obj.y, obj.fontSize * 0.3, currentPageInfo.height, pageRenderScale) - lineHeight * 0.55 - lineHeight * (lines.length - 1),
                         minWidth: width,
                         height,
+                        lineHeight: `${lineHeight}px`,
+                        textAlign: obj.align ?? "left",
                         fontSize: Math.max(8, obj.fontSize * pageRenderScale),
                         fontWeight: obj.bold ? 700 : 400,
                         color: cssColor(obj.color),
