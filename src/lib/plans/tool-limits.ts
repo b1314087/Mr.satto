@@ -27,8 +27,10 @@ const UNLIMITED = Number.POSITIVE_INFINITY;
 
 export const PLAN_LIMITS = {
   "image-layout": { free: 10, standard: 20, premium: 100, unit: "枚", label: "配置する画像" },
-  "image-merge": { free: 1, standard: 5, premium: 50, unit: "枚", label: "結合する画像" },
-  "pdf-merge": { free: 1, standard: 1, premium: 50, unit: "ファイル", label: "結合するPDF" },
+  // 2026-11：無料でも結合を試せるよう、画像結合・PDF結合の無料の上限を1から2にした
+  // （旧スタンダードが無料より少なくならないよう、PDF結合の旧スタンダードも2にそろえた）
+  "image-merge": { free: 2, standard: 5, premium: 50, unit: "枚", label: "結合する画像" },
+  "pdf-merge": { free: 2, standard: 2, premium: 50, unit: "ファイル", label: "結合するPDF" },
   "image-to-pdf": { free: 1, standard: 1, premium: 200, unit: "枚", label: "PDFにする画像" },
   "pdf-ocr": { free: 1, standard: 1, premium: 200, unit: "ページ", label: "文字を読み取る（OCR）ページ" },
   "pdf-to-excel": { free: 1, standard: 1, premium: 200, unit: "ページ", label: "変換するページ" },

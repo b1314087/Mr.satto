@@ -1,6 +1,8 @@
 import { test as plainTest, expect as plainExpect } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { setDevPlanOverride } from "../helpers/dev-plan";
+import { waitForFileInputHydrated } from "../helpers/tool-ready";
+import { fixtures } from "../fixtures/paths";
 import { PLAN_LIMITS, getPlanLimit, clampToLimit } from "@/lib/plans/tool-limits";
 
 /**
@@ -42,4 +44,33 @@ test("プレミアム：ZIP作成では上限の案内を出さず、たくさ�
   await expect(page.getByTestId("plan-limit-hint")).toHaveCount(0);
   await expect(page.getByTestId("plan-limit-notice")).toHaveCount(0);
   await expect(page.getByText("memo-5.txt").first()).toBeVisible();
+});
+
+plainTest("無料：画像結合・PDF結合は2つまで（2つで結合を試せる）", () => {
+  plainExpect(PLAN_LIMITS["image-merge"].free).toBe(2);
+  plainExpect(PLAN_LIMITS["pdf-merge"].free).toBe(2);
+  plainExpect(PLAN_LIMITS["pdf-merge"].standard).toBeGreaterThanOrEqual(2);
+});
+
+test("無料：PDF結合で3つ選ぶと2つだけ読み込み、2つをそのまま結合できる", async ({ page, context, baseURL }) => {
+  await setDevPlanOverride(context, "free", baseURL!);
+  await page.goto("/tools/pdf-merge");
+  await expect(page.getByTestId("plan-limit-hint")).toContainText("2ファイルまで");
+  await waitForFileInputHydrated(page);
+  await page.locator('input[type="file"]').first().setInputFiles([fixtures.singlePagePdf, fixtures.multiPagePdf, fixtures.singlePagePdf]);
+  await expect(page.getByTestId("plan-limit-notice")).toContainText("超えた1ファイル");
+  const run = page.getByRole("button", { name: "2件のPDFを結合する" });
+  await expect(run).toBeEnabled();
+  await run.click();
+  await expect(page.getByTestId("result-popup")).toBeVisible({ timeout: 30_000 });
+});
+
+test("無料：画像結合で2枚を選ぶと、案内を出さずに結合できる", async ({ page, context, baseURL }) => {
+  await setDevPlanOverride(context, "free", baseURL!);
+  await page.goto("/tools/image-merge");
+  await expect(page.getByTestId("plan-limit-hint")).toContainText("2枚まで");
+  await waitForFileInputHydrated(page);
+  await page.locator('input[type="file"]').first().setInputFiles([fixtures.png, fixtures.landscapeJpg]);
+  await expect(page.getByTestId("plan-limit-notice")).toHaveCount(0);
+  await expect(page.getByText("landscape.jpg").first()).toBeVisible();
 });
