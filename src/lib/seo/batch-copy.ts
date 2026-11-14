@@ -140,6 +140,72 @@ export const FILE_UNZIP_BATCH_ANSWER = batchAnswer(
   "まとめて保存するときは、どのZIPの中身か分かるよう、ファイル名の前に元のZIPの名前を付けます。"
 );
 
+// 2026-11：一括処理を15ツールに追加（使い方の「ファイルを選ぶ」手順）
+export const PDF_TO_IMAGE_HOWTO_SELECT: OnOffCopy = {
+  on: `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル上限50MB。プレミアムプランでは最大${BATCH_LIMITS["pdf-to-image"]}個まとめて選べます）。`,
+  off: `PDFをドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["pdf-to-image"]}個まとめて選べます・1ファイル上限50MB）。`,
+};
+export const IMAGE_CROP_HOWTO_SELECT: OnOffCopy = {
+  on: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（SNSサイズ・自由トリミングは、プレミアムプランでは最大${BATCH_LIMITS["image-crop"]}枚まとめて選べます）。`,
+  off: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（SNSサイズ・自由トリミングは、最大${BATCH_LIMITS["image-crop"]}枚まとめて選べます）。`,
+};
+export const IMAGE_ROTATE_FLIP_HOWTO_SELECT: OnOffCopy = {
+  on: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（JPG・PNG・WebPなど。1ファイル上限50MB。プレミアムプランでは最大${BATCH_LIMITS["image-rotate-flip"]}枚まとめて選べます）。`,
+  off: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（JPG・PNG・WebPなど。最大${BATCH_LIMITS["image-rotate-flip"]}枚まとめて選べます・1ファイル上限50MB）。`,
+};
+export const IMAGE_ROTATE_HOWTO_SELECT: OnOffCopy = {
+  on: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（1ファイル上限50MB。プレミアムプランでは最大${BATCH_LIMITS["image-rotate-flip"]}枚まとめて選べます）。`,
+  off: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["image-rotate-flip"]}枚まとめて選べます・1ファイル上限50MB）。`,
+};
+export const IMAGE_METADATA_REMOVE_HOWTO_SELECT: OnOffCopy = {
+  on: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（プレミアムプランでは、最大${BATCH_LIMITS["image-metadata-remove"]}枚まとめて選べます）。`,
+  off: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["image-metadata-remove"]}枚まとめて選べます）。`,
+};
+export const IMAGE_WATERMARK_HOWTO_SELECT: OnOffCopy = {
+  on: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（プレミアムプランでは、最大${BATCH_LIMITS["image-watermark"]}枚まとめて選べ、同じ透かしを入れられます）。`,
+  off: `画像ファイルをドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["image-watermark"]}枚まとめて選べ、同じ透かしを入れられます）。`,
+};
+export const IMAGE_TILE_SPLIT_HOWTO_SELECT: OnOffCopy = {
+  on: `画像をドラッグ&ドロップ、またはタップして選択します（プレミアムプランでは、最大${BATCH_LIMITS["image-tile-split"]}枚まとめて選べます）。`,
+  off: `画像をドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["image-tile-split"]}枚まとめて選べます）。`,
+};
+export const IMAGE_MOSAIC_HOWTO_SELECT: OnOffCopy = {
+  on: `画像をドラッグ&ドロップ、またはタップして選択します（プレミアムプランでは、最大${BATCH_LIMITS["image-mosaic"]}枚まとめて選べ、1枚目で決めた範囲を同じ割合の位置で当てはめます）。`,
+  off: `画像をドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["image-mosaic"]}枚まとめて選べ、1枚目で決めた範囲を同じ割合の位置で当てはめます）。`,
+};
+export const PDF_FIX_HOWTO_SELECT: OnOffCopy = {
+  on: `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル上限50MB。ページ番号・透かしは、プレミアムプランでは最大${BATCH_LIMITS["pdf-fix"]}個まとめて選べます）。`,
+  off: `PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル上限50MB。ページ番号・透かしは、最大${BATCH_LIMITS["pdf-fix"]}個まとめて選べます）。`,
+};
+export const WORD_TO_PDF_HOWTO_SELECT: OnOffCopy = {
+  on: `Word文書(.docx)をドラッグ&ドロップ、またはタップして選択します（1ファイル上限30MB。プレミアムプランでは最大${BATCH_LIMITS["word-to-pdf"]}個まとめて選べます）。`,
+  off: `Word文書(.docx)をドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["word-to-pdf"]}個まとめて選べます・1ファイル上限30MB）。`,
+};
+export const EXCEL_TO_PDF_HOWTO_SELECT: OnOffCopy = {
+  on: `Excelファイル(.xlsx)をドラッグ&ドロップ、またはタップして選択します（1ファイル上限30MB。プレミアムプランでは最大${BATCH_LIMITS["excel-to-pdf"]}個まとめて選べます）。`,
+  off: `Excelファイル(.xlsx)をドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["excel-to-pdf"]}個まとめて選べます・1ファイル上限30MB）。`,
+};
+export const PDF_PASSWORD_PROTECT_HOWTO_SELECT: OnOffCopy = {
+  on: `PDFファイルを選びます（先頭ページがプレビューされます。プレミアムプランでは最大${BATCH_LIMITS["pdf-password-protect"]}個まとめて選べ、同じパスワードを設定できます）。`,
+  off: `PDFファイルを選びます（先頭ページがプレビューされます。最大${BATCH_LIMITS["pdf-password-protect"]}個まとめて選べ、同じパスワードを設定できます）。`,
+};
+export const PDF_RESIZE_PAGES_HOWTO_SELECT: OnOffCopy = {
+  on: `PDFファイルをドラッグ&ドロップ、またはタップして選択します（プレミアムプランでは、最大${BATCH_LIMITS["pdf-resize-pages"]}個まとめて選べます）。`,
+  off: `PDFファイルをドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["pdf-resize-pages"]}個まとめて選べます）。`,
+};
+export const PDF_METADATA_REMOVE_HOWTO_SELECT: OnOffCopy = {
+  on: `PDFファイルをドラッグ&ドロップ、またはタップして選択します（プレミアムプランでは、最大${BATCH_LIMITS["pdf-metadata-remove"]}個まとめて選べ、1つずつ順番に削除します）。`,
+  off: `PDFファイルをドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["pdf-metadata-remove"]}個まとめて選べ、1つずつ順番に削除します）。`,
+};
+export const PDF_CROP_PAGES_HOWTO_SELECT: OnOffCopy = {
+  on: `PDFファイルをドラッグ&ドロップ、またはタップして選択します（プレミアムプランでは、最大${BATCH_LIMITS["pdf-crop-pages"]}個まとめて選べ、同じ余白で調整できます）。`,
+  off: `PDFファイルをドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["pdf-crop-pages"]}個まとめて選べ、同じ余白で調整できます）。`,
+};
+export const FILE_UNZIP_HOWTO_SELECT: OnOffCopy = {
+  on: `ZIPファイルをドラッグ&ドロップ、またはタップして選択します（1ファイル上限200MB。プレミアムプランでは最大${BATCH_LIMITS["file-unzip"]}個まとめて選べます）。`,
+  off: `ZIPファイルをドラッグ&ドロップ、またはタップして選択します（最大${BATCH_LIMITS["file-unzip"]}個まとめて選べます・1ファイル上限200MB）。`,
+};
+
 export const BATCH_COPY_PAIRS: OnOffCopy[] = [
   FORMAT_CONVERT_META_BATCH,
   FORMAT_CONVERT_LEAD_BATCH,
@@ -171,4 +237,20 @@ export const BATCH_COPY_PAIRS: OnOffCopy[] = [
   PDF_METADATA_REMOVE_BATCH_ANSWER,
   PDF_CROP_PAGES_BATCH_ANSWER,
   FILE_UNZIP_BATCH_ANSWER,
+  PDF_TO_IMAGE_HOWTO_SELECT,
+  IMAGE_CROP_HOWTO_SELECT,
+  IMAGE_ROTATE_FLIP_HOWTO_SELECT,
+  IMAGE_ROTATE_HOWTO_SELECT,
+  IMAGE_METADATA_REMOVE_HOWTO_SELECT,
+  IMAGE_WATERMARK_HOWTO_SELECT,
+  IMAGE_TILE_SPLIT_HOWTO_SELECT,
+  IMAGE_MOSAIC_HOWTO_SELECT,
+  PDF_FIX_HOWTO_SELECT,
+  WORD_TO_PDF_HOWTO_SELECT,
+  EXCEL_TO_PDF_HOWTO_SELECT,
+  PDF_PASSWORD_PROTECT_HOWTO_SELECT,
+  PDF_RESIZE_PAGES_HOWTO_SELECT,
+  PDF_METADATA_REMOVE_HOWTO_SELECT,
+  PDF_CROP_PAGES_HOWTO_SELECT,
+  FILE_UNZIP_HOWTO_SELECT,
 ];

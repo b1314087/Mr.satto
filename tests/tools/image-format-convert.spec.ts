@@ -7,6 +7,7 @@ import { clearDevOverrides } from "../helpers/dev-plan";
 import { uploadFixture, waitForSuccess, clickAndDownload, assertDownloadedFile, closeResultPopup } from "../helpers/tool-runner";
 import { tools } from "@/lib/tools/data";
 import { detectConvertFormat, isSameFormat, outputFileNames, sizeChangePercent, splitByFormat, transparencyNote } from "@/lib/image-format-convert";
+import { BATCH_LIMITS } from "@/lib/batch/batch-config";
 
 /**
  * 画像形式変換の共通画面（JPG変換・PNG変換・WebP変換・画像一括変換の4ページ）のテスト。
@@ -240,7 +241,7 @@ premiumTest.describe("画像形式変換: 既存URL・SEO・ツール登録の�
     await page.getByTestId("guide-howto").locator("summary", { hasText: "文章で読む" }).click();
     const body = await page.getByTestId("guide-howto").innerText();
     // 複数枚をまとめて選べるのはプレミアムプランの一括処理（Premium 一括処理の工程で説明を変更）
-    expect(body).toContain("最大30枚まとめて選べます");
+    expect(body).toContain(`最大${BATCH_LIMITS["image-format-convert"]}枚まとめて選べます`);
     expect(body).toContain("ZIPにまとめて保存されます");
     expect(body).not.toContain("1ファイル・上限50MB");
   });

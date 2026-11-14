@@ -56,6 +56,22 @@ import {
   PDF_RESIZE_PAGES_BATCH_ANSWER,
   PDF_TO_IMAGE_BATCH_ANSWER,
   WORD_TO_PDF_BATCH_ANSWER,
+  EXCEL_TO_PDF_HOWTO_SELECT,
+  FILE_UNZIP_HOWTO_SELECT,
+  IMAGE_CROP_HOWTO_SELECT,
+  IMAGE_METADATA_REMOVE_HOWTO_SELECT,
+  IMAGE_MOSAIC_HOWTO_SELECT,
+  IMAGE_ROTATE_FLIP_HOWTO_SELECT,
+  IMAGE_ROTATE_HOWTO_SELECT,
+  IMAGE_TILE_SPLIT_HOWTO_SELECT,
+  IMAGE_WATERMARK_HOWTO_SELECT,
+  PDF_CROP_PAGES_HOWTO_SELECT,
+  PDF_FIX_HOWTO_SELECT,
+  PDF_METADATA_REMOVE_HOWTO_SELECT,
+  PDF_PASSWORD_PROTECT_HOWTO_SELECT,
+  PDF_RESIZE_PAGES_HOWTO_SELECT,
+  PDF_TO_IMAGE_HOWTO_SELECT,
+  WORD_TO_PDF_HOWTO_SELECT,
 } from "@/lib/seo/batch-copy";
 
 export interface ToolFaqItem {
@@ -227,7 +243,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     lead: "目的（SNSサイズ・自由トリミング・証明写真）を選ぶと、その目的に必要な設定だけが表示されます。切り抜く範囲はプレビューで確かめられます。",
     howTo: [
       "画面上部のボタンで、目的を選びます（SNSサイズ／自由トリミング／証明写真）。",
-      "画像ファイルをドラッグ&ドロップ、またはタップして選択します。",
+      IMAGE_CROP_HOWTO_SELECT.on,
       "SNSサイズでは用途（正方形・縦長・横長・ストーリー）を、自由トリミングでは切り抜く範囲と縦横比（自由・1:1・4:3・16:9）を、証明写真では写真のサイズ（プリセットまたはmm指定）と位置・大きさを決めます。",
       "プレビューで確認して書き出し、ダウンロードします（証明写真は、画像として保存するか、A4等の用紙にまとめてPDFで書き出せます）。",
     ],
@@ -287,7 +303,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "画像を90度・180度・270度回転したり、左右・上下に反転（ミラー）したりできる無料ツール。結果をプレビューで確認でき、ブラウザ内処理でファイルは送信されません。",
     lead: "画像を90度単位で回転したり、左右・上下に反転させたりできます。画面の切り替えで、回転と反転を選べます。",
     howTo: [
-      "画像ファイルをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB、JPG・PNG・WebPなど）。",
+      IMAGE_ROTATE_FLIP_HOWTO_SELECT.on,
       "「回転」または「反転」を選びます。回転なら角度（時計回りに90°・180°・270°）、反転なら向き（左右・上下）を選びます。",
       "「回転する」（反転のときは「反転する」）を押します。選んだ角度や向きの結果は、プレビューですぐに確認できます。",
       "結果を確認してダウンロードします。設定を変えると、前の結果はダウンロードできなくなるので、もう一度実行してください。",
@@ -310,7 +326,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "画像を90度・180度・270度単位で回転したり、左右反転させたりできる無料ツールです。",
     lead: "画像を90度単位で回転したり、左右に反転させたりできます。",
     howTo: [
-      "画像ファイルをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB）。",
+      IMAGE_ROTATE_HOWTO_SELECT.on,
       "「回転」を選び、回転角度（時計回りに90°・180°・270°）を選びます。左右・上下に反転したいときは、「反転」に切り替えて向きを選びます。",
       "「回転する」（反転のときは「反転する」）を押します。選んだ角度や向きの結果は、プレビューですぐに確認できます。",
       "結果を確認してダウンロードします。",
@@ -328,7 +344,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "画像を左右または上下に反転（ミラー）できる無料ツール。JPG・PNG・WebPに対応し、ブラウザ内処理でファイルはサーバーに送信されません。",
     lead: "画像を左右または上下に反転（ミラー）させて、新しい画像として保存できます。",
     howTo: [
-      "画像ファイルをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB、JPG・PNG・WebPなど）。",
+      IMAGE_ROTATE_FLIP_HOWTO_SELECT.on,
       "「左右反転」または「上下反転」を選びます。",
       "「反転する」を押すと、その場で結果がプレビューされます。",
       "内容を確認して、反転後の画像をダウンロードします。",
@@ -488,7 +504,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     lead: "PDFへの文字入れや白消し・書き直し、黒塗り（墨消し）、ページ番号、透かしを、設定の欄の「やりたい操作」から選び、プレビューで確かめながら使えます。",
     howTo: [
       "「やりたい操作」のボタンから、行いたい修正（文字・図形などを置く／白消し／ページ番号／透かし／墨消し）を選びます。",
-      "PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB）。",
+      PDF_FIX_HOWTO_SELECT.on,
       "記入・注釈・白消しでは、PDF上をクリックして文字や白消しの四角形を配置します。誤字を直すときは、白消しで隠してから、その上に「テキスト」で書き直します。ページ番号・透かしでは、位置や大きさなどを設定します。",
       "実行（書き出し）ボタンを押して、できあがったPDFをダウンロードします。",
     ],
@@ -544,7 +560,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PDFの各ページを画像ファイルとして書き出せる無料ツール。資料の1ページだけを画像として使いたいときに便利です。",
     lead: "PDFの各ページを、画像ファイルとして書き出します。",
     howTo: [
-      "PDFをドラッグ&ドロップ、またはタップして選択します（1ファイル・上限50MB）。",
+      PDF_TO_IMAGE_HOWTO_SELECT.on,
       "画像の形式（PNG・JPG）を選びます。PDFのすべてのページが、1ページずつ画像になります。",
       "「画像化する」を押すと処理されます。",
       "生成された画像をダウンロードします（複数ページの場合はまとめて取得できます）。",
@@ -686,7 +702,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "Wordファイル(.docx)をPDFに変換できるツール。段落・見出し・太字/斜体/下線・箇条書き・表・画像に対応。プレミアムプランで利用できます。",
     lead: "Word文書（.docx）を、段落・見出し・表・画像などを保ったままPDFに変換します。",
     howTo: [
-      "Word文書(.docx)をドラッグ&ドロップ、またはタップして選択します（1ファイル・上限30MB）。",
+      WORD_TO_PDF_HOWTO_SELECT.on,
       "「PDFに変換する」を押すと処理されます。",
       "変換結果（ページ数・段落数・表・画像の数）を確認します。",
       "PDFファイルとしてダウンロードします。",
@@ -713,7 +729,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "Excelファイル(.xlsx)をPDFに変換できるツール。シート選択・縦横切り替え・横幅に合わせる機能に対応。プレミアムプランで利用できます。",
     lead: "Excelファイル（.xlsx）の表を、シートを選んでPDFに変換します。",
     howTo: [
-      "Excelファイル(.xlsx)をドラッグ&ドロップ、またはタップして選択します（1ファイル・上限30MB）。",
+      EXCEL_TO_PDF_HOWTO_SELECT.on,
       "変換するシート、用紙の向き（縦/横）、列幅の扱いを選びます。",
       "「PDFに変換する」を押すと処理されます。",
       "PDFファイルとしてダウンロードします。",
@@ -1945,7 +1961,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PDFにパスワードを設定して暗号化する無料ツール。AES-256対応で、印刷・コピー・編集の制限もかけられます。ファイルもパスワードもアップロードされず、ブラウザ内だけで処理されます。",
     lead: "PDFを選んでパスワードを入力するだけで、AES-256で暗号化したPDFを作成します。結果は実際に開き直して確認します。",
     howTo: [
-      "PDFファイルを選びます（先頭ページがプレビューされます）。",
+      PDF_PASSWORD_PROTECT_HOWTO_SELECT.on,
       "開くためのパスワードを2回入力します。",
       "必要なら、印刷・コピー・編集の許可を外します。",
       "「パスワードを設定する」を押し、保護済みのPDFを保存します。",
@@ -2083,7 +2099,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "ZIPファイルをブラウザ上で解凍して中身を取り出せる無料ツール。ファイルは外部サーバーへ送信されず、個別ダウンロードにも対応しています。",
     lead: "ZIPファイルをブラウザ上で解凍して中身を取り出し、確認・ダウンロードできます。",
     howTo: [
-      "ZIPファイルをドラッグ&ドロップ、またはタップして選択します（上限200MB）。",
+      FILE_UNZIP_HOWTO_SELECT.on,
       "「解凍する」を押すと、含まれているファイルの一覧が表示されます。",
       "1件ずつ「保存」から個別にダウンロードするか、「まとめてZIPでダウンロード」からすべてまとめて保存します。",
     ],
@@ -2120,7 +2136,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PDFのページサイズをA4・A3・Letterに変更できる無料ツール。内容を拡大縮小するか、ページサイズだけ変えるかを選べます。",
     lead: "PDFの全ページのサイズを、A4・A3・Letterのいずれかに変更します。",
     howTo: [
-      "PDFファイルをドラッグ&ドロップ、またはタップして選択します。",
+      PDF_RESIZE_PAGES_HOWTO_SELECT.on,
       "変更後のサイズ（A4・A3・Letter）と向き（縦向き・横向き）を選びます。",
       "「内容も拡大縮小する」か「ページサイズだけ変更する」かを選びます。",
       "「変更する」を押すと処理が実行され、結果をダウンロードできます。",
@@ -2138,7 +2154,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PDFのタイトル・作成者などのメタデータを確認して削除できる無料ツール。削除前後の内容を実際に確認できます。",
     lead: "PDFのタイトル・作成者・件名・キーワードなどの標準的な文書情報を確認し、削除します。",
     howTo: [
-      "PDFファイルをドラッグ&ドロップ、またはタップして選択します。",
+      PDF_METADATA_REMOVE_HOWTO_SELECT.on,
       "現在設定されているメタデータが表示されます。",
       "「メタデータを削除する」を押すと処理が実行され、削除後の内容が実際に確認された上で表示されます。",
       "結果のPDFをダウンロードします。",
@@ -2156,7 +2172,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "PDFページの上下左右の余白（表示範囲）をmm単位で調整できる無料ツール。内容を再描画せず、見た目の範囲だけを変更します。",
     lead: "PDFの各ページについて、上下左右の余白をmm単位で指定し、表示・印刷される範囲を調整します。",
     howTo: [
-      "PDFファイルをドラッグ&ドロップ、またはタップして選択します。",
+      PDF_CROP_PAGES_HOWTO_SELECT.on,
       "プリセット（0/10/15/20mm）を使うか、上下左右それぞれの余白をmm単位で入力します。",
       "「余白を調整する」を押すと処理が実行され、結果をダウンロードできます。",
     ],
@@ -2177,7 +2193,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "画像を再エンコードして、撮影日時や位置情報（GPS）などの不要なメタデータを取り除ける無料ツールです。",
     lead: "画像を再エンコードすることで、EXIFなどに含まれる撮影日時・位置情報等のメタデータを取り除きます。",
     howTo: [
-      "画像ファイルをドラッグ&ドロップ、またはタップして選択します。",
+      IMAGE_METADATA_REMOVE_HOWTO_SELECT.on,
       "「メタデータを削除する」を押すと、画像がCanvas上に描き直されて再度書き出されます。",
       "結果を確認してダウンロードします。",
     ],
@@ -2195,7 +2211,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
       "画像にテキストの透かし（ウォーターマーク）を追加できる無料ツール。位置・不透明度・文字サイズ・回転角度を調整できます。",
     lead: "画像にテキストの透かしを追加します。位置・不透明度・文字サイズ・回転角度を自由に調整できます。",
     howTo: [
-      "画像ファイルをドラッグ&ドロップ、またはタップして選択します。",
+      IMAGE_WATERMARK_HOWTO_SELECT.on,
       "透かしの文字・位置（左上/右上/中央/左下/右下）・不透明度・フォントサイズ・回転角度を指定します。",
       "「透かしを追加する」を押すと処理が実行され、結果がその場でプレビューされます。",
       "内容を確認してダウンロードします。",
@@ -2342,7 +2358,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     lead:
       "1枚の画像を、指定した行数×列数のタイルへ均等に分割し、それぞれを個別の画像として書き出せます。元画像はリサイズ・トリミングせず、ピクセル領域をそのまま分割します。",
     howTo: [
-      "画像をドラッグ&ドロップ、またはタップして選択します。",
+      IMAGE_TILE_SPLIT_HOWTO_SELECT.on,
       "2×2・3×3・4×4のプリセット、または行数・列数を自由に指定します。",
       "プレビューで分割位置とタイル数を確認します。",
       "出力形式（PNG・JPEG）を選び、「分割する」を押します。",
@@ -2375,7 +2391,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
     lead:
       "1枚の画像の一部をドラッグで矩形選択し、モザイクまたはぼかしを適用して隠せます。顔・ナンバープレート・住所・その他の個人情報など、複数の場所を同時に処理できます。",
     howTo: [
-      "画像をドラッグ&ドロップ、またはタップして選択します。",
+      IMAGE_MOSAIC_HOWTO_SELECT.on,
       "「＋ 範囲を追加」で隠したい場所に矩形範囲を作成し、ドラッグで移動・四隅のハンドルでサイズ変更します。",
       "範囲ごとに「モザイク」または「ぼかし」を選び、強度を調整します。",
       "必要な分だけ範囲を追加し、プレビューで仕上がりを確認します。",

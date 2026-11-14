@@ -387,3 +387,21 @@ baseTest("説明文：課金オフの間は、一括処理の質問からプレ�
     expect(faq!.answer, id).not.toContain("無料プラン");
   }
 });
+
+baseTest("説明文：使い方の「ファイルを選ぶ」手順に、まとめて選べる数が書いてあり、課金オフではプランの話がなくなる", () => {
+  for (const id of SEO_IDS) {
+    const content = getToolSeoContent(id)!;
+    const on = adaptToolSeoContentWith(content, { billing: true, ads: false, premiumOnly: false, standardOffered: false });
+    const step = on.howTo.find((s) => s.includes("まとめて選べ"));
+    expect(step, id).toBeTruthy();
+    expect(step!, id).toContain("プレミアムプラン");
+    expect(step!, id).not.toContain("1ファイル・");
+    const limit = Number(step!.match(/最大(\d+)/)![1]);
+    expect(Object.values(BATCH_LIMITS), id).toContain(limit);
+
+    const off = adaptToolSeoContentWith(content, { billing: false, ads: false, premiumOnly: false, standardOffered: false });
+    const offStep = off.howTo.find((s) => s.includes("まとめて選べ"));
+    expect(offStep, id).toBeTruthy();
+    expect(offStep!, id).not.toContain("プレミアム");
+  }
+});
