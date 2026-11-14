@@ -3,6 +3,7 @@ import { test as plainTest } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
+import { setDevPlanOverride } from "../helpers/dev-plan";
 import { clickAndDownload, waitForFileInputHydrated, waitForSuccess } from "../helpers/tool-runner";
 import { containsDirectory, isExternalFileDrag } from "@/lib/drop/page-file-drop";
 import { writeXlsxSheets } from "@/lib/excel/xlsx-simple-io";
@@ -108,8 +109,9 @@ test.describe("全画面のドロップ：共通のファイル選択欄（1つ�
     await expect(page.getByRole("button", { name: /4件を/ })).toHaveCount(0);
   });
 
-  test("1ファイルのツールに複数を落としたときは、これまでどおり先頭の1つだけを使う", async ({ page }) => {
-    // PDF圧縮はプレミアムの一括処理に対応したため（複数を受け取る）、1ファイルだけを扱うPDFメタデータ削除で確かめる
+  test("1ファイルのツールに複数を落としたときは、これまでどおり先頭の1つだけを使う", async ({ page, context, baseURL }) => {
+    // 2026-11：PDFメタデータ削除もプレミアムの一括処理に対応したため、1ファイルずつ処理する無料プランで確かめる
+    await setDevPlanOverride(context, "free", baseURL!);
     await openTool(page, "pdf-metadata-remove");
     await dragOn(page, ["dragenter", "dragover", "drop"], [file(fixtures.singlePagePdf, "first.pdf", "application/pdf"), file(fixtures.multiPagePdf, "second.pdf", "application/pdf")]);
     await expect(page.getByText("first.pdf").first()).toBeVisible({ timeout: 20_000 });

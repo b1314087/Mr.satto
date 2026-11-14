@@ -6,19 +6,22 @@ import { PremiumHint } from "@/components/ui/premium-badge";
 import { useCurrentPlan } from "@/lib/plans/plan-context";
 import { featureFlags } from "@/lib/config/features";
 import { PLAN_LIMITS, clampToLimit, formatLimit, getPlanLimit, type PlanLimitKey } from "@/lib/plans/tool-limits";
+import { checkPlanLimitAccess } from "@/lib/plans/plan-limit-actions";
 
 /**
  * ツールの「一度に扱える数」をプランに合わせて受け付ける（共通の部品。設定は src/lib/plans/tool-limits.ts）。
  *
  * - limit：今のプランでの上限（上限なしは Infinity）
- * - limited：プレミアムより少ない上限で使っているか（無料・旧スタンダード）
+ * - limited：プレミアムより少ない上限で使っているか（無料・スタンダード）
  * - clamp(items)：上限を超えた分を切り捨てて返し、切り捨てたときは案内（notice）を出す
  * - exceed(count)：数だけを確かめて、超えていれば案内を出して true を返す（行数・ページ数など、切り捨てられないもの向け）
  */
 export function usePlanLimit(key: PlanLimitKey) {
   const plan = useCurrentPlan();
   const def = PLAN_LIMITS[key];
-  const limit = getPlanLimit(key, plan);
+  // サーバーでの確認（confirmCount）で多い件数を使えないと分かったあとは、無料の上限にする（安全側）
+  const [revoked, setRevoked] = useState(false);
+  const limit = revoked ? def.free : getPlanLimit(key, plan);
   const premiumLimit: number = def.premium;
   const limited = limit < premiumLimit;
   const [notice, setNotice] = useState<PlanLimitNoticeState | null>(null);
@@ -53,6 +56,30 @@ export function usePlanLimit(key: PlanLimitKey) {
     return true;
   }
 
+  /**
+   * 処理を始める直前に呼ぶ。無料の上限を超える件数を処理するときは、サーバーで今のプランを確かめる
+   * （画面を開いたあとにログアウト・契約終了・お試し終了があっても、多い件数を処理させない）。
+   * 使えなければ案内を出し、上限を無料のものに下げて false を返す（呼び出し側は処理を始めない）。
+   */
+  async function confirmCount(count: number): Promise<boolean> {
+    if (count > limit) {
+      setNotice({ kind: "over", count });
+      return false;
+    }
+    if (!featureFlags.billing || count <= def.free) return true;
+    let ok = false;
+    try {
+      ok = await checkPlanLimitAccess(key, count);
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      setRevoked(true);
+      setNotice({ kind: "over", count });
+    }
+    return ok;
+  }
+
   return {
     key,
     limit,
@@ -66,6 +93,7 @@ export function usePlanLimit(key: PlanLimitKey) {
     clampAdd,
     blockAdd,
     exceed,
+    confirmCount,
   };
 }
 
@@ -112,7 +140,7 @@ export function PlanLimitNotice({ state }: { state: PlanLimitState }) {
   );
 }
 
-/** 無料・旧スタンダードのときだけ出す、上限の1行案内（例：「結合する画像は1回5枚まで。50枚まで扱えるのは」＋プレミアムプラン） */
+/** 無料・スタンダードのときだけ出す、上限の1行案内（例：「結合する画像は1回5枚まで。50枚まで扱えるのは」＋プレミアムプラン） */
 export function PlanLimitHint({ state }: { state: PlanLimitState }) {
   if (!featureFlags.billing || !state.limited) return null;
   return (

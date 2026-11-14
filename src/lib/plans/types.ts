@@ -12,10 +12,10 @@
  *
  * 重要：「広告も見ない」「料金も払わない」でそのまま使える
  * 完全無料プランは、最終仕様として存在しない。
- * free ユーザーは通常ツールの利用時に、Rewarded Ads の視聴によって
- * 1時間の一時利用権（Temporary Access）を得る（src/lib/plans/temporary-access.ts）。
+ * free ユーザーは広告がオンのとき、ダウンロードのたびに Rewarded Ads を1回視聴する
+ * （2026-11 から。視聴後に使える時間は0。src/lib/plans/temporary-access-cookie.ts の TEMP_ACCESS_DURATION_MS）。
  *
- * premium（および旧 standard）の実際の契約状態は Stripe Subscription が正式な情報源であり、
+ * standard・premium の実際の契約状態は Stripe Subscription が正式な情報源であり、
  * Webhook経由でSupabase DBへ同期される（src/lib/plans/current-plan.tsのgetServerPlan）。
  */
 export type Plan = "free" | "standard" | "premium";

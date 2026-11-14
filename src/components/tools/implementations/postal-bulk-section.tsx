@@ -8,7 +8,6 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { Segmented } from "@/components/ui/segmented";
 import { SettingsSection } from "@/components/ui/settings-section";
 import { usePrehydrationValue } from "@/lib/hooks/use-prehydration-value";
-import { usePremiumFeature } from "@/lib/plans/use-premium-feature";
 import { featureFlags } from "@/lib/config/features";
 import { parseTableFile, type ParsedTableFile } from "@/lib/utils/table-file";
 import { csvRowsToBlob } from "@/lib/utils/csv";
@@ -46,10 +45,10 @@ const STATUS_CLASS: Record<BulkRowResult["status"], string> = {
  * - 調べる向き（郵便番号→住所／住所→郵便番号）は、ツールの上で選んだ向きに合わせる。
  */
 export function PostalBulkSection({ direction }: { direction: BulkDirection }) {
-  const premium = usePremiumFeature();
-  // 料金プランの上限（まとめて調べる件数）。旧スタンダードは少ない件数で使え、無料（1件）は1件ずつの検索だけ
+  // 料金プランの上限（まとめて調べる件数）。スタンダードは10件、プレミアムは10,000件、無料（1件）は1件ずつの検索だけ。
+  // 処理の直前に、サーバーでもプランを確かめる（bulkLimit.confirmCount）
   const bulkLimit = usePlanLimit("postal-bulk");
-  const bulkAllowed = premium.allowed || bulkLimit.limit > 1;
+  const bulkAllowed = bulkLimit.limit > 1;
   const maxRows = Math.min(BULK_MAX_ROWS, bulkLimit.limit);
   const [source, setSource] = useState<Source>("paste");
   const [text, setText] = useState("");
@@ -113,8 +112,8 @@ export function PostalBulkSection({ direction }: { direction: BulkDirection }) {
     }
     setRunning(true);
     try {
-      if (premium.allowed && !(await premium.confirm())) {
-        setError("まとめて調べる機能は、プレミアムプランの機能です。");
+      if (!(await bulkLimit.confirmCount(inputs.length))) {
+        setError(`今のプランでまとめて調べられるのは${bulkLimit.limit.toLocaleString("ja-JP")}件までです（今は${inputs.length.toLocaleString("ja-JP")}件）。`);
         return;
       }
       const r = await bulkLookup(inputs, direction, (done, total) => setProgress({ done, total }));

@@ -88,6 +88,7 @@ export function FileZipTool() {
 
   async function handleRun() {
     if (files.length === 0) return;
+    if (!(await planLimit.confirmCount(files.length))) return;
     setStatus("processing");
     setError(null);
     setZipBlob(null);

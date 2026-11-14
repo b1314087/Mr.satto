@@ -1692,7 +1692,17 @@ const toolDefinitions: Tool[] = [
  * （src/lib/plans/premium-feature.ts）。
  */
 export function effectiveRequiredPlan(requiredPlan: Tool["requiredPlan"]): Tool["requiredPlan"] {
-  return ALL_TOOLS_STANDARD ? "standard" : requiredPlan;
+  return resolveRequiredPlan(requiredPlan, ALL_TOOLS_STANDARD);
+}
+
+/** 運用スイッチの値を引数で受け取る版（スイッチをオフにしたときの動きを、本番の値を変えずにテストするため） */
+export function resolveRequiredPlan(requiredPlan: Tool["requiredPlan"], allToolsStandard: boolean): Tool["requiredPlan"] {
+  return allToolsStandard ? "standard" : requiredPlan;
+}
+
+/** 運用スイッチ ALL_TOOLS_STANDARD を外す前の、各ツール本来の区分（テスト・確認用。本番の動きには使わない） */
+export function getOriginalRequiredPlan(id: string): Tool["requiredPlan"] | undefined {
+  return toolDefinitions.find((t) => t.id === id)?.requiredPlan;
 }
 
 // ツール間のファイル受け渡しの設定（工程16）は src/lib/handoff/config.ts の1か所で決め、ここで各ツールに付ける

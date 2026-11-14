@@ -222,6 +222,7 @@ export function ImageMergeTool() {
 
   async function handleSave(format: ImageMergeFormat) {
     if (!canProcess) return;
+    if (!(await planLimit.confirmCount(files.length))) return;
     setStatus("processing");
     setError(null);
     try {

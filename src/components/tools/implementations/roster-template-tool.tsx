@@ -118,6 +118,7 @@ export function RosterTemplateTool() {
 
   async function handleGenerate(format: "excel" | "pdf") {
     if (!baseInput) return;
+    if (table && !(await rowLimit.confirmCount(table.rows.length))) return;
     const input = { ...baseInput, format };
     const validationError = validateRosterTemplateInput(input);
     if (validationError) {

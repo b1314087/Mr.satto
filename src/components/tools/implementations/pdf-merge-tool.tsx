@@ -67,9 +67,10 @@ export function PdfMergeTool({
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function handleRun() {
+  async function handleRun() {
     if (files.length < 2) return;
     const targets = files;
+    if (!(await planLimit.confirmCount(targets.length))) return;
     void run.run(() => new PdfMergeProcessor().process({ files: targets }));
   }
 
@@ -131,7 +132,7 @@ export function PdfMergeTool({
         <RunBar>
           <button
             type="button"
-            onClick={handleRun}
+            onClick={() => void handleRun()}
             disabled={status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >

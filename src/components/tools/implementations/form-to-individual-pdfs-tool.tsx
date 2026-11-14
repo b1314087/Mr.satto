@@ -380,6 +380,7 @@ export function FormToIndividualPdfsTool() {
   // ---------------------------------------------------------------------
   async function handleGenerateAll() {
     if (!templateBytes || !table) return;
+    if (!(await rowLimit.confirmCount(table.rows.length))) return;
     setError(null);
     setStatus("processing");
     setGeneratedZip(null);

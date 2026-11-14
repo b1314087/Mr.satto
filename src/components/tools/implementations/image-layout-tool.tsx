@@ -530,6 +530,7 @@ export function ImageLayoutTool() {
       setError("配置された画像・文字がありません。画像を追加するか、文字を配置してください。");
       return;
     }
+    if (!(await imageLimit.confirmCount(items.filter((it) => it.kind === "image").length))) return;
     setStatus("processing");
     setError(null);
     try {

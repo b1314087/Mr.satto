@@ -219,6 +219,7 @@ export function EnvelopeAddressTool() {
   const validationError = validateEnvelopeAddressInput(input);
 
   async function handleRun() {
+    if (!(await recipientLimit.confirmCount(recipients.length))) return;
     setStatus("processing");
     setError(null);
     setResult(null);

@@ -61,6 +61,21 @@ export function getPlanLimit(key: PlanLimitKey, plan: Plan | null): number {
   return def[plan ?? "free"];
 }
 
+/** 上限の設定があるツールの名前か（ブラウザから渡された値を確かめるため） */
+export function isPlanLimitKey(key: unknown): key is PlanLimitKey {
+  return typeof key === "string" && Object.prototype.hasOwnProperty.call(PLAN_LIMITS, key);
+}
+
+/**
+ * このプランで、この件数を一度に扱えるか（サーバーでの確認 src/lib/plans/plan-limit-actions.ts が使う）。
+ * 知らないツール名・0以上の整数でない件数は、扱えないものとする（安全側）。
+ */
+export function isAllowedCount(key: unknown, count: unknown, plan: Plan | null): boolean {
+  if (!isPlanLimitKey(key)) return false;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 0) return false;
+  return count <= getPlanLimit(key, plan);
+}
+
 /** プレミアムでの上限（案内の文「プレミアムなら◯件まで」に使う） */
 export function getPremiumLimit(key: PlanLimitKey): number {
   return PLAN_LIMITS[key].premium;

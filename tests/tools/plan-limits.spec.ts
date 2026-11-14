@@ -74,3 +74,27 @@ test("無料：画像結合で2枚を選ぶと、案内を出さずに結合で�
   await expect(page.getByTestId("plan-limit-notice")).toHaveCount(0);
   await expect(page.getByText("landscape.jpg").first()).toBeVisible();
 });
+
+test("開いたあとにプランが無料に変わったら、処理の直前のサーバーの確認で、多い件数の処理を止める", async ({ page, context, baseURL }) => {
+  // プレミアムでページを開き、たくさん選ぶ
+  await page.goto("/tools/file-zip");
+  await waitForFileInputHydrated(page);
+  await page.locator('input[type="file"]').first().setInputFiles(textFiles(5));
+  await expect(page.getByText("memo-5.txt").first()).toBeVisible();
+  // ログアウト・契約の終了などで、サーバー上のプランが無料になった
+  await setDevPlanOverride(context, "free", baseURL!);
+  await page.getByRole("button", { name: "5件をZIP化する" }).click();
+  const notice = page.getByTestId("plan-limit-notice");
+  await expect(notice).toContainText(`${PLAN_LIMITS["file-zip"].free}ファイルまで`);
+  await expect(notice).toContainText("今は5ファイル");
+  await expect(page.getByText("ZIPの作成が完了しました")).toHaveCount(0);
+});
+
+test("プレミアムのままなら、処理の直前の確認を通って、そのまま処理できる", async ({ page }) => {
+  await page.goto("/tools/file-zip");
+  await waitForFileInputHydrated(page);
+  await page.locator('input[type="file"]').first().setInputFiles(textFiles(5));
+  await page.getByRole("button", { name: "5件をZIP化する" }).click();
+  await expect(page.getByText("ZIPの作成が完了しました")).toBeVisible();
+  await expect(page.getByTestId("plan-limit-notice")).toHaveCount(0);
+});

@@ -47,7 +47,6 @@ import {
 import { downloadBlob } from "@/lib/utils/format";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { CsvEncodingControl } from "@/components/common/csv-encoding-control";
-import { usePremiumFeature } from "@/lib/plans/use-premium-feature";
 import { featureFlags } from "@/lib/config/features";
 import { parseTableFile, type ParsedTableFile } from "@/lib/utils/table-file";
 import { applyRecipient, type PostcardRecipient } from "@/lib/print/postcard-address-layout";
@@ -146,11 +145,10 @@ export function PostcardTool() {
   // 郵便番号から自動で入れた住所（利用者が書き換えたら、もう上書きしない）
   const autoAddressRef = useRef<{ recipient: string; sender: string }>({ recipient: "", sender: "" });
   const [zipNote, setZipNote] = useState<{ recipient: string | null; sender: string | null }>({ recipient: null, sender: null });
-  // Excel・CSVで読み込んだ複数の宛先（プレミアム）
-  const premium = usePremiumFeature();
-  // 料金プランの上限（まとめて作る宛先の件数）。旧スタンダードは少ない件数で使え、無料（1件）は1枚ずつの作成だけ
+  // 料金プランの上限（Excel・CSVでまとめて作る宛先の件数）。スタンダードは10件、プレミアムは500件、無料（1件）は1枚ずつの作成だけ。
+  // 処理の直前に、サーバーでもプランを確かめる（recipientLimit.confirmCount）
   const recipientLimit = usePlanLimit("postcard");
-  const bulkAllowed = premium.allowed || recipientLimit.limit > 1;
+  const bulkAllowed = recipientLimit.limit > 1;
   const maxRecipients = Math.min(POSTCARD_RECIPIENTS_MAX, recipientLimit.limit);
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkTable, setBulkTable] = useState<ParsedTableFile | null>(null);
@@ -328,8 +326,8 @@ export function PostcardTool() {
     setError(null);
     setResult(null);
     try {
-      if (side === "address" && recipients && premium.allowed && !(await premium.confirm())) {
-        setError("Excel・CSVでまとめて作る機能は、プレミアムプランの機能です。");
+      if (side === "address" && recipients && !(await recipientLimit.confirmCount(recipients.length))) {
+        setError(`今のプランでまとめて作れる宛先は${recipientLimit.limit.toLocaleString("ja-JP")}件までです（今は${recipients.length.toLocaleString("ja-JP")}件）。`);
         setStatus("error");
         return;
       }

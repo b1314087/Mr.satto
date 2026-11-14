@@ -76,6 +76,7 @@ export function AudioMergeTool() {
 
   async function handleRun() {
     if (files.length < 2) return;
+    if (!(await planLimit.confirmCount(files.length))) return;
     await job.run(({ onProgress, cancelSignal }) =>
       new AudioMergeProcessor().process({
         files,

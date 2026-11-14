@@ -88,6 +88,7 @@ export function CsvMergeTool() {
 
   async function handleRun() {
     if (files.length < 2) return;
+    if (!(await planLimit.confirmCount(files.length))) return;
     setStatus("processing");
     setError(null);
     setResult(null);

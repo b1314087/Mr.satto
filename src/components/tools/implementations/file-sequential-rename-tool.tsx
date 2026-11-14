@@ -86,6 +86,7 @@ export function FileSequentialRenameTool() {
 
   async function handleRun() {
     if (files.length === 0 || validationError) return;
+    if (!(await planLimit.confirmCount(files.length))) return;
     setStatus("processing");
     setError(null);
     setResults(null);

@@ -210,6 +210,7 @@ export function TicketVoucherTool() {
   }
 
   async function handleRun() {
+    if (!(await ticketLimit.confirmCount(ticketCount))) return;
     setStatus("processing");
     setError(null);
     setResult(null);
