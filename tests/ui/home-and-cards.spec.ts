@@ -66,7 +66,7 @@ test.describe("「おすすめツール」の削除", () => {
     await expect(page.getByRole("heading", { name: "おすすめツール" })).toHaveCount(0);
     await expect(page.getByText("おすすめツール")).toHaveCount(0);
     // トップに並ぶカードは「カテゴリ」のカードだけ。個別ツールのカード（aria-label付きのリンク）は出ない
-    // （内部リンク改善の工程で追加した「よく使われるツール」は、カードではなく文字のリンク。tests/seo/internal-links.spec.ts）
+    // （内部リンク改善の工程で追加した「よく使われるツール」の欄は、2026-11に削除した。tests/seo/internal-links.spec.ts）
     await expect(main(page).locator('a[href^="/tools/"][aria-label]')).toHaveCount(0);
   });
 

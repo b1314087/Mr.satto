@@ -13,31 +13,6 @@ import type { CategoryId } from "./types";
  */
 
 /**
- * トップページの「よく使われるツール」。
- *
- * 選び方：Search Console で表示実績がある作業（見積書のPDF化・H.264変換・PDF回転など）と、
- * 一般に検索の多い作業（PDFの結合・圧縮・変換、画像の圧縮・サイズ変更）を中心に、カテゴリが偏らないように選んだ。
- * 一覧・検索に出る、使えるツールだけを並べる（テストで確認している）。
- */
-export const POPULAR_TOOL_IDS: readonly string[] = [
-  "pdf-to-excel",
-  "pdf-to-word",
-  "pdf-edit",
-  "pdf-compress",
-  "image-compress",
-  // 工程3：画像リサイズは「画像リサイズ・圧縮」（image-compress）に統合したため、代わりに統合した「画像トリミング」を並べる
-  "image-crop",
-  "image-format-convert",
-  "excel-csv-convert",
-  // 総合改修 10：見積書作成は「見積書・注文書・請求書作成」（document-suite）に統合した
-  "document-suite",
-  "video-compress",
-  "video-h264",
-  // 工程4：OCRはPDF→テキスト（OCR対応）に統合した
-  "pdf-to-text",
-];
-
-/**
  * カテゴリページに「ほかのカテゴリにある関連ツール」として並べるツール。
  *
  * ツールの所属カテゴリは1つだけ（URL・パンくずリストはそのまま）。ただ、変換ツールは利用者が

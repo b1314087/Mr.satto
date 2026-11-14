@@ -2,13 +2,13 @@ import { test, expect } from "@playwright/test";
 import { getListedTools, getToolById, tools } from "@/lib/tools/data";
 import { hasImplementation } from "@/lib/tools/registry";
 import { getRelatedTools } from "@/lib/tools/related-tools";
-import { CATEGORY_CROSS_LINKS, POPULAR_TOOL_IDS } from "@/lib/tools/internal-links";
+import { CATEGORY_CROSS_LINKS } from "@/lib/tools/internal-links";
 import { toolSeoContent } from "@/lib/seo/tool-content";
 import { getToolSeoContent } from "@/lib/seo/tool-content";
 
 /**
  * 内部リンク・検索導線改善の工程のテスト。
- *  1. トップページの「よく使われるツール」（文字のリンク）
+ *  1. トップページの「よく使われるツール」は2026-11に削除した（出ていないことを確かめる）
  *  2. カテゴリページの「機能ごとのページ」（総合ツールにまとめた機能の個別URL）と「ほかのカテゴリにある関連ツール」
  *  3. PDF→Excel・PDF→Word・PDF編集・画像圧縮の関連ツール
  *  4. どのリンクも、普通の <a href> で、正しいURL（末尾の / なし・nofollow なし）を指し、開くと200
@@ -20,46 +20,11 @@ const usableListed = (id: string) => {
   return !!t && t.status === "available" && hasImplementation(t.id) && !t.mergedInto && getListedTools().some((x) => x.id === id);
 };
 
-test.describe("トップページの「よく使われるツール」", () => {
-  test("設定のツールはすべて、一覧・検索に出る使えるツールで、重複がない", () => {
-    expect(POPULAR_TOOL_IDS.length).toBeGreaterThanOrEqual(8);
-    expect(new Set(POPULAR_TOOL_IDS).size).toBe(POPULAR_TOOL_IDS.length);
-    for (const id of POPULAR_TOOL_IDS) expect(usableListed(id), id).toBe(true);
-  });
-
-  test("カテゴリの下に、設定どおりの順で普通のリンクとして並ぶ（カードではない）", async ({ page }) => {
-    await page.goto("/");
-    const section = page.locator("section", { has: page.getByRole("heading", { name: "よく使われるツール" }) });
-    await expect(section).toBeVisible();
-    const links = section.locator("a");
-    await expect(links).toHaveCount(POPULAR_TOOL_IDS.length);
-    for (const [i, id] of POPULAR_TOOL_IDS.entries()) {
-      await expect(links.nth(i)).toHaveAttribute("href", `/tools/${id}`);
-      await expect(links.nth(i)).toHaveText(getToolById(id)!.name);
-      await expect(links.nth(i)).not.toHaveAttribute("rel", /nofollow/);
-    }
-    // カテゴリ（「カテゴリから探す」）より下にある
-    const categoriesBox = await page.getByRole("heading", { name: "カテゴリから探す" }).boundingBox();
-    const popularBox = await section.boundingBox();
-    expect(popularBox!.y).toBeGreaterThan(categoriesBox!.y);
-  });
-
-  test("リンクを押すと、そのツールのページへ移動する（PDF→Excel）", async ({ page }) => {
-    await page.goto("/");
-    await page.locator("section", { has: page.getByRole("heading", { name: "よく使われるツール" }) }).getByRole("link", { name: "PDF→Excel" }).click();
-    await expect(page).toHaveURL(/\/tools\/pdf-to-excel$/);
-    await expect(page.getByRole("heading", { level: 1, name: "PDF→Excel" })).toBeVisible();
-  });
-
-  test("スマホの幅でも横にはみ出さず、折り返して並ぶ", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 800 });
-    await page.goto("/");
-    const section = page.locator("section", { has: page.getByRole("heading", { name: "よく使われるツール" }) });
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(overflow).toBeLessThanOrEqual(0);
-    const boxes = await section.locator("a").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right));
-    expect(Math.max(...boxes)).toBeLessThanOrEqual(375);
-  });
+test("トップページに「よく使われるツール」の欄が出ない（2026-11 削除）。カテゴリから探す欄はそのまま", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "カテゴリから探す" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "よく使われるツール" })).toHaveCount(0);
+  await expect(page.locator("#popular-tools-heading")).toHaveCount(0);
 });
 
 test.describe("カテゴリページの追加のリンク", () => {
