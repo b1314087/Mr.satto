@@ -12,14 +12,17 @@ import {
 } from "@/lib/ads/reward-provider";
 import { getTemporaryAccessService } from "@/lib/plans/temporary-access";
 import { PLAN_DEFINITIONS } from "@/lib/plans/types";
-import { TEMP_ACCESS_DURATION_MS } from "@/lib/plans/temporary-access-cookie";
+import { AD_EVERY_DOWNLOAD, TEMP_ACCESS_DURATION_MS } from "@/lib/plans/temporary-access-cookie";
 import { featureFlags } from "@/lib/config/features";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Spinner } from "@/components/ui/spinner";
 
 /**
- * ダウンロード時の広告確認（Free向けの「広告を見て1時間利用する」導線）。
+ * ダウンロード時の広告確認（Free向け）。
+ * 2026-11：ダウンロードのたびに広告を見る方式（AD_EVERY_DOWNLOAD）に変更した。広告を見たあとは、
+ * 保留していたダウンロードを1回だけ実行し、時間制の利用権は残さない。
+ * 以下の説明の「1時間」は、時間制（TEMP_ACCESS_DURATION_MS が0より大きい）のときの動き。
  *
  * Tool Processing → Processed File → Download Gate(このコンポーネント) → Download
  *
@@ -121,7 +124,8 @@ export function DownloadGateProvider({
   }, []);
 
   function applyUnlocked(kind: "ad" | "fallback", expiresAtMs: number | null) {
-    unlockedUntilMsRef.current = expiresAtMs ?? Date.now() + TEMP_ACCESS_DURATION_MS;
+    // 毎回広告の方式では、広告を見ただけでは「利用権あり」にしない（保留中のダウンロードだけを、次の「ダウンロードする」で実行する）
+    unlockedUntilMsRef.current = AD_EVERY_DOWNLOAD ? 0 : (expiresAtMs ?? Date.now() + TEMP_ACCESS_DURATION_MS);
     rewardEarnedRef.current = false;
     setUnlockKind(kind);
     setPhase("unlocked");
@@ -211,6 +215,9 @@ export function DownloadGateProvider({
     const actions = queueRef.current.splice(0);
     setItemLabels([]);
     setPhase("closed");
+    // 毎回広告の方式：1回の操作の中で続けて保存されるファイル（同じクリックで2つ目を保存するツールなど）だけは、
+    // もう一度広告を求めない。数秒たてば、次のダウンロードではまた広告を見る
+    if (AD_EVERY_DOWNLOAD) unlockedUntilMsRef.current = Date.now() + 3000;
     for (const action of actions) action.run();
   }
 
@@ -236,7 +243,9 @@ export function DownloadGateProvider({
                   ダウンロードの前に広告をご覧ください
                 </h2>
                 <p className="text-sm text-ms-muted">
-                  無料でご利用の場合、広告を1回見ていただくと、1時間は他のツールを含めて広告なしでダウンロードできます。
+                  {AD_EVERY_DOWNLOAD
+                    ? "無料でご利用の場合、ダウンロードのたびに広告を1回ご覧いただいています。"
+                    : "無料でご利用の場合、広告を1回見ていただくと、1時間は他のツールを含めて広告なしでダウンロードできます。"}
                 </p>
                 <p className="text-xs text-ms-muted">
                   ファイルはお使いのブラウザの中で処理されており、広告の視聴でサーバーへ送信されることはありません。
@@ -277,11 +286,15 @@ export function DownloadGateProvider({
                 </h2>
                 {unlockKind === "fallback" ? (
                   <p className="text-sm text-ms-muted">
-                    広告を表示できませんでした。ご不便をおかけしたため、今回は特別に1時間、広告なしでご利用いただけるようにしました。
+                    {AD_EVERY_DOWNLOAD
+                      ? "広告を表示できませんでした。ご不便をおかけしたため、今回は広告なしでダウンロードしていただけます。"
+                      : "広告を表示できませんでした。ご不便をおかけしたため、今回は特別に1時間、広告なしでご利用いただけるようにしました。"}
                   </p>
                 ) : (
                   <p className="text-sm text-ms-muted">
-                    広告の視聴が完了しました。これから1時間は、他のツールを含めて広告なしでダウンロードできます。
+                    {AD_EVERY_DOWNLOAD
+                      ? "広告の視聴が完了しました。「ダウンロードする」を押すと保存します。"
+                      : "広告の視聴が完了しました。これから1時間は、他のツールを含めて広告なしでダウンロードできます。"}
                   </p>
                 )}
                 <DownloadTargets labels={itemLabels} />
@@ -352,7 +365,8 @@ function PlanHint() {
   if (!featureFlags.billing) return null;
   return (
     <p className="text-xs text-ms-muted">
-      プレミアム（月額{PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円・税込）に加入すると、広告なしでご利用いただけます。{" "}
+      スタンダード（月額{PLAN_DEFINITIONS.standard.priceYen.toLocaleString("ja-JP")}円・税込）またはプレミアム（月額
+      {PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円・税込）に加入すると、広告なしでご利用いただけます。{" "}
       <Link href="/pricing" className="underline underline-offset-2 hover:text-ms-accent dark:hover:text-ms-focus">
         料金プランを見る
       </Link>

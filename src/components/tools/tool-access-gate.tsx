@@ -9,6 +9,7 @@ import { DownloadGateProvider } from "@/components/ads/download-gate-provider";
 import { isAdFreeToolId } from "@/lib/tools/ad-free-tools";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { TemporaryAccessBanner } from "@/components/tools/temporary-access-banner";
+import { AD_EVERY_DOWNLOAD } from "@/lib/plans/temporary-access-cookie";
 import { featureFlags } from "@/lib/config/features";
 
 /**
@@ -106,6 +107,10 @@ export function ToolAccessGate({
     plan === "free" && temporaryAccessActive && temporaryAccessExpiresAtMs !== null;
   // Freeで広告ゲートが有効、かつ有効な利用権がない間は、ダウンロード時に広告を見るという案内を出す
   const showDownloadAdNotice = downloadAdRequired && !temporaryAccessActive;
+  // 2026-11：ダウンロードのたびに広告を見る方式（AD_EVERY_DOWNLOAD）では、時間の話をしない
+  const adNoticeFull = AD_EVERY_DOWNLOAD
+    ? "無料でご利用いただけます。ダウンロードのたびに、広告を1回ご覧いただきます。"
+    : "無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。";
 
   return (
     <DownloadGateProvider toolId={toolId} adRequired={downloadAdRequired}>
@@ -117,17 +122,15 @@ export function ToolAccessGate({
         // 仕組み・条件は変えない（表示の仕方だけ）。全文は、閉じていても読み上げで読める
         <div className="ms-ad-badge-row">
           <details className="ms-ad-badge" data-testid="download-ad-notice">
-            <summary aria-label="無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。">
+            <summary aria-label={adNoticeFull}>
               <span aria-hidden="true">
-                <b>無料</b>・保存時に広告1回で1時間広告なし
+                <b>無料</b>・{AD_EVERY_DOWNLOAD ? "保存のたびに広告1回" : "保存時に広告1回で1時間広告なし"}
               </span>
               <span className="ms-info-dot" aria-hidden="true">
                 i
               </span>
             </summary>
-            <p className="ms-ad-badge-text">
-              無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。
-            </p>
+            <p className="ms-ad-badge-text">{adNoticeFull}</p>
           </details>
         </div>
       )}

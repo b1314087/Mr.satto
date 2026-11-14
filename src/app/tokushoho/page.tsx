@@ -34,6 +34,7 @@ export default function TokushohoPage() {
   if (!featureFlags.billing) return <FeatureUnavailable title="特定商取引法に基づく表記" />;
 
   const premium = PLAN_DEFINITIONS.premium;
+  const standard = PLAN_DEFINITIONS.standard;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
@@ -73,6 +74,9 @@ export default function TokushohoPage() {
         </Row>
         <Row label="販売価格">
           <p>
+            {standard.name}プラン: 月額{standard.priceYen.toLocaleString()}円（税込）
+          </p>
+          <p>
             {premium.name}プラン: 月額{premium.priceYen.toLocaleString()}円（税込）
           </p>
           <p className="mt-1">
@@ -83,7 +87,7 @@ export default function TokushohoPage() {
             のページをご確認ください。
           </p>
           <p className="mt-1">
-            旧料金（月額980円のプレミアムプラン、月額550円のスタンダードプラン）でご契約済みの方は、新しい料金への移行が完了するまで、ご契約時の料金で請求されます。移行の方法と時期は、あらためてご案内します。
+            旧料金（月額980円のプレミアムプラン）でご契約済みの方は、新しい料金への移行が完了するまで、ご契約時の料金で請求されます。移行の方法と時期は、あらためてご案内します。
           </p>
         </Row>
         <Row label="商品代金以外の必要料金">

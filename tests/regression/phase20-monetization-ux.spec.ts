@@ -60,7 +60,8 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
       // バッジが見えていて、全文が読み上げ用の名前（aria-label）として付いていることを確かめる
       const adNotice = page.getByTestId("download-ad-notice");
       await expect(adNotice).toBeVisible();
-      await expect(adNotice.locator("summary")).toHaveAttribute("aria-label", "無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。");
+      // 2026-11：ダウンロードのたびに広告を見る方式に変更（時間の話はしない）
+      await expect(adNotice.locator("summary")).toHaveAttribute("aria-label", "無料でご利用いただけます。ダウンロードのたびに、広告を1回ご覧いただきます。");
   });
 
   test("ダウンロード時の確認画面で、Premiumへの案内（料金プランへの導線）も分かる", async ({ page }) => {
@@ -68,7 +69,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await page.getByRole("button", { name: "ダウンロード" }).click();
 
     const dialog = page.getByTestId("download-gate-dialog");
-    await expect(dialog.getByText(/プレミアム（月額1,100円・税込）に加入すると、広告なしでご利用いただけます/)).toBeVisible();
+    await expect(dialog.getByText(/スタンダード（月額220円・税込）またはプレミアム（月額\s*1,100円・税込）に加入すると、広告なしでご利用いただけます/)).toBeVisible();
     await expect(dialog.getByRole("link", { name: "料金プランを見る" })).toBeVisible();
   });
 
@@ -94,7 +95,7 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await expect(page.getByText("このツールはプレミアムプランで利用できます")).toBeVisible();
   });
 
-  test("広告視聴で1時間の利用権が付与され、状態表示され、他のツールでも広告なしでダウンロードできる", async ({
+  test("2026-11 毎回広告：広告を見るとそのファイルを保存でき、別のツールでは、また広告確認が出る（残り時間の表示はない）", async ({
     page,
     context,
     baseURL,
@@ -110,14 +111,11 @@ test.describe("Free: Standardツールのアクセス条件表示とRewarded Ad�
     await dialog.getByRole("button", { name: /ダウンロードする/ }).click();
     await assertDownloadedFile(await downloadPromise, { format: "png", minBytes: 10 });
 
-    // 残り時間（サーバー発行の期限から計算）が分かる
-    await expect(page.getByText(/無料利用中：あと(\d+時間(\d+分)?|\d+分)/)).toBeVisible();
-
-    // 一時利用中は、別のツールへ移動してもダウンロード時に広告確認へ戻されない
-    await page.goto("/tools/image-compress");
-    await expect(page.getByRole("button", { name: "広告を見て1時間無料で使う" })).toHaveCount(0);
-    await expect(page.locator('input[type="file"]')).toBeAttached();
-    await expect(page.getByText(/無料利用中：あと(\d+時間(\d+分)?|\d+分)/)).toBeVisible();
+    await expect(page.getByText(/無料利用中：あと/)).toHaveCount(0);
+    // 別のツールでも、ダウンロード時にはまた広告確認が出る
+    await processFixtureImage(page);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await expect(page.getByTestId("download-gate-dialog")).toHaveAttribute("data-phase", "prompt");
   });
 
   test("ダウンロードの前後には通常の広告枠が出ない（Freeのまま）", async ({ page, context, baseURL }) => {
@@ -225,19 +223,19 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
     await clearDevOverrides(context);
   });
 
-  test("Free/Premiumの料金・広告有無・対象範囲の説明が仕様どおり（Standardは出ない）", async ({ page }) => {
+  test("Free/Standard/Premiumの料金・広告有無・対象範囲の説明が仕様どおり（2026-11 スタンダード月220円を再開）", async ({ page }) => {
     await page.goto("/pricing");
 
     // Free: ¥0・広告あり・通常ツール
     await expect(page.getByText("0円", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText(/広告を見ると1時間、通常ツールを利用できます/)).toBeVisible();
+    await expect(page.getByText(/ダウンロードのたびに広告を1回ご覧いただきます/)).toBeVisible();
     if (premiumTool) {
       // プレミアム限定のツールが実在する間は、無料は「通常ツール」、プレミアムは「すべてのツール」と書き分ける
       await expect(page.getByText("通常ツールを利用可能").first()).toBeVisible();
     } else {
       // 全ツールが標準扱いの間は、どちらのプランも同じ表示にし、実在しない「通常ツールのみ」の制限を示さない
       await expect(page.getByText("通常ツールを利用可能")).toHaveCount(0);
-      await expect(page.getByText("すべてのツールを利用可能")).toHaveCount(2);
+      await expect(page.getByText("すべてのツールを利用可能")).toHaveCount(3);
       await expect(page.getByText("プレミアム対象ツール")).toHaveCount(0);
     }
 
@@ -247,11 +245,14 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
     await expect(page.getByText(/「AIで読み取る」補助/)).toBeVisible();
 
     // 広告あり/なしの明示（Free=あり、Premium=なし）
-    await expect(page.getByText("広告視聴あり")).toBeVisible();
+    await expect(page.getByText("ダウンロードのたびに広告を視聴")).toBeVisible();
     await expect(page.getByText("広告なし").first()).toBeVisible();
 
-    // 旧プランは新規のプランとして出ない
-    await expect(page.getByText(/スタンダード|550円/)).toHaveCount(0);
+    // スタンダード（月220円・広告なしだけ）が出る。旧550円は出ない
+    await expect(page.getByRole("heading", { name: "スタンダード", exact: true })).toBeVisible();
+    await expect(page.getByText("220円/月", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText(/一括処理・AIの補助・プレミアム限定の機能は含みません/)).toBeVisible();
+    await expect(page.getByText(/550円/)).toHaveCount(0);
   });
 });
 

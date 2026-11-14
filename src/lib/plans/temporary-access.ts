@@ -1,7 +1,7 @@
 "use client";
 
 import { grantFallbackTemporaryAccess, grantTemporaryAccess } from "./temporary-access-actions";
-import { TEMP_ACCESS_COOKIE_NAME } from "./temporary-access-cookie";
+import { AD_EVERY_DOWNLOAD, TEMP_ACCESS_COOKIE_NAME } from "./temporary-access-cookie";
 import type { FallbackGrantReason } from "./temporary-access-kinds";
 
 /**
@@ -167,6 +167,8 @@ class CookieBackedTemporaryAccessService implements TemporaryAccessService {
   }
 
   isActive(): boolean {
+    // ダウンロードのたびに広告を見る方式では、時間制の利用権は持たない（古いCookieが残っていても使わない）
+    if (AD_EVERY_DOWNLOAD) return false;
     const expiresAtMs = this.resolveExpiresAtMs();
     return expiresAtMs !== null && Date.now() < expiresAtMs;
   }

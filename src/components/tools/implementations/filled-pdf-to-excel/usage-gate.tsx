@@ -191,7 +191,7 @@ export function UsageGatePanel({
           )}
           {featureFlags.billing && usage.plan === "premium" && <p>プレミアムプランのため、ページ数・回数の制限なくご利用いただけます。</p>}
           {featureFlags.billing && usage.plan === "standard" && (
-            <p>スタンダード（旧プラン・広告なし）: 1回につき最大{usage.maxPagesPerUse}ページまで、回数制限なくご利用いただけます。</p>
+            <p>スタンダード（広告なし）: 1回につき最大{usage.maxPagesPerUse}ページまで、回数制限なくご利用いただけます。</p>
           )}
           {featureFlags.billing && usage.plan === "free" && (
             <p>

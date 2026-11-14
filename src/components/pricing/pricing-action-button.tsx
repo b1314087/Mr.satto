@@ -21,7 +21,7 @@ export function PricingActionButton({
   stripeConfigured,
   hasOpenSubscription = false,
 }: {
-  plan: Extract<Plan, "premium">;
+  plan: Exclude<Plan, "free">;
   isAuthenticated: boolean;
   currentPlan: Plan;
   stripeConfigured: boolean;
@@ -121,7 +121,7 @@ export function PricingActionButton({
         aria-busy={loading || undefined}
         className="w-full ms-btn ms-btn-primary"
       >
-        {loading ? "移動中..." : "プレミアムを始める"}
+        {loading ? "移動中..." : plan === "standard" ? "スタンダードを始める" : "プレミアムを始める"}
       </button>
       {error && <p className="text-center text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>

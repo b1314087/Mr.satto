@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS, PREMIUM_PRICE_YEN } from "@/lib/plans/types";
+import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS, PREMIUM_PRICE_YEN, STANDARD_PRICE_YEN } from "@/lib/plans/types";
 import { setDevPlanOverride } from "../helpers/dev-plan";
 
 /**
@@ -13,23 +13,26 @@ import { setDevPlanOverride } from "../helpers/dev-plan";
  * 本番のStripe実課金・Supabaseの契約状態そのものを検証するものではない。
  */
 
-test("pricing: 現行の料金は ¥0 / ¥1,100 の2つだけ。旧Standard(¥550)・旧Premium(¥980)は料金ページに出ない", async ({ page }) => {
+test("pricing（2026-11）: 料金は ¥0 / ¥220（スタンダード）/ ¥1,100 の3つ。旧Standard(¥550)・旧Premium(¥980)は料金ページに出ない", async ({ page }) => {
   await page.goto("/pricing");
 
   expect(PLAN_DEFINITIONS.free.priceYen).toBe(0);
+  expect(PLAN_DEFINITIONS.standard.priceYen).toBe(STANDARD_PRICE_YEN);
+  expect(STANDARD_PRICE_YEN).toBe(220);
   expect(PLAN_DEFINITIONS.premium.priceYen).toBe(PREMIUM_PRICE_YEN);
   expect(PREMIUM_PRICE_YEN).toBe(1100);
-  expect(OFFERED_PLAN_IDS).toEqual(["free", "premium"]);
+  expect(OFFERED_PLAN_IDS).toEqual(["free", "standard", "premium"]);
 
   await expect(page.getByText("無料", { exact: false }).first()).toBeVisible();
   await expect(page.getByText("0円", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("220円", { exact: false }).first()).toBeVisible();
   await expect(page.getByText("1,100円", { exact: false }).first()).toBeVisible();
   const text = await page.locator("main").innerText();
-  expect(text).not.toMatch(/550|980|スタンダード/);
-  // 無料・プレミアム・お支払い/解約（＋会員登録できる環境では、無料お試しの案内）。
+  expect(text).not.toMatch(/550|980/);
+  // 無料・スタンダード・プレミアム・お支払い/解約（＋会員登録できる環境では、無料お試しの案内）。
   // 会員登録が準備中の環境（Supabaseの設定がない）では、無料お試しを案内しない（監査 C-9）
   const trialShown = await page.getByTestId("trial-offer").count();
-  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(3 + trialShown);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(4 + trialShown);
 });
 
 test("filled-pdf-to-excel: free/standard/premiumで利用制限の表示が切り替わる（dev cookie経由）", async ({

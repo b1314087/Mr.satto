@@ -35,13 +35,6 @@ async function readTempCookie(context: BrowserContext): Promise<string | null> {
   return cookie ? cookie.value : null;
 }
 
-/** v2.<expiresAtMs>.<kind>.<signature> の種別部分 */
-function tokenKind(value: string | null): string | null {
-  if (!value) return null;
-  const parts = value.split(".");
-  return parts.length === 4 ? parts[2] : null;
-}
-
 const dialogOf = (page: Page) => page.getByTestId("download-gate-dialog");
 
 test.describe("Free: ダウンロード時の広告ゲート", () => {
@@ -77,7 +70,7 @@ test.describe("Free: ダウンロード時の広告ゲート", () => {
     await expect(dialogOf(page)).toHaveAttribute("data-phase", "prompt");
   });
 
-  test("報酬付与後に1時間の利用権(種別: 広告視聴)が付与され、広告後もファイルが失われずダウンロードできる", async ({
+  test("2026-11 毎回広告：広告を見ると、そのダウンロードだけができ、次のダウンロードではまた広告確認が出る（時間制の利用権は残らない）", async ({
     page,
     context,
     baseURL,
@@ -89,9 +82,10 @@ test.describe("Free: ダウンロード時の広告ゲート", () => {
     await dialogOf(page).getByRole("button", { name: "広告を見てダウンロード" }).click();
     await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
     await expect(dialogOf(page).getByText(/広告の視聴が完了しました/)).toBeVisible();
+    await expect(dialogOf(page).getByText(/1時間/)).toHaveCount(0);
 
-    // 広告視聴による付与として記録されている（代替付与ではない）
-    expect(tokenKind(await readTempCookie(context))).toBe("ad");
+    // 時間制の利用権（Cookie）は発行しない
+    expect(await readTempCookie(context)).toBeNull();
 
     // 広告の後、ユーザー自身のクリックで保存される（保留していたBlobが失われていない）
     const downloadPromise = page.waitForEvent("download");
@@ -100,20 +94,11 @@ test.describe("Free: ダウンロード時の広告ゲート", () => {
     await assertDownloadedFile(download, { format: "png", minBytes: 10 });
     await expect(dialogOf(page)).toHaveCount(0);
 
-    // 有効期間中は、再びダウンロードしても広告確認は出ない
-    const second = await clickAndDownload(page, "ダウンロード");
-    await assertDownloadedFile(second, { format: "png", minBytes: 10 });
-    await expect(dialogOf(page)).toHaveCount(0);
-
-    // 他のツールでも、広告なしで最後までダウンロードできる
-    await page.goto("/tools/csv-format");
-    await page.locator("textarea").first().fill(fs.readFileSync(fixtures.csv, "utf8"));
-    await page.getByRole("button", { name: "整形する" }).click();
-    await waitForSuccess(page, "完了");
-    const csvDownload = await clickAndDownload(page, "CSVとしてダウンロード");
-    await assertDownloadedFile(csvDownload, { minBytes: 1 });
-    await expect(dialogOf(page)).toHaveCount(0);
-    await expect(page.getByText(/無料利用中：あと(\d+時間(\d+分)?|\d+分)/)).toBeVisible();
+    // 次のダウンロードでは、また広告確認が出る（同じ操作の続きとみなす数秒を過ぎたあと）
+    await page.waitForTimeout(3500);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "prompt");
+    await expect(page.getByText(/無料利用中：あと/)).toHaveCount(0);
   });
 
   test("二重クリック・二重イベントでも、利用権付与は1回・ダウンロードも1回だけ", async ({ page, context, baseURL }) => {
@@ -172,11 +157,11 @@ test.describe("Free: ダウンロード時の広告ゲート", () => {
     await setDevAdOutcome(context, "granted", baseURL!);
     await dialogOf(page).getByRole("button", { name: "もう一度試す" }).click();
     await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
-    expect(tokenKind(await readTempCookie(context))).toBe("ad");
+    expect(await readTempCookie(context), "毎回広告では利用権(Cookie)を残さない").toBeNull();
   });
 
   for (const outcome of ["unavailable", "sdk-failed", "timeout", "display-failed"] as const satisfies DevAdOutcome[]) {
-    test(`広告が配信されない(${outcome})場合、代替の1時間の利用権(種別: 代替付与)が付与され、その旨が伝わる`, async ({
+    test(`広告が配信されない(${outcome})場合、今回は広告なしでダウンロードでき、その旨が伝わる`, async ({
       page,
       context,
       baseURL,
@@ -192,8 +177,8 @@ test.describe("Free: ダウンロード時の広告ゲート", () => {
       await expect(dialogOf(page).getByText(/広告を表示できませんでした/)).toBeVisible();
       await expect(dialogOf(page).getByText(/広告の視聴が完了しました/)).toHaveCount(0);
 
-      // 内部では「代替付与」として区別されている（広告視聴("ad")とは別）
-      expect(tokenKind(await readTempCookie(context))).toBe("fallback");
+      // 毎回広告では、時間制の利用権（Cookie）は残さない
+      expect(await readTempCookie(context)).toBeNull();
 
       const downloadPromise = page.waitForEvent("download");
       await dialogOf(page).getByRole("button", { name: /ダウンロードする/ }).click();
@@ -216,23 +201,6 @@ test.describe("Free: ダウンロード時の広告ゲート", () => {
     await expect(dialogOf(page)).toHaveAttribute("data-phase", "unavailable", { timeout: 15_000 });
     expect(await readTempCookie(context)).toBeNull();
     expect(downloads).toBe(0);
-  });
-
-  test("利用権の期限が切れた後は、再び広告確認が表示される", async ({ page, context, baseURL }) => {
-    await setDevAdOutcome(context, "granted", baseURL!);
-    await processImage(page);
-    await page.getByRole("button", { name: "ダウンロード" }).click();
-    await dialogOf(page).getByRole("button", { name: "広告を見てダウンロード" }).click();
-    await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
-    await dialogOf(page).getByRole("button", { name: "閉じる" }).click();
-
-    // 利用権を期限切れの状態にして、ページを開き直す
-    await context.addCookies([
-      { name: TEMP_COOKIE, value: `v2.${Date.now() - 60_000}.ad.expired`, url: baseURL! },
-    ]);
-    await processImage(page);
-    await page.getByRole("button", { name: "ダウンロード" }).click();
-    await expect(dialogOf(page)).toHaveAttribute("data-phase", "prompt");
   });
 
   test("個別の保存経路: 保存を保留している間、Blobへの参照が保持されたままキャンセルできる", async ({ page }) => {
@@ -273,18 +241,17 @@ test.describe("利用権トークン: 旧形式(v1)との互換と署名の検�
     await clearDevOverrides(context);
   });
 
-  test("旧形式(v1)の有効なトークンは引き続き有効で、広告なしでダウンロードできる", async ({ page, context, baseURL }) => {
+  test("2026-11 毎回広告：以前の時間制の有効なトークン(v1)が残っていても使わず、広告確認が出る", async ({ page, context, baseURL }) => {
     const exp = Date.now() + 30 * 60_000;
     await context.addCookies([{ name: TEMP_COOKIE, value: `v1.${exp}.${sign(`v1.${exp}`)}`, url: baseURL! }]);
     await processImage(page);
 
-    await expect(page.getByText(/無料利用中：あと/)).toBeVisible();
-    const download = await clickAndDownload(page, "ダウンロード");
-    await assertDownloadedFile(download, { format: "png", minBytes: 10 });
-    await expect(dialogOf(page)).toHaveCount(0);
+    await expect(page.getByText(/無料利用中：あと/)).toHaveCount(0);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "prompt");
   });
 
-  test("v2(代替付与)の有効なトークンもサーバーに受け入れられ、広告なしでダウンロードできる", async ({
+  test("2026-11 毎回広告：以前の時間制の有効なトークン(v2)が残っていても使わず、広告確認が出る", async ({
     page,
     context,
     baseURL,
@@ -295,9 +262,9 @@ test.describe("利用権トークン: 旧形式(v1)との互換と署名の検�
     ]);
     await processImage(page);
 
-    await expect(page.getByText(/無料利用中：あと/)).toBeVisible();
-    const download = await clickAndDownload(page, "ダウンロード");
-    await assertDownloadedFile(download, { format: "png", minBytes: 10 });
+    await expect(page.getByText(/無料利用中：あと/)).toHaveCount(0);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "prompt");
   });
 
   test("種別(kind)を書き換えたトークンは、サーバーが無効と判定する", async ({ page, context, baseURL }) => {

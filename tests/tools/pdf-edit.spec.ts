@@ -365,7 +365,7 @@ plainTest.describe("PDF編集: 広告ゲート（Freeプラン）", () => {
       // バッジが見えていて、全文が読み上げ用の名前（aria-label）として付いていることを確かめる
       const adNotice = page.getByTestId("download-ad-notice");
       await plainExpect(adNotice).toBeVisible();
-      await plainExpect(adNotice.locator("summary")).toHaveAttribute("aria-label", "無料でご利用いただけます。ダウンロードの際に広告を1回ご覧いただくと、1時間は広告なしでご利用いただけます。");
+      await plainExpect(adNotice.locator("summary")).toHaveAttribute("aria-label", "無料でご利用いただけます。ダウンロードのたびに、広告を1回ご覧いただきます。");
 
       await page.getByTestId("pdf-edit-mode-rotate").click();
       await uploadWhenReady(page, fixtures.multiPagePdf, page.getByRole("button", { name: "回転する" }), { readyTimeoutMs: 25_000 });

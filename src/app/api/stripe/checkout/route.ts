@@ -8,7 +8,7 @@ import { runCheckoutFlow } from "@/lib/stripe/checkout-flow";
 import { rejectUntrustedOrigin } from "@/lib/security/request-origin";
 import { getStripeClient } from "@/lib/stripe/client";
 import { isStripeConfigured, hasPriceIdFor, stripeConfig } from "@/lib/stripe/config";
-import { verifyPremiumPrice } from "@/lib/stripe/price-guard-server";
+import { verifyPlanPrice } from "@/lib/stripe/price-guard-server";
 import { getOrCreateStripeCustomerId } from "@/lib/stripe/customer";
 import { siteConfig } from "@/lib/config/site";
 import type { Plan } from "@/lib/plans/types";
@@ -32,8 +32,9 @@ const RATE_LIMIT = { limit: 5, windowMs: 60_000 };
  * - Checkoutセッションを見ただけで契約確定とはしない。正式な契約状態の反映は
  *   Stripe Webhook（/api/stripe/webhook）経由でのみ行う（Phase 3 spec 9章）。
  */
-function isValidPlan(value: unknown): value is Extract<Plan, "premium"> {
-  return value === "premium";
+/** お申し込みを受け付けるプラン（2026-11 からスタンダード 月220円も受け付ける） */
+function isValidPlan(value: unknown): value is Exclude<Plan, "free"> {
+  return value === "premium" || value === "standard";
 }
 
 export async function POST(request: Request) {
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
   const plan = (body as { plan?: unknown })?.plan;
   if (!isValidPlan(plan)) {
     return NextResponse.json(
-      { error: "お申し込みできるのはプレミアムプランです。" },
+      { error: "お申し込みできるのはスタンダードプランとプレミアムプランです。" },
       { status: 400 }
     );
   }
@@ -122,9 +123,9 @@ export async function POST(request: Request) {
   }
 
   // 表示している料金と、Stripeの実際の価格が一致しているときだけ、決済に進める
-  const priceCheck = await verifyPremiumPrice();
+  const priceCheck = await verifyPlanPrice(plan);
   if (!priceCheck.ok) {
-    console.error("[stripe/checkout] premium price check failed:", priceCheck.reason);
+    console.error(`[stripe/checkout] ${plan} price check failed:`, priceCheck.reason);
     return NextResponse.json(
       { error: "現在、お申し込みの受け付けを準備中です。しばらくしてから、もう一度お試しください。" },
       { status: 503 }

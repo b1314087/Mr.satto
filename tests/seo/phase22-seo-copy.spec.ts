@@ -21,7 +21,8 @@ import { EVENT_FILE_ACCEPT } from "@/lib/calendar/event-file";
  */
 
 /** 現在の本番相当: 課金オン・広告オフ。プレミアム限定ツールなし・Standardなし */
-const PRODUCTION: CopyContext = { billing: true, ads: false, premiumOnly: false, standardOffered: false };
+// 2026-11：スタンダード（月220円）を再開したため、本番相当でも standardOffered は true
+const PRODUCTION: CopyContext = { billing: true, ads: false, premiumOnly: false, standardOffered: true };
 
 function allText(content: ToolSeoContent): string[] {
   return [content.metaTitle, content.metaDescription, content.lead, ...content.howTo, ...content.faq.flatMap((f) => [f.question, f.answer])];
@@ -31,17 +32,19 @@ function categoryText(c: { metaTitle: string; metaDescription: string; intro: st
   return [c.metaTitle, c.metaDescription, c.intro];
 }
 
-test.describe("SEO文: 本番相当（課金オン・広告オフ・プレミアム限定ツールなし・Standardなし）", () => {
-  test("実際の設定と、この回帰テストの前提が一致している（プレミアム限定ツールなし・Standard未提供）", () => {
+test.describe("SEO文: 本番相当（課金オン・広告オフ・プレミアム限定ツールなし・Standardあり）", () => {
+  test("実際の設定と、この回帰テストの前提が一致している（プレミアム限定ツールなし・Standard提供）", () => {
     // 前提が変わったとき（例: ツールを再び有料にした）は、このテストが先に失敗して気づける。
     expect(tools.filter((t) => t.status === "available" && t.requiredPlan === "premium")).toHaveLength(0);
-    expect((OFFERED_PLAN_IDS as readonly string[]).includes("standard")).toBe(false);
+    expect((OFFERED_PLAN_IDS as readonly string[]).includes("standard")).toBe(true);
   });
 
   test("全ツールのSEO文に、プレミアム専用・Standard・広告の文言が残らない（FAQPage構造化データも同じ）", () => {
     const FORBIDDEN = /プレミアムプラン専用|プレミアム専用|プレミアムプランで利用できます|Standard|スタンダード|Free|Premium|広告/;
     const problems: string[] = [];
     for (const [id, content] of Object.entries(toolSeoContent)) {
+      // 記入済みPDF→Excelは、プランごとのページ数の違い（スタンダードを含む）を説明するため、下の専用のテストで確かめる
+      if (id === "filled-pdf-to-excel") continue;
       const adapted = adaptToolSeoContentWith(content, PRODUCTION);
       for (const text of allText(adapted)) if (FORBIDDEN.test(text)) problems.push(`${id}: ${text.slice(0, 80)}`);
       const json = JSON.stringify(buildFaqPage(adapted.faq));
@@ -76,17 +79,16 @@ test.describe("SEO文: 本番相当（課金オン・広告オフ・プレミア
     }
   });
 
-  test("記入済みPDF→Excel: Standardの記述は消え、ページ数の制限・プレミアムの違いは残る", () => {
+  test("記入済みPDF→Excel（2026-11 スタンダード再開）: プランごとのページ数の違いが正しく書かれ、広告オフの間は広告視聴の話をしない", () => {
     const adapted = adaptToolSeoContentWith(toolSeoContent["filled-pdf-to-excel"], PRODUCTION);
     const text = allText(adapted).join("\n");
-    expect(text).not.toMatch(/Standard|スタンダード|Free|Premium|広告/);
-    expect(adapted.faq.map((f) => f.question)).not.toContain("スタンダードプランではどのように使えますか？");
-    expect(adapted.metaDescription).toContain("無料プランは1回1ページまで");
-    expect(adapted.metaDescription).toContain("プレミアムプランはページ数・回数とも無制限");
+    expect(text).not.toMatch(/Standard|Free|Premium|広告視聴/);
+    expect(adapted.metaDescription).toContain("無料プラン・スタンダードは1ページずつ");
+    expect(adapted.metaDescription).toContain("プレミアムはページ数・回数とも無制限");
     const limit = adapted.faq.find((f) => f.question === "1回に処理できるページ数の上限は？");
-    expect(limit?.answer).toContain("無料プランは1回あたり1ページまで");
+    expect(limit?.answer).toContain("無料プラン・スタンダードプランは1回あたり1ページまで");
     expect(limit?.answer).toContain("プレミアムプランはページ数の制限がありません");
-    expect(adapted.faq.map((f) => f.question)).toContain("プレミアムプランの制限は？");
+    expect(adapted.faq.map((f) => f.question)).toContain("スタンダードプランではどのように使えますか？");
     expect(adapted.faq.map((f) => f.question)).toContain("無料プランではどのように使えますか？");
     // 他の仕様の説明（保存されない・手書きの注意）は残る
     expect(text).toContain("送信・保存されることはありません");
@@ -204,7 +206,7 @@ test.describe("年度カレンダー: 通常のブラウザ内処理とAI利用�
 });
 
 test.describe("トップページの構造化データ（WebApplication）の説明", () => {
-  test("本番相当（課金オン・広告オフ・Standardなし）: 提供していないプランや広告回避の案内を出さない", () => {
+  test("課金オン・広告オフ・Standardなし: 提供していないプランや広告回避の案内を出さない", () => {
     const d = buildOfferDescription({ billing: true, ads: false, standardOffered: false });
     expect(d).not.toMatch(/Standard|スタンダード|広告/);
     expect(d).toContain("無料でご利用いただけます");
@@ -212,7 +214,7 @@ test.describe("トップページの構造化データ（WebApplication）の説
   });
 
   test("広告オン: 広告視聴の説明は残し、提供していないStandardには触れない／提供すれば触れる", () => {
-    expect(buildOfferDescription({ billing: true, ads: true, standardOffered: false })).toBe("広告視聴による1時間の無料利用、またはプレミアムプランへの加入で利用できます。");
+    expect(buildOfferDescription({ billing: true, ads: true, standardOffered: false })).toBe("ダウンロードのたびに広告を視聴して無料で利用するか、プレミアムプランへの加入で広告なしで利用できます。");
     expect(buildOfferDescription({ billing: true, ads: true, standardOffered: true })).toContain("スタンダード／プレミアムプラン");
   });
 

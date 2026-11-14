@@ -19,8 +19,14 @@
 export const TEMP_ACCESS_COOKIE_NAME = "mrsatto_temp_access";
 
 /**
- * 広告を1回視聴したあとの無料利用時間。仕様で確定した値のため、勝手に変更しない
+ * 広告を1回視聴したあと、広告なしでダウンロードできる時間。仕様で確定した値のため、勝手に変更しない
  * （Phase 3 spec 3章・35章 / Phase 4 spec 10章・41章）。
  * 2026年10月、運営者の指示で15分から1時間へ変更した。
+ * 2026年11月、運営者の指示で0（ダウンロードのたびに広告を見る）へ変更した。
+ * 0のときは利用権（Cookie）を発行せず、広告を見たあとの1回のダウンロードだけを許可する（AD_EVERY_DOWNLOAD）。
+ * 時間制に戻すときは、ここに時間（ミリ秒）を入れるだけでよい（例：60 * 60 * 1000 で1時間）。
  */
-export const TEMP_ACCESS_DURATION_MS = 60 * 60 * 1000;
+export const TEMP_ACCESS_DURATION_MS = 0;
+
+/** ダウンロードのたびに広告を見る方式か（広告を見たあとの広告なしの時間が0のとき） */
+export const AD_EVERY_DOWNLOAD = TEMP_ACCESS_DURATION_MS <= 0;

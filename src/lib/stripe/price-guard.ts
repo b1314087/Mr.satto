@@ -1,7 +1,7 @@
 /**
  * 「画面に出している料金」と「Stripeで実際に請求される料金」が食い違ったまま、決済を受け付けないための確認。
  *
- * 表示する料金は PREMIUM_PRICE_YEN（src/lib/plans/types.ts）の1か所で決まる。
+ * 表示する料金は PREMIUM_PRICE_YEN・STANDARD_PRICE_YEN（src/lib/plans/types.ts）で決まる。
  * 決済に使うPrice IDの中身（金額・通貨・請求の周期）が、それと一致している場合だけ、Checkoutを作る。
  * 一致しない場合（例: Price IDがまだ旧980円のまま）は、課金せず「準備中」にする。
  *
@@ -20,7 +20,7 @@ export interface PriceLike {
 export type PriceCheck = { ok: true } | { ok: false; reason: "inactive" | "currency" | "amount" | "not_monthly" | "not_found" };
 
 /** 円は小数を持たない通貨なので、Stripeの unit_amount はそのまま円の金額になる */
-export function checkPremiumPrice(price: PriceLike | null | undefined, expectedYen: number): PriceCheck {
+export function checkPlanPrice(price: PriceLike | null | undefined, expectedYen: number): PriceCheck {
   if (!price) return { ok: false, reason: "not_found" };
   if (price.active === false) return { ok: false, reason: "inactive" };
   if ((price.currency ?? "").toLowerCase() !== "jpy") return { ok: false, reason: "currency" };
@@ -31,3 +31,6 @@ export function checkPremiumPrice(price: PriceLike | null | undefined, expectedY
   }
   return { ok: true };
 }
+
+/** 以前の名前（Premiumの価格の確認）。中身は checkPlanPrice と同じ */
+export const checkPremiumPrice = checkPlanPrice;

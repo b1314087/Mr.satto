@@ -11,7 +11,8 @@ import { hasUsedTrial } from "@/lib/plans/grant-store";
 import { TrialCard } from "@/components/pricing/trial-card";
 import { isStripeConfigured } from "@/lib/stripe/config";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { verifyPremiumPrice } from "@/lib/stripe/price-guard-server";
+import { verifyPlanPrice } from "@/lib/stripe/price-guard-server";
+import { AD_EVERY_DOWNLOAD } from "@/lib/plans/temporary-access-cookie";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { PricingActionButton } from "@/components/pricing/pricing-action-button";
 import { tools } from "@/lib/tools/data";
@@ -21,7 +22,7 @@ import type React from "react";
 
 export const metadata: Metadata = {
   title: "料金プラン",
-  description: `${siteConfig.name}の料金プラン（無料・プレミアム）のご案内です。無料プランとプレミアムプラン（月額${PLAN_DEFINITIONS.premium.priceYen.toLocaleString()}円・税込）でできること、AIの補助の利用枠、解約の方法を説明します。`,
+  description: `${siteConfig.name}の料金プラン（無料・スタンダード・プレミアム）のご案内です。無料プラン、スタンダードプラン（月額${PLAN_DEFINITIONS.standard.priceYen.toLocaleString()}円・税込）、プレミアムプラン（月額${PLAN_DEFINITIONS.premium.priceYen.toLocaleString()}円・税込）でできること、AIの補助の利用枠、解約の方法を説明します。`,
   alternates: {
     canonical: "/pricing",
   },
@@ -50,18 +51,21 @@ function getToolAccessLabel(toolAccess: string): string {
  */
 /** プランカードの「広告」の行。広告の仕組みが有効でない間は、実際の状態（広告を見る必要がない）を書く */
 function getAdsLabel(adsRequired: boolean, adGateActive: boolean): string | null {
-  // 広告そのものを提供していない間は、「広告なし」をプレミアムの特典として書かない（書くと、特典があるように見えてしまう）
+  // 広告そのものを提供していない間は、「広告なし」を有料プランの特典として書かない（書くと、特典があるように見えてしまう）
   if (!adsRequired) return featureFlags.ads ? "広告なし" : null;
-  if (adGateActive) return "広告視聴あり";
+  if (adGateActive) return AD_EVERY_DOWNLOAD ? "ダウンロードのたびに広告を視聴" : "広告視聴あり";
   return featureFlags.ads ? "広告が表示されます" : "現在、広告は表示されません";
 }
 
 function getPlanUsageNote(planId: string, adGateActive: boolean): string {
   switch (planId) {
     case "free":
-      return adGateActive
-        ? "広告を見ると1時間、通常ツールを利用できます（複数のツールをまとめて利用可能）"
-        : "広告を見なくても、通常ツールをご利用いただけます。";
+      if (!adGateActive) return "広告を見なくても、通常ツールをご利用いただけます。";
+      return AD_EVERY_DOWNLOAD
+        ? "通常ツールを無料でご利用いただけます。ダウンロードのたびに広告を1回ご覧いただきます。"
+        : "広告を見ると1時間、通常ツールを利用できます（複数のツールをまとめて利用可能）";
+    case "standard":
+      return `月額${PLAN_DEFINITIONS.standard.priceYen.toLocaleString("ja-JP")}円（税込）・広告なしで通常ツールを利用できます${featureFlags.ads ? "" : "（現在は無料プランでも広告は表示していません）"}。一括処理・AIの補助・プレミアム限定の機能は含みません。`;
     case "premium":
       return `月額${PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円（税込）${featureFlags.ads ? "・広告なし" : ""}${hasPremiumOnlyTools ? "・プレミアム対象ツールも利用可能" : ""}`;
     default:
@@ -97,10 +101,13 @@ export default async function PricingPage({
   const { checkout } = await searchParams;
   // プランの判定と、Stripeの価格の確認は、互いの結果を使わないので、同時に行う（順番に待たない）。
   // 画面の料金とStripeの実際の価格が一致しているときだけ、お申し込みを受け付ける
-  const [serverPlan, stripeConfigured] = await Promise.all([
+  const [serverPlan, premiumReady, standardReady] = await Promise.all([
     getServerPlan(),
-    isStripeConfigured() ? verifyPremiumPrice().then((check) => check.ok) : Promise.resolve(false),
+    isStripeConfigured() ? verifyPlanPrice("premium").then((check) => check.ok) : Promise.resolve(false),
+    isStripeConfigured() ? verifyPlanPrice("standard").then((check) => check.ok) : Promise.resolve(false),
   ]);
+  // プランごとに、画面の料金とStripeの価格が一致しているか（一致していないプランは「準備中」）
+  const planReady = { standard: standardReady, premium: premiumReady };
   const adGateActive = isRewardedAdGateActive();
   // Stripeの契約でのプラン（無料付与・お試しによるプレミアムとは分ける。付与中の人も、通常どおり申し込める）
   const subscriptionPlan = resolveEffectivePlan(serverPlan.subscription);
@@ -117,7 +124,7 @@ export default async function PricingPage({
     <div className="mx-auto w-full max-w-4xl px-4 py-12 sm:px-6">
       <h1 className="mb-2 text-2xl font-bold text-ms-text">料金プラン</h1>
       <p className="mb-10 text-sm text-ms-muted">
-        {siteConfig.name}は、無料プランとプレミアムプランでご利用いただけます。
+        {siteConfig.name}は、無料プラン・スタンダードプラン・プレミアムプランでご利用いただけます。
       </p>
 
       {checkout === "cancelled" && (
@@ -128,7 +135,7 @@ export default async function PricingPage({
 
       <TrialCard state={trialState} grant={serverPlan.grantActive ? serverPlan.grant : null} />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {OFFERED_PLAN_IDS.map((id) => {
           const plan = PLAN_DEFINITIONS[id];
           return (
@@ -210,7 +217,7 @@ export default async function PricingPage({
                   plan={id}
                   isAuthenticated={serverPlan.userId !== null}
                   currentPlan={subscriptionPlan}
-                  stripeConfigured={stripeConfigured}
+                  stripeConfigured={planReady[id]}
                   hasOpenSubscription={hasOpenSubscription(serverPlan.subscription)}
                 />
               )}
@@ -256,8 +263,8 @@ export default async function PricingPage({
 
       <p className="mt-8 text-xs text-ms-muted">
         ※ お支払い・契約状況の確認は Stripe を利用しています。カード情報はMr.Satto側では保存しません。
-        {!stripeConfigured &&
-          " 現在、プレミアムへのお申し込み機能は準備中です。"}
+        {!premiumReady && " 現在、プレミアムへのお申し込み機能は準備中です。"}
+        {!standardReady && " 現在、スタンダードへのお申し込み機能は準備中です。"}
       </p>
     </div>
   );

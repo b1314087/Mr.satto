@@ -6,7 +6,7 @@ import {
   verifyTemporaryAccessToken,
   type TemporaryAccessCheck,
 } from "./temp-access-token";
-import { TEMP_ACCESS_COOKIE_NAME, TEMP_ACCESS_DURATION_MS } from "./temporary-access-cookie";
+import { AD_EVERY_DOWNLOAD, TEMP_ACCESS_COOKIE_NAME, TEMP_ACCESS_DURATION_MS } from "./temporary-access-cookie";
 import { isFallbackGrantReason, type TemporaryAccessKind } from "./temporary-access-kinds";
 import { decideFallbackGrant } from "./fallback-grant-policy";
 
@@ -28,6 +28,8 @@ const TEMP_ACCESS_COOKIE = TEMP_ACCESS_COOKIE_NAME;
 async function storeTemporaryAccessToken(
   kind: TemporaryAccessKind
 ): Promise<{ expiresAtMs: number; kind: TemporaryAccessKind }> {
+  // 2026-11：ダウンロードのたびに広告を見る方式では、利用権（Cookie）を残さない（広告を見たあとの1回だけを許可する）
+  if (AD_EVERY_DOWNLOAD) return { expiresAtMs: Date.now(), kind };
   const cookieStore = await cookies();
   const token = issueTemporaryAccessToken(TEMP_ACCESS_DURATION_MS, kind);
   const verification = verifyTemporaryAccessToken(token);
@@ -61,6 +63,8 @@ async function storeTemporaryAccessToken(
  * 広告視聴による付与・代替付与の両方に同じ防御を適用する。
  */
 async function findActiveTemporaryAccess(): Promise<{ expiresAtMs: number; kind: TemporaryAccessKind } | null> {
+  // ダウンロードのたびに広告を見る方式では、以前に発行した時間制の利用権が残っていても使わない
+  if (AD_EVERY_DOWNLOAD) return null;
   const cookieStore = await cookies();
   const existing = verifyTemporaryAccessToken(cookieStore.get(TEMP_ACCESS_COOKIE)?.value);
   if (existing.active && existing.expiresAtMs !== null && existing.kind !== null) {
@@ -136,6 +140,7 @@ export async function grantFallbackTemporaryAccess(reason: string): Promise<Fall
  * ページ(Server Component)からの利用を想定。
  */
 export async function checkTemporaryAccess(): Promise<TemporaryAccessCheck> {
+  if (AD_EVERY_DOWNLOAD) return { active: false, expiresAtMs: null, kind: null };
   const cookieStore = await cookies();
   const token = cookieStore.get(TEMP_ACCESS_COOKIE)?.value;
   return verifyTemporaryAccessToken(token);

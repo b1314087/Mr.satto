@@ -18,7 +18,7 @@ import { OCR_MAX_PAGES, PDF_TO_EXCEL_MAX_OCR_PAGES, PDF_TO_EXCEL_MAX_PAGES, PDF_
 
 const ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
-const PRODUCTION: CopyContext = { billing: true, ads: false, premiumOnly: false, standardOffered: false };
+const PRODUCTION: CopyContext = { billing: true, ads: false, premiumOnly: false, standardOffered: true };
 
 test.describe("L1: PDFツールのページ数上限の説明", () => {
   test("上限の値は、実際の制限処理が使う定数と同じ（定数は一か所だけで定義）", () => {
@@ -150,7 +150,8 @@ test.describe("L5: プラン名の表記（無料／プレミアム／スタン�
   test("プランID・内部の識別子は変わっていない（表示名だけを日本語にした）", () => {
     const types = read("src/lib/plans/types.ts");
     expect(types).toContain('export type Plan = "free" | "standard" | "premium";');
-    expect(types).toContain('export const OFFERED_PLAN_IDS = ["free", "premium"]');
+    // 2026-11：スタンダード（月220円）を再開した
+    expect(types).toContain('export const OFFERED_PLAN_IDS = ["free", "standard", "premium"]');
   });
 
   test("記入済みPDF→Excelの画面メッセージも、「ご利用中のプラン」「プレミアムプラン」の日本語表記になっている", () => {
@@ -349,10 +350,10 @@ test.describe("記入済みPDF→Excel: 通常の変換はAIを使わないと�
     expect(JSON.stringify(offFilled)).not.toContain("AIで項目を");
   });
 
-  test("工程10の修正（スタンダード非提供・1ページ制限）が維持されている", () => {
+  test("1ページ制限の説明が維持されている（2026-11 スタンダード再開後は、無料・スタンダードの両方が1ページずつ）", () => {
     const seo = getToolSeoContent("filled-pdf-to-excel")!;
     const text = [seo.metaDescription, ...seo.faq.flatMap((f) => [f.question, f.answer])].join("\n");
-    expect(text).not.toMatch(/Standard|スタンダード/);
+    expect(text).not.toMatch(/Standard/);
     expect(text).toContain("1回あたり1ページまで");
   });
 });

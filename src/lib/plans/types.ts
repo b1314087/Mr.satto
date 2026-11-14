@@ -1,13 +1,13 @@
 /**
  * Mr.Satto の料金プラン（2026-10 に料金体系を統一）。
  *
- * 現行の料金体系（新規のお申し込みができるのは、この2つだけ）：
+ * 現行の料金体系（2026-11 にスタンダードを月220円で再開。新規のお申し込みができるのは、この3つ）：
  *
- * free     : 0円。ログイン不要。リワード広告視聴で1時間、通常ツールを利用可能
- * premium  : 月額1,100円（税込）。ログイン必須。広告なしですべてのツールと、AIによる読み取り補助を利用可能
+ * free     : 0円。ログイン不要。広告がオンのときは、ダウンロードのたびにリワード広告を視聴
+ * standard : 月額220円（税込）。ログイン必須。広告なしで通常ツールを利用可能（一括処理・AI・プレミアム限定の機能は含まない）
+ * premium  : 月額1,100円（税込）。ログイン必須。広告なしですべてのツールと、一括処理・AIによる読み取り補助を利用可能
  *
- * standard は旧プラン（月額550円）。新規の申し込みはできず、料金ページにも表示しない。
- * すでに契約中の人の権限（広告なしで通常ツールを利用）を、移行が終わるまで失わないために、型と判定だけを残している。
+ * 旧スタンダード（月額550円）の契約者はいない（運営者の試験のみ）ため、価格の移行は扱わない。
  * 旧Premium（月額980円）の契約も、アプリ内では premium として扱う（価格の違いでプランを分けない）。
  *
  * 重要：「広告も見ない」「料金も払わない」でそのまま使える
@@ -22,11 +22,20 @@ export type Plan = "free" | "standard" | "premium";
 
 export const PLAN_IDS: readonly Plan[] = ["free", "standard", "premium"] as const;
 
-/** 現行の料金体系で、料金ページに表示し、新規のお申し込みを受け付けるプラン（standard は含めない） */
-export const OFFERED_PLAN_IDS = ["free", "premium"] as const satisfies readonly Plan[];
+/** 現行の料金体系で、料金ページに表示し、新規のお申し込みを受け付けるプラン（2026-11 から standard も含める） */
+export const OFFERED_PLAN_IDS = ["free", "standard", "premium"] as const satisfies readonly Plan[];
+
+/** 有料プラン（お申し込みを受け付けるもの） */
+export type PaidPlan = Exclude<Plan, "free">;
 
 /** Premiumの月額（税込・円）。表示と、Stripeの実際の価格との照合（src/lib/stripe/price-guard.ts）の両方がこの値を使う */
 export const PREMIUM_PRICE_YEN = 1100;
+
+/** Standardの月額（税込・円）。Premiumと同じく、表示とStripeの実際の価格との照合の両方がこの値を使う */
+export const STANDARD_PRICE_YEN = 220;
+
+/** 有料プランの月額（税込・円） */
+export const PAID_PLAN_PRICE_YEN: Record<PaidPlan, number> = { standard: STANDARD_PRICE_YEN, premium: PREMIUM_PRICE_YEN };
 
 /**
  * ツールの区分の表示名（ツールのカードのバッジ）。旧プラン名の「スタンダード」とは別の、ツールの区分の名前。
@@ -76,12 +85,11 @@ export const PLAN_DEFINITIONS: Record<Plan, PlanDefinition> = {
   },
   standard: {
     id: "standard",
-    name: "スタンダード（旧プラン）",
-    // 旧プランの月額。新規のお申し込みはできず、表示もしない。契約中の人の記録のためだけに残している
-    priceYen: 550,
+    name: "スタンダード",
+    priceYen: STANDARD_PRICE_YEN,
     adsRequired: false,
     toolAccess: "standard",
-    description: "広告なしで通常ツールを利用できます（旧プラン・新規のお申し込みはできません）",
+    description: "広告なしで通常ツールを利用できます",
   },
   premium: {
     id: "premium",

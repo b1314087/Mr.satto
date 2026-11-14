@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { checkPremiumPrice } from "@/lib/stripe/price-guard";
+import { checkPlanPrice, checkPremiumPrice } from "@/lib/stripe/price-guard";
 import { hasOpenSubscription, resolveEffectivePlan } from "@/lib/plans/effective-plan";
-import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS, PREMIUM_PRICE_YEN } from "@/lib/plans/types";
+import { OFFERED_PLAN_IDS, PAID_PLAN_PRICE_YEN, PLAN_DEFINITIONS, PREMIUM_PRICE_YEN, STANDARD_PRICE_YEN } from "@/lib/plans/types";
 
 /** 料金の統一（Free / Premium 1,100円）と、課金の二重化・表示と請求の食い違いを防ぐ判定の単体テスト */
 
@@ -49,9 +49,18 @@ test.describe("契約の二重化を防ぐ判定", () => {
   });
 });
 
-test("料金体系: 現行は Free / Premium(1,100円) の2つだけで、Standardは新規に出さない", () => {
-  expect(OFFERED_PLAN_IDS).toEqual(["free", "premium"]);
+test("料金体系（2026-11）: Free / Standard(220円) / Premium(1,100円) の3つ", () => {
+  expect(OFFERED_PLAN_IDS).toEqual(["free", "standard", "premium"]);
   expect(PLAN_DEFINITIONS.free.priceYen).toBe(0);
+  expect(PLAN_DEFINITIONS.standard.priceYen).toBe(220);
   expect(PLAN_DEFINITIONS.premium.priceYen).toBe(1100);
-  expect(PLAN_DEFINITIONS.standard.name).toContain("旧プラン");
+  expect(PLAN_DEFINITIONS.standard.name).toBe("スタンダード");
+  expect(PLAN_DEFINITIONS.standard.adsRequired).toBe(false);
+});
+
+test("スタンダードの価格の確認も、月額220円（円・毎月）のときだけ通る", () => {
+  const good = { active: true, currency: "jpy", unit_amount: 220, type: "recurring", recurring: { interval: "month", interval_count: 1 } };
+  expect(checkPlanPrice(good, STANDARD_PRICE_YEN)).toEqual({ ok: true });
+  expect(checkPlanPrice({ ...good, unit_amount: 550 }, STANDARD_PRICE_YEN)).toEqual({ ok: false, reason: "amount" });
+  expect(PAID_PLAN_PRICE_YEN).toEqual({ standard: 220, premium: 1100 });
 });

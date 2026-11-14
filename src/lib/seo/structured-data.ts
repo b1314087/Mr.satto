@@ -102,7 +102,7 @@ export function buildOfferDescription(options: { billing: boolean; ads: boolean;
   if (!billing) return "会員登録なしで、無料でご利用いただけます。";
   if (ads) {
     const paidPlans = standardOffered ? "スタンダード／プレミアムプラン" : "プレミアムプラン";
-    return `広告視聴による1時間の無料利用、または${paidPlans}への加入で利用できます。`;
+    return `ダウンロードのたびに広告を視聴して無料で利用するか、${paidPlans}への加入で広告なしで利用できます。`;
   }
   return "無料でご利用いただけます。AIで読み取る補助機能は、プレミアムプランでご利用いただけます。";
 }
