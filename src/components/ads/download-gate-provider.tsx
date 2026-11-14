@@ -36,7 +36,8 @@ import { Spinner } from "@/components/ui/spinner";
  *      （ツールを開いただけでは広告を要求しない）。
  *   5. Googleの報酬付与イベントを確認できたら、広告視聴による1時間の利用権を付与する。
  *      広告自体が配信されなかった場合（SDK読み込み失敗・在庫なし・タイムアウト等）は、
- *      暫定的に代替の1時間の利用権を付与し、広告を表示できなかったことを利用者へ伝える。
+ *      1日1回まで（日本時間）救済として、広告なしで保存できるようにし、広告を表示できなかったことを利用者へ伝える
+ *      （src/lib/plans/fallback-grant-policy.ts）。今日すでに使っていれば、広告の再読み込みを案内する。
  *      広告を途中で閉じただけ（報酬付与イベントなし）の場合は、どちらも付与しない。
  *   6. 付与の後は、ユーザーが改めて「ダウンロードする」を押した時点で、保留していた
  *      保存を実行する。広告の後に自動でダウンロードを始めないのは、広告を挟んだ後の
@@ -50,7 +51,7 @@ import { Spinner } from "@/components/ui/spinner";
  * ならない（開発者ツール等で回避される可能性がある）。
  */
 
-type Phase = "closed" | "prompt" | "busy" | "unlocked" | "denied" | "unavailable" | "error";
+type Phase = "closed" | "prompt" | "busy" | "unlocked" | "denied" | "unavailable" | "fallback-used" | "error";
 
 export function DownloadGateProvider({
   toolId,
@@ -77,6 +78,9 @@ export function DownloadGateProvider({
   // 広告の報酬付与は確認できたが、利用権の発行(Server Action)に失敗した場合、
   // 次の再試行では広告を見せ直さず、発行だけをやり直す
   const rewardEarnedRef = useRef(false);
+  // 毎回広告の方式で、広告を見た（または救済を受けた）あと「閉じる」を押した場合の、使っていない1回分。
+  // 次のダウンロードでは、広告を見せ直さずに保存する（救済の1日1回を、保存しないまま失わせないため）。このページの中だけ
+  const unusedCreditRef = useRef(false);
   const primaryButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -93,6 +97,11 @@ export function DownloadGateProvider({
       intercept(action: GatedAction): boolean {
         if (!adRequiredRef.current) return false;
         if (hasAccess()) return false;
+        if (unusedCreditRef.current) {
+          unusedCreditRef.current = false;
+          if (AD_EVERY_DOWNLOAD) unlockedUntilMsRef.current = Date.now() + 3000;
+          return false;
+        }
 
         const queue = queueRef.current;
         // 同じ操作（同じBlob）の二重登録を防ぐ
@@ -120,7 +129,11 @@ export function DownloadGateProvider({
   const close = useCallback(() => {
     queueRef.current = [];
     setItemLabels([]);
-    setPhase("closed");
+    setPhase((current) => {
+      // 広告を見た（救済を受けた）のに保存しないで閉じた：その1回分を、このページの次のダウンロードに残す
+      if (current === "unlocked" && AD_EVERY_DOWNLOAD) unusedCreditRef.current = true;
+      return "closed";
+    });
   }, []);
 
   function applyUnlocked(kind: "ad" | "fallback", expiresAtMs: number | null) {
@@ -197,7 +210,8 @@ export function DownloadGateProvider({
       setBusyLabel("広告を表示できませんでした。利用権を準備しています...");
       const fallback = await getTemporaryAccessService().grantFallback(outcome.reason);
       if (!fallback.granted) {
-        setPhase("unavailable");
+        // 救済（1日1回）は今日もう使っている：広告の再読み込みを案内する
+        setPhase(fallback.denial === "daily-limit" ? "fallback-used" : "unavailable");
         return;
       }
       // 広告は視聴されていない。種別は "fallback" として扱い、画面でもその旨を伝える。
@@ -287,7 +301,7 @@ export function DownloadGateProvider({
                 {unlockKind === "fallback" ? (
                   <p className="text-sm text-ms-muted">
                     {AD_EVERY_DOWNLOAD
-                      ? "広告を表示できませんでした。ご不便をおかけしたため、今回は広告なしでダウンロードしていただけます。"
+                      ? "広告を表示できませんでした。ご不便をおかけしたため、今回は広告なしでダウンロードしていただけます（広告を表示できないときの広告なしのダウンロードは、1日1回までです）。"
                       : "広告を表示できませんでした。ご不便をおかけしたため、今回は特別に1時間、広告なしでご利用いただけるようにしました。"}
                   </p>
                 ) : (
@@ -313,7 +327,7 @@ export function DownloadGateProvider({
               </>
             )}
 
-            {(phase === "denied" || phase === "unavailable" || phase === "error") && (
+            {(phase === "denied" || phase === "unavailable" || phase === "fallback-used" || phase === "error") && (
               <>
                 <h2 id="download-gate-title" className="text-lg font-semibold text-ms-text">
                   {phase === "denied" ? "広告の視聴が完了しませんでした" : "広告を表示できませんでした"}
@@ -323,6 +337,8 @@ export function DownloadGateProvider({
                     "広告を最後まで視聴できなかったため、利用権は付与されませんでした。もう一度お試しください。処理済みのファイルはそのまま残っています。"}
                   {phase === "unavailable" &&
                     "現在、広告を表示できません。しばらくしてからもう一度お試しください。処理済みのファイルはそのまま残っています。"}
+                  {phase === "fallback-used" &&
+                    "広告を表示できなかったときに広告なしでダウンロードできる救済（1日1回）は、今日はすでに使われています。広告ブロッカーをお使いの場合は止めてから、ページを再読み込みせずに「もう一度試す」を押してください。処理済みのファイルはそのまま残っています。"}
                   {phase === "error" &&
                     "エラーが発生しました。しばらくしてからもう一度お試しください。処理済みのファイルはそのまま残っています。"}
                 </p>

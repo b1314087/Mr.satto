@@ -17,6 +17,10 @@ export interface SubscriptionSnapshot {
   status: string;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  /** 契約の価格ID（表示の確認用。古い行・テストでは無いことがある） */
+  priceId?: string | null;
+  /** Stripeの契約ID（予約中のプラン変更の確認用。古い行・テストでは無いことがある） */
+  stripeSubscriptionId?: string | null;
 }
 
 export function resolveEffectivePlan(subscription: SubscriptionSnapshot | null): Plan {

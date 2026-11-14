@@ -9,6 +9,7 @@ import {
 import { AD_EVERY_DOWNLOAD, TEMP_ACCESS_COOKIE_NAME, TEMP_ACCESS_DURATION_MS } from "./temporary-access-cookie";
 import { isFallbackGrantReason, type TemporaryAccessKind } from "./temporary-access-kinds";
 import { decideFallbackGrant } from "./fallback-grant-policy";
+import { claimDailyFallback, hasClaimedFallbackToday } from "./fallback-claim";
 
 /**
  * Temporary Accessトークンを保持するCookie名・有効期間。
@@ -92,25 +93,25 @@ export async function grantTemporaryAccess(): Promise<{ expiresAtMs: number; kin
   return storeTemporaryAccessToken("ad");
 }
 
-/** 代替付与の結果 */
+/** 代替付与（救済）の結果 */
 export type FallbackGrantResult =
   | { granted: true; expiresAtMs: number; kind: TemporaryAccessKind }
-  | { granted: false; denial: "invalid-reason" | "cooldown" };
+  | { granted: false; denial: "invalid-reason" | "daily-limit" };
 
 /**
- * 広告自体が配信されなかった場合に、暫定的に1時間の利用権を付与するServer Action。
+ * 広告自体が配信されなかった場合（広告ブロッカー・配信エラー）の救済を付与するServer Action。
  *
- * 広告視聴による付与（grantTemporaryAccess）とは別の経路で、発行するトークンの
- * 種別は "fallback"。広告が視聴された・広告収益が発生した、という意味には
- * ならない（呼び出し側のUIも「広告を表示できなかった」ことを利用者へ明示する）。
+ * 2026-11（総合改修）：救済は1人につき1日1回（日本時間）。判定は src/lib/plans/fallback-grant-policy.ts、
+ * 記録は src/lib/plans/fallback-claim.ts（データベース＋署名付きCookie）。
+ * 毎回広告の方式（AD_EVERY_DOWNLOAD）では、救済で許可されるのは、保留しているダウンロード1回分だけ。
  *
- * 付与するかどうかの判定は src/lib/plans/fallback-grant-policy.ts の
- * decideFallbackGrant() に分離してある。現在は制限なし（暫定）。
+ * 広告視聴による付与（grantTemporaryAccess）とは別の経路で、トークンの種別は "fallback"。
+ * 広告が視聴された・広告収益が発生した、という意味にはならない（画面でも「広告を表示できなかった」と伝える）。
  *
- * reason はクライアントから渡される文字列で信用できないため、既知の理由に
- * 該当しない値は拒否する。ただし、広告が本当に配信されなかったかどうかを
- * サーバーが確かめることはできない（広告ブロッカーを使う人が毎回呼ぶ、または
- * このServer Actionを直接呼ぶ、といったことは防げない）。
+ * reason はクライアントから渡される文字列で信用できないため、既知の理由に該当しない値は拒否する
+ * （広告を途中で閉じた場合は、画面がこのServer Actionを呼ばない）。
+ * ただし、広告が本当に配信されなかったかどうかを、サーバーが確かめることはできない
+ * （このServer Actionを直接呼ばれると、広告を表示せずに救済を使える。1日1回の制限は、その場合にも効く）。
  */
 export async function grantFallbackTemporaryAccess(reason: string): Promise<FallbackGrantResult> {
   if (!isFallbackGrantReason(reason)) {
@@ -120,16 +121,15 @@ export async function grantFallbackTemporaryAccess(reason: string): Promise<Fall
   const active = await findActiveTemporaryAccess();
   if (active) return { granted: true, ...active };
 
-  const decision = decideFallbackGrant({
-    reason,
-    nowMs: Date.now(),
-    // 「最後に代替付与した時刻」はまだ保持していない（制限なしの暫定運用）。
-    // 制限を導入する際の手順は fallback-grant-policy.ts を参照。
-    lastFallbackGrantedAtMs: null,
-  });
-  if (!decision.allowed) {
-    return { granted: false, denial: decision.denial };
-  }
+  // 今日すでに使っていれば（Cookieの印）、データベースに問い合わせずに断る
+  const usedBefore = (await hasClaimedFallbackToday()) ? 1 : 0;
+  const early = decideFallbackGrant({ reason, usedToday: usedBefore });
+  if (!early.allowed) return { granted: false, denial: early.denial };
+
+  // 記録（データベースで1日1行だけ作れる。連打・複数タブで同時に呼ばれても、1回しか "claimed" にならない）
+  const claim = await claimDailyFallback();
+  const decision = decideFallbackGrant({ reason, usedToday: claim === "claimed" ? 0 : 1 });
+  if (!decision.allowed) return { granted: false, denial: decision.denial };
 
   const stored = await storeTemporaryAccessToken("fallback");
   return { granted: true, ...stored };

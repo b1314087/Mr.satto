@@ -130,11 +130,13 @@ export function PdfToTextTool() {
       if (isImage && !ocrAllowed) {
         throw new Error("画像からの文字の読み取り（OCR）は、プレミアムプランの機能です。");
       }
+      // OCRで読み取るページ数の上限も、処理の直前にサーバーで今のプランを確かめる
+      const maxOcrPages = ocrAllowed ? await ocrLimit.effectiveLimit() : ocrLimit.limit;
       const output = await new OcrProcessor().process({
         file,
         language,
         ocrAllowed,
-        maxOcrPages: ocrLimit.limit,
+        maxOcrPages,
         isCancelled: () => cancelRef.current,
         onPageProgress: (info) => {
           const percent = Math.round(info.pageProgress * 100);

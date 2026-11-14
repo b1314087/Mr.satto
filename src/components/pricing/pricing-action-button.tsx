@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import type { Plan } from "@/lib/plans/types";
 import { siteConfig } from "@/lib/config/site";
 import { wrongAddressMessage } from "@/lib/stripe/wrong-address";
+import { PortalLinkButton } from "@/components/account/portal-link-button";
+import { PLAN_CHANGE_LABEL, type PlanChange } from "@/lib/plans/plan-change";
 
 /**
  * /pricing の各プランカードのアクションボタン。
@@ -20,6 +22,7 @@ export function PricingActionButton({
   currentPlan,
   stripeConfigured,
   hasOpenSubscription = false,
+  planChange = null,
 }: {
   plan: Exclude<Plan, "free">;
   isAuthenticated: boolean;
@@ -27,6 +30,8 @@ export function PricingActionButton({
   stripeConfigured: boolean;
   /** まだ続いている契約がある（契約が二重にならないよう、新しく申し込ませない） */
   hasOpenSubscription?: boolean;
+  /** 契約中のプランから、このプランへ変更できるとき（ポータルのプラン変更の画面を開く。src/lib/plans/plan-change.ts） */
+  planChange?: PlanChange | null;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -44,6 +49,19 @@ export function PricingActionButton({
         >
           契約状況を確認する
         </Link>
+      </div>
+    );
+  }
+
+  if (hasOpenSubscription && planChange) {
+    return (
+      <div className="mt-auto flex flex-col gap-2">
+        <PortalLinkButton flow="plan_change" label={PLAN_CHANGE_LABEL[planChange]} variant="primary" testId={`plan-change-${plan}`} />
+        <p className="text-center text-xs text-ms-muted">
+          {planChange === "upgrade"
+            ? "差額は日割りで計算され、変更時に請求されます。"
+            : "次回の更新日まではプレミアムのままご利用いただけます。"}
+        </p>
       </div>
     );
   }

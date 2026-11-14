@@ -48,7 +48,18 @@ export const stripeConfig = {
    * scripts/create-portal-config.mjs で、Mr.Satto専用の設定を作ってそのIDを設定する。
    */
   portalConfigurationId: trimmedEnv("STRIPE_PORTAL_CONFIGURATION_ID"),
+  /**
+   * スタンダード ↔ プレミアムのプラン変更を、ポータルで受け付けるか（"true" のときだけ）。
+   * ポータルの設定でプラン変更を有効にしてから（scripts/create-portal-config.mjs）、"true" にする。
+   * それまでは、プラン変更のボタンを出さない（押してもポータルでプランを変えられない状態にしないため）。
+   */
+  planChangeEnabled: trimmedEnv("STRIPE_PLAN_CHANGE_ENABLED") === "true",
 };
+
+/** プラン変更のボタンを出せる状態か（Stripe・両プランの価格・ポータルのプラン変更の設定がそろっている） */
+export function isPlanChangeReady(): boolean {
+  return isStripeConfigured() && stripeConfig.planChangeEnabled && hasPriceIdFor("standard") && hasPriceIdFor("premium");
+}
 
 /** 契約の価格 → プランの判定に使う対応表 */
 export function getPlanMapping(): PlanMapping {

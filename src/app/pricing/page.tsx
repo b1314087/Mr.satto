@@ -9,9 +9,10 @@ import { hasOpenSubscription, resolveEffectivePlan } from "@/lib/plans/effective
 import { trialOfferState } from "@/lib/plans/grants";
 import { hasUsedTrial } from "@/lib/plans/grant-store";
 import { TrialCard } from "@/components/pricing/trial-card";
-import { isStripeConfigured } from "@/lib/stripe/config";
+import { isPlanChangeReady, isStripeConfigured } from "@/lib/stripe/config";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { verifyPlanPrice } from "@/lib/stripe/price-guard-server";
+import { planChangeFor } from "@/lib/plans/plan-change";
 import { AD_EVERY_DOWNLOAD } from "@/lib/plans/temporary-access-cookie";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { PricingActionButton } from "@/components/pricing/pricing-action-button";
@@ -108,6 +109,8 @@ export default async function PricingPage({
   ]);
   // プランごとに、画面の料金とStripeの価格が一致しているか（一致していないプランは「準備中」）
   const planReady = { standard: standardReady, premium: premiumReady };
+  // スタンダード ↔ プレミアムの変更は、両プランの価格がStripeと一致し、ポータルでプラン変更を有効にしているときだけ
+  const planChangeReady = isPlanChangeReady() && standardReady && premiumReady;
   const adGateActive = isRewardedAdGateActive();
   // Stripeの契約でのプラン（無料付与・お試しによるプレミアムとは分ける。付与中の人も、通常どおり申し込める）
   const subscriptionPlan = resolveEffectivePlan(serverPlan.subscription);
@@ -219,6 +222,7 @@ export default async function PricingPage({
                   currentPlan={subscriptionPlan}
                   stripeConfigured={planReady[id]}
                   hasOpenSubscription={hasOpenSubscription(serverPlan.subscription)}
+                  planChange={planChangeReady ? planChangeFor(serverPlan.subscription, id) : null}
                 />
               )}
             </div>
@@ -237,7 +241,7 @@ export default async function PricingPage({
           </li>
           <li className="flex items-start gap-2">
             <span aria-hidden="true">・</span>
-            解約は、アカウント画面の「お支払い方法の変更・解約」からいつでもできます。解約後も、現在の契約期間の終了まではご利用いただけます。
+            解約は、アカウント画面の「お支払い方法の変更・請求履歴・解約」からいつでもできます。解約後も、現在の契約期間の終了まではご利用いただけます。
           </li>
           <li className="flex items-start gap-2">
             <span aria-hidden="true">・</span>

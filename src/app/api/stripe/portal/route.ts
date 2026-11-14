@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { featureFlags } from "@/lib/config/features";
 import { getCurrentUser } from "@/lib/auth/user";
 import { getStripeClient } from "@/lib/stripe/client";
-import { isStripeConfigured, stripeConfig } from "@/lib/stripe/config";
+import { isPlanChangeReady, isStripeConfigured, stripeConfig } from "@/lib/stripe/config";
+import { isOpenSubscriptionStatus } from "@/lib/plans/effective-plan";
 import { resolvePortalConfiguration } from "@/lib/stripe/portal-config";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { siteConfig } from "@/lib/config/site";
@@ -21,6 +22,10 @@ const RATE_LIMIT = { limit: 5, windowMs: 60_000 };
  * 自前で複雑なカード管理・プラン変更画面を作らず、Stripeが提供する
  * Customer Portal（解約・プラン変更・支払い方法変更・請求履歴）に一任する
  * （Phase 3 spec 13章・14章）。
+ *
+ * 本文に {"flow":"plan_change"} があり、プラン変更の準備ができている（isPlanChangeReady）ときは、
+ * ポータルの「プラン変更」の画面を直接開く（スタンダード ↔ プレミアム。src/lib/plans/plan-change.ts）。
+ * プラン変更の画面を開けなかった場合（ポータル側の設定が未完了など）は、通常のポータルを開く（画面を壊さない）。
  */
 export async function POST(request: Request) {
   // 課金システムがオフの間は、決済を受け付けない（src/lib/config/features.ts）
@@ -69,9 +74,15 @@ export async function POST(request: Request) {
 
   const { data } = await supabase
     .from("subscriptions")
-    .select("stripe_customer_id")
+    .select("stripe_customer_id, stripe_subscription_id, status, plan")
     .eq("user_id", user.id)
     .maybeSingle();
+
+  const wantsPlanChange = await readPlanChangeRequest(request);
+  const subscriptionId =
+    wantsPlanChange && isPlanChangeReady() && data?.stripe_subscription_id && data.plan && data.status && isOpenSubscriptionStatus(data.status)
+      ? (data.stripe_subscription_id as string)
+      : null;
 
   if (!data?.stripe_customer_id) {
     return NextResponse.json(
@@ -88,12 +99,29 @@ export async function POST(request: Request) {
 
   try {
     const stripe = getStripeClient();
-    const portalSession = await stripe.billingPortal.sessions.create({
-      customer: data.stripe_customer_id,
+    const base = {
+      customer: data.stripe_customer_id as string,
       return_url: `${siteConfig.url}/account`,
       // Mr.Satto専用のポータル設定（未設定の間は、アカウントの既定の設定が使われる）
       ...(portalConfiguration.id ? { configuration: portalConfiguration.id } : {}),
-    });
+    };
+    if (subscriptionId) {
+      try {
+        const planChangeSession = await stripe.billingPortal.sessions.create({
+          ...base,
+          flow_data: {
+            type: "subscription_update",
+            subscription_update: { subscription: subscriptionId },
+            after_completion: { type: "redirect", redirect: { return_url: `${siteConfig.url}/account?plan_change=done` } },
+          },
+        });
+        return NextResponse.json({ url: planChangeSession.url, flow: "plan_change" });
+      } catch (error) {
+        // ポータルでプラン変更が有効になっていない等：通常のポータルを開く
+        console.error("[stripe/portal] plan change flow unavailable, falling back to the portal:", error);
+      }
+    }
+    const portalSession = await stripe.billingPortal.sessions.create(base);
     return NextResponse.json({ url: portalSession.url });
   } catch (error) {
     console.error("[stripe/portal]", error);
@@ -101,5 +129,17 @@ export async function POST(request: Request) {
       { error: "契約管理ページの作成に失敗しました。しばらくしてから再度お試しください。" },
       { status: 502 }
     );
+  }
+}
+
+/** 本文の {"flow":"plan_change"} を読む（本文がない・読めないときは false） */
+async function readPlanChangeRequest(request: Request): Promise<boolean> {
+  try {
+    const text = await request.text();
+    if (!text || text.length > 200) return false;
+    const body = JSON.parse(text) as { flow?: unknown };
+    return body?.flow === "plan_change";
+  } catch {
+    return false;
   }
 }

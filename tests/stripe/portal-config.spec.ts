@@ -50,24 +50,38 @@ test.describe("ポータル作成の呼び出し（ソースの静的な確認�
 test.describe("専用設定の作成スクリプト（静的なレビュー。実行はしない）", () => {
   const script = read("scripts/create-portal-config.mjs");
 
-  test("契約期間の終了時に解約・プラン変更は無効（利用規約の第5条と一致）", () => {
+  test("契約期間の終了時に解約（利用規約の第5条と一致）・支払い方法の変更・請求履歴は有効", () => {
     expect(script).toContain('"features[subscription_cancel][mode]": "at_period_end"');
     expect(script).toContain('"features[subscription_cancel][enabled]": "true"');
-    expect(script).toContain('"features[subscription_update][enabled]": "false"');
     expect(script).toContain('"features[payment_method_update][enabled]": "true"');
     expect(script).toContain('"features[invoice_history][enabled]": "true"');
   });
 
-  test("既存の設定・商品・契約を変更しない: 呼ぶのは「一覧(GET)」と「新規作成(POST)」だけ", () => {
-    const calls = [...script.matchAll(/stripe\(\s*"([A-Z]+)"\s*,\s*"([^"]*)"/g)].map((m) => `${m[1]} ${m[2]}`);
-    expect(calls.sort()).toEqual(['GET ?limit=100', 'POST '].sort());
+  test("プラン変更：両方の価格IDがあるときだけ有効。アップグレードはすぐ（日割りで請求）、ダウングレードは次回の更新日から", () => {
+    // 価格IDがそろわないときは無効のまま
+    expect(script).toContain('"features[subscription_update][enabled]": "false"');
+    expect(script).toContain('"features[subscription_update][enabled]": "true"');
+    expect(script).toContain("process.env.STRIPE_STANDARD_PRICE_ID");
+    expect(script).toContain("process.env.STRIPE_PREMIUM_PRICE_ID");
+    expect(script).toContain('"features[subscription_update][proration_behavior]": "always_invoice"');
+    expect(script).toContain('"features[subscription_update][schedule_at_period_end][conditions][0][type]": "decreasing_item_amount"');
+    // 価格の中身（月220円・月1,100円・JPY・毎月）を確かめてから有効にする
+    expect(script).toMatch(/ok\(standard, 220\)/);
+    expect(script).toMatch(/ok\(premium, 1100\)/);
+  });
+
+  test("変更するのは、Mr.Satto専用のポータル設定だけ（商品・価格・契約は読むだけで変更しない）", () => {
+    const calls = [...script.matchAll(/stripe\(\s*"([A-Z]+)"\s*,\s*(["`])([^"`]*)\2/g)].map((m) => `${m[1]} ${m[3]}`);
+    expect(calls.sort()).toEqual(
+      ["GET ?limit=100", "POST ", "POST /${encodeURIComponent(mine.id)}", "GET /prices/${encodeURIComponent(standardPrice)}", "GET /prices/${encodeURIComponent(premiumPrice)}"].sort(),
+    );
     expect(script).not.toMatch(/"(DELETE|PUT|PATCH)"/);
-    // 接続先は、ポータル設定のエンドポイントだけ
-    expect(script).toContain('"https://api.stripe.com/v1/billing_portal/configurations"');
+    // 価格は読むだけ（GET）。POST はポータル設定のエンドポイントだけ
+    expect(script).toContain('`${API_ROOT}/billing_portal/configurations`');
     expect(script.match(/https:\/\/api\.stripe\.com/g)).toHaveLength(1);
   });
 
-  test("すでにMr.Satto専用の設定（metadata.app=mr-satto）があれば、新しく作らずIDを表示するだけ", () => {
+  test("すでにMr.Satto専用の設定（metadata.app=mr-satto）があれば、新しく作らず、その設定のプラン変更の部分だけを更新する", () => {
     expect(script).toContain('"metadata[app]": "mr-satto"');
     expect(script).toMatch(/c\?\.metadata\?\.app === "mr-satto"/);
     expect(script).toMatch(/process\.exit\(0\)/);

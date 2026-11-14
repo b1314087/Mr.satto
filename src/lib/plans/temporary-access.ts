@@ -44,7 +44,7 @@ export interface TemporaryAccessSnapshot {
 /** 広告が配信されなかった場合の代替付与の結果 */
 export type FallbackGrantOutcome =
   | { granted: true; snapshot: TemporaryAccessSnapshot }
-  | { granted: false; denial: "invalid-reason" | "cooldown" };
+  | { granted: false; denial: "invalid-reason" | "daily-limit" };
 
 export interface TemporaryAccessService {
   /** Rewarded Ad視聴完了後、Standard対象ツール全体の一時的な利用権限を付与する */

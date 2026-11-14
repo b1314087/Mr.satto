@@ -149,7 +149,7 @@ async function fetchSubscriptionSnapshot(userId: string): Promise<SubscriptionSn
 
   const { data, error } = await supabase
     .from("subscriptions")
-    .select("plan, status, current_period_end, cancel_at_period_end")
+    .select("plan, status, current_period_end, cancel_at_period_end, stripe_price_id, stripe_subscription_id")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -161,5 +161,7 @@ async function fetchSubscriptionSnapshot(userId: string): Promise<SubscriptionSn
     status: data.status as string,
     currentPeriodEnd: data.current_period_end as string | null,
     cancelAtPeriodEnd: Boolean(data.cancel_at_period_end),
+    priceId: (data.stripe_price_id as string | null) ?? null,
+    stripeSubscriptionId: (data.stripe_subscription_id as string | null) ?? null,
   };
 }

@@ -176,9 +176,11 @@ export function PdfToExcelTool() {
     setProgressLabel("解析中...");
 
     try {
+      // 変換するページ数の上限は、処理の直前にサーバーでも今のプランを確かめる（ページ数はサーバーへ送らない）
+      const maxPages = await pageLimit.effectiveLimit();
       const output = await new PdfToExcelProcessor().process({
         file,
-        maxPages: pageLimit.limit,
+        maxPages,
         options,
         onPageProgress: (info) => {
           if (info.method === "ocr") {

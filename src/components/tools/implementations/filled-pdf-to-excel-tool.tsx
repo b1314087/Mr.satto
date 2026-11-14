@@ -154,6 +154,8 @@ function AutoExtractSection() {
 
   async function handleRun() {
     if (files.length === 0 || totalPages === null) return;
+    // 読み取るPDFのファイル数の上限は、処理の直前にサーバーでも今のプランを確かめる（ページ数の利用量は、下のサーバーの確認で数える）
+    if (!(await fileLimit.confirmCount(files.length))) return;
     setError(null);
 
     // 利用量チェック（consumeUsage、サーバーアクション呼び出し）もtry/catchの

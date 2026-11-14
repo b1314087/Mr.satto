@@ -162,9 +162,11 @@ export function PdfToWordTool() {
     setProgressLabel("解析中...");
 
     try {
+      // 変換するページ数の上限は、処理の直前にサーバーでも今のプランを確かめる
+      const maxPages = await pageLimit.effectiveLimit();
       const output = await new PdfToWordProcessor().process({
         file,
-        maxPages: pageLimit.limit,
+        maxPages,
         onPageProgress: (info) => {
           if (info.method === "ocr") {
             setProgressLabel(

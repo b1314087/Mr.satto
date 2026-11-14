@@ -80,9 +80,28 @@ export function usePlanLimit(key: PlanLimitKey) {
     return ok;
   }
 
+  /**
+   * 処理を始める直前に呼ぶ（ページ数など、処理してみるまで数が分からず、上限を超えた分を切り捨てて処理するツール向け）。
+   * 無料より多い上限で使っているときは、サーバーで今のプランを確かめ、使えなければ無料の上限を返す（処理は止めない）。
+   */
+  async function effectiveLimit(): Promise<number> {
+    if (!featureFlags.billing || limit <= def.free || !Number.isFinite(def.free)) return limit;
+    let ok = false;
+    try {
+      ok = await checkPlanLimitAccess(key, Number.isFinite(limit) ? limit : def.free + 1);
+    } catch {
+      ok = false;
+    }
+    if (ok) return limit;
+    setRevoked(true);
+    return def.free;
+  }
+
   return {
     key,
     limit,
+    /** 無料での上限（サーバーで確かめる必要があるかの目安） */
+    free: def.free as number,
     premiumLimit,
     limited,
     unit: def.unit,
@@ -94,6 +113,7 @@ export function usePlanLimit(key: PlanLimitKey) {
     blockAdd,
     exceed,
     confirmCount,
+    effectiveLimit,
   };
 }
 

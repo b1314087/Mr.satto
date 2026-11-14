@@ -370,3 +370,104 @@ test.describe("スマートフォン表示（Chromiumのモバイルエミュレ
     await assertDownloadedFile(await downloadPromise, { format: "png", minBytes: 10 });
   });
 });
+
+test.describe("2026-11 広告が出ないときの救済（1日1回）", () => {
+  test.beforeEach(async ({ context }) => {
+    await clearDevOverrides(context);
+  });
+
+  test("救済は1日1回：2回目は広告なしで保存させず、広告の再読み込みを案内する（処理済みファイルは残る）", async ({ page, context, baseURL }) => {
+    await setDevAdOutcome(context, "sdk-failed", baseURL!);
+    let downloads = 0;
+    page.on("download", () => downloads++);
+    await processImage(page);
+
+    // 1回目：救済で保存できる
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await dialogOf(page).getByRole("button", { name: "広告を見てダウンロード" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
+    await expect(dialogOf(page).getByText(/1日1回までです/)).toBeVisible();
+    await dialogOf(page).getByRole("button", { name: /ダウンロードする/ }).click();
+    await expect.poll(() => downloads).toBe(1);
+    // 今日使った印は、ブラウザから読めない（httpOnly）
+    const mark = (await context.cookies()).find((c) => c.name === "mrsatto_ad_fallback");
+    expect(mark?.httpOnly).toBe(true);
+
+    // 2回目（数秒後）：救済は使用済み
+    await page.waitForTimeout(3500);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await dialogOf(page).getByRole("button", { name: "広告を見てダウンロード" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "fallback-used", { timeout: 15_000 });
+    await expect(dialogOf(page).getByText(/今日はすでに使われています/)).toBeVisible();
+    await expect(dialogOf(page).getByRole("button", { name: /ダウンロードする/ })).toHaveCount(0);
+    expect(downloads).toBe(1);
+
+    // 広告が出るようになれば（広告ブロッカーを止めた等）、同じ画面から広告を見て保存できる
+    await setDevAdOutcome(context, "granted", baseURL!);
+    await dialogOf(page).getByRole("button", { name: "もう一度試す" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
+    await dialogOf(page).getByRole("button", { name: /ダウンロードする/ }).click();
+    await expect.poll(() => downloads).toBe(2);
+  });
+
+  test("別のタブでも、同じ日の2回目の救済は受けられない", async ({ page, context, baseURL }) => {
+    await setDevAdOutcome(context, "timeout", baseURL!);
+    await processImage(page);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await dialogOf(page).getByRole("button", { name: "広告を見てダウンロード" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
+
+    const other = await context.newPage();
+    await processImage(other);
+    await other.getByRole("button", { name: "ダウンロード" }).click();
+    await dialogOf(other).getByRole("button", { name: "広告を見てダウンロード" }).click();
+    await expect(dialogOf(other)).toHaveAttribute("data-phase", "fallback-used", { timeout: 15_000 });
+  });
+
+  test("連打しても救済は1回分：広告の準備中はダウンロードできず、保存も1回だけ", async ({ page, context, baseURL }) => {
+    await setDevAdOutcome(context, "display-failed", baseURL!);
+    let downloads = 0;
+    page.on("download", () => downloads++);
+    await processImage(page);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    const watch = dialogOf(page).getByRole("button", { name: "広告を見てダウンロード" });
+    await watch.click();
+    await watch.click({ timeout: 1000 }).catch(() => {});
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
+    expect(downloads).toBe(0);
+    const save = dialogOf(page).getByRole("button", { name: /ダウンロードする/ });
+    await save.click();
+    await save.click({ timeout: 1000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    expect(downloads).toBe(1);
+  });
+
+  test("救済を受けたあと保存せずに閉じても、その1回分は、このページの次のダウンロードで使える", async ({ page, context, baseURL }) => {
+    await setDevAdOutcome(context, "unavailable", baseURL!);
+    await processImage(page);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await dialogOf(page).getByRole("button", { name: "広告を見てダウンロード" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
+    await dialogOf(page).getByRole("button", { name: "閉じる" }).click();
+    await expect(dialogOf(page)).toHaveCount(0);
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await assertDownloadedFile(await downloadPromise, { format: "png", minBytes: 10 });
+    await expect(dialogOf(page)).toHaveCount(0);
+  });
+
+  test("広告を途中で閉じた場合は、救済の対象にしない（救済の回数も使わない）", async ({ page, context, baseURL }) => {
+    await setDevAdOutcome(context, "denied", baseURL!);
+    await processImage(page);
+    await page.getByRole("button", { name: "ダウンロード" }).click();
+    await dialogOf(page).getByRole("button", { name: "広告を見てダウンロード" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "denied", { timeout: 15_000 });
+    expect((await context.cookies()).find((c) => c.name === "mrsatto_ad_fallback")).toBeUndefined();
+
+    // その後、広告が出ないときは、まだ救済を受けられる
+    await setDevAdOutcome(context, "sdk-failed", baseURL!);
+    await dialogOf(page).getByRole("button", { name: "もう一度試す" }).click();
+    await expect(dialogOf(page)).toHaveAttribute("data-phase", "unlocked", { timeout: 15_000 });
+  });
+});

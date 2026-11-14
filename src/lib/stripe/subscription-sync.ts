@@ -31,7 +31,7 @@ export interface PlanMapping {
   premiumProductIds: string[];
   /** Premiumとして扱うPrice ID（現在の価格と、移行期間だけ残す旧価格） */
   premiumPriceIds: string[];
-  /** Standard（新料金体系には含めない。既存契約の表示が壊れないよう、判定だけ残す） */
+  /** Standard（月220円）の価格ID。商品での指定（premiumProductIds）より優先する */
   standardPriceIds: string[];
 }
 
@@ -46,12 +46,19 @@ export function productIdOf(item: SubscriptionItemLike): string | null {
 /** 契約のアイテムから有料プランを決める。どれにも当たらなければ null（知らない価格） */
 export function resolvePlanFromItems(items: SubscriptionItemLike[], mapping: PlanMapping): PaidPlan | null {
   let standard = false;
+  let premiumByProduct = false;
   for (const item of items) {
     const priceId = item.price?.id ?? null;
     const productId = productIdOf(item);
-    if ((priceId && mapping.premiumPriceIds.includes(priceId)) || (productId && mapping.premiumProductIds.includes(productId))) return "premium";
-    if (priceId && mapping.standardPriceIds.includes(priceId)) standard = true;
+    if (priceId && mapping.premiumPriceIds.includes(priceId)) return "premium";
+    // 価格IDでの指定を、商品での指定より優先する（スタンダードの価格を、プレミアムと同じ商品の下に作った場合も、スタンダードと判定する）
+    if (priceId && mapping.standardPriceIds.includes(priceId)) {
+      standard = true;
+      continue;
+    }
+    if (productId && mapping.premiumProductIds.includes(productId)) premiumByProduct = true;
   }
+  if (premiumByProduct) return "premium";
   return standard ? "standard" : null;
 }
 

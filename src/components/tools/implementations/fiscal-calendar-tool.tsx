@@ -112,6 +112,11 @@ export function FiscalCalendarTool() {
 
   async function handleGenerate(format: FiscalCalendarFormat) {
     const input = baseInput(format);
+    // 取り込む予定の件数の上限は、処理の直前にサーバーでも今のプランを確かめる（予定の内容はサーバーへ送らない）
+    if (allImportedEvents && allImportedEvents.length > eventLimit.free) {
+      const cap = await eventLimit.effectiveLimit();
+      if (allImportedEvents.length > cap) input.events = allImportedEvents.slice(0, cap);
+    }
     const validationError = validateFiscalCalendarInput(input);
     if (validationError) {
       setError(validationError);

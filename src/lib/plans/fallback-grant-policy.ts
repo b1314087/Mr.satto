@@ -1,58 +1,38 @@
 import type { FallbackGrantReason } from "./temporary-access-kinds";
 
 /**
- * 広告が配信されなかった場合の「代替付与」を許可するかどうかの判定（ポリシー）。
+ * 広告が配信されなかった場合の「救済」（代替付与）を許可するかどうかの判定（ポリシー）。
  *
- * 判定（このファイル）と付与（src/lib/plans/temporary-access-actions.ts の
- * grantFallbackTemporaryAccess）を分離してある。将来、広告が安定して配信される
- * ようになり代替付与を制限したくなった場合は、このファイルの設定と判定だけを
- * 変更すればよい（付与処理・UI側は変更不要）。
+ * 判定（このファイル）と付与（src/lib/plans/temporary-access-actions.ts の grantFallbackTemporaryAccess）を分けてある。
  *
- * 現在（暫定運用）：制限なし。広告が配信されない場合は、毎回1時間の代替利用権を
- * 付与する。広告ブロッカーなどで代替付与が繰り返し発生すると、広告収益が
- * 減少する可能性がある。
- *
- * 将来「24時間に1回まで」などに制限する手順（今回は実施しない）：
- *   1. cooldownMs に 24 * 60 * 60 * 1000 を設定する。
- *   2. 「最後に代替付与した時刻」をサーバーが検証できる形で保持する。
- *      例：署名付きの長期Cookie。Cookieの追加は仕様変更（Cookie仕様の変更）に
- *      当たるため、運営者の指示を得てから行うこと。
- *   3. grantFallbackTemporaryAccess が、その保持した時刻を lastFallbackGrantedAtMs
- *      としてこの関数へ渡す（現在は常に null を渡している）。
- *
- * Cookieはブラウザ側で削除できるため、Cookieによる制限は完全な不正防止にはならない
- * （利用者が自分の端末のCookieを消せば回避できる）。
+ * 2026-11（総合改修）：救済は「1人につき1日1回」（日本時間の日付で切り替わる）。
+ * - 広告ブロッカー・広告配信のエラーで広告が出ないときだけ使える（理由は temporary-access-kinds.ts の FALLBACK_GRANT_REASONS）。
+ *   広告を途中で閉じた（広告は出ている）場合は、救済の対象にしない。
+ * - 「今日もう使ったか」は、サーバーで2つの記録を見て決める（src/lib/plans/fallback-claim.ts）：
+ *     1. データベース（Supabase の ad_fallback_daily。1日だけ有効な、元に戻せない識別値だけを保存）
+ *        ログイン中はユーザーごと、未ログインは接続元とブラウザの情報から作る、その日だけの識別値ごと。
+ *        同じ識別値の行は1日1つしか作れないので、連打・複数タブで同時に実行しても、1回しか通らない。
+ *     2. 署名付きのCookie（今日使った印）。データベースを使えない間も、同じブラウザでは1日1回にする。
+ *   Cookieは利用者が消せるので、Cookieだけでは完全な不正防止にならない（データベースの記録が本命）。
  */
 export interface FallbackPolicyConfig {
-  /** 代替付与の最小間隔(ms)。null = 制限なし（暫定） */
-  cooldownMs: number | null;
+  /** 1日（日本時間）に救済できる回数。null = 制限なし */
+  perDay: number | null;
 }
 
 export const FALLBACK_GRANT_POLICY: FallbackPolicyConfig = {
-  cooldownMs: null,
+  perDay: 1,
 };
 
 export interface FallbackGrantRequest {
   reason: FallbackGrantReason;
-  nowMs: number;
-  /** 最後に代替付与した時刻(ms epoch)。記録がない場合は null */
-  lastFallbackGrantedAtMs: number | null;
+  /** 今日（日本時間）すでに救済した回数 */
+  usedToday: number;
 }
 
-export type FallbackGrantDecision =
-  | { allowed: true }
-  | { allowed: false; denial: "cooldown"; retryAfterMs: number };
+export type FallbackGrantDecision = { allowed: true } | { allowed: false; denial: "daily-limit" };
 
-export function decideFallbackGrant(
-  request: FallbackGrantRequest,
-  config: FallbackPolicyConfig = FALLBACK_GRANT_POLICY
-): FallbackGrantDecision {
-  if (config.cooldownMs === null || request.lastFallbackGrantedAtMs === null) {
-    return { allowed: true };
-  }
-  const elapsed = request.nowMs - request.lastFallbackGrantedAtMs;
-  if (elapsed < config.cooldownMs) {
-    return { allowed: false, denial: "cooldown", retryAfterMs: config.cooldownMs - elapsed };
-  }
-  return { allowed: true };
+export function decideFallbackGrant(request: FallbackGrantRequest, config: FallbackPolicyConfig = FALLBACK_GRANT_POLICY): FallbackGrantDecision {
+  if (config.perDay === null) return { allowed: true };
+  return request.usedToday < config.perDay ? { allowed: true } : { allowed: false, denial: "daily-limit" };
 }

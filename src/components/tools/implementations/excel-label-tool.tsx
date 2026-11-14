@@ -242,6 +242,8 @@ export function ExcelLabelTool() {
   }, [plan, geometry, style]);
 
   async function handleRun() {
+    // 印刷するラベルのシート数の上限は、処理の直前にサーバーでも今のプランを確かめる
+    if (plan && !(await sheetLimit.confirmCount(plan.pages.length))) return;
     setStatus("processing");
     setError(null);
     setResult(null);

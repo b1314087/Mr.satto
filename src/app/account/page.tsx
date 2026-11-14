@@ -8,7 +8,10 @@ import { hasUsedTrial } from "@/lib/plans/grant-store";
 import { TrialCard } from "@/components/pricing/trial-card";
 import { signOutAction } from "@/lib/auth/actions";
 import { PortalLinkButton } from "@/components/account/portal-link-button";
-import { isStripeConfigured } from "@/lib/stripe/config";
+import { isPlanChangeReady, isStripeConfigured, stripeConfig } from "@/lib/stripe/config";
+import { planChangeFor, PLAN_CHANGE_LABEL } from "@/lib/plans/plan-change";
+import { fetchScheduledPlanChange } from "@/lib/stripe/scheduled-change-server";
+import { AccountAiUsage } from "@/components/account/account-ai-usage";
 import { SUBSCRIPTION_STATUS_LABEL as STATUS_LABEL } from "@/lib/plans/status-labels";
 import { featureFlags } from "@/lib/config/features";
 import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
@@ -46,12 +49,12 @@ const TRIAL_MESSAGES: Record<string, string> = {
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams: Promise<{ checkout?: string; consent?: string; trial?: string }>;
+  searchParams: Promise<{ checkout?: string; consent?: string; trial?: string; plan_change?: string }>;
 }) {
   // 課金システムがオフの間は準備中の案内だけを表示する（src/lib/config/features.ts）
   if (!featureFlags.billing) return <FeatureUnavailable title="アカウント" />;
 
-  const { checkout, consent: consentParam, trial: trialParam } = await searchParams;
+  const { checkout, consent: consentParam, trial: trialParam, plan_change: planChangeParam } = await searchParams;
   const serverPlan = await getServerPlan();
 
   if (!serverPlan.userId) {
@@ -83,11 +86,25 @@ export default async function AccountPage({
   const subscriptionPremium = resolveEffectivePlan(serverPlan.subscription) === "premium";
   const userId = serverPlan.userId;
   // 同意の記録・ユーザー名・無料お試しの利用歴は、互いの結果を使わないので、同時に問い合わせる（順番に待たない）
-  const [consentState, username, trialUsed] = await Promise.all([
+  const subscription = serverPlan.subscription;
+  // 月額は、契約の価格IDが今の価格と一致するときだけ表示する（旧価格などは推測して表示しない）
+  const subscribedPriceYen =
+    subscription?.plan && subscription.priceId && subscription.priceId === stripeConfig.priceIds[subscription.plan]
+      ? PLAN_DEFINITIONS[subscription.plan].priceYen
+      : null;
+  const planChangeTargets = isPlanChangeReady()
+    ? (["premium", "standard"] as const).flatMap((target) => {
+        const change = planChangeFor(subscription, target);
+        return change ? [{ target, change }] : [];
+      })
+    : [];
+  const [consentState, username, trialUsed, scheduledChange] = await Promise.all([
     // 現在の利用規約・プライバシーポリシーへの同意の記録（読み取れないときは、案内を出さない）
     getConsentState(userId),
     getSupabaseServerClient().then((client) => getOwnUsername(client, userId)),
     !serverPlan.grantActive && !subscriptionPremium ? hasUsedTrial(userId) : Promise.resolve(false),
+    // 予約中のプラン変更（プレミアム → スタンダードを次回の更新日から、など）。読めなければ表示しない
+    subscription && !subscription.cancelAtPeriodEnd ? fetchScheduledPlanChange(subscription.stripeSubscriptionId, subscription.plan) : Promise.resolve(null),
   ]);
   const consentMissing = consentState.ok && consentState.missing.length > 0;
   const trialState = trialOfferState({
@@ -100,6 +117,12 @@ export default async function AccountPage({
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-12 sm:px-6">
       <h1 className="mb-6 text-2xl font-bold text-ms-text">アカウント</h1>
+
+      {planChangeParam === "done" && (
+        <p className="ms-glass mb-6 px-4 py-3 text-sm text-ms-text" data-testid="plan-change-message">
+          プランの変更を受け付けました。契約状況への反映まで数秒ほどかかる場合があります。反映されない場合はページを再読み込みしてください。
+        </p>
+      )}
 
       {checkout === "success" && (
         <p className="ms-glass mb-6 px-4 py-3 text-sm text-ms-text">
@@ -185,6 +208,12 @@ export default async function AccountPage({
                 {STATUS_LABEL[serverPlan.subscription.status] ?? serverPlan.subscription.status}
               </p>
             </div>
+            {subscribedPriceYen !== null && (
+              <div>
+                <p className="text-xs text-ms-muted">月額料金</p>
+                <p className="text-ms-text">{subscribedPriceYen.toLocaleString("ja-JP")}円（税込）</p>
+              </div>
+            )}
             <div>
               <p className="text-xs text-ms-muted">
                 {serverPlan.subscription.cancelAtPeriodEnd ? "利用可能期限" : "次回更新日"}
@@ -195,7 +224,12 @@ export default async function AccountPage({
             </div>
             {serverPlan.subscription.cancelAtPeriodEnd && (
               <p className="sm:col-span-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                解約手続き済みです。上記の期限まではこのままご利用いただけます。
+                解約手続き済みです。上記の期限まではこのままご利用いただけます。期限が過ぎると、無料プランになります。
+              </p>
+            )}
+            {scheduledChange && (
+              <p data-testid="scheduled-plan-change" className="sm:col-span-2 rounded-lg border border-ms-border px-3 py-2 text-xs text-ms-text">
+                {formatDate(scheduledChange.startsAt)}から{PLAN_DEFINITIONS[scheduledChange.plan].name}に変わります。それまでは今のプランのままご利用いただけます。
               </p>
             )}
           </div>
@@ -205,7 +239,13 @@ export default async function AccountPage({
           </p>
         )}
 
+        {serverPlan.plan === "premium" && <AccountAiUsage />}
+
         <div className="flex flex-wrap items-center gap-4 border-t border-ms-border pt-6">
+          {!scheduledChange &&
+            planChangeTargets.map(({ target, change }) => (
+              <PortalLinkButton key={target} flow="plan_change" label={PLAN_CHANGE_LABEL[change]} variant="primary" testId={`plan-change-${target}`} />
+            ))}
           {isStripeConfigured() && serverPlan.subscription && <PortalLinkButton />}
           {(serverPlan.plan === "free" || (serverPlan.grantActive && !subscriptionPremium)) && (
             <Link

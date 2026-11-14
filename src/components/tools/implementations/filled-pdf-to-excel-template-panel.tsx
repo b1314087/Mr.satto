@@ -456,6 +456,11 @@ export function FilledPdfToExcelTemplatePanel() {
     setError(null);
 
     try {
+      // 読み取るPDFのファイル数の上限は、処理の直前にサーバーでも今のプランを確かめる
+      if (!(await fileLimit.confirmCount(filledFiles.length))) {
+        setIsSubmittingExtraction(false);
+        return;
+      }
       const consumeResult = await consumeUsage(totalPages);
       if (!consumeResult.allowed) {
         setError(describeConsumeFailure(consumeResult));
