@@ -27,8 +27,9 @@ export type FeatureName = "ads" | "billing";
 
 /** 本番の設定。広告や課金を入れる／切るときは、ここだけを書き換える。 */
 const PRODUCTION_FLAGS: Record<FeatureName, boolean> = {
-  // 2026-11-15：広告をオンにした（無料プランは、ダウンロードのたびにリワード広告を見ると、すべての通常ツールを使える）
-  ads: true,
+  // 2026-11-15：広告をいったんオフに戻した（mrsatto.com のAdSenseの審査が通るまで。広告が届かず、無料の人が1日1回しか保存できなくなるため）。
+  // 審査が通ったら true に戻す（無料プランは、ダウンロードのたびにリワード広告を見ると、すべての通常ツールを使える）
+  ads: false,
   billing: true,
 };
 
