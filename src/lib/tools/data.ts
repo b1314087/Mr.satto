@@ -582,13 +582,13 @@ const toolDefinitions: Tool[] = [
   },
   {
     // Excelの表を、Wordで編集できる表にする。用紙・余白・印刷の倍率を引き継ぎ、表がページからはみ出さないよう列の幅を決める
-    // （src/lib/office-convert/excel-to-word.ts）。Excel→PDF・Word→PDFと同じOffice変換のツールとして、プレミアム対象にする
+    // （src/lib/office-convert/excel-to-word.ts）。だれでも使える通常のツール（プレミアム限定にしない）
     id: "excel-to-word",
     name: "Excel→Word",
     category: "word",
     description: "Excelの表を、Wordで編集できる表に変換します。用紙からはみ出さないように列の幅を調整します",
     status: "available",
-    requiredPlan: "premium",
+    requiredPlan: "standard",
     processor: "browser",
     keywords: ["excel", "xlsx", "word", "docx", "表", "変換", "エクセル", "ワード"],
     relatedToolIds: ["word-to-excel", "excel-to-pdf"],
@@ -600,7 +600,7 @@ const toolDefinitions: Tool[] = [
     category: "csv-excel",
     description: "Word文書の表を、Excelのセルに変換します。表ごとにシートを分け、結合や書式も引き継ぎます",
     status: "available",
-    requiredPlan: "premium",
+    requiredPlan: "standard",
     processor: "browser",
     keywords: ["word", "docx", "excel", "xlsx", "表", "変換", "ワード", "エクセル"],
     relatedToolIds: ["excel-to-word", "pdf-to-excel"],

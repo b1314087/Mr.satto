@@ -80,7 +80,9 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
     const decode = (v: string) => v.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#x27;/g, "'");
     const description = decode(html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? "");
     const jsonLd = [...html.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-    const main = html.match(/<main[\s\S]*?<\/main>/)?.[0] ?? "";
+    // ツールのページは「読み込み中」の画面（loading.tsx）を先に送り、本文はあとから同じHTMLの中に流し込まれる。
+    // そのため最初の <main> だけでなく、<body> 全体（スクリプト・スタイルを除く）を本文として読む
+    const main = html.match(/<body[\s\S]*<\/body>/)?.[0] ?? "";
     const visible = decode(main.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ");
     return { description, jsonLd: jsonLd.join("\n"), visible };
   }
@@ -112,10 +114,9 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
     }
   });
 
-  test("記入済みPDF→Excel: 提供していないStandardの説明が説明文・FAQ・構造化データに出ない（1ページまでの制限は案内する）", async ({ request }) => {
-    const { description, jsonLd, visible } = await readSeo(request, "/tools/filled-pdf-to-excel");
-    for (const text of [description, jsonLd, visible]) expect(text).not.toMatch(/Standard|スタンダード/);
-    expect(description).toContain("無料プランは1回1ページまで");
+  test("記入済みPDF→Excel: 無料・スタンダードは1ページずつ、プレミアムは制限なしと案内する（2026-11 スタンダード再開後。広告視聴の案内は出さない）", async ({ request }) => {
+    const { description, visible } = await readSeo(request, "/tools/filled-pdf-to-excel");
+    expect(description).toContain("無料プラン・スタンダードは1ページずつ");
     expect(visible).toContain("プレミアムプランはページ数の制限がありません");
     expect(visible).not.toContain("広告の視聴が必要です");
   });

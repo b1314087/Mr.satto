@@ -726,7 +726,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
   "excel-to-word": {
     metaTitle: "Excel→Word変換｜Excelの表を編集できるWordの表に（A4からはみ出さない）",
     metaDescription:
-      "Excelファイル(.xlsx・.xlsm)の表を、Wordで編集できる表に変換するツール。用紙の大きさ・向き・余白・印刷の倍率を引き継ぎ、表がA4などのページからはみ出さないよう列の幅を自動で調整します。プレミアムプランで利用できます。",
+      "Excelファイル(.xlsx・.xlsm)の表を、Wordで編集できる表に変換するツール。用紙の大きさ・向き・余白・印刷の倍率を引き継ぎ、表がA4などのページからはみ出さないよう列の幅を自動で調整します。無料で利用できます。",
     lead: "Excelの表を、結合セル・罫線・背景色・文字の書式を保ったまま、Wordで編集できる表に変換します。表がページの横幅からはみ出さないように、列の幅を自動で調整します。",
     howTo: [
       "Excelファイル(.xlsx・.xlsm)をドラッグ&ドロップ、またはタップして選択します（1ファイル・上限30MB）。",
@@ -751,13 +751,13 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
           "文字の無い図形・線、データバーなど一部の条件付き書式、PNG・JPEG以外の画像、マクロ（.xlsmのVBA）は入りません。非表示の行・列は、Excelの印刷と同じく入れません。再現できなかったものは、変換結果の画面でお知らせします。Wordで開いたときのフォントの違いで、行の高さが変わることがあります。",
       },
       { question: "アップロードしたファイルはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
-      { question: "無料プランでも使えますか？", answer: "このツールはプレミアムプラン専用の機能です。" },
+      { question: "無料プランでも使えますか？", answer: "はい。会員登録なしで、無料でご利用いただけます。" },
     ],
   },
   "word-to-excel": {
     metaTitle: "Word→Excel変換｜Word文書の表をExcelのセルに（表ごとにシート）",
     metaDescription:
-      "Word文書(.docx)の表を、Excelで編集できるセルに変換するツール。表ごとにシートを分け、結合セル・罫線・背景色・文字の書式・列の幅を引き継ぎます。表以外の文章も別のシートに残します。プレミアムプランで利用できます。",
+      "Word文書(.docx)の表を、Excelで編集できるセルに変換するツール。表ごとにシートを分け、結合セル・罫線・背景色・文字の書式・列の幅を引き継ぎます。表以外の文章も別のシートに残します。無料で利用できます。",
     lead: "Word文書の表を、結合セルや書式を保ったまま、Excelで編集できるセルに変換します。表ごとにシートを分け、表の前の見出しをシート名にします。",
     howTo: [
       "Word文書(.docx)をドラッグ&ドロップ、またはタップして選択します（1ファイル・上限30MB）。",
@@ -781,7 +781,7 @@ export const toolSeoContent: Record<string, ToolSeoContent> = {
         answer: "ブラウザの中では安全に読み込めないため、対応していません。Wordで「名前を付けて保存」から「Word文書（.docx）」を選んで保存し直してからお使いください。",
       },
       { question: "アップロードしたファイルはサーバーに保存されますか？", answer: NO_UPLOAD_ANSWER },
-      { question: "無料プランでも使えますか？", answer: "このツールはプレミアムプラン専用の機能です。" },
+      { question: "無料プランでも使えますか？", answer: "はい。会員登録なしで、無料でご利用いただけます。" },
     ],
   },
   "excel-to-pdf": {
