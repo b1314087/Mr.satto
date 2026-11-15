@@ -23,6 +23,8 @@ import { EVENT_FILE_ACCEPT } from "@/lib/calendar/event-file";
 /** 現在の本番相当: 課金オン・広告オフ。プレミアム限定ツールなし・Standardなし */
 // 2026-11：スタンダード（月220円）を再開したため、本番相当でも standardOffered は true
 const PRODUCTION: CopyContext = { billing: true, ads: false, premiumOnly: false, standardOffered: true };
+/** 現在の本番相当（2026-11-15〜）: 課金オン・広告オン。プレミアム限定ツールなし・Standardあり */
+const PRODUCTION_ADS_ON: CopyContext = { billing: true, ads: true, premiumOnly: false, standardOffered: true };
 
 function allText(content: ToolSeoContent): string[] {
   return [content.metaTitle, content.metaDescription, content.lead, ...content.howTo, ...content.faq.flatMap((f) => [f.question, f.answer])];
@@ -32,7 +34,7 @@ function categoryText(c: { metaTitle: string; metaDescription: string; intro: st
   return [c.metaTitle, c.metaDescription, c.intro];
 }
 
-test.describe("SEO文: 本番相当（課金オン・広告オフ・プレミアム限定ツールなし・Standardあり）", () => {
+test.describe("SEO文: 広告オフの構成（課金オン・広告オフ・プレミアム限定ツールなし・Standardあり）", () => {
   test("実際の設定と、この回帰テストの前提が一致している（プレミアム限定ツールなし・Standard提供）", () => {
     // 前提が変わったとき（例: ツールを再び有料にした）は、このテストが先に失敗して気づける。
     expect(tools.filter((t) => t.status === "available" && t.requiredPlan === "premium")).toHaveLength(0);
@@ -92,6 +94,53 @@ test.describe("SEO文: 本番相当（課金オン・広告オフ・プレミア
     expect(adapted.faq.map((f) => f.question)).toContain("無料プランではどのように使えますか？");
     // 他の仕様の説明（保存されない・手書きの注意）は残る
     expect(text).toContain("送信・保存されることはありません");
+  });
+});
+
+test.describe("SEO文: 現在の本番相当（課金オン・広告オン・プレミアム限定ツールなし・Standardあり。2026-11-15〜）", () => {
+  test("全ツールのSEO文に、プレミアム専用・英語のプラン名が残らない", () => {
+    const FORBIDDEN = /プレミアムプラン専用|プレミアム専用|プレミアムプランで利用できます|Standard|Free|Premium/;
+    const problems: string[] = [];
+    for (const [id, content] of Object.entries(toolSeoContent)) {
+      const adapted = adaptToolSeoContentWith(content, PRODUCTION_ADS_ON);
+      for (const text of allText(adapted)) if (FORBIDDEN.test(text)) problems.push(`${id}: ${text.slice(0, 80)}`);
+      const json = JSON.stringify(buildFaqPage(adapted.faq));
+      if (FORBIDDEN.test(json)) problems.push(`${id}: FAQPage構造化データ`);
+    }
+    expect(problems, problems.join("\n")).toEqual([]);
+  });
+
+  test("工程9で指摘された16ツール: 無料で使える案内のうえで、ダウンロード時の広告視聴を案内する", () => {
+    const ids = [
+      "pdf-to-excel", "pdf-to-word", "word-to-pdf", "excel-to-pdf",
+      "video-convert", "video-compress", "video-resize", "video-frame-rate", "video-h264", "video-thumbnail", "video-metadata-remove",
+      "estimate-generator", "quote-order-generator", "invoice-generator", "order-generator",
+    ];
+    for (const id of ids) {
+      const adapted = adaptToolSeoContentWith(toolSeoContent[id], PRODUCTION_ADS_ON);
+      expect(adapted.metaDescription, id).toContain("無料で利用できます");
+      expect(adapted.metaDescription, id).not.toContain("プレミアム");
+      const free = adapted.faq.find((f) => f.question === "無料プランでも使えますか？");
+      expect(free?.answer, id).toContain("はい。会員登録なしで、無料でご利用いただけます。");
+      expect(free?.answer, id).toContain("ダウンロード時に、広告の視聴が必要");
+    }
+  });
+
+  test("記入済みPDF→Excel: 無料は広告視聴で1ページずつ、スタンダードは広告なしで1ページずつ、プレミアムは無制限", () => {
+    const adapted = adaptToolSeoContentWith(toolSeoContent["filled-pdf-to-excel"], PRODUCTION_ADS_ON);
+    expect(adapted.metaDescription).toContain("無料プランは広告視聴で1ページずつ");
+    expect(adapted.metaDescription).toContain("スタンダードは広告なしで1ページずつ");
+    expect(adapted.metaDescription).toContain("プレミアムはページ数・回数とも無制限");
+  });
+
+  test("カテゴリ: 英語のプラン名・「プレミアム専用」が残らない", () => {
+    const FORBIDDEN = /プレミアムプラン専用|無料・プレミアム|Standard|Free|Premium/;
+    const problems: string[] = [];
+    for (const [id, content] of Object.entries(categorySeoContent)) {
+      const adapted = adaptCategorySeoContentWith(content, PRODUCTION_ADS_ON);
+      for (const text of categoryText(adapted)) if (FORBIDDEN.test(text)) problems.push(`${id}: ${text.slice(0, 80)}`);
+    }
+    expect(problems, problems.join("\n")).toEqual([]);
   });
 });
 

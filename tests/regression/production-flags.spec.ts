@@ -2,11 +2,11 @@ import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-/** 本番の機能スイッチの値を固定する: AI有料プランのため課金はオン、広告は必ずオフ。 */
-test("本番の機能スイッチ: billing=true, ads=false（広告が誤って有効にならない）", () => {
+/** 本番の機能スイッチの値を固定する: 課金はオン。2026-11-15から広告もオン（無料はダウンロードのたびに広告を見て使う）。 */
+test("本番の機能スイッチ: billing=true, ads=true（どちらかが誤って切り替わらない）", () => {
   const src = readFileSync(path.join(process.cwd(), "src/lib/config/features.ts"), "utf8");
   const block = src.match(/const PRODUCTION_FLAGS[^{]*\{([\s\S]*?)\};/)?.[1] ?? "";
-  expect(block).toMatch(/ads:\s*false/);
+  expect(block).toMatch(/ads:\s*true/);
   expect(block).toMatch(/billing:\s*true/);
 });
 

@@ -85,25 +85,39 @@ test.describe("プランごとのファイルサイズの上限", () => {
 
 // ───────────── 画面 ─────────────
 
-test.describe("料金ページ：月額・年額の切り替えと、ファイルサイズの行", () => {
-  test("月額が既定。年額に切り替えると、2,200円/年・11,000円/年と「2か月分お得」が出る。比較表に年額とファイルサイズの行がある", async ({ page }) => {
+test.describe("料金ページ：年額を月額のすぐ下に表示する・ファイルサイズの行", () => {
+  test("切り替えボタンはなく、各有料プランの月額の下に「年額払いなら 〇円/年」と「2か月分お得」が出る。比較表に年額とファイルサイズの行がある", async ({ page }) => {
     await page.goto("/pricing");
-    const toggle = page.getByTestId("billing-toggle");
-    await expect(toggle.getByRole("link", { name: "月額" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByTestId("billing-toggle")).toHaveCount(0);
     await expect(page.getByTestId("pricing-price-standard")).toContainText("220円/月（税込）");
+    await expect(page.getByTestId("pricing-yearly-standard")).toContainText("年額払いなら 2,200円/年");
+    await expect(page.getByTestId("pricing-yearly-standard")).toContainText("2か月分お得");
+    await expect(page.getByTestId("pricing-yearly-premium")).toContainText("年額払いなら 11,000円/年");
+    await expect(page.getByTestId("pricing-yearly-free")).toHaveCount(0);
     await expect(page.getByTestId("pricing-filesize-standard")).toHaveText(/上限が2倍/);
     await expect(page.getByTestId("pricing-filesize-premium")).toHaveText(/上限が4倍/);
 
-    await toggle.getByRole("link", { name: /年額/ }).click();
-    await expect(page).toHaveURL(/billing=year/);
-    await expect(page.getByTestId("pricing-price-standard")).toContainText("2,200円/年（税込）");
-    await expect(page.getByTestId("pricing-price-premium")).toContainText("11,000円/年（税込）");
-    await expect(page.locator("main")).toContainText("2か月分お得");
+    // 以前の ?billing=year のURLで来ても、同じ表示になる（月額の価格の表示は変わらない）
+    await page.goto("/pricing?billing=year");
+    await expect(page.getByTestId("pricing-price-standard")).toContainText("220円/月（税込）");
+    await expect(page.getByTestId("pricing-yearly-standard")).toContainText("2,200円/年");
 
     const table = page.getByTestId("plan-comparison");
     await expect(table.getByRole("row", { name: /年額（税込）/ })).toContainText("2,200円");
     await expect(table.getByRole("row", { name: /年額（税込）/ })).toContainText("11,000円");
     await expect(table.getByRole("row", { name: /ファイルサイズの上限/ })).toContainText("4倍");
+  });
+
+  test("申し込みのボタン：年額の価格が確認できたプランだけ「〇〇を年額で始める」を月額のボタンの下に出し、押すと年額で決済を作る", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync("src/components/pricing/pricing-action-button.tsx", "utf8");
+    expect(src).toContain("{yearlyAvailable && (");
+    expect(src).toContain('onClick={() => handleClick("year")}');
+    expect(src).toContain("を年額で始める");
+    expect(src).toContain('JSON.stringify(interval === "year" ? { plan, interval } : { plan })');
+    const page = fs.readFileSync("src/app/pricing/page.tsx", "utf8");
+    expect(page).toContain("yearlyAvailable={yearlyReady[id]}");
+    expect(page).toContain('verifyPlanPrice("standard", "year")');
   });
 });
 

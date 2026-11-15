@@ -3,7 +3,7 @@ import Link from "next/link";
 import { siteConfig } from "@/lib/config/site";
 import { featureFlags } from "@/lib/config/features";
 import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
-import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS, PAID_PLAN_YEARLY_PRICE_YEN, YEARLY_MONTHS_CHARGED, type BillingInterval } from "@/lib/plans/types";
+import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS, PAID_PLAN_YEARLY_PRICE_YEN, YEARLY_MONTHS_CHARGED } from "@/lib/plans/types";
 import { getServerPlan } from "@/lib/plans/current-plan";
 import { hasOpenSubscription, resolveEffectivePlan } from "@/lib/plans/effective-plan";
 import { trialOfferState } from "@/lib/plans/grants";
@@ -86,21 +86,20 @@ export default async function PricingPage({
   // 課金システムがオフの間は準備中の案内だけを表示する（src/lib/config/features.ts）
   if (!featureFlags.billing) return <FeatureUnavailable title="料金プラン" />;
 
-  const { checkout, billing } = await searchParams;
-  // 月額・年額の切り替え（?billing=year で年額。既定は月額）
-  const interval: BillingInterval = billing === "year" ? "year" : "month";
+  const { checkout } = await searchParams;
   // プランの判定と、Stripeの価格の確認は、互いの結果を使わないので、同時に行う（順番に待たない）。
-  // 画面の料金とStripeの実際の価格が一致しているときだけ、お申し込みを受け付ける
+  // 画面の料金とStripeの実際の価格が一致しているときだけ、お申し込みを受け付ける。
+  // 月額と年額は同じカードに並べて表示するので、両方の価格をいつも確認する
   const [serverPlan, premiumReady, standardReady, premiumYearlyReady, standardYearlyReady] = await Promise.all([
     getServerPlan(),
     isStripeConfigured() ? verifyPlanPrice("premium").then((check) => check.ok) : Promise.resolve(false),
     isStripeConfigured() ? verifyPlanPrice("standard").then((check) => check.ok) : Promise.resolve(false),
-    isStripeConfigured() && interval === "year" ? verifyPlanPrice("premium", "year").then((check) => check.ok) : Promise.resolve(false),
-    isStripeConfigured() && interval === "year" ? verifyPlanPrice("standard", "year").then((check) => check.ok) : Promise.resolve(false),
+    isStripeConfigured() ? verifyPlanPrice("premium", "year").then((check) => check.ok) : Promise.resolve(false),
+    isStripeConfigured() ? verifyPlanPrice("standard", "year").then((check) => check.ok) : Promise.resolve(false),
   ]);
-  // プランごとに、画面の料金とStripeの価格が一致しているか（一致していないプランは「準備中」）。表示中の周期（月額・年額）で判定する
-  const planReady =
-    interval === "year" ? { standard: standardYearlyReady, premium: premiumYearlyReady } : { standard: standardReady, premium: premiumReady };
+  // プランごとに、画面の料金とStripeの価格が一致しているか（一致していない方は「準備中」・ボタンを出さない）
+  const planReady = { standard: standardReady, premium: premiumReady };
+  const yearlyReady = { standard: standardYearlyReady, premium: premiumYearlyReady };
   // スタンダード ↔ プレミアムの変更は、両プランの価格がStripeと一致し、ポータルでプラン変更を有効にしているときだけ
   // 年額の契約のプラン変更は、まだ受け付けない（ポータルの設定が月額の価格だけのため）。月額の契約だけに変更のボタンを出す
   const subscribedInterval = describePriceId(serverPlan.subscription?.priceId)?.interval ?? "month";
@@ -129,26 +128,6 @@ export default async function PricingPage({
 
       <TrialCard state={trialState} grant={serverPlan.grantActive ? serverPlan.grant : null} />
 
-      {/* 月額・年額の切り替え（年額は10か月分の料金＝2か月分お得） */}
-      <nav aria-label="お支払いの周期" className="mb-4 flex justify-center" data-testid="billing-toggle">
-        <div className="inline-flex rounded-lg border border-ms-border p-1 text-sm">
-          <Link
-            href="/pricing"
-            aria-current={interval === "month" ? "page" : undefined}
-            className={`rounded-md px-4 py-1.5 ${interval === "month" ? "bg-ms-accent text-white" : "text-ms-text hover:bg-ms-hover-tint"}`}
-          >
-            月額
-          </Link>
-          <Link
-            href="/pricing?billing=year"
-            aria-current={interval === "year" ? "page" : undefined}
-            className={`rounded-md px-4 py-1.5 ${interval === "year" ? "bg-ms-accent text-white" : "text-ms-text hover:bg-ms-hover-tint"}`}
-          >
-            年額<span className="ml-1 text-xs">（{12 - YEARLY_MONTHS_CHARGED}か月分お得）</span>
-          </Link>
-        </div>
-      </nav>
-
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {OFFERED_PLAN_IDS.map((id) => {
           const plan = PLAN_DEFINITIONS[id];
@@ -162,17 +141,17 @@ export default async function PricingPage({
                   {plan.name}
                 </h2>
                 <p className="mt-1 text-2xl font-bold text-ms-text" data-testid={`pricing-price-${id}`}>
-                  {id === "free"
-                    ? "0円"
-                    : interval === "year"
-                      ? `${PAID_PLAN_YEARLY_PRICE_YEN[id].toLocaleString()}円`
-                      : `${plan.priceYen.toLocaleString()}円`}
-                  {id !== "free" && (
-                    <span className="ml-1 text-sm font-normal text-ms-muted">{interval === "year" ? "/年（税込）" : "/月（税込）"}</span>
-                  )}
+                  {id === "free" ? "0円" : `${plan.priceYen.toLocaleString()}円`}
+                  {id !== "free" && <span className="ml-1 text-sm font-normal text-ms-muted">/月（税込）</span>}
                 </p>
-                {id !== "free" && interval === "year" && (
-                  <p className="text-xs text-ms-muted">月額{plan.priceYen.toLocaleString()}円の{YEARLY_MONTHS_CHARGED}か月分（{12 - YEARLY_MONTHS_CHARGED}か月分お得）</p>
+                {/* 年額は切り替えずに、月額のすぐ下に並べて表示する（年額は10か月分の料金＝2か月分お得） */}
+                {id !== "free" && (
+                  <p className="mt-1 text-sm text-ms-text" data-testid={`pricing-yearly-${id}`}>
+                    年額払いなら <span className="font-semibold">{PAID_PLAN_YEARLY_PRICE_YEN[id].toLocaleString()}円</span>/年
+                    <span className="mt-1 block w-fit whitespace-nowrap rounded bg-ms-hover-tint px-1.5 py-0.5 text-xs font-medium text-ms-accent dark:text-ms-focus">
+                      {12 - YEARLY_MONTHS_CHARGED}か月分お得
+                    </span>
+                  </p>
                 )}
               </div>
 
@@ -204,7 +183,7 @@ export default async function PricingPage({
                   stripeConfigured={planReady[id]}
                   hasOpenSubscription={hasOpenSubscription(serverPlan.subscription)}
                   planChange={planChangeReady ? planChangeFor(serverPlan.subscription, id) : null}
-                  interval={interval}
+                  yearlyAvailable={yearlyReady[id]}
                 />
               )}
             </div>

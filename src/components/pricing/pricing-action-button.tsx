@@ -23,7 +23,7 @@ export function PricingActionButton({
   stripeConfigured,
   hasOpenSubscription = false,
   planChange = null,
-  interval = "month",
+  yearlyAvailable = false,
 }: {
   plan: Exclude<Plan, "free">;
   isAuthenticated: boolean;
@@ -33,11 +33,12 @@ export function PricingActionButton({
   hasOpenSubscription?: boolean;
   /** 契約中のプランから、このプランへ変更できるとき（ポータルのプラン変更の画面を開く。src/lib/plans/plan-change.ts） */
   planChange?: PlanChange | null;
-  /** 請求の周期（月額・年額） */
-  interval?: "month" | "year";
+  /** 年額でも申し込めるとき（Stripeの年額の価格が画面の金額と一致しているとき）。月額のボタンの下に「年額で始める」を出す */
+  yearlyAvailable?: boolean;
 }) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  // 押したボタン（月額・年額）。移動中は両方とも押せなくする
+  const [loading, setLoading] = useState<"month" | "year" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (currentPlan === plan) {
@@ -106,8 +107,8 @@ export function PricingActionButton({
     );
   }
 
-  async function handleClick() {
-    setLoading(true);
+  async function handleClick(interval: "month" | "year") {
+    setLoading(interval);
     setError(null);
     try {
       const res = await fetch("/api/stripe/checkout", {
@@ -124,27 +125,40 @@ export function PricingActionButton({
       }
       if (!res.ok || !data.url) {
         setError(wrongAddressMessage(res.status, "/pricing", window.location.origin, siteConfig.url) ?? data.error ?? "決済ページの作成に失敗しました。");
-        setLoading(false);
+        setLoading(null);
         return;
       }
       window.location.href = data.url;
     } catch {
       setError("決済ページの作成に失敗しました。しばらくしてから再度お試しください。");
-      setLoading(false);
+      setLoading(null);
     }
   }
 
+  const planName = plan === "standard" ? "スタンダード" : "プレミアム";
   return (
     <div className="mt-auto flex flex-col gap-2">
       <button
         type="button"
-        onClick={handleClick}
-        disabled={loading}
-        aria-busy={loading || undefined}
+        onClick={() => handleClick("month")}
+        disabled={loading !== null}
+        aria-busy={loading === "month" || undefined}
         className="w-full ms-btn ms-btn-primary"
       >
-        {loading ? "移動中..." : `${plan === "standard" ? "スタンダード" : "プレミアム"}を${interval === "year" ? "年額で" : ""}始める`}
+        {loading === "month" ? "移動中..." : `${planName}を始める`}
       </button>
+      {yearlyAvailable && (
+        <button
+          type="button"
+          onClick={() => handleClick("year")}
+          disabled={loading !== null}
+          aria-busy={loading === "year" || undefined}
+          className="w-full ms-btn ms-btn-secondary"
+          data-testid={`pricing-yearly-button-${plan}`}
+        >
+          {loading === "year" ? "移動中..." : `${planName}を年額で始める`}
+        </button>
+      )}
       {error && <p className="text-center text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );

@@ -18,7 +18,7 @@ import { OCR_MAX_PAGES, PDF_TO_EXCEL_MAX_OCR_PAGES, PDF_TO_EXCEL_MAX_PAGES, PDF_
 
 const ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
-const PRODUCTION: CopyContext = { billing: true, ads: false, premiumOnly: false, standardOffered: true };
+const PRODUCTION: CopyContext = { billing: true, ads: true, premiumOnly: false, standardOffered: true };
 
 test.describe("L1: PDFツールのページ数上限の説明", () => {
   test("上限の値は、実際の制限処理が使う定数と同じ（定数は一か所だけで定義）", () => {
