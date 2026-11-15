@@ -49,17 +49,18 @@ type Row = { label: string; free: string; standard: string; premium: string };
 export function PlanComparison({ adGateActive }: { adGateActive: boolean }) {
   const batchMax = Math.max(...Object.values(BATCH_LIMITS));
   const rows: Row[] = [
+    // 「月額」「年額」だけだと、年額を「毎月の金額」と勘違いされやすいので、「〇〇払い」と、金額の後ろの「/月」「/年」で支払い方をはっきり書く
     {
-      label: "月額（税込）",
+      label: "月額払い（税込）",
       free: "0円",
-      standard: `${PLAN_DEFINITIONS.standard.priceYen.toLocaleString("ja-JP")}円`,
-      premium: `${PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円`,
+      standard: `${PLAN_DEFINITIONS.standard.priceYen.toLocaleString("ja-JP")}円/月`,
+      premium: `${PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円/月`,
     },
     {
-      label: "年額（税込）",
+      label: "年額払い（税込）",
       free: NO,
-      standard: `${PAID_PLAN_YEARLY_PRICE_YEN.standard.toLocaleString("ja-JP")}円`,
-      premium: `${PAID_PLAN_YEARLY_PRICE_YEN.premium.toLocaleString("ja-JP")}円`,
+      standard: `${PAID_PLAN_YEARLY_PRICE_YEN.standard.toLocaleString("ja-JP")}円/年`,
+      premium: `${PAID_PLAN_YEARLY_PRICE_YEN.premium.toLocaleString("ja-JP")}円/年`,
     },
     { label: "ログイン", free: "不要", standard: "必要", premium: "必要" },
     { label: "すべてのツール", free: YES, standard: YES, premium: YES },

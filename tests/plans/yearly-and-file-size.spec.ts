@@ -103,8 +103,11 @@ test.describe("料金ページ：年額を月額のすぐ下に表示する・�
     await expect(page.getByTestId("pricing-yearly-standard")).toContainText("2,200円/年");
 
     const table = page.getByTestId("plan-comparison");
-    await expect(table.getByRole("row", { name: /年額（税込）/ })).toContainText("2,200円");
-    await expect(table.getByRole("row", { name: /年額（税込）/ })).toContainText("11,000円");
+    // 比較表は「月額払い」「年額払い」と書き、金額に「/月」「/年」を付ける（年額を毎月の金額と勘違いされないように）
+    await expect(table.getByRole("row", { name: /月額払い（税込）/ })).toContainText("220円/月");
+    await expect(table.getByRole("row", { name: /月額払い（税込）/ })).toContainText("1,100円/月");
+    await expect(table.getByRole("row", { name: /年額払い（税込）/ })).toContainText("2,200円/年");
+    await expect(table.getByRole("row", { name: /年額払い（税込）/ })).toContainText("11,000円/年");
     await expect(table.getByRole("row", { name: /ファイルサイズの上限/ })).toContainText("4倍");
   });
 
