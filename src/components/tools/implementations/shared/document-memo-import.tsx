@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { DocumentFormState } from "@/lib/documents/types";
 import { memoTemplate, parseDocumentMemo, type MemoImportResult } from "@/lib/documents/memo-import";
+import { DocumentMemoAi, documentMemoAiEnabled } from "./document-memo-ai";
 
 const inputClass =
   "rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-neutral-700 dark:bg-neutral-900";
@@ -10,6 +11,7 @@ const inputClass =
 /**
  * 帳票共通: メモを貼り付けて、入力欄をまとめて埋める（AIなし・ブラウザの中だけ）。
  * 書き方は「項目名：中身」を1行ずつ。読めなかった行は、行番号と理由を一覧で出す。
+ * 決まった書き方でない文章（メールの文面など）は、プレミアムの「AIでメモの形に整える」で、この書き方に整えられる（任意・同意したときだけ送る）。
  */
 export function DocumentMemoImport({
   form,
@@ -44,7 +46,7 @@ export function DocumentMemoImport({
         <p className="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
           「項目名：中身」を1行ずつ書いたメモを貼り付けて「メモから入力する」を押すと、各欄に入ります。
           メモに書いた項目だけを書き換えます（明細を書いたときは、明細を書いた内容に置き換えます）。
-          明細は「品名, 数量, 単位, 単価」の順です。メモは外へ送らず、このブラウザの中だけで読み取ります。
+          明細は「品名, 数量, 単位, 単価」の順です。「メモから入力する」は、メモを外へ送らず、このブラウザの中だけで読み取ります。
         </p>
         <textarea
           value={text}
@@ -78,6 +80,16 @@ export function DocumentMemoImport({
           </button>
         </div>
 
+        {documentMemoAiEnabled() && (
+          <DocumentMemoAi
+            docType={form.type}
+            text={text}
+            onMemo={(memo) => {
+              setText(memo);
+              setResult(null);
+            }}
+          />
+        )}
         <div role="status" aria-live="polite" data-testid="memo-import-result" className="text-xs">
           {result && result.applied.length > 0 && (
             <p className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">

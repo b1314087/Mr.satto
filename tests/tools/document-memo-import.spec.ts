@@ -86,15 +86,18 @@ test.describe("メモから入力: 読み取り（計算）", () => {
 });
 
 async function openMemo(page: Page, slug: string) {
-  await page.goto(`/tools/${slug}`);
-  const box = page.getByTestId("memo-import");
-  await box.waitFor({ timeout: 60_000 });
-  // 画面の準備（ハイドレーション）が終わるまで、開いて入力し直す
+  // 画面の準備（ハイドレーション）が終わるまで、開いて入力し直す。
+  // 開発サーバーが並行してページを作り直していて準備が終わらないときは、ページを開き直す（最大で約2分）
   await expect(async () => {
-    if (!(await box.evaluate((d) => (d as HTMLDetailsElement).open))) await box.locator("summary").click();
-    await page.getByTestId("memo-import-text").fill("宛先：x");
-    await expect(page.getByTestId("memo-import-apply")).toBeEnabled({ timeout: 1_500 });
-  }).toPass({ timeout: 20_000 });
+    await page.goto(`/tools/${slug}`);
+    const box = page.getByTestId("memo-import");
+    await box.waitFor({ timeout: 60_000 });
+    await expect(async () => {
+      if (!(await box.evaluate((d) => (d as HTMLDetailsElement).open))) await box.locator("summary").click();
+      await page.getByTestId("memo-import-text").fill("宛先：x");
+      await expect(page.getByTestId("memo-import-apply")).toBeEnabled({ timeout: 1_500 });
+    }).toPass({ timeout: 20_000 });
+  }).toPass({ timeout: 120_000 });
 }
 
 test.describe("メモから入力: 画面", () => {

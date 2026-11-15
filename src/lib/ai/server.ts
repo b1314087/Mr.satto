@@ -11,6 +11,7 @@ import { AI_MODELS } from "./pricing";
 import { IMAGE_OUTPUT_SCHEMA, OUTPUT_SCHEMA } from "./calendar-assist";
 import { FORM_OUTPUT_SCHEMA } from "./form-extract";
 import { PPTX_TEXT_OUTPUT_SCHEMA } from "./pptx-text";
+import { DOC_MEMO_OUTPUT_SCHEMA } from "./document-memo";
 import type { Availability, AssistDeps, Caller } from "./service";
 
 /**
@@ -73,6 +74,7 @@ export function createAssistDeps(periodLimitMicroUsd?: number): AssistDeps | nul
     callModel: ({ tier, instructions, input, maxOutputTokens, mode, images }) => {
       const isPptx = mode === "pptx";
       const isForm = mode === "form";
+      const isDocMemo = mode === "docmemo";
       // 画像つきの入力: カレンダー・PowerPointの画像、PDF→Excelのスキャンしたページ
       const isImage = (mode === "image" || isPptx) && images !== undefined && images.length > 0;
       const hasImages = (isImage || isForm) && images !== undefined && images.length > 0;
@@ -83,8 +85,8 @@ export function createAssistDeps(periodLimitMicroUsd?: number): AssistDeps | nul
         instructions,
         input: aiInput,
         maxOutputTokens,
-        schemaName: isForm ? "form_rows" : isPptx ? "pptx_text_lines" : isImage ? "calendar_image_events" : "calendar_rows",
-        schema: isForm ? FORM_OUTPUT_SCHEMA : isPptx ? PPTX_TEXT_OUTPUT_SCHEMA : isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
+        schemaName: isDocMemo ? "document_memo" : isForm ? "form_rows" : isPptx ? "pptx_text_lines" : isImage ? "calendar_image_events" : "calendar_rows",
+        schema: isDocMemo ? DOC_MEMO_OUTPUT_SCHEMA : isForm ? FORM_OUTPUT_SCHEMA : isPptx ? PPTX_TEXT_OUTPUT_SCHEMA : isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
         timeoutMs: TIMEOUT_MS,
       });
     },

@@ -51,6 +51,15 @@ import {
   parsePptxTextOutput,
   validatePptxTextRequest,
 } from "./pptx-text";
+import {
+  DOC_MEMO_CONSENT_VERSION,
+  DOC_MEMO_INSTRUCTIONS,
+  DOC_MEMO_OUTPUT_SCHEMA,
+  buildDocMemoUserInput,
+  maxOutputTokensForDocMemo,
+  parseDocMemoOutput,
+  validateDocMemoRequest,
+} from "./document-memo";
 import type { Ledger, PeriodSnapshot, ReserveOutcome } from "./ledger";
 import type { OpenAiCallResult } from "./openai-client";
 
@@ -61,6 +70,8 @@ export const FEATURE_FORM_EXTRACT = "form-extract";
 export const FEATURE_TABLE_EXTRACT = "table-extract";
 /** Word→Excelの、表になっていない文章を表にするAI補助（同上） */
 export const FEATURE_WORD_TABLE = "word-table";
+/** 見積書・注文書・請求書作成の、文章をメモの形に整えるAI補助（同上） */
+export const FEATURE_DOCUMENT_MEMO = "document-memo";
 /** PowerPoint白黒反転の、AIによる画像内の文字の読み取り（同上） */
 export const FEATURE_PPTX_TEXT = "pptx-text";
 
@@ -78,7 +89,7 @@ export interface AssistDeps {
     instructions: string;
     input: string;
     maxOutputTokens: number;
-    mode?: "rows" | "image" | "form" | "pptx";
+    mode?: "rows" | "image" | "form" | "pptx" | "docmemo";
     images?: AssistImage[];
   }): Promise<OpenAiCallResult>;
   /** 運用ログ。本文（セルの文字・AIの出力）は渡さない */
@@ -222,9 +233,40 @@ export async function handlePptxText(
   });
 }
 
+/** 見積書・注文書・請求書作成の、貼り付けた文章を「項目名：中身」のメモの形に整える補助。流れは記入済みPDF→Excelと同じ */
+export async function handleDocumentMemo(
+  deps: AssistDeps,
+  caller: Caller,
+  availability: Availability,
+  rawBody: unknown,
+): Promise<ServiceResponse> {
+  const denied = checkAccess(caller, availability, rawBody, DOC_MEMO_CONSENT_VERSION);
+  if (denied) return denied;
+  const validated = validateDocMemoRequest(rawBody);
+  if (!validated.ok) return respond(400, { error: "invalid_request", message: validated.message });
+  const request = validated.value;
+  const input = buildDocMemoUserInput(request);
+  return execute(deps, caller.userId as string, {
+    mode: "docmemo",
+    feature: FEATURE_DOCUMENT_MEMO,
+    requestId: request.requestId,
+    tier: request.model,
+    instructions: DOC_MEMO_INSTRUCTIONS,
+    input,
+    maxOutputTokens: maxOutputTokensForDocMemo(request.text.length),
+    estimatedInputTokens: estimateInputTokens(DOC_MEMO_INSTRUCTIONS + JSON.stringify(DOC_MEMO_OUTPUT_SCHEMA) + input) + 1_000,
+    tooLargeMessage: "一度に送る文章が多すぎます。文章を減らして、もう一度お試しください。",
+    incompleteMessage: "AIの応答が途中で切れたため、結果を使えませんでした。文章を減らして、もう一度お試しください。",
+    parse: (text) => {
+      const parsed = parseDocMemoOutput(text, request);
+      return parsed ? { fields: { fields: parsed.fields, items: parsed.items, notes: parsed.notes }, rejected: parsed.rejected } : null;
+    },
+  });
+}
+
 /** 1回の依頼の中身（文字の読み取り・画像の読み取りで共通の流れに渡す形） */
 interface Plan {
-  mode: "rows" | "image" | "form" | "pptx";
+  mode: "rows" | "image" | "form" | "pptx" | "docmemo";
   /** 利用台帳に残る機能名 */
   feature: string;
   requestId: string;
@@ -342,6 +384,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
       ...(plan.mode === "image" ? { mode: "image" as const, images: plan.images } : {}),
       ...(plan.mode === "pptx" ? { mode: "pptx" as const, images: plan.images } : {}),
       ...(plan.mode === "form" ? { mode: "form" as const, ...(plan.images ? { images: plan.images } : {}) } : {}),
+      ...(plan.mode === "docmemo" ? { mode: "docmemo" as const } : {}),
     });
   } catch {
     // 呼び出しの中で想定外の例外が起きた: 課金されたか分からないので、そのままにする
