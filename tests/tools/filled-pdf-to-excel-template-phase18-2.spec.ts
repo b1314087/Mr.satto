@@ -55,6 +55,11 @@ async function setFieldType(page: Page, badge: string, type: "text" | "checkbox"
 
 async function addField(page: Page, spec: TemplateFieldSpec, type: "text" | "checkbox" = "text") {
   await personBlock(page, spec.personIndex).getByRole("button", { name: "項目を追加" }).click();
+  // PDFの絵は倍率どおりの大きさで出る（大きいと画面より縦に長い）ので、絵の左上が、上に固定されたヘッダーに隠れない位置までスクロールしてから押す
+  await page.locator(CANVAS).evaluate((el) => {
+    el.scrollIntoView({ block: "start" });
+    window.scrollBy(0, -160);
+  });
   await page.locator(CANVAS).click({ position: SAFE_CLICK_POSITION });
 
   const badge = fieldDisplayId(spec.personIndex, spec.fieldIndex);
@@ -151,6 +156,17 @@ test.describe("座標: ズームによる入力枠の位置ずれ修正", () => 
           timeout: 10_000,
         })
         .toBe(Math.round(expectedTop));
+
+      // PDFの絵も倍率どおりの大きさで表示される（2026-11-15：80%より大きい倍率で、絵だけが枠の幅で止まり、入力枠とずれていた）
+      const pageImage = page.getByTestId("template-page-image");
+      await expect
+        .poll(async () => Math.round(await pageImage.evaluate((el) => el.getBoundingClientRect().width)), { timeout: 10_000 })
+        .toBe(Math.round(TEMPLATE_PAGE.width * scale));
+      // 入力枠は、表示中のPDFの絵の上で、同じ位置にある（絵の左上からの距離が倍率どおり）
+      const imgBox = (await pageImage.boundingBox())!;
+      const fieldBox = (await fieldLocator.boundingBox())!;
+      expect(Math.abs(fieldBox.x - imgBox.x - expectedLeft)).toBeLessThanOrEqual(2);
+      expect(Math.abs(fieldBox.y - imgBox.y - expectedTop)).toBeLessThanOrEqual(2);
 
       // 枠が保持するPDF実座標そのもの(X/Y/幅/高さの数値入力)は、ズームでは一切変化しない
       expect(Number(await xInput.inputValue())).toBe(spec.x);

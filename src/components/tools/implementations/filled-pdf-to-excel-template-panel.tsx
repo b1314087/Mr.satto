@@ -611,7 +611,16 @@ export function FilledPdfToExcelTemplatePanel() {
                   onPointerUp={handleFieldPointerUp}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={pageImageUrl} alt={`テンプレート ${currentPageIndex + 1}ページ目`} draggable={false} />
+                  {/* 画像は必ず倍率どおりの大きさで出す（サイト共通の「画像は枠の幅まで」の縮小を効かせない）。
+                      縮小されると、倍率どおりに計算した入力枠の位置とPDFの絵がずれる（80%より大きい倍率で起きていた）。
+                      はみ出した分は、外側の枠でスクロールして見る */}
+                  <img
+                    src={pageImageUrl}
+                    alt={`テンプレート ${currentPageIndex + 1}ページ目`}
+                    draggable={false}
+                    data-testid="template-page-image"
+                    className="block max-w-none"
+                  />
                   {activeViewport &&
                     fieldsOnCurrentPage.map((field) => {
                       const screenRect = pdfRectToScreenRect(
@@ -823,11 +832,11 @@ export function FilledPdfToExcelTemplatePanel() {
 
       {step === "confirm" && (
         <div className="flex flex-col gap-4">
-          <div className="rounded-lg border border-neutral-200 dark:border-neutral-800">
+          <div className="overflow-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
             {pageImageUrl && (
               <div className="relative inline-block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={pageImageUrl} alt="テンプレートの確認" draggable={false} />
+                <img src={pageImageUrl} alt="テンプレートの確認" draggable={false} className="block max-w-none" />
                 {activeViewport &&
                   fieldsOnCurrentPage.map((field) => {
                     const screenRect = pdfRectToScreenRect(

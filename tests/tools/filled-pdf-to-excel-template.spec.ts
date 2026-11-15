@@ -71,6 +71,11 @@ async function addPerson(page: Page) {
 /** 1つの入力枠を作成し、正確な位置・大きさ・ラベル名を数値入力で設定する */
 async function addField(page: Page, spec: TemplateFieldSpec) {
   await personBlock(page, spec.personIndex).getByRole("button", { name: "項目を追加" }).click();
+  // PDFの絵は倍率どおりの大きさで出る（大きいと画面より縦に長い）ので、絵の左上が、上に固定されたヘッダーに隠れない位置までスクロールしてから押す
+  await page.locator(CANVAS).evaluate((el) => {
+    el.scrollIntoView({ block: "start" });
+    window.scrollBy(0, -160);
+  });
   await page.locator(CANVAS).click({ position: SAFE_CLICK_POSITION });
 
   const badge = fieldDisplayId(spec.personIndex, spec.fieldIndex);
