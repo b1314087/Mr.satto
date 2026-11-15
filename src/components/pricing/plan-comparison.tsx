@@ -2,6 +2,7 @@ import { PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { PLAN_LIMITS, type PlanLimitKey } from "@/lib/plans/tool-limits";
 import { BATCH_LIMITS } from "@/lib/batch/batch-config";
 import { featureFlags } from "@/lib/config/features";
+import { PDF_TO_EXCEL_CREDIT_MAX_PAGES } from "@/lib/tools/filled-pdf-to-excel/usage-cookie";
 
 /**
  * 料金ページの下に置く、プランの比較表。
@@ -57,7 +58,6 @@ export function PlanComparison({ adGateActive }: { adGateActive: boolean }) {
     { label: "すべてのツール", free: YES, standard: YES, premium: YES },
     { label: "件数の上限", free: "少なめ", standard: "一部ツールで多め", premium: "最大" },
     { label: "複数ファイルの一括処理", free: NO, standard: NO, premium: `${YES}（最大${batchMax}ファイル）` },
-    { label: "記入済みPDF→Excel", free: "1回1ページ", standard: "1回1ページ", premium: "制限なし" },
     { label: "AIの補助", free: NO, standard: NO, premium: YES },
   ];
   // 広告は、実際に出している（または広告視聴が必要な）間だけ行を出す。出していない間は差がないので書かない
@@ -119,6 +119,13 @@ export function PlanComparison({ adGateActive }: { adGateActive: boolean }) {
                   </tr>
                 );
               })}
+              {/* 記入済みPDF→Excel は、ファイル数とは別に「1回に読み取れるページ数」の制限がある */}
+              <tr className="border-b border-ms-border last:border-0">
+                <th className="px-3 py-1.5 text-left font-normal text-ms-text" scope="row">記入済みPDF→Excel（1回のページ数）</th>
+                <td className={td}>{PDF_TO_EXCEL_CREDIT_MAX_PAGES}ページ</td>
+                <td className={td}>{PDF_TO_EXCEL_CREDIT_MAX_PAGES}ページ</td>
+                <td className={td}>制限なし</td>
+              </tr>
             </tbody>
           </table>
         </div>

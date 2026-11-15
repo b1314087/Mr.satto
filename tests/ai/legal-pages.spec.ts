@@ -75,7 +75,7 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(all).toContain("AIによる読み取り補助を除きます");
   });
 
-  test("料金ページ: プレミアムの内容（AIの補助・PDF→Excelの制限差）と比較表が書かれ、全ツールが標準扱いの間は「プレミアム対象ツール」を書かない", async ({ page }) => {
+  test("料金ページ: プレミアムの内容（AIの補助・比較表）が書かれ、全ツールが標準扱いの間は「プレミアム対象ツール」を書かない", async ({ page }) => {
     await page.goto("/pricing");
     const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
     expect(text).toContain("1,100円/月");
@@ -89,8 +89,10 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     await expect(postal).toContainText("1件");
     await expect(postal).toContainText("10件");
     await expect(postal).toContainText("10,000件");
-    expect(text).toContain("記入済みPDF→Excel：制限なし");
-    expect(text).toContain("記入済みPDF→Excel：1回1ページ");
+    // 記入済みPDF→Excel のページ数の制限は、ツールごとの表の中に書く（カードと上の表には出さない）
+    const filledPages = table.getByRole("row", { name: /記入済みPDF→Excel（1回のページ数）/ });
+    await expect(filledPages).toContainText("1ページ");
+    await expect(filledPages).toContainText("制限なし");
     expect(text).not.toContain("プレミアム対象ツール");
     expect(text).not.toContain("通常ツールを利用可能");
   });

@@ -143,7 +143,6 @@ export default async function PricingPage({
                 </PlanItem>
                 <PlanItem testId={`pricing-limit-${id}`}>{LIMIT_LABEL[id]}</PlanItem>
                 {getAdsLabel(plan.adsRequired, adGateActive) && <PlanItem>{getAdsLabel(plan.adsRequired, adGateActive)}</PlanItem>}
-                <PlanItem>{id === "premium" ? "記入済みPDF→Excel：制限なし" : "記入済みPDF→Excel：1回1ページ"}</PlanItem>
                 {id === "premium" && (
                   <PlanItem testId="pricing-ai-premium">
                     <span className="inline-flex items-center gap-2">AIの補助 <PremiumTag kind="ai" /></span>
