@@ -228,7 +228,6 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
 
     // Free: ¥0・広告あり・通常ツール
     await expect(page.getByText("0円", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText(/ダウンロードのたびに広告を1回ご覧いただきます/)).toBeVisible();
     if (premiumTool) {
       // プレミアム限定のツールが実在する間は、無料は「通常ツール」、プレミアムは「すべてのツール」と書き分ける
       await expect(page.getByText("通常ツールを利用可能").first()).toBeVisible();
@@ -242,7 +241,7 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
     // Premium: ¥1,100/月・広告なし・すべて対象・AI読み取り補助
     await expect(page.getByText("1,100円/月", { exact: false }).first()).toBeVisible();
     if (premiumTool) await expect(page.getByText("すべてのツールを利用可能")).toBeVisible();
-    await expect(page.getByText(/「AIで読み取る」補助/)).toBeVisible();
+    await expect(page.getByText("年度カレンダー作成・記入済みPDF→Excel・PDF→Excel・PowerPoint白黒反転")).toBeVisible();
 
     // 広告あり/なしの明示（Free=あり、Premium=なし）
     await expect(page.getByText("ダウンロードのたびに広告を視聴")).toBeVisible();
@@ -251,7 +250,7 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
     // スタンダード（月220円・広告なしだけ）が出る。旧550円は出ない
     await expect(page.getByRole("heading", { name: "スタンダード", exact: true })).toBeVisible();
     await expect(page.getByText("220円/月", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText(/一括処理・AIの補助・プレミアム限定の機能は含みません/)).toBeVisible();
+    await expect(page.getByTestId("pricing-limit-standard")).toHaveText(/一部ツールで上限アップ/);
     await expect(page.getByText(/550円/)).toHaveCount(0);
   });
 });

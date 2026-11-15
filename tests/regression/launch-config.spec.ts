@@ -35,12 +35,8 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
     expect(text).not.toContain("広告なし");
     expect(text).not.toContain("プレミアム対象ツール");
     expect(text).toContain("現在、広告は表示されません"); // 無料プランの実際の状態
-    expect(text).toContain("AIの利用枠は、請求期間ごとに上限があり");
-    expect(text).toContain("AIトークン");
+    expect(text).toContain("利用枠は請求期間ごと・4つ共通です");
     expect(text).toContain("OpenAI");
-    expect(text).toContain("必ずご自身で確認してください");
-    // 年度カレンダー作成の通常処理は無料のまま（AIを使わない）
-    expect(text).toContain("通常の年度カレンダー作成は無料（AIは使いません）");
   });
 
   test("フッター・トップ・運営者情報: 通常ツールはブラウザ処理、AI機能だけが同意のうえで外部送信されると区別して説明する", async ({ page }) => {

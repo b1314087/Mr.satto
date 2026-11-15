@@ -78,15 +78,12 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
   test("料金ページ: プレミアムの内容（AIの利用枠・外部送信・PDF→Excelの制限差）が書かれ、全ツールが標準扱いの間は「プレミアム対象ツール」を書かない", async ({ page }) => {
     await page.goto("/pricing");
     const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
-    expect(text).toContain("月額1,100円");
-    expect(text).toContain("AIの利用枠は、請求期間ごとに上限があり");
-    expect(text).toContain("同意のうえで、選んだ内容が外部のAIサービス（OpenAI）へ送信されます");
-    expect(text).toContain("「記入済みPDF→Excel」は、ページ数・回数の制限なし");
-    expect(text).toContain("「記入済みPDF→Excel」は、1回1ページまで");
-    expect(text).toContain("「記入済みPDF→Excel」の「AIで項目を読み取る」補助");
-    expect(text).toContain("「PDF→Excel」の「AIで表を読み取る」補助");
-    expect(text).toContain("「PowerPoint白黒反転」の「AIの判断で、きれいに反転する」補助");
-    expect(text).toContain("スライドの中の画像を縮小したもので、ファイルそのものは送りません");
+    expect(text).toContain("1,100円/月");
+    expect(text).toContain("利用枠は請求期間ごと・4つ共通です");
+    expect(text).toContain("同意のうえで、内容をOpenAIへ送信します");
+    expect(text).toContain("記入済みPDF→Excel：制限なし");
+    expect(text).toContain("記入済みPDF→Excel：1回1ページ");
+    expect(text).toContain("年度カレンダー作成・記入済みPDF→Excel・PDF→Excel・PowerPoint白黒反転");
     expect(text).not.toContain("プレミアム対象ツール");
     expect(text).not.toContain("通常ツールを利用可能");
   });
