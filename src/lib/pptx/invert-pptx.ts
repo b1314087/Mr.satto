@@ -7,6 +7,7 @@
  *
  * 元のファイルは変更しない（読み込んだデータのコピーを書き換える）。
  */
+import { MAX_FILE_SIZE_MULTIPLIER } from "@/lib/plans/file-size";
 import { unzipSync, zipSync, strFromU8, strToU8, type Zippable } from "fflate";
 import { emptyColorStats, parseClrMap, parseThemeColors, swapClrMap, convertColorsInXml, DEFAULT_CLR_MAP, type ClrMap, type ColorContext, type ColorStats, type InvertOptions } from "./invert-xml";
 import { resolvePalette, DEFAULT_COLOR_CHOICE, type ColorChoice } from "./palette";
@@ -41,7 +42,8 @@ export interface PptxInvertOptions extends InvertOptions {
 export const DEFAULT_PPTX_INVERT_OPTIONS: PptxInvertOptions = { invertImages: true, brightenDarkText: false, colors: DEFAULT_COLOR_CHOICE };
 
 /** 処理できるファイルの大きさの上限 */
-export const PPTX_MAX_BYTES = 150 * 1024 * 1024;
+/** いちばん大きいプランの上限（無料150MB×4）での安全装置。プランごとの上限は、ファイル選択の欄で確かめる */
+export const PPTX_MAX_BYTES = 150 * MAX_FILE_SIZE_MULTIPLIER * 1024 * 1024;
 /** ZIPを展開したあとの大きさの上限（ZIP爆弾を避ける） */
 export const PPTX_MAX_UNPACKED_BYTES = 800 * 1024 * 1024;
 export const PPTX_MAX_ENTRIES = 20000;

@@ -124,7 +124,7 @@ function usageBody(period: PeriodSnapshot | null) {
 
 const RESERVE_ERRORS: Record<Exclude<ReserveOutcome, "ok">, { status: number; error: string; message: string }> = {
   duplicate: { status: 409, error: "duplicate", message: "同じ依頼がすでに処理されています。画面を更新して、もう一度お試しください。" },
-  quota_exceeded: { status: 429, error: "quota_exceeded", message: "今期のAI利用枠を使い切りました。次の更新日にリセットされます。" },
+  quota_exceeded: { status: 429, error: "quota_exceeded", message: "今期のAI利用枠を使い切りました。リセット日（月額は次の更新日、年額は毎月の契約日）に元に戻ります。" },
   too_many_concurrent: { status: 429, error: "too_many_concurrent", message: "処理中のAI読み取りがあります。終わってから、もう一度お試しください。" },
   rate_limited: { status: 429, error: "rate_limited", message: "短時間に多く実行されました。少し待ってから、もう一度お試しください。" },
   not_premium: { status: 403, error: "not_premium", message: "AIによる読み取り補助は、プレミアムプランの機能です。" },

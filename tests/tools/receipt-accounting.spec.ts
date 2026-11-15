@@ -5,6 +5,7 @@ import { test as plainTest, expect as plainExpect, type Page } from "@playwright
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { test, expect } from "../fixtures/premium-test";
+import { FILE_SIZE_MULTIPLIER } from "@/lib/plans/file-size";
 import { uploadWhenReady } from "../helpers/tool-ready";
 import { readXlsxSheet } from "../helpers/xlsx-inspect";
 import { assertDownloadedFile, clickAndDownload, uploadFixture, waitForFileInputHydrated } from "../helpers/tool-runner";
@@ -362,8 +363,11 @@ test("receipt-accounting: 画像を読み込むとOCRで行が追加され、未
   // 明細が0件のあいだは、仕訳プレビューの表は畳んでおく（読み込みの案内を覆わない）。開くと、空の案内が出る
   await expect(page.getByTestId("receipt-preview-toggle")).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByTestId("receipt-journal-preview")).not.toHaveAttribute("data-sticky", "true");
-  await page.getByTestId("receipt-preview-toggle").click();
-  await expect(page.getByTestId("receipt-export-empty")).toBeVisible();
+  // 画面の準備（ハイドレーション）の前に押すと反応しないことがあるため、開くまで押し直す
+  await expect(async () => {
+    if ((await page.getByTestId("receipt-preview-toggle").getAttribute("aria-expanded")) !== "true") await page.getByTestId("receipt-preview-toggle").click();
+    await expect(page.getByTestId("receipt-export-empty")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
   const img = await makeImageFile(page, "receipt1.png", RECEIPT_TEXT);
   await loadFiles(page, [img], 1);
 
@@ -668,16 +672,18 @@ test("receipt-accounting: 空白のページ・文字情報と画像が混在す
 });
 
 test("receipt-accounting: 大きすぎる画像・PDFは、中身を読まずにサイズのエラーにする。31ファイル以上は追加を30ファイルまでにする", async ({ page }) => {
+  // このテストはプレミアムで動く。ファイルサイズの上限は、プレミアムの倍率（4倍）をかけた値（src/lib/plans/file-size.ts）
+  const X = FILE_SIZE_MULTIPLIER.premium;
   const bigPdf = path.join(dir, "big.pdf");
-  fs.writeFileSync(bigPdf, Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(RECEIPT_LIMITS.maxPdfMB * 1024 * 1024)]));
+  fs.writeFileSync(bigPdf, Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(RECEIPT_LIMITS.maxPdfMB * X * 1024 * 1024)]));
   const bigPng = path.join(dir, "big.png");
-  fs.writeFileSync(bigPng, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(RECEIPT_LIMITS.maxImageMB * 1024 * 1024)]));
+  fs.writeFileSync(bigPng, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(RECEIPT_LIMITS.maxImageMB * X * 1024 * 1024)]));
   await openTool(page);
   await uploadWhenReady(page, [bigPdf, bigPng], page.getByTestId("receipt-job").nth(1), { readyTimeoutMs: 60_000 });
   const errors = page.locator('[data-testid="receipt-job"][data-status="error"]');
   await expect(errors).toHaveCount(2);
-  await expect(errors.filter({ hasText: "big.pdf" })).toContainText(`PDFは1つ${RECEIPT_LIMITS.maxPdfMB}MBまで`);
-  await expect(errors.filter({ hasText: "big.png" })).toContainText(`画像は1つ${RECEIPT_LIMITS.maxImageMB}MBまで`);
+  await expect(errors.filter({ hasText: "big.pdf" })).toContainText(`PDFは1つ${RECEIPT_LIMITS.maxPdfMB * X}MBまで`);
+  await expect(errors.filter({ hasText: "big.png" })).toContainText(`画像は1つ${RECEIPT_LIMITS.maxImageMB * X}MBまで`);
   await expect(page.getByTestId("receipt-row")).toHaveCount(0);
 
   // 31ファイル：先頭の30ファイルだけを受け付け、残りは追加していないと知らせる

@@ -23,6 +23,7 @@ export function PricingActionButton({
   stripeConfigured,
   hasOpenSubscription = false,
   planChange = null,
+  interval = "month",
 }: {
   plan: Exclude<Plan, "free">;
   isAuthenticated: boolean;
@@ -32,6 +33,8 @@ export function PricingActionButton({
   hasOpenSubscription?: boolean;
   /** 契約中のプランから、このプランへ変更できるとき（ポータルのプラン変更の画面を開く。src/lib/plans/plan-change.ts） */
   planChange?: PlanChange | null;
+  /** 請求の周期（月額・年額） */
+  interval?: "month" | "year";
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -110,7 +113,8 @@ export function PricingActionButton({
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        // 月額は従来どおり plan だけを送る。年額のときだけ interval を付ける
+        body: JSON.stringify(interval === "year" ? { plan, interval } : { plan }),
       });
       const data = (await res.json()) as { url?: string; error?: string; code?: string };
       if (data.code === "consent_required") {
@@ -139,7 +143,7 @@ export function PricingActionButton({
         aria-busy={loading || undefined}
         className="w-full ms-btn ms-btn-primary"
       >
-        {loading ? "移動中..." : plan === "standard" ? "スタンダードを始める" : "プレミアムを始める"}
+        {loading ? "移動中..." : `${plan === "standard" ? "スタンダード" : "プレミアム"}を${interval === "year" ? "年額で" : ""}始める`}
       </button>
       {error && <p className="text-center text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>

@@ -1,4 +1,5 @@
 import { unzipSync } from "fflate";
+import { MAX_FILE_SIZE_MULTIPLIER } from "@/lib/plans/file-size";
 
 /**
  * Excel・Wordのファイルの、拡張子と中身（実際の形式）の確認。
@@ -38,8 +39,9 @@ export async function checkOfficeFile(file: File, kind: OfficeKind): Promise<Uin
   if (!okExt.includes(ext)) {
     throw new OfficeFileError(kind === "excel" ? "Excelファイル（.xlsx・.xlsm）を選択してください。" : "Word文書（.docx）を選択してください。");
   }
-  if (file.size > MAX_OFFICE_FILE_MB * 1024 * 1024) {
-    throw new OfficeFileError(`ファイルが大きすぎます（上限${MAX_OFFICE_FILE_MB}MB）。`);
+  // プランごとの上限はファイル選択の欄で確かめる。ここは、いちばん大きいプランの上限での安全装置
+  if (file.size > MAX_OFFICE_FILE_MB * MAX_FILE_SIZE_MULTIPLIER * 1024 * 1024) {
+    throw new OfficeFileError(`ファイルが大きすぎます（上限${MAX_OFFICE_FILE_MB * MAX_FILE_SIZE_MULTIPLIER}MB）。`);
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (hasMagic(bytes, OLE_MAGIC)) {

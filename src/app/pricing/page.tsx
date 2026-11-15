@@ -3,13 +3,13 @@ import Link from "next/link";
 import { siteConfig } from "@/lib/config/site";
 import { featureFlags } from "@/lib/config/features";
 import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
-import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { OFFERED_PLAN_IDS, PLAN_DEFINITIONS, PAID_PLAN_YEARLY_PRICE_YEN, YEARLY_MONTHS_CHARGED, type BillingInterval } from "@/lib/plans/types";
 import { getServerPlan } from "@/lib/plans/current-plan";
 import { hasOpenSubscription, resolveEffectivePlan } from "@/lib/plans/effective-plan";
 import { trialOfferState } from "@/lib/plans/grants";
 import { hasUsedTrial } from "@/lib/plans/grant-store";
 import { TrialCard } from "@/components/pricing/trial-card";
-import { isPlanChangeReady, isStripeConfigured } from "@/lib/stripe/config";
+import { describePriceId, isPlanChangeReady, isStripeConfigured } from "@/lib/stripe/config";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { verifyPlanPrice } from "@/lib/stripe/price-guard-server";
 import { planChangeFor } from "@/lib/plans/plan-change";
@@ -51,6 +51,13 @@ const LIMIT_LABEL: Record<(typeof OFFERED_PLAN_IDS)[number], string> = {
 };
 
 
+/** プランカードの「ファイルサイズの上限」の行（src/lib/plans/file-size.ts の倍率） */
+const FILE_SIZE_LABEL: Record<(typeof OFFERED_PLAN_IDS)[number], string> = {
+  free: "ファイルサイズは各ツールの上限まで",
+  standard: "ファイルサイズの上限が2倍",
+  premium: "ファイルサイズの上限が4倍",
+};
+
 /** プランカードの「広告」の行。広告の仕組みが有効でない間は、実際の状態（広告を見る必要がない）を書く */
 function getAdsLabel(adsRequired: boolean, adGateActive: boolean): string | null {
   // 広告そのものを提供していない間は、「広告なし」を有料プランの特典として書かない（書くと、特典があるように見えてしまう）
@@ -74,23 +81,30 @@ function PlanItem({ children, testId }: { children: React.ReactNode; testId?: st
 export default async function PricingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ checkout?: string }>;
+  searchParams: Promise<{ checkout?: string; billing?: string }>;
 }) {
   // 課金システムがオフの間は準備中の案内だけを表示する（src/lib/config/features.ts）
   if (!featureFlags.billing) return <FeatureUnavailable title="料金プラン" />;
 
-  const { checkout } = await searchParams;
+  const { checkout, billing } = await searchParams;
+  // 月額・年額の切り替え（?billing=year で年額。既定は月額）
+  const interval: BillingInterval = billing === "year" ? "year" : "month";
   // プランの判定と、Stripeの価格の確認は、互いの結果を使わないので、同時に行う（順番に待たない）。
   // 画面の料金とStripeの実際の価格が一致しているときだけ、お申し込みを受け付ける
-  const [serverPlan, premiumReady, standardReady] = await Promise.all([
+  const [serverPlan, premiumReady, standardReady, premiumYearlyReady, standardYearlyReady] = await Promise.all([
     getServerPlan(),
     isStripeConfigured() ? verifyPlanPrice("premium").then((check) => check.ok) : Promise.resolve(false),
     isStripeConfigured() ? verifyPlanPrice("standard").then((check) => check.ok) : Promise.resolve(false),
+    isStripeConfigured() && interval === "year" ? verifyPlanPrice("premium", "year").then((check) => check.ok) : Promise.resolve(false),
+    isStripeConfigured() && interval === "year" ? verifyPlanPrice("standard", "year").then((check) => check.ok) : Promise.resolve(false),
   ]);
-  // プランごとに、画面の料金とStripeの価格が一致しているか（一致していないプランは「準備中」）
-  const planReady = { standard: standardReady, premium: premiumReady };
+  // プランごとに、画面の料金とStripeの価格が一致しているか（一致していないプランは「準備中」）。表示中の周期（月額・年額）で判定する
+  const planReady =
+    interval === "year" ? { standard: standardYearlyReady, premium: premiumYearlyReady } : { standard: standardReady, premium: premiumReady };
   // スタンダード ↔ プレミアムの変更は、両プランの価格がStripeと一致し、ポータルでプラン変更を有効にしているときだけ
-  const planChangeReady = isPlanChangeReady() && standardReady && premiumReady;
+  // 年額の契約のプラン変更は、まだ受け付けない（ポータルの設定が月額の価格だけのため）。月額の契約だけに変更のボタンを出す
+  const subscribedInterval = describePriceId(serverPlan.subscription?.priceId)?.interval ?? "month";
+  const planChangeReady = isPlanChangeReady() && standardReady && premiumReady && subscribedInterval === "month";
   const adGateActive = isRewardedAdGateActive();
   // Stripeの契約でのプラン（無料付与・お試しによるプレミアムとは分ける。付与中の人も、通常どおり申し込める）
   const subscriptionPlan = resolveEffectivePlan(serverPlan.subscription);
@@ -115,6 +129,26 @@ export default async function PricingPage({
 
       <TrialCard state={trialState} grant={serverPlan.grantActive ? serverPlan.grant : null} />
 
+      {/* 月額・年額の切り替え（年額は10か月分の料金＝2か月分お得） */}
+      <nav aria-label="お支払いの周期" className="mb-4 flex justify-center" data-testid="billing-toggle">
+        <div className="inline-flex rounded-lg border border-ms-border p-1 text-sm">
+          <Link
+            href="/pricing"
+            aria-current={interval === "month" ? "page" : undefined}
+            className={`rounded-md px-4 py-1.5 ${interval === "month" ? "bg-ms-accent text-white" : "text-ms-text hover:bg-ms-hover-tint"}`}
+          >
+            月額
+          </Link>
+          <Link
+            href="/pricing?billing=year"
+            aria-current={interval === "year" ? "page" : undefined}
+            className={`rounded-md px-4 py-1.5 ${interval === "year" ? "bg-ms-accent text-white" : "text-ms-text hover:bg-ms-hover-tint"}`}
+          >
+            年額<span className="ml-1 text-xs">（{12 - YEARLY_MONTHS_CHARGED}か月分お得）</span>
+          </Link>
+        </div>
+      </nav>
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {OFFERED_PLAN_IDS.map((id) => {
           const plan = PLAN_DEFINITIONS[id];
@@ -127,12 +161,19 @@ export default async function PricingPage({
                 <h2 className="text-lg font-semibold text-ms-text">
                   {plan.name}
                 </h2>
-                <p className="mt-1 text-2xl font-bold text-ms-text">
-                  {plan.priceYen === 0 ? "0円" : `${plan.priceYen.toLocaleString()}円`}
-                  {plan.priceYen > 0 && (
-                    <span className="ml-1 text-sm font-normal text-ms-muted">/月（税込）</span>
+                <p className="mt-1 text-2xl font-bold text-ms-text" data-testid={`pricing-price-${id}`}>
+                  {id === "free"
+                    ? "0円"
+                    : interval === "year"
+                      ? `${PAID_PLAN_YEARLY_PRICE_YEN[id].toLocaleString()}円`
+                      : `${plan.priceYen.toLocaleString()}円`}
+                  {id !== "free" && (
+                    <span className="ml-1 text-sm font-normal text-ms-muted">{interval === "year" ? "/年（税込）" : "/月（税込）"}</span>
                   )}
                 </p>
+                {id !== "free" && interval === "year" && (
+                  <p className="text-xs text-ms-muted">月額{plan.priceYen.toLocaleString()}円の{YEARLY_MONTHS_CHARGED}か月分（{12 - YEARLY_MONTHS_CHARGED}か月分お得）</p>
+                )}
               </div>
 
               {/* 特典の一覧（✓ 付き）。1行ずつ短く書き、細かい条件は利用規約・各ツールの画面に任せる */}
@@ -142,6 +183,7 @@ export default async function PricingPage({
                   {id === "premium" ? "複数ファイルの一括処理" : "ファイルは1つずつ処理"}
                 </PlanItem>
                 <PlanItem testId={`pricing-limit-${id}`}>{LIMIT_LABEL[id]}</PlanItem>
+                <PlanItem testId={`pricing-filesize-${id}`}>{FILE_SIZE_LABEL[id]}</PlanItem>
                 {getAdsLabel(plan.adsRequired, adGateActive) && <PlanItem>{getAdsLabel(plan.adsRequired, adGateActive)}</PlanItem>}
                 {id === "premium" && (
                   <PlanItem testId="pricing-ai-premium">
@@ -162,6 +204,7 @@ export default async function PricingPage({
                   stripeConfigured={planReady[id]}
                   hasOpenSubscription={hasOpenSubscription(serverPlan.subscription)}
                   planChange={planChangeReady ? planChangeFor(serverPlan.subscription, id) : null}
+                  interval={interval}
                 />
               )}
             </div>
@@ -176,7 +219,7 @@ export default async function PricingPage({
           お支払い・解約について
         </h2>
         <ul className="flex flex-col gap-2 text-sm text-ms-muted">
-          <li>・有料プランは毎月自動で更新されます。</li>
+          <li>・有料プランは毎月自動で更新されます（年額プランは1年ごと）。</li>
           <li>・解約はアカウント画面からいつでもできます（契約期間の終了まで利用可）。</li>
           <li>・法令に定める場合を除き、返金や、日割り計算は行いません。</li>
         </ul>

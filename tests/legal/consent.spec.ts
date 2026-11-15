@@ -92,7 +92,8 @@ test.describe("決済の前の同意の確認（ソースの静的確認）", ()
     const src = read("src/app/api/stripe/checkout/route.ts");
     const gate = src.indexOf("getConsentState(user.id)");
     expect(gate).toBeGreaterThan(-1);
-    expect(gate).toBeLessThan(src.indexOf("verifyPlanPrice(plan)"));
+    expect(src.indexOf("verifyPlanPrice(plan, interval)")).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(src.indexOf("verifyPlanPrice(plan, interval)"));
     expect(gate).toBeLessThan(src.indexOf("checkout.sessions.create"));
     expect(src).toContain("consent_required");
     expect(src).toMatch(/if \(!consent\.ok\)[\s\S]{0,200}status: 503/);

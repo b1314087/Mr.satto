@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getServerPlan } from "@/lib/plans/current-plan";
-import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { PLAN_DEFINITIONS, paidPlanPriceYen } from "@/lib/plans/types";
 import { resolveEffectivePlan } from "@/lib/plans/effective-plan";
 import { GRANT_SOURCE_LABEL, formatGrantEnd, trialOfferState } from "@/lib/plans/grants";
 import { hasUsedTrial } from "@/lib/plans/grant-store";
 import { TrialCard } from "@/components/pricing/trial-card";
 import { signOutAction } from "@/lib/auth/actions";
 import { PortalLinkButton } from "@/components/account/portal-link-button";
-import { isPlanChangeReady, isStripeConfigured, stripeConfig } from "@/lib/stripe/config";
+import { describePriceId, isPlanChangeReady, isStripeConfigured } from "@/lib/stripe/config";
 import { planChangeFor, PLAN_CHANGE_LABEL } from "@/lib/plans/plan-change";
 import { fetchScheduledPlanChange } from "@/lib/stripe/scheduled-change-server";
 import { AccountAiUsage } from "@/components/account/account-ai-usage";
@@ -87,12 +87,13 @@ export default async function AccountPage({
   const userId = serverPlan.userId;
   // 同意の記録・ユーザー名・無料お試しの利用歴は、互いの結果を使わないので、同時に問い合わせる（順番に待たない）
   const subscription = serverPlan.subscription;
-  // 月額は、契約の価格IDが今の価格と一致するときだけ表示する（旧価格などは推測して表示しない）
+  // 料金は、契約の価格IDが今の価格（月額・年額）と一致するときだけ表示する（旧価格などは推測して表示しない）
+  const subscribedPrice = describePriceId(subscription?.priceId);
   const subscribedPriceYen =
-    subscription?.plan && subscription.priceId && subscription.priceId === stripeConfig.priceIds[subscription.plan]
-      ? PLAN_DEFINITIONS[subscription.plan].priceYen
-      : null;
-  const planChangeTargets = isPlanChangeReady()
+    subscribedPrice && subscription?.plan === subscribedPrice.plan ? paidPlanPriceYen(subscribedPrice.plan, subscribedPrice.interval) : null;
+  const subscribedYearly = subscribedPrice?.interval === "year";
+  // 年額の契約のプラン変更は、まだ受け付けない（ポータルの設定が月額の価格だけのため）
+  const planChangeTargets = isPlanChangeReady() && !subscribedYearly
     ? (["premium", "standard"] as const).flatMap((target) => {
         const change = planChangeFor(subscription, target);
         return change ? [{ target, change }] : [];
@@ -210,7 +211,7 @@ export default async function AccountPage({
             </div>
             {subscribedPriceYen !== null && (
               <div>
-                <p className="text-xs text-ms-muted">月額料金</p>
+                <p className="text-xs text-ms-muted">{subscribedYearly ? "年額料金" : "月額料金"}</p>
                 <p className="text-ms-text">{subscribedPriceYen.toLocaleString("ja-JP")}円（税込）</p>
               </div>
             )}

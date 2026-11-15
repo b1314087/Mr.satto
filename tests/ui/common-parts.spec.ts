@@ -79,7 +79,9 @@ test.describe("共通部品のソース", () => {
     const src = read("src/components/common/file-dropzone.tsx");
     for (const p of ["accept?: string", "multiple?: boolean", "maxSizeMB?: number", "label?: string", "hint?: string", "onFilesSelected", "onError?"])
       expect(src).toContain(p);
-    expect(src).toContain("maxSizeMB = 50");
+    // 既定は50MB（無料の値）。プランの倍率（src/lib/plans/file-size.ts）をかけた値で検査する
+    expect(src).toContain("maxSizeMB: baseMaxSizeMB = 50");
+    expect(src).toContain("scaleMaxSizeMB(baseMaxSizeMB, plan)");
     expect(src).toContain("matchesAccept");
     expect(src).toContain("このファイル形式には対応していません");
     expect(src).toContain("ファイルサイズが大きすぎます");

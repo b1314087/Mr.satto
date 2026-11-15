@@ -1,4 +1,5 @@
-import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { PAID_PLAN_YEARLY_PRICE_YEN, PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { FILE_SIZE_MULTIPLIER } from "@/lib/plans/file-size";
 import { PLAN_LIMITS, type PlanLimitKey } from "@/lib/plans/tool-limits";
 import { BATCH_LIMITS } from "@/lib/batch/batch-config";
 import { featureFlags } from "@/lib/config/features";
@@ -54,15 +55,22 @@ export function PlanComparison({ adGateActive }: { adGateActive: boolean }) {
       standard: `${PLAN_DEFINITIONS.standard.priceYen.toLocaleString("ja-JP")}円`,
       premium: `${PLAN_DEFINITIONS.premium.priceYen.toLocaleString("ja-JP")}円`,
     },
+    {
+      label: "年額（税込）",
+      free: NO,
+      standard: `${PAID_PLAN_YEARLY_PRICE_YEN.standard.toLocaleString("ja-JP")}円`,
+      premium: `${PAID_PLAN_YEARLY_PRICE_YEN.premium.toLocaleString("ja-JP")}円`,
+    },
     { label: "ログイン", free: "不要", standard: "必要", premium: "必要" },
     { label: "すべてのツール", free: YES, standard: YES, premium: YES },
     { label: "件数の上限", free: "少なめ", standard: "一部ツールで多め", premium: "最大" },
+    { label: "ファイルサイズの上限", free: "各ツールの上限", standard: `${FILE_SIZE_MULTIPLIER.standard}倍`, premium: `${FILE_SIZE_MULTIPLIER.premium}倍` },
     { label: "複数ファイルの一括処理", free: NO, standard: NO, premium: `${YES}（最大${batchMax}ファイル）` },
     { label: "AIの補助", free: NO, standard: NO, premium: YES },
   ];
   // 広告は、実際に出している（または広告視聴が必要な）間だけ行を出す。出していない間は差がないので書かない
   if (adGateActive || featureFlags.ads) {
-    rows.splice(3, 0, { label: "広告", free: adGateActive ? "ダウンロードごとに視聴" : "あり", standard: "なし", premium: "なし" });
+    rows.splice(4, 0, { label: "広告", free: adGateActive ? "ダウンロードごとに視聴" : "あり", standard: "なし", premium: "なし" });
   }
 
   const th = "px-3 py-2 text-center font-semibold text-ms-text";

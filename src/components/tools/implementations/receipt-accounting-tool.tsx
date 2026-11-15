@@ -40,6 +40,8 @@ import { ReceiptReadError, readReceiptFile, type ReadDocument } from "@/lib/proc
 import { PreviewFullscreenFrame } from "@/components/common/preview-fullscreen";
 import { StepHeading } from "@/components/ui/step-heading";
 import { PlanLimitHint, usePlanLimit } from "@/components/common/plan-limit";
+import { useCurrentPlan } from "@/lib/plans/plan-context";
+import { fileSizeMultiplier } from "@/lib/plans/file-size";
 
 /**
  * 領収書・レシートから会計CSV作成（工程8。新工程1で、freee会計向けに作り直した）。
@@ -199,6 +201,8 @@ export function ReceiptAccountingTool() {
   const csvExport = useCsvExport();
   const [docs, setDocs] = useState<DocRow[]>([]);
   const docLimit = usePlanLimit("receipt-accounting-csv");
+  // プランごとのファイルサイズの倍率（無料1・スタンダード2・プレミアム4）
+  const sizeMultiplier = fileSizeMultiplier(useCurrentPlan());
   // 料金プランの上限（画面に並べて読み取る領収書の数）
   const maxDocuments = docLimit.limit;
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -366,7 +370,7 @@ export function ReceiptAccountingTool() {
         try {
           const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
           kind = detectReceiptFileKind(head);
-          problem = checkReceiptFile(kind, file.size);
+          problem = checkReceiptFile(kind, file.size, sizeMultiplier);
         } catch {
           problem = "ファイルを読み込めませんでした。";
         }
@@ -384,7 +388,7 @@ export function ReceiptAccountingTool() {
       }
       void runQueue();
     },
-    [nextId, runQueue],
+    [nextId, runQueue, sizeMultiplier],
   );
 
 

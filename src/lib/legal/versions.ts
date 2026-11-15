@@ -10,8 +10,9 @@
  *   （すでに契約中の方の利用は止まらない）。
  */
 export const LEGAL_VERSIONS = {
-  terms: "2026-11-14",
-  privacy: "2026-11-14",
+  // 2026-11-15：AIの補助の追加（Word→Excel・見積書等のメモ）、年額プランの追加
+  terms: "2026-11-15",
+  privacy: "2026-11-15",
 } as const;
 
 export type LegalDocument = keyof typeof LEGAL_VERSIONS;

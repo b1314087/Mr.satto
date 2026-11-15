@@ -1,5 +1,6 @@
 import { canUseTool } from "@/lib/plans/access";
 import type { Plan } from "@/lib/plans/types";
+import { scaleMaxSizeMB } from "@/lib/plans/file-size";
 import type { HandoffFileInfo, HandoffFileKind, HandoffReceiveSpec, HandoffSendSpec, HandoffTarget } from "./types";
 
 /**
@@ -41,10 +42,14 @@ function planAllows(target: HandoffTarget, plan: Plan | null): boolean {
   return canUseTool(plan, target.requiredPlan).allowed;
 }
 
-/** 送り先が、このファイルの組をそのまま受け取れるか */
-export function canReceiveFiles(receive: HandoffReceiveSpec, files: readonly HandoffFileInfo[]): boolean {
+/**
+ * 送り先が、このファイルの組をそのまま受け取れるか。
+ * サイズの上限は、ファイル選択の欄と同じく、プランの倍率をかけた値（無料1倍・スタンダード2倍・プレミアム4倍。src/lib/plans/file-size.ts）。
+ */
+export function canReceiveFiles(receive: HandoffReceiveSpec, files: readonly HandoffFileInfo[], plan: Plan | null = null): boolean {
   if (files.length === 0 || files.length > receive.maxFiles) return false;
-  return files.every((f) => f.size > 0 && f.size <= receive.maxFileSizeMB * MB && kindAccepted(receive, f.kind));
+  const maxBytes = scaleMaxSizeMB(receive.maxFileSizeMB, plan) * MB;
+  return files.every((f) => f.size > 0 && f.size <= maxBytes && kindAccepted(receive, f.kind));
 }
 
 /** 実際のファイルをもとに、受け渡し先の候補を返す（設定の順） */
@@ -55,7 +60,7 @@ export function findHandoffTargets(
   plan: Plan | null
 ): HandoffTarget[] {
   if (!source.send) return [];
-  return targets.filter((t) => !isSelf(source, t) && planAllows(t, plan) && canReceiveFiles(t.receive, files));
+  return targets.filter((t) => !isSelf(source, t) && planAllows(t, plan) && canReceiveFiles(t.receive, files, plan));
 }
 
 /**

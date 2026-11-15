@@ -37,6 +37,28 @@ export const STANDARD_PRICE_YEN = 220;
 /** 有料プランの月額（税込・円） */
 export const PAID_PLAN_PRICE_YEN: Record<PaidPlan, number> = { standard: STANDARD_PRICE_YEN, premium: PREMIUM_PRICE_YEN };
 
+/** 請求の周期（2026-11-15 から年額も受け付ける） */
+export type BillingInterval = "month" | "year";
+
+/** 年額で「何か月分の料金」になるか（12か月のうち2か月分お得） */
+export const YEARLY_MONTHS_CHARGED = 10;
+
+/** 有料プランの年額（税込・円）。月額の10か月分（スタンダード2,200円・プレミアム11,000円）。表示とStripeの価格の照合の両方がこの値を使う */
+export const PAID_PLAN_YEARLY_PRICE_YEN: Record<PaidPlan, number> = {
+  standard: STANDARD_PRICE_YEN * YEARLY_MONTHS_CHARGED,
+  premium: PREMIUM_PRICE_YEN * YEARLY_MONTHS_CHARGED,
+};
+
+/** プランと周期ごとの料金（税込・円） */
+export function paidPlanPriceYen(plan: PaidPlan, interval: BillingInterval): number {
+  return interval === "year" ? PAID_PLAN_YEARLY_PRICE_YEN[plan] : PAID_PLAN_PRICE_YEN[plan];
+}
+
+/** 請求の周期の値として正しいか */
+export function isBillingInterval(value: unknown): value is BillingInterval {
+  return value === "month" || value === "year";
+}
+
 /**
  * ツールの区分の表示名（ツールのカードのバッジ）。旧プラン名の「スタンダード」とは別の、ツールの区分の名前。
  * requiredPlan が "standard" のツールは、無料プランで使える（以前の表示「通常」は、何が通常なのか伝わらなかったため変更）。

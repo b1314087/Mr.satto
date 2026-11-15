@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { siteConfig } from "@/lib/config/site";
-import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { PLAN_DEFINITIONS, PAID_PLAN_YEARLY_PRICE_YEN } from "@/lib/plans/types";
 import { featureFlags } from "@/lib/config/features";
 import { FeatureUnavailable } from "@/components/layout/feature-unavailable";
 
@@ -74,10 +74,10 @@ export default function TokushohoPage() {
         </Row>
         <Row label="販売価格">
           <p>
-            {standard.name}プラン: 月額{standard.priceYen.toLocaleString()}円（税込）
+            {standard.name}プラン: 月額{standard.priceYen.toLocaleString()}円（税込）／年額{PAID_PLAN_YEARLY_PRICE_YEN.standard.toLocaleString()}円（税込）
           </p>
           <p>
-            {premium.name}プラン: 月額{premium.priceYen.toLocaleString()}円（税込）
+            {premium.name}プラン: 月額{premium.priceYen.toLocaleString()}円（税込）／年額{PAID_PLAN_YEARLY_PRICE_YEN.premium.toLocaleString()}円（税込）
           </p>
           <p className="mt-1">
             無料プランは0円です。{premium.name}プランには、年度カレンダー作成の「AIで読み取る」補助と、記入済みPDF→Excelの「AIで項目を読み取る」補助、PDF→Excelの「AIで表を読み取る」補助、PowerPoint白黒反転の「AIの判断で、きれいに反転する」補助、Word→Excelの「AIで表にする」補助、見積書・注文書・請求書作成の「AIでメモの形に整える」補助が含まれます（AIトークン単位の利用枠を6つの補助で共通に使い、追加の料金はかかりません）。AIの補助は、実行のたびに送信内容を確認し、同意したときだけ、選んだ内容（PowerPoint白黒反転では、スライドの中の画像を縮小したもの。PowerPointファイルそのものは送りません。Word→Excelでは、表以外の文章だけ。見積書・注文書・請求書作成では、貼り付けた文章だけ）を外部のAIサービス（OpenAI）へ送信して処理します。各プランの内容は
@@ -98,13 +98,13 @@ export default function TokushohoPage() {
           カード情報は、{siteConfig.name}では保存しません。
         </Row>
         <Row label="お支払い時期">
-          お申し込みの完了時に初回分を、以降は毎月の更新日に、自動でご請求します。
+          お申し込みの完了時に初回分を、以降は毎月の更新日（年額プランは毎年の更新日）に、自動でご請求します。
         </Row>
         <Row label="サービスの提供時期">
           お支払い手続きの完了後、すぐにご利用いただけます（契約状況の反映に数秒ほどかかる場合があります）。
         </Row>
         <Row label="契約期間・更新">
-          契約期間は1か月です。解約しない限り、毎月自動で更新されます。
+          契約期間は、月額プランは1か月、年額プランは1年です。解約しない限り、同じ期間で自動で更新されます（月額プランは毎月自動で更新されます）。
         </Row>
         <Row label="解約の方法">
           <p>
@@ -115,7 +115,7 @@ export default function TokushohoPage() {
           </p>
         </Row>
         <Row label="返金・キャンセル">
-          デジタルサービスの性質上、法令に定める場合を除き、お支払い済みの料金の返金は行いません。日割り計算も行いません。
+          デジタルサービスの性質上、法令に定める場合を除き、お支払い済みの料金の返金は行いません。日割り計算も行いません（年額プランを途中で解約した場合も、残りの期間分の返金は行いません。契約期間の終了まではご利用いただけます）。
         </Row>
         <Row label="お支払いが確認できない場合">
           お支払いの確認が取れない間は、有料プランとしては扱われず、無料プランと同じ扱いになります。

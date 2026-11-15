@@ -33,18 +33,19 @@ export function detectReceiptFileKind(head: Uint8Array): ReceiptFileKind | null 
 }
 
 /** ファイルの種類ごとのサイズ上限（バイト） */
-export function maxBytesFor(kind: ReceiptFileKind): number {
-  return (kind === "pdf" ? RECEIPT_LIMITS.maxPdfMB : RECEIPT_LIMITS.maxImageMB) * 1024 * 1024;
+export function maxBytesFor(kind: ReceiptFileKind, multiplier = 1): number {
+  return (kind === "pdf" ? RECEIPT_LIMITS.maxPdfMB : RECEIPT_LIMITS.maxImageMB) * multiplier * 1024 * 1024;
 }
 
 /** 種類とサイズの確認結果。問題がなければ null、問題があれば利用者に見せる理由（ファイル名や内容は含めない） */
-export function checkReceiptFile(kind: ReceiptFileKind | null, sizeBytes: number): string | null {
+/** multiplier は、プランのファイルサイズの倍率（src/lib/plans/file-size.ts。無料1・スタンダード2・プレミアム4） */
+export function checkReceiptFile(kind: ReceiptFileKind | null, sizeBytes: number, multiplier = 1): string | null {
   if (sizeBytes === 0) return "空のファイルです。";
   if (kind === null) {
     return "対応していない形式、またはファイルが壊れています。JPG・PNG・WebP・PDFのファイルを選んでください（HEICなどには対応していません）。";
   }
-  if (sizeBytes > maxBytesFor(kind)) {
-    const limit = kind === "pdf" ? RECEIPT_LIMITS.maxPdfMB : RECEIPT_LIMITS.maxImageMB;
+  if (sizeBytes > maxBytesFor(kind, multiplier)) {
+    const limit = (kind === "pdf" ? RECEIPT_LIMITS.maxPdfMB : RECEIPT_LIMITS.maxImageMB) * multiplier;
     return `ファイルサイズが大きすぎます（${kind === "pdf" ? "PDF" : "画像"}は1つ${limit}MBまでです）。`;
   }
   return null;

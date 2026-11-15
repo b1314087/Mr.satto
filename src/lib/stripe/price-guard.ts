@@ -17,17 +17,20 @@ export interface PriceLike {
   recurring?: { interval?: string | null; interval_count?: number | null; usage_type?: string | null } | null;
 }
 
-export type PriceCheck = { ok: true } | { ok: false; reason: "inactive" | "currency" | "amount" | "not_monthly" | "not_found" };
+export type PriceCheck = { ok: true } | { ok: false; reason: "inactive" | "currency" | "amount" | "not_monthly" | "not_yearly" | "not_found" };
 
-/** 円は小数を持たない通貨なので、Stripeの unit_amount はそのまま円の金額になる */
-export function checkPlanPrice(price: PriceLike | null | undefined, expectedYen: number): PriceCheck {
+/**
+ * 円は小数を持たない通貨なので、Stripeの unit_amount はそのまま円の金額になる。
+ * interval は請求の周期（月額 "month"・年額 "year"）。どちらも1回の周期（interval_count が1）だけを受け付ける。
+ */
+export function checkPlanPrice(price: PriceLike | null | undefined, expectedYen: number, interval: "month" | "year" = "month"): PriceCheck {
   if (!price) return { ok: false, reason: "not_found" };
   if (price.active === false) return { ok: false, reason: "inactive" };
   if ((price.currency ?? "").toLowerCase() !== "jpy") return { ok: false, reason: "currency" };
   if (price.unit_amount !== expectedYen) return { ok: false, reason: "amount" };
   const r = price.recurring;
-  if (price.type !== "recurring" || !r || r.interval !== "month" || (r.interval_count ?? 1) !== 1 || (r.usage_type ?? "licensed") !== "licensed") {
-    return { ok: false, reason: "not_monthly" };
+  if (price.type !== "recurring" || !r || r.interval !== interval || (r.interval_count ?? 1) !== 1 || (r.usage_type ?? "licensed") !== "licensed") {
+    return { ok: false, reason: interval === "year" ? "not_yearly" : "not_monthly" };
   }
   return { ok: true };
 }

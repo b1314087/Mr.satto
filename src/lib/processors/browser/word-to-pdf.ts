@@ -1,3 +1,4 @@
+import { MAX_FILE_SIZE_MULTIPLIER } from "@/lib/plans/file-size";
 import type { PDFFont, PDFPage } from "pdf-lib";
 import { BrowserProcessor } from "../types";
 import type { PdfProcessorOutput } from "../types";
@@ -165,7 +166,8 @@ function resolveParagraphGap(spacing: DefaultParagraphSpacing, gridLinePitchPt: 
 
 /** 未検証のDOCXを信頼しないための安全策（■18・■34）。妥当なDOCXは通常これより
  *  はるかに小さいため、この上限自体がZIP爆弾的な入力への一次防御になる。 */
-const MAX_DOCX_SIZE_BYTES = 30 * 1024 * 1024;
+// プランごとの上限（無料30MB・スタンダード60MB・プレミアム120MB）はファイル選択の欄で確かめる。ここは、いちばん大きいプランの上限での安全装置
+const MAX_DOCX_SIZE_BYTES = 30 * MAX_FILE_SIZE_MULTIPLIER * 1024 * 1024;
 /** 1枚あたりの画像デコード後サイズの上限（巨大画像によるメモリ逼迫を防ぐ） */
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_PAGE_COUNT = 300;

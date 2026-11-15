@@ -6,10 +6,13 @@ import { matchesAccept } from "@/lib/utils/file-accept";
 import { useHandoffReceiver } from "@/components/handoff/handoff-provider";
 import { usePageFileDrop } from "@/components/common/page-file-drop";
 import { containsDirectory, FOLDER_DROP_MESSAGE } from "@/lib/drop/page-file-drop";
+import { useCurrentPlan } from "@/lib/plans/plan-context";
+import { rewriteSizeHint, scaleMaxSizeMB } from "@/lib/plans/file-size";
 
 interface FileDropzoneProps {
   accept?: string;
   multiple?: boolean;
+  /** ファイルサイズの上限（MB）。無料プランの値を渡す。スタンダード・プレミアムでは、プランの倍率をかけた上限になる（src/lib/plans/file-size.ts） */
   maxSizeMB?: number;
   label?: string;
   hint?: string;
@@ -58,9 +61,9 @@ interface FileDropzoneProps {
 export function FileDropzone({
   accept,
   multiple = false,
-  maxSizeMB = 50,
+  maxSizeMB: baseMaxSizeMB = 50,
   label = "ファイルをドラッグ&ドロップ",
-  hint = "またはタップして選択",
+  hint: baseHint = "またはタップして選択",
   onFilesSelected,
   onError,
   acceptHandoff = true,
@@ -70,6 +73,10 @@ export function FileDropzone({
   size = "md",
   inputTestId,
 }: FileDropzoneProps) {
+  // プランに応じたファイルサイズの上限（無料1倍・スタンダード2倍・プレミアム4倍）。説明文の「〇MB」も合わせて書き換える
+  const plan = useCurrentPlan();
+  const maxSizeMB = scaleMaxSizeMB(baseMaxSizeMB, plan);
+  const hint = rewriteSizeHint(baseHint, baseMaxSizeMB, maxSizeMB);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
@@ -89,7 +96,7 @@ export function FileDropzone({
       const maxBytes = maxSizeMB * 1024 * 1024;
       const tooLarge = files.find((f) => f.size > maxBytes);
       if (tooLarge) {
-        return `ファイルサイズが大きすぎます（上限 ${maxSizeMB}MB）。ファイルを確認してください。`;
+        return `ファイルサイズが大きすぎます（上限 ${maxSizeMB.toLocaleString("ja-JP")}MB）。ファイルを確認してください。`;
       }
       return null;
     },

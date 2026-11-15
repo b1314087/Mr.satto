@@ -1,8 +1,8 @@
 import "server-only";
 
-import { PAID_PLAN_PRICE_YEN, type PaidPlan } from "@/lib/plans/types";
+import { paidPlanPriceYen, type BillingInterval, type PaidPlan } from "@/lib/plans/types";
 import { getStripeClient } from "./client";
-import { isStripeConfigured, stripeConfig } from "./config";
+import { isStripeConfigured, priceIdFor } from "./config";
 import { checkPlanPrice, type PriceCheck } from "./price-guard";
 
 /**
@@ -15,22 +15,24 @@ const NG_TTL_MS = 30_000;
 
 type VerifyResult = PriceCheck | { ok: false; reason: "unavailable" | "not_configured" };
 
-const cache = new Map<PaidPlan, { priceId: string; at: number; result: PriceCheck | { ok: false; reason: "unavailable" } }>();
+const cache = new Map<string, { priceId: string; at: number; result: PriceCheck | { ok: false; reason: "unavailable" } }>();
 
-export async function verifyPlanPrice(plan: PaidPlan): Promise<VerifyResult> {
-  const priceId = stripeConfig.priceIds[plan];
+/** interval は請求の周期（月額 "month"・年額 "year"。年額は 2026-11-15〜） */
+export async function verifyPlanPrice(plan: PaidPlan, interval: BillingInterval = "month"): Promise<VerifyResult> {
+  const priceId = priceIdFor(plan, interval);
   if (!isStripeConfigured() || !priceId) return { ok: false, reason: "not_configured" };
   const now = Date.now();
-  const hit = cache.get(plan);
+  const key = `${plan}:${interval}`;
+  const hit = cache.get(key);
   if (hit && hit.priceId === priceId && now - hit.at < (hit.result.ok ? OK_TTL_MS : NG_TTL_MS)) return hit.result;
   let result: PriceCheck | { ok: false; reason: "unavailable" };
   try {
     const price = await getStripeClient().prices.retrieve(priceId);
-    result = checkPlanPrice(price, PAID_PLAN_PRICE_YEN[plan]);
+    result = checkPlanPrice(price, paidPlanPriceYen(plan, interval), interval);
   } catch {
     result = { ok: false, reason: "unavailable" };
   }
-  cache.set(plan, { priceId, at: now, result });
+  cache.set(key, { priceId, at: now, result });
   return result;
 }
 

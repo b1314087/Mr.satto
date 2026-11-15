@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { siteConfig } from "@/lib/config/site";
-import { PLAN_DEFINITIONS } from "@/lib/plans/types";
+import { PAID_PLAN_YEARLY_PRICE_YEN, PLAN_DEFINITIONS } from "@/lib/plans/types";
 import { featureFlags } from "@/lib/config/features";
 import { tools } from "@/lib/tools/data";
 import { formatLegalVersion, LEGAL_VERSIONS } from "@/lib/legal/versions";
@@ -154,7 +154,7 @@ export default function TermsPage() {
                 AIの読み取り結果は「提案」です。誤りや推測が含まれることがあり、自動では採用されません。ユーザーが元のファイルと見比べて内容を確認し、必要に応じて修正したうえで、採用するかどうかを決めてください。「AIの判断で、きれいに反転する」の結果も、通常の変換と画面で見比べて、使うかどうかをユーザーが決めてください。採用した予定やExcelの内容、保存したPowerPointファイルの内容については、ユーザーが責任を負うものとします。
               </li>
               <li>
-                AIの利用には、請求期間（Stripeの契約期間）ごとに上限があり、AIトークンという単位で残量を表示します。AIトークンは、本サービス内の利用量を示す単位で、金銭その他と交換することはできません。この利用枠は、第2条の2のすべてのAIの機能で共通です。上限に達した場合は、次の請求期間まで、AIの機能を利用できません。通信の不具合などで処理の結果を確認できなかった場合は、その分の利用枠がすぐには戻らないことがあります。
+                AIの利用には、請求期間（Stripeの契約期間。年額プランでは、契約の開始日から1か月ごとに区切った期間）ごとに上限があり、AIトークンという単位で残量を表示します。AIトークンは、本サービス内の利用量を示す単位で、金銭その他と交換することはできません。この利用枠は、第2条の2のすべてのAIの機能で共通です。上限に達した場合は、次の請求期間まで、AIの機能を利用できません。通信の不具合などで処理の結果を確認できなかった場合は、その分の利用枠がすぐには戻らないことがあります。
               </li>
               <li>
                 AIの機能は、外部サービスの状況により、一時的に利用できない場合があります。利用できない場合も、通常の年度カレンダー作成、通常のPDF→Excel、通常の記入済みPDF→Excel、通常のPowerPoint白黒反転と、Excel・PDF・PowerPointの出力は利用できます。
@@ -198,13 +198,13 @@ export default function TermsPage() {
           {featureFlags.billing ? (
             <Clauses>
               <li>
-                有料プランの料金は、プレミアムプランが月額{premium.priceYen.toLocaleString()}円（税込）です。旧料金でご契約済みの方は、第2条のとおり、移行が完了するまでご契約時の料金で請求されます。
+                有料プランの料金は、プレミアムプランが月額{premium.priceYen.toLocaleString()}円（税込）または年額{PAID_PLAN_YEARLY_PRICE_YEN.premium.toLocaleString()}円（税込）、スタンダードプランが月額{PLAN_DEFINITIONS.standard.priceYen.toLocaleString()}円（税込）または年額{PAID_PLAN_YEARLY_PRICE_YEN.standard.toLocaleString()}円（税込）です。旧料金でご契約済みの方は、第2条のとおり、移行が完了するまでご契約時の料金で請求されます。
               </li>
               <li>
                 お支払いは、決済サービスStripeを通じて行います。運営者は、カード情報を保存しません。
               </li>
               <li>
-                お申し込みの完了時に初回分を、以降は毎月の更新日に、自動でご請求します。
+                お申し込みの完了時に初回分を、以降は毎月の更新日（年額プランは毎年の更新日）に、自動でご請求します。
               </li>
               <li>
                 お支払いの確認が取れない間（お支払いの確認中、未払いなど）は、有料プランとしては扱われず、無料プランと同じ扱いになります。
@@ -219,7 +219,7 @@ export default function TermsPage() {
         <Section title="第5条（契約期間・更新・解約）">
           {featureFlags.billing ? (
             <Clauses>
-              <li>有料プランの契約期間は1か月で、解約しない限り、毎月自動で更新されます。</li>
+              <li>有料プランの契約期間は、月額プランは1か月、年額プランは1年で、解約しない限り、同じ期間で自動で更新されます（月額プランは毎月自動で更新されます）。</li>
               <li>
                 解約は、アカウント画面の「お支払い方法の変更・請求履歴・解約」から、いつでも行えます。
               </li>
@@ -238,7 +238,7 @@ export default function TermsPage() {
         <Section title="第6条（返金）">
           {featureFlags.billing ? (
             <p>
-              デジタルサービスの性質上、法令に定める場合を除き、お支払い済みの料金の返金は行いません。解約・プランの変更による日割りでの返金も行いません（プレミアムプランへの変更時の差額の計算は、第5条のとおりです）。
+              デジタルサービスの性質上、法令に定める場合を除き、お支払い済みの料金の返金は行いません。解約・プランの変更による日割りでの返金も行いません（年額プランを途中で解約した場合も、残りの期間分は返金しません。プレミアムプランへの変更時の差額の計算は、第5条のとおりです）。
             </p>
           ) : (
             <NotProvided reason="現在、お支払いが発生するサービスは提供していないため、本条は定めていません。" />

@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Plan } from "@/lib/plans/types";
+import type { BillingInterval, PaidPlan, Plan } from "@/lib/plans/types";
 import { parseIdList, type PlanMapping } from "./subscription-sync";
 
 /**
@@ -33,6 +33,14 @@ export const stripeConfig = {
     premium: trimmedEnv("STRIPE_PREMIUM_PRICE_ID"),
   } satisfies Record<Exclude<Plan, "free">, string>,
   /**
+   * 年額の価格（price_…、2026-11-15〜）。スタンダード 2,200円/年・プレミアム 11,000円/年。
+   * 未設定の間は、年額のお申し込みを受け付けない（料金ページの年額は「準備中」になる）。
+   */
+  yearlyPriceIds: {
+    standard: trimmedEnv("STRIPE_STANDARD_YEARLY_PRICE_ID"),
+    premium: trimmedEnv("STRIPE_PREMIUM_YEARLY_PRICE_ID"),
+  } satisfies Record<Exclude<Plan, "free">, string>,
+  /**
    * Premiumの判定に使う追加の設定（任意）。Checkoutが使う価格は priceIds.premium の1つだけで、ここは「契約の判定」用。
    *   STRIPE_PREMIUM_PRODUCT_ID        Premium専用のProduct ID。設定すると、その商品の価格はすべてPremiumとして扱う
    *                                    （旧980円と新1,100円を同じ商品の下に置けば、価格を移行してもコード側の変更が要らない）。
@@ -61,12 +69,27 @@ export function isPlanChangeReady(): boolean {
   return isStripeConfigured() && stripeConfig.planChangeEnabled && hasPriceIdFor("standard") && hasPriceIdFor("premium");
 }
 
-/** 契約の価格 → プランの判定に使う対応表 */
+/** プランと周期ごとの、決済に使う価格のID（未設定なら空文字） */
+export function priceIdFor(plan: PaidPlan, interval: BillingInterval = "month"): string {
+  return interval === "year" ? stripeConfig.yearlyPriceIds[plan] : stripeConfig.priceIds[plan];
+}
+
+/** 価格のIDから、プランと周期を求める（料金の表示用。Mr.Sattoの価格でなければ null） */
+export function describePriceId(priceId: string | null | undefined): { plan: PaidPlan; interval: BillingInterval } | null {
+  if (!priceId) return null;
+  for (const plan of ["standard", "premium"] as const) {
+    if (stripeConfig.priceIds[plan] === priceId) return { plan, interval: "month" };
+    if (stripeConfig.yearlyPriceIds[plan] === priceId) return { plan, interval: "year" };
+  }
+  return null;
+}
+
+/** 契約の価格 → プランの判定に使う対応表（年額の価格も含める） */
 export function getPlanMapping(): PlanMapping {
   return {
     premiumProductIds: stripeConfig.premiumProductIds,
-    premiumPriceIds: [stripeConfig.priceIds.premium, ...stripeConfig.premiumLegacyPriceIds].filter((id) => id.length > 0),
-    standardPriceIds: stripeConfig.priceIds.standard ? [stripeConfig.priceIds.standard] : [],
+    premiumPriceIds: [stripeConfig.priceIds.premium, stripeConfig.yearlyPriceIds.premium, ...stripeConfig.premiumLegacyPriceIds].filter((id) => id.length > 0),
+    standardPriceIds: [stripeConfig.priceIds.standard, stripeConfig.yearlyPriceIds.standard].filter((id) => id.length > 0),
   };
 }
 
@@ -81,6 +104,6 @@ export function isStripeWebhookConfigured(): boolean {
 }
 
 /** 指定プランのPrice IDが設定されているか */
-export function hasPriceIdFor(plan: Exclude<Plan, "free">): boolean {
-  return stripeConfig.priceIds[plan].length > 0;
+export function hasPriceIdFor(plan: Exclude<Plan, "free">, interval: BillingInterval = "month"): boolean {
+  return priceIdFor(plan, interval).length > 0;
 }

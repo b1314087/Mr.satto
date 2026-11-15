@@ -26,7 +26,7 @@ export function AccountAiUsage() {
   if (!usage) return null;
   return (
     <div data-testid="account-ai-usage">
-      <p className="mb-1 text-xs text-ms-muted">AIトークン（今の請求期間）</p>
+      <p className="mb-1 text-xs text-ms-muted">AIトークン（今の利用枠の期間。年額プランは1か月ごと）</p>
       <AiUsageMeter usage={usage} />
     </div>
   );

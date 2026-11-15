@@ -7,11 +7,11 @@ import { hasOpenSubscription, isOpenSubscriptionStatus } from "@/lib/plans/effec
 import { runCheckoutFlow } from "@/lib/stripe/checkout-flow";
 import { rejectUntrustedOrigin } from "@/lib/security/request-origin";
 import { getStripeClient } from "@/lib/stripe/client";
-import { isStripeConfigured, hasPriceIdFor, stripeConfig } from "@/lib/stripe/config";
+import { isStripeConfigured, hasPriceIdFor, priceIdFor } from "@/lib/stripe/config";
 import { verifyPlanPrice } from "@/lib/stripe/price-guard-server";
 import { getOrCreateStripeCustomerId } from "@/lib/stripe/customer";
 import { siteConfig } from "@/lib/config/site";
-import type { Plan } from "@/lib/plans/types";
+import { isBillingInterval, type BillingInterval, type Plan } from "@/lib/plans/types";
 import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { getConsentState } from "@/lib/legal/consent-store";
 import { CONSENT_REQUIRED_MESSAGE, CONSENT_UNAVAILABLE_MESSAGE } from "@/lib/legal/consent";
@@ -85,9 +85,16 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!hasPriceIdFor(plan)) {
+  // 請求の周期（省略は月額。2026-11-15 から年額 "year" も受け付ける）
+  const rawInterval = (body as { interval?: unknown })?.interval;
+  if (rawInterval !== undefined && !isBillingInterval(rawInterval)) {
+    return NextResponse.json({ error: "お支払いの周期が正しくありません。" }, { status: 400 });
+  }
+  const interval: BillingInterval = rawInterval ?? "month";
+
+  if (!hasPriceIdFor(plan, interval)) {
     return NextResponse.json(
-      { error: `${plan}プランのPrice IDが設定されていません。管理者に環境変数の設定を確認してください。` },
+      { error: interval === "year" ? "現在、年額でのお申し込みは準備中です。" : `${plan}プランのPrice IDが設定されていません。管理者に環境変数の設定を確認してください。` },
       { status: 503 }
     );
   }
@@ -123,9 +130,9 @@ export async function POST(request: Request) {
   }
 
   // 表示している料金と、Stripeの実際の価格が一致しているときだけ、決済に進める
-  const priceCheck = await verifyPlanPrice(plan);
+  const priceCheck = await verifyPlanPrice(plan, interval);
   if (!priceCheck.ok) {
-    console.error(`[stripe/checkout] ${plan} price check failed:`, priceCheck.reason);
+    console.error(`[stripe/checkout] ${plan} (${interval}) price check failed:`, priceCheck.reason);
     return NextResponse.json(
       { error: "現在、お申し込みの受け付けを準備中です。しばらくしてから、もう一度お試しください。" },
       { status: 503 }
@@ -135,7 +142,7 @@ export async function POST(request: Request) {
   try {
     const customerId = await getOrCreateStripeCustomerId(user.id, user.email);
     const stripe = getStripeClient();
-    const priceId = stripeConfig.priceIds[plan];
+    const priceId = priceIdFor(plan, interval);
 
     // 二重作成の防止（工程39）: Stripe上の最新の契約の確認、開いているCheckoutの再利用、冪等性キーつきの作成
     const result = await runCheckoutFlow(
