@@ -273,7 +273,12 @@ test.describe("ツールカード", () => {
     }
     await expect(main(page).locator('a[href="/tools/csv-to-excel"]').getByText("AI実装", { exact: true })).toHaveCount(0);
     const cloudAi = getListedTools().filter((t) => t.hasAi === "cloud" && t.status === "available").map((t) => t.id).sort();
-    expect(cloudAi).toEqual(["filled-pdf-to-excel", "fiscal-calendar", "pdf-to-excel", "pptx-invert"]);
+    // AIの補助（6つ）が入っているツールすべて。見積書・注文書・請求書作成（メモの形に整える）と Word→Excel（表にする）も含む
+    expect(cloudAi).toEqual(["document-suite", "filled-pdf-to-excel", "fiscal-calendar", "pdf-to-excel", "pptx-invert", "word-to-excel"]);
+    await page.goto("/tools/generator");
+    await expect(main(page).locator('a[href="/tools/document-suite"]').getByText("AI実装", { exact: true })).toHaveCount(1);
+    await page.goto("/tools/csv-excel");
+    await expect(main(page).locator('a[href="/tools/word-to-excel"]').getByText("AI実装", { exact: true })).toHaveCount(1);
   });
 
   test("カテゴリ別一覧: 説明文は見出しの右隣に並ぶ（広い画面）", async ({ page }) => {

@@ -602,6 +602,8 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
+    // 「AIで表にする」補助（プレミアム）：表のないWord文書から、AIが表の形に整える
+    hasAi: "cloud",
     keywords: ["word", "docx", "excel", "xlsx", "表", "変換", "ワード", "エクセル"],
     relatedToolIds: ["excel-to-word", "pdf-to-excel"],
   },
@@ -1188,6 +1190,8 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "premium",
     processor: "browser",
+    // 「AIでメモの形に整える」補助（プレミアム）：メールの文面などから、宛先・明細などを取り出してメモの形に整える
+    hasAi: "cloud",
     keywords: ["見積書", "注文書", "請求書", "発注書", "帳票", "書類作成", "estimate", "invoice", "order", "見積書 注文書 一体"],
     featured: true,
   },
