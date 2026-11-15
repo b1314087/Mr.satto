@@ -27,6 +27,8 @@ export function DocumentMemoImport({
 }) {
   const [text, setText] = useState("");
   const [result, setResult] = useState<MemoImportResult | null>(null);
+  // 最初は開いておき、使わない人は見出しを押して閉じられる
+  const [open, setOpen] = useState(true);
 
   function handleImport() {
     const r = parseDocumentMemo(text, form, { deliveryTextField });
@@ -38,15 +40,29 @@ export function DocumentMemoImport({
   const example = memoTemplate(form.type, { deliveryTextField });
 
   return (
-    <details data-testid="memo-import" className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-      <summary className="cursor-pointer text-sm font-semibold text-neutral-700 dark:text-neutral-200">
-        メモを貼り付けて、まとめて入力する（任意）
+    <details
+      data-testid="memo-import"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      className="group rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
+    >
+      {/* 見出し：押すと開閉する（右の矢印の向きで、開いているか閉じているかがわかる） */}
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2">
+          <span className="text-base font-bold text-neutral-800 dark:text-neutral-100">メモからまとめて入力</span>
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">任意</span>
+        </span>
+        <span className="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400">
+          <span className="group-open:hidden">開く</span>
+          <span className="hidden group-open:inline">閉じる</span>
+          <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 transition-transform group-open:rotate-180" fill="currentColor">
+            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+          </svg>
+        </span>
       </summary>
       <div className="mt-3 flex flex-col gap-3">
         <p className="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-          「項目名：中身」を1行ずつ書いたメモを貼り付けて「メモから入力する」を押すと、各欄に入ります。
-          メモに書いた項目だけを書き換えます（明細を書いたときは、明細を書いた内容に置き換えます）。
-          明細は「品名, 数量, 単位, 単価」の順です。「メモから入力する」は、メモを外へ送らず、このブラウザの中だけで読み取ります。
+          「項目名：中身」を1行ずつ書いたメモを貼り付けると、各欄にまとめて入ります（明細は「品名, 数量, 単位, 単価」の順）。メモは外へ送らず、ブラウザの中だけで読み取ります。
         </p>
         <textarea
           value={text}

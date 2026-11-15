@@ -141,3 +141,26 @@ test.describe("メモから入力: 画面", () => {
     await expect(page.getByTestId("tool-preview")).toContainText("受注後2週間");
   });
 });
+
+test.describe("メモからまとめて入力: 見出しと開閉", () => {
+  test("最初から開いていて、見出し「メモからまとめて入力」を押すと閉じ、もう一度押すと開く。説明は短い", async ({ page }) => {
+    test.setTimeout(150_000);
+    await openMemo(page, "document-suite");
+    const box = page.getByTestId("memo-import");
+    const summary = box.locator("summary");
+    await expect(summary).toContainText("メモからまとめて入力");
+    await expect(summary).toContainText("閉じる");
+    expect(await box.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(true);
+    await expect(box).toContainText("ブラウザの中だけで読み取ります");
+    await expect(box).not.toContainText("明細を書いた内容に置き換えます");
+
+    await summary.click();
+    await expect.poll(() => box.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(false);
+    await expect(page.getByTestId("memo-import-text")).toBeHidden();
+    await expect(summary).toContainText("開く");
+
+    await summary.click();
+    await expect.poll(() => box.evaluate((d) => (d as HTMLDetailsElement).open)).toBe(true);
+    await expect(page.getByTestId("memo-import-text")).toBeVisible();
+  });
+});
