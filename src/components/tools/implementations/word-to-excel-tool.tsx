@@ -12,10 +12,12 @@ import { downloadBlob, stripExtension } from "@/lib/utils/format";
 import { WordToExcelProcessor, readWordDocumentInfo, type WordDocumentInfo, type WordToExcelOutput } from "@/lib/office-convert/word-to-excel";
 import { MAX_OFFICE_FILE_MB } from "@/lib/office-convert/file-check";
 import { ConversionChecks } from "./office-convert-checks";
+import { FilledPdfAiPanel, formAiEnabled } from "./filled-pdf-to-excel/ai-panel";
 
 /**
  * Word→Excel変換。Wordの表を、表ごとにExcelのシートにする（結合・書式・列の幅を引き継ぐ）。
  * 表以外の文章は「本文」のシートに入れる。処理はすべてブラウザの中で行い、ファイルはサーバーへ送らない。
+ * 表になっていない文章は、プレミアムの「AIで表にする」補助で、列に分けた表にもできる（任意。利用者が内容を確認し、同意したときだけ、その文章をAIへ送る）。
  */
 export function WordToExcelTool() {
   const [file, setFile] = useState<File | null>(null);
@@ -148,6 +150,11 @@ export function WordToExcelTool() {
 
       <ProcessingStatus state={status} processingLabel={progress || "変換しています…"} successLabel="Excelファイルができました" />
       {error && <ErrorMessage message={error} />}
+
+      {/* 表になっていない文章を、AIで列に分けて表にする（プレミアム・任意）。表以外の文章があるときだけ出す */}
+      {file && info && (info.paragraphCount > 0 || info.textBoxCount > 0) && formAiEnabled() && (
+        <FilledPdfAiPanel files={[file]} totalPages={null} purpose="word" />
+      )}
 
       {result && (
         <ResultPopup>

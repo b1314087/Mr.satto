@@ -59,6 +59,8 @@ export const FEATURE_CALENDAR_ASSIST = "calendar-import";
 export const FEATURE_FORM_EXTRACT = "form-extract";
 /** PDF→Excelの、AI読み取り補助（同上） */
 export const FEATURE_TABLE_EXTRACT = "table-extract";
+/** Word→Excelの、表になっていない文章を表にするAI補助（同上） */
+export const FEATURE_WORD_TABLE = "word-table";
 /** PowerPoint白黒反転の、AIによる画像内の文字の読み取り（同上） */
 export const FEATURE_PPTX_TEXT = "pptx-text";
 
@@ -171,7 +173,7 @@ export async function handleFormExtract(
   const images = formRequestImages(request);
   return execute(deps, caller.userId as string, {
     mode: "form",
-    feature: request.purpose === "table" ? FEATURE_TABLE_EXTRACT : FEATURE_FORM_EXTRACT,
+    feature: request.purpose === "table" ? FEATURE_TABLE_EXTRACT : request.purpose === "word" ? FEATURE_WORD_TABLE : FEATURE_FORM_EXTRACT,
     requestId: request.requestId,
     tier: request.model,
     instructions,

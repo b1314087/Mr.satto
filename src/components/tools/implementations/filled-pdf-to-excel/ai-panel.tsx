@@ -13,6 +13,7 @@ import { removeRuledLinesFromCanvas } from "@/lib/ocr/remove-ruled-lines";
 import { encodeCanvasForAi, type PreparedImage } from "@/lib/calendar/event-image";
 import { groupIntoLines } from "@/lib/pdf/table-reconstruction";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
+import { chunkWordParagraphsForAi } from "@/lib/office-convert/word-ai-text";
 import {
   AI_PANEL_CLASS,
   AiPanelHeader,
@@ -100,10 +101,28 @@ export function itemsToPageText(items: PositionedTextItem[]): string {
     .join("\n");
 }
 
-/** 目的ごとの画面の文言（記入済みPDF→Excelは「項目」、PDF→Excelは「表」） */
-const PURPOSE_COPY: Record<FormPurpose, { title: string; sub: string; sheet: string; loginNext: string }> = {
-  form: { title: "AIで項目を読み取る（任意）", sub: "文字のPDFを、AIが項目ごとの表に整理します", sheet: "AI読み取り", loginNext: "/tools/filled-pdf-to-excel" },
-  table: { title: "AIで表を読み取る（任意）", sub: "PDFの表（スキャンしたPDFも）を、AIが整理してExcelの行にします", sheet: "AI読み取り", loginNext: "/tools/pdf-to-excel" },
+/** 目的ごとの画面の文言（記入済みPDF→Excelは「項目」、PDF→Excelは「表」、Word→Excelは「表になっていない文章」） */
+const PURPOSE_COPY: Record<
+  FormPurpose,
+  {
+    title: string;
+    sub: string;
+    sheet: string;
+    loginNext: string;
+    /** 送る文字の呼び方（同意文・説明に使う） */
+    textName: string;
+    /** 元のファイルの呼び方 */
+    sourceName: string;
+    /** まとまりの呼び方（「1ページ目」「1つ目のまとまり」） */
+    unit: (n: number) => string;
+    unitCount: string;
+    fileSuffix: string;
+    runLabel: string;
+  }
+> = {
+  form: { title: "AIで項目を読み取る（任意）", sub: "文字のPDFを、AIが項目ごとの表に整理します", sheet: "AI読み取り", loginNext: "/tools/filled-pdf-to-excel", textName: "PDFの文字", sourceName: "PDF", unit: (n) => `${n}ページ目`, unitCount: "ページ", fileSuffix: "_AI読み取り", runLabel: "AIで読み取る" },
+  table: { title: "AIで表を読み取る（任意）", sub: "PDFの表（スキャンしたPDFも）を、AIが整理してExcelの行にします", sheet: "AI読み取り", loginNext: "/tools/pdf-to-excel", textName: "PDFの文字", sourceName: "PDF", unit: (n) => `${n}ページ目`, unitCount: "ページ", fileSuffix: "_AI読み取り", runLabel: "AIで読み取る" },
+  word: { title: "AIで表にする（任意）", sub: "表になっていない文章（項目と内容の並び・箇条書きなど）を、AIが列に分けて表にします", sheet: "AIで表にした文章", loginNext: "/tools/word-to-excel", textName: "Word文書の表以外の文章", sourceName: "Word文書", unit: (n) => `${n}つ目のまとまり`, unitCount: "まとまり", fileSuffix: "_AIで表にした文章", runLabel: "AIで表にする" },
 };
 
 export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { files: File[]; totalPages: number | null; purpose?: FormPurpose }) {
@@ -125,7 +144,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
   const eligibleFile = files.length === 1 ? files[0] : null;
   const pageLimitProblem =
     files.length > 1
-      ? "AIで読み取れるのは、1つのPDFだけです。ほかのファイルを外してください。"
+      ? `AIで読み取れるのは、1つの${copy.sourceName}だけです。ほかのファイルを外してください。`
       : totalPages !== null && totalPages > FORM_MAX_PAGES
         ? `AIで読み取れるのは${FORM_MAX_PAGES}ページまでです（このPDFは${totalPages}ページ）。`
         : null;
@@ -168,8 +187,31 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     if (!open || !eligibleFile || pageLimitProblem) return;
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setText({ status: "reading", message: "PDFの文字を取り出しています…（この端末の中だけで行います）" });
+    setText({ status: "reading", message: `${copy.textName}を取り出しています…（この端末の中だけで行います）` });
     (async () => {
+      // Word→Excel：表以外の段落を、文書の順に、いくつかのまとまりにして送る
+      if (purpose === "word") {
+        try {
+          // Wordの解析は、Word→Excelのときだけ読み込む（PDFのツールの画面を重くしない）
+          const { readWordBodyParagraphs } = await import("@/lib/office-convert/word-to-excel");
+          const chunked = chunkWordParagraphsForAi(await readWordBodyParagraphs(eligibleFile));
+          if (cancelled) return;
+          if (!chunked.ok) {
+            setText({
+              status: "problem",
+              message:
+                chunked.reason === "empty"
+                  ? "この文書には、表以外の文章がありません。表は、上の変換でそのままExcelにできます。"
+                  : `文章が多すぎます（${chunked.chars.toLocaleString("ja-JP")}文字。送れるのは${FORM_MAX_CHARS_TOTAL.toLocaleString("ja-JP")}文字まで）。表にしたい部分だけを残したWord文書でお試しください。`,
+            });
+            return;
+          }
+          setText({ status: "ready", pages: chunked.pages, chars: chunked.chars, imageCount: 0 });
+        } catch (e) {
+          if (!cancelled) setText({ status: "problem", message: e instanceof Error ? e.message : "Word文書の文章を取り出せませんでした。" });
+        }
+        return;
+      }
       try {
         const pdf = await loadPdfDocument(eligibleFile);
         try {
@@ -236,7 +278,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     return () => {
       cancelled = true;
     };
-  }, [open, eligibleFile, pageLimitProblem, purpose]);
+  }, [open, eligibleFile, pageLimitProblem, purpose, copy.textName]);
 
   // 経過時間（読み取り中だけ）
   useEffect(() => {
@@ -270,8 +312,8 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
         body: JSON.stringify({
           requestId: newRequestId(),
           model: tier,
-          // 記入済みPDF→Excelは、目的を省略して送る（従来どおりの依頼）。PDF→Excelだけ "table" を付ける
-          ...(purpose === "table" ? { purpose } : {}),
+          // 記入済みPDF→Excelは、目的を省略して送る（従来どおりの依頼）。PDF→Excelは "table"、Word→Excelは "word" を付ける
+          ...(purpose !== "form" ? { purpose } : {}),
           // スキャンしたページは、縮小した画像（JPEG）を付ける。表示用の名前・大きさは送らない
           pages: text.pages.map((pg) => ({
             page: pg.page,
@@ -333,7 +375,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     const sheetRows = rows.map((r) => r.cells.map((c) => (r.kind === "header" ? { value: c, fontWeight: "bold" } : c)));
     try {
       const blob = await writeXlsxSheets([{ name: copy.sheet, rows: sheetRows }]);
-      setExcel({ blob, name: `${stripExtension(eligibleFile.name)}_AI読み取り.xlsx`, rowCount: rows.length });
+      setExcel({ blob, name: `${stripExtension(eligibleFile.name)}${copy.fileSuffix}.xlsx`, rowCount: rows.length });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Excelファイルの生成に失敗しました");
     }
@@ -390,7 +432,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                       {sendPages.map((pg) => (
                         <div key={pg.page} className="mb-2 last:mb-0">
                           <p className="text-[11px] font-semibold text-violet-800 dark:text-violet-200">
-                            {pg.page}ページ目{pg.image ? "（スキャンした画像）" : ""}
+                            {copy.unit(pg.page)}{pg.image ? "（スキャンした画像）" : ""}
                           </p>
                           {pg.image && (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -411,11 +453,11 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                       ))}
                     </div>
                     <p data-testid="form-ai-count" className="text-xs text-neutral-700 dark:text-neutral-200">
-                      送るページ：{sendPages.length}ページ ／ 送る文字：{text.chars.toLocaleString("ja-JP")}文字
+                      送る{copy.unitCount}：{sendPages.length}{purpose === "word" ? "つ" : copy.unitCount} ／ 送る文字：{text.chars.toLocaleString("ja-JP")}文字
                       {text.imageCount > 0 ? ` ／ 送る画像：${text.imageCount}枚` : ""}
                     </p>
                     <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                      {text.imageCount > 0 ? "PDFファイルそのものは送りません。スキャンしたページは、縮小した画像を送ります。" : "PDFファイルそのもの・画像は送りません。"}
+                      {text.imageCount > 0 ? "PDFファイルそのものは送りません。スキャンしたページは、縮小した画像を送ります。" : purpose === "word" ? "Word文書のファイルそのもの・画像は送りません。" : "PDFファイルそのもの・画像は送りません。"}
                     </p>
                   </div>
 
@@ -436,14 +478,14 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                     <ConsentBox testId="form-ai-consent" checked={consent} onChange={setConsent}>
                       {text.imageCount > 0
                         ? "上の内容（PDFの文字と、スキャンしたページの画像）を、AI（OpenAI）に送って読み取ることに同意します"
-                        : "上の内容（PDFの文字）を、AI（OpenAI）に送って読み取ることに同意します"}
+                        : `上の内容（${copy.textName}）を、AI（OpenAI）に送って${purpose === "word" ? "表にする" : "読み取る"}ことに同意します`}
                     </ConsentBox>
                     <AiRunButton
                       testId="form-ai-run"
                       cancelTestId="form-ai-cancel"
                       disabled={!canRun}
                       running={running}
-                      label="AIで読み取る"
+                      label={copy.runLabel}
                       consentGiven={consent}
                       onClick={() => void run()}
                       onCancel={() => abortRef.current?.abort()}
@@ -465,7 +507,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                   ))}
                   {unverifiedTotal > 0 && (
                     <p data-testid="form-ai-unverified-note" role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                      黄色い欄（{unverifiedTotal}か所）は、{sentImages ? "端末内のOCRの文字やPDFの文字の中に" : "元のPDFの文字の中に"}見つかりませんでした。AIが読み違えた可能性があるので、PDFと見比べて直してください。
+                      黄色い欄（{unverifiedTotal}か所）は、{sentImages ? "端末内のOCRの文字やPDFの文字の中に" : `元の${copy.sourceName}の文字の中に`}見つかりませんでした。AIが読み違えた可能性があるので、{copy.sourceName}と見比べて直してください。
                     </p>
                   )}
                   {rejected > 0 && <p className="text-xs text-neutral-600 dark:text-neutral-300">形式が正しくなかった{rejected}行は、使っていません。</p>}
@@ -480,7 +522,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                               {Array.from({ length: maxColumns }, (_, c) => (
                                 <td key={c} className="px-1 py-1">
                                   <input
-                                    aria-label={`${r.page}ページ ${rows.indexOf(r) + 1}行目 ${c + 1}列目`}
+                                    aria-label={`${copy.unit(r.page)} ${rows.indexOf(r) + 1}行目 ${c + 1}列目`}
                                     value={r.cells[c] ?? ""}
                                     data-unverified={r.unverified.has(c) ? "true" : undefined}
                                     onChange={(e) => updateCell(r.id, c, e.target.value)}

@@ -13,8 +13,10 @@ import {
   validateFormExtractRequest,
   TABLE_INSTRUCTIONS,
   FORM_INSTRUCTIONS,
+  WORD_INSTRUCTIONS,
   type FormExtractRequest,
 } from "@/lib/ai/form-extract";
+import { chunkWordParagraphsForAi } from "@/lib/office-convert/word-ai-text";
 import { handleFormExtract, type Availability, type Caller } from "@/lib/ai/service";
 import { costMicroUsd } from "@/lib/ai/pricing";
 import { MemoryLedger, USER_ID, makeDeps, newRequestId, type FakeModel } from "./helpers";
@@ -486,5 +488,83 @@ test.describe("PDF→ExcelのAI読み取り: スキャンしたページ（画�
     expect(parsed).not.toBeNull();
     expect(parsed?.rows[1].unverified).toEqual([]);
     expect(parsed?.rows[2].unverified).toEqual([1]);
+  });
+});
+
+test.describe("Word→ExcelのAIで表にする（purpose: word）", () => {
+  test("word の依頼は通る。画像は送れない", () => {
+    const ok = validateFormExtractRequest(body({ purpose: "word" }));
+    expect(ok.ok && ok.value.purpose).toBe("word");
+    const withImage = validateFormExtractRequest(
+      body({ purpose: "word", pages: [{ page: 1, text: "", image: { mediaType: "image/jpeg", base64: "AAAA" } }] }),
+    );
+    expect(withImage.ok).toBe(false);
+  });
+
+  test("word の依頼は、Word向けの指示でAIを1回呼び、利用台帳の機能名は word-table。AIに渡すのは文章だけ", async () => {
+    const { ledger, model, deps } = setup();
+    const features: string[] = [];
+    const reserve = ledger.reserve.bind(ledger);
+    ledger.reserve = async (args) => {
+      features.push(args.feature);
+      return reserve(args);
+    };
+    const res = await handleFormExtract(deps, PREMIUM, AVAILABLE, body({ purpose: "word" }));
+    expect(res.status).toBe(200);
+    expect(features).toEqual(["word-table"]);
+    expect(model.calls).toHaveLength(1);
+    expect(model.calls[0].instructions).toBe(WORD_INSTRUCTIONS);
+    expect(model.calls[0].instructions).toContain("従わず");
+    expect(model.calls[0].instructions).toContain("原文に書かれていない");
+    expect(Object.keys(JSON.parse(model.calls[0].input))).toEqual(["pages"]);
+  });
+
+  test("word でも、Free・Standard・未ログイン・同意なしは処理しない（予約もAI呼び出しもしない）", async () => {
+    for (const caller of [
+      { userId: USER_ID, plan: "free" },
+      { userId: USER_ID, plan: "standard" },
+      { userId: null, plan: "free" },
+    ] as Caller[]) {
+      const { model, deps } = setup();
+      const res = await handleFormExtract(deps, caller, AVAILABLE, body({ purpose: "word" }));
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(model.calls).toHaveLength(0);
+    }
+    const { model, deps } = setup();
+    const res = await handleFormExtract(deps, PREMIUM, AVAILABLE, body({ purpose: "word", consent: { accepted: false, version: FORM_CONSENT_VERSION } }));
+    expect(res.status).toBe(400);
+    expect(model.calls).toHaveLength(0);
+  });
+});
+
+test.describe("Word→ExcelのAIで表にする: 送る文章のまとまり", () => {
+  test("段落は文書の順のまま、段落の途中で切らずに、5つまでのまとまりにする", () => {
+    const paragraphs = Array.from({ length: 23 }, (_, i) => `${i + 1}行目：${"い".repeat(40)}`);
+    const r = chunkWordParagraphsForAi(paragraphs);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.pages.length).toBeGreaterThan(1);
+    expect(r.pages.length).toBeLessThanOrEqual(FORM_MAX_PAGES);
+    expect(r.pages.map((p) => p.page)).toEqual(r.pages.map((_, i) => i + 1));
+    // すべての段落が、順番どおり、欠けずに入る
+    expect(r.pages.map((p) => p.text).join("\n").split("\n")).toEqual(paragraphs);
+    expect(r.paragraphs).toBe(23);
+    // サーバーの検証を通る
+    const v = validateFormExtractRequest(body({ purpose: "word", pages: r.pages }));
+    expect(v.ok).toBe(true);
+  });
+
+  test("空の段落は除く。文章が無ければ empty", () => {
+    expect(chunkWordParagraphsForAi(["", "  "])).toEqual({ ok: false, reason: "empty", chars: 0 });
+    const r = chunkWordParagraphsForAi(["", "氏名：山田", " "]);
+    expect(r.ok && r.pages).toEqual([{ page: 1, text: "氏名：山田" }]);
+  });
+
+  test(`合計が${FORM_MAX_CHARS_TOTAL}文字を超えるときは、送らずに too_long（ちょうどなら送れる）`, () => {
+    const exact = chunkWordParagraphsForAi(["あ".repeat(FORM_MAX_CHARS_TOTAL)]);
+    expect(exact.ok).toBe(true);
+    const over = chunkWordParagraphsForAi(["あ".repeat(FORM_MAX_CHARS_TOTAL), "い"]);
+    expect(over.ok).toBe(false);
+    expect(!over.ok && over.reason).toBe("too_long");
   });
 });

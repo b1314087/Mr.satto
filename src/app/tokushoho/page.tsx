@@ -80,7 +80,7 @@ export default function TokushohoPage() {
             {premium.name}プラン: 月額{premium.priceYen.toLocaleString()}円（税込）
           </p>
           <p className="mt-1">
-            無料プランは0円です。{premium.name}プランには、年度カレンダー作成の「AIで読み取る」補助と、記入済みPDF→Excelの「AIで項目を読み取る」補助、PDF→Excelの「AIで表を読み取る」補助、PowerPoint白黒反転の「AIの判断で、きれいに反転する」補助が含まれます（AIトークン単位の利用枠を4つの補助で共通に使い、追加の料金はかかりません）。AIの補助は、実行のたびに送信内容を確認し、同意したときだけ、選んだ内容（PowerPoint白黒反転では、スライドの中の画像を縮小したもの。PowerPointファイルそのものは送りません）を外部のAIサービス（OpenAI）へ送信して処理します。各プランの内容は
+            無料プランは0円です。{premium.name}プランには、年度カレンダー作成の「AIで読み取る」補助と、記入済みPDF→Excelの「AIで項目を読み取る」補助、PDF→Excelの「AIで表を読み取る」補助、PowerPoint白黒反転の「AIの判断で、きれいに反転する」補助、Word→Excelの「AIで表にする」補助が含まれます（AIトークン単位の利用枠を5つの補助で共通に使い、追加の料金はかかりません）。AIの補助は、実行のたびに送信内容を確認し、同意したときだけ、選んだ内容（PowerPoint白黒反転では、スライドの中の画像を縮小したもの。PowerPointファイルそのものは送りません。Word→Excelでは、表以外の文章だけ）を外部のAIサービス（OpenAI）へ送信して処理します。各プランの内容は
             <Link href="/pricing" className={`mx-1 ${LINK_CLASS}`}>
               料金プラン
             </Link>

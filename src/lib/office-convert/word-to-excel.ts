@@ -306,6 +306,28 @@ export async function readWordDocumentInfo(file: File): Promise<WordDocumentInfo
   };
 }
 
+/**
+ * 表以外の文章（段落・テキストボックスの文字）を、文書の順に返す（空の段落は除く）。
+ * Word→Excelの「AIで表にする」補助（プレミアム）で、AIへ送る内容を画面に出すために使う。ファイルはサーバーへ送らない。
+ */
+export async function readWordBodyParagraphs(file: File): Promise<string[]> {
+  const bytes = await checkOfficeFile(file, "word");
+  let doc: ParsedDocument;
+  try {
+    doc = parseDocument(bytes);
+  } catch {
+    throw new Error(`${file.name} の内容を読み取れませんでした。ファイルが壊れている可能性があります。`);
+  }
+  const out: { index: number; text: string }[] = [];
+  doc.body.forEach((b, i) => {
+    if (b.tag !== "p") return;
+    const text = paragraphText(b.para).trim();
+    if (text !== "") out.push({ index: i, text });
+  });
+  for (const t of doc.textBoxes) out.push({ index: t.bodyIndex + 0.5, text: t.text.trim() });
+  return out.sort((a, b) => a.index - b.index).map((x) => x.text);
+}
+
 function imageMime(path: string): XImage["mime"] | null {
   const ext = path.toLowerCase().split(".").pop();
   if (ext === "png") return "image/png";
