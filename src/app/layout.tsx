@@ -32,6 +32,10 @@ export const metadata: Metadata = {
     title: `${siteConfig.name}｜${siteConfig.tagline}`,
     description: siteConfig.description,
   },
+  // AdSenseのサイトの所有権の確認用（<head> に <meta name="google-adsense-account" content="ca-pub-…"> を出す）。
+  // 広告のスクリプトは表示を速くするため後から読み込む（afterInteractive）ので、AdSenseの確認ロボットが元のHTMLで見つけられない。
+  // そのため、元のHTMLに必ず含まれるメタタグで確認する。広告IDが未設定の間は出さない（広告のオン・オフとは関係なく、確認だけに使う）
+  ...(adConfig.adsenseClientId ? { other: { "google-adsense-account": adConfig.adsenseClientId } } : {}),
 };
 
 export const viewport = {
