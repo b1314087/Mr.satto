@@ -75,15 +75,22 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(all).toContain("AIによる読み取り補助を除きます");
   });
 
-  test("料金ページ: プレミアムの内容（AIの利用枠・外部送信・PDF→Excelの制限差）が書かれ、全ツールが標準扱いの間は「プレミアム対象ツール」を書かない", async ({ page }) => {
+  test("料金ページ: プレミアムの内容（AIの補助・PDF→Excelの制限差）と比較表が書かれ、全ツールが標準扱いの間は「プレミアム対象ツール」を書かない", async ({ page }) => {
     await page.goto("/pricing");
     const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
     expect(text).toContain("1,100円/月");
-    expect(text).toContain("利用枠は請求期間ごと・4つ共通です");
-    expect(text).toContain("同意のうえで、内容をOpenAIへ送信します");
+    expect(text).toContain("AIの補助");
+    // 比較表：プランの違いと、ツールごとの件数の上限（PLAN_LIMITS から作る）
+    const table = page.getByTestId("plan-comparison");
+    await expect(table.getByRole("heading", { name: "プランの比較" })).toBeVisible();
+    await expect(table.getByRole("rowheader", { name: "複数ファイルの一括処理" })).toBeVisible();
+    await table.getByText("ツールごとの件数の上限を見る").click();
+    const postal = table.getByRole("row", { name: /郵便番号・住所検索（まとめて）/ });
+    await expect(postal).toContainText("1件");
+    await expect(postal).toContainText("10件");
+    await expect(postal).toContainText("10,000件");
     expect(text).toContain("記入済みPDF→Excel：制限なし");
     expect(text).toContain("記入済みPDF→Excel：1回1ページ");
-    expect(text).toContain("年度カレンダー作成・記入済みPDF→Excel・PDF→Excel・PowerPoint白黒反転");
     expect(text).not.toContain("プレミアム対象ツール");
     expect(text).not.toContain("通常ツールを利用可能");
   });

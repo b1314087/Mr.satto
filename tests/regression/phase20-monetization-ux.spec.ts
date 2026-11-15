@@ -241,7 +241,7 @@ test.describe("Pricing: 表示が実際の料金・条件と一致する", () =>
     // Premium: ¥1,100/月・広告なし・すべて対象・AI読み取り補助
     await expect(page.getByText("1,100円/月", { exact: false }).first()).toBeVisible();
     if (premiumTool) await expect(page.getByText("すべてのツールを利用可能")).toBeVisible();
-    await expect(page.getByText("年度カレンダー作成・記入済みPDF→Excel・PDF→Excel・PowerPoint白黒反転")).toBeVisible();
+    await expect(page.getByTestId("pricing-ai-premium")).toBeVisible();
 
     // 広告あり/なしの明示（Free=あり、Premium=なし）
     await expect(page.getByText("ダウンロードのたびに広告を視聴")).toBeVisible();

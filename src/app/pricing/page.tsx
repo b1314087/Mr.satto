@@ -16,6 +16,7 @@ import { planChangeFor } from "@/lib/plans/plan-change";
 import { AD_EVERY_DOWNLOAD } from "@/lib/plans/temporary-access-cookie";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { PricingActionButton } from "@/components/pricing/pricing-action-button";
+import { PlanComparison } from "@/components/pricing/plan-comparison";
 import { tools } from "@/lib/tools/data";
 import { PremiumTag } from "@/components/ui/premium-badge";
 import type React from "react";
@@ -49,8 +50,6 @@ const LIMIT_LABEL: Record<(typeof OFFERED_PLAN_IDS)[number], string> = {
   premium: "件数の上限が最大",
 };
 
-/** AIの補助があるツール（料金ページでは名前だけを並べる） */
-const AI_ASSIST_TOOLS = ["年度カレンダー作成", "記入済みPDF→Excel", "PDF→Excel", "PowerPoint白黒反転"];
 
 /** プランカードの「広告」の行。広告の仕組みが有効でない間は、実際の状態（広告を見る必要がない）を書く */
 function getAdsLabel(adsRequired: boolean, adGateActive: boolean): string | null {
@@ -145,22 +144,12 @@ export default async function PricingPage({
                 <PlanItem testId={`pricing-limit-${id}`}>{LIMIT_LABEL[id]}</PlanItem>
                 {getAdsLabel(plan.adsRequired, adGateActive) && <PlanItem>{getAdsLabel(plan.adsRequired, adGateActive)}</PlanItem>}
                 <PlanItem>{id === "premium" ? "記入済みPDF→Excel：制限なし" : "記入済みPDF→Excel：1回1ページ"}</PlanItem>
+                {id === "premium" && (
+                  <PlanItem testId="pricing-ai-premium">
+                    <span className="inline-flex items-center gap-2">AIの補助 <PremiumTag kind="ai" /></span>
+                  </PlanItem>
+                )}
               </ul>
-              {id === "premium" && (
-                <div className="flex flex-col gap-1.5 border-t border-ms-border pt-3">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-ms-text">
-                    AIの補助 <PremiumTag kind="ai" />
-                  </p>
-                  <p className="text-sm text-ms-text">{AI_ASSIST_TOOLS.join("・")}</p>
-                  <p data-testid="pricing-ai-note" className="text-xs text-ms-muted">
-                    利用枠は請求期間ごと・4つ共通です。使うときは同意のうえで、内容をOpenAIへ送信します（
-                    <Link href="/privacy" className="text-ms-accent hover:underline dark:text-ms-focus">
-                      詳しく
-                    </Link>
-                    ）。
-                  </p>
-                </div>
-              )}
 
               {id === "free" ? (
                 <span className="mt-auto w-full rounded-lg border border-dashed border-ms-border-strong px-4 py-2 text-center text-sm text-ms-muted">
@@ -180,6 +169,8 @@ export default async function PricingPage({
           );
         })}
       </div>
+
+      <PlanComparison adGateActive={adGateActive} />
 
       <section className="ms-glass mt-10 p-6">
         <h2 className="mb-3 text-base font-semibold text-ms-text">

@@ -29,14 +29,14 @@ test.describe("公開時の構成: 課金オン・広告オフ", () => {
     expect(text).not.toContain("有効になった後"); // 将来の広告の予定を、現行の説明に出さない
   });
 
-  test("料金ページ: 広告を出していない間は「広告なし」を特典にせず、実在しない「プレミアム対象ツール」も書かない。AIの利用枠と外部送信を説明する", async ({ page }) => {
+  test("料金ページ: 広告を出していない間は「広告なし」を特典にせず、実在しない「プレミアム対象ツール」も書かない（比較表にも広告の行を出さない）", async ({ page }) => {
     await page.goto("/pricing");
     const text = (await page.locator("main").innerText()).replace(/\s+/g, " ");
     expect(text).not.toContain("広告なし");
     expect(text).not.toContain("プレミアム対象ツール");
     expect(text).toContain("現在、広告は表示されません"); // 無料プランの実際の状態
-    expect(text).toContain("利用枠は請求期間ごと・4つ共通です");
-    expect(text).toContain("OpenAI");
+    // 広告を出していない間は、比較表にも「広告」の行を出さない
+    await expect(page.getByTestId("plan-comparison").getByRole("rowheader", { name: "広告" })).toHaveCount(0);
   });
 
   test("フッター・トップ・運営者情報: 通常ツールはブラウザ処理、AI機能だけが同意のうえで外部送信されると区別して説明する", async ({ page }) => {
