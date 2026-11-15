@@ -3,6 +3,7 @@ import "server-only";
 import { featureFlags } from "@/lib/config/features";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import { getServerPlan } from "@/lib/plans/current-plan";
+import { paidAccessGranted } from "@/lib/passkey/policy";
 import { resolveAiPlan, resolveEffectivePlan } from "@/lib/plans/effective-plan";
 import { AI_TRIAL_LIMIT_MICRO_USD } from "@/lib/plans/grants";
 import { createRpcLedger, type Ledger } from "./ledger";
@@ -43,6 +44,9 @@ export function getAiAvailability(): Availability {
 export async function getCaller(): Promise<Caller> {
   const ctx = await getServerPlan();
   if (ctx.isDevOverride || ctx.userId === null) return { userId: ctx.userId, plan: resolveAiPlan(ctx.plan, ctx.subscription, Date.now()) };
+  // 有料プランの利用条件（パスキーの本人確認・登録端末・同時利用）を満たさない間は、AIも使えない
+  // （契約を直接見る下の判定より先に止める。契約があっても、条件を満たすまでは無料と同じ）
+  if (!paidAccessGranted(ctx.paidAccess) && ctx.paidAccess !== "not_paid") return { userId: ctx.userId, plan: "free" };
   const now = Date.now();
   // Stripeの契約だけで見たときのプラン（契約の期間が過ぎて更新が確認できなければ、AIは使えない）
   const bySubscription = resolveAiPlan(resolveEffectivePlan(ctx.subscription), ctx.subscription, now);

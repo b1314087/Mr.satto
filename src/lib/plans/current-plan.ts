@@ -8,6 +8,9 @@ import { checkTemporaryAccess } from "./temporary-access-actions";
 import { resolveEffectivePlan, type SubscriptionSnapshot } from "./effective-plan";
 import { applyGrantToPlan, isGrantActive, type PremiumGrant } from "./grants";
 import { fetchOwnGrant } from "./grant-store";
+import { getDevPasskeyUser } from "@/lib/passkey/dev";
+import { resolvePaidAccess } from "@/lib/passkey/server";
+import { paidAccessGranted, type PaidAccessStatus } from "@/lib/passkey/policy";
 
 /**
  * 現在のユーザーのプランを取得する唯一の窓口（Phase 3: サーバー側プラン判定）。
@@ -43,7 +46,15 @@ export { ACTIVE_SUBSCRIPTION_STATUSES, resolveEffectivePlan } from "./effective-
 export type { SubscriptionSnapshot } from "./effective-plan";
 
 export interface ServerPlanContext {
+  /**
+   * 実際に使えるプラン（権限の判定はこれで行う）。
+   * 有料の契約（または無料付与・お試し）があっても、パスキーの本人確認・端末の登録・同時利用の条件を満たさない間は "free"。
+   */
   plan: Plan;
+  /** 契約（と無料付与・お試し）だけで見たプラン。表示や二重申し込みの判定に使う（権限の判定には使わない） */
+  contractPlan: Plan;
+  /** 有料プランの利用条件（パスキー・端末・同時利用）の状態。契約がなければ "not_paid"、仕組みがオフなら "disabled" */
+  paidAccess: PaidAccessStatus;
   userId: string | null;
   userEmail: string | null;
   /** DB上の契約行（未契約・未ログインの場合はnull） */
@@ -85,9 +96,33 @@ async function getDevPlanOverride(): Promise<Plan | null> {
 
 export async function getServerPlan(): Promise<ServerPlanContext> {
   const devOverride = await getDevPlanOverride();
+  // 開発の自動テスト専用：テスト用ユーザー（Cookie）がいるときは、上書きしたプランを「契約」として扱い、
+  // パスキー・端末・同時利用の条件を本番と同じように判定する（src/lib/passkey/dev.ts。本番では動かない）
+  const devPasskeyUser = await getDevPasskeyUser();
+  if (devPasskeyUser) {
+    const contractPlan: Plan = devOverride ?? "free";
+    const access = await resolvePaidAccess(devPasskeyUser.id, contractPlan !== "free");
+    const plan: Plan = paidAccessGranted(access.status) || contractPlan === "free" ? contractPlan : "free";
+    const temp = plan === "free" ? await checkTemporaryAccess() : { active: false, expiresAtMs: null };
+    return {
+      plan,
+      contractPlan,
+      paidAccess: access.status,
+      userId: devPasskeyUser.id,
+      userEmail: devPasskeyUser.email,
+      subscription: null,
+      grant: null,
+      grantActive: false,
+      temporaryAccessActive: temp.active,
+      temporaryAccessExpiresAtMs: temp.expiresAtMs,
+      isDevOverride: false,
+    };
+  }
   if (devOverride) {
     return {
       plan: devOverride,
+      contractPlan: devOverride,
+      paidAccess: devOverride === "free" ? "not_paid" : "disabled",
       userId: null,
       userEmail: null,
       subscription: null,
@@ -106,6 +141,8 @@ export async function getServerPlan(): Promise<ServerPlanContext> {
     const temp = await checkTemporaryAccess();
     return {
       plan: "free",
+      contractPlan: "free",
+      paidAccess: "not_paid",
       userId: null,
       userEmail: null,
       subscription: null,
@@ -122,16 +159,23 @@ export async function getServerPlan(): Promise<ServerPlanContext> {
   const [subscription, grant] = await Promise.all([fetchSubscriptionSnapshot(user.id), fetchOwnGrant(user.id)]);
   const nowMs = Date.now();
   // Stripeの契約でのプラン。有効な付与（無料付与・無料お試し）があれば、プレミアムに引き上げる（期限が切れれば、自動で戻る）
-  const effectivePlan: Plan = applyGrantToPlan(resolveEffectivePlan(subscription), grant, nowMs);
+  const contractPlan: Plan = applyGrantToPlan(resolveEffectivePlan(subscription), grant, nowMs);
+  // 有料プラン（スタンダード・プレミアム。無料付与・お試しを含む）は、パスキーの本人確認・登録端末（最大2台）・
+  // 同時利用（1台）の条件を満たすときだけ使える。満たさない間は、契約はそのまま、権限だけ無料と同じにする
+  const access = await resolvePaidAccess(user.id, contractPlan !== "free");
+  const effectivePlan: Plan = contractPlan === "free" || paidAccessGranted(access.status) ? contractPlan : "free";
 
   // 認証済みだが契約が無い(free相当の)ユーザーにも、Freeユーザーとして
   // Temporary Accessを適用する（Phase 3 spec 4章：「Standard会員/Premium会員には
   // 不要」なだけで、認証済みfreeユーザーを排除する仕様ではない）。
+  // パスキーの本人確認がまだの有料会員も、その間は無料と同じく広告を見て通常ツールを使える。
   const temp =
     effectivePlan === "free" ? await checkTemporaryAccess() : { active: false, expiresAtMs: null };
 
   return {
     plan: effectivePlan,
+    contractPlan,
+    paidAccess: access.status,
     userId: user.id,
     userEmail: user.email,
     subscription,

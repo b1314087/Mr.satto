@@ -9,6 +9,8 @@ import { adConfig, isAdsEnabled } from "@/lib/ads/config";
 import { VisitBeacon } from "@/components/analytics/visit-beacon";
 import { NavigationFeedback } from "@/components/ui/navigation-feedback";
 import { BusyHold } from "@/components/ui/busy-hold";
+import { PaidSessionGuard } from "@/components/passkey/paid-session-guard";
+import { featureFlags } from "@/lib/config/features";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
@@ -66,6 +68,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <VisitBeacon />
           <NavigationFeedback />
           <BusyHold />
+          {/* 有料プランの同時利用の定期確認（パスキーで本人確認した端末だけで動く） */}
+          {featureFlags.passkey && <PaidSessionGuard />}
           <Header />
           <main className="flex-1">{children}</main>
           <Footer />

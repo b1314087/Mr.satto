@@ -26,6 +26,7 @@ import { getCategorySeoContent } from "@/lib/seo/category-content";
 import { siteConfig } from "@/lib/config/site";
 import { ToolHandoffProvider } from "@/components/handoff/handoff-provider";
 import { buildHandoffPageProps } from "@/lib/handoff/page-props";
+import { PaidAccessNotice } from "@/components/passkey/paid-access-notice";
 
 interface ToolPageProps {
   params: Promise<{ tool: string }>;
@@ -217,6 +218,8 @@ export default async function ToolPage({ params }: ToolPageProps) {
           // （serverPlanは isAvailable のときのみ非nullだが、TypeScriptの型上は
           //   ここで明示的にチェックしておく必要がある）
           <CurrentPlanProvider plan={serverPlan.plan}>
+            {/* 有料の契約があるのに本人確認などがまだの人へ（このツールはゲートを通らないので、ここで案内する） */}
+            <PaidAccessNotice status={serverPlan.paidAccess} next={`/tools/${tool.id}`} />
             <ToolHandoffProvider {...handoff!}>
               <ToolImplementation toolId={tool.id} />
             </ToolHandoffProvider>
@@ -230,6 +233,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
                 plan={serverPlan.plan}
                 temporaryAccessActive={serverPlan.temporaryAccessActive}
                 temporaryAccessExpiresAtMs={serverPlan.temporaryAccessExpiresAtMs}
+                paidAccess={serverPlan.paidAccess}
               >
                 <ToolImplementation toolId={tool.id} />
               </ToolAccessGate>

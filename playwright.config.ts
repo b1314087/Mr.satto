@@ -104,6 +104,9 @@ export default defineConfig({
     env: {
       NEXT_PUBLIC_SITE_URL: SITE_URL,
       PORT,
+      // パスキー・登録端末・同時利用のテスト用：開発サーバーで、Supabaseが未設定のときだけ、メモリ上の保存先と
+      // テスト用ユーザー（Cookie）を使う（src/lib/passkey/dev.ts。本番では一切動かない）
+      PASSKEY_DEV_STORE: "memory",
     },
   },
 });

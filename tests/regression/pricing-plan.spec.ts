@@ -29,10 +29,12 @@ test("pricing（2026-11）: 料金は ¥0 / ¥220（スタンダード）/ ¥1,1
   await expect(page.getByText("1,100円", { exact: false }).first()).toBeVisible();
   const text = await page.locator("main").innerText();
   expect(text).not.toMatch(/550|980/);
-  // 無料・スタンダード・プレミアム・お支払い/解約（＋会員登録できる環境では、無料お試しの案内）。
+  // 無料・スタンダード・プレミアム・プランの比較・お支払い/解約（＋会員登録できる環境では、無料お試しの案内）。
   // 会員登録が準備中の環境（Supabaseの設定がない）では、無料お試しを案内しない（監査 C-9）
+  // 2026-11-15：プランの比較表（見出し「プランの比較」）を追加したので、見出しは5つ
   const trialShown = await page.getByTestId("trial-offer").count();
-  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(4 + trialShown);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(5 + trialShown);
+  await expect(page.getByRole("heading", { level: 2, name: "プランの比較" })).toBeVisible();
 });
 
 test("filled-pdf-to-excel: free/standard/premiumで利用制限の表示が切り替わる（dev cookie経由）", async ({

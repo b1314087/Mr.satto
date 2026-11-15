@@ -22,6 +22,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnUsername } from "@/lib/auth/username-store";
 import { FormSubmitButton } from "@/components/ui/form-submit-button";
 import { UsernameForm } from "@/components/account/username-form";
+import { PaidAccessNotice } from "@/components/passkey/paid-access-notice";
 
 // 個人の契約情報を含むページのため検索エンジンには公開しない（Phase 3 spec 25章）。
 export const metadata: Metadata = {
@@ -82,7 +83,9 @@ export default async function AccountPage({
     );
   }
 
-  const planDefinition = PLAN_DEFINITIONS[serverPlan.plan];
+  // 表示は契約のプラン（パスキーの本人確認がまだでも、ご契約は有効なので、契約のプラン名を出す）
+  const planDefinition = PLAN_DEFINITIONS[serverPlan.contractPlan];
+  const passkeyEnabled = featureFlags.passkey;
   const subscriptionPremium = resolveEffectivePlan(serverPlan.subscription) === "premium";
   const userId = serverPlan.userId;
   // 同意の記録・ユーザー名・無料お試しの利用歴は、互いの結果を使わないので、同時に問い合わせる（順番に待たない）
@@ -128,8 +131,12 @@ export default async function AccountPage({
       {checkout === "success" && (
         <p className="ms-glass mb-6 px-4 py-3 text-sm text-ms-text">
           お申し込みありがとうございます。契約状況への反映まで数秒ほどかかる場合があります。反映されない場合はページを再読み込みしてください。
+          {passkeyEnabled && "続けて、パスキーの登録をお願いします（登録が終わると、有料プランの機能を使えます）。"}
         </p>
       )}
+
+      {/* 有料の契約があるのに、パスキーの本人確認・端末の登録などがまだの人への案内 */}
+      <PaidAccessNotice status={serverPlan.paidAccess} next="/account" />
 
       {trialParam && TRIAL_MESSAGES[trialParam] && (
         <p role="status" data-testid="trial-message" className="ms-glass mb-6 px-4 py-3 text-sm text-ms-text">
@@ -242,13 +249,25 @@ export default async function AccountPage({
 
         {serverPlan.plan === "premium" && <AccountAiUsage />}
 
+        {passkeyEnabled && serverPlan.contractPlan !== "free" && (
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-ms-muted">パスキーと登録端末</p>
+            <p className="text-sm text-ms-text">
+              有料プランは、パスキーでの本人確認と、登録した端末（最大2台）でご利用いただけます（同時に使えるのは1台です）。
+            </p>
+            <Link href="/account/security" className="text-sm text-ms-accent hover:underline dark:text-ms-focus" data-testid="account-security-link">
+              パスキーと登録端末を管理する
+            </Link>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-4 border-t border-ms-border pt-6">
           {!scheduledChange &&
             planChangeTargets.map(({ target, change }) => (
               <PortalLinkButton key={target} flow="plan_change" label={PLAN_CHANGE_LABEL[change]} variant="primary" testId={`plan-change-${target}`} />
             ))}
           {isStripeConfigured() && serverPlan.subscription && <PortalLinkButton />}
-          {(serverPlan.plan === "free" || (serverPlan.grantActive && !subscriptionPremium)) && (
+          {(serverPlan.contractPlan === "free" || (serverPlan.grantActive && !subscriptionPremium)) && (
             <Link
               href="/pricing"
               className="ms-btn ms-btn-primary"

@@ -6,6 +6,9 @@
  *
  *   ads     : 広告（通常の広告＋ダウンロード時のリワード広告）を出すか
  *   billing : 課金システム（料金・会員登録・ログイン導線・決済）を提供するか
+ *   passkey : 有料プランのアカウント共有対策（パスキー必須・登録端末は最大2台・同時利用は1台）を行うか。
+ *             ★Supabaseに supabase/migrations/0011_passkeys_devices_sessions.sql を適用してから true にする
+ *             （適用前に true にすると、表がないため有料会員が有料機能を使えなくなる）
  *
  * ■ 本番（NODE_ENV === "production"。Vercelの本番・プレビュー）は PRODUCTION_FLAGS の値を使う。
  * ■ 開発（next dev）とテストは、広告・課金まわりの既存テストがそのまま動くよう、常にオン。
@@ -23,7 +26,7 @@
  *     NEXT_PUBLIC_ADSENSE_CLIENT_ID / NEXT_PUBLIC_ADSENSE_SLOT_*（通常の広告）
  *     NEXT_PUBLIC_GAM_REWARDED_AD_UNIT_PATH（ダウンロード時のリワード広告）
  */
-export type FeatureName = "ads" | "billing";
+export type FeatureName = "ads" | "billing" | "passkey";
 
 /** 本番の設定。広告や課金を入れる／切るときは、ここだけを書き換える。 */
 const PRODUCTION_FLAGS: Record<FeatureName, boolean> = {
@@ -31,6 +34,8 @@ const PRODUCTION_FLAGS: Record<FeatureName, boolean> = {
   // 審査が通ったら true に戻す（無料プランは、ダウンロードのたびにリワード広告を見ると、すべての通常ツールを使える）
   ads: false,
   billing: true,
+  // 2026-11-16：パスキー必須などの仕組みを追加した。Supabaseへ0011を適用し、動作を確かめてから true にする
+  passkey: false,
 };
 
 function resolveFeature(name: FeatureName): boolean {
@@ -47,4 +52,5 @@ function resolveFeature(name: FeatureName): boolean {
 export const featureFlags: Record<FeatureName, boolean> = {
   ads: resolveFeature("ads"),
   billing: resolveFeature("billing"),
+  passkey: resolveFeature("passkey"),
 };

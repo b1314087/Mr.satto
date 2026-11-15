@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
+import { afterPasswordChangedAction } from "@/lib/auth/actions";
 
 const INPUT_CLASS =
   "ms-input";
@@ -66,6 +67,9 @@ export function ResetPasswordForm() {
       setStatus("error");
       return;
     }
+
+    // 他の端末のログインと、有料プランの利用ロック・本人確認を終わらせる（失敗しても、パスワードの変更は終わっている）
+    await afterPasswordChangedAction().catch(() => undefined);
 
     setStatus("success");
     // 更新に使ったセッションは既に有効なセッションのため、ログイン画面を

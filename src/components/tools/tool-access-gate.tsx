@@ -11,6 +11,8 @@ import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { TemporaryAccessBanner } from "@/components/tools/temporary-access-banner";
 import { AD_EVERY_DOWNLOAD } from "@/lib/plans/temporary-access-cookie";
 import { featureFlags } from "@/lib/config/features";
+import { PaidAccessNotice, paidAccessMessage } from "@/components/passkey/paid-access-notice";
+import type { PaidAccessStatus } from "@/lib/passkey/policy";
 
 /**
  * Tool Access Gate（Phase 2-0: ツール利用前の権限制御 → Phase 3で本番判定 →
@@ -51,6 +53,7 @@ export function ToolAccessGate({
   plan,
   temporaryAccessActive,
   temporaryAccessExpiresAtMs,
+  paidAccess = "not_paid",
   children,
 }: {
   toolId: string;
@@ -61,6 +64,11 @@ export function ToolAccessGate({
   temporaryAccessActive: boolean;
   /** サーバー側で検証済みの、Temporary Accessの有効期限（ms epoch）。無効な場合はnull */
   temporaryAccessExpiresAtMs: number | null;
+  /**
+   * 有料プランの利用条件（パスキーの本人確認など）の状態（getServerPlan の paidAccess）。
+   * 有料の契約があるのに条件を満たしていない人には、申し込みではなく本人確認を案内する
+   */
+  paidAccess?: PaidAccessStatus;
   children: ReactNode;
 }) {
   const access = canUseTool(plan, requiredPlan);
@@ -74,6 +82,12 @@ export function ToolAccessGate({
   // 利用不可・Premium必要（Free/Standardユーザーの前ではPremiumツールは
   // 常にこの案内になる。FreeのTemporary Accessの有無はここでは一切考慮しない。
   // Phase 4 spec 16章：1時間の無料利用権をPremiumツールへ適用しない）
+  // 有料の契約はあるが、パスキーの本人確認などがまだの人：申し込みの案内ではなく、本人確認へ案内する
+  const paidAccessBlocked = paidAccessMessage(paidAccess) !== null;
+  if (!access.allowed && paidAccessBlocked) {
+    return <PaidAccessNotice status={paidAccess} variant="card" next={`/tools/${toolId}`} />;
+  }
+
   if (!access.allowed) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-6 py-16 text-center dark:border-amber-800 dark:bg-amber-950/30">
@@ -114,6 +128,7 @@ export function ToolAccessGate({
 
   return (
     <DownloadGateProvider toolId={toolId} adRequired={downloadAdRequired}>
+      {paidAccessBlocked && <PaidAccessNotice status={paidAccess} next={`/tools/${toolId}`} />}
       {showRemainingTimeBanner && (
         <TemporaryAccessBanner expiresAtMs={temporaryAccessExpiresAtMs as number} />
       )}
