@@ -6,20 +6,20 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { afterPasswordChangedAction } from "@/lib/auth/actions";
+import { AUTH_LINK_MESSAGES, PASSWORD_MESSAGES, classifyAuthLinkError } from "@/lib/auth/auth-link";
 
 const INPUT_CLASS =
   "ms-input";
 
 const MIN_PASSWORD_LENGTH = 8;
 
-function translateAuthError(message: string): string {
-  if (message.includes("Password") && message.includes("least")) {
-    return `パスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください。`;
-  }
-  if (message.includes("session") || message.includes("Session")) {
-    return "セッションの有効期限が切れました。お手数ですが、パスワード再設定をもう一度お試しください。";
-  }
-  return "パスワードの更新に失敗しました。しばらくしてから再度お試しください。";
+function translateAuthError(error: { code?: string | null; name?: string | null; status?: number | null }): string {
+  if (error.code === "weak_password") return PASSWORD_MESSAGES.tooShort;
+  if (error.code === "same_password") return PASSWORD_MESSAGES.samePassword;
+  const problem = classifyAuthLinkError(error);
+  if (problem === "network") return AUTH_LINK_MESSAGES.network;
+  if (error.name === "AuthSessionMissingError" || problem === "expired" || problem === "used") return AUTH_LINK_MESSAGES.session;
+  return PASSWORD_MESSAGES.updateFailed;
 }
 
 /**
@@ -28,7 +28,7 @@ function translateAuthError(message: string): string {
  * 既に有効なセッション（/auth/reset-callback経由）の存在を確認済みのため、
  * ここでは新しいパスワードの入力・確認一致チェック・更新のみを行う。
  */
-export function ResetPasswordForm() {
+export function ResetPasswordForm({ email }: { email?: string | null }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,12 +40,12 @@ export function ResetPasswordForm() {
     if (status === "processing") return;
 
     if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`パスワードは${MIN_PASSWORD_LENGTH}文字以上で入力してください。`);
+      setError(PASSWORD_MESSAGES.tooShort);
       setStatus("error");
       return;
     }
     if (password !== confirmPassword) {
-      setError("新しいパスワードと確認用パスワードが一致しません。");
+      setError(PASSWORD_MESSAGES.mismatch);
       setStatus("error");
       return;
     }
@@ -63,7 +63,7 @@ export function ResetPasswordForm() {
     const { error: updateError } = await supabase.auth.updateUser({ password });
 
     if (updateError) {
-      setError(translateAuthError(updateError.message));
+      setError(translateAuthError(updateError));
       setStatus("error");
       return;
     }
@@ -80,6 +80,12 @@ export function ResetPasswordForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {email && (
+        // どのアカウントのパスワードを変えるのかを示す（他人から送られたリンクで、別のアカウントを操作していないか気づけるように）
+        <p className="text-sm text-ms-muted" data-testid="reset-password-account">
+          <span className="font-medium text-ms-text">{email}</span> のパスワードを設定します。
+        </p>
+      )}
       <label className="flex flex-col gap-1.5 text-sm">
         新しいパスワード（{MIN_PASSWORD_LENGTH}文字以上）
         <input

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { ResetPasswordForm } from "@/components/auth/reset-password-form";
+import { AUTH_LINK_MESSAGES } from "@/lib/auth/auth-link";
 
 // パスワード再設定という個人の操作画面のため検索エンジンには公開しない（account/page.tsxと同方針）。
 export const metadata: Metadata = {
@@ -22,8 +23,8 @@ export default async function ResetPasswordPage() {
         <h1 className="mb-3 text-2xl font-bold text-ms-text">
           新しいパスワードを設定
         </h1>
-        <p className="mb-6 text-sm text-ms-muted">
-          このリンクは無効か、有効期限が切れています。お手数ですが、パスワード再設定をもう一度お試しください。
+        <p className="mb-6 text-sm text-ms-muted" data-testid="reset-password-no-session">
+          {AUTH_LINK_MESSAGES.session}
         </p>
         <Link
           href="/auth/forgot-password"
@@ -41,7 +42,7 @@ export default async function ResetPasswordPage() {
         新しいパスワードを設定
       </h1>
       <div className="ms-glass p-6">
-        <ResetPasswordForm />
+        <ResetPasswordForm email={data.user.email ?? null} />
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LoginForm } from "@/components/auth/login-form";
+import { AuthLinkNotice } from "@/components/auth/auth-link-notice";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { featureFlags } from "@/lib/config/features";
 
@@ -15,15 +16,17 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; confirmed?: string; auth_error?: string; error?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, confirmed, auth_error: authError, error: legacyError } = await searchParams;
 
   return (
     <div className="mx-auto w-full max-w-sm px-4 py-16 sm:px-6">
       <h1 className="mb-6 text-center text-2xl font-bold text-ms-text">
         ログイン
       </h1>
+
+      <AuthLinkNotice confirmed={confirmed} authError={authError} legacyError={legacyError} />
 
       <div className="ms-glass p-6">
         {isSupabaseConfigured() ? (

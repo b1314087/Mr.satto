@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabasePasswordRecoveryRequestClient } from "@/lib/supabase/client";
 import { ErrorMessage } from "@/components/common/error-message";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { siteConfig } from "@/lib/config/site";
@@ -29,7 +29,8 @@ export function ForgotPasswordForm() {
     e.preventDefault();
     if (status === "processing") return;
 
-    const supabase = getSupabaseBrowserClient();
+    // 別のブラウザ・スマートフォンでメールを開いても再設定できる方式で申し込む（src/lib/supabase/client.ts）
+    const supabase = getSupabasePasswordRecoveryRequestClient();
     if (!supabase) {
       setStatus("error");
       return;
