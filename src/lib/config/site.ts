@@ -5,6 +5,13 @@
  * 必ずここを参照する。将来ブランド名やコピーを変更する場合も、
  * この1ファイルを更新するだけで全ページに反映される。
  */
+/**
+ * 正式なドメイン（固定）。アクセス先の統一（Vercelの初期ドメイン・www からの転送）・広告を出すドメイン・
+ * パスキーの利用元（RP ID）は、環境変数ではなく、この固定の値を使う（設定の書き間違いで別のドメインにならないように）。
+ */
+export const CANONICAL_HOST = "mrsatto.com";
+export const CANONICAL_ORIGIN = `https://${CANONICAL_HOST}`;
+
 export const siteConfig = {
   name: "Mr.Satto",
   shortName: "Mr.Satto",

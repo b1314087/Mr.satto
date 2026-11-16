@@ -3,6 +3,7 @@
 import { useEffect, useId } from "react";
 import { adConfig, isAdsEnabled } from "@/lib/ads/config";
 import { featureFlags } from "@/lib/config/features";
+import { useAdHostAllowed } from "@/lib/ads/host";
 
 export type AdSlotPlacement =
   | "header"
@@ -55,15 +56,18 @@ export function AdSlot({
   // AdSenseのポリシー・配信品質の面でも好ましくない。まだ広告ユニットを作っていない枠
   // (例: ダウンロード前後)は、環境変数を設定するまで何も表示しない。
   const enabled = isAdsEnabled() && PLACEMENT_SLOT[placement] !== "";
+  // 広告を出してよいホスト名（mrsatto.com）か。サーバーではホスト名が分からないので、表示したあとブラウザで確かめる
+  // （最初は出さない側に倒し、許可されたホスト名のときだけ広告枠を出す）
+  const hostAllowed = useAdHostAllowed();
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !hostAllowed) return;
     try {
       (window.adsbygoogle = window.adsbygoogle || []).push({});
     } catch {
       // AdSenseスクリプトが未ロードの場合などは静かに無視し、UIは壊さない
     }
-  }, [enabled]);
+  }, [enabled, hostAllowed]);
 
   // 機能スイッチ（src/lib/config/features.ts）で広告がオフの間は、開発・テスト環境でも何も表示しない。
   if (!featureFlags.ads) return null;
@@ -83,6 +87,9 @@ export function AdSlot({
       </div>
     );
   }
+
+  // 広告を出さないホスト名（www・Vercelの初期ドメイン・プレビュー・localhost など）では、何も出さない
+  if (!hostAllowed) return null;
 
   return (
     <div

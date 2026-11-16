@@ -1,4 +1,21 @@
 import type { NextConfig } from "next";
+import { CANONICAL_HOST, CANONICAL_ORIGIN } from "./src/lib/config/site";
+
+/**
+ * アクセス先を正式なドメイン（https://mrsatto.com）にそろえる（2026-11-16）。
+ *
+ * Vercelの本番（VERCEL_ENV=production。ビルドのときにVercelが設定する）だけで、
+ * ホスト名が mrsatto.com 以外（www.mrsatto.com・〇〇.vercel.app・デプロイごとのURLなど）のリクエストを、
+ * 同じパス・同じクエリのまま https://mrsatto.com へ恒久的に転送する（308）。
+ *   - 転送先のドメインは固定（リクエストの値を転送先のホストに使わないので、別のサイトへ飛ばされることはない）
+ *   - mrsatto.com へのリクエストは転送しない（転送がくり返されない）
+ *   - プレビュー（VERCEL_ENV=preview）・ローカル開発（VERCEL_ENV なし）は転送しない（開発・確認はそのまま使える）
+ * Next.js の redirects() は、ページ・API・public のファイルより先に判定される（Proxy とは別の仕組みで、Proxyと競合しない）。
+ * クエリは、Next.js の仕様で、そのまま転送先へ引き継がれる。
+ */
+const IS_VERCEL_PRODUCTION = process.env.VERCEL_ENV === "production";
+const IS_VERCEL_PREVIEW = process.env.VERCEL_ENV === "preview";
+const CANONICAL_HOST_PATTERN = CANONICAL_HOST.replace(/\./g, "\\.");
 
 /**
  * Content-Security-Policy（Phase 6.5 セキュリティ監査で追加）。
@@ -238,6 +255,17 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      // 正式なドメインへの統一（本番だけ。上の IS_VERCEL_PRODUCTION の説明を参照）。他の転送より先に判定する
+      ...(IS_VERCEL_PRODUCTION
+        ? [
+            {
+              source: "/:path*",
+              missing: [{ type: "host" as const, value: CANONICAL_HOST_PATTERN }],
+              destination: `${CANONICAL_ORIGIN}/:path*`,
+              permanent: true,
+            },
+          ]
+        : []),
       // 工程1で削除したツール。旧アドレスは404にせず、関連するページへ恒久的に転送する(308。Next.js の permanent。
       // 検索エンジンは301と同じ恒久的な転送として扱う)。
       // - 配色パレット生成：色を選んでカラーコードを使うツールとして最も近い「グラデーション生成」へ
@@ -338,6 +366,8 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: SECURITY_HEADERS,
       },
+      // プレビュー（一般の人に見せない確認用のアドレス）は、検索エンジンに載せない
+      ...(IS_VERCEL_PREVIEW ? [{ source: "/(.*)", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] }] : []),
     ];
   },
 };

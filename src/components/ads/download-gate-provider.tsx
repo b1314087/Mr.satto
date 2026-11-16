@@ -17,6 +17,7 @@ import { featureFlags } from "@/lib/config/features";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Spinner } from "@/components/ui/spinner";
+import { isCurrentHostAdAllowed } from "@/lib/ads/host";
 
 /**
  * ダウンロード時の広告確認（Free向け）。
@@ -96,6 +97,9 @@ export function DownloadGateProvider({
     return registerDownloadGate({
       intercept(action: GatedAction): boolean {
         if (!adRequiredRef.current) return false;
+        // 広告を出せるのは正式なドメイン（mrsatto.com）だけ。ほかのアドレス（プレビュー・Vercelの初期ドメインなど）では、
+        // 広告を見せずにそのまま保存する（広告を出せない場所で「広告を見て」と求めない）
+        if (!isCurrentHostAdAllowed()) return false;
         if (hasAccess()) return false;
         if (unusedCreditRef.current) {
           unusedCreditRef.current = false;

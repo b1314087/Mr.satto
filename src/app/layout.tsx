@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { Header } from "@/components/layout/header";
@@ -10,6 +9,7 @@ import { VisitBeacon } from "@/components/analytics/visit-beacon";
 import { NavigationFeedback } from "@/components/ui/navigation-feedback";
 import { BusyHold } from "@/components/ui/busy-hold";
 import { PaidSessionGuard } from "@/components/passkey/paid-session-guard";
+import { AdsenseLoader } from "@/components/ads/adsense-loader";
 import { featureFlags } from "@/lib/config/features";
 
 export const metadata: Metadata = {
@@ -53,15 +53,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-full flex-col">
         {/* NEXT_PUBLIC_ADSENSE_CLIENT_ID が設定されている場合のみAdSenseスクリプトを読み込む。
             未設定の間(現在)は何も出力せず、外部への通信も発生しない。 */}
-        {isAdsEnabled() && (
-          <Script
-            id="adsbygoogle-loader"
-            async
-            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adConfig.adsenseClientId}`}
-            crossOrigin="anonymous"
-            strategy="afterInteractive"
-          />
-        )}
+        {/* 広告を出すのは正式なドメイン（mrsatto.com）だけ。ほかのアドレスではスクリプトを読み込まない（AdsenseLoader が確かめる） */}
+        {isAdsEnabled() && <AdsenseLoader clientId={adConfig.adsenseClientId} />}
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           {/* 背景のやわらかい光（装飾。白と薄いグレーだけ。操作や文字には関わらない） */}
           <div className="ms-ambient" aria-hidden="true" />

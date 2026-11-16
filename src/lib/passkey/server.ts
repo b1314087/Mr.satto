@@ -12,7 +12,7 @@ import {
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import { getCurrentUser } from "@/lib/auth/user";
-import { siteConfig } from "@/lib/config/site";
+import { CANONICAL_HOST, CANONICAL_ORIGIN, siteConfig } from "@/lib/config/site";
 import { featureFlags } from "@/lib/config/features";
 import { getSupabaseServiceClient } from "@/lib/supabase/service";
 import {
@@ -109,10 +109,10 @@ export async function relyingParty(): Promise<{ rpID: string; origins: string[] 
   const h = await headers();
   const origin = h.get("origin");
   if (process.env.NODE_ENV === "production") {
-    const host = new URL(siteConfig.url).hostname.replace(/^www\./, "");
-    const origins = [`https://${host}`, `https://www.${host}`];
+    // 正式なパスキーの利用元は https://mrsatto.com だけ（環境変数ではなく固定値。www・Vercelのアドレスは本番では mrsatto.com へ転送される）
+    const origins = [CANONICAL_ORIGIN];
     if (origin && !origins.includes(origin)) return null;
-    return { rpID: host, origins };
+    return { rpID: CANONICAL_HOST, origins };
   }
   const host = h.get("host") ?? "";
   const m = /^localhost(?::(\d+))?$/.exec(host);

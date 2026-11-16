@@ -107,6 +107,9 @@ export default defineConfig({
       // パスキー・登録端末・同時利用のテスト用：開発サーバーで、Supabaseが未設定のときだけ、メモリ上の保存先と
       // テスト用ユーザー（Cookie）を使う（src/lib/passkey/dev.ts。本番では一切動かない）
       PASSKEY_DEV_STORE: "memory",
+      // 広告は正式なドメイン（mrsatto.com）だけで出す（src/lib/ads/host.ts）。自動テストは localhost で広告の流れを確かめるため、
+      // 開発サーバーのときだけ localhost を許可する（本番のビルドでは、この値は無視される）
+      NEXT_PUBLIC_ADS_TEST_HOSTS: "localhost",
     },
   },
 });
