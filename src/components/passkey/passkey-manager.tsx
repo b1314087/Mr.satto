@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { MAX_DEVICES } from "@/lib/passkey/config";
@@ -73,6 +73,17 @@ export function PasskeyManager({
     setDeviceLimitState(v);
   };
   const [confirming, setConfirming] = useState<string | null>(null);
+  // 新しい端末（2台目以降）の登録のための、メールの確認コードの入力（null のときは出さない）
+  const [emailStep, setEmailStep] = useState<{ maskedEmail: string; sent: boolean } | null>(null);
+  const [emailCode, setEmailCode] = useState("");
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!emailStep) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [emailStep]);
+  const resendWaitSec = Math.max(0, Math.ceil((resendAt - now) / 1000));
 
   const supported = typeof window === "undefined" ? true : browserSupportsWebAuthn();
 
@@ -102,6 +113,7 @@ export function PasskeyManager({
   function handleDeviceStep(data: Record<string, unknown>): boolean {
     if (data.kind === "ok") {
       setDeviceLimit(false);
+      setEmailStep(null);
       setMessage({
         tone: "ok",
         text: data.tookOver
@@ -109,6 +121,12 @@ export function PasskeyManager({
           : "本人確認ができました。この端末で有料プランの機能を使えます。",
       });
       return true;
+    }
+    if (data.kind === "email_required") {
+      setEmailStep({ maskedEmail: String(data.maskedEmail ?? "登録しているメールアドレス"), sent: false });
+      setEmailCode("");
+      setMessage({ tone: "info", text: String(data.message) });
+      return false;
     }
     if (data.kind === "device_limit") {
       setDeviceLimit(true);
@@ -174,6 +192,33 @@ export function PasskeyManager({
     const ok = handleDeviceStep(verified.data);
     if (ok) setMessage({ tone: "ok", text: "パスキーを登録しました。この端末で有料プランの機能を使えます。" });
     return ok;
+  }
+
+  async function sendEmailCode(): Promise<boolean> {
+    const r = await api("email-send");
+    if (!r.ok) {
+      setMessage({ tone: "error", text: r.error });
+      if (r.code === "too_soon") setResendAt(Date.now() + 10_000);
+      return false;
+    }
+    setEmailStep({ maskedEmail: String(r.data.maskedEmail ?? emailStep?.maskedEmail ?? ""), sent: true });
+    setResendAt(Date.now() + 60_000);
+    setNow(Date.now());
+    setMessage({ tone: "info", text: `${String(r.data.maskedEmail)} に確認コードを送りました。メールに書かれた6桁の数字を入力してください（有効期限は10分です）。` });
+    return false; // 画面の読み込み直しはしない（入力を続ける）
+  }
+
+  async function verifyEmailCode(): Promise<boolean> {
+    const r = await api("email-verify", { code: emailCode });
+    if (!r.ok) {
+      setMessage({ tone: "error", text: r.error });
+      if (r.code === "expired" || r.code === "locked" || r.code === "no_code") {
+        setEmailCode("");
+        setEmailStep((cur) => (cur ? { ...cur, sent: false } : cur));
+      }
+      return false;
+    }
+    return handleDeviceStep(r.data);
   }
 
   async function revoke(id: string): Promise<boolean> {
@@ -267,6 +312,56 @@ export function PasskeyManager({
           )}
         </div>
       </section>
+
+      {emailStep && (
+        <section className="ms-glass flex flex-col gap-3 p-6" data-testid="email-step">
+          <h2 className="text-base font-bold text-ms-text">メールの確認コード（新しい端末の登録）</h2>
+          <p className="text-sm leading-relaxed text-ms-text">
+            2台目以降の端末を登録するときは、本人確認のため、{emailStep.maskedEmail} に確認コードを送ります。
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="ms-btn ms-btn-secondary"
+              disabled={busy || resendWaitSec > 0}
+              onClick={() => void run(sendEmailCode)}
+              data-testid="email-send"
+            >
+              {resendWaitSec > 0 ? `送り直しは${resendWaitSec}秒後` : emailStep.sent ? "確認コードを送り直す" : "確認コードを送る"}
+            </button>
+          </div>
+          {emailStep.sent && (
+            <form
+              className="flex flex-wrap items-end gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(verifyEmailCode);
+              }}
+            >
+              <label className="flex flex-col gap-1 text-sm text-ms-text">
+                確認コード（6桁）
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={emailCode}
+                  onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="w-40 rounded-lg border border-ms-border bg-white px-3 py-2 text-lg tracking-widest text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100"
+                  data-testid="email-code"
+                />
+              </label>
+              <button type="submit" className="ms-btn ms-btn-primary" disabled={busy || emailCode.length !== 6} data-testid="email-verify">
+                確認して登録する
+              </button>
+            </form>
+          )}
+          <p className="text-xs leading-relaxed text-ms-muted">
+            届かないときは、迷惑メールのフォルダもご確認ください。送り直しは60秒に1回、1時間に5通までです。コードは5回まで入力できます。
+          </p>
+        </section>
+      )}
 
       <section className="ms-glass flex flex-col gap-3 p-6" data-testid="device-list">
         <h2 className="text-base font-bold text-ms-text">

@@ -57,6 +57,17 @@ export interface NewCredential {
   label: string;
 }
 
+export type EmailBeginSendOutcome =
+  | { outcome: "ok"; id: string }
+  | { outcome: "too_soon"; retryAfterSec: number }
+  | { outcome: "hourly_limit" };
+
+export type EmailAttemptOutcome =
+  | { outcome: "ok"; id: string; remaining: number }
+  | { outcome: "none" }
+  | { outcome: "expired" }
+  | { outcome: "locked" };
+
 export interface PasskeyStore {
   listCredentials(userId: string): Promise<StoredCredential[]>;
   /** 本人のパスキーだけを返す（他人のCredential IDなら null） */
@@ -81,6 +92,15 @@ export interface PasskeyStore {
   releaseLease(userId: string, tokenHash: string): Promise<boolean>;
   endAllSessions(userId: string): Promise<void>;
   accessState(userId: string, deviceHash: string | null, sessionHash: string | null): Promise<AccessState>;
+
+  /** これまでに登録したことのある端末の数（解除した端末も数える） */
+  deviceHistoryCount(userId: string): Promise<number>;
+  emailBeginSend(userId: string, verificationHash: string): Promise<EmailBeginSendOutcome>;
+  emailCancelSend(userId: string, id: string): Promise<void>;
+  emailAttempt(userId: string, verificationHash: string): Promise<EmailAttemptOutcome>;
+  emailMarkVerified(userId: string, id: string): Promise<boolean>;
+  emailHasApproval(userId: string, verificationHash: string): Promise<boolean>;
+  emailConsumeApproval(userId: string, verificationHash: string): Promise<boolean>;
 
   logEvent(userId: string, kind: string, detail?: Record<string, unknown>, ipHash?: string | null, userAgent?: string | null): Promise<void>;
   countEvents(userId: string, kind: string, sinceSec: number): Promise<number>;

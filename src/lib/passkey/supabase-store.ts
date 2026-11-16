@@ -8,8 +8,14 @@ import {
   LEASE_TTL_SEC,
   MAX_DEVICES,
   RECENT_VERIFICATION_TTL_SEC,
+  EMAIL_APPROVAL_WINDOW_SEC,
+  EMAIL_CODE_TTL_SEC,
+  EMAIL_HOURLY_MAX,
+  EMAIL_MAX_ATTEMPTS,
+  EMAIL_RESEND_INTERVAL_SEC,
 } from "./config";
 import type { LeaseState } from "./policy";
+import type { EmailAttemptOutcome, EmailBeginSendOutcome } from "./store";
 import type { AccessState, AcquireLeaseOutcome, NewCredential, PasskeyStore, RegisterDeviceOutcome, StoredCredential, StoredDevice } from "./store";
 
 /**
@@ -200,6 +206,57 @@ export function createSupabasePasskeyStore(client: SupabaseClient): PasskeyStore
         lease: data.lease,
         verifiedAt: data.verified_at ?? null,
       };
+    },
+
+    async deviceHistoryCount(userId) {
+      return Number(must(await client.rpc("pk_device_history_count", { p_user: userId }), "deviceHistoryCount"));
+    },
+    async emailBeginSend(userId, verificationHash): Promise<EmailBeginSendOutcome> {
+      const data = must(
+        await client.rpc("pk_email_begin_send", {
+          p_user: userId,
+          p_verification_hash: verificationHash,
+          p_ttl_sec: EMAIL_CODE_TTL_SEC,
+          p_interval_sec: EMAIL_RESEND_INTERVAL_SEC,
+          p_hourly_max: EMAIL_HOURLY_MAX,
+        }),
+        "emailBeginSend"
+      ) as { outcome: string; id?: string; retry_after_sec?: number };
+      if (data.outcome === "ok") return { outcome: "ok", id: String(data.id) };
+      if (data.outcome === "too_soon") return { outcome: "too_soon", retryAfterSec: Number(data.retry_after_sec ?? EMAIL_RESEND_INTERVAL_SEC) };
+      if (data.outcome === "hourly_limit") return { outcome: "hourly_limit" };
+      throw new Error(`emailBeginSend: unexpected ${data.outcome}`);
+    },
+    async emailCancelSend(userId, id) {
+      must(await client.rpc("pk_email_cancel_send", { p_user: userId, p_id: id }), "emailCancelSend");
+    },
+    async emailAttempt(userId, verificationHash): Promise<EmailAttemptOutcome> {
+      const data = must(
+        await client.rpc("pk_email_attempt", { p_user: userId, p_verification_hash: verificationHash, p_max_attempts: EMAIL_MAX_ATTEMPTS }),
+        "emailAttempt"
+      ) as { outcome: string; id?: string; remaining?: number };
+      if (data.outcome === "ok") return { outcome: "ok", id: String(data.id), remaining: Number(data.remaining ?? 0) };
+      if (data.outcome === "none" || data.outcome === "expired" || data.outcome === "locked") return { outcome: data.outcome };
+      throw new Error(`emailAttempt: unexpected ${data.outcome}`);
+    },
+    async emailMarkVerified(userId, id) {
+      return Boolean(must(await client.rpc("pk_email_mark_verified", { p_user: userId, p_id: id }), "emailMarkVerified"));
+    },
+    async emailHasApproval(userId, verificationHash) {
+      return Boolean(
+        must(
+          await client.rpc("pk_email_has_approval", { p_user: userId, p_verification_hash: verificationHash, p_window_sec: EMAIL_APPROVAL_WINDOW_SEC }),
+          "emailHasApproval"
+        )
+      );
+    },
+    async emailConsumeApproval(userId, verificationHash) {
+      return Boolean(
+        must(
+          await client.rpc("pk_email_consume_approval", { p_user: userId, p_verification_hash: verificationHash, p_window_sec: EMAIL_APPROVAL_WINDOW_SEC }),
+          "emailConsumeApproval"
+        )
+      );
     },
 
     async logEvent(userId, kind, detail = {}, ipHash = null, userAgent = null) {

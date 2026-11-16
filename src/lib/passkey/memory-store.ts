@@ -8,6 +8,11 @@ import {
   LEASE_TTL_SEC,
   MAX_DEVICES,
   RECENT_VERIFICATION_TTL_SEC,
+  EMAIL_APPROVAL_WINDOW_SEC,
+  EMAIL_CODE_TTL_SEC,
+  EMAIL_HOURLY_MAX,
+  EMAIL_MAX_ATTEMPTS,
+  EMAIL_RESEND_INTERVAL_SEC,
 } from "./config";
 import type { PasskeyStore, StoredCredential } from "./store";
 
@@ -21,6 +26,7 @@ interface Lease { userId: string; deviceId: string; tokenHash: string; verifiedA
 interface Challenge { id: string; userId: string; kind: string; challenge: string; expiresAt: number; used: boolean }
 interface Verification { userId: string; credentialId: string; expiresAt: number }
 interface Event { userId: string; kind: string; at: number }
+interface EmailChallenge { id: string; userId: string; verificationHash: string; sentAt: number; expiresAt: number; attempts: number; verifiedAt: number | null; usedAt: number | null }
 
 interface Db {
   credentials: Map<string, StoredCredential & { userId: string }>;
@@ -29,6 +35,7 @@ interface Db {
   challenges: Map<string, Challenge>;
   verifications: Map<string, Verification>;
   events: Event[];
+  emailChallenges: EmailChallenge[];
 }
 
 const g = globalThis as unknown as { __mrsattoPasskeyMemoryDb?: Db };
@@ -41,11 +48,29 @@ function db(): Db {
     challenges: new Map(),
     verifications: new Map(),
     events: [],
+    emailChallenges: [],
   };
+  g.__mrsattoPasskeyMemoryDb.emailChallenges ??= [];
   return g.__mrsattoPasskeyMemoryDb;
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
+
+/** テスト用：メールの確認の時刻を、指定した秒数だけ前にずらす（送り直しの間隔・有効期限・承認の期限を試すため） */
+export function shiftMemoryEmailChallenges(userId: string, seconds: number): void {
+  for (const c of db().emailChallenges) {
+    if (c.userId !== userId) continue;
+    c.sentAt -= seconds * 1000;
+    c.expiresAt -= seconds * 1000;
+    if (c.verifiedAt !== null) c.verifiedAt -= seconds * 1000;
+  }
+}
+
+/** テスト用：利用ロックの本人確認の時刻を、指定した秒数だけ前にずらす（12時間ごとの確認を試すため） */
+export function ageMemoryLeaseVerification(userId: string, seconds: number): void {
+  const lease = db().leases.get(userId);
+  if (lease) lease.verifiedAt -= seconds * 1000;
+}
 
 /** テスト用：時間を進めたことにして、利用ロックを期限切れにする */
 export function expireMemoryLease(userId: string): void {
@@ -178,6 +203,57 @@ export function createMemoryPasskeyStore(): PasskeyStore {
       else if (lease.expiresAt <= Date.now() || (device && lease.deviceId === device.id)) state = "free";
       else state = "other";
       return { credentialCount, deviceId: device?.id ?? null, lease: state, verifiedAt: state === "mine" && lease ? iso(lease.verifiedAt) : null };
+    },
+
+    async deviceHistoryCount(userId) {
+      return [...db().devices.values()].filter((d) => d.userId === userId).length;
+    },
+    async emailBeginSend(userId, verificationHash) {
+      const now = Date.now();
+      const mine = db().emailChallenges.filter((c) => c.userId === userId);
+      const last = mine.reduce((m, c) => Math.max(m, c.sentAt), 0);
+      if (last && last > now - EMAIL_RESEND_INTERVAL_SEC * 1000) {
+        return { outcome: "too_soon", retryAfterSec: Math.ceil((last + EMAIL_RESEND_INTERVAL_SEC * 1000 - now) / 1000) };
+      }
+      if (mine.filter((c) => c.sentAt > now - 3600_000).length >= EMAIL_HOURLY_MAX) return { outcome: "hourly_limit" };
+      for (const c of mine) if (c.verifiedAt === null && c.expiresAt > now) c.expiresAt = now;
+      const id = randomUUID();
+      db().emailChallenges.push({ id, userId, verificationHash, sentAt: now, expiresAt: now + EMAIL_CODE_TTL_SEC * 1000, attempts: 0, verifiedAt: null, usedAt: null });
+      return { outcome: "ok", id };
+    },
+    async emailCancelSend(userId, id) {
+      db().emailChallenges = db().emailChallenges.filter((c) => !(c.id === id && c.userId === userId && c.verifiedAt === null && c.attempts === 0));
+    },
+    async emailAttempt(userId, verificationHash) {
+      const c = db()
+        .emailChallenges.filter((x) => x.userId === userId && x.verificationHash === verificationHash && x.verifiedAt === null)
+        .sort((a, b) => b.sentAt - a.sentAt)[0];
+      if (!c) return { outcome: "none" };
+      if (c.expiresAt <= Date.now()) return { outcome: "expired" };
+      if (c.attempts >= EMAIL_MAX_ATTEMPTS) return { outcome: "locked" };
+      c.attempts += 1;
+      return { outcome: "ok", id: c.id, remaining: EMAIL_MAX_ATTEMPTS - c.attempts };
+    },
+    async emailMarkVerified(userId, id) {
+      const c = db().emailChallenges.find((x) => x.id === id && x.userId === userId);
+      if (!c || c.verifiedAt !== null || c.expiresAt <= Date.now()) return false;
+      c.verifiedAt = Date.now();
+      return true;
+    },
+    async emailHasApproval(userId, verificationHash) {
+      const since = Date.now() - EMAIL_APPROVAL_WINDOW_SEC * 1000;
+      return db().emailChallenges.some(
+        (c) => c.userId === userId && c.verificationHash === verificationHash && c.verifiedAt !== null && c.verifiedAt > since && c.usedAt === null
+      );
+    },
+    async emailConsumeApproval(userId, verificationHash) {
+      const since = Date.now() - EMAIL_APPROVAL_WINDOW_SEC * 1000;
+      const c = db().emailChallenges.find(
+        (x) => x.userId === userId && x.verificationHash === verificationHash && x.verifiedAt !== null && x.verifiedAt > since && x.usedAt === null
+      );
+      if (!c) return false;
+      c.usedAt = Date.now();
+      return true;
     },
 
     async logEvent(userId, kind) {

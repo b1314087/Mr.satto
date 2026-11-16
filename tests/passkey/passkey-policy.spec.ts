@@ -76,3 +76,43 @@ test.describe("設定値と組み込み先", () => {
     expect(route).toContain('if (!isPasskeyDevMode()) return json({ error: "見つかりません。" }, 404);');
   });
 });
+
+test.describe("メールの確認コードの設定（2026-11-16に確定）", () => {
+  test("6桁・有効期限10分・5回まで・送り直し60秒・1時間に5通。コードはDBに保存しない", async () => {
+    const c = await import("@/lib/passkey/config");
+    expect([c.EMAIL_CODE_LENGTH, c.EMAIL_CODE_TTL_SEC, c.EMAIL_MAX_ATTEMPTS, c.EMAIL_RESEND_INTERVAL_SEC, c.EMAIL_HOURLY_MAX]).toEqual([6, 600, 5, 60, 5]);
+    const sql = fs.readFileSync("supabase/migrations/0012_passkey_email_verification.sql", "utf8");
+    expect(sql).not.toMatch(/\bcode\s+text\b/);
+    // 2台目以降だけ：これまでに1台でも登録したことがあるときだけ、メールの確認を求める
+    const server = fs.readFileSync("src/lib/passkey/server.ts", "utf8");
+    expect(server).toContain("if ((await store.deviceHistoryCount(user.id)) > 0) {");
+    expect(server).toContain("if (!verificationHash || !(await store.emailConsumeApproval(user.id, verificationHash))) {");
+  });
+});
+
+test.describe("本番に出す準備", () => {
+  test("SQL Editor用のまとめたSQLは、0011と0012をこの順につなげた内容と一致する", () => {
+    const merged = fs.readFileSync("supabase/manual/passkey_launch.sql", "utf8");
+    const m11 = fs.readFileSync("supabase/migrations/0011_passkeys_devices_sessions.sql", "utf8");
+    const m12 = fs.readFileSync("supabase/migrations/0012_passkey_email_verification.sql", "utf8");
+    const body = merged.slice(merged.indexOf(m11));
+    expect(body).toBe(`${m11}\n${m12}`);
+  });
+
+  test("プライバシーポリシー：仕組みがオンのとき、保存する情報（公開鍵・端末の識別子のハッシュ・確認の記録など）と保存しないもの（秘密鍵・生体情報・確認コード・IPアドレスそのもの）を書く", async ({ page }) => {
+    await page.goto("/privacy");
+    const item = page.getByTestId("privacy-passkey");
+    await expect(item).toBeVisible({ timeout: 60_000 });
+    for (const text of ["パスキーの公開鍵", "秘密鍵", "生体情報", "ハッシュ値", "確認コードは認証サービス（Supabase）が作成・照合し", "IPアドレスそのものは保存しません", "90日を目安"]) {
+      await expect(item).toContainText(text);
+    }
+    await expect(page.getByTestId("privacy-passkey-cookies")).toContainText("最長400日");
+  });
+
+  test("プライバシーポリシーの記載と版の更新は、機能スイッチと一緒に変わる（本番のスイッチはオフのまま）", () => {
+    expect(fs.readFileSync("src/app/privacy/page.tsx", "utf8")).toContain("const passkey = billing && featureFlags.passkey;");
+    expect(fs.readFileSync("src/lib/legal/versions.ts", "utf8")).toContain('privacy: featureFlags.passkey ? "2026-11-16" : "2026-11-15",');
+    const flags = fs.readFileSync("src/lib/config/features.ts", "utf8");
+    expect(flags.slice(flags.indexOf("const PRODUCTION_FLAGS"))).toMatch(/passkey:\s*false/);
+  });
+});

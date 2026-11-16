@@ -94,6 +94,17 @@ async function authenticate(page: Page) {
   await page.getByTestId("passkey-authenticate").click();
 }
 
+/** 新しい端末（2台目以降）のメールの確認コード：送る → （開発用の口から）コードを読む → 入力して確認する */
+async function completeEmailStep(page: Page) {
+  await expect(page.getByTestId("email-step")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("email-send").click();
+  await expect(page.getByTestId("email-code")).toBeVisible({ timeout: 30_000 });
+  const { body } = await apiPost(page, "dev-email-code");
+  expect(String(body.code)).toMatch(/^\d{6}$/);
+  await page.getByTestId("email-code").fill(String(body.code));
+  await page.getByTestId("email-verify").click();
+}
+
 test.describe.configure({ mode: "serial" });
 test.setTimeout(240_000);
 
@@ -144,6 +155,8 @@ test("登録したパスキーで別の端末から本人確認すると、2台�
   await openSecurity(b.page);
   await expect.poll(() => status(b.page)).toBe("needs_device");
   await b.page.getByTestId("passkey-authenticate").click();
+  // 2台目なので、メールの確認コードが必要（コードを確認できたら、続けて登録・利用開始）
+  await completeEmailStep(b.page);
   await expect(b.page.getByTestId("passkey-message")).toContainText("別の端末での利用を終了し", { timeout: 30_000 });
   await expect.poll(() => status(b.page), { timeout: 30_000 }).toBe("ok");
   await expect(b.page.getByTestId("device-item")).toHaveCount(2);
@@ -156,10 +169,11 @@ test("登録したパスキーで別の端末から本人確認すると、2台�
   await a.page.goto(PREMIUM_TOOL);
   await expect(a.page.getByTestId("paid-access-notice")).toHaveAttribute("data-status", "in_use_elsewhere", { timeout: 60_000 });
 
-  // Aでもう一度本人確認すると、Aに戻る（同時に使えるのは1台）
+  // Aでもう一度本人確認すると、Aに戻る（同時に使えるのは1台）。登録済みの端末なので、メールの確認はいらない
   await syncPasskeys(b, a);
   await authenticate(a.page);
   await expect.poll(() => status(a.page), { timeout: 30_000 }).toBe("ok");
+  await expect(a.page.getByTestId("email-step")).toHaveCount(0);
   await openSecurity(b.page);
   await expect.poll(() => status(b.page)).toBe("in_use_elsewhere");
 });
@@ -173,9 +187,10 @@ test("3台目は登録できない。1台解除すると、その場で3台目�
   await registerPasskey(a.page);
   await syncPasskeys(a, b);
   await authenticate(b.page);
+  await completeEmailStep(b.page);
   await expect.poll(() => status(b.page), { timeout: 30_000 }).toBe("ok");
 
-  // C：本人確認はできるが、端末は上限（指示書の文言で案内）
+  // C：本人確認はできるが、端末は上限（指示書の文言で案内）。上限のときは、メールを送る前に解除を案内する
   await syncPasskeys(b, c);
   await authenticate(c.page);
   await expect(c.page.getByTestId("passkey-message")).toContainText(
@@ -185,9 +200,13 @@ test("3台目は登録できない。1台解除すると、その場で3台目�
   await expect.poll(() => status(c.page)).toBe("needs_device");
   await expect(c.page.getByTestId("device-item")).toHaveCount(2);
 
-  // 1台解除 → 続けてCを登録（本人確認から5分以内なので、もう一度の確認はいらない）
+  await expect(c.page.getByTestId("email-step")).toHaveCount(0);
+  // 1台解除 → 続けてCを登録（パスキーの本人確認から10分以内なので、もう一度の確認はいらない。3台目の端末なのでメールの確認は必要）
   await c.page.getByTestId("device-revoke").first().click();
   await c.page.getByTestId("device-revoke-confirm").click();
+  // 同じアカウントで、Bの確認コードを送ってから60秒たっていないので、時刻を進める（送り直しの間隔は正しく効いている）
+  await apiPost(c.page, "dev-email-shift", { seconds: 61 });
+  await completeEmailStep(c.page);
   await expect.poll(() => status(c.page), { timeout: 30_000 }).toBe("ok");
   await expect(c.page.getByTestId("device-item")).toHaveCount(2);
   await expect(c.page.getByTestId("device-item").filter({ hasText: "この端末" })).toHaveCount(1);
@@ -319,4 +338,126 @@ test("パスキーをすべて削除すると、再登録するまで有料機�
   await expect.poll(() => status(a.page), { timeout: 30_000 }).toBe("needs_passkey");
   await a.page.goto(PREMIUM_TOOL);
   await expect(a.page.getByTestId("paid-access-notice")).toHaveAttribute("data-status", "needs_passkey", { timeout: 60_000 });
+});
+
+test.describe("新しい端末（2台目以降）のメールの確認コード", () => {
+  /** A（1台目）でパスキーを登録し、B（2台目・未登録）でパスキーの本人確認まで済ませて、メールの確認の画面を出す */
+  async function setupSecondDevice(browser: Browser, baseURL: string) {
+    const user = randomUUID();
+    const a = await newDevice(browser, baseURL, user);
+    const b = await newDevice(browser, baseURL, user);
+    contexts.push(a.context, b.context);
+    await registerPasskey(a.page);
+    await syncPasskeys(a, b);
+    await authenticate(b.page);
+    await expect(b.page.getByTestId("email-step")).toBeVisible({ timeout: 30_000 });
+    return { a, b, user };
+  }
+
+  test("1台目はメールの確認なしで登録でき、2台目は確認コードを入れるまで登録されない", async ({ browser, baseURL }) => {
+    const { a, b } = await setupSecondDevice(browser, baseURL!);
+    await openSecurity(a.page);
+    await expect(a.page.getByTestId("device-item")).toHaveCount(1); // 1台目は確認なしで登録済み
+    // 確認コードを入れずに、端末の登録だけを呼んでも登録されない
+    const reg = await apiPost(b.page, "device-register");
+    expect(reg.status).toBe(200);
+    expect(reg.body.kind).toBe("email_required");
+    // メールアドレスは一部だけ表示する
+    await expect(b.page.getByTestId("email-step")).toContainText("***@example.test");
+    await openSecurity(b.page);
+    await expect.poll(() => status(b.page)).toBe("needs_device");
+    await expect(b.page.getByTestId("device-item")).toHaveCount(1);
+  });
+
+  test("間違ったコードでは登録できず、5回間違えると、正しいコードでも使えなくなる", async ({ browser, baseURL }) => {
+    const { b } = await setupSecondDevice(browser, baseURL!);
+    expect((await apiPost(b.page, "email-send")).status).toBe(200);
+    const right = String((await apiPost(b.page, "dev-email-code")).body.code);
+    const wrong = right === "000000" ? "111111" : "000000";
+    for (let i = 1; i <= 4; i++) {
+      const r = await apiPost(b.page, "email-verify", { code: wrong });
+      expect(r.status).toBe(400);
+      expect(String(r.body.error)).toContain(`あと${5 - i}回`);
+    }
+    const fifth = await apiPost(b.page, "email-verify", { code: wrong });
+    expect(String(fifth.body.error)).toContain("5回間違えた");
+    const sixth = await apiPost(b.page, "email-verify", { code: right });
+    expect(sixth.status).toBe(429);
+    expect(sixth.body.code).toBe("locked");
+    await openSecurity(b.page);
+    await expect.poll(() => status(b.page)).toBe("needs_device");
+  });
+
+  test("有効期限（10分）が切れたコードでは登録できない", async ({ browser, baseURL }) => {
+    const { b } = await setupSecondDevice(browser, baseURL!);
+    expect((await apiPost(b.page, "email-send")).status).toBe(200);
+    const code = String((await apiPost(b.page, "dev-email-code")).body.code);
+    await apiPost(b.page, "dev-email-shift", { seconds: 601 });
+    const r = await apiPost(b.page, "email-verify", { code });
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe("expired");
+  });
+
+  test("送り直しは60秒に1回、1時間に5通まで", async ({ browser, baseURL }) => {
+    const { b } = await setupSecondDevice(browser, baseURL!);
+    expect((await apiPost(b.page, "email-send")).status).toBe(200);
+    const tooSoon = await apiPost(b.page, "email-send");
+    expect(tooSoon.status).toBe(429);
+    expect(tooSoon.body.code).toBe("too_soon");
+    for (let i = 2; i <= 5; i++) {
+      await apiPost(b.page, "dev-email-shift", { seconds: 61 });
+      expect((await apiPost(b.page, "email-send")).status, `send ${i}`).toBe(200);
+    }
+    await apiPost(b.page, "dev-email-shift", { seconds: 61 });
+    const sixth = await apiPost(b.page, "email-send");
+    expect(sixth.status).toBe(429);
+    expect(sixth.body.code).toBe("hourly_limit");
+  });
+
+  test("確認できたコードは使い回せない。他のアカウントのコードは使えない", async ({ browser, baseURL }) => {
+    const { b, user } = await setupSecondDevice(browser, baseURL!);
+    // 他のアカウント（Carol）で同じ状況を作り、Bのコードを入れても通らない
+    const other = await setupSecondDevice(browser, baseURL!);
+    expect((await apiPost(b.page, "email-send")).status).toBe(200);
+    expect((await apiPost(other.b.page, "email-send")).status).toBe(200);
+    const bCode = String((await apiPost(b.page, "dev-email-code")).body.code);
+    const otherCode = String((await apiPost(other.b.page, "dev-email-code")).body.code);
+    if (bCode !== otherCode) {
+      const cross = await apiPost(other.b.page, "email-verify", { code: bCode });
+      expect(cross.status).toBe(400);
+    }
+    // Bは自分のコードで登録できる
+    const ok = await apiPost(b.page, "email-verify", { code: bCode });
+    expect(ok.status).toBe(200);
+    expect(ok.body.kind).toBe("ok");
+    // 同じコードをもう一度使っても、何も起きない（登録済みの端末なので、確認コードは不要と返す）
+    const again = await apiPost(b.page, "email-verify", { code: bCode });
+    expect(again.status).toBe(409);
+    expect(user).toBeTruthy();
+  });
+});
+
+test("12時間たつと本人確認を求め、パスキーで確認すればメールなしで続けて使える。パスワード変更で全端末のセッションが終わる", async ({ browser, baseURL }) => {
+  const a = await newDevice(browser, baseURL!, randomUUID());
+  contexts.push(a.context);
+  await registerPasskey(a.page);
+  await apiPost(a.page, "dev-age-verification", { seconds: 13 * 3600 });
+  await openSecurity(a.page);
+  await expect.poll(() => status(a.page)).toBe("needs_verification");
+  await a.page.getByTestId("passkey-authenticate").click();
+  await expect.poll(() => status(a.page), { timeout: 30_000 }).toBe("ok");
+  await expect(a.page.getByTestId("email-step")).toHaveCount(0);
+  // パスワード変更のあとの処理（endAllSessions）：この端末も本人確認が必要になる
+  await apiPost(a.page, "dev-end-all-sessions");
+  await openSecurity(a.page);
+  await expect.poll(() => status(a.page)).toBe("needs_verification");
+});
+
+test("正式なアドレス以外（別のOrigin）からは、パスキーの操作を受け付けない", async ({ browser, baseURL }) => {
+  const a = await newDevice(browser, baseURL!, randomUUID());
+  contexts.push(a.context);
+  for (const origin of ["https://mrmatto.vercel.app", "https://www.mrsatto.com", "https://evil.example"]) {
+    const res = await a.context.request.post(`${baseURL}/api/passkey/register-options`, { headers: { Origin: origin, "Content-Type": "application/json" }, data: {} });
+    expect(res.status(), origin).toBe(403);
+  }
 });

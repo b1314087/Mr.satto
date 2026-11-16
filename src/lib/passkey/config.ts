@@ -18,8 +18,11 @@ export const LEASE_TTL_SEC = 180;
 export const HEARTBEAT_INTERVAL_MS = 60_000;
 /** パスキーで本人確認してから、もう一度確認を求めるまでの時間（ミリ秒） */
 export const VERIFICATION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
-/** 端末の解除・パスキーの削除などに必要な「直近の本人確認」の有効期間（秒） */
-export const RECENT_VERIFICATION_TTL_SEC = 5 * 60;
+/**
+ * 端末の解除・パスキーの削除・新しい端末の登録などに必要な「直近の本人確認」の有効期間（秒）。
+ * 新しい端末ではこのあとメールの確認コードを入力するので、コードの有効期限（10分）に合わせる
+ */
+export const RECENT_VERIFICATION_TTL_SEC = 10 * 60;
 /** チャレンジの有効期間（秒） */
 export const CHALLENGE_TTL_SEC = 5 * 60;
 
@@ -41,3 +44,15 @@ export const SESSION_HINT_COOKIE = "mrsatto-paid-active";
 export const DEVICE_LIMIT_MESSAGE =
   "登録できる端末は最大2台です。新しい端末を登録するには、現在登録されている端末を1台解除してください。";
 export const IN_USE_MESSAGE = "このアカウントは別の端末で利用中です。先に利用中の端末からログアウトしてください。";
+
+/**
+ * 新しい端末（2台目以降）の登録のための、メールの確認コード（2026-11-16に利用者と確定）。
+ * 初めての端末（1台目）・登録済みの端末での12時間ごとの確認・登録済みの端末どうしの切り替えでは求めない
+ */
+export const EMAIL_CODE_LENGTH = 6;
+export const EMAIL_CODE_TTL_SEC = 10 * 60;
+export const EMAIL_MAX_ATTEMPTS = 5;
+export const EMAIL_RESEND_INTERVAL_SEC = 60;
+export const EMAIL_HOURLY_MAX = 5;
+/** コードを確認してから、端末の登録に使えるまでの時間（秒） */
+export const EMAIL_APPROVAL_WINDOW_SEC = 10 * 60;

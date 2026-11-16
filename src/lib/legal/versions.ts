@@ -1,3 +1,5 @@
+import { featureFlags } from "@/lib/config/features";
+
 /**
  * 利用規約・プライバシーポリシーの「現行の版」（工程38）。
  *
@@ -12,7 +14,9 @@
 export const LEGAL_VERSIONS = {
   // 2026-11-15：AIの補助の追加（Word→Excel・見積書等のメモ）、年額プランの追加
   terms: "2026-11-15",
-  privacy: "2026-11-15",
+  // 2026-11-16：有料プランの本人確認（パスキー）・登録端末・同時利用の記載を追加。
+  // この記載は、その仕組みの機能スイッチ（featureFlags.passkey）をオンにしたときから表示するので、版もそのときに上がる
+  privacy: featureFlags.passkey ? "2026-11-16" : "2026-11-15",
 } as const;
 
 export type LegalDocument = keyof typeof LEGAL_VERSIONS;
