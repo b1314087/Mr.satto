@@ -608,6 +608,30 @@ const toolDefinitions: Tool[] = [
     relatedToolIds: ["excel-to-word", "pdf-to-excel"],
   },
   {
+    // 古い形式のExcel（.xls、Excel 97〜2003）を、今の形式（.xlsx）に書き直す。拡張子の付け替えではなく、
+    // セルの値・数式・書式・列の幅・行の高さ・結合を移し替える（src/lib/office-convert/xls-to-xlsx.ts）。だれでも使える通常のツール
+    id: "xls-to-xlsx",
+    name: "Excel旧形式→新形式（.xls→.xlsx）",
+    category: "csv-excel",
+    description: "古いExcelファイル(.xls)を、今のExcelの形式(.xlsx)に変換します。数式・書式・列の幅・セルの結合を引き継ぎます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["xls", "xlsx", "変換", "旧形式", "古いExcel", "Excel97", "Excel2003", "互換モード", "エクセル", "拡張子"],
+  },
+  {
+    // 古い形式のWord（.doc、Word 97〜2003）を、今の形式（.docx）に書き直す。文章だけを取り出す簡易変換ではなく、
+    // 文字・段落の書式・スタイル・表・画像・ヘッダー・フッター・セクションを移し替える（src/lib/office-convert/doc-to-docx.ts）
+    id: "doc-to-docx",
+    name: "Word旧形式→新形式（.doc→.docx）",
+    category: "word",
+    description: "古いWord文書(.doc)を、今のWordの形式(.docx)に変換します。文字の書式・表・画像・ヘッダー・フッターを引き継ぎます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["doc", "docx", "変換", "旧形式", "古いWord", "Word97", "Word2003", "互換モード", "ワード", "拡張子"],
+  },
+  {
     id: "pdf-extract-pages",
     name: "PDFページ抽出",
     category: "pdf",

@@ -1813,6 +1813,60 @@ a[data-nav-pending="true"] {
 
 
   /* ---- アイコン付きの操作ボタン（PDF修正の「やりたい操作」など、選択肢が多めで種類が分かれるもの） ---- */
+  /* PDF修正の「やりたい操作」の帯（プレビューの列の上に固定する、1行のボタンの並び。狭い画面では横にスクロール） */
+  .ms-op-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 0.125rem;
+    overflow-x: auto;
+    padding: 0.25rem;
+    border: 1px solid var(--ms-border);
+    border-radius: var(--ms-radius-control);
+    background-color: var(--ms-surface-strong);
+    box-shadow: 0 2px 8px -4px rgba(15, 23, 42, 0.25);
+    scrollbar-width: thin;
+  }
+  .ms-op-bar > button {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.0625rem;
+    min-width: 2.6rem;
+    height: 2.75rem;
+    padding: 0 0.3rem;
+    border: 1px solid transparent;
+    border-radius: calc(var(--ms-radius-control) - 2px);
+    color: var(--ms-text);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1.1;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ms-op-bar > button:hover:not([aria-checked="true"]) {
+    background-color: var(--ms-hover-tint);
+    border-color: var(--ms-border);
+  }
+  .ms-op-bar > button[aria-checked="true"] {
+    color: var(--ms-on-accent);
+    background-color: var(--ms-accent);
+    background-image: var(--ms-accent-gradient);
+  }
+  .ms-op-bar > button:focus-visible {
+    outline: 2px solid var(--ms-focus);
+    outline-offset: 1px;
+  }
+  .ms-op-bar .ms-op-icon {
+    font-size: 0.9375rem;
+    line-height: 1;
+  }
+  .ms-op-bar-sep {
+    flex: 0 0 1px;
+    margin: 0.375rem 0.25rem;
+    background-color: var(--ms-border);
+  }
   .ms-op-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr));

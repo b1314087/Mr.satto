@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { PdfFillAnnotateTool, type ToolMode } from "./pdf-fill-annotate-tool";
 import { PdfAddPageNumbersTool } from "./pdf-add-page-numbers-tool";
 import { PdfWatermarkTool } from "./pdf-watermark-tool";
@@ -17,6 +17,8 @@ import { WHITEOUT_NOTICE } from "@/lib/pdf-annotate/whiteout";
 
 /**
  * PDF修正の総合画面（工程12。新工程1で、操作の選び方を「やりたい操作」のプルダウン1つにまとめた）。
+ * 2026-11（工程1）：「やりたい操作」は、1行のボタンの帯にして、プレビューの列の一番上に固定した（PCではプレビューと一緒に画面に固定、
+ * スマホでは画面の上に固定）。操作を変えるたびに画面の上まで戻らなくてよい。使い方の説明は、設定の列に残す。
  *
  * - プルダウンで選べるのは、今あるPDF修正の操作だけ（文字・チェック・図形・手書き・画像・印影・白消し・黒塗り・
  *   置いたものの選択／ページ番号・透かし。src/lib/tools/pdf-fix-modes.ts の PDF_FIX_OPERATIONS）。
@@ -49,6 +51,8 @@ const PDF_FIX_OPERATION_SHORT: Record<PdfFixOperation, string> = {
   watermark: "透かし",
   redact: "墨消し",
 };
+/** 帯に並べるときの、さらに短い名前（帯の幅に収めるため。正式な名前はカーソルを乗せると出る） */
+const PDF_FIX_OPERATION_BAR: Partial<Record<PdfFixOperation, string>> = { select: "選ぶ", "page-numbers": "番号" };
 const PDF_FIX_OPERATION_ICONS: Record<PdfFixOperation, string> = {
   text: "Aa",
   checkbox: "✓",
@@ -112,57 +116,68 @@ export function PdfFixTool() {
 
   const singleFileProps = { initialFile: sharedFile, onFileChange: setSharedFile };
 
-  /** やりたい操作のプルダウンと、いまの操作・使い方 */
-  const operationBlock = (
-      <div className="flex flex-col gap-2" data-testid="pdf-fix-modes" data-mode={mode}>
-        {/* やりたい操作（12個）を、アイコン付きのボタンで並べる（以前はプルダウン）。グループは以前の区分と同じ */}
-        <div role="radiogroup" aria-label="やりたい操作" data-testid="pdf-fix-operation" data-value={operation} className="flex flex-col gap-2">
-          {PDF_FIX_OPERATION_GROUPS.map((g) => (
-            <div key={g.group} className="flex flex-col gap-1">
-              <p className="text-[11px] font-semibold text-ms-muted">{g.label}</p>
-              <div className="ms-op-grid">
-                {PDF_FIX_OPERATIONS.filter((o) => o.group === g.group).map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={operation === o.value}
-                    title={o.label}
-                    data-testid={`pdf-fix-op-${o.value}`}
-                    onClick={() => chooseOperation(o.value)}
-                  >
-                    <span aria-hidden="true" className="ms-op-icon">
-                      {PDF_FIX_OPERATION_ICONS[o.value]}
-                    </span>
-                    {PDF_FIX_OPERATION_SHORT[o.value]}
-                  </button>
-                ))}
-              </div>
-            </div>
+  /**
+   * やりたい操作のボタンの帯（1行）。PDFを表示しているときは、プレビューの列の一番上に固定し、
+   * 編集の途中でも上まで戻らずに切り替えられるようにする（ページ番号・透かし・墨消しのときは、ツールの上に固定）
+   */
+  const operationToolbar = (
+    <div role="radiogroup" aria-label="やりたい操作" data-testid="pdf-fix-operation" data-value={operation} className="ms-op-bar">
+      {PDF_FIX_OPERATION_GROUPS.map((g, gi) => (
+        <Fragment key={g.group}>
+          {gi > 0 && <span className="ms-op-bar-sep" aria-hidden="true" title={g.label} />}
+          {PDF_FIX_OPERATIONS.filter((o) => o.group === g.group).map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={operation === o.value}
+              title={`${o.label}（${g.label}）`}
+              data-testid={`pdf-fix-op-${o.value}`}
+              onClick={() => chooseOperation(o.value)}
+            >
+              <span aria-hidden="true" className="ms-op-icon">
+                {PDF_FIX_OPERATION_ICONS[o.value]}
+              </span>
+              {PDF_FIX_OPERATION_BAR[o.value] ?? PDF_FIX_OPERATION_SHORT[o.value]}
+            </button>
           ))}
-        </div>
-        <div
-          data-testid="pdf-fix-mode-description"
-          className="flex flex-col gap-0.5 rounded-lg bg-ms-hover-tint px-3 py-2 text-xs text-ms-text"
-        >
-          <p className="font-semibold" data-testid="pdf-fix-current-operation" data-operation={operation}>
-            いまの操作：{info.label}
+        </Fragment>
+      ))}
+    </div>
+  );
+
+  /** いまの操作の名前と使い方（設定の列に出す） */
+  const operationBlock = (
+    <div className="flex flex-col gap-2" data-testid="pdf-fix-modes" data-mode={mode}>
+      <div
+        data-testid="pdf-fix-mode-description"
+        className="flex flex-col gap-0.5 rounded-lg bg-ms-hover-tint px-3 py-2 text-xs text-ms-text"
+      >
+        <p className="font-semibold" data-testid="pdf-fix-current-operation" data-operation={operation}>
+          いまの操作：{info.label}
+        </p>
+        <p>{info.howTo}</p>
+        {mode !== "annotate" && annotateHasEdits && (
+          <p className="mt-1" data-testid="pdf-fix-annotate-kept">
+            PDFの上に置いた文字・図形などは、そのまま残っています（「PDFの上に置く」操作を選ぶと、続きを編集できます）。
+            ページ番号・透かしは、それとは別のPDFとして書き出します。
           </p>
-          <p>{info.howTo}</p>
-          {mode !== "annotate" && annotateHasEdits && (
-            <p className="mt-1" data-testid="pdf-fix-annotate-kept">
-              PDFの上に置いた文字・図形などは、そのまま残っています（「PDFの上に置く」操作を選ぶと、続きを編集できます）。
-              ページ番号・透かしは、それとは別のPDFとして書き出します。
-            </p>
-          )}
-        </div>
+        )}
       </div>
+    </div>
   );
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 記入・注釈のときは、やりたい操作を設定の列（「記入・注釈を配置」の見出しの下）に出す。ページ番号・透かしのときは、ここに出す */}
-      {mode !== "annotate" && operationBlock}
+      {/* 記入・注釈のときは、ボタンの帯をプレビューの列の上に、使い方を設定の列に出す。ページ番号・透かし・墨消しのときは、ここに出す（帯は画面の上に固定） */}
+      {mode !== "annotate" && (
+        <div className="flex flex-col gap-2">
+          <div className="sticky top-14 z-30" data-testid="pdf-fix-toolbar-top">
+            {operationToolbar}
+          </div>
+          {operationBlock}
+        </div>
+      )}
 
       {/* 白消し・黒塗りを選んだときだけ、見た目だけ隠す方式と、本当の墨消しの違いを出す */}
       {(operation === "whiteout" || operation === "blackout") && (
@@ -211,6 +226,7 @@ export function PdfFixTool() {
           onModeChange={handleAnnotateModeChange}
           inactive={mode !== "annotate"}
           operationSlot={mode === "annotate" ? operationBlock : undefined}
+          previewToolbar={mode === "annotate" ? operationToolbar : undefined}
           onOpenRedaction={() => chooseOperation("redact")}
         />
       </div>

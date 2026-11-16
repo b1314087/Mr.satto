@@ -199,6 +199,9 @@ const PdfToWordTool = dynamic(() =>
   import("./implementations/pdf-to-word-tool").then((m) => m.PdfToWordTool),
   { loading: ToolLoading }
 );
+const LegacyOfficeConvertTool = dynamic(() =>
+  import("./implementations/legacy-office-convert-tool").then((m) => m.LegacyOfficeConvertTool),
+);
 const ExcelToWordTool = dynamic(() =>
   import("./implementations/excel-to-word-tool").then((m) => m.ExcelToWordTool),
   { loading: ToolLoading }
@@ -548,6 +551,10 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelToPdfTool />;
     case "excel-to-word":
       return <ExcelToWordTool />;
+    case "xls-to-xlsx":
+      return <LegacyOfficeConvertTool kind="xls" />;
+    case "doc-to-docx":
+      return <LegacyOfficeConvertTool kind="doc" />;
     case "word-to-excel":
       return <WordToExcelTool />;
     case "pdf-extract-pages":

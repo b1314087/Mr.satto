@@ -9,14 +9,28 @@ export interface XFont {
   sizePt?: number | null;
   bold?: boolean;
   italic?: boolean;
-  underline?: boolean;
+  /** true = 一重線。"double" = 二重線 */
+  underline?: boolean | "double";
   strike?: boolean;
   /** RRGGBB（#なし） */
   color?: string | null;
   vertAlign?: "superscript" | "subscript" | null;
 }
 
-export type XBorderStyle = "hair" | "thin" | "medium" | "thick" | "dashed" | "dotted" | "double";
+export type XBorderStyle =
+  | "hair"
+  | "thin"
+  | "medium"
+  | "thick"
+  | "dashed"
+  | "dotted"
+  | "double"
+  | "mediumDashed"
+  | "dashDot"
+  | "mediumDashDot"
+  | "dashDotDot"
+  | "mediumDashDotDot"
+  | "slantDashDot";
 export interface XBorderSide {
   style: XBorderStyle;
   color?: string | null;
@@ -26,12 +40,21 @@ export interface XStyle {
   font?: XFont;
   /** 背景色 RRGGBB */
   fill?: string | null;
+  /** 塗りつぶしの模様（既定は solid）と、模様の背景の色（旧形式の.xlsの模様の塗りつぶし用） */
+  fillPattern?: string | null;
+  fillBg?: string | null;
   border?: { top?: XBorderSide | null; bottom?: XBorderSide | null; left?: XBorderSide | null; right?: XBorderSide | null };
-  hAlign?: "left" | "center" | "right" | "justify" | null;
-  vAlign?: "top" | "center" | "bottom" | null;
+  hAlign?: "left" | "center" | "right" | "justify" | "fill" | "centerContinuous" | "distributed" | null;
+  vAlign?: "top" | "center" | "bottom" | "justify" | "distributed" | null;
   wrap?: boolean;
+  /** 縮小して全体を表示 */
+  shrink?: boolean;
+  /** 文字の向き（0〜180、255 = 縦書き） */
+  rotation?: number;
   /** 表示形式（例: "#,##0"・"yyyy/m/d"・"@"） */
   numFmt?: string | null;
+  /** Excelに最初からある表示形式の番号（numFmt より優先） */
+  numFmtId?: number | null;
   indent?: number;
 }
 
@@ -40,6 +63,10 @@ export interface XCell {
   /** 一部の文字だけ書式が違うときの、文字の区切り（v は全体の文字列） */
   rich?: { text: string; font: XFont }[] | null;
   style?: XStyle | null;
+  /** 数式（先頭の = は付けない）。v は保存しておく計算結果 */
+  f?: string | null;
+  /** v をエラーの値（#DIV/0! など）として書く */
+  error?: boolean;
 }
 
 export interface XImage {
@@ -59,8 +86,22 @@ export interface XSheet {
   /** 列の幅（Excelの文字数の単位）。null は既定 */
   colWidths: (number | null)[];
   /** 行の高さ（pt）。custom = 固定の高さ（文字に合わせて広がらない） */
-  rowHeights: Map<number, { pt: number; custom: boolean }>;
+  rowHeights: Map<number, { pt: number; custom: boolean; hidden?: boolean }>;
   images: XImage[];
+  /** 非表示の列（0始まり） */
+  hiddenCols?: Set<number>;
+  /** シートの表示（既定は表示） */
+  state?: "visible" | "hidden" | "veryHidden";
+  /** 既定の列の幅（文字数）・行の高さ（pt） */
+  baseColWidth?: number | null;
+  defaultRowHeightPt?: number | null;
+}
+
+export interface XWorkbookOptions {
+  /** 1904年を基準にした日付（Mac版の古いExcelの設定） */
+  date1904?: boolean;
+  /** ブックの既定のフォント（空のセル・行の高さの基準）。省略時は游ゴシック 11pt */
+  defaultFont?: XFont;
 }
 
 const EMU_PER_PX = 9525;
@@ -97,7 +138,7 @@ function fontXml(f: XFont | undefined, tag: "font" | "rPr"): string {
   if (f?.bold) parts.push("<b/>");
   if (f?.italic) parts.push("<i/>");
   if (f?.strike) parts.push("<strike/>");
-  if (f?.underline) parts.push('<u/>');
+  if (f?.underline) parts.push(f.underline === "double" ? '<u val="double"/>' : "<u/>");
   if (f?.vertAlign) parts.push(`<vertAlign val="${f.vertAlign}"/>`);
   parts.push(`<sz val="${f?.sizePt ? Math.round(f.sizePt * 2) / 2 : 11}"/>`);
   parts.push(f?.color ? `<color rgb="FF${f.color.toUpperCase()}"/>` : '<color theme="1"/>');
@@ -114,7 +155,10 @@ function borderXml(b: XStyle["border"]): string {
 }
 
 class StyleBook {
-  fonts: string[] = [fontXml(undefined, "font")];
+  fonts: string[];
+  constructor(defaultFont?: XFont) {
+    this.fonts = [fontXml(defaultFont, "font")];
+  }
   fills: string[] = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
   borders: string[] = ["<border><left/><right/><top/><bottom/><diagonal/></border>"];
   numFmts: string[] = [];
@@ -131,14 +175,20 @@ class StyleBook {
   styleId(s: XStyle | null | undefined): number {
     if (!s) return 0;
     const fontId = this.idx(this.fonts, fontXml(s.font, "font"));
-    const fillId = s.fill ? this.idx(this.fills, `<fill><patternFill patternType="solid"><fgColor rgb="FF${s.fill.toUpperCase()}"/><bgColor indexed="64"/></patternFill></fill>`) : 0;
+    const fillId = s.fill
+      ? this.idx(
+          this.fills,
+          `<fill><patternFill patternType="${s.fillPattern ?? "solid"}"><fgColor rgb="FF${s.fill.toUpperCase()}"/>${s.fillBg ? `<bgColor rgb="FF${s.fillBg.toUpperCase()}"/>` : '<bgColor indexed="64"/>'}</patternFill></fill>`
+        )
+      : 0;
     const borderId = s.border ? this.idx(this.borders, borderXml(s.border)) : 0;
     let numFmtId = 0;
-    if (s.numFmt === "@") numFmtId = 49;
+    if (typeof s.numFmtId === "number" && s.numFmtId >= 0 && s.numFmtId < 164) numFmtId = s.numFmtId;
+    else if (s.numFmt === "@") numFmtId = 49;
     else if (s.numFmt) numFmtId = 164 + this.idx(this.numFmts, s.numFmt);
     const align =
-      s.hAlign || s.vAlign || s.wrap || s.indent
-        ? `<alignment${s.hAlign ? ` horizontal="${s.hAlign}"` : ""}${s.vAlign ? ` vertical="${s.vAlign}"` : ""}${s.wrap ? ' wrapText="1"' : ""}${s.indent ? ` indent="${s.indent}"` : ""}/>`
+      s.hAlign || s.vAlign || s.wrap || s.indent || s.shrink || s.rotation
+        ? `<alignment${s.hAlign ? ` horizontal="${s.hAlign}"` : ""}${s.vAlign ? ` vertical="${s.vAlign}"` : ""}${s.rotation ? ` textRotation="${s.rotation}"` : ""}${s.wrap ? ' wrapText="1"' : ""}${s.indent ? ` indent="${s.indent}"` : ""}${s.shrink ? ' shrinkToFit="1"' : ""}/>`
         : "";
     const xf = `<xf numFmtId="${numFmtId}" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0"${numFmtId ? ' applyNumberFormat="1"' : ""} applyFont="1"${fillId ? ' applyFill="1"' : ""}${borderId ? ' applyBorder="1"' : ""}${align ? ' applyAlignment="1">' + align + "</xf>" : "/>"}`;
     const k = xf;
@@ -158,8 +208,8 @@ class StyleBook {
   }
 }
 
-export function writeXlsx(sheets: XSheet[]): Uint8Array {
-  const styles = new StyleBook();
+export function writeXlsx(sheets: XSheet[], options: XWorkbookOptions = {}): Uint8Array {
+  const styles = new StyleBook(options.defaultFont);
   const strings: string[] = [];
   const stringIndex = new Map<string, number>();
   const sst = (xml: string) => {
@@ -174,6 +224,10 @@ export function writeXlsx(sheets: XSheet[]): Uint8Array {
   const mediaExt = new Set<string>();
   let imageCounter = 0;
 
+  // 最初に表示するシート（非表示のシートは選べない）
+  const firstVisible = Math.max(0, sheets.findIndex((s) => !s.state || s.state === "visible"));
+  // 数式があるときは、開いたときに計算し直してもらう（保存されている計算結果が古いことがあるため）
+  const hasFormula = sheets.some((s) => s.rows.some((row) => row?.some((c) => !!c?.f)));
   sheets.forEach((sheet, si) => {
     const n = si + 1;
     const rowsXml: string[] = [];
@@ -188,6 +242,19 @@ export function writeXlsx(sheets: XSheet[]): Uint8Array {
         const s = styles.styleId(cell.style);
         const sAttr = s ? ` s="${s}"` : "";
         const v = cell.v;
+        if (cell.f) {
+          const f = `<f>${esc(cell.f)}</f>`;
+          if (typeof v === "number" && Number.isFinite(v)) cells.push(`<c r="${ref}"${sAttr}>${f}<v>${v}</v></c>`);
+          else if (v instanceof Date) cells.push(`<c r="${ref}"${sAttr}>${f}<v>${dateToSerial(v)}</v></c>`);
+          else if (typeof v === "boolean") cells.push(`<c r="${ref}"${sAttr} t="b">${f}<v>${v ? 1 : 0}</v></c>`);
+          else if (cell.error && typeof v === "string") cells.push(`<c r="${ref}"${sAttr} t="e">${f}<v>${esc(v)}</v></c>`);
+          else cells.push(`<c r="${ref}"${sAttr} t="str">${f}<v>${esc(v === null ? "" : String(v))}</v></c>`);
+          return;
+        }
+        if (cell.error && typeof v === "string") {
+          cells.push(`<c r="${ref}"${sAttr} t="e"><v>${esc(v)}</v></c>`);
+          return;
+        }
         if (v === null || v === "") {
           if (s) cells.push(`<c r="${ref}"${sAttr}/>`);
         } else if (typeof v === "number" && Number.isFinite(v)) {
@@ -206,13 +273,26 @@ export function writeXlsx(sheets: XSheet[]): Uint8Array {
         }
       });
       if (cells.length > 0 || h) {
-        rowsXml.push(`<row r="${r + 1}"${h ? ` ht="${Math.round(h.pt * 100) / 100}"${h.custom ? ' customHeight="1"' : ""}` : ""}>${cells.join("")}</row>`);
+        rowsXml.push(
+          `<row r="${r + 1}"${h ? ` ht="${Math.round(h.pt * 100) / 100}"${h.custom ? ' customHeight="1"' : ""}${h.hidden ? ' hidden="1"' : ""}` : ""}>${cells.join("")}</row>`
+        );
       }
     }
-    const cols = sheet.colWidths
-      .map((w, c) => (w ? `<col min="${c + 1}" max="${c + 1}" width="${w}" customWidth="1"/>` : ""))
-      .filter(Boolean)
-      .join("");
+    const hiddenCols = sheet.hiddenCols ?? new Set<number>();
+    const colCount = Math.max(sheet.colWidths.length, hiddenCols.size ? Math.max(...hiddenCols) + 1 : 0);
+    const colParts: string[] = [];
+    // 同じ幅・同じ表示の列が続くときは、1つの範囲にまとめて書く（.xls は256列すべてに幅があることが多い）
+    for (let c = 0; c < colCount; ) {
+      const w = sheet.colWidths[c];
+      const hidden = hiddenCols.has(c);
+      let end = c;
+      while (end + 1 < colCount && sheet.colWidths[end + 1] === w && hiddenCols.has(end + 1) === hidden) end++;
+      if (w || hidden) {
+        colParts.push(`<col min="${c + 1}" max="${end + 1}" width="${w ?? sheet.baseColWidth ?? 8.43}"${w ? ' customWidth="1"' : ""}${hidden ? ' hidden="1"' : ""}/>`);
+      }
+      c = end + 1;
+    }
+    const cols = colParts.join("");
     const merges = sheet.merges.length
       ? `<mergeCells count="${sheet.merges.length}">${sheet.merges.map((m) => `<mergeCell ref="${colName(m.c1)}${m.r1 + 1}:${colName(m.c2)}${m.r2 + 1}"/>`).join("")}</mergeCells>`
       : "";
@@ -248,7 +328,7 @@ export function writeXlsx(sheets: XSheet[]): Uint8Array {
     }
     files[`xl/worksheets/sheet${n}.xml`] = strToU8(
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetViews><sheetView workbookViewId="0"${si === 0 ? ' tabSelected="1"' : ""}/></sheetViews><sheetFormatPr defaultRowHeight="18.75"/>${cols ? `<cols>${cols}</cols>` : ""}<sheetData>${rowsXml.join("")}</sheetData>${merges}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/>${drawing}</worksheet>`
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetViews><sheetView workbookViewId="0"${si === firstVisible ? ' tabSelected="1"' : ""}/></sheetViews><sheetFormatPr${sheet.baseColWidth ? ` baseColWidth="${sheet.baseColWidth}"` : ""} defaultRowHeight="${sheet.defaultRowHeightPt ?? 18.75}"/>${cols ? `<cols>${cols}</cols>` : ""}<sheetData>${rowsXml.join("")}</sheetData>${merges}<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait"/>${drawing}</worksheet>`
     );
     contentOverrides.push(`<Override PartName="/xl/worksheets/sheet${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`);
   });
@@ -260,7 +340,9 @@ export function writeXlsx(sheets: XSheet[]): Uint8Array {
   files["xl/styles.xml"] = strToU8(styles.xml());
   files["xl/workbook.xml"] = strToU8(
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>${sheets.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>`
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${options.date1904 ? '<workbookPr date1904="1"/>' : ""}<bookViews><workbookView${firstVisible > 0 ? ` activeTab="${firstVisible}"` : ""}/></bookViews><sheets>${sheets
+      .map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}"${s.state && s.state !== "visible" ? ` state="${s.state}"` : ""} r:id="rId${i + 1}"/>`)
+      .join("")}</sheets>${hasFormula ? '<calcPr calcId="0" fullCalcOnLoad="1"/>' : ""}</workbook>`
   );
   files["xl/_rels/workbook.xml.rels"] = strToU8(
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

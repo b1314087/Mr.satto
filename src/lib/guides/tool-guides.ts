@@ -325,6 +325,12 @@ export const toolGuides: Record<string, ToolGuide> = {
       ...finish("変換する", "Wordに変換する", [file(XLSX), table(4, 2)], "Word文書をダウンロード"),
     ],
   },
+  "xls-to-xlsx": {
+    steps: [pick("Excelを選ぶ", "Excel旧形式のファイル(.xls)をドラッグ&ドロップ"), ...finish("変換する", ".xlsxに変換する", [file("data.xls"), table(4, 2)], "Excelファイル(.xlsx)をダウンロード")],
+  },
+  "doc-to-docx": {
+    steps: [pick("Wordを選ぶ", "Word旧形式の文書(.doc)をドラッグ&ドロップ"), ...finish("変換する", ".docxに変換する", [file("report.doc")], "Word文書(.docx)をダウンロード")],
+  },
   "word-to-excel": {
     steps: [
       pick("Wordを選ぶ", "Word文書(.docx)をドラッグ&ドロップ"),

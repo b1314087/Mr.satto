@@ -30,6 +30,7 @@ import {
   type TextAnnotationObject,
 } from "@/lib/pdf-annotate/types";
 import { clampMoveDelta, rotatePointAround } from "@/lib/pdf-annotate/geometry";
+import { ensurePdfTextFont, layoutTextBox, PDF_TEXT_FONT_FAMILY } from "@/lib/pdf-annotate/text-layout";
 import { saveBlob, stripExtension } from "@/lib/utils/format";
 import { runWithDownloadAccess } from "@/lib/download/download-gate";
 import { useUnsavedChangesWarning } from "./shared/use-unsaved-changes-warning";
@@ -176,6 +177,14 @@ function objectBoundsForClamp(obj: AnnotationObject): { minX: number; maxX: numb
   return { minX: obj.x, maxX: obj.x + obj.width, minY: obj.y, maxY: obj.y + obj.height };
 }
 
+/** 注釈をずらす（矢印キーでの微調整用。PDFの座標で dx・dy） */
+function moveObjectBy(o: AnnotationObject, dx: number, dy: number): AnnotationObject {
+  if (o.type === "ink") return { ...o, points: o.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+  if (o.type === "shape" && o.shapeKind === "line") return { ...o, x1: o.x1 + dx, y1: o.y1 + dy, x2: o.x2 + dx, y2: o.y2 + dy };
+  if (o.type === "shape") return { ...o, x: o.x + dx, y: o.y + dy } as AnnotationObject;
+  return { ...o, x: o.x + dx, y: o.y + dy } as AnnotationObject;
+}
+
 function normalizeRotation(deg: number): number {
   const r = deg % 360;
   return r < 0 ? r + 360 : r;
@@ -189,6 +198,7 @@ export function PdfFillAnnotateTool({
   onModeChange,
   inactive,
   operationSlot,
+  previewToolbar,
   onOpenRedaction,
 }: SharedPdfFileProps & {
   /** 配置済みの注釈・文字・図形などが1つでもあるかが変わったときに呼ばれる（総合画面が、機能の切り替え前に確認を出すため） */
@@ -207,6 +217,11 @@ export function PdfFillAnnotateTool({
    * まだ表示していないときは画面の一番上に出す（どちらか1か所だけ。プレビューの上には重ねない）
    */
   operationSlot?: React.ReactNode;
+  /**
+   * PDF修正の「やりたい操作」のボタンの帯。プレビューの列の一番上に置き、PCではプレビューと一緒に画面に固定、
+   * スマホでは画面の上（ヘッダーの下）に固定する。編集の途中でも、上まで戻らずに操作を切り替えられる
+   */
+  previewToolbar?: React.ReactNode;
   /** PDF修正の中で使うとき：墨消し（元の文字ごと消す）へ切り替える。無いときは墨消しのページへのリンクを出す */
   onOpenRedaction?: () => void;
 } = {}) {
@@ -272,8 +287,14 @@ export function PdfFillAnnotateTool({
     startY: number;
     original: AnnotationObject;
     snapshot: AnnotationObject[];
+    /** 押す前から選ばれていたか（選ばれている文字をもう一度押すと、その場で文字を編集する） */
+    wasActive?: boolean;
   } | null>(null);
   const textEditStartRef = useRef<{ id: string; text: string } | null>(null);
+  /** プレビューの上で、その場で文字を入力・編集している文字の注釈 */
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  /** 書き出しと同じフォント（Noto Sans JP）を、画面の表示用に読み込んだか */
+  const [, setPdfFontReady] = useState(false);
 
   // --- テキスト配置の既定値 ---
   const [textFontSize, setTextFontSize] = useState(14);
@@ -397,20 +418,58 @@ export function PdfFillAnnotateTool({
     if (repositioningId === id) setRepositioningId(null);
   }
 
-  // Deleteキーで選択中のオブジェクトを削除する（キーボード操作のための最低限の対応）
+  // Deleteキーで選択中のオブジェクトを削除する。矢印キーで少しずつ動かす（1pt。Shiftを押しながらなら10pt）
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!activeObjectId) return;
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        removeObject(activeObjectId);
+        return;
+      }
+      const step = e.shiftKey ? 10 : 1;
+      const delta = e.key === "ArrowLeft" ? [-step, 0] : e.key === "ArrowRight" ? [step, 0] : e.key === "ArrowUp" ? [0, step] : e.key === "ArrowDown" ? [0, -step] : null;
+      if (!delta) return;
+      const obj = objects.find((o) => o.id === activeObjectId);
+      if (!obj) return;
       e.preventDefault();
-      removeObject(activeObjectId);
+      const page = currentPageInfo ?? { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY };
+      const { dx, dy } = clampMoveDelta(objectBoundsForClamp(obj), delta[0], delta[1], page);
+      if (dx === 0 && dy === 0) return;
+      commit(objects.map((o) => (o.id === obj.id ? moveObjectBy(o, dx, dy) : o)));
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeObjectId, objects]);
+
+  // 文字の注釈があるときは、書き出しと同じフォントを画面の表示用に読み込む（画面とPDFで、文字の幅・位置を同じにするため）
+  const hasTextObject = objects.some((o) => o.type === "text");
+  useEffect(() => {
+    if (!hasTextObject) return;
+    let alive = true;
+    void ensurePdfTextFont().then((ok) => {
+      if (alive && ok) setPdfFontReady(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [hasTextObject]);
+
+  /**
+   * その場の文字の編集を終える。空のままの欄も残す（下の一覧の入力欄で続きを入力できるように。空の欄はPDFには書き出さない）
+   */
+  function finishTextEditing(id: string) {
+    setEditingTextId((cur) => (cur === id ? null : cur));
+    const obj = objects.find((o) => o.id === id);
+    const start = textEditStartRef.current;
+    textEditStartRef.current = null;
+    if (start && start.id === id && obj && obj.type === "text" && obj.text !== start.text) {
+      pushHistory(objects.map((o) => (o.id === id ? { ...o, text: start.text } : o)));
+    }
+  }
 
   function patchObjectLive(id: string, patch: Record<string, unknown>) {
     setObjects((prev) => prev.map((o) => (o.id === id ? ({ ...o, ...patch } as AnnotationObject) : o)));
@@ -715,6 +774,9 @@ export function PdfFillAnnotateTool({
       };
       commit([...objects, obj]);
       setActiveObjectId(obj.id);
+      // 置いた場所で、そのまま文字を入力できるようにする
+      textEditStartRef.current = { id: obj.id, text: "" };
+      setEditingTextId(obj.id);
       setMode("select");
     } else if (mode === "checkbox") {
       if (atObjectLimit()) return;
@@ -871,6 +933,7 @@ export function PdfFillAnnotateTool({
     if (mode !== "select") setMode("select");
     e.stopPropagation();
     (e.target as Element).setPointerCapture(e.pointerId);
+    const wasActive = activeObjectId === obj.id;
     setActiveObjectId(obj.id);
     dragState.current = {
       id: obj.id,
@@ -878,6 +941,7 @@ export function PdfFillAnnotateTool({
       startY: e.clientY,
       original: obj,
       snapshot: objects,
+      wasActive,
     };
   }
 
@@ -937,6 +1001,12 @@ export function PdfFillAnnotateTool({
     }
     if (totalMove >= 4) {
       pushHistory(drag.snapshot);
+      return;
+    }
+    // 選ばれている文字をもう一度押したら、その場で文字を編集する
+    if (drag.original.type === "text" && drag.wasActive) {
+      textEditStartRef.current = { id: drag.id, text: drag.original.text };
+      setEditingTextId(drag.id);
     }
   }
 
@@ -1193,6 +1263,7 @@ export function PdfFillAnnotateTool({
   const previewShown = Boolean(file && pageImageUrl && currentPageInfo);
   return (
     <div className="flex flex-col gap-6">
+      {previewToolbar && !previewShown && previewToolbar}
       {operationSlot && !previewShown && operationSlot}
 
       {error && <ErrorMessage message={error} />}
@@ -1636,10 +1707,20 @@ export function PdfFillAnnotateTool({
 
           </div>
 
+          {/* プレビューの列：PCでは画面に固定（スクロールしても見えたまま）。一番上に「やりたい操作」の帯を置く */}
+          <div
+            className="min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start"
+            data-testid="pdf-preview-column"
+          >
+          {previewToolbar && (
+            <div className="sticky top-14 z-30 -mx-1 mb-2 px-1 lg:static lg:mx-0 lg:px-0" data-testid="pdf-fix-toolbar-slot">
+              {previewToolbar}
+            </div>
+          )}
           <div
             ref={canvasWrapRef}
             data-testid="tool-preview"
-            className="w-full min-w-0 overflow-x-auto lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto"
+            className={`w-full min-w-0 overflow-x-auto lg:overflow-y-auto ${previewToolbar ? "lg:max-h-[calc(100vh-9.5rem)]" : "lg:max-h-[calc(100vh-6rem)]"}`}
           >
             <div
               data-testid="pdf-annotate-canvas"
@@ -1681,13 +1762,56 @@ export function PdfFillAnnotateTool({
               {pageObjects.map((obj) => {
                 const isActive = activeObjectId === obj.id;
                 if (obj.type === "text") {
-                  // 2026-11：改行した文字が、画面では1行につながって見えていた（書き出したPDFは複数行だった）。
-                  // 書き出しと同じく、obj.y を最後の行の位置とし、それより上の行を行間（文字サイズ×1.3）ずつ積み上げて表示する
+                  // 書き出しと同じフォント・同じ送り幅・同じ基準線で表示する（src/lib/pdf-annotate/text-layout.ts）。
+                  // 画面の拡大・縮小は、PDFの座標×倍率で位置を決めるので、ずれない
                   const lines = obj.text.split("\n");
-                  const longest = Math.max(1, ...lines.map((l) => l.length));
-                  const width = Math.max(20, longest * obj.fontSize * 0.62) * pageRenderScale;
-                  const lineHeight = obj.fontSize * 1.3 * pageRenderScale;
-                  const height = lineHeight * lines.length;
+                  const box = layoutTextBox(obj, currentPageInfo.height, pageRenderScale);
+                  const editing = editingTextId === obj.id;
+                  const common: React.CSSProperties = {
+                    left: box.left,
+                    top: box.top,
+                    lineHeight: `${box.lineHeight}px`,
+                    textAlign: obj.align ?? "left",
+                    fontSize: box.fontPx,
+                    fontFamily: `${PDF_TEXT_FONT_FAMILY}, "Noto Sans JP", sans-serif`,
+                    fontWeight: 400,
+                    fontSynthesis: "none",
+                    fontKerning: "none",
+                    color: cssColor(obj.color),
+                    // 書き出しの疑似太字（少しずらして重ねる）と同じ見た目にする
+                    textShadow: box.boldShiftPx ? `${box.boldShiftPx}px 0 0 ${cssColor(obj.color)}` : undefined,
+                  };
+                  if (editing) {
+                    return (
+                      <textarea
+                        key={obj.id}
+                        autoFocus
+                        value={obj.text}
+                        rows={Math.max(1, lines.length)}
+                        wrap="off"
+                        spellCheck={false}
+                        aria-label="PDFに書き込む文字"
+                        data-testid="pdf-annotate-inline-text"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onFocus={() => {
+                          if (!textEditStartRef.current || textEditStartRef.current.id !== obj.id) textEditStartRef.current = { id: obj.id, text: obj.text };
+                        }}
+                        onChange={(e) => patchObjectLive(obj.id, { text: e.target.value.slice(0, PDF_FILL_ANNOTATE_LIMITS.maxTextLength) })}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
+                            e.preventDefault();
+                            (e.target as HTMLTextAreaElement).blur();
+                          }
+                        }}
+                        onBlur={() => finishTextEditing(obj.id)}
+                        placeholder="文字を入力"
+                        className="absolute z-20 m-0 resize-none overflow-hidden whitespace-pre border-0 bg-white/70 p-0 outline outline-2 outline-blue-500 placeholder:text-neutral-400 dark:bg-white/70"
+                        style={{ ...common, width: Math.max(box.width + box.fontPx, box.fontPx * 4), height: box.height }}
+                      />
+                    );
+                  }
                   return (
                     <div
                       key={obj.id}
@@ -1695,26 +1819,26 @@ export function PdfFillAnnotateTool({
                       onPointerMove={handleObjectPointerMove}
                       onPointerUp={handleObjectPointerUp}
                       onClick={handleObjectInertClick}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setActiveObjectId(obj.id);
+                        textEditStartRef.current = { id: obj.id, text: obj.text };
+                        setEditingTextId(obj.id);
+                      }}
                       data-testid="pdf-annotate-text-object"
                       data-lines={lines.length}
-                      className={`absolute whitespace-pre px-0.5 ${
+                      className={`absolute whitespace-pre ${
                         isActive ? "outline outline-2 outline-blue-500" : "outline outline-1 outline-dashed outline-neutral-400/60"
                       }`}
                       style={{
-                        left: pdfToScreenX(obj.x, pageRenderScale),
-                        top: pdfToScreenY(obj.y, obj.fontSize * 0.3, currentPageInfo.height, pageRenderScale) - lineHeight * 0.55 - lineHeight * (lines.length - 1),
-                        minWidth: width,
-                        height,
-                        lineHeight: `${lineHeight}px`,
-                        textAlign: obj.align ?? "left",
-                        fontSize: Math.max(8, obj.fontSize * pageRenderScale),
-                        fontWeight: obj.bold ? 700 : 400,
-                        color: cssColor(obj.color),
+                        ...common,
+                        width: box.width,
+                        height: box.height,
                         cursor: mode === "ink" ? "default" : "move",
                         touchAction: "none",
                       }}
                     >
-                      {obj.text || "（テキスト未入力）"}
+                      {obj.text || <span className="text-neutral-400">（テキスト未入力）</span>}
                     </div>
                   );
                 }
@@ -1888,7 +2012,80 @@ export function PdfFillAnnotateTool({
                   </div>
                 );
               })}
+
+              {/* 選んでいる文字の、すぐ上に出す小さな操作の帯（編集・大きさ・太字・揃え・削除） */}
+              {(() => {
+                const obj = pageObjects.find((o) => o.id === activeObjectId);
+                if (!obj || obj.type !== "text" || mode === "ink") return null;
+                const box = layoutTextBox(obj, currentPageInfo.height, pageRenderScale);
+                const barTop = box.top - 40 >= 0 ? box.top - 40 : box.top + box.height + 6;
+                const btn = "flex h-8 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded px-1.5 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-700";
+                const setSize = (v: number) => patchObjectWithHistory(obj.id, { fontSize: Math.min(96, Math.max(6, v)) });
+                return (
+                  <div
+                    data-testid="pdf-annotate-text-toolbar"
+                    className="absolute z-30 flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-neutral-300 bg-white p-0.5 text-neutral-800 shadow-md dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
+                    style={{ left: Math.max(0, Math.min(box.left, pageImagePixelSize.width - 340)), top: barTop }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className={btn}
+                      title="文字を編集（文字をダブルクリックしても編集できます）"
+                      data-testid="pdf-annotate-text-edit"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        textEditStartRef.current = { id: obj.id, text: obj.text };
+                        setEditingTextId(obj.id);
+                      }}
+                    >
+                      編集
+                    </button>
+                    <span className="mx-0.5 h-5 w-px bg-neutral-200 dark:bg-neutral-600" aria-hidden="true" />
+                    <button type="button" className={btn} title="文字を小さく" aria-label="文字を小さく" data-testid="pdf-annotate-text-smaller" onMouseDown={(e) => e.preventDefault()} onClick={() => setSize(obj.fontSize - 1)}>
+                      A−
+                    </button>
+                    <span className="w-9 text-center text-xs tabular-nums" data-testid="pdf-annotate-text-size">
+                      {obj.fontSize}pt
+                    </span>
+                    <button type="button" className={btn} title="文字を大きく" aria-label="文字を大きく" data-testid="pdf-annotate-text-larger" onMouseDown={(e) => e.preventDefault()} onClick={() => setSize(obj.fontSize + 1)}>
+                      A＋
+                    </button>
+                    <span className="mx-0.5 h-5 w-px bg-neutral-200 dark:bg-neutral-600" aria-hidden="true" />
+                    <button
+                      type="button"
+                      className={`${btn} ${obj.bold ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+                      aria-pressed={obj.bold}
+                      title="太字"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => patchObjectWithHistory(obj.id, { bold: !obj.bold })}
+                    >
+                      B
+                    </button>
+                    {(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => (
+                      <button
+                        key={a}
+                        type="button"
+                        className={`${btn} ${(obj.align ?? "left") === a ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+                        aria-pressed={(obj.align ?? "left") === a}
+                        title={`${ALIGN_LABELS[a]}（複数行のときの、行どうしの揃え方）`}
+                        data-testid={`pdf-annotate-text-align-${a}`}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => patchObjectWithHistory(obj.id, { align: a })}
+                      >
+                        {a === "left" ? "⇤" : a === "center" ? "↔" : "⇥"}
+                      </button>
+                    ))}
+                    <span className="mx-0.5 h-5 w-px bg-neutral-200 dark:bg-neutral-600" aria-hidden="true" />
+                    <button type="button" className={`${btn} text-red-600`} title="この文字を削除" aria-label="この文字を削除" onMouseDown={(e) => e.preventDefault()} onClick={() => removeObject(obj.id)}>
+                      ✕
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
+          </div>
           </div>
 
           {objects.length > 0 && (

@@ -41,6 +41,38 @@ export interface RemoveLinesResult {
   gray: Uint8Array;
   /** 消した罫線の画素数 */
   removedPixels: number;
+  /** 消した縦の罫線（画像のピクセル座標。y0 < y1、下方向が正）。表の列の区切りに使う */
+  verticalRules: { x: number; y0: number; y1: number }[];
+}
+
+/** 縦の罫線の印（画素ごと）から、線分（x・上端・下端）を取り出す。隣り合う列の、縦に重なる線は1本にまとめる */
+function extractVerticalSegments(vmark: Uint8Array, w: number, h: number, maxThickness: number): { x: number; y0: number; y1: number }[] {
+  const raw: { x: number; y0: number; y1: number }[] = [];
+  for (let x = 0; x < w; x++) {
+    let y = 0;
+    while (y < h) {
+      if (!vmark[y * w + x]) {
+        y++;
+        continue;
+      }
+      let end = y;
+      while (end < h && vmark[end * w + x]) end++;
+      raw.push({ x, y0: y, y1: end - 1 });
+      y = end;
+    }
+  }
+  raw.sort((a, b) => a.x - b.x || a.y0 - b.y0);
+  const merged: { xs: number[]; y0: number; y1: number; lastX: number }[] = [];
+  for (const seg of raw) {
+    const hit = merged.find((m) => seg.x - m.lastX <= Math.max(2, maxThickness) && seg.y0 <= m.y1 && seg.y1 >= m.y0);
+    if (hit) {
+      hit.xs.push(seg.x);
+      hit.lastX = seg.x;
+      hit.y0 = Math.min(hit.y0, seg.y0);
+      hit.y1 = Math.max(hit.y1, seg.y1);
+    } else merged.push({ xs: [seg.x], y0: seg.y0, y1: seg.y1, lastX: seg.x });
+  }
+  return merged.map((m) => ({ x: m.xs.reduce((a, b) => a + b, 0) / m.xs.length, y0: m.y0, y1: m.y1 }));
 }
 
 /** 周囲(boxRadius四方)の平均より一定以上暗い画素を「インク」とする */
@@ -411,7 +443,9 @@ export function removeRuledLines(img: GrayImage, options: RemoveLinesOptions = {
 
   const mark = new Uint8Array(w * h);
   markHorizontalRuns(ink, w, h, minH, maxThickness, mark);
-  markVerticalRuns(ink, w, h, minV, maxThickness, mark);
+  const vmark = new Uint8Array(w * h);
+  markVerticalRuns(ink, w, h, minV, maxThickness, vmark);
+  for (let i = 0; i < mark.length; i++) if (vmark[i]) mark[i] = 1;
 
   // 罫線のふち(アンチエイリアスの薄い部分)も消すため、1画素分太らせて塗る
   const out = new Uint8Array(img.gray);
@@ -433,7 +467,7 @@ export function removeRuledLines(img: GrayImage, options: RemoveLinesOptions = {
       }
     }
   }
-  return { gray: out, removedPixels: removed };
+  return { gray: out, removedPixels: removed, verticalRules: extractVerticalSegments(vmark, w, h, maxThickness) };
 }
 
 /**
@@ -441,9 +475,21 @@ export function removeRuledLines(img: GrayImage, options: RemoveLinesOptions = {
  * (前処理に失敗してもOCR自体は止めない)。
  */
 export function removeRuledLinesFromCanvas(canvas: HTMLCanvasElement, options?: RemoveLinesOptions): HTMLCanvasElement {
+  return prepareScanForTable(canvas, options).canvas;
+}
+
+/**
+ * スキャンした表の読み取りの前処理（Canvas版）：照明のムラをならし、傾きを直し、濃い帯の白い文字を反転し、罫線を消す。
+ * 罫線を消した画像（OCRに渡す）と、消した縦の罫線（傾きを直したあとの画像の座標。列の区切りに使う）を返す。
+ * 失敗した場合は元のCanvasをそのまま返す（前処理に失敗してもOCR自体は止めない）。
+ */
+export function prepareScanForTable(
+  canvas: HTMLCanvasElement,
+  options?: RemoveLinesOptions
+): { canvas: HTMLCanvasElement; verticalRules: { x: number; y0: number; y1: number }[]; skewDegrees: number } {
   try {
     const ctx = canvas.getContext("2d");
-    if (!ctx) return canvas;
+    if (!ctx) return { canvas, verticalRules: [], skewDegrees: 0 };
     const { width: w, height: h } = canvas;
     const src = ctx.getImageData(0, 0, w, h);
     const gray = new Uint8Array(w * h);
@@ -460,21 +506,22 @@ export function removeRuledLinesFromCanvas(canvas: HTMLCanvasElement, options?: 
     // 濃い帯の上の白い文字を反転する(straightはevenと同じ配列のことがあるため、コピーに対して行う)
     const prepared = new Uint8Array(straight);
     const inverted = invertDarkBlocks({ width: w, height: h, gray: prepared }, prepared);
-    const { gray: cleaned, removedPixels } = removeRuledLines({ width: w, height: h, gray: prepared }, options);
-    if (removedPixels === 0 && !changed && straight === even && inverted === 0) return canvas;
+    const { gray: cleaned, removedPixels, verticalRules } = removeRuledLines({ width: w, height: h, gray: prepared }, options);
+    const skewDegrees = Math.abs(skew) >= 0.4 ? skew : 0;
+    if (removedPixels === 0 && !changed && straight === even && inverted === 0) return { canvas, verticalRules, skewDegrees };
     const out = document.createElement("canvas");
     out.width = w;
     out.height = h;
     const octx = out.getContext("2d");
-    if (!octx) return canvas;
+    if (!octx) return { canvas, verticalRules, skewDegrees };
     const dst = octx.createImageData(w, h);
     for (let i = 0; i < w * h; i++) {
       dst.data[i * 4] = dst.data[i * 4 + 1] = dst.data[i * 4 + 2] = cleaned[i];
       dst.data[i * 4 + 3] = 255;
     }
     octx.putImageData(dst, 0, 0);
-    return out;
+    return { canvas: out, verticalRules, skewDegrees };
   } catch {
-    return canvas;
+    return { canvas, verticalRules: [], skewDegrees: 0 };
   }
 }

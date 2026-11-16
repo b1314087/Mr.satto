@@ -513,30 +513,49 @@ test.describe("PDF修正: 設定は設定の列、プレビューはプレビュ
     { name: "PC（1280px）", width: 1280, height: 800 },
     { name: "スマホ（390px）", width: 390, height: 844 },
   ]) {
-    test(`${vp.name}：やりたい操作のボタン・説明は設定の列の中にあり、PDFのプレビューに重ならない（スクロールしても）`, async ({ page }) => {
+    test(`${vp.name}：操作の切り替えバーはプレビューのすぐ上にあり、PDFに重ならない。説明は設定の列にある`, async ({ page }) => {
       test.setTimeout(90_000);
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+      // 操作の切り替え（選ぶ／テキスト／…）は、プレビューの列の上部（ツールバーの枠）に1つだけある
+      const slot = page.getByTestId("pdf-fix-toolbar-slot");
+      await expect(slot).toBeVisible();
+      await expect(slot.getByTestId("pdf-fix-operation")).toBeVisible();
+      await expect(page.getByTestId("pdf-fix-operation")).toHaveCount(1);
+      // いまの操作の説明は、設定の列に残る
       const inSettings = page.getByTestId("pdf-fix-operation-in-settings");
-      await expect(inSettings).toBeVisible();
-      await expect(inSettings.getByTestId("pdf-fix-operation")).toBeVisible();
       await expect(inSettings.getByTestId("pdf-fix-current-operation")).toBeVisible();
       // 以前の「プレビューに重ねる帯」は無い
       await expect(page.getByTestId("pdf-fix-operation-near-preview")).toHaveCount(0);
-      await expect(page.getByTestId("pdf-fix-operation")).toHaveCount(1);
       await choosePdfFixOperation(page, "テキスト");
       const canvas = page.locator(CANVAS);
-      for (const scroll of [0, 300, 900]) {
-        await page.evaluate((y) => window.scrollTo(0, y), scroll);
-        const c = await canvas.boundingBox();
-        const o = await inSettings.boundingBox();
-        if (!c || !o) continue;
-        expect(overlaps(c, o)).toBe(false);
-      }
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const c0 = (await canvas.boundingBox())!;
+      const b0 = (await slot.boundingBox())!;
+      // 最初の表示では、バーはPDFの上にあって重ならない
+      expect(overlaps(c0, b0)).toBe(false);
+      expect(b0.y + b0.height).toBeLessThanOrEqual(c0.y + 1);
       if (vp.width >= 1024) {
-        const c = (await canvas.boundingBox())!;
+        // PCでは設定の列（左）とプレビューの列（右）が分かれ、ページをスクロールしてもバーはPDFに重ならない
+        for (const scroll of [300, 900]) {
+          await page.evaluate((y) => window.scrollTo(0, y), scroll);
+          const c = await canvas.boundingBox();
+          const b = await slot.boundingBox();
+          if (!c || !b) continue;
+          expect(overlaps(c, b)).toBe(false);
+        }
         const o = (await inSettings.boundingBox())!;
-        expect(o.x + o.width).toBeLessThanOrEqual(c.x); // 設定は左・プレビューは右
+        const c = (await canvas.boundingBox())!;
+        expect(o.x + o.width).toBeLessThanOrEqual(c.x);
+      } else {
+        // スマホでは、下へスクロールしてもバーが画面の上に残る（上まで戻らずに操作を切り替えられる）
+        // PDFの上端より下までスクロールする
+        await page.evaluate((y) => window.scrollBy(0, y), c0.y + 300);
+        const b = (await slot.boundingBox())!;
+        expect(b.y).toBeGreaterThanOrEqual(0);
+        expect(b.y).toBeLessThan(200);
+        await choosePdfFixOperation(page, "選択・移動");
+        await expect(page.getByTestId("pdf-fix-current-operation")).toHaveAttribute("data-operation", "select");
       }
       // ページが横にはみ出さない
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
