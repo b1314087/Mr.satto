@@ -44,12 +44,6 @@ SQL
 "${PSQL[@]}" -f "$ROOT/supabase/tests/passkeys_devices_sessions_test.sql" | tee "$WORK/out.txt"
 grep -q "PASSKEY SQL: ok" "$WORK/out.txt"
 
-# 0012（新しい端末の登録のためのメール確認）。0011のあとに適用し、2回目の適用も安全
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/0012_passkey_email_verification.sql" >/dev/null 2>&1
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/0012_passkey_email_verification.sql" >/dev/null 2>&1
-"${PSQL[@]}" -f "$ROOT/supabase/tests/passkey_email_verification_test.sql" | tee "$WORK/out2.txt"
-grep -q "PASSKEY EMAIL SQL: ok" "$WORK/out2.txt"
-
 # 同時実行1: 同じユーザーが、空きのある状態から10台を同時に登録しても、2台までしか登録できない
 U=00000000-0000-0000-0000-0000000000d4
 "${PSQL[@]}" -c "insert into auth.users(id, email) values ('$U', 'race')" >/dev/null
@@ -76,22 +70,24 @@ test "$OK" = "10" && test "$INUSE" = "10" || { echo "race B: expected 10 ok (own
 test "$("${PSQL[@]}" -c "select count(*) from public.paid_session_leases where user_id='$U'")" = "1"
 echo "lease owner: ${OWNER:0:8}..."
 
-# 取り消し用SQLで元に戻り、既存の表は残り、再適用できる（0012 → 0011 の順に取り消す）
-"${PSQL[@]}" -f "$ROOT/supabase/rollbacks/0012_passkey_email_verification_rollback.sql" >/dev/null
-test "$("${PSQL[@]}" -c "select count(*) from pg_tables where tablename = 'passkey_email_challenges'")" = "0"
-test "$("${PSQL[@]}" -c "select count(*) from pg_tables where tablename = 'registered_devices'")" = "1"
+# 取り消し用SQLで元に戻り、既存の表は残り、再適用できる
 "${PSQL[@]}" -f "$ROOT/supabase/rollbacks/0011_passkeys_devices_sessions_rollback.sql" >/dev/null
 test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_%'")" = "0"
 test "$("${PSQL[@]}" -c "select count(*) from pg_tables where tablename = 'subscriptions'")" = "1"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/0011_passkeys_devices_sessions.sql" >/dev/null 2>&1
 test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_%'")" = "13"
-"${PSQL[@]}" -f "$ROOT/supabase/migrations/0012_passkey_email_verification.sql" >/dev/null 2>&1
-test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_%'")" = "20"
-# SQL Editor用にまとめたファイル（0011＋0012）だけで、まっさらな状態から全部作れて、2回流しても安全
-"${PSQL[@]}" -f "$ROOT/supabase/rollbacks/0012_passkey_email_verification_rollback.sql" >/dev/null
-"${PSQL[@]}" -f "$ROOT/supabase/rollbacks/0011_passkeys_devices_sessions_rollback.sql" >/dev/null
+
+# メール認証（廃止）の後片付け：古い0012を実行していた場合でも、cleanupで表・関数が消え、0011はそのまま。2回目も安全
+"${PSQL[@]}" -f "$ROOT/tests/fixtures/passkey/legacy_0012_passkey_email_verification.sql" >/dev/null 2>&1
+test "$("${PSQL[@]}" -c "select count(*) from pg_tables where tablename = 'passkey_email_challenges'")" = "1"
+"${PSQL[@]}" -f "$ROOT/supabase/manual/passkey_email_cleanup.sql" >/dev/null 2>&1
+"${PSQL[@]}" -f "$ROOT/supabase/manual/passkey_email_cleanup.sql" >/dev/null 2>&1
+test "$("${PSQL[@]}" -c "select count(*) from pg_tables where tablename = 'passkey_email_challenges'")" = "0"
+test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_email\_%' or proname = 'pk_device_history_count'")" = "0"
+test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_%'")" = "13"
+test "$("${PSQL[@]}" -c "select count(*) from pg_tables where schemaname='public' and tablename in ('passkey_credentials','registered_devices','passkey_challenges','passkey_verifications','paid_session_leases','auth_security_events')")" = "6"
+echo "EMAIL CLEANUP SQL: ok"
+# 公開用のまとめたSQLも、そのまま実行できる
 "${PSQL[@]}" -f "$ROOT/supabase/manual/passkey_launch.sql" >/dev/null 2>&1
-"${PSQL[@]}" -f "$ROOT/supabase/manual/passkey_launch.sql" >/dev/null 2>&1
-test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_%'")" = "20"
-test "$("${PSQL[@]}" -c "select count(*) from pg_tables where schemaname='public' and tablename in ('passkey_credentials','registered_devices','passkey_challenges','passkey_verifications','paid_session_leases','auth_security_events','passkey_email_challenges')")" = "7"
+test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_%'")" = "13"
 echo "ALL PASSKEY SQL TESTS PASSED"

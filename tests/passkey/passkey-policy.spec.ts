@@ -77,35 +77,24 @@ test.describe("設定値と組み込み先", () => {
   });
 });
 
-test.describe("メールの確認コードの設定（2026-11-16に確定）", () => {
-  test("6桁・有効期限10分・5回まで・送り直し60秒・1時間に5通。コードはDBに保存しない", async () => {
-    const c = await import("@/lib/passkey/config");
-    expect([c.EMAIL_CODE_LENGTH, c.EMAIL_CODE_TTL_SEC, c.EMAIL_MAX_ATTEMPTS, c.EMAIL_RESEND_INTERVAL_SEC, c.EMAIL_HOURLY_MAX]).toEqual([6, 600, 5, 60, 5]);
-    const sql = fs.readFileSync("supabase/migrations/0012_passkey_email_verification.sql", "utf8");
-    expect(sql).not.toMatch(/\bcode\s+text\b/);
-    // 2台目以降だけ：これまでに1台でも登録したことがあるときだけ、メールの確認を求める
-    const server = fs.readFileSync("src/lib/passkey/server.ts", "utf8");
-    expect(server).toContain("if ((await store.deviceHistoryCount(user.id)) > 0) {");
-    expect(server).toContain("if (!verificationHash || !(await store.emailConsumeApproval(user.id, verificationHash))) {");
-  });
-});
-
 test.describe("本番に出す準備", () => {
-  test("SQL Editor用のまとめたSQLは、0011と0012をこの順につなげた内容と一致する", () => {
+  test("SQL Editor用のまとめたSQLは、0011と同じ内容。メール認証の表・関数は含まない", () => {
     const merged = fs.readFileSync("supabase/manual/passkey_launch.sql", "utf8");
     const m11 = fs.readFileSync("supabase/migrations/0011_passkeys_devices_sessions.sql", "utf8");
-    const m12 = fs.readFileSync("supabase/migrations/0012_passkey_email_verification.sql", "utf8");
-    const body = merged.slice(merged.indexOf(m11));
-    expect(body).toBe(`${m11}\n${m12}`);
+    expect(merged.slice(merged.indexOf(m11))).toBe(m11);
+    expect(merged).not.toContain("passkey_email_challenges");
+    expect(fs.existsSync("supabase/migrations/0012_passkey_email_verification.sql")).toBe(false);
+    expect(fs.existsSync("src/lib/passkey/email-code.ts")).toBe(false);
   });
 
-  test("プライバシーポリシー：仕組みがオンのとき、保存する情報（公開鍵・端末の識別子のハッシュ・確認の記録など）と保存しないもの（秘密鍵・生体情報・確認コード・IPアドレスそのもの）を書く", async ({ page }) => {
+  test("プライバシーポリシー：仕組みがオンのとき、実際に保存する情報だけを書く（メールの確認コードの記載はない）", async ({ page }) => {
     await page.goto("/privacy");
     const item = page.getByTestId("privacy-passkey");
     await expect(item).toBeVisible({ timeout: 60_000 });
-    for (const text of ["パスキーの公開鍵", "秘密鍵", "生体情報", "ハッシュ値", "確認コードは認証サービス（Supabase）が作成・照合し", "IPアドレスそのものは保存しません", "90日を目安"]) {
+    for (const text of ["パスキーの公開鍵", "秘密鍵", "生体情報", "ハッシュ値", "IPアドレスそのものは保存しません", "90日を目安"]) {
       await expect(item).toContainText(text);
     }
+    await expect(item).not.toContainText("確認コード");
     await expect(page.getByTestId("privacy-passkey-cookies")).toContainText("最長400日");
   });
 

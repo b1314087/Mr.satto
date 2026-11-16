@@ -10,15 +10,12 @@ import {
   registerCurrentDevice,
   relyingParty,
   revokeDevice,
-  sendDeviceEmailCode,
-  verifyDeviceEmailCode,
   endAllSessions,
   startPasskeyAuthentication,
   startPasskeyRegistration,
 } from "@/lib/passkey/server";
 import { isPasskeyDevMode } from "@/lib/passkey/dev";
-import { ageMemoryLeaseVerification, expireMemoryLease, shiftMemoryEmailChallenges } from "@/lib/passkey/memory-store";
-import { devLastEmailCode } from "@/lib/passkey/email-code";
+import { ageMemoryLeaseVerification, expireMemoryLease } from "@/lib/passkey/memory-store";
 
 /**
  * パスキー・登録端末・同時利用のAPI（POSTだけ。JSONで受け取り、JSONで返す）。
@@ -28,7 +25,6 @@ import { devLastEmailCode } from "@/lib/passkey/email-code";
  *   device-revoke                      : 端末の登録を解除する（直近の本人確認が必要）
  *   credential-delete                  : パスキーを削除する（直近の本人確認が必要）
  *   heartbeat                          : 利用状態の定期確認（同時利用のロックを延長する）
- *   email-send / email-verify          : 新しい端末（2台目以降）の登録のための、メールの確認コードの送信と確認（確認できたら端末を登録する）
  *
  * どの操作も、検証済みのログインの本人だけを対象にする（リクエストの中のユーザーIDは受け取らない）。
  * 別のサイトからの呼び出しは、Originの確認で断る。
@@ -100,23 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
       }
       case "heartbeat":
         return json({ status: await heartbeat(store, user) });
-      case "email-send": {
-        const r = await sendDeviceEmailCode(store, user);
-        return r.ok ? json(r) : json({ error: r.message, code: r.code }, r.status);
-      }
-      case "email-verify": {
-        const code = typeof body.code === "string" ? body.code.slice(0, 20) : "";
-        const r = await verifyDeviceEmailCode(store, user, code);
-        return r.ok ? json(r) : json({ error: r.message, code: r.code }, r.status);
-      }
       // ここから下は、開発の自動テスト専用（本番では isPasskeyDevMode() が常に false なので、すべて404）
-      case "dev-email-code":
-        if (!isPasskeyDevMode()) return json({ error: "見つかりません。" }, 404);
-        return json({ code: user.email ? devLastEmailCode(user.email) : null });
-      case "dev-email-shift":
-        if (!isPasskeyDevMode()) return json({ error: "見つかりません。" }, 404);
-        shiftMemoryEmailChallenges(user.id, Number(body.seconds ?? 0));
-        return json({ ok: true });
       case "dev-age-verification":
         if (!isPasskeyDevMode()) return json({ error: "見つかりません。" }, 404);
         ageMemoryLeaseVerification(user.id, Number(body.seconds ?? 0));

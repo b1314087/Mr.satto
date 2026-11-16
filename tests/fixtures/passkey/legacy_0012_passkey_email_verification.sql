@@ -1,3 +1,4 @@
+-- テスト専用：廃止したメール認証の古いSQL（a21855a時点の 0012）。supabase/manual/passkey_email_cleanup.sql が正しく消せるかを確かめるためだけに置く。本番では実行しない。
 -- Mr.Satto: パスキーの新しい端末（2台目以降）を登録するときの、メールの確認コード（2026-11-16）
 --
 -- ★0011_passkeys_devices_sessions.sql のあとに実行する（0011の表 registered_devices を使う）。

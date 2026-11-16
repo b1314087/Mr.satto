@@ -20,7 +20,6 @@ import {
   AUTH_FAILURE_WINDOW_SEC,
   DEVICE_COOKIE,
   DEVICE_LIMIT_MESSAGE,
-  MAX_DEVICES,
   MAX_PASSKEYS,
   RECENT_VERIFICATION_TTL_SEC,
   SESSION_COOKIE,
@@ -32,7 +31,6 @@ import { createSupabasePasskeyStore } from "./supabase-store";
 import { getDevPasskeyUser, isPasskeyDevMode } from "./dev";
 import { deviceLabelFromUserAgent, passkeyLabel } from "./labels";
 import { decidePaidAccess, type PaidAccessStatus } from "./policy";
-import { EMAIL_CODE_RE, getEmailCodeSender, maskEmail } from "./email-code";
 import type { PasskeyStore, StoredDevice } from "./store";
 
 /**
@@ -182,21 +180,10 @@ async function hasRecentVerification(store: PasskeyStore, userId: string): Promi
   return store.checkVerification(userId, hashToken(token));
 }
 
-/** 直近の本人確認を記録し、その値のハッシュを返す（同じリクエストの中では、新しいCookieを読み直せないため） */
-async function markVerified(store: PasskeyStore, userId: string, credentialId: string): Promise<string> {
+async function markVerified(store: PasskeyStore, userId: string, credentialId: string): Promise<void> {
   const token = newToken();
-  const tokenHash = hashToken(token);
-  await store.createVerification(userId, tokenHash, credentialId);
+  await store.createVerification(userId, hashToken(token), credentialId);
   await setTokenCookie(VERIFY_COOKIE, token, RECENT_VERIFICATION_TTL_SEC);
-  return tokenHash;
-}
-
-/** リクエストのCookieにある直近の本人確認の値のハッシュ（有効なときだけ） */
-async function currentVerificationHash(store: PasskeyStore, userId: string): Promise<string | null> {
-  const token = await readTokenCookie(VERIFY_COOKIE);
-  if (!token) return null;
-  const tokenHash = hashToken(token);
-  return (await store.checkVerification(userId, tokenHash)) ? tokenHash : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,41 +192,17 @@ async function currentVerificationHash(store: PasskeyStore, userId: string): Pro
 
 export type DeviceStepResult =
   | { kind: "ok"; tookOver: boolean }
-  /** 新しい端末（2台目以降）なので、メールの確認コードが必要 */
-  | { kind: "email_required"; maskedEmail: string; message: string }
   | { kind: "device_limit"; devices: StoredDevice[]; message: string }
   | { kind: "rate_limited"; message: string }
   | { kind: "error"; message: string };
 
-/**
- * この端末を（未登録なら登録して）、同時利用のロックを取る。パスキーの本人確認の直後にだけ呼ぶ。
- * 新しい端末の登録は、初めての端末（1台目）以外は、メールの確認コードの確認（verificationHash にひもづく承認）が必要。
- */
-async function attachDeviceAndStartSession(store: PasskeyStore, user: PasskeyUser, verificationHash: string | null): Promise<DeviceStepResult> {
+/** この端末を（未登録なら登録して）、同時利用のロックを取る。パスキーの本人確認の直後にだけ呼ぶ */
+async function attachDeviceAndStartSession(store: PasskeyStore, user: PasskeyUser): Promise<DeviceStepResult> {
   const meta = await requestMeta();
   let deviceToken = await readTokenCookie(DEVICE_COOKIE);
-  const existingDeviceId = deviceToken ? (await store.accessState(user.id, hashToken(deviceToken), null)).deviceId : null;
-
-  let reg: Awaited<ReturnType<PasskeyStore["registerDevice"]>>;
-  if (existingDeviceId && deviceToken) {
-    // 登録済みの端末（12時間ごとの確認・切り替え）：メールの確認はいらない
-    reg = await store.registerDevice(user.id, hashToken(deviceToken), deviceLabelFromUserAgent(meta.userAgent));
-  } else {
-    // 新しい端末：先に上限を確かめる（上限なら、メールを送る前に、解除を案内する）
-    if ((await store.listDevices(user.id)).length >= MAX_DEVICES) {
-      await log(store, user.id, "device_limit_hit");
-      return { kind: "device_limit", devices: await store.listDevices(user.id), message: DEVICE_LIMIT_MESSAGE };
-    }
-    // 2台目以降（これまでに1台でも登録したことがある）は、メールの確認コードで確認できたときだけ登録する（承認は1回だけ使える）
-    if ((await store.deviceHistoryCount(user.id)) > 0) {
-      if (!verificationHash || !(await store.emailConsumeApproval(user.id, verificationHash))) {
-        return {
-          kind: "email_required",
-          maskedEmail: maskEmail(user.email),
-          message: "新しい端末を登録するため、登録しているメールアドレスに送る確認コードを入力してください。",
-        };
-      }
-    }
+  let reg = deviceToken ? await store.registerDevice(user.id, hashToken(deviceToken), deviceLabelFromUserAgent(meta.userAgent)) : null;
+  if (!reg || reg.outcome === "revoked" || reg.outcome === "conflict") {
+    // 端末の識別値がない・解除済み・他人のもの → 新しい識別値で登録する
     deviceToken = newToken();
     reg = await store.registerDevice(user.id, hashToken(deviceToken), deviceLabelFromUserAgent(meta.userAgent));
   }
@@ -345,8 +308,8 @@ export async function finishPasskeyRegistration(
   if (inserted === "duplicate") return { ok: false, status: 409, message: "このパスキーは、すでに登録されています。" };
   await log(store, user.id, "passkey_registered", { aaguid: info.aaguid, backedUp: info.credentialBackedUp });
   // 登録の操作そのものが、生体認証/PINによる本人確認なので、この端末の登録と利用開始まで続けて行う
-  const verificationHash = await markVerified(store, user.id, info.credential.id);
-  return { ok: true, ...(await attachDeviceAndStartSession(store, user, verificationHash)) };
+  await markVerified(store, user.id, info.credential.id);
+  return { ok: true, ...(await attachDeviceAndStartSession(store, user)) };
 }
 
 // ---------------------------------------------------------------------------
@@ -413,8 +376,8 @@ export async function finishPasskeyAuthentication(
   }
   await store.updateCredentialUsage(user.id, credential.credentialId, verification.authenticationInfo.newCounter, verification.authenticationInfo.credentialBackedUp);
   await log(store, user.id, "auth_ok");
-  const verificationHash = await markVerified(store, user.id, credential.credentialId);
-  return { ok: true, ...(await attachDeviceAndStartSession(store, user, verificationHash)) };
+  await markVerified(store, user.id, credential.credentialId);
+  return { ok: true, ...(await attachDeviceAndStartSession(store, user)) };
 }
 
 // ---------------------------------------------------------------------------
@@ -429,87 +392,8 @@ const VERIFY_FIRST: CeremonyError = {
 };
 
 export async function registerCurrentDevice(store: PasskeyStore, user: PasskeyUser): Promise<({ ok: true } & DeviceStepResult) | CeremonyError> {
-  const verificationHash = await currentVerificationHash(store, user.id);
-  if (!verificationHash) return VERIFY_FIRST;
-  return { ok: true, ...(await attachDeviceAndStartSession(store, user, verificationHash)) };
-}
-
-// ---------------------------------------------------------------------------
-// 新しい端末（2台目以降）の登録のための、メールの確認コード
-// ---------------------------------------------------------------------------
-
-/** メールの確認が必要な状況か（パスキーの本人確認が済んでいて、この端末が未登録で、2台目以降で、上限に空きがある） */
-async function emailStepPrecheck(store: PasskeyStore, user: PasskeyUser): Promise<{ ok: true; verificationHash: string } | CeremonyError> {
-  const verificationHash = await currentVerificationHash(store, user.id);
-  if (!verificationHash) return VERIFY_FIRST;
-  if (!user.email) return { ok: false, status: 409, message: "メールアドレスが登録されていないため、確認コードを送れません。お問い合わせください。" };
-  const deviceToken = await readTokenCookie(DEVICE_COOKIE);
-  const deviceId = deviceToken ? (await store.accessState(user.id, hashToken(deviceToken), null)).deviceId : null;
-  if (deviceId) return { ok: false, status: 409, code: "not_needed", message: "この端末は登録済みです（確認コードは必要ありません）。" };
-  if ((await store.deviceHistoryCount(user.id)) === 0) return { ok: false, status: 409, code: "not_needed", message: "1台目の端末には、確認コードは必要ありません。" };
-  if ((await store.listDevices(user.id)).length >= MAX_DEVICES) return { ok: false, status: 409, code: "device_limit", message: DEVICE_LIMIT_MESSAGE };
-  return { ok: true, verificationHash };
-}
-
-export async function sendDeviceEmailCode(store: PasskeyStore, user: PasskeyUser): Promise<{ ok: true; maskedEmail: string } | CeremonyError> {
-  const pre = await emailStepPrecheck(store, user);
-  if (!pre.ok) return pre;
-  const begin = await store.emailBeginSend(user.id, pre.verificationHash);
-  if (begin.outcome === "too_soon") {
-    return { ok: false, status: 429, code: "too_soon", message: `確認コードの送り直しは、あと${begin.retryAfterSec}秒お待ちください。` };
-  }
-  if (begin.outcome === "hourly_limit") {
-    await log(store, user.id, "email_code_hourly_limit");
-    return { ok: false, status: 429, code: "hourly_limit", message: "確認コードを送れる回数（1時間に5通）を超えました。しばらくしてからお試しください。" };
-  }
-  const sent = await getEmailCodeSender().send(user.email!);
-  if (!sent.ok) {
-    await store.emailCancelSend(user.id, begin.id);
-    await log(store, user.id, "email_code_send_failed", { reason: sent.reason });
-    return {
-      ok: false,
-      status: 503,
-      message:
-        sent.reason === "rate_limited"
-          ? "メールの送信が混み合っています。少し時間をおいてから、もう一度お試しください。"
-          : "確認コードのメールを送れませんでした。しばらくしてから、もう一度お試しください。解決しない場合はお問い合わせください。",
-    };
-  }
-  await log(store, user.id, "email_code_sent");
-  return { ok: true, maskedEmail: maskEmail(user.email) };
-}
-
-export async function verifyDeviceEmailCode(store: PasskeyStore, user: PasskeyUser, code: string): Promise<({ ok: true } & DeviceStepResult) | CeremonyError> {
-  const normalized = code.replace(/\s/g, "");
-  if (!EMAIL_CODE_RE.test(normalized)) return { ok: false, status: 400, message: "確認コード（6桁の数字）を入力してください。" };
-  const pre = await emailStepPrecheck(store, user);
-  if (!pre.ok) return pre;
-  // 照合の前に1回分を数える（同時に何回送っても、上限を超えて試せない）
-  const attempt = await store.emailAttempt(user.id, pre.verificationHash);
-  if (attempt.outcome === "none") return { ok: false, status: 400, code: "no_code", message: "先に「確認コードを送る」を押してください。" };
-  if (attempt.outcome === "expired") return { ok: false, status: 400, code: "expired", message: "確認コードの有効期限（10分）が切れました。もう一度、確認コードを送ってください。" };
-  if (attempt.outcome === "locked") {
-    return { ok: false, status: 429, code: "locked", message: "確認コードを5回間違えたため、このコードは使えなくなりました。もう一度、確認コードを送ってください。" };
-  }
-  const matched = await getEmailCodeSender().verify(user.email!, normalized);
-  if (!matched) {
-    await log(store, user.id, "email_code_failed");
-    return {
-      ok: false,
-      status: 400,
-      code: attempt.remaining > 0 ? "wrong" : "locked",
-      message:
-        attempt.remaining > 0
-          ? `確認コードが違います（あと${attempt.remaining}回まで試せます）。`
-          : "確認コードを5回間違えたため、このコードは使えなくなりました。もう一度、確認コードを送ってください。",
-    };
-  }
-  if (!(await store.emailMarkVerified(user.id, attempt.id))) {
-    return { ok: false, status: 400, code: "expired", message: "確認コードの有効期限（10分）が切れました。もう一度、確認コードを送ってください。" };
-  }
-  await log(store, user.id, "email_code_verified");
-  // 確認できたので、続けてこの端末を登録し、利用を開始する
-  return { ok: true, ...(await attachDeviceAndStartSession(store, user, pre.verificationHash)) };
+  if (!(await hasRecentVerification(store, user.id))) return VERIFY_FIRST;
+  return { ok: true, ...(await attachDeviceAndStartSession(store, user)) };
 }
 
 export async function revokeDevice(store: PasskeyStore, user: PasskeyUser, deviceId: string): Promise<{ ok: true } | CeremonyError> {
