@@ -41,7 +41,6 @@ import { BLACKOUT_COLOR, BLACKOUT_NOTICE, isBlackoutObject, isWhiteoutObject, WH
 import type { AnnotationObject } from "@/lib/pdf-annotate/types";
 import { uploadFixture, clickAndDownload, closeResultPopup, waitForSuccess, assertDownloadedFile } from "../helpers/tool-runner";
 import { uploadWhenReady } from "../helpers/tool-ready";
-import { setDevPlanOverride } from "../helpers/dev-plan";
 import { scratchDir } from "../helpers/tmp";
 import { fixtures } from "../fixtures/paths";
 import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
@@ -52,7 +51,7 @@ import { choosePdfFixOperation } from "../helpers/pdf-fix-operation";
  *  4-2 PDF修正：置いたものをどのモードでも動かせる・ページの外へ出ない・つまみで大きさ・枠なしのチェック・
  *      黒塗り（見た目だけ）と墨消し（PDF黒塗り・墨消し）の区別・回転したページでの位置
  *  4-3 PDF→テキスト（OCR対応）：OCRの統合・ページごとの読み取り方・改行と段落・ページの区切り・旧URL
- *  4-4 電子印鑑：複数ページ押印（プレミアム）。スタンダードは1ページのまま
+ *  4-4 プレミアム限定の機能の判定（電子印鑑の複数ページ押印は2026-11-17に固有ID付きの作り方ごと削除）
  *  4-5 PDF差し込み印刷：データソースの拡張（貼り付け・見出しの行・シート）・結果の一覧
  *  4-6 記入済みPDF→Excel：入力フォームの値・チェックボックス・金額/マイナス/日付の型
  *  4-7 PDF→Word：段組み（2段）の読む順番とWordの段組み
@@ -478,102 +477,12 @@ plainTest("4-3・4-4: ツールの中のプレミアム機能の判定（OCRは�
   const switchOn = effectiveRequiredPlan("premium") === "standard";
   plainExpect(canUsePremiumFeature("free", "premium-tool")).toBe(switchOn);
   plainExpect(canUsePremiumFeature("premium", "premium-tool")).toBe(true);
-  // 電子印鑑の複数ページ押印（新しいプレミアムの機能）は、スイッチに関わらずプレミアムだけ
+  // プレミアム限定の機能（premium-only）は、スイッチに関わらずプレミアムだけ
   plainExpect(canUsePremiumFeature("free", "premium-only")).toBe(false);
   plainExpect(canUsePremiumFeature("standard", "premium-only")).toBe(false);
   plainExpect(canUsePremiumFeature("premium", "premium-only")).toBe(true);
 });
 
-// ===========================================================================
-// 4. 画面（4-4 電子印鑑の複数ページ押印）
-// ===========================================================================
-async function makeBlankPdf(file: string, pageCount: number) {
-  const doc = await PDFDocument.create();
-  for (let i = 0; i < pageCount; i++) {
-    const p = doc.addPage([595, 842]);
-    p.drawRectangle({ x: 36, y: 36, width: 523, height: 770, borderWidth: 0.5, borderColor: rgb(0.7, 0.7, 0.7) });
-  }
-  fs.writeFileSync(file, await doc.save());
-}
-
-async function enableQr(page: Page) {
-  // 固有ID付きで作る（総合改修 5-1）に切り替え、QRコードを入れる（既定でオン）。画面の準備が終わる前に押すと反映されないことがあるので、欄が出るまで押し直す
-  await expect(async () => {
-    const idMode = page.getByTestId("stamp-mode").getByRole("button", { name: "固有ID付きで作る", exact: true });
-    if ((await idMode.getAttribute("aria-pressed")) !== "true") await idMode.click();
-    const box = page.getByLabel("QRコードを入れる", { exact: true });
-    if (!(await box.isChecked())) await box.check();
-    await expect(page.getByTestId("stamp-pdf-target")).toBeVisible({ timeout: 1000 });
-  }).toPass({ timeout: 15_000 });
-}
-
-/** PDFのページを画像にして、赤い画素（印影）の数を数える */
-function redPixels(pdf: string, pageNo: number): number {
-  const dir = scratchDir("step4-stamp-render");
-  const base = path.join(dir, `p${pageNo}`);
-  execFileSync("pdftoppm", ["-png", "-r", "40", "-f", String(pageNo), "-l", String(pageNo), "-singlefile", pdf, base]);
-  return Number(
-    py(
-      "import sys,subprocess\nraw=subprocess.run(['ffmpeg','-v','error','-i',sys.argv[1],'-f','rawvideo','-pix_fmt','rgb24','-'],capture_output=True).stdout\nn=0\nfor i in range(0,len(raw),3):\n  r,g,b=raw[i],raw[i+1],raw[i+2]\n  n+= 1 if (r>150 and g<110 and b<110) else 0\nprint(n)",
-      [`${base}.png`]
-    ).trim()
-  );
-}
-
-test.describe("4-4: 電子印鑑の複数ページ押印（プレミアム）", () => {
-  test.use({ viewport: { width: 1280, height: 1400 } });
-  test.setTimeout(180_000);
-
-  test("プレミアム：ページの一覧から押すページを選び、ページごとに位置・大きさ・角度を決めて押す（選ばないページには押さない）", async ({ page }) => {
-    const dir = scratchDir("step4-stamp");
-    const src = path.join(dir, "three.pdf");
-    await makeBlankPdf(src, 3);
-    await page.goto("/tools/electronic-stamp-generator");
-    await page.locator("#stamp-text-input").fill("山田");
-    await enableQr(page);
-    await page.getByTestId("stamp-target-pdf-input").setInputFiles(src);
-    await expect(page.getByTestId("stamp-target-pdf-name")).toContainText("three.pdf");
-    // 既定は、これまでどおり1ページだけ（ページの選択）
-    await expect(page.getByTestId("stamp-target-page")).toBeVisible();
-    await page.getByTestId("stamp-multipage-toggle").check();
-    await expect(page.getByTestId("stamp-page-list")).toBeVisible();
-    await expect(page.getByTestId("stamp-page-1")).toHaveAttribute("data-stamped", "true");
-    // 3ページ目にも押す。3ページ目を選んで、位置・角度を変える
-    await page.getByTestId("stamp-page-toggle-3").check();
-    await page.getByTestId("stamp-page-select-3").click();
-    await expect(page.getByTestId("stamp-active-page")).toContainText("3ページ目");
-    await page.getByRole("slider", { name: "印影の横の位置（X）" }).fill("10");
-    await page.getByRole("slider", { name: "印影の縦の位置（Y）" }).fill("90");
-    await page.getByRole("slider", { name: "印影の角度" }).fill("30");
-    await expect(page.getByTestId("stamp-multipage-summary")).toContainText("2ページに押します（1・3ページ目）");
-    await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
-    await waitForSuccess(page, "印影画像が完成しました");
-    await expect(page.getByTestId("stamp-result-summary")).toHaveText("この印影を、PDF（全3ページ）の1・3ページ目に押しました。");
-    const d = await clickAndDownload(page, "PDFをダウンロード");
-    const { path: out } = await assertDownloadedFile(d, { format: "pdf", minBytes: 100 });
-    expect(redPixels(out, 1)).toBeGreaterThan(20);
-    expect(redPixels(out, 2)).toBe(0);
-    expect(redPixels(out, 3)).toBeGreaterThan(20);
-  });
-
-  test("スタンダード（無料）：これまでどおり1ページだけに押し、複数ページの押印はプレミアムの機能と案内する", async ({ page, context, baseURL }) => {
-    await setDevPlanOverride(context, "standard", baseURL!);
-    const dir = scratchDir("step4-stamp-std");
-    const src = path.join(dir, "two.pdf");
-    await makeBlankPdf(src, 2);
-    await page.goto("/tools/electronic-stamp-generator");
-    await page.locator("#stamp-text-input").fill("佐藤");
-    await enableQr(page);
-    await page.getByTestId("stamp-target-pdf-input").setInputFiles(src);
-    await expect(page.getByTestId("stamp-multipage-premium-note")).toBeVisible();
-    await expect(page.getByTestId("stamp-multipage-toggle")).toHaveCount(0);
-    await expect(page.getByRole("slider", { name: "印影の角度" })).toHaveCount(0);
-    await page.getByTestId("stamp-target-page").selectOption("1");
-    await page.getByRole("button", { name: "印影画像を生成する", exact: true }).click();
-    await waitForSuccess(page, "印影画像が完成しました");
-    await expect(page.getByTestId("stamp-result-summary")).toHaveText("この印影を、PDF（全2ページ）の2ページ目に押しました。");
-  });
-});
 
 // ===========================================================================
 // 5. 画面（4-2 PDF修正）

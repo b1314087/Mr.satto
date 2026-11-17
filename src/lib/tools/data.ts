@@ -1645,7 +1645,7 @@ const toolDefinitions: Tool[] = [
     id: "electronic-stamp-generator",
     name: "電子印鑑生成",
     category: "generator",
-    description: "文字から印影画像を作成したり、お手持ちの印鑑を画像・PDFから取り込んで透明PNGに整えたり、固有ID付き（QRコードは任意）の印影を作ったりできます",
+    description: "文字から印影画像を作成したり、お手持ちの印鑑を画像・PDFから取り込んで透明PNGに整えたりできます",
     status: "available",
     requiredPlan: "standard",
     processor: "browser",

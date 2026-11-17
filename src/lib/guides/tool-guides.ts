@@ -790,7 +790,7 @@ export const toolGuides: Record<string, ToolGuide> = {
   "electronic-stamp-generator": {
     split: true,
     steps: [
-      step("作り方を選んで文字を入れる", [btns(["文字から作る", "印鑑を取り込む", "固有ID付きで作る"], 0), head("文字", 1), input("文字", "山田"), preview("stamp")], 0),
+      step("作り方を選んで文字を入れる", [btns(["文字から作る", "印鑑を取り込む"], 0), head("文字", 1), input("文字", "山田"), preview("stamp")], 0),
       step("形・色・大きさを決める", [head("形・色・大きさ", 2), btns(["丸印", "角印"], 0), seg("色", ["朱色", "黒", "青"], 0), slider("印影サイズ", 0.4, "300px"), preview("stamp")], 2),
       step("出力形式を選んで生成する", [head("出力形式", 5), seg(undefined, ["PNG", "JPEG", "WebP"], 0), run("印影画像を生成する"), preview("stamp")], 1),
     ],

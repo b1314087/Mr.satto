@@ -11,7 +11,7 @@ import { effectiveRequiredPlan } from "@/lib/tools/data";
  * 閉じる仕組みは持っていないため、ツールの中のプレミアム機能は、ツールの画面の中でこの関数を使って出し分ける。
  *
  * 機能の種類（scope）:
- * - "premium-only"：新しく追加したプレミアムの機能（電子印鑑の複数ページ押印）。
+ * - "premium-only"：プレミアムだけの機能（現在これを使うツールはない。電子印鑑の複数ページ押印は2026-11-17に削除）。
  *   Premium 一括処理（src/lib/batch/batch-config.ts の canUseBatch）と同じルール：プレミアムだけが使える。
  * - "premium-tool"：もともとプレミアム限定のツールだった機能を、統合でほかのツールの一部にしたもの（旧OCR）。
  *   元のツールと同じ条件で使える（全ツールをスタンダード扱いにする運用スイッチ ALL_TOOLS_STANDARD がオンの間は、
