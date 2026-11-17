@@ -689,6 +689,19 @@ const toolDefinitions: Tool[] = [
     keywords: ["Excel", "エクセル", "xlsx", "シート分割", "シート結合", "シートを分ける", "シートをまとめる", "ブック結合", "シート ファイル化", "タブ 分割"],
   },
   {
+    // 2026-11-17：質問をカードで追加・編集・並べ替えし、紙のプレビューを見ながらアンケート用紙を作る（src/lib/survey/）。
+    // Webで回答を集める機能はない。PDF・Word・印刷で紙にして配る
+    id: "survey-sheet",
+    name: "アンケート用紙作成",
+    category: "generator",
+    description: "質問をカードで追加・並べ替えして、紙で配るアンケート用紙を作ります。プレビューを見ながら編集し、PDF・Word・印刷で出力",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["roster-template", "seating-chart"],
+    keywords: ["アンケート", "アンケート用紙", "アンケート作成", "質問紙", "調査票", "満足度調査", "フォーム", "Forms", "印刷", "テンプレート"],
+  },
+  {
     // 2026-11-17：和暦（明治〜令和）と西暦を、まとめて変換する（src/lib/date/wareki.ts）。Excel・CSVの列も変換できる
     id: "wareki-convert",
     name: "和暦・西暦一括変換",

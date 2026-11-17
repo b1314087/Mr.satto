@@ -215,6 +215,10 @@ const ExcelSheetsTool = dynamic(() =>
   import("./implementations/excel-sheets-tool").then((m) => m.ExcelSheetsTool),
   { loading: ToolLoading }
 );
+const SurveySheetTool = dynamic(() =>
+  import("./implementations/survey-sheet-tool").then((m) => m.SurveySheetTool),
+  { loading: ToolLoading }
+);
 const WarekiConvertTool = dynamic(() =>
   import("./implementations/wareki-convert-tool").then((m) => m.WarekiConvertTool),
   { loading: ToolLoading }
@@ -585,6 +589,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelSheetsTool />;
     case "wareki-convert":
       return <WarekiConvertTool />;
+    case "survey-sheet":
+      return <SurveySheetTool />;
     case "xls-to-xlsx":
       return <LegacyOfficeConvertTool kind="xls" />;
     case "doc-to-docx":

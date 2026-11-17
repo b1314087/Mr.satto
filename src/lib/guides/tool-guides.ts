@@ -361,6 +361,14 @@ export const toolGuides: Record<string, ToolGuide> = {
       ...finish("分割する", "2シートを分割する", [file(XLSX)], "ZIPをダウンロード").slice(0, 1),
     ],
   },
+  "survey-sheet": {
+    steps: [
+      step("タイトルを入力", [input("アンケートのタイトル", "セミナー参加者アンケート"), text("説明文", ["ご協力をお願いいたします。"])], 0),
+      step("質問を追加", [btn("＋ 質問を追加"), chips(undefined, ["単一選択", "複数選択", "長文記述", "評価"], [0])], 0),
+      step("見た目を選ぶ", [chips("デザインのテンプレート", ["シンプル", "ビジネス", "学校向け", "イベント向け", "おしゃれ"], [1]), preview("pdf", "紙のプレビュー")], 0),
+      step("書き出す・印刷する", [btn("PDFを作る"), btn("Wordを作る"), btn("印刷する")], 0),
+    ],
+  },
   "wareki-convert": {
     steps: [
       step("入れ方を選ぶ", [seg(undefined, ["日付を貼り付ける", "Excel・CSVから"], 0)], 0),

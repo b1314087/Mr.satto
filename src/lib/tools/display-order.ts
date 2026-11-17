@@ -121,6 +121,7 @@ export const TOOL_READINGS: Record<string, string> = {
   "password-generator": "ぱすわーどせいせい",
   "fiscal-calendar": "ねんどかれんだーさくせい",
   "sequence-generator": "れんばん・こうもくいっかつせいせい",
+  "survey-sheet": "あんけーとようしさくせい",
   // その他
   "wareki-convert": "われき・せいれきいっかつへんかん",
   "pomodoro-timer": "ぽもどーろたいまー",
