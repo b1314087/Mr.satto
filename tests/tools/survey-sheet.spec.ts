@@ -57,6 +57,18 @@ async function allPagesText(page: Page): Promise<string> {
 }
 const questions = (page: Page) => page.getByTestId("survey-question");
 
+/** 質問カードを開く（編集中のカードだけが開いている） */
+async function openCard(page: Page, i: number) {
+  const card = questions(page).nth(i);
+  if ((await card.getAttribute("data-active")) !== "1") await card.getByTestId("survey-question-open").click();
+  await expect(card).toHaveAttribute("data-active", "1");
+  return card;
+}
+
+async function designTab(page: Page) {
+  await page.getByTestId("survey-panel").getByRole("radio", { name: "デザイン" }).click();
+}
+
 async function addQuestion(page: Page, type: string) {
   await page.getByTestId("survey-add").click();
   await page.getByTestId(`survey-add-${type}`).click();
@@ -181,7 +193,7 @@ test.describe("編集とプレビュー", () => {
     await expect.poll(async () => (await pageText(page))?.indexOf("基本情報") ?? -1).toBeLessThan(await pageText(page).then((t) => t?.indexOf("満足度を教えてください") ?? 0));
 
     // 並べ替え（ドラッグ）：2つ目を最後へ
-    const firstTitle = await questions(page).nth(1).getByTestId("survey-question-title").inputValue();
+    const firstTitle = await (await openCard(page, 1)).getByTestId("survey-question-title").inputValue();
     const handle = questions(page).nth(1).getByTestId("survey-question-drag");
     const target = questions(page).nth(4);
     const hb = (await handle.boundingBox())!;
@@ -190,9 +202,10 @@ test.describe("編集とプレビュー", () => {
     await page.mouse.down();
     await page.mouse.move(hb.x + hb.width / 2, tb.y + tb.height - 5, { steps: 12 });
     await page.mouse.up();
-    await expect(questions(page).nth(4).getByTestId("survey-question-title")).toHaveValue(firstTitle);
+    await expect((await openCard(page, 4)).getByTestId("survey-question-title")).toHaveValue(firstTitle);
 
-    // 削除
+    // 削除（ゴミ箱のアイコン）
+    await expect(questions(page).nth(4).getByTestId("survey-question-remove").locator("svg[data-icon=trash]")).toHaveCount(1);
     await questions(page).nth(4).getByTestId("survey-question-remove").click();
     await expect(questions(page)).toHaveCount(4);
     await expect.poll(() => pageText(page)).not.toContain(firstTitle);
@@ -202,15 +215,16 @@ test.describe("編集とプレビュー", () => {
     await open(page);
     for (const t of ["multiple", "short", "long", "rating", "scale", "number", "date"]) await addQuestion(page, t);
     await expect(questions(page)).toHaveCount(9);
-    const svg = page.getByTestId("survey-page");
     expect(await page.locator("#survey-print-root polygon").count()).toBe(5); // 評価の★5つ（すべてのページ）
-    expect(await svg.locator("circle").count()).toBeGreaterThan(5); // 単一選択・段階評価の○
+    expect(await page.locator("#survey-print-root circle").count()).toBeGreaterThan(5); // 単一選択・段階評価の○（すべてのページ）
     const all = await allPagesText(page);
     expect(all).toContain("とても良い");
     expect(all).toContain("歳");
     expect(all).toContain("年");
-    // 必須の印
-    await questions(page).nth(2).getByTestId("survey-question-required").check();
+    // 必須の印（スイッチ）
+    const req = (await openCard(page, 2)).getByTestId("survey-question-required");
+    await req.click();
+    await expect(req).toHaveAttribute("aria-checked", "true");
     await expect.poll(() => pageText(page)).toContain("必須");
   });
 
@@ -218,7 +232,7 @@ test.describe("編集とプレビュー", () => {
     await open(page);
     const svg = page.getByTestId("survey-page");
     await expect(svg).toHaveAttribute("viewBox", "0 0 210 297");
-    await page.getByTestId("survey-layout").locator("summary").click();
+    await designTab(page);
     await page.getByTestId("survey-orientation").getByRole("radio", { name: "A4横" }).click();
     await expect(svg).toHaveAttribute("viewBox", "0 0 297 210");
     await page.getByTestId("survey-orientation").getByRole("radio", { name: "A4縦" }).click();
@@ -226,31 +240,80 @@ test.describe("編集とプレビュー", () => {
     const x1 = await svg.locator("text").first().getAttribute("y");
     await page.getByTestId("survey-margin").fill("28");
     await expect.poll(() => svg.locator("text").first().getAttribute("y")).not.toBe(x1);
+    await page.getByTestId("survey-panel").getByRole("radio", { name: "質問" }).click();
     // 長文の質問を足して、2ページ以上にする
     for (let i = 0; i < 6; i++) await addQuestion(page, "long");
     await expect(page.getByTestId("survey-page-count")).toContainText(/全[2-9]ページ/);
     await expect(page.getByTestId("survey-page-button")).not.toHaveCount(0);
+    // 足した質問（編集中）が載っているページが出ている。ページを切り替えられる
+    await page.getByTestId("survey-page-button").nth(0).click();
     expect(await pageText(page)).toMatch(/1 \/ \d/);
     await page.getByTestId("survey-page-button").nth(1).click();
     expect(await pageText(page)).toMatch(/2 \/ \d/);
-    await page.getByTestId("survey-page-numbers").uncheck();
+    await designTab(page);
+    await page.getByTestId("survey-page-numbers").click();
     await expect.poll(() => pageText(page)).not.toMatch(/\d \/ \d/);
+  });
+
+  test("編集中のカードだけが開き、ほかは要約で表示。プレビューの質問を押すと、その質問を編集できる", async ({ page }) => {
+    await open(page);
+    await expect(questions(page).nth(0)).toHaveAttribute("data-active", "0");
+    await expect(questions(page).nth(0)).toContainText("満足 / やや満足 / やや不満 / 不満");
+    await openCard(page, 0);
+    await expect(questions(page).nth(1)).toHaveAttribute("data-active", "0");
+    // ○ は飾り（用紙で回答者が丸を付ける場所）であることを知らせる
+    await expect(questions(page).nth(0).getByTestId("survey-options-hint")).toContainText("ここでは押せません");
+    // プレビューの2つ目の質問を押す → 2つ目のカードが開く
+    const q2id = await questions(page).nth(1).getAttribute("data-qid");
+    await page.locator(`[data-testid=survey-preview-region][data-id="${q2id}"]`).click();
+    await expect(questions(page).nth(1)).toHaveAttribute("data-active", "1");
+    await expect(questions(page).nth(0)).toHaveAttribute("data-active", "0");
+    // 長文の記入欄の高さ（＋）
+    await expect(questions(page).nth(1).getByTestId("survey-long-lines")).toHaveText("5行");
+    await questions(page).nth(1).getByTestId("survey-long-more").click();
+    await expect(questions(page).nth(1).getByTestId("survey-long-lines")).toHaveText("6行");
+  });
+
+  test("「その他」の追加・削除、横に並べるスイッチ、この下に質問を追加、プレビューの拡大", async ({ page }) => {
+    await open(page);
+    const c = await openCard(page, 0);
+    await c.getByTestId("survey-other-add").click();
+    await expect.poll(() => pageText(page)).toContain("その他");
+    await c.getByTestId("survey-other-remove").click();
+    await expect.poll(() => pageText(page)).not.toContain("その他");
+    const dir = c.getByTestId("survey-question-direction");
+    await expect(dir).toHaveAttribute("aria-checked", "true");
+    await dir.click();
+    await expect(dir).toHaveAttribute("aria-checked", "false");
+    // この下に追加：1つ目と2つ目の間に入る
+    await c.getByTestId("survey-question-insert").click();
+    await page.getByTestId("survey-add-menu").getByTestId("survey-add-date").click();
+    await expect(questions(page)).toHaveCount(3);
+    await expect(questions(page).nth(1)).toHaveAttribute("data-type", "date");
+    await expect(questions(page).nth(1)).toHaveAttribute("data-active", "1");
+    // 拡大
+    await page.getByTestId("survey-zoom-in").click();
+    await expect(page.getByTestId("survey-zoom")).toHaveText("125%");
+    await expect(page.getByTestId("survey-page")).toHaveAttribute("style", /width: 125%/);
   });
 
   test("テンプレート：見た目だけが変わり、質問は消えない。質問例は確認してから入れ替える", async ({ page }) => {
     await open(page);
     await page.getByTestId("survey-title").fill("私のアンケート");
+    await designTab(page);
     await page.getByTestId("survey-template-school").click();
     await expect(page.getByTestId("survey-template-school")).toHaveAttribute("aria-pressed", "true");
-    await expect(questions(page)).toHaveCount(2);
-    await expect(page.getByTestId("survey-title")).toHaveValue("私のアンケート");
     // 質問例：やめる → そのまま
     await page.getByTestId("survey-use-sample").click();
     await page.getByTestId("survey-confirm-no").click();
+    await page.getByTestId("survey-panel").getByRole("radio", { name: "質問" }).click();
     await expect(page.getByTestId("survey-title")).toHaveValue("私のアンケート");
+    await expect(questions(page)).toHaveCount(2);
+    await designTab(page);
     // 入れ替える
     await page.getByTestId("survey-use-sample").click();
     await page.getByTestId("survey-confirm-yes").click();
+    await page.getByTestId("survey-panel").getByRole("radio", { name: "質問" }).click();
     await expect(page.getByTestId("survey-title")).toHaveValue("学校生活アンケート");
     await expect(questions(page)).toHaveCount(4);
   });
@@ -262,9 +325,11 @@ test.describe("出力", () => {
 
   test("PDF：A4で、プレビューと同じページ数・日本語の文字が入る。横向きにも対応", async ({ page }) => {
     await open(page);
+    await designTab(page);
     await page.getByTestId("survey-template-business").click();
     await page.getByTestId("survey-use-sample").click();
     await page.getByTestId("survey-confirm-yes").click();
+    await page.getByTestId("survey-panel").getByRole("radio", { name: "質問" }).click();
     for (let i = 0; i < 4; i++) await addQuestion(page, "long");
     await page.waitForTimeout(800);
     const previewPages = Number((await page.getByTestId("survey-page-count").textContent())!.match(/全(\d+)ページ/)![1]);
@@ -282,7 +347,7 @@ test.describe("出力", () => {
     expect(text).toMatch(new RegExp(`1\\s*/\\s*${previewPages}`));
 
     // 横向き
-    await page.getByTestId("survey-layout").locator("summary").click();
+    await designTab(page);
     await page.getByTestId("survey-orientation").getByRole("radio", { name: "A4横" }).click();
     await expect(page.getByTestId("survey-pdf-ready")).toHaveCount(0); // 内容が変わったら作り直す
     await page.getByTestId("survey-make-pdf").click();
@@ -293,6 +358,7 @@ test.describe("出力", () => {
 
   test("Word：文字・段落・表で作られ（画像なし）、Wordで編集できる形。用紙・ページ番号も入る", async ({ page }) => {
     await open(page);
+    await designTab(page);
     await page.getByTestId("survey-template-business").click();
     await page.getByTestId("survey-use-sample").click();
     await page.getByTestId("survey-confirm-yes").click();
@@ -362,7 +428,7 @@ test.describe("ブラウザ内の保存", () => {
     await addQuestion(page, "short");
     await page.waitForTimeout(900);
     expect(await stored(page)).toBeNull();
-    await expect(page.getByTestId("survey-save-status")).toContainText("いまは保存していません");
+    await expect(page.getByTestId("survey-save-status")).toContainText("保存していません");
     // 再読み込みしようとすると、確認が出る（受け入れると内容は消える）
     const dialogs: string[] = [];
     page.on("dialog", (d) => {

@@ -22,10 +22,19 @@ export type Prim =
   | { k: "circle"; cx: number; cy: number; r: number; stroke: string; lw: number }
   | { k: "star"; cx: number; cy: number; r: number; stroke: string; lw: number };
 
+/** 用紙の上で、各質問が置かれた場所（プレビューで質問を押して編集するため・編集中の質問を目立たせるため） */
+export interface Region {
+  id: string;
+  page: number;
+  y: number;
+  h: number;
+}
+
 export interface LaidOutSurvey {
   width: number;
   height: number;
   pages: Prim[][];
+  regions: Region[];
 }
 
 /** 文字の幅（mm）を返す。プレビューでは画面のフォント、PDF では埋め込むフォントで測る */
@@ -43,6 +52,8 @@ interface Row {
 
 interface Block {
   rows: Row[];
+  /** 質問の ID（ヘッダーは無し） */
+  id?: string;
   /** 次のまとまりと同じページに置く（セクションの見出し・ヘッダー） */
   keepWithNext?: boolean;
 }
@@ -548,11 +559,12 @@ export function layoutSurvey(survey: Survey, measure: Measure): LaidOutSurvey {
   if (header.rows.length) blocks.push(header);
   let no = 0;
   for (const q of survey.questions) {
-    if (q.type === "section") blocks.push(sectionBlock(c, q));
-    else blocks.push(questionBlock(c, q, ++no));
+    if (q.type === "section") blocks.push({ ...sectionBlock(c, q), id: q.id });
+    else blocks.push({ ...questionBlock(c, q, ++no), id: q.id });
   }
 
   const pages: Prim[][] = [[]];
+  const regions: Region[] = [];
   let y = c.top;
   let firstOnPage = true;
   const newPage = () => {
@@ -572,6 +584,10 @@ export function layoutSurvey(survey: Survey, measure: Measure): LaidOutSurvey {
     for (let j = i; blocks[j]?.keepWithNext && j + 1 < blocks.length; j++) need += d.spacing + Math.min(sum(blocks[j + 1].rows), area);
     if (!firstOnPage && y + gap + Math.min(need, area) > c.bottom) newPage();
     else y += gap;
+    let regionStart = { page: pages.length - 1, y };
+    const closeRegion = () => {
+      if (b.id) regions.push({ id: b.id, page: regionStart.page, y: regionStart.y, h: y - regionStart.y });
+    };
     if (y + total <= c.bottom) {
       for (const r of b.rows) {
         pages[pages.length - 1].push(...r.draw(y));
@@ -580,11 +596,16 @@ export function layoutSurvey(survey: Survey, measure: Measure): LaidOutSurvey {
     } else {
       // 1ページに収まらないほど大きい質問：行の切れ目でページを分ける（最後の手段）
       for (const r of b.rows) {
-        if (y + r.h > c.bottom && y > c.top) newPage();
+        if (y + r.h > c.bottom && y > c.top) {
+          closeRegion();
+          newPage();
+          regionStart = { page: pages.length - 1, y };
+        }
         pages[pages.length - 1].push(...r.draw(y));
         y += r.h;
       }
     }
+    closeRegion();
     firstOnPage = false;
   });
 
@@ -594,7 +615,7 @@ export function layoutSurvey(survey: Survey, measure: Measure): LaidOutSurvey {
       p.push({ k: "text", x: width / 2, y: height - Math.max(5, m / 2) + d.fontSize * 0.85 * PT * 0.35, size: d.fontSize * 0.85, text: `${i + 1} / ${n}`, color: MUTED, anchor: "middle" });
     });
   }
-  return { width, height, pages };
+  return { width, height, pages, regions };
 }
 
 /** 等幅の近似で幅を測る（テスト・フォントの読み込み前の仮の配置に使う） */

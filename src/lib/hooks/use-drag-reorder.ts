@@ -9,7 +9,15 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
  * 使い方：一覧の各行に data-reorder-index={i} を付け、つまみに handleProps(i) を渡す。
  * ドラッグ中は draggingIndex / overIndex が入るので、見た目（影・線）に使える。
  */
-export function useDragReorder(count: number, onMove: (from: number, to: number) => void) {
+export function useDragReorder(
+  count: number,
+  onMove: (from: number, to: number) => void,
+  /**
+   * 一覧の入れ物・各行に付ける印の名前（省略時は data-reorder-root・data-reorder-index）。
+   * 一覧の中に別の並べ替えの一覧を入れるとき（例：質問の中の選択肢）に、別の名前にして混ざらないようにする。
+   */
+  attrs: { root: string; item: string } = { root: "data-reorder-root", item: "data-reorder-index" },
+) {
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLElement | null>(null);
@@ -18,7 +26,7 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
   function indexAt(clientY: number): number {
     const root = containerRef.current;
     if (!root) return 0;
-    const rows = Array.from(root.querySelectorAll<HTMLElement>("[data-reorder-index]"));
+    const rows = Array.from(root.querySelectorAll<HTMLElement>(`[${attrs.item}]`));
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i].getBoundingClientRect();
       if (clientY < r.top + r.height / 2) return i;
@@ -32,7 +40,7 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
         if (count < 2) return;
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
-        containerRef.current = e.currentTarget.closest<HTMLElement>("[data-reorder-root]");
+        containerRef.current = e.currentTarget.closest<HTMLElement>(`[${attrs.root}]`);
         setDraggingIndex(index);
         overRef.current = index;
         setOverIndex(index);
