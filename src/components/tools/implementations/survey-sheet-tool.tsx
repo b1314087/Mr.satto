@@ -187,16 +187,21 @@ export function SurveySheetTool() {
   const [tab, setTab] = useState<"edit" | "preview">("edit");
   const [page, setPage] = useState(0);
   const [adding, setAdding] = useState(false);
-  const [confirm, setConfirm] = useState<null | "new" | "clear" | { sample: TemplateId }>(null);
+  const [confirm, setConfirm] = useState<null | "new" | { sample: TemplateId }>(null);
+  /** この端末に保存するか（利用者が選んだときだけ保存する。最初は保存しない） */
+  const [persist, setPersist] = useState(false);
+  /** 保存をやめた（保存データを消した）ことを知らせる */
+  const [cleared, setCleared] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "pdf" | "docx">(null);
   const [outputs, setOutputs] = useState<{ pdf?: { blob: Blob; pages: number }; docx?: Blob } | null>(null);
   const { measure } = useSurveyFontMeasure();
   const listRef = useRef<HTMLOListElement>(null);
-  /** 保存データを削除した直後は、次に入力するまで保存しない */
-  const skipSave = useRef(false);
+  /** 開いてから内容を変えたか（保存していないときに、ページを閉じる前の確認を出すため） */
+  const dirty = useRef(false);
+  const firstSurvey = useRef(true);
 
-  // 前回の続き（この端末のブラウザに保存した内容）を読み込む
+  // 前回の続き（「この端末に保存する」を選んで保存した内容）があれば読み込む
   useEffect(() => {
     const draft = loadDraft();
     if (draft) {
@@ -204,17 +209,34 @@ export function SurveySheetTool() {
       setSurvey(draft.survey);
       setSavedAt(draft.savedAt);
       setRestored(true);
+      setPersist(true);
     }
     setLoaded(true);
   }, []);
 
-  // 自動保存（入力が止まってから少しあとに保存する）
+  // 内容を変えたかを覚える（読み込みの前の最初の状態は数えない）
   useEffect(() => {
-    if (!loaded) return;
-    if (skipSave.current) {
-      skipSave.current = false;
+    if (firstSurvey.current || !loaded) {
+      firstSurvey.current = false;
       return;
     }
+    dirty.current = true;
+  }, [survey, loaded]);
+
+  // 保存していないときは、ページを閉じる・再読み込みする前に確認を出す（入力した内容が消えるため）
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (persist || !dirty.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [persist]);
+
+  // 「この端末に保存する」を選んでいるときだけ、自動で保存する（入力が止まってから少しあと）
+  useEffect(() => {
+    if (!loaded || !persist) return;
     const t = window.setTimeout(() => {
       const at = saveDraft(survey);
       if (at) {
@@ -223,7 +245,20 @@ export function SurveySheetTool() {
       } else setSaveFailed(true);
     }, 500);
     return () => window.clearTimeout(t);
-  }, [survey, loaded]);
+  }, [survey, loaded, persist]);
+
+  function changePersist(on: boolean) {
+    setPersist(on);
+    setCleared(false);
+    if (!on) {
+      // 保存をやめたら、この端末に保存した内容をすぐに消す（画面の内容はそのまま）
+      clearDraft();
+      setSavedAt(null);
+      setSaveFailed(false);
+      setRestored(false);
+      setCleared(true);
+    }
+  }
 
   // 内容が変わったら、前に作った PDF・Word は使えない（古い内容をダウンロードしないように）
   useEffect(() => {
@@ -259,13 +294,6 @@ export function SurveySheetTool() {
     if (confirm === "new") {
       const fresh = createDefaultSurvey();
       setSurvey(fresh);
-      setPage(0);
-    } else if (confirm === "clear") {
-      clearDraft();
-      skipSave.current = true;
-      setSurvey(createDefaultSurvey());
-      setSavedAt(null);
-      setRestored(false);
       setPage(0);
     } else if (confirm && typeof confirm === "object") {
       const t = templateById(confirm.sample);
@@ -570,26 +598,31 @@ export function SurveySheetTool() {
 
   return (
     <div className="flex flex-col gap-4" data-testid="survey-tool" data-loaded={loaded ? "1" : "0"}>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-        <span data-testid="survey-save-status" aria-live="polite">
-          {saveFailed
-            ? "このブラウザでは自動保存できません（ページを閉じると内容は消えます）"
-            : savedAt
-              ? `この端末のブラウザに自動保存しました（${fmtTime(savedAt)}）`
-              : "入力した内容は、この端末のブラウザに自動保存されます（サーバーには送りません）"}
-        </span>
-        <span className="ml-auto flex gap-2">
-          <button type="button" className={BTN} onClick={() => setConfirm("new")} data-testid="survey-new">
-            新しいアンケート
-          </button>
-          <button type="button" className={BTN} onClick={() => setConfirm("clear")} data-testid="survey-clear">
-            保存データを削除
-          </button>
-        </span>
+      <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 bg-white/60 px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900/40 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <label className="flex items-center gap-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+            <input type="checkbox" checked={persist} onChange={(e) => changePersist(e.target.checked)} data-testid="survey-persist" />
+            この端末に保存する（次に開いたときに続きから再開）
+          </label>
+          <span className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="survey-save-status" aria-live="polite">
+            {persist
+              ? saveFailed
+                ? "このブラウザでは保存できません（ページを閉じると内容は消えます）"
+                : savedAt
+                  ? `この端末のブラウザに保存しました（${fmtTime(savedAt)}）。共用のパソコンでは、使い終わったらチェックを外してください（保存した内容が消えます）。`
+                  : "この端末のブラウザに保存します（サーバーには送りません）。"
+              : cleared
+                ? "この端末に保存した内容を削除しました。いまは保存していません。"
+                : "いまは保存していません（ページを閉じたり再読み込みしたりすると、内容は消えます）。サーバーには送りません。"}
+          </span>
+        </div>
+        <button type="button" className={`${BTN} sm:ml-auto`} onClick={() => setConfirm("new")} data-testid="survey-new">
+          新しいアンケート
+        </button>
       </div>
       {restored && (
         <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200" data-testid="survey-restored">
-          前回の続きから表示しています。
+          この端末に保存した前回の続きから表示しています。
         </p>
       )}
       {confirm && (
@@ -597,13 +630,11 @@ export function SurveySheetTool() {
           <p>
             {confirm === "new"
               ? "いまのアンケートを閉じて、新しいアンケートを作りますか？（いまの内容は消えます）"
-              : confirm === "clear"
-                ? "この端末のブラウザに保存したアンケートを削除しますか？画面も最初の状態に戻ります。"
-                : `「${templateById(confirm.sample).label}」の質問例に入れ替えますか？いまのタイトル・質問は、質問例に置き換わります。`}
+              : `「${templateById(confirm.sample).label}」の質問例に入れ替えますか？いまのタイトル・質問は、質問例に置き換わります。`}
           </p>
           <div className="flex gap-2">
             <button type="button" className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700" onClick={doConfirm} data-testid="survey-confirm-yes">
-              {confirm === "clear" ? "削除する" : "入れ替える"}
+              入れ替える
             </button>
             <button type="button" className={BTN} onClick={() => setConfirm(null)} data-testid="survey-confirm-no">
               やめる

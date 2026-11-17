@@ -352,36 +352,76 @@ print(json.dumps({"paras":paras,"cells":cells,"tables":len(d.tables),"images":le
 
 // ---------------------------------------------------------------------------
 test.describe("ブラウザ内の保存", () => {
-  test("自動保存し、再読み込みしても続きから表示する。保存データを削除すると、最初の状態に戻る", async ({ page }) => {
+  const KEY = "mr-satto:survey-sheet:draft:v1";
+  const stored = (page: Page) => page.evaluate((k) => localStorage.getItem(k), KEY);
+
+  test("最初は保存しない。閉じる前に確認を出す（入力した内容が消えるため）", async ({ page }) => {
+    await open(page);
+    await expect(page.getByTestId("survey-persist")).not.toBeChecked();
+    await page.getByTestId("survey-title").fill("保存しないテスト");
+    await addQuestion(page, "short");
+    await page.waitForTimeout(900);
+    expect(await stored(page)).toBeNull();
+    await expect(page.getByTestId("survey-save-status")).toContainText("いまは保存していません");
+    // 再読み込みしようとすると、確認が出る（受け入れると内容は消える）
+    const dialogs: string[] = [];
+    page.on("dialog", (d) => {
+      dialogs.push(d.type());
+      void d.accept();
+    });
+    await page.reload();
+    expect(dialogs).toContain("beforeunload");
+    await expect(page.getByTestId("survey-title")).toHaveValue("アンケート");
+    await expect(page.getByTestId("survey-restored")).toHaveCount(0);
+  });
+
+  test("「この端末に保存する」を選ぶと保存し、再読み込みしても続きから表示する。チェックを外すと保存した内容を消す", async ({ page }) => {
     await open(page);
     await page.getByTestId("survey-title").fill("保存のテスト");
     await addQuestion(page, "rating");
-    await expect(page.getByTestId("survey-save-status")).toContainText("自動保存しました");
-    // サーバーへは送らない（保存は localStorage だけ）
-    await expect.poll(() => page.evaluate(() => localStorage.getItem("mr-satto:survey-sheet:draft:v1"))).toContain("保存のテスト");
+    await page.getByTestId("survey-persist").check();
+    await expect(page.getByTestId("survey-save-status")).toContainText("保存しました");
+    // 保存は端末のブラウザ（localStorage）だけ
+    await expect.poll(() => stored(page)).toContain("保存のテスト");
 
     await page.reload();
     await expect(page.getByTestId("survey-title")).toHaveValue("保存のテスト");
     await expect(questions(page)).toHaveCount(3);
     await expect(page.getByTestId("survey-restored")).toBeVisible();
+    await expect(page.getByTestId("survey-persist")).toBeChecked();
 
-    await page.getByTestId("survey-clear").click();
-    await page.getByTestId("survey-confirm-yes").click();
-    await expect(page.getByTestId("survey-title")).toHaveValue("アンケート");
-    expect(await page.evaluate(() => localStorage.getItem("mr-satto:survey-sheet:draft:v1"))).toBeNull();
+    // チェックを外す → 保存した内容はすぐ消える（画面の内容はそのまま）
+    await page.getByTestId("survey-persist").uncheck();
+    expect(await stored(page)).toBeNull();
+    await expect(page.getByTestId("survey-save-status")).toContainText("削除しました");
+    await expect(page.getByTestId("survey-title")).toHaveValue("保存のテスト");
+    // 外したあとに編集しても、保存しない
+    await page.getByTestId("survey-title").fill("保存のテスト2");
+    await page.waitForTimeout(900);
+    expect(await stored(page)).toBeNull();
+    page.on("dialog", (d) => void d.accept());
     await page.reload();
     await expect(page.getByTestId("survey-title")).toHaveValue("アンケート");
     await expect(page.getByTestId("survey-restored")).toHaveCount(0);
+    await expect(page.getByTestId("survey-persist")).not.toBeChecked();
   });
 
   test("壊れた保存データがあっても画面は止まらない。編集中にサーバーへの送信はない", async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("mr-satto:survey-sheet:draft:v1", "{ broken json"));
+    await page.addInitScript(() => {
+      // 1回目の読み込みのときだけ、壊れたデータを入れる
+      if (!sessionStorage.getItem("seeded")) {
+        sessionStorage.setItem("seeded", "1");
+        localStorage.setItem("mr-satto:survey-sheet:draft:v1", "{ broken json");
+      }
+    });
     const posts: string[] = [];
     page.on("request", (r) => {
       if (r.method() !== "GET" && !/__nextjs|hot-update|_rsc|analytics/.test(r.url())) posts.push(`${r.method()} ${r.url()}`);
     });
     await open(page);
     await expect(page.getByTestId("survey-title")).toHaveValue("アンケート");
+    await expect(page.getByTestId("survey-persist")).not.toBeChecked();
+    await page.getByTestId("survey-persist").check();
     await page.getByTestId("survey-title").fill("送信されないこと");
     await addQuestion(page, "short");
     await page.waitForTimeout(800);
