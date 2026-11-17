@@ -86,6 +86,18 @@ test "$("${PSQL[@]}" -c "select count(*) from pg_tables where tablename = 'passk
 test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_email\_%' or proname = 'pk_device_history_count'")" = "0"
 test "$("${PSQL[@]}" -c "select count(*) from pg_proc where proname like 'pk\_%'")" = "13"
 test "$("${PSQL[@]}" -c "select count(*) from pg_tables where schemaname='public' and tablename in ('passkey_credentials','registered_devices','passkey_challenges','passkey_verifications','paid_session_leases','auth_security_events')")" = "6"
+# パスキーを実際に保存できる（2026-11-17：正規表現の回数の上限 255 を超えた制約で、保存が必ず失敗していたため）。
+# 本物のパスキーと同じくらいの長さ（ID 300文字・公開鍵 1000文字）で保存でき、決まりに合わない値は弾く
+CID=$(python3 -c "print('A'*300)")
+PK=$(python3 -c "print('B-_'*333 + 'C')")
+"${PSQL[@]}" -c "set role service_role; insert into public.passkey_credentials(user_id, credential_id, public_key) values ('$U', '$CID', '$PK')" >/dev/null
+test "$("${PSQL[@]}" -c "select count(*) from public.passkey_credentials where user_id='$U'")" = "1" || { echo "credential insert failed"; exit 1; }
+if "${PSQL[@]}" -c "insert into public.passkey_credentials(user_id, credential_id, public_key) values ('$U', 'bad id with spaces!!', '$PK')" >/dev/null 2>&1; then echo "invalid credential_id accepted"; exit 1; fi
+LONG=$(python3 -c "print('A'*1401)")
+if "${PSQL[@]}" -c "insert into public.passkey_credentials(user_id, credential_id, public_key) values ('$U', '$LONG', '$PK')" >/dev/null 2>&1; then echo "too long credential_id accepted"; exit 1; fi
+# サーバー（Service Role）が、パスキーの表を読み書きできる
+test "$("${PSQL[@]}" -c "select bool_and(has_table_privilege('service_role', c.oid, 'select') and has_table_privilege('service_role', c.oid, 'insert') and has_table_privilege('service_role', c.oid, 'delete')) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname in ('passkey_credentials','registered_devices','passkey_challenges','passkey_verifications','paid_session_leases','auth_security_events')")" = "t" || { echo "service_role privileges missing"; exit 1; }
+
 echo "EMAIL CLEANUP SQL: ok"
 # 公開用のまとめたSQLも、そのまま実行できる
 "${PSQL[@]}" -f "$ROOT/supabase/manual/passkey_launch.sql" >/dev/null 2>&1

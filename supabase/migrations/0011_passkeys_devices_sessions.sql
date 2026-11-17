@@ -19,8 +19,9 @@
 create table if not exists public.passkey_credentials (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  credential_id text not null unique check (credential_id ~ '^[A-Za-z0-9_-]{16,1400}$'),
-  public_key text not null check (public_key ~ '^[A-Za-z0-9_-]{16,4000}$'),
+  -- 長さの上限は char_length で確かめる（PostgreSQL の正規表現は、{m,n} の回数を 255 までしか書けないため。2026-11-17）
+  credential_id text not null unique check (credential_id ~ '^[A-Za-z0-9_-]+$' and char_length(credential_id) between 16 and 1400),
+  public_key text not null check (public_key ~ '^[A-Za-z0-9_-]+$' and char_length(public_key) between 16 and 4000),
   counter bigint not null default 0 check (counter >= 0),
   transports text[] not null default '{}',
   device_type text check (device_type in ('singleDevice', 'multiDevice')),
@@ -31,6 +32,13 @@ create table if not exists public.passkey_credentials (
   last_used_at timestamptz
 );
 create index if not exists passkey_credentials_user_idx on public.passkey_credentials(user_id);
+-- すでに表がある場合も、長さの確かめ方を新しいものにする（何度実行しても安全。2026-11-17）
+alter table public.passkey_credentials drop constraint if exists passkey_credentials_credential_id_check;
+alter table public.passkey_credentials add constraint passkey_credentials_credential_id_check
+  check (credential_id ~ '^[A-Za-z0-9_-]+$' and char_length(credential_id) between 16 and 1400);
+alter table public.passkey_credentials drop constraint if exists passkey_credentials_public_key_check;
+alter table public.passkey_credentials add constraint passkey_credentials_public_key_check
+  check (public_key ~ '^[A-Za-z0-9_-]+$' and char_length(public_key) between 16 and 4000);
 comment on table public.passkey_credentials is 'パスキーの公開鍵とCredential ID（秘密鍵は保存しない）。Service Roleだけが読み書きする。';
 
 -- 2. 登録端末（パスキーとは別に管理する。1アカウント最大2台は関数で判定する）
