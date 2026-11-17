@@ -652,6 +652,55 @@ const toolDefinitions: Tool[] = [
     keywords: ["Word", "ワード", "docx", "書式リセット", "書式のクリア", "書式を消す", "初期化", "デフォルト", "デフォルト化", "設定値デフォルト化", "標準に戻す", "ページ設定リセット", "余白 標準", "A4に戻す"],
   },
   {
+    // 2026-11-17：複数のWord（.docx）を、中身（書式・表・画像・ヘッダー/フッター・セクション）を保ったまま1つにまとめる（src/lib/office-merge/docx-merge.ts）
+    id: "word-merge",
+    name: "Word結合",
+    category: "word",
+    description: "複数のWord文書(.docx)を、選んだ順に1つのWordにまとめます。文字の書式・表・画像・ヘッダー・フッター・用紙の設定はファイルごとにそのまま",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["word-to-pdf", "pdf-merge"],
+    keywords: ["Word", "ワード", "docx", "結合", "合体", "まとめる", "1つにする", "連結", "ファイル結合", "文書結合"],
+  },
+  {
+    // 2026-11-17：Word→PDF と同じ方法でページに組み、ページごとに PNG・JPEG にする
+    id: "word-to-image",
+    name: "Word→画像変換",
+    category: "word",
+    description: "Word文書(.docx)をページごとにPNG・JPEGの画像にします。解像度とページを選べて、複数ページはZIPでまとめてダウンロード",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["word-to-pdf", "pdf-to-image"],
+    keywords: ["Word", "ワード", "docx", "画像", "PNG", "JPEG", "JPG", "画像化", "変換", "サムネイル", "スクリーンショット"],
+  },
+  {
+    // 2026-11-17：シートの中身（値・数式・書式・結合・列の幅・行の高さ・非表示）を保ったまま、シートを分ける・まとめる（src/lib/office-merge/xlsx-sheets.ts）。
+    // 1つのシートにデータを積み上げる「データの結合」は excel-csv-merge
+    id: "excel-sheet-split-merge",
+    name: "Excelシート分割・結合",
+    category: "csv-excel",
+    description: "Excel(.xlsx)のシートを1シートずつ別のファイルに分けたり、複数のExcelのシートを1つのファイルにまとめたりします。書式・数式・列の幅はそのまま",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["excel-merge", "excel-format-reset"],
+    keywords: ["Excel", "エクセル", "xlsx", "シート分割", "シート結合", "シートを分ける", "シートをまとめる", "ブック結合", "シート ファイル化", "タブ 分割"],
+  },
+  {
+    // 2026-11-17：和暦（明治〜令和）と西暦を、まとめて変換する（src/lib/date/wareki.ts）。Excel・CSVの列も変換できる
+    id: "wareki-convert",
+    name: "和暦・西暦一括変換",
+    category: "other",
+    description: "和暦（明治〜令和）と西暦を、まとめて変換します。貼り付けた日付のほか、Excel・CSVの選んだ列も変換でき、存在しない日付は「要確認」でお知らせ",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["date-weekday-tool"],
+    keywords: ["和暦", "西暦", "令和", "平成", "昭和", "大正", "明治", "元号", "変換", "早見表", "年号", "生年月日"],
+  },
+  {
     id: "pdf-extract-pages",
     name: "PDFページ抽出",
     category: "pdf",

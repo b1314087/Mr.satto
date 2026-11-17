@@ -203,6 +203,22 @@ const OfficeResetTool = dynamic(() =>
   import("./implementations/office-reset-tool").then((m) => m.OfficeResetTool),
   { loading: ToolLoading }
 );
+const WordMergeTool = dynamic(() =>
+  import("./implementations/word-merge-tool").then((m) => m.WordMergeTool),
+  { loading: ToolLoading }
+);
+const WordToImageTool = dynamic(() =>
+  import("./implementations/word-to-image-tool").then((m) => m.WordToImageTool),
+  { loading: ToolLoading }
+);
+const ExcelSheetsTool = dynamic(() =>
+  import("./implementations/excel-sheets-tool").then((m) => m.ExcelSheetsTool),
+  { loading: ToolLoading }
+);
+const WarekiConvertTool = dynamic(() =>
+  import("./implementations/wareki-convert-tool").then((m) => m.WarekiConvertTool),
+  { loading: ToolLoading }
+);
 const LegacyOfficeConvertTool = dynamic(() =>
   import("./implementations/legacy-office-convert-tool").then((m) => m.LegacyOfficeConvertTool),
 );
@@ -561,6 +577,14 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <OfficeResetTool kind="docx" />;
     case "pptx-format-reset":
       return <OfficeResetTool kind="pptx" />;
+    case "word-merge":
+      return <WordMergeTool />;
+    case "word-to-image":
+      return <WordToImageTool />;
+    case "excel-sheet-split-merge":
+      return <ExcelSheetsTool />;
+    case "wareki-convert":
+      return <WarekiConvertTool />;
     case "xls-to-xlsx":
       return <LegacyOfficeConvertTool kind="xls" />;
     case "doc-to-docx":

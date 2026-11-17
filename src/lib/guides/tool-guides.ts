@@ -339,6 +339,36 @@ export const toolGuides: Record<string, ToolGuide> = {
       ...finish("標準に戻す", "標準に戻す", [file("report.docx")], "Word文書(.docx)をダウンロード"),
     ],
   },
+  "word-merge": {
+    steps: [
+      pick("Wordを選ぶ", "Word（.docx）をドラッグ&ドロップ（複数可）"),
+      step("順番とページ番号", [file("report1.docx"), file("report2.docx", true), seg("ページ番号", ["続けて振る", "ファイルごとに1から"], 0)], 2),
+      ...finish("結合する", "2件のWordを結合する", [file("report1.docx"), file("report2.docx", true)]),
+    ],
+  },
+  "word-to-image": {
+    steps: [
+      pick("Wordを選ぶ", "Word（.docx）をドラッグ&ドロップ"),
+      step("ページと形式を選ぶ", [file(DOCX), seg(undefined, ["すべてのページ", "ページを選ぶ"], 0), seg("形式", ["PNG（文字がくっきり）", "JPEG（ファイルが小さい）"], 0), seg("解像度", ["96dpi", "150dpi", "200dpi", "300dpi"], 1)], 1),
+      ...finish("画像にする", "3ページを画像にする", [file(DOCX), preview("image")], "ZIPをダウンロード"),
+    ],
+  },
+  "excel-sheet-split-merge": {
+    steps: [
+      step("操作を選ぶ", [btns(["シート分割", "シート結合"], 0)], 0),
+      pick("Excelを選ぶ", "Excel（.xlsx）をドラッグ&ドロップ", [btns(["シート分割", "シート結合"], 0)]),
+      step("シートを選ぶ", [file(XLSX), check("売上"), check("経費")], 1),
+      ...finish("分割する", "2シートを分割する", [file(XLSX)], "ZIPをダウンロード").slice(0, 1),
+    ],
+  },
+  "wareki-convert": {
+    steps: [
+      step("入れ方を選ぶ", [seg(undefined, ["日付を貼り付ける", "Excel・CSVから"], 0)], 0),
+      step("日付を入力", [text("変換する日付を入力", ["2026/11/17", "令和元年5月1日", "H31.4.30"])], 0),
+      step("向きと書き方", [seg("変換の向き", ["自動（西暦⇔和暦）", "西暦→和暦", "和暦→西暦"], 0), seg("和暦の書き方", ["令和8年11月17日", "R8.11.17"], 0)], 0),
+      step("確かめてダウンロード", [table(2, 3), btn("Excel（.xlsx）でダウンロード")], 1),
+    ],
+  },
   "xls-to-xlsx": {
     steps: [pick("Excelを選ぶ", "Excel旧形式のファイル(.xls)をドラッグ&ドロップ"), ...finish("変換する", ".xlsxに変換する", [file("data.xls"), table(4, 2)], "Excelファイル(.xlsx)をダウンロード")],
   },
