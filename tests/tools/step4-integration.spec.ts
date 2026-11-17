@@ -523,7 +523,8 @@ test.describe("4-2: PDF修正の操作", () => {
     await uploadWhenReady(page, fixtures.singlePagePdf, page.locator(CANVAS));
     await choosePdfFixOperation(page, "図形");
     await page.locator(CANVAS).click({ position: { x: 200, y: 200 } });
-    const shape = page.locator(`${CANVAS} > div.absolute`).last();
+    // 選んだ注釈の上に出る操作バー（pdf-annotate-object-toolbar）もキャンバスの中の div.absolute なので、図形だけを選ぶ
+    const shape = page.locator(`${CANVAS} > div.absolute:not([data-testid="pdf-annotate-object-toolbar"])`).last();
     await expect(shape).toBeVisible();
     // もう一度「図形」モードにしても、置いた図形をつかんで動かせる（新しい図形は増えない）
     await choosePdfFixOperation(page, "図形");
