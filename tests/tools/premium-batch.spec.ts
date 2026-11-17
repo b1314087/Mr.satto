@@ -281,6 +281,22 @@ baseTest("料金ページに、一括処理がプレミアムの機能である�
   await expect(page.getByTestId("pricing-batch-free")).toContainText("1つずつ");
 });
 
+baseTest("料金ページ：プレミアムのカードは強み（AIの補助・一括処理）が先頭にあり、「プレミアムでできること」で対応ツールへ進める", async ({ page }) => {
+  await page.goto("/pricing");
+  // プレミアムのカードの特典の1行目・2行目が、AIの補助と一括処理
+  const premiumItems = page.getByTestId("pricing-ai-premium").locator("xpath=..").locator(":scope > li");
+  await expect(premiumItems.nth(0)).toHaveAttribute("data-testid", "pricing-ai-premium");
+  await expect(premiumItems.nth(1)).toHaveAttribute("data-testid", "pricing-batch-premium");
+  const highlights = page.getByTestId("premium-highlights");
+  await expect(highlights).toBeVisible();
+  // AIの補助：AI機能のあるツール（例：見積書・注文書・請求書作成）へのリンク
+  await expect(page.getByTestId("premium-highlight-ai-tools").getByRole("link", { name: "見積書・注文書・請求書作成" })).toHaveAttribute("href", "/tools/document-suite");
+  // 一括処理：最大のファイル数と、対応ツールの数・名前
+  await expect(page.getByTestId("premium-highlight-batch")).toContainText("最大50ファイル");
+  await expect(page.getByTestId("premium-highlight-batch-tools").getByRole("link")).toHaveCount(6);
+  await expect(page.getByTestId("premium-highlight-batch")).toContainText(/ほか\d+ツール/);
+});
+
 // 既存の単体処理の確認（プレミアムでも、1ファイルのときは従来どおりの結果画面になる）
 premiumTest("プレミアムでも、1枚だけのときは従来どおりの結果画面で保存できる", async ({ page }) => {
   await page.goto("/tools/image-compress");

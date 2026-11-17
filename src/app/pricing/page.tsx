@@ -17,6 +17,7 @@ import { AD_EVERY_DOWNLOAD } from "@/lib/plans/temporary-access-cookie";
 import { isRewardedAdGateActive } from "@/lib/ads/gam-config";
 import { PricingActionButton } from "@/components/pricing/pricing-action-button";
 import { PlanComparison } from "@/components/pricing/plan-comparison";
+import { PremiumHighlights } from "@/components/pricing/premium-highlights";
 import { tools } from "@/lib/tools/data";
 import { PremiumTag } from "@/components/ui/premium-badge";
 import type React from "react";
@@ -67,9 +68,9 @@ function getAdsLabel(adsRequired: boolean, adGateActive: boolean): string | null
 }
 
 /** プランの特典の1行（✓ 付き） */
-function PlanItem({ children, testId }: { children: React.ReactNode; testId?: string }) {
+function PlanItem({ children, testId, strong = false }: { children: React.ReactNode; testId?: string; strong?: boolean }) {
   return (
-    <li className="flex items-start gap-2" data-testid={testId}>
+    <li className={`flex items-start gap-2${strong ? " font-semibold" : ""}`} data-testid={testId}>
       <span aria-hidden="true" className="mt-0.5 font-bold text-ms-accent dark:text-ms-focus">
         ✓
       </span>
@@ -156,19 +157,23 @@ export default async function PricingPage({
               </div>
 
               {/* 特典の一覧（✓ 付き）。1行ずつ短く書き、細かい条件は利用規約・各ツールの画面に任せる */}
+              {/* プレミアムは、強み（AIの補助・複数ファイルの一括処理）を先頭に太字で出す（2026-11-17） */}
               <ul className="flex flex-col gap-2 text-sm text-ms-text">
-                <PlanItem>{getToolAccessLabel(plan.toolAccess)}</PlanItem>
-                <PlanItem testId={`pricing-batch-${id}`}>
-                  {id === "premium" ? "複数ファイルの一括処理" : "ファイルは1つずつ処理"}
-                </PlanItem>
-                <PlanItem testId={`pricing-limit-${id}`}>{LIMIT_LABEL[id]}</PlanItem>
-                <PlanItem testId={`pricing-filesize-${id}`}>{FILE_SIZE_LABEL[id]}</PlanItem>
-                {getAdsLabel(plan.adsRequired, adGateActive) && <PlanItem>{getAdsLabel(plan.adsRequired, adGateActive)}</PlanItem>}
                 {id === "premium" && (
-                  <PlanItem testId="pricing-ai-premium">
+                  <PlanItem testId="pricing-ai-premium" strong>
                     <span className="inline-flex items-center gap-2">AIの補助 <PremiumTag kind="ai" /></span>
                   </PlanItem>
                 )}
+                {id === "premium" && (
+                  <PlanItem testId={`pricing-batch-${id}`} strong>
+                    複数ファイルの一括処理
+                  </PlanItem>
+                )}
+                <PlanItem>{getToolAccessLabel(plan.toolAccess)}</PlanItem>
+                {id !== "premium" && <PlanItem testId={`pricing-batch-${id}`}>ファイルは1つずつ処理</PlanItem>}
+                <PlanItem testId={`pricing-limit-${id}`}>{LIMIT_LABEL[id]}</PlanItem>
+                <PlanItem testId={`pricing-filesize-${id}`}>{FILE_SIZE_LABEL[id]}</PlanItem>
+                {getAdsLabel(plan.adsRequired, adGateActive) && <PlanItem>{getAdsLabel(plan.adsRequired, adGateActive)}</PlanItem>}
               </ul>
 
               {id === "free" ? (
@@ -190,6 +195,8 @@ export default async function PricingPage({
           );
         })}
       </div>
+
+      <PremiumHighlights />
 
       <PlanComparison adGateActive={adGateActive} />
 

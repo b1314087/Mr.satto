@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { getFeaturedTools, getListedTools, tools } from "@/lib/tools/data";
+import { sortToolsForDisplay } from "@/lib/tools/display-order";
 import { waitForFileInputHydrated } from "../helpers/tool-ready";
 
 /**
@@ -237,7 +238,8 @@ for (const scheme of ["light", "dark"] as Scheme[]) {
 
     test("ツール一覧: カードはガラス調で、リンク先・個数が変わらず、文字が読める", async ({ page }) => {
       await page.goto("/tools");
-      const expected = getListedTools().filter((t) => t.status === "available");
+      // 一覧の並びは、カテゴリーの順 → カテゴリーの中は50音順（2026-11 表示順の統一）
+      const expected = sortToolsForDisplay(getListedTools().filter((t) => t.status === "available"));
       const cards = page.locator('main a[href^="/tools/"][aria-label]');
       await expect(cards).toHaveCount(expected.length);
       for (const [i, tool] of expected.entries()) await expect(cards.nth(i)).toHaveAttribute("href", `/tools/${tool.id}`);

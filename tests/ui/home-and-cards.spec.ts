@@ -88,15 +88,16 @@ test.describe("「おすすめツール」の削除", () => {
   });
 
   test("関連ツールは従来どおり、同カテゴリが足りない時に featured で補われる", () => {
-    // 同カテゴリの候補が極端に少ないツール（PowerPointは1件のみ）で、featuredによる補完が働く
+    // 同カテゴリの候補が少ないツール（PowerPointは白黒反転と書式リセットの2件）で、featuredによる補完が働く
     const pptx = getToolById("pptx-invert")!;
     const { related, sameCategoryCandidateCount } = getRelatedTools(pptx);
-    expect(sameCategoryCandidateCount).toBe(0);
+    expect(sameCategoryCandidateCount).toBe(1);
     expect(related.length).toBe(4);
-    // 工程11: relatedToolIds で指定した「使う場面が近いツール」が先頭に入り、残りが featured で補われる
+    // 工程11: relatedToolIds で指定した「使う場面が近いツール」が先頭に入り、次に同カテゴリ、残りが featured で補われる
     const pinnedIds = pptx.relatedToolIds ?? [];
     expect(related.slice(0, pinnedIds.length).map((t) => t.id)).toEqual(pinnedIds);
-    expect(related.slice(pinnedIds.length).every((t) => t.featured && t.id !== pptx.id)).toBe(true);
+    expect(related[pinnedIds.length].id).toBe("pptx-format-reset");
+    expect(related.slice(pinnedIds.length + 1).every((t) => t.featured && t.id !== pptx.id)).toBe(true);
   });
 
   test("個別ツールページの関連ツールが従来どおり表示され、ガラス調のカードで正しいリンク先を持つ", async ({ page }) => {

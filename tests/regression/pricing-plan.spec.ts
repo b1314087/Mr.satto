@@ -32,8 +32,10 @@ test("pricing（2026-11）: 料金は ¥0 / ¥220（スタンダード）/ ¥1,1
   // 無料・スタンダード・プレミアム・プランの比較・お支払い/解約（＋会員登録できる環境では、無料お試しの案内）。
   // 会員登録が準備中の環境（Supabaseの設定がない）では、無料お試しを案内しない（監査 C-9）
   // 2026-11-15：プランの比較表（見出し「プランの比較」）を追加したので、見出しは5つ
+  // 2026-11-17：「プレミアムでできること」を追加したので、見出しは6つ
   const trialShown = await page.getByTestId("trial-offer").count();
-  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(5 + trialShown);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveCount(6 + trialShown);
+  await expect(page.getByRole("heading", { level: 2, name: /プレミアムでできること/ })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "プランの比較" })).toBeVisible();
 });
 

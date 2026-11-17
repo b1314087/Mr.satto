@@ -22,7 +22,12 @@ function pdfText(pdf: string): string {
 
 async function gotoTool(page: import("@playwright/test").Page) {
   await page.goto("/tools/ticket-voucher");
-  await expect(page.getByLabel("開始番号").first()).toBeVisible();
+  const start = page.getByLabel("開始番号").first();
+  await expect(start).toBeVisible();
+  // 入力欄の部品は、ページ全体より後から準備（hydration）が終わることがある。準備前に入力すると消えるので、入力欄そのものの準備を待つ
+  await expect
+    .poll(() => start.evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactProps$"))), { timeout: 30_000 })
+    .toBe(true);
 }
 
 test("開始番号と終了番号を指定すると、その範囲の連番の券ができる", async ({ page }) => {

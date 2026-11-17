@@ -24,7 +24,7 @@ plainTest.describe("検索品質（やりたい作業の言い方で探す）", 
     ["CSVをExcelに", "excel-csv-convert"],
     ["画像のサイズ変更", "image-compress"], // 工程3：画像リサイズは「画像リサイズ・圧縮」に統合
     ["画像を軽くする", "image-compress"],
-    ["請求書を作る", "invoice-generator"],
+    ["請求書を作る", "document-suite"], // 請求書作成は「見積書・注文書・請求書作成」に統合
     // 入力欄の例
     ["PDFを圧縮したい", "pdf-compress"],
     ["画像の背景を消したい", "background-remover"],

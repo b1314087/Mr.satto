@@ -337,8 +337,9 @@ test.describe("動画字幕追加：字幕の編集とプレビュー", () => {
     await page.mouse.move(lane!.x + (lane!.width * 3) / 4, end!.y + end!.height / 2, { steps: 6 });
     await page.mouse.up();
     const endVal = parseSubtitleTime(await page.getByTestId("vs-cue-end").inputValue())!;
+    // つまみの真ん中をつかむので、つまみの幅の半分（画面の数ピクセル＝0.2秒前後）だけずれることがある
     expect(endVal).toBeGreaterThan(2.8);
-    expect(endVal).toBeLessThan(3.2);
+    expect(endVal).toBeLessThan(3.3);
     await expect(page.getByTestId("vs-cue-start")).toHaveValue("00:00:01.000");
     // 真ん中をドラッグすると、長さを保ったまま動く
     await row.scrollIntoViewIfNeeded();
