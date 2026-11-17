@@ -34,8 +34,9 @@ const PRODUCTION_FLAGS: Record<FeatureName, boolean> = {
   // 審査が通ったら true に戻す（無料プランは、ダウンロードのたびにリワード広告を見ると、すべての通常ツールを使える）
   ads: false,
   billing: true,
-  // 2026-11-16：パスキー必須などの仕組みを追加した。Supabaseへ0011を適用し、動作を確かめてから true にする
-  passkey: false,
+  // 2026-11-16：パスキー必須などの仕組みを追加した。
+  // 2026-11-17：Supabaseへ0011（passkey_launch.sql）を適用・確認し、本人の許可を得てオンにした。問題があれば false に戻す
+  passkey: true,
 };
 
 function resolveFeature(name: FeatureName): boolean {

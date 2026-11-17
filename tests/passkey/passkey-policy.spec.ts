@@ -55,14 +55,14 @@ test.describe("設定値と組み込み先", () => {
     expect(IN_USE_MESSAGE).toBe("このアカウントは別の端末で利用中です。先に利用中の端末からログアウトしてください。");
   });
 
-  test("プランの判定（getServerPlan）とAIのサーバー判定に、利用条件が組み込まれている。本番の機能スイッチはまだオフ", () => {
+  test("プランの判定（getServerPlan）とAIのサーバー判定に、利用条件が組み込まれている。本番の機能スイッチはオン（2026-11-17 公開）", () => {
     const plan = fs.readFileSync("src/lib/plans/current-plan.ts", "utf8");
     expect(plan).toContain("const access = await resolvePaidAccess(user.id, contractPlan !== \"free\");");
     expect(plan).toContain('contractPlan === "free" || paidAccessGranted(access.status) ? contractPlan : "free"');
     const ai = fs.readFileSync("src/lib/ai/server.ts", "utf8");
     expect(ai).toContain('if (!paidAccessGranted(ctx.paidAccess) && ctx.paidAccess !== "not_paid") return { userId: ctx.userId, plan: "free" };');
     const flags = fs.readFileSync("src/lib/config/features.ts", "utf8");
-    expect(flags.slice(flags.indexOf("const PRODUCTION_FLAGS"))).toMatch(/passkey:\s*false/);
+    expect(flags.slice(flags.indexOf("const PRODUCTION_FLAGS"))).toMatch(/passkey:\s*true/);
     // ログアウトでロックを解放し、パスワード変更で他の端末のログインとロックを終わらせる
     const actions = fs.readFileSync("src/lib/auth/actions.ts", "utf8");
     expect(actions).toContain("await endCurrentSession(user?.id ?? null);");
@@ -98,10 +98,10 @@ test.describe("本番に出す準備", () => {
     await expect(page.getByTestId("privacy-passkey-cookies")).toContainText("最長400日");
   });
 
-  test("プライバシーポリシーの記載と版の更新は、機能スイッチと一緒に変わる（本番のスイッチはオフのまま）", () => {
+  test("プライバシーポリシーの記載と版の更新は、機能スイッチと一緒に変わる（本番のスイッチはオン。2026-11-17 公開）", () => {
     expect(fs.readFileSync("src/app/privacy/page.tsx", "utf8")).toContain("const passkey = billing && featureFlags.passkey;");
-    expect(fs.readFileSync("src/lib/legal/versions.ts", "utf8")).toContain('privacy: featureFlags.passkey ? "2026-11-16" : "2026-11-15",');
+    expect(fs.readFileSync("src/lib/legal/versions.ts", "utf8")).toContain('privacy: featureFlags.passkey ? "2026-11-17" : "2026-11-15",');
     const flags = fs.readFileSync("src/lib/config/features.ts", "utf8");
-    expect(flags.slice(flags.indexOf("const PRODUCTION_FLAGS"))).toMatch(/passkey:\s*false/);
+    expect(flags.slice(flags.indexOf("const PRODUCTION_FLAGS"))).toMatch(/passkey:\s*true/);
   });
 });
