@@ -5,6 +5,7 @@ import { categories } from "@/lib/tools/categories";
 import { getFeaturedTools, getListedTools, getToolById, tools } from "@/lib/tools/data";
 import { getRelatedTools } from "@/lib/tools/related-tools";
 import { searchTools } from "@/lib/tools/search";
+import { sortToolsForDisplay } from "@/lib/tools/display-order";
 import { siteConfig } from "@/lib/config/site";
 
 /**
@@ -213,8 +214,9 @@ test.describe("ツールカード", () => {
     await expect(cards).toHaveCount(available().length);
     const classes = await cards.evaluateAll((els) => els.map((e) => e.className));
     expect(classes.every((c) => c.includes("ms-glass") && c.includes("ms-glass-interactive"))).toBe(true);
+    // 2026-11-17：一覧は表示順（カテゴリーの順 → カテゴリーの中は50音順。src/lib/tools/display-order.ts）で並ぶ
     await cards.nth(1).click();
-    await expect(page).toHaveURL(new RegExp(`/tools/${available()[1].id}$`));
+    await expect(page).toHaveURL(new RegExp(`/tools/${sortToolsForDisplay(available())[1].id}$`));
   });
 
   test("カード全体が1つのリンク（<a>）で、中身（見出し・説明）はその中にある。JSでの遷移に置き換えていない", async ({ page }) => {
@@ -229,7 +231,8 @@ test.describe("ツールカード", () => {
 
   test("カテゴリ別一覧: カードの名前の下に説明を1行だけ出す（1行に収まらない分は省略。名前・バッジ・リンクは変わらない）。全ツール一覧でも説明が残る", async ({ page }) => {
     // 内部リンク・検索導線改善の工程で、利用者の判断により「説明なし」から「1行だけ説明」に変更した
-    const imageTools = getListedTools().filter((t) => t.category === "image" && t.status === "available");
+    // 2026-11-17：カテゴリーの中は50音順（src/lib/tools/display-order.ts）
+    const imageTools = sortToolsForDisplay(getListedTools().filter((t) => t.category === "image" && t.status === "available"));
     await page.goto("/tools/image");
     const cards = main(page).locator('a[href^="/tools/"][aria-label]');
     await expect(cards).toHaveCount(imageTools.length);

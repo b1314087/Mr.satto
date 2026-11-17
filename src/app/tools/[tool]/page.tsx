@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { tools, getToolById, getToolsByCategory, getMergedTools, isListedTool } from "@/lib/tools/data";
+import { sortToolsForDisplay } from "@/lib/tools/display-order";
 import { categories, getCategory, getCategoryToolsLabel, getRelatedToolsHeading } from "@/lib/tools/categories";
 import { CategoryBadge } from "@/components/tools/category-badge";
 import { CategoryIcon } from "@/components/ui/category-icon";
@@ -123,7 +124,8 @@ export default async function ToolPage({ params }: ToolPageProps) {
   const category = findCategoryByParam(param);
   if (category) {
     const content = getCategorySeoContent(category.id);
-    const categoryTools = getToolsByCategory(category.id);
+    // カテゴリーの中は50音順で表示する（ツール一覧ページと同じ順。src/lib/tools/display-order.ts）
+    const categoryTools = sortToolsForDisplay(getToolsByCategory(category.id));
     const availableTools = categoryTools.filter((t) => t.status === "available" && hasImplementation(t.id) && isListedTool(t));
     const comingSoonTools = categoryTools.filter((t) => t.status === "coming-soon");
     const breadcrumbItems = [

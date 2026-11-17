@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Tool, CategoryId } from "@/lib/tools/types";
 import type { Category } from "@/lib/tools/types";
 import { searchTools } from "@/lib/tools/search";
+import { sortToolsForDisplay } from "@/lib/tools/display-order";
 import { SearchBar } from "./search-bar";
 import { ToolGrid } from "./tool-grid";
 import { CategoryIcon } from "@/components/ui/category-icon";
@@ -36,9 +37,11 @@ export function ToolsExplorer({
   }
 
   const filtered = useMemo(() => {
-    let result = category === "all" ? tools : tools.filter((t) => t.category === category);
-    result = searchTools(result, query);
-    return result;
+    const inCategory = category === "all" ? tools : tools.filter((t) => t.category === category);
+    // 検索しているときは、検索の順（当てはまる順・同じ点数ならデータの順）のまま。
+    // 検索していないとき（searchTools が受け取った配列をそのまま返したとき）は、一覧の表示順（カテゴリーの順 → カテゴリーの中は50音順。src/lib/tools/display-order.ts）
+    const searched = searchTools(inCategory, query);
+    return searched === inCategory ? sortToolsForDisplay(inCategory) : searched;
   }, [tools, category, query]);
 
   // Phase 19: 準備中（coming-soon）のツールは実装済みツールの検索結果に
