@@ -1,6 +1,7 @@
 "use client";
 
 import { FilePreview } from "./file-preview";
+import { TrashIcon } from "@/components/ui/trash-icon";
 
 export function FileList({
   files,
@@ -21,16 +22,10 @@ export function FileList({
               type="button"
               onClick={() => onRemove(index)}
               aria-label={`${file.name} を削除`}
+              title="削除"
               className="ms-focus-ring absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-ms-border bg-ms-strong text-ms-muted transition-colors hover:text-ms-text hover:bg-ms-hover-tint"
             >
-              <svg className="h-5 w-5" fill="none" viewBox="3 3 18 18" stroke="currentColor" aria-hidden="true">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
+              <TrashIcon className="h-[18px] w-[18px]" />
             </button>
           )}
         </li>

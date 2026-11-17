@@ -413,14 +413,77 @@ print(json.dumps({"s":wb.sheetnames,"a1":a["A1"].value,"bold":a["A1"].font.b,"co
     opensInLibreOffice(out);
   });
 
-  test("異常系：.xlsx 以外・1ファイルだけでは実行できない", async ({ page }) => {
+  test("結合：選んだシート同士だけを結合する。選ばなかったシート・表・名前を参照する数式は値になる（別のファイルの同じ名前を指さない）", async ({ page }) => {
+    test.skip(!pythonOk, "python が無い環境");
+    await open(page, "excel-sheet-split-merge");
+    await page.getByTestId("excel-sheets-mode-merge").click();
+    await uploadFixture(page, [fx("book-a.xlsx"), fx("book-b.xlsx")]);
+    const fileBlocks = page.getByTestId("excel-merge-file-sheets");
+    await expect(fileBlocks).toHaveCount(2);
+    // book-a：売上・表だけ（設定・非表示を外す）
+    const a = fileBlocks.nth(0).getByTestId("excel-merge-sheet");
+    await a.nth(1).uncheck();
+    await a.nth(2).uncheck();
+    // book-b：集計だけ
+    await fileBlocks.nth(1).getByTestId("excel-merge-toggle-file").click();
+    await fileBlocks.nth(1).getByTestId("excel-merge-sheet").nth(1).check();
+    await expect(page.getByTestId("excel-merge-preview").locator("li")).toHaveCount(3);
+    await expect(page.getByTestId("excel-merge-run")).toContainText("選んだ3シートを結合する");
+    await page.getByTestId("excel-merge-run").click();
+    await expect(page.getByTestId("excel-merge-result")).toContainText("3シート", { timeout: 60_000 });
+    await expect(page.getByTestId("excel-sheets-notices")).toContainText("選ばなかったシート");
+    const { out } = await save(page, /ダウンロード/, "selected.xlsx");
+    const r = py(
+      `import json,sys,openpyxl
+wb=openpyxl.load_workbook(sys.argv[1]); s=wb["売上"]; t=wb["集計"]
+print(json.dumps({"sheets":wb.sheetnames,"b5":s["B5"].value,"c3":s["C3"].value,"c5":s["C5"].value,"t1":t["A1"].value,"t2":t["A2"].value,"bold":s["A1"].font.b,"tables":list(wb["表"].tables.keys())}))`,
+      out
+    );
+    expect(r.sheets).toEqual(["売上", "表", "集計"]);
+    // 同じシートの中だけを参照する数式は残る
+    expect(r.b5).toBe("=SUM(B3:B4)");
+    // 選ばなかった「設定」・名前「税率」を参照する数式は、保存されていた値に
+    expect(r.c5).toBe(10);
+    expect(r.c3).toBe(110);
+    // book-b の「売上」（選ばなかった）を参照する数式は値になる（book-a の「売上」を指さない）
+    expect(r.t1).toBe(2469);
+    // book-b の選ばなかったシートの表（Table1）を参照する数式も値になる（book-a の Table1 を指さない）
+    expect(r.t2).toBe(12);
+    expect(r.bold).toBe(true);
+    expect(r.tables).toEqual(["Table1"]);
+    opensInLibreOffice(out);
+  });
+
+  test("結合：1つのファイルからでも、選んだシートをまとめられる。選んだシートが2つ未満のときは実行できない", async ({ page }) => {
+    test.skip(!pythonOk, "python が無い環境");
+    await open(page, "excel-sheet-split-merge");
+    await page.getByTestId("excel-sheets-mode-merge").click();
+    await uploadFixture(page, [fx("book-a.xlsx")]);
+    await expect(page.getByTestId("excel-merge-run")).toContainText("選んだ4シートを結合する");
+    await page.getByTestId("excel-merge-toggle-file").click();
+    await expect(page.getByTestId("excel-merge-need-more")).toBeVisible();
+    await expect(page.getByTestId("excel-merge-run")).toHaveCount(0);
+    const boxes = page.getByTestId("excel-merge-sheet");
+    await boxes.nth(0).check();
+    await expect(page.getByTestId("excel-merge-run")).toHaveCount(0);
+    await boxes.nth(3).check();
+    await page.getByTestId("excel-merge-run").click();
+    await expect(page.getByTestId("excel-merge-result")).toContainText("2シート", { timeout: 60_000 });
+    const { out } = await save(page, /ダウンロード/, "one.xlsx");
+    const r = py(`import json,sys,openpyxl; wb=openpyxl.load_workbook(sys.argv[1]); print(json.dumps({"s":wb.sheetnames}))`, out);
+    expect(r.s).toEqual(["売上", "表"]);
+  });
+
+  test("異常系：.xlsx 以外のファイルはエラーになる。ファイルを外すボタンはゴミ箱のアイコン", async ({ page }) => {
     await open(page, "excel-sheet-split-merge");
     await uploadFixture(page, fx("wareki.csv"));
     await expect(page.getByTestId("excel-sheets-error")).toContainText("対応していません");
     await page.getByTestId("excel-sheets-mode-merge").click();
     await uploadFixture(page, [fx("book-a.xlsx")]);
-    await expect(page.getByText("もう1つ以上Excelのファイルを追加してください")).toBeVisible();
-    await expect(page.getByTestId("excel-merge-run")).toHaveCount(0);
+    const remove = page.getByRole("button", { name: "book-a.xlsx を削除" });
+    await expect(remove.locator("svg[data-icon=trash]")).toHaveCount(1);
+    await remove.click();
+    await expect(page.getByTestId("excel-merge-file-sheets")).toHaveCount(0);
   });
 });
 

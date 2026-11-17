@@ -269,8 +269,11 @@ interface MergeOutput {
 function MergePanel() {
   const [files, setFiles] = useState<File[]>([]);
   const [sheetLists, setSheetLists] = useState<Map<File, SheetInfo[]>>(new Map());
+  /** ファイルごとの、結合するシート（元の並びの番号）。最初はすべて */
+  const [selection, setSelection] = useState<Map<File, number[]>>(new Map());
   const [inputError, setInputError] = useState<string | null>(null);
-  const settingKey = files.length > 0 ? files.map((f) => `${fileKey(f)}:${fileIdentity(f)}`).join("|") : "";
+  const selectedOf = (f: File) => selection.get(f) ?? (sheetLists.get(f) ?? []).map((s) => s.index);
+  const settingKey = files.length > 0 ? files.map((f) => `${fileKey(f)}:${fileIdentity(f)}:${selectedOf(f).join(",")}`).join("|") : "";
   const run = useKeyedRun<MergeOutput>(settingKey);
   const error = run.error ?? inputError;
 
@@ -295,27 +298,49 @@ function MergePanel() {
     if (ok.length > room) errors.push(`一度に結合できるのは${MAX_XLSX_MERGE_FILES}ファイルまでです。`);
     setInputError(errors.length ? errors.join(" ") : null);
     setSheetLists(lists);
+    setSelection((prev) => {
+      const next = new Map(prev);
+      for (const f of ok) next.set(f, (lists.get(f) ?? []).map((sh) => sh.index));
+      return next;
+    });
     if (ok.length && room) setFiles((prev) => [...prev, ...ok.slice(0, room)]);
   }
 
+  function toggleSheet(f: File, index: number, on: boolean) {
+    setSelection((prev) => {
+      const next = new Map(prev);
+      const cur = selectedOf(f);
+      next.set(f, on ? [...cur, index].sort((x, y) => x - y) : cur.filter((i) => i !== index));
+      return next;
+    });
+  }
+
+  function toggleFile(f: File, on: boolean) {
+    setSelection((prev) => new Map(prev).set(f, on ? (sheetLists.get(f) ?? []).map((sh) => sh.index) : []));
+  }
+
+  const totalSelected = files.reduce((n, f) => n + selectedOf(f).length, 0);
+
   function handleRun() {
-    if (files.length < 2) return;
-    const targets = files;
+    if (totalSelected < 2) return;
+    const targets = files.filter((f) => selectedOf(f).length > 0);
+    const sel = new Map(targets.map((f) => [f, selectedOf(f)]));
     void run.run(async () => {
-      const inputs = await Promise.all(targets.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })));
+      const inputs = await Promise.all(targets.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()), sheets: sel.get(f) })));
       const res = await mergeWorkbooks(inputs);
       return { blob: new Blob([res.files[0].bytes as BlobPart], { type: XLSX_MIME }), notices: res.notices };
     });
   }
 
   const result = run.value;
-  const totalSheets = files.reduce((s, f) => s + (sheetLists.get(f)?.length ?? 0), 0);
+  const totalSheets = totalSelected;
 
   // 結合したあとのシート名（重なる名前に番号が付くことを先に見せる）
   const preview: { file: number; name: string; renamed: boolean; state: string }[] = [];
   const used = new Set<string>();
   files.forEach((f, fi) => {
-    for (const s of sheetLists.get(f) ?? []) {
+    const chosen = selectedOf(f);
+    for (const s of (sheetLists.get(f) ?? []).filter((sh) => chosen.includes(sh.index))) {
       let name = s.name;
       if (used.has(name.toLowerCase())) {
         for (let i = 2; ; i++) {
@@ -369,12 +394,60 @@ function MergePanel() {
         onError={setInputError}
       />
       {files.length > 0 && <ReorderableFileList files={files} onReorder={setFiles} onRemove={(i) => setFiles((prev) => prev.filter((_, x) => x !== i))} />}
-      {files.length === 1 && <p className="text-xs text-neutral-500 dark:text-neutral-400">結合するには、もう1つ以上Excelのファイルを追加してください。</p>}
+      {files.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800" data-testid="excel-merge-sheets">
+          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">結合するシートを選ぶ（{totalSelected}シートを選択中）</p>
+          {files.map((f, fi) => {
+            const list = sheetLists.get(f) ?? [];
+            const chosen = selectedOf(f);
+            const allOn = list.length > 0 && chosen.length === list.length;
+            return (
+              <div key={fileKey(f)} className="flex flex-col gap-1" data-testid="excel-merge-file-sheets">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+                    <span className="inline-block shrink-0 rounded-full bg-blue-600 px-1.5 text-[10px] font-semibold text-white">{fi + 1}</span>
+                    <span className="min-w-0 truncate">{f.name}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => toggleFile(f, !allOn)}
+                    className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs hover:border-blue-400 dark:border-neutral-700"
+                    data-testid="excel-merge-toggle-file"
+                  >
+                    {allOn ? "すべて外す" : "すべて選ぶ"}
+                  </button>
+                </div>
+                <ul className="flex flex-wrap gap-2">
+                  {list.map((sh) => (
+                    <li key={sh.index}>
+                      <label
+                        className={`flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm ${
+                          chosen.includes(sh.index) ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30" : "border-neutral-300 dark:border-neutral-700"
+                        }`}
+                      >
+                        <input type="checkbox" checked={chosen.includes(sh.index)} onChange={(e) => toggleSheet(f, sh.index, e.target.checked)} data-testid="excel-merge-sheet" />
+                        <span className="max-w-[12rem] truncate">{sh.name}</span>
+                        {STATE_LABEL[sh.state] && <span className="text-[10px] text-neutral-500">{STATE_LABEL[sh.state]}</span>}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            選んだシートだけを、上のファイルの順・シートの順に1つのExcelにまとめます。1つのファイルの中から、いくつかのシートを選んでまとめることもできます。
+          </p>
+        </div>
+      )}
+      {files.length > 0 && totalSelected < 2 && (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400" data-testid="excel-merge-need-more">結合するシートを2つ以上選んでください（ファイルを追加することもできます）。</p>
+      )}
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
         シートを1つの表に縦に積み上げたいときは、「Excel・CSV結合」を使ってください。
       </p>
 
-      {files.length >= 2 && (
+      {totalSelected >= 2 && (
         <RunBar>
           <button
             type="button"
@@ -384,7 +457,7 @@ function MergePanel() {
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             data-testid="excel-merge-run"
           >
-            {files.length}件のExcelを結合する
+            選んだ{totalSelected}シートを結合する
           </button>
         </RunBar>
       )}

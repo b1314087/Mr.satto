@@ -313,92 +313,146 @@ function formulasToValues(sheet: Document, hit: (formula: string) => boolean): n
 // 分割
 // ---------------------------------------------------------------------------
 
+/**
+ * シートの中の、なくなるシート（removedLower）・なくなる名前の定義（removedNames）を参照するものを直す。
+ * - 数式は、保存されている計算結果の値に置き換える（参照先がなくなる・別のブックの同じ名前のシートを指してしまうのを防ぐ）。
+ * - 入力規則・条件付き書式は外す。
+ */
+function dropRefsToRemoved(sheet: Document, removedLower: Set<string>, removedNames: string[], removedTables: string[] = []): { converted: number; removedRules: number } {
+  if (removedLower.size === 0 && removedNames.length === 0 && removedTables.length === 0) return { converted: 0, removedRules: 0 };
+  const tableRes = removedTables.filter(Boolean).map((t) => new RegExp(`(^|[^A-Za-z0-9_.\\u0080-\\uFFFF])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\[`, "i"));
+  const hit = (f: string) =>
+    sheetRefsIn(f).some((r) => r !== "[external]" && removedLower.has(r.toLowerCase())) ||
+    removedNames.some((n) => n !== "" && usesName(f, n)) ||
+    tableRes.some((re) => mapOutsideStrings(f, (p) => (re.test(p) ? "\u0000" : p)).includes("\u0000"));
+  const converted = formulasToValues(sheet, hit);
+  let removedRules = 0;
+  for (const dv of byLocal(sheet, "dataValidation")) {
+    const text = byLocal(dv, "formula1").concat(byLocal(dv, "formula2")).map((x) => x.textContent ?? "").join(" ");
+    if (hit(text)) {
+      dv.parentNode?.removeChild(dv);
+      removedRules++;
+    }
+  }
+  for (const cf of byLocal(sheet, "conditionalFormatting")) {
+    for (const rule of childrenByLocal(cf, "cfRule")) {
+      const text = byLocal(rule, "formula").map((x) => x.textContent ?? "").join(" ");
+      if (hit(text)) {
+        rule.parentNode?.removeChild(rule);
+        removedRules++;
+      }
+    }
+    if (childrenByLocal(cf, "cfRule").length === 0) cf.parentNode?.removeChild(cf);
+  }
+  for (const dvs of byLocal(sheet, "dataValidations")) {
+    const count = childrenByLocal(dvs, "dataValidation").length;
+    if (count === 0) dvs.parentNode?.removeChild(dvs);
+    else dvs.setAttribute("count", String(count));
+  }
+  return { converted, removedRules };
+}
+
+/** シートの中にある表（テーブル）の名前 */
+function tablesOnSheets(book: Book, sheets: Element[]): string[] {
+  const out: string[] = [];
+  for (const el of sheets) {
+    const p = sheetPartPath(book, el);
+    if (!p || !book.files[relsPathOf(p)]) continue;
+    for (const r of listRels(readRels(book.files, p))) {
+      if (r.external || !relTypeIs(r.type, "table")) continue;
+      const t = readXml(book.files, resolveTarget(p, r.target), "テーブル");
+      const name = t?.documentElement.getAttribute("displayName") ?? t?.documentElement.getAttribute("name");
+      if (name) out.push(name);
+    }
+  }
+  return out;
+}
+
+/**
+ * ブックを、keep のシート（元の並びの番号）だけにする。残すシートの順番は元のまま。
+ * 名前の定義・数式・入力規則・条件付き書式で、外したシートを参照するものも直す。
+ */
+function keepOnlySheets(book: Book, keep: number[], notices: Set<string>): { converted: number } {
+  const sheets = sheetEls(book);
+  const keepSet = new Set(keep.filter((i) => i >= 0 && i < sheets.length));
+  if (keepSet.size === sheets.length) return { converted: 0 };
+  if (keepSet.size === 0) throw new OoxmlError(`${book.label}で、残すシートが選ばれていません。`);
+  const removedLower = new Set(sheets.filter((_, i) => !keepSet.has(i)).map((s) => (s.getAttribute("name") ?? "").toLowerCase()));
+  const removedTables = tablesOnSheets(book, sheets.filter((_, i) => !keepSet.has(i)));
+  const newIndex = new Map<number, number>();
+  let n = 0;
+  sheets.forEach((s, i) => {
+    if (keepSet.has(i)) {
+      newIndex.set(i, n++);
+      return;
+    }
+    const rid = s.getAttributeNS(REL_NS, "id");
+    for (const r of listRels(book.wbRels)) if (r.id === rid) r.el.parentNode?.removeChild(r.el);
+    s.parentNode?.removeChild(s);
+  });
+  // 表示されたシートが1つもなくなるときは、最初のシートを表示にする（ブックには表示されたシートが1つ以上必要なため）
+  const kept = sheetEls(book);
+  if (!kept.some((s) => (s.getAttribute("state") ?? "visible") === "visible")) {
+    kept[0].removeAttribute("state");
+    notices.add("残したシートがすべて非表示だったため、最初のシートを表示にしました（ブックには表示されたシートが1つ以上必要なため）。");
+  }
+  // 名前の定義：外したシートだけの名前・外したシートを参照する名前を外し、シートの番号を付け直す
+  const removedNames: string[] = [];
+  const definedNames = byLocal(book.wb, "definedNames")[0];
+  if (definedNames) {
+    for (const dn of childrenByLocal(definedNames, "definedName")) {
+      const local = dn.getAttribute("localSheetId");
+      const refsRemoved = sheetRefsIn(dn.textContent ?? "").some((r) => r !== "[external]" && removedLower.has(r.toLowerCase()));
+      const localGone = local !== null && !newIndex.has(Number(local));
+      if (localGone || refsRemoved) {
+        if (!localGone) removedNames.push(dn.getAttribute("name") ?? "");
+        dn.parentNode?.removeChild(dn);
+        continue;
+      }
+      if (local !== null) dn.setAttribute("localSheetId", String(newIndex.get(Number(local))));
+    }
+    if (childrenByLocal(definedNames, "definedName").length === 0) definedNames.parentNode?.removeChild(definedNames);
+  }
+  for (const v of byLocal(book.wb, "workbookView")) {
+    v.setAttribute("activeTab", "0");
+    v.removeAttribute("firstSheet");
+  }
+  let converted = 0;
+  let removedRules = 0;
+  kept.forEach((el, i) => {
+    const path = sheetPartPath(book, el);
+    if (!path || !book.files[path]) return;
+    const sheet = readXml(book.files, path, book.label)!;
+    for (const sv of byLocal(sheet, "sheetView")) {
+      if (i === 0) sv.setAttribute("tabSelected", "1");
+      else sv.removeAttribute("tabSelected");
+    }
+    const r = dropRefsToRemoved(sheet, removedLower, removedNames, removedTables);
+    converted += r.converted;
+    removedRules += r.removedRules;
+    book.files[path] = xmlBytes(sheet);
+  });
+  if (removedRules > 0) notices.add("選ばなかったシートを参照する入力規則・条件付き書式は、参照先がなくなるため外しました。");
+  return { converted };
+}
+
 export async function splitSheets(bytes: Uint8Array, label: string, indexes: number[]): Promise<XlsxSheetsResult> {
   if (indexes.length === 0) throw new OoxmlError("分割するシートを選んでください。");
-  const probe = openBook(bytes, label);
-  const all = sheetEls(probe);
-  const names = all.map((s) => s.getAttribute("name") ?? "");
+  const all = sheetEls(openBook(bytes, label));
   const notices = new Set<string>();
   const out: XlsxSheetsOutput[] = [];
   let convertedTotal = 0;
   for (const keep of indexes) {
     if (keep < 0 || keep >= all.length) continue;
     const book = openBook(bytes, label);
-    const sheets = sheetEls(book);
-    const keepEl = sheets[keep];
+    const keepEl = sheetEls(book)[keep];
     const keepName = keepEl.getAttribute("name") ?? "";
-    const removedNames = names.filter((_, i) => i !== keep);
-    const removedLower = new Set(removedNames.map((n) => n.toLowerCase()));
-    // ブックからほかのシートを外す
-    for (const [i, s] of sheets.entries()) {
-      if (i === keep) continue;
-      const rid = s.getAttributeNS(REL_NS, "id");
-      for (const r of listRels(book.wbRels)) if (r.id === rid) r.el.parentNode?.removeChild(r.el);
-      s.parentNode?.removeChild(s);
-    }
     // 1つだけのシートは、表示にする（ブックには表示されたシートが1つ以上必要なため）
     if (keepEl.getAttribute("state") && keepEl.getAttribute("state") !== "visible") {
       keepEl.removeAttribute("state");
       notices.add("非表示のシートを分割したときは、そのシートを表示にしました（1つだけのシートは表示にする必要があるため）。");
     }
-    // 名前の定義：このシートだけのもの以外・ほかのシートを参照するものを外す
-    const removedDefinedNames: string[] = [];
-    const definedNames = byLocal(book.wb, "definedNames")[0];
-    if (definedNames) {
-      for (const dn of childrenByLocal(definedNames, "definedName")) {
-        const local = dn.getAttribute("localSheetId");
-        const refs = sheetRefsIn(dn.textContent ?? "");
-        const refsRemoved = refs.some((r) => r === "[external]" || removedLower.has(r.toLowerCase()));
-        if ((local !== null && Number(local) !== keep) || refsRemoved) {
-          if (local === null || Number(local) === keep) removedDefinedNames.push(dn.getAttribute("name") ?? "");
-          dn.parentNode?.removeChild(dn);
-          continue;
-        }
-        if (local !== null) dn.setAttribute("localSheetId", "0");
-      }
-      if (childrenByLocal(definedNames, "definedName").length === 0) definedNames.parentNode?.removeChild(definedNames);
-    }
-    // 表示：このシートを開いた状態にする
-    for (const v of byLocal(book.wb, "workbookView")) {
-      v.setAttribute("activeTab", "0");
-      v.removeAttribute("firstSheet");
-    }
-    const keepPath = sheetPartPath(book, keepEl);
-    if (keepPath && book.files[keepPath]) {
-      const sheet = readXml(book.files, keepPath, label)!;
-      for (const sv of byLocal(sheet, "sheetView")) sv.setAttribute("tabSelected", "1");
-      const hit = (f: string) =>
-        sheetRefsIn(f).some((r) => r !== "[external]" && removedLower.has(r.toLowerCase()) && r.toLowerCase() !== keepName.toLowerCase()) ||
-        removedDefinedNames.some((n) => n !== "" && usesName(f, n));
-      const n = formulasToValues(sheet, hit);
-      convertedTotal += n;
-      // 入力規則・条件付き書式で、ほかのシートを参照するものは外す（参照先がなくなるため）
-      let removedRules = 0;
-      for (const dv of byLocal(sheet, "dataValidation")) {
-        const text = byLocal(dv, "formula1").concat(byLocal(dv, "formula2")).map((x) => x.textContent ?? "").join(" ");
-        if (hit(text)) {
-          dv.parentNode?.removeChild(dv);
-          removedRules++;
-        }
-      }
-      for (const cf of byLocal(sheet, "conditionalFormatting")) {
-        for (const rule of childrenByLocal(cf, "cfRule")) {
-          const text = byLocal(rule, "formula").map((x) => x.textContent ?? "").join(" ");
-          if (hit(text)) {
-            rule.parentNode?.removeChild(rule);
-            removedRules++;
-          }
-        }
-        if (childrenByLocal(cf, "cfRule").length === 0) cf.parentNode?.removeChild(cf);
-      }
-      for (const dvs of byLocal(sheet, "dataValidations")) {
-        const count = childrenByLocal(dvs, "dataValidation").length;
-        if (count === 0) dvs.parentNode?.removeChild(dvs);
-        else dvs.setAttribute("count", String(count));
-      }
-      if (removedRules > 0) notices.add("ほかのシートを参照する入力規則・条件付き書式は、参照先がなくなるため外しました。");
-      book.files[keepPath] = xmlBytes(sheet);
-    }
+    convertedTotal += keepOnlySheets(book, [keep], notices).converted;
     dropDerivedParts(book);
     setFullCalcOnLoad(book);
     out.push({ name: keepName, bytes: writeBook(book) });
@@ -711,13 +765,21 @@ const SHEET_REL_KEEP = ["drawing", "vmlDrawing", "comments", "table", "printerSe
 export interface MergeInput {
   name: string;
   bytes: Uint8Array;
+  /** 結合するシート（元の並びの番号）。省略したときは、すべてのシート */
+  sheets?: number[];
 }
 
 export async function mergeWorkbooks(inputs: MergeInput[]): Promise<XlsxSheetsResult> {
-  if (inputs.length < 2) throw new OoxmlError("結合するには、Excelのファイルを2つ以上選んでください。");
+  if (inputs.length < 1) throw new OoxmlError("結合するExcelのファイルを選んでください。");
   if (inputs.length > MAX_XLSX_MERGE_FILES) throw new OoxmlError(`一度に結合できるのは${MAX_XLSX_MERGE_FILES}ファイルまでです。`);
+  const selectedCount = inputs.reduce((n, inp) => n + (inp.sheets ? inp.sheets.length : sheetEls(openBook(inp.bytes, inp.name)).length), 0);
+  if (selectedCount < 2) throw new OoxmlError("結合するシートを2つ以上選んでください。");
+  // シートを1つも選んでいないファイルは、結合に使わない
+  inputs = inputs.filter((inp) => !inp.sheets || inp.sheets.length > 0);
   const a = openBook(inputs[0].bytes, inputs[0].name);
   const notices = new Set<string>();
+  // 1つ目のブックで選ばなかったシートを外す（それを参照する数式は値にする）
+  let selectionConverted = inputs[0].sheets ? keepOnlySheets(a, inputs[0].sheets, notices).converted : 0;
   const aStyles = stylesOf(a);
   if (!aStyles) throw new OoxmlError(`${inputs[0].name}の書式の情報が見つかりませんでした。`);
   const aTheme = readTheme(a);
@@ -770,7 +832,22 @@ export async function mergeWorkbooks(inputs: MergeInput[]): Promise<XlsxSheetsRe
     };
 
     // シート名の付け直し
-    const bSheets = sheetEls(b);
+    // 選んだシートだけを使う。選ばなかったシートを参照する数式は値にする（別のブックの同じ名前のシートを指してしまわないように）
+    const bAll = sheetEls(b);
+    const selected = (inputs[k].sheets ?? bAll.map((_, i) => i)).filter((i) => i >= 0 && i < bAll.length).sort((x, y) => x - y);
+    const bSheets = selected.map((i) => bAll[i]);
+    const localMap = new Map<number, number>(selected.map((orig, pos) => [orig, pos]));
+    const removedLowerB = new Set(bAll.filter((_, i) => !localMap.has(i)).map((el) => (el.getAttribute("name") ?? "").toLowerCase()));
+    const removedTablesB = tablesOnSheets(b, bAll.filter((_, i) => !localMap.has(i)));
+    const bDefinedAll = byLocal(b.wb, "definedNames")[0];
+    const removedNamesB = bDefinedAll
+      ? childrenByLocal(bDefinedAll, "definedName")
+          .filter((dn) => {
+            const local = dn.getAttribute("localSheetId");
+            return (local === null || localMap.has(Number(local))) && sheetRefsIn(dn.textContent ?? "").some((r) => r !== "[external]" && removedLowerB.has(r.toLowerCase()));
+          })
+          .map((dn) => dn.getAttribute("name") ?? "")
+      : [];
     const renames = new Map<string, string>();
     const newNames: string[] = [];
     for (const s of bSheets) {
@@ -853,6 +930,9 @@ export async function mergeWorkbooks(inputs: MergeInput[]): Promise<XlsxSheetsRe
       const isWorksheet = relTypeIs(rel.type, "worksheet");
       const sheetDoc = readXml(b.files, p, inputs[k].name)!;
       if (isWorksheet) {
+        const dropped = dropRefsToRemoved(sheetDoc, removedLowerB, removedNamesB, removedTablesB);
+        selectionConverted += dropped.converted;
+        if (dropped.removedRules > 0) notices.add("選ばなかったシートを参照する入力規則・条件付き書式は、参照先がなくなるため外しました。");
         // セルの書式・共有の文字列・数式
         for (const c of byLocal(sheetDoc, "c")) {
           const st = c.getAttribute("s");
@@ -977,6 +1057,9 @@ export async function mergeWorkbooks(inputs: MergeInput[]): Promise<XlsxSheetsRe
         if (sheetRefsIn(text).includes("[external]")) continue;
         const name = dn.getAttribute("name") ?? "";
         const local = dn.getAttribute("localSheetId");
+        // 選ばなかったシートだけの名前・選ばなかったシートを参照する名前は、取り込まない
+        if (local !== null && !localMap.has(Number(local))) continue;
+        if (sheetRefsIn(text).some((r) => r !== "[external]" && removedLowerB.has(r.toLowerCase()))) continue;
         const add = (localId: number | null) => {
           const copy = a.wb.importNode(dn, true) as Element;
           copy.textContent = fixFormulaText(text);
@@ -984,7 +1067,7 @@ export async function mergeWorkbooks(inputs: MergeInput[]): Promise<XlsxSheetsRe
           else copy.setAttribute("localSheetId", String(localId));
           ensureDefined().appendChild(copy);
         };
-        if (local !== null) add(bLocalBase + Number(local));
+        if (local !== null) add(bLocalBase + localMap.get(Number(local))!);
         else if (!aGlobalNames.has(name.toLowerCase())) {
           aGlobalNames.add(name.toLowerCase());
           add(null);
@@ -1014,6 +1097,7 @@ export async function mergeWorkbooks(inputs: MergeInput[]): Promise<XlsxSheetsRe
   dropDerivedParts(a);
   setFullCalcOnLoad(a);
   if (renamedAny) notices.add("同じ名前のシートは「名前 (2)」のように名前を変えました。そのシートを参照する数式・グラフも、新しい名前に合わせて直しています。");
+  if (selectionConverted > 0) notices.add(`選ばなかったシートを参照していた数式${selectionConverted}個は、参照先のシートが結合したファイルにないため、保存されていた計算結果の値に置き換えました。`);
   if (externalConverted > 0) notices.add(`ほかのブック（外部ファイル）を参照していた数式${externalConverted}個は、保存されていた計算結果の値に置き換えました。`);
   if (sheetCount > 255) notices.add("シートの数が多いため、開くのに時間がかかることがあります。");
   const bytes = writeBook(a);

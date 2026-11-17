@@ -17,6 +17,7 @@ import { createZip } from "@/lib/utils/zip";
 import { downloadBlob, formatBytes, getExtension, stripExtension } from "@/lib/utils/format";
 import { RunBar } from "@/components/ui/run-bar";
 import { PlanLimitHint, PlanLimitNotice, usePlanLimit } from "@/components/common/plan-limit";
+import { TrashIcon } from "@/components/ui/trash-icon";
 
 /**
  * ファイル一括リネーム。
@@ -168,16 +169,10 @@ export function FileBulkRenameTool() {
                     type="button"
                     onClick={() => removeFile(index)}
                     aria-label={`${file.name} を削除`}
+                    title="削除"
                     className="shrink-0 rounded-full bg-neutral-100 p-1.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700"
                   >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
+                    <TrashIcon className="h-4 w-4" />
                   </button>
                 </div>
               </li>
