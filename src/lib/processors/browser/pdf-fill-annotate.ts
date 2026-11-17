@@ -11,6 +11,7 @@ import {
 } from "@/lib/pdf-annotate/types";
 import { displayToPageMatrix, isIdentityMatrix, rectPivotForCenterRotation } from "@/lib/pdf-annotate/geometry";
 import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
+import { layoutVerticalText } from "@/lib/pdf-annotate/text-layout";
 
 /**
  * PDF記入・注釈（Phase 15）の書き出しProcessor。
@@ -93,6 +94,23 @@ function drawTextObject(page: PDFPage, font: PDFFont, obj: Extract<AnnotationObj
     else if (align === "right") lineX = obj.x + Math.max(0, boxWidth - lineWidth);
     drawTextLineRobust(page, font, line, lineX, lineY, obj.fontSize, obj.color, obj.bold);
   });
+}
+
+/**
+ * 縦書き（2026-11-17）。並べ方は画面と同じ layoutVerticalText で求める。
+ * obj.x・obj.y は文字の箱の左上（y は箱の上端）。回す文字は、右へ90度（pdf-lib では -90度）回して描く。
+ */
+function drawVerticalTextObject(page: PDFPage, font: PDFFont, obj: Extract<AnnotationObject, { type: "text" }>) {
+  const layout = layoutVerticalText(obj.text, obj.fontSize, obj.align ?? "left", (ch) => font.widthOfTextAtSize(ch, obj.fontSize));
+  const boldOffset = obj.bold ? Math.max(0.35, obj.fontSize * 0.018) : 0;
+  const color = toRgb(obj.color);
+  for (const g of layout.glyphs) {
+    const x = obj.x + g.x;
+    const y = obj.y - g.y;
+    const rotate = g.rotate ? pdfLib().degrees(-90) : undefined;
+    page.drawText(g.ch, { x, y, size: obj.fontSize, font, color, rotate });
+    if (boldOffset) page.drawText(g.ch, { x: x + boldOffset, y, size: obj.fontSize, font, color, rotate });
+  }
 }
 
 function drawCheckbox(
@@ -286,7 +304,8 @@ async function drawObject(doc: PDFDocument, page: PDFPage, font: PDFFont | null,
   try {
     if (obj.type === "text") {
       if (obj.text.trim() === "" || !font) return;
-      drawTextObject(page, font, obj);
+      if (obj.vertical) drawVerticalTextObject(page, font, obj);
+      else drawTextObject(page, font, obj);
     } else if (obj.type === "checkbox") {
       drawCheckbox(page, obj.x, obj.y, obj.size, obj.checked, obj.markStyle ?? "check", obj.frame !== false);
     } else if (obj.type === "ink") {

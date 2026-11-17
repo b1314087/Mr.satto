@@ -72,8 +72,13 @@ export interface TextAnnotationObject extends AnnotationObjectBase {
   bold: boolean;
   /** テキストボックスの幅（pt）。未指定の場合は内容から自動計算する（Phase 15互換） */
   width?: number;
-  /** 左/中央/右揃え。未指定時はleft扱い */
+  /** 左/中央/右揃え。未指定時はleft扱い（縦書きのときは、上/中央/下揃えとして使う） */
   align?: TextAlign;
+  /**
+   * 縦書きにするか（2026-11-17。未指定時は横書き）。
+   * 縦書きのときは、x・y を「文字の箱の左上」（y は箱の上端）として扱う（src/lib/pdf-annotate/text-layout.ts）。
+   */
+  vertical?: boolean;
 }
 
 export interface CheckboxAnnotationObject extends AnnotationObjectBase {

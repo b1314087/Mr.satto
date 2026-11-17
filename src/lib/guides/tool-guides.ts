@@ -325,6 +325,20 @@ export const toolGuides: Record<string, ToolGuide> = {
       ...finish("変換する", "Wordに変換する", [file(XLSX), table(4, 2)], "Word文書をダウンロード"),
     ],
   },
+  "excel-format-reset": {
+    steps: [
+      pick("Excelを選ぶ", "Excelファイル(.xlsx)をドラッグ&ドロップ"),
+      step("戻すものを選ぶ", [file("data.xlsx"), check("書式を標準に戻す"), check("ページ・印刷の設定を標準に戻す")], 1),
+      ...finish("標準に戻す", "標準に戻す", [file("data.xlsx"), table(4, 3)], "Excelファイル(.xlsx)をダウンロード"),
+    ],
+  },
+  "word-format-reset": {
+    steps: [
+      pick("Wordを選ぶ", "Word文書(.docx)をドラッグ&ドロップ"),
+      step("戻すものを選ぶ", [file("report.docx"), check("書式を標準に戻す"), check("ページの設定を標準に戻す")], 1),
+      ...finish("標準に戻す", "標準に戻す", [file("report.docx")], "Word文書(.docx)をダウンロード"),
+    ],
+  },
   "xls-to-xlsx": {
     steps: [pick("Excelを選ぶ", "Excel旧形式のファイル(.xls)をドラッグ&ドロップ"), ...finish("変換する", ".xlsxに変換する", [file("data.xls"), table(4, 2)], "Excelファイル(.xlsx)をダウンロード")],
   },
@@ -506,6 +520,13 @@ export const toolGuides: Record<string, ToolGuide> = {
       step("内容を入れる", [seg("ラベルに入れる内容", ["全ラベル同じ内容", "ラベルごとに違う内容"], 1), drop("Excel・CSVのファイルをドラッグ&ドロップ"), seg("敬称", ["なし", "様", "御中"], 1), preview("label")], 1),
       step("文字を整える", [slider("文字の大きさ", 0.3), seg("書体", ["ゴシック体", "明朝体", "メイリオ"], 0), seg("横の位置", ["左", "中央", "右"], 1), preview("label")], 1),
       { title: "作成する", parts: [seg("書体", ["ゴシック体", "明朝体", "メイリオ"], 0), check("ラベルの枠線を印刷する（シールに直接印刷するときは外します）", false), run("Wordを作成"), preview("label")], focus: 2 },
+    ],
+  },
+  "pptx-format-reset": {
+    steps: [
+      pick("PowerPointを選ぶ", "PowerPointファイル(.pptx)をドラッグ&ドロップ"),
+      step("戻すものを選ぶ", [file("slides.pptx"), check("書式を標準に戻す"), check("スライドのサイズを標準に戻す")], 1),
+      ...finish("標準に戻す", "標準に戻す", [file("slides.pptx")], "PowerPointファイル(.pptx)をダウンロード"),
     ],
   },
   "pptx-invert": {

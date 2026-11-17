@@ -120,7 +120,8 @@ test.describe("PDF記入・注釈: 未保存の編集を離れるときの確認
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
     expect(await wouldWarn(page)).toBe(false);
 
-    // 保存後に、すでにある文字を書き換えるのも再編集
+    // 保存後に、すでにある文字を書き換えるのも再編集（一覧は見出しだけになっているので、開いてから書き換える）
+    await page.locator(OBJECT_LIST).getByTestId("pdf-annotate-object-summary").first().click();
     await page.locator(OBJECT_LIST).locator("textarea").first().fill("保存したあとに書き換えた文字");
     expect(await wouldWarn(page)).toBe(true);
   });

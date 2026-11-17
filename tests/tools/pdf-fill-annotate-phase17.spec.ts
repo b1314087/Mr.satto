@@ -182,6 +182,8 @@ test.describe("複製・前面/背面", () => {
     await expect(page.getByText("配置した注釈（2件）")).toBeVisible();
 
     const rows = page.locator(OBJECT_LIST).locator("li");
+    // 一覧は、選んだ注釈だけが開いている。1件目の見出しを押して開いてから操作する
+    await rows.first().getByTestId("pdf-annotate-object-summary").click();
     await rows.first().getByRole("button", { name: "最背面へ" }).click();
     // 例外が発生せず、2件のまま維持されていることを確認する（厳密な描画順はDOM順で目視困難なため、
     // クラッシュしないこと・件数が変わらないことを確認する回帰テストとする）。

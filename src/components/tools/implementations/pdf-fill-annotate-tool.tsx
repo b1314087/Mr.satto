@@ -30,7 +30,15 @@ import {
   type TextAnnotationObject,
 } from "@/lib/pdf-annotate/types";
 import { clampMoveDelta, rotatePointAround } from "@/lib/pdf-annotate/geometry";
-import { ensurePdfTextFont, layoutTextBox, PDF_TEXT_FONT_FAMILY } from "@/lib/pdf-annotate/text-layout";
+import {
+  convertTextYForWritingMode,
+  ensurePdfTextFont,
+  layoutTextBox,
+  layoutVerticalText,
+  measureCharPt,
+  PDF_TEXT_FONT_FAMILY,
+  textBoundsPdf,
+} from "@/lib/pdf-annotate/text-layout";
 import { saveBlob, stripExtension } from "@/lib/utils/format";
 import { runWithDownloadAccess } from "@/lib/download/download-gate";
 import { useUnsavedChangesWarning } from "./shared/use-unsaved-changes-warning";
@@ -166,15 +174,58 @@ function lineBounds(obj: LineShapeObject) {
 function objectBoundsForClamp(obj: AnnotationObject): { minX: number; maxX: number; minY: number; maxY: number } {
   if (obj.type === "ink") return inkBounds(obj);
   if (obj.type === "shape" && obj.shapeKind === "line") return lineBounds(obj);
-  if (obj.type === "text") {
-    const longest = Math.max(1, ...obj.text.split("\n").map((l) => l.length));
-    const width = obj.width ?? Math.max(20, longest * obj.fontSize * 0.62);
-    // 改行があるときは、上の行の分（行間×行数）もページの中に収める
-    const extraLines = obj.text.split("\n").length - 1;
-    return { minX: obj.x, maxX: obj.x + width, minY: obj.y - obj.fontSize * 0.3, maxY: obj.y + obj.fontSize + extraLines * obj.fontSize * 1.3 };
-  }
+  // 文字は、画面の表示・書き出しと同じ計算の箱を使う（縦書きにも対応。2026-11-17）
+  if (obj.type === "text") return textBoundsPdf(obj);
   if (obj.type === "checkbox") return { minX: obj.x, maxX: obj.x + obj.size, minY: obj.y, maxY: obj.y + obj.size };
   return { minX: obj.x, maxX: obj.x + obj.width, minY: obj.y, maxY: obj.y + obj.height };
+}
+
+/** 回した矩形・画像の、ページの上での外側の箱（PDFの座標） */
+function rotatedRectBounds(x: number, y: number, w: number, h: number, rotation: number) {
+  if (!rotation || rotation % 360 === 0) return { minX: x, maxX: x + w, minY: y, maxY: y + h };
+  const center = { x: x + w / 2, y: y + h / 2 };
+  const corners = [
+    { x, y },
+    { x: x + w, y },
+    { x, y: y + h },
+    { x: x + w, y: y + h },
+  ].map((p) => rotatePointAround(p, center, rotation));
+  return {
+    minX: Math.min(...corners.map((p) => p.x)),
+    maxX: Math.max(...corners.map((p) => p.x)),
+    minY: Math.min(...corners.map((p) => p.y)),
+    maxY: Math.max(...corners.map((p) => p.y)),
+  };
+}
+
+/** 揃える操作で使う、注釈の見た目の箱（PDFの座標。回したものは、回したあとの外側の箱） */
+function objectBoundsForAlign(obj: AnnotationObject): { minX: number; maxX: number; minY: number; maxY: number } {
+  if (obj.type === "image") return rotatedRectBounds(obj.x, obj.y, obj.width, obj.height, obj.rotation ?? 0);
+  if (obj.type === "shape" && obj.shapeKind !== "line") return rotatedRectBounds(obj.x, obj.y, obj.width, obj.height, obj.rotation);
+  return objectBoundsForClamp(obj);
+}
+
+type AlignKind = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom";
+const ALIGN_ACTIONS: { kind: AlignKind; label: string; icon: string }[] = [
+  { kind: "left", label: "左を揃える", icon: "⇤" },
+  { kind: "hcenter", label: "左右の中央を揃える", icon: "↔" },
+  { kind: "right", label: "右を揃える", icon: "⇥" },
+  { kind: "top", label: "上を揃える", icon: "⤒" },
+  { kind: "vcenter", label: "上下の中央（高さ）を揃える", icon: "↕" },
+  { kind: "bottom", label: "下を揃える", icon: "⤓" },
+];
+
+/** 一覧の見出しに出す、注釈の種類と中身の短い説明 */
+function objectSummary(obj: AnnotationObject): { kind: string; detail: string } {
+  if (obj.type === "text") {
+    const t = obj.text.replace(/\s+/g, " ").trim();
+    return { kind: obj.vertical ? "テキスト（縦書き）" : "テキスト", detail: t ? (t.length > 24 ? `${t.slice(0, 24)}…` : t) : "（未入力）" };
+  }
+  if (obj.type === "checkbox") return { kind: "チェック", detail: obj.checked ? MARK_STYLE_LABELS[obj.markStyle ?? "check"] : "（印なし）" };
+  if (obj.type === "ink") return { kind: "手書き", detail: `${obj.points.length}点` };
+  if (obj.type === "image") return { kind: obj.isStamp ? "印影" : "画像", detail: `${Math.round(obj.width)}×${Math.round(obj.height)}pt` };
+  if (obj.shapeKind === "line") return { kind: "直線", detail: "" };
+  return { kind: obj.shapeKind === "circle" ? "円" : "四角形", detail: `${Math.round(obj.width)}×${Math.round(obj.height)}pt` };
 }
 
 /** 注釈をずらす（矢印キーでの微調整用。PDFの座標で dx・dy） */
@@ -301,6 +352,15 @@ export function PdfFillAnnotateTool({
   const [textColorChoice, setTextColorChoice] = useState<ColorChoice>("black");
   const [textBold, setTextBold] = useState(false);
   const [textAlign, setTextAlign] = useState<TextAlign>("left");
+  // 縦書きで置くか（2026-11-17）
+  const [textVertical, setTextVertical] = useState(false);
+  // 揃えるために、いっしょに選んでいる注釈（activeObjectId 以外。2026-11-17）
+  const [extraSelectedIds, setExtraSelectedIds] = useState<string[]>([]);
+  const suppressCanvasClickRef = useRef(false);
+  // スマホ向け：押した注釈を、選んでいるものに足していく（Shift／⌘を押しながら押すのと同じ）
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  // 「配置した注釈」の一覧で、開いている注釈（選んだ注釈だけを開き、ほかは見出しだけにする）
+  const [openListIds, setOpenListIds] = useState<string[]>([]);
 
   // --- チェック配置の既定値 ---
   const [checkboxSize, setCheckboxSize] = useState(16);
@@ -458,6 +518,18 @@ export function PdfFillAnnotateTool({
     };
   }, [hasTextObject]);
 
+  // 選んだ注釈を、一覧で開く（ほかは閉じて見出しだけにする）。何も選んでいないときは、いっしょに選んでいるものも外す
+  // （React の「表示中に前の値と比べて state を直す」書き方。effect で直すと、表示が2回走るため）
+  const [listSyncedActiveId, setListSyncedActiveId] = useState<string | null>(null);
+  if (listSyncedActiveId !== activeObjectId) {
+    setListSyncedActiveId(activeObjectId);
+    setOpenListIds(activeObjectId ? [activeObjectId] : []);
+    if (!activeObjectId) {
+      setExtraSelectedIds([]);
+      setMultiSelectMode(false);
+    }
+  }
+
   /**
    * その場の文字の編集を終える。空のままの欄も残す（下の一覧の入力欄で続きを入力できるように。空の欄はPDFには書き出さない）
    */
@@ -509,6 +581,41 @@ export function PdfFillAnnotateTool({
     }
     commit([...objects, clone]);
     setActiveObjectId(clone.id);
+  }
+
+  /** 選んでいる2つ以上の注釈を、上・下・左・右・中央で揃える（PowerPoint と同じく、選んだもの全体の端・中央に合わせる） */
+  function alignSelected(kind: AlignKind) {
+    const ids = new Set([activeObjectId, ...extraSelectedIds].filter((v): v is string => !!v));
+    const targets = objects.filter((o) => ids.has(o.id) && o.page === selectedPage);
+    if (targets.length < 2) return;
+    const bounds = new Map(targets.map((o) => [o.id, objectBoundsForAlign(o)]));
+    const all = [...bounds.values()];
+    const g = {
+      minX: Math.min(...all.map((b) => b.minX)),
+      maxX: Math.max(...all.map((b) => b.maxX)),
+      minY: Math.min(...all.map((b) => b.minY)),
+      maxY: Math.max(...all.map((b) => b.maxY)),
+    };
+    const next = objects.map((o) => {
+      const b = bounds.get(o.id);
+      if (!b) return o;
+      let dx = 0;
+      let dy = 0;
+      if (kind === "left") dx = g.minX - b.minX;
+      else if (kind === "right") dx = g.maxX - b.maxX;
+      else if (kind === "hcenter") dx = (g.minX + g.maxX) / 2 - (b.minX + b.maxX) / 2;
+      else if (kind === "top") dy = g.maxY - b.maxY;
+      else if (kind === "bottom") dy = g.minY - b.minY;
+      else dy = (g.minY + g.maxY) / 2 - (b.minY + b.maxY) / 2;
+      return Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001 ? o : moveObjectBy(o, dx, dy);
+    });
+    commit(next);
+  }
+
+  /** 文字の横書き⇔縦書きを切り替える（文字の箱の左上は動かさない） */
+  function toggleTextVertical(obj: TextAnnotationObject) {
+    const toVertical = !obj.vertical;
+    patchObjectWithHistory(obj.id, { vertical: toVertical, y: convertTextYForWritingMode(obj, toVertical) });
   }
 
   /** 矩形・円・画像（rotationフィールドを持つもの）の回転を指定角ぶん進める */
@@ -686,6 +793,7 @@ export function PdfFillAnnotateTool({
     if (pageNumber < 1 || pageNumber > pages.length) return;
     setSelectedPage(pageNumber);
     setActiveObjectId(null);
+    setExtraSelectedIds([]);
     setRepositioningId(null);
     void reloadPreview(pageNumber, zoom);
   }
@@ -759,7 +867,10 @@ export function PdfFillAnnotateTool({
     if (mode === "text") {
       if (atObjectLimit()) return;
       const fontSize = textFontSize;
-      const pdfY = screenToPdfY(clickY, fontSize * 0.3, currentPageInfo.height, pageRenderScale);
+      // 縦書きは、押した位置を文字の箱の上端にする。横書きは、押した位置の少し下を文字の基準線にする（従来どおり）
+      const pdfY = textVertical
+        ? screenToPdfY(clickY, 0, currentPageInfo.height, pageRenderScale)
+        : screenToPdfY(clickY, fontSize * 0.3, currentPageInfo.height, pageRenderScale);
       const obj: TextAnnotationObject = {
         id: createAnnotationId("text"),
         type: "text",
@@ -771,6 +882,7 @@ export function PdfFillAnnotateTool({
         color: COLOR_CHOICES[textColorChoice],
         bold: textBold,
         align: textAlign,
+        ...(textVertical ? { vertical: true } : {}),
       };
       commit([...objects, obj]);
       setActiveObjectId(obj.id);
@@ -916,6 +1028,10 @@ export function PdfFillAnnotateTool({
       }
       setMode("select");
     } else if (mode === "select") {
+      if (suppressCanvasClickRef.current) {
+        suppressCanvasClickRef.current = false;
+        return;
+      }
       setActiveObjectId(null);
     }
   }
@@ -932,6 +1048,22 @@ export function PdfFillAnnotateTool({
     if (mode !== "select" && isWhiteoutObject(obj) && (mode === "text" || mode === "checkbox")) return;
     if (mode !== "select") setMode("select");
     e.stopPropagation();
+    // 揃えるために、いくつか選ぶ（Shift・⌘・Ctrl を押しながら押す。スマホは「複数選択」をオンにして押す）
+    const additive = multiSelectMode || e.shiftKey || e.metaKey || e.ctrlKey;
+    if (additive && activeObjectId && objects.some((o) => o.id === activeObjectId && o.page === obj.page)) {
+      // 押した直後のクリックが、下のページに届いても選択を外さないようにする
+      suppressCanvasClickRef.current = true;
+      if (activeObjectId === obj.id) {
+        if (extraSelectedIds.length > 0) {
+          setActiveObjectId(extraSelectedIds[0]);
+          setExtraSelectedIds(extraSelectedIds.slice(1));
+        }
+      } else {
+        setExtraSelectedIds((prev) => (prev.includes(obj.id) ? prev.filter((id) => id !== obj.id) : [...prev, obj.id]));
+      }
+      return;
+    }
+    if (extraSelectedIds.length > 0) setExtraSelectedIds([]);
     (e.target as Element).setPointerCapture(e.pointerId);
     const wasActive = activeObjectId === obj.id;
     setActiveObjectId(obj.id);
@@ -1097,6 +1229,7 @@ export function PdfFillAnnotateTool({
     // オブジェクト上のクリックが親要素(キャンバス)まで伝播し、配置モードで
     // 意図しない新規オブジェクトが作られてしまうのを防ぐ
     e.stopPropagation();
+    suppressCanvasClickRef.current = false;
   }
 
   // ---------------------------------------------------------------------
@@ -1479,6 +1612,10 @@ export function PdfFillAnnotateTool({
                   options={(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => ({ value: a, label: ALIGN_LABELS[a] }))}
                 />
               </div>
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={textVertical} onChange={(e) => setTextVertical(e.target.checked)} data-testid="pdf-annotate-text-vertical-setting" />
+                縦書き
+              </label>
               <span className="text-neutral-500 dark:text-neutral-400">改行はEnter</span>
             </div>
           )}
@@ -1760,7 +1897,107 @@ export function PdfFillAnnotateTool({
               )}
 
               {pageObjects.map((obj) => {
-                const isActive = activeObjectId === obj.id;
+                const isActive = activeObjectId === obj.id || extraSelectedIds.includes(obj.id);
+                if (obj.type === "text" && obj.vertical) {
+                  // 縦書き：書き出しと同じ並べ方（layoutVerticalText）で、1文字ずつ SVG に描く
+                  const s = pageRenderScale;
+                  const fontSize = obj.fontSize;
+                  const v = layoutVerticalText(obj.text, fontSize, obj.align ?? "left", (ch) => measureCharPt(ch, fontSize));
+                  const left = obj.x * s;
+                  const top = (currentPageInfo.height - obj.y) * s;
+                  const boldShift = obj.bold ? Math.max(0.35, fontSize * 0.018) * s : 0;
+                  const fontFamily = `${PDF_TEXT_FONT_FAMILY}, "Noto Sans JP", sans-serif`;
+                  if (editingTextId === obj.id) {
+                    const lineH = fontSize * 1.3 * s;
+                    const w = Math.max(v.width * s + lineH, lineH * 2);
+                    return (
+                      <textarea
+                        key={obj.id}
+                        autoFocus
+                        value={obj.text}
+                        wrap="off"
+                        spellCheck={false}
+                        aria-label="PDFに書き込む文字（縦書き）"
+                        data-testid="pdf-annotate-inline-text"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onFocus={() => {
+                          if (!textEditStartRef.current || textEditStartRef.current.id !== obj.id) textEditStartRef.current = { id: obj.id, text: obj.text };
+                        }}
+                        onChange={(e) => patchObjectLive(obj.id, { text: e.target.value.slice(0, PDF_FILL_ANNOTATE_LIMITS.maxTextLength) })}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === "Escape" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
+                            e.preventDefault();
+                            (e.target as HTMLTextAreaElement).blur();
+                          }
+                        }}
+                        onBlur={() => finishTextEditing(obj.id)}
+                        placeholder="文字を入力"
+                        className="absolute z-20 m-0 resize-none overflow-hidden whitespace-pre border-0 bg-white/70 p-0 outline outline-2 outline-blue-500 placeholder:text-neutral-400"
+                        style={{
+                          // 右端（1行目）の位置は動かさず、左へ列が増えていく
+                          left: left + v.width * s - w,
+                          top,
+                          width: w,
+                          height: Math.max(v.height * s + fontSize * s, fontSize * s * 5),
+                          writingMode: "vertical-rl",
+                          fontSize: fontSize * s,
+                          lineHeight: `${lineH}px`,
+                          fontFamily,
+                          color: cssColor(obj.color),
+                        }}
+                      />
+                    );
+                  }
+                  return (
+                    <div
+                      key={obj.id}
+                      onPointerDown={(e) => handleObjectPointerDown(e, obj)}
+                      onPointerMove={handleObjectPointerMove}
+                      onPointerUp={handleObjectPointerUp}
+                      onClick={handleObjectInertClick}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setActiveObjectId(obj.id);
+                        textEditStartRef.current = { id: obj.id, text: obj.text };
+                        setEditingTextId(obj.id);
+                      }}
+                      data-testid="pdf-annotate-text-object"
+                      data-vertical="true"
+                      data-lines={obj.text.split("\n").length}
+                      className={`absolute ${isActive ? "outline outline-2 outline-blue-500" : "outline outline-1 outline-dashed outline-neutral-400/60"}`}
+                      style={{ left, top, width: v.width * s, height: v.height * s, cursor: mode === "ink" ? "default" : "move", touchAction: "none" }}
+                    >
+                      {obj.text ? (
+                        <svg width={v.width * s} height={v.height * s} style={{ overflow: "visible", display: "block" }} role="img" aria-label={obj.text}>
+                          {v.glyphs.map((g, i) => {
+                            const gx = g.x * s;
+                            const gy = g.y * s;
+                            const transform = g.rotate ? `rotate(90 ${gx} ${gy})` : undefined;
+                            const props = { fontSize: fontSize * s, fontFamily, fill: cssColor(obj.color), xmlSpace: "preserve" as const };
+                            return (
+                              <g key={i} transform={transform}>
+                                <text x={gx} y={gy} {...props}>
+                                  {g.ch}
+                                </text>
+                                {boldShift > 0 && (
+                                  <text x={gx + boldShift} y={gy} {...props} aria-hidden="true">
+                                    {g.ch}
+                                  </text>
+                                )}
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      ) : (
+                        <span className="text-neutral-400" style={{ writingMode: "vertical-rl", fontSize: Math.max(10, fontSize * s * 0.8) }}>
+                          （テキスト未入力）
+                        </span>
+                      )}
+                    </div>
+                  );
+                }
                 if (obj.type === "text") {
                   // 書き出しと同じフォント・同じ送り幅・同じ基準線で表示する（src/lib/pdf-annotate/text-layout.ts）。
                   // 画面の拡大・縮小は、PDFの座標×倍率で位置を決めるので、ずれない
@@ -2016,8 +2253,13 @@ export function PdfFillAnnotateTool({
               {/* 選んでいる文字の、すぐ上に出す小さな操作の帯（編集・大きさ・太字・揃え・削除） */}
               {(() => {
                 const obj = pageObjects.find((o) => o.id === activeObjectId);
-                if (!obj || obj.type !== "text" || mode === "ink") return null;
-                const box = layoutTextBox(obj, currentPageInfo.height, pageRenderScale);
+                if (!obj || obj.type !== "text" || mode === "ink" || extraSelectedIds.length > 0) return null;
+                const tb = textBoundsPdf(obj);
+                const box = {
+                  left: tb.minX * pageRenderScale,
+                  top: (currentPageInfo.height - tb.maxY) * pageRenderScale,
+                  height: (tb.maxY - tb.minY) * pageRenderScale,
+                };
                 const barTop = box.top - 40 >= 0 ? box.top - 40 : box.top + box.height + 6;
                 const btn = "flex h-8 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded px-1.5 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-700";
                 const setSize = (v: number) => patchObjectWithHistory(obj.id, { fontSize: Math.min(96, Math.max(6, v)) });
@@ -2025,7 +2267,7 @@ export function PdfFillAnnotateTool({
                   <div
                     data-testid="pdf-annotate-text-toolbar"
                     className="absolute z-30 flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-neutral-300 bg-white p-0.5 text-neutral-800 shadow-md dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-                    style={{ left: Math.max(0, Math.min(box.left, pageImagePixelSize.width - 340)), top: barTop }}
+                    style={{ left: Math.max(0, Math.min(box.left, pageImagePixelSize.width - 470)), top: barTop }}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -2074,11 +2316,139 @@ export function PdfFillAnnotateTool({
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => patchObjectWithHistory(obj.id, { align: a })}
                       >
-                        {a === "left" ? "⇤" : a === "center" ? "↔" : "⇥"}
+                        {obj.vertical ? (a === "left" ? "⤒" : a === "center" ? "↕" : "⤓") : a === "left" ? "⇤" : a === "center" ? "↔" : "⇥"}
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      className={`${btn} ${obj.vertical ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+                      aria-pressed={!!obj.vertical}
+                      title={obj.vertical ? "横書きにする" : "縦書きにする"}
+                      data-testid="pdf-annotate-text-vertical"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => toggleTextVertical(obj)}
+                    >
+                      縦書き
+                    </button>
                     <span className="mx-0.5 h-5 w-px bg-neutral-200 dark:bg-neutral-600" aria-hidden="true" />
+                    <button type="button" className={btn} title="この文字を複製" data-testid="pdf-annotate-toolbar-duplicate" onMouseDown={(e) => e.preventDefault()} onClick={() => duplicateObject(obj.id)}>
+                      複製
+                    </button>
+                    <button
+                      type="button"
+                      className={`${btn} ${multiSelectMode ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+                      aria-pressed={multiSelectMode}
+                      title="ほかの注釈も選んで、位置を揃える（PCでは Shift を押しながら押しても選べます）"
+                      data-testid="pdf-annotate-toolbar-multi"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setMultiSelectMode((v) => !v)}
+                    >
+                      複数選択
+                    </button>
                     <button type="button" className={`${btn} text-red-600`} title="この文字を削除" aria-label="この文字を削除" onMouseDown={(e) => e.preventDefault()} onClick={() => removeObject(obj.id)}>
+                      ✕
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* 揃える操作の帯（2つ以上選んでいるとき）。プレビューの上に重ねて出す（下の表示を押し下げると、押した位置がずれるため） */}
+              {(() => {
+                const ids = [activeObjectId, ...extraSelectedIds];
+                const selected = pageObjects.filter((o) => ids.includes(o.id));
+                if (selected.length >= 2) {
+                  const bs = selected.map((o) => objectBoundsForAlign(o));
+                  const top = (currentPageInfo.height - Math.max(...bs.map((b) => b.maxY))) * pageRenderScale;
+                  const bottom = (currentPageInfo.height - Math.min(...bs.map((b) => b.minY))) * pageRenderScale;
+                  const left = Math.min(...bs.map((b) => b.minX)) * pageRenderScale;
+                  const barTop = top - 46 >= 0 ? top - 46 : Math.min(bottom + 6, Math.max(0, pageImagePixelSize.height - 46));
+                  return (
+                    <div
+                      data-testid="pdf-annotate-align-bar"
+                      className="absolute z-30 flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-blue-300 bg-white p-0.5 text-xs shadow-md dark:border-blue-800 dark:bg-neutral-800"
+                      style={{ left: Math.max(0, Math.min(left, pageImagePixelSize.width - 420)), top: barTop }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="whitespace-nowrap px-1 font-semibold text-blue-800 dark:text-blue-200" data-testid="pdf-annotate-align-count">
+                        {selected.length}個：
+                      </span>
+                      {ALIGN_ACTIONS.map((a) => (
+                        <button
+                          key={a.kind}
+                          type="button"
+                          title={a.label}
+                          aria-label={a.label}
+                          data-testid={`pdf-annotate-align-${a.kind}`}
+                          onClick={() => alignSelected(a.kind)}
+                          className="flex h-8 shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1.5 font-semibold text-neutral-700 hover:bg-blue-50 hover:text-blue-700 dark:text-neutral-200 dark:hover:bg-neutral-700"
+                        >
+                          <span aria-hidden="true">{a.icon}</span>
+                          {a.label.replace("を揃える", "").replace("（高さ）", "").replace("左右の", "").replace("上下の", "")}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        data-testid="pdf-annotate-align-clear"
+                        title="選ぶのを1つに戻す"
+                        onClick={() => {
+                          setExtraSelectedIds([]);
+                          setMultiSelectMode(false);
+                        }}
+                        className="h-8 shrink-0 whitespace-nowrap rounded px-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                      >
+                        解除
+                      </button>
+                    </div>
+                  );
+                }
+                if (multiSelectMode && selected.length === 1) {
+                  const b = objectBoundsForAlign(selected[0]);
+                  const bottom = (currentPageInfo.height - b.minY) * pageRenderScale;
+                  return (
+                    <p
+                      className="pointer-events-none absolute z-30 max-w-[16rem] rounded-lg border border-blue-200 bg-blue-50 p-1.5 text-xs text-blue-800 shadow dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200"
+                      style={{ left: Math.max(0, Math.min(b.minX * pageRenderScale, pageImagePixelSize.width - 260)), top: Math.min(bottom + 6, Math.max(0, pageImagePixelSize.height - 60)) }}
+                      data-testid="pdf-annotate-multi-hint"
+                    >
+                      揃えたい注釈を押して、いっしょに選んでください（もう一度押すと外れます）。
+                    </p>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* 文字以外の注釈を選んだときの、小さな操作の帯（複製・複数選択・削除。2026-11-17） */}
+              {(() => {
+                const obj = pageObjects.find((o) => o.id === activeObjectId);
+                if (!obj || obj.type === "text" || mode === "ink" || extraSelectedIds.length > 0 || repositioningId) return null;
+                const b = objectBoundsForAlign(obj);
+                const top = (currentPageInfo.height - b.maxY) * pageRenderScale;
+                const bottom = (currentPageInfo.height - b.minY) * pageRenderScale;
+                const barTop = top - 40 >= 0 ? top - 40 : bottom + 6;
+                const btn = "flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded px-2 text-xs font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-700";
+                return (
+                  <div
+                    data-testid="pdf-annotate-object-toolbar"
+                    className="absolute z-30 flex items-center gap-0.5 rounded-lg border border-neutral-300 bg-white p-0.5 text-neutral-800 shadow-md dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
+                    style={{ left: Math.max(0, Math.min(b.minX * pageRenderScale, pageImagePixelSize.width - 230)), top: barTop }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button type="button" className={btn} data-testid="pdf-annotate-toolbar-duplicate" onClick={() => duplicateObject(obj.id)}>
+                      複製
+                    </button>
+                    <button
+                      type="button"
+                      className={`${btn} ${multiSelectMode ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+                      aria-pressed={multiSelectMode}
+                      title="ほかの注釈も選んで、位置を揃える（PCでは Shift を押しながら押しても選べます）"
+                      data-testid="pdf-annotate-toolbar-multi"
+                      onClick={() => setMultiSelectMode((v) => !v)}
+                    >
+                      複数選択
+                    </button>
+                    <button type="button" className={`${btn} text-red-600`} aria-label="この注釈を削除" onClick={() => removeObject(obj.id)}>
                       ✕
                     </button>
                   </div>
@@ -2092,37 +2462,72 @@ export function PdfFillAnnotateTool({
             <div className="flex min-w-0 flex-col gap-2 lg:col-start-1 lg:row-start-2">
               <h3 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">配置した注釈（{objects.length}件）</h3>
               <ul className="flex flex-col gap-2" data-testid="pdf-annotate-object-list">
-                {objects.map((obj) => (
+                {objects.map((obj) => {
+                  const open = openListIds.includes(obj.id);
+                  const summary = objectSummary(obj);
+                  const special = isWhiteoutObject(obj) || isBlackoutObject(obj);
+                  return (
                   <li
                     key={obj.id}
+                    data-testid="pdf-annotate-object-item"
+                    data-expanded={open ? "true" : "false"}
                     onClick={() => {
                       if (obj.page !== selectedPage) handlePageChange(obj.page);
                       setActiveObjectId(obj.id);
                     }}
-                    className={`flex flex-wrap items-center gap-2 rounded-lg border p-2 text-xs ${
+                    className={`flex flex-col gap-2 rounded-lg border p-2 text-xs ${
                       activeObjectId === obj.id ? "border-blue-400 bg-blue-50 dark:bg-blue-950/20" : "border-neutral-200 dark:border-neutral-800"
                     }`}
                   >
-                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                      {obj.page}p
-                    </span>
-                    {isWhiteoutObject(obj) && (
-                      <span
-                        data-testid="pdf-whiteout-badge"
-                        className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                      >
-                        白消し
+                    {/* 見出し：何の注釈か（種類・中身・ページ）。押すと開く／閉じる */}
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      data-testid="pdf-annotate-object-summary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (obj.page !== selectedPage) handlePageChange(obj.page);
+                        if (activeObjectId !== obj.id) {
+                          setActiveObjectId(obj.id);
+                          setOpenListIds([obj.id]);
+                        } else {
+                          setOpenListIds((prev) => (prev.includes(obj.id) ? prev.filter((id) => id !== obj.id) : [...prev, obj.id]));
+                        }
+                      }}
+                      className="flex w-full min-w-0 items-center gap-2 text-left"
+                    >
+                      <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                        {obj.page}p
                       </span>
-                    )}
-                    {isBlackoutObject(obj) && (
-                      <span
-                        data-testid="pdf-blackout-badge"
-                        className="rounded bg-red-100 px-1.5 py-0.5 text-red-800 dark:bg-red-900/40 dark:text-red-200"
-                        title={BLACKOUT_NOTICE.body}
-                      >
-                        黒塗り（見た目だけ・元データは残る）
+                      {isWhiteoutObject(obj) && (
+                        <span
+                          data-testid="pdf-whiteout-badge"
+                          className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                        >
+                          白消し
+                        </span>
+                      )}
+                      {isBlackoutObject(obj) && (
+                        <span
+                          data-testid="pdf-blackout-badge"
+                          className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+                          title={BLACKOUT_NOTICE.body}
+                        >
+                          黒塗り（見た目だけ・元データは残る）
+                        </span>
+                      )}
+                      {!special && <span className="shrink-0 font-semibold text-neutral-700 dark:text-neutral-200">{summary.kind}</span>}
+                      {!special && summary.detail && (
+                        <span className="min-w-0 truncate text-neutral-500 dark:text-neutral-400" data-testid="pdf-annotate-object-detail">
+                          {summary.detail}
+                        </span>
+                      )}
+                      <span className="ml-auto shrink-0 text-neutral-400" aria-hidden="true">
+                        {open ? "▲" : "▼"}
                       </span>
-                    )}
+                    </button>
+                    {open && (
+                    <div className="flex flex-wrap items-center gap-2" data-testid="pdf-annotate-object-detail-panel">
 
                     {obj.type === "text" && (
                       <>
@@ -2168,6 +2573,10 @@ export function PdfFillAnnotateTool({
                             onChange={(e) => patchObjectWithHistory(obj.id, { bold: e.target.checked })}
                           />
                           太字
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input type="checkbox" checked={!!obj.vertical} onChange={() => toggleTextVertical(obj)} data-testid="pdf-annotate-list-vertical" />
+                          縦書き
                         </label>
                         <label className="flex items-center gap-1">
                           整列
@@ -2411,8 +2820,11 @@ export function PdfFillAnnotateTool({
                     >
                       削除
                     </button>
+                    </div>
+                    )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </div>
           )}

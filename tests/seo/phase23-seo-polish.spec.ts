@@ -170,7 +170,8 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
 
   test("他のツールページの関連ツールに、pptx-invertが出る（使う場面が近いOffice書類のツールから）", () => {
     const from = available.filter((t) => getRelatedTools(t).related.some((r) => r.id === "pptx-invert")).map((t) => t.id);
-    expect(from.sort()).toEqual(["excel-to-pdf", "word-to-pdf"]);
+    // 2026-11-17：同じPowerPointのツール（書式・スライドサイズリセット）からも出る
+    expect(from.sort()).toEqual(["excel-to-pdf", "pptx-format-reset", "word-to-pdf"]);
   });
 
   test("pptx-invertのページには、同じくOffice書類を扱うツールが関連ツールとして出る", () => {

@@ -632,6 +632,26 @@ const toolDefinitions: Tool[] = [
     keywords: ["doc", "docx", "変換", "旧形式", "古いWord", "Word97", "Word2003", "互換モード", "ワード", "拡張子"],
   },
   {
+    id: "excel-format-reset",
+    name: "Excel書式・印刷設定リセット",
+    category: "csv-excel",
+    description: "Excelファイル(.xlsx)の書式（フォント・色・罫線・塗りつぶし）と、ページ・印刷の設定（用紙・余白・印刷範囲・列の幅・行の高さ）を標準に戻します。値・数式はそのまま",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["Excel", "エクセル", "xlsx", "書式リセット", "書式クリア", "書式を消す", "初期化", "デフォルト", "デフォルト化", "設定値デフォルト化", "標準に戻す", "印刷設定リセット", "ページ設定", "印刷範囲解除", "列幅リセット"],
+  },
+  {
+    id: "word-format-reset",
+    name: "Word書式・ページ設定リセット",
+    category: "word",
+    description: "Word文書(.docx)の書式（フォント・文字の大きさ・色・段落・表の罫線）と、ページの設定（用紙・余白・段組み）を標準に戻します。文章・見出し・箇条書き・表はそのまま",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["Word", "ワード", "docx", "書式リセット", "書式のクリア", "書式を消す", "初期化", "デフォルト", "デフォルト化", "設定値デフォルト化", "標準に戻す", "ページ設定リセット", "余白 標準", "A4に戻す"],
+  },
+  {
     id: "pdf-extract-pages",
     name: "PDFページ抽出",
     category: "pdf",
@@ -1735,6 +1755,16 @@ const toolDefinitions: Tool[] = [
     keywords: ["PowerPoint", "パワーポイント", "pptx", "白黒反転", "ダークモード", "黒背景", "白背景", "反転", "スライド", "プレゼン", "色反転"],
     // 同じOffice書類を扱うツール。PowerPointのツールは他にないため、同カテゴリ以外から案内する
     relatedToolIds: ["word-to-pdf", "excel-to-pdf"],
+  },
+  {
+    id: "pptx-format-reset",
+    name: "PowerPoint書式・スライドサイズリセット",
+    category: "pptx",
+    description: "PowerPoint(.pptx)の書式（フォント・文字の大きさ・色・段落・枠の色・背景）をレイアウトとテーマの標準に戻し、スライドのサイズを標準(16:9)にします。文字・画像・グラフはそのまま",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["PowerPoint", "パワーポイント", "pptx", "書式リセット", "リセット", "書式を消す", "初期化", "デフォルト", "デフォルト化", "設定値デフォルト化", "標準に戻す", "スライドサイズ", "16:9", "ワイド画面"],
   },
 ];
 

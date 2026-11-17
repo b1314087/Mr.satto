@@ -199,6 +199,10 @@ const PdfToWordTool = dynamic(() =>
   import("./implementations/pdf-to-word-tool").then((m) => m.PdfToWordTool),
   { loading: ToolLoading }
 );
+const OfficeResetTool = dynamic(() =>
+  import("./implementations/office-reset-tool").then((m) => m.OfficeResetTool),
+  { loading: ToolLoading }
+);
 const LegacyOfficeConvertTool = dynamic(() =>
   import("./implementations/legacy-office-convert-tool").then((m) => m.LegacyOfficeConvertTool),
 );
@@ -551,6 +555,12 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ExcelToPdfTool />;
     case "excel-to-word":
       return <ExcelToWordTool />;
+    case "excel-format-reset":
+      return <OfficeResetTool kind="xlsx" />;
+    case "word-format-reset":
+      return <OfficeResetTool kind="docx" />;
+    case "pptx-format-reset":
+      return <OfficeResetTool kind="pptx" />;
     case "xls-to-xlsx":
       return <LegacyOfficeConvertTool kind="xls" />;
     case "doc-to-docx":

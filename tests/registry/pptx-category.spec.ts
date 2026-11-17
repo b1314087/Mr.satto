@@ -18,7 +18,8 @@ test.describe("PowerPointカテゴリー: 登録", () => {
 
   test("PowerPoint白黒反転は、PowerPointカテゴリーだけに属する（その他には残らない）", () => {
     expect(getToolById("pptx-invert")?.category).toBe("pptx");
-    expect(tools.filter((t) => t.category === "pptx").map((t) => t.id)).toEqual(["pptx-invert"]);
+    // 2026-11-17：PowerPoint書式・スライドサイズリセット（pptx-format-reset）を追加
+    expect(tools.filter((t) => t.category === "pptx").map((t) => t.id)).toEqual(["pptx-invert", "pptx-format-reset"]);
     expect(tools.filter((t) => t.category === "other").map((t) => t.id)).not.toContain("pptx-invert");
   });
 
