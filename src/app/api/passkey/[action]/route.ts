@@ -113,7 +113,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
       default:
         return json({ error: "見つかりません。" }, 404);
     }
-  } catch {
+  } catch (e) {
+    // 原因を Vercel のログで確かめられるようにする（ログに出すのは、どの処理の何のエラーかだけ。鍵・個人の情報は出さない）
+    console.error(`[passkey] ${action} failed:`, e instanceof Error ? e.message : String(e));
     return json({ error: "処理できませんでした。しばらくしてから、もう一度お試しください。" }, 500);
   }
 }

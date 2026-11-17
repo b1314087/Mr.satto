@@ -110,6 +110,9 @@ alter table public.paid_session_leases enable row level security;
 alter table public.auth_security_events enable row level security;
 revoke all on public.passkey_credentials, public.registered_devices, public.passkey_challenges,
   public.passkey_verifications, public.paid_session_leases, public.auth_security_events from anon, authenticated;
+-- サーバー（Service Role）だけが読み書きできるようにする（2026-11-17。Supabase の設定によっては、新しい表に自動で権限が付かないため）
+grant select, insert, update, delete on public.passkey_credentials, public.registered_devices, public.passkey_challenges,
+  public.passkey_verifications, public.paid_session_leases, public.auth_security_events to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 関数（Service Roleだけが実行できる）
