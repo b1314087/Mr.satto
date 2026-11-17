@@ -51,10 +51,19 @@ export default async function AccountSecurityPage({ searchParams }: { searchPara
         </Link>
       </p>
       <h1 className="mb-2 text-2xl font-bold text-ms-text">パスキーと登録端末</h1>
-      <p className="mb-6 text-sm leading-relaxed text-ms-muted">
-        有料プラン（{PLAN_DEFINITIONS.standard.name}・{PLAN_DEFINITIONS.premium.name}）は、パスキーでの本人確認と、登録した端末（最大{MAX_DEVICES}台）でご利用いただけます。同時に使えるのは1台です。
-        パスキーは、Apple（iCloudキーチェーン）・Google（Googleパスワードマネージャー）・Microsoft（Windows Hello）で作れます。
-      </p>
+      <ul className="mb-6 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ms-muted" data-testid="passkey-security-intro">
+        <li>
+          有料プラン（{PLAN_DEFINITIONS.standard.name}・{PLAN_DEFINITIONS.premium.name}）を使うには、パスキーの登録が必要です。無料プランの方は、登録しなくてもこれまでどおり使えます。
+        </li>
+        <li>
+          有料プランを使える端末は、最大{MAX_DEVICES}台まで登録できます。同じパソコンでも、ブラウザ（SafariとChromeなど）が違うと別の端末として数えます。使わなくなった端末は、下の一覧から解除できます。
+        </li>
+        <li>同時に使えるのは1台です。別の登録端末でパスキーの本人確認をすると、その端末に切り替わります。</li>
+        <li>登録したパスキーは、下の一覧から削除できます。</li>
+        <li>
+          パスキーは、Apple（iCloudキーチェーン）・Google（Googleパスワードマネージャー）・Microsoft（Windows Hello）などに保存して使うことを想定しています。確認の画面（顔・指紋・PIN・QRコードなど）は、お使いの端末やブラウザによって異なります。
+        </li>
+      </ul>
       {overview ? (
         <PasskeyManager
           status={serverPlan.paidAccess}
