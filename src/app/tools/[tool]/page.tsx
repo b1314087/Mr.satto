@@ -27,6 +27,9 @@ import { siteConfig } from "@/lib/config/site";
 import { ToolHandoffProvider } from "@/components/handoff/handoff-provider";
 import { buildHandoffPageProps } from "@/lib/handoff/page-props";
 import { PaidAccessNotice } from "@/components/passkey/paid-access-notice";
+import { ToolConsentGate } from "@/components/legal/tool-consent-gate";
+import { getConsentState } from "@/lib/legal/consent-store";
+import { shouldRequireConsentForTools } from "@/lib/legal/consent";
 
 interface ToolPageProps {
   params: Promise<{ tool: string }>;
@@ -154,6 +157,9 @@ export default async function ToolPage({ params }: ToolPageProps) {
   // ツールが利用不可（isAvailable === false）の場合はcookies()を読む必要がなく、
   // 準備中ページを静的なまま提供できるため呼び出さない。
   const serverPlan = isAvailable ? await getServerPlan() : null;
+  // 2026-11-17：ログイン中で、現在の利用規約・プライバシーポリシーへの同意がまだの人は、同意してからツールを使う
+  const consentRequired =
+    !!serverPlan?.userId && shouldRequireConsentForTools(serverPlan.userId, await getConsentState(serverPlan.userId));
 
   // 関連ツール: 「準備中」のツールや自分自身は候補から除外する（Coming Soonのみが
   // 表示される状態を避けるため）。同カテゴリだけで4件に満たない場合は、
@@ -204,7 +210,9 @@ export default async function ToolPage({ params }: ToolPageProps) {
       </div>
 
       <div className="ms-tool-panel p-4 sm:p-6">
-        {isAvailable && serverPlan && tool.id === BYPASS_ACCESS_GATE_TOOL_ID ? (
+        {isAvailable && serverPlan && consentRequired ? (
+          <ToolConsentGate next={`/tools/${tool.id}`} />
+        ) : isAvailable && serverPlan && tool.id === BYPASS_ACCESS_GATE_TOOL_ID ? (
           // Phase 11: 記入済みPDF→Excelは、Free「1ページごとに広告視聴必須・
           // 利用回数無制限」/Standard「広告なし・1回1ページ・利用回数無制限」/
           // Premium「ページ数・回数とも無制限」という、ツール専用・ページ数ベースの

@@ -161,7 +161,7 @@ export default async function AccountPage({
           <p className="text-xs leading-relaxed text-ms-muted">
             {consentParam === "required"
               ? "有料プランのお申し込みには、現在の利用規約とプライバシーポリシーへの同意が必要です。"
-              : "現在の利用規約とプライバシーポリシーへの同意が、まだ記録されていません。有料プランのお申し込み前に、ご確認ください。"}
+              : "現在の利用規約とプライバシーポリシーへの同意が、まだ記録されていません。ツールを使う前・有料プランのお申し込み前に、ご確認ください。"}
           </p>
           <label className="flex items-start gap-2 text-xs leading-relaxed text-ms-muted">
             <input type="checkbox" name="consent" required className="mt-0.5 h-4 w-4 shrink-0 rounded accent-[var(--ms-accent)]" />

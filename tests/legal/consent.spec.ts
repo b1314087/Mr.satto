@@ -134,3 +134,37 @@ test.describe("アカウント削除の実装（ソースの静的確認）", ()
     expect(src).not.toMatch(/refunds\./);
   });
 });
+
+// 2026-11-17：ログイン中で、現在の版に同意していない人は、ツールを使う前に同意する
+test.describe("ツールを使う前の同意（ログイン中の会員だけ）", () => {
+  test("ログイン中で未同意の文書があるときだけ求める。未ログイン・同意済み・記録を読めないときは求めない", async () => {
+    const { shouldRequireConsentForTools } = await import("@/lib/legal/consent");
+    expect(shouldRequireConsentForTools("user-1", { ok: true, missing: ["privacy"] })).toBe(true);
+    expect(shouldRequireConsentForTools("user-1", { ok: true, missing: [] })).toBe(false);
+    expect(shouldRequireConsentForTools(null, { ok: true, missing: ["terms"] })).toBe(false);
+    expect(shouldRequireConsentForTools("user-1", { ok: false })).toBe(false);
+    expect(shouldRequireConsentForTools("user-1", null)).toBe(false);
+  });
+
+  test("同意したあとの戻り先は、サイトの中のツールのページ・アカウントだけ", async () => {
+    const { safeConsentNext } = await import("@/lib/legal/consent");
+    expect(safeConsentNext("/tools/pdf-fix")).toBe("/tools/pdf-fix");
+    expect(safeConsentNext("/account")).toBe("/account");
+    for (const bad of ["https://evil.example/tools/pdf-fix", "//evil.example", "/tools/../admin", "/admin", "/tools/pdf-fix?x=1", "", null, 1]) {
+      expect(safeConsentNext(bad), String(bad)).toBeNull();
+    }
+  });
+
+  test("ツールのページは、同意がまだの会員にツールの代わりに同意の画面を出し、同意すると同じツールへ戻る", () => {
+    const page = read("src/app/tools/[tool]/page.tsx");
+    expect(page).toContain("shouldRequireConsentForTools(serverPlan.userId, await getConsentState(serverPlan.userId))");
+    expect(page).toContain("<ToolConsentGate next={`/tools/${tool.id}`} />");
+    // 同意の画面は、すべてのツール（ゲートを通らない記入済みPDF→Excelも含む）より先に判定する
+    expect(page.indexOf("consentRequired ?")).toBeLessThan(page.indexOf("tool.id === BYPASS_ACCESS_GATE_TOOL_ID ?"));
+    const action = read("src/lib/legal/consent-actions.ts");
+    expect(action).toContain('const next = safeConsentNext(formData.get("next"));');
+    expect(action).toContain("if (ok && next) redirect(next);");
+    // 版・日時・ユーザーIDは、これまでどおりサーバー側で決める（DBの経路の値は account のまま）
+    expect(action).toContain('recordCurrentConsents(user.id, "account")');
+  });
+});

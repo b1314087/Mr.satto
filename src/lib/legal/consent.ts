@@ -8,7 +8,7 @@ import { LEGAL_DOCUMENTS, LEGAL_VERSIONS, type LegalDocument } from "./versions"
  * メールアドレス、IPアドレス、端末情報は記録しない。
  */
 
-/** 同意をした経路。signup = 会員登録時 / account = アカウント画面での同意 */
+/** 同意をした経路。signup = 会員登録時 / account = アカウント画面・ツールの画面での同意（ログイン後の同意。DBの制約に合わせて同じ値にする） */
 export type ConsentSource = "signup" | "account";
 
 export interface ConsentRecordLike {
@@ -57,3 +57,25 @@ export const CONSENT_REQUIRED_MESSAGE =
   "有料プランのお申し込みには、現在の利用規約とプライバシーポリシーへの同意が必要です。アカウント画面で内容を確認し、同意してください。";
 export const CONSENT_UNAVAILABLE_MESSAGE =
   "現在、お申し込みの受け付けを準備中です。しばらくしてから、もう一度お試しください。";
+
+/**
+ * ツールを使う前に、同意を求めるか（2026-11-17）。ログイン中で、現行の版への同意の記録が無い文書があるときだけ求める。
+ * ログインしていない人には求めない。同意の記録を読み取れなかったとき（ok:false）は、ツールを止めない（障害で全員が使えなくなるのを防ぐ）。
+ */
+export function shouldRequireConsentForTools(
+  userId: string | null,
+  state: { ok: true; missing: readonly string[] } | { ok: false } | null,
+): boolean {
+  return !!userId && !!state && state.ok && state.missing.length > 0;
+}
+
+/**
+ * 同意したあとに戻る先として受け付けるアドレス。サイトの中のツールのページ・アカウントだけ（外のサイトへ飛ばされないように）。
+ */
+export function safeConsentNext(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return /^\/(tools\/[a-z0-9-]+|account)$/.test(value) ? value : null;
+}
+
+export const TOOL_CONSENT_MESSAGE =
+  "ツールを使うには、現在の利用規約とプライバシーポリシーへの同意が必要です。内容を確認して、同意してください。";
