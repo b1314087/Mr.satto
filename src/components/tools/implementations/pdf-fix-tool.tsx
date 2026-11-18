@@ -47,12 +47,13 @@ const PDF_FIX_OPERATION_SHORT: Record<PdfFixOperation, string> = {
   whiteout: "白消し",
   blackout: "黒塗り",
   select: "選ぶ・動かす",
+  "erase-text": "文字を消す",
   "page-numbers": "ページ番号",
   watermark: "透かし",
   redact: "墨消し",
 };
 /** 帯に並べるときの、さらに短い名前（帯の幅に収めるため。正式な名前はカーソルを乗せると出る） */
-const PDF_FIX_OPERATION_BAR: Partial<Record<PdfFixOperation, string>> = { select: "選ぶ", "page-numbers": "番号" };
+const PDF_FIX_OPERATION_BAR: Partial<Record<PdfFixOperation, string>> = { select: "選ぶ", "page-numbers": "番号", "erase-text": "文字消し" };
 const PDF_FIX_OPERATION_ICONS: Record<PdfFixOperation, string> = {
   text: "Aa",
   checkbox: "✓",
@@ -63,6 +64,7 @@ const PDF_FIX_OPERATION_ICONS: Record<PdfFixOperation, string> = {
   whiteout: "▭",
   blackout: "■",
   select: "↖",
+  "erase-text": "⌫",
   "page-numbers": "#",
   watermark: "◌",
   redact: "▮",

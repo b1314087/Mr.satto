@@ -9,6 +9,9 @@ import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
 import { ResultPopup } from "@/components/common/result-popup";
 import { withPdfDocument, type PdfDocument } from "@/lib/pdf/pdfjs-client";
 import { PdfFillAnnotateProcessor } from "@/lib/processors/browser/pdf-fill-annotate";
+import { analyzePageText, eraseSentences, loadTextGuides, type PageTextAnalysis } from "@/lib/processors/browser/pdf-text-erase";
+import { sentenceAt } from "@/lib/pdf-text-edit/sentences";
+import { nearestGuide, type TextGuides } from "@/lib/pdf-text-edit/guides";
 import type { PdfProcessorOutput } from "@/lib/processors/types";
 import {
   createAnnotationId,
@@ -82,7 +85,7 @@ import { StepHeading } from "@/components/ui/step-heading";
  * 生成物を保存することは一切行わない。
  */
 
-export type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape" | "whiteout" | "blackout";
+export type ToolMode = "select" | "text" | "checkbox" | "ink" | "image" | "stamp" | "shape" | "whiteout" | "blackout" | "erase-text";
 type ColorChoice = "black" | "red" | "blue";
 
 interface PageInfo {
@@ -294,8 +297,22 @@ export function PdfFillAnnotateTool({
   const canvasWrapRef = useRef<HTMLDivElement>(null);
 
   const [objects, setObjects] = useState<AnnotationObject[]>([]);
-  // 編集中のデータ（配置済みのオブジェクト）の有無を、総合画面へ知らせる。画面が外れるときは「なし」に戻す
-  const hasEdits = objects.length > 0;
+  // 文字を消す（文単位。2026-11-18）：消す前のPDFを順に積む（「1つ前に戻す」で戻せるように）
+  const [eraseStack, setEraseStack] = useState<ArrayBuffer[]>([]);
+  // 書き出したとき・保存したときのPDF（文字を消したあとに保存したかを見分ける）
+  const exportedBytesRef = useRef<ArrayBuffer | null>(null);
+  const [savedPdfBytes, setSavedPdfBytes] = useState<ArrayBuffer | null>(null);
+  const [textAnalysis, setTextAnalysis] = useState<{ page: number; bytes: ArrayBuffer; analysis: PageTextAnalysis } | null>(null);
+  const [textAnalysisLoading, setTextAnalysisLoading] = useState(false);
+  const [hoverSentenceId, setHoverSentenceId] = useState<number | null>(null);
+  const [selectedSentenceIds, setSelectedSentenceIds] = useState<number[]>([]);
+  const [erasing, setErasing] = useState(false);
+  const [eraseMessage, setEraseMessage] = useState<string | null>(null);
+  // もともと書かれている文字の、書き始めの位置・基準線の高さ（位置合わせの目印。2026-11-18）
+  const [textGuides, setTextGuides] = useState<{ page: number; bytes: ArrayBuffer; guides: TextGuides } | null>(null);
+  const [activeGuide, setActiveGuide] = useState<{ x: number | null; y: number | null } | null>(null);
+  // 編集中のデータ（配置済みのオブジェクト・消した文字）の有無を、総合画面へ知らせる。画面が外れるときは「なし」に戻す
+  const hasEdits = objects.length > 0 || eraseStack.length > 0;
   // 「保存した」時点の編集内容（ダウンロードの保存処理が実際に実行された時点の objects）。
   // objects は編集のたびに新しい配列へ置き換わり、既存の配列は書き換えない。そのため
   // 「いまの objects が保存した配列そのものか」で、保存後に編集が加わったかを判定できる
@@ -304,7 +321,7 @@ export function PdfFillAnnotateTool({
   // 直近に書き出し（PDF生成）が成功した時点の objects。画面に出ている生成結果は、この編集内容から作られている
   const exportedObjectsRef = useRef<AnnotationObject[] | null>(null);
   // 保存していない編集があるあいだだけ、ブラウザを閉じる・再読み込みする直前に確認を出す
-  const hasUnsavedEdits = hasEdits && objects !== savedObjects;
+  const hasUnsavedEdits = (objects.length > 0 && objects !== savedObjects) || (eraseStack.length > 0 && pdfBytes !== savedPdfBytes);
   useUnsavedChangesWarning(hasUnsavedEdits);
   // 配置済みの編集があるときに別のPDFが選ばれた場合の、確認待ちのファイル（確認するまで、読み込み・編集の消去はしない）
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
@@ -714,6 +731,13 @@ export function PdfFillAnnotateTool({
     setObjects([]);
     setSavedObjects(null);
     exportedObjectsRef.current = null;
+    setEraseStack([]);
+    exportedBytesRef.current = null;
+    setSavedPdfBytes(null);
+    setTextAnalysis(null);
+    setSelectedSentenceIds([]);
+    setHoverSentenceId(null);
+    setEraseMessage(null);
     pastRef.current = [];
     futureRef.current = [];
     setCanUndo(false);
@@ -810,6 +834,140 @@ export function PdfFillAnnotateTool({
     void reloadPreview(selectedPage, z);
   }
 
+  // ---------------------------------------------------------------------
+  // 文字を消す（文単位。2026-11-18）
+  // ---------------------------------------------------------------------
+  // 「文字を消す」を選んでいる間は、表示中のページの文字を読み、文に分ける（PDFやページが変わったら読み直す）
+  useEffect(() => {
+    if (mode !== "erase-text" || !pdfBytes || !currentPageInfo) return;
+    if (textAnalysis && textAnalysis.page === selectedPage && textAnalysis.bytes === pdfBytes) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTextAnalysisLoading(true);
+    setSelectedSentenceIds([]);
+    setHoverSentenceId(null);
+    const bytes = pdfBytes;
+    const page = selectedPage;
+    analyzePageText(bytes, page)
+      .then((analysis) => {
+        if (!cancelled) setTextAnalysis({ page, bytes, analysis });
+      })
+      .catch(() => {
+        if (!cancelled) setTextAnalysis({ page, bytes, analysis: { sentences: [], hasText: false, erasable: false } });
+      })
+      .finally(() => {
+        if (!cancelled) setTextAnalysisLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, pdfBytes, selectedPage, pages.length]);
+
+  const pageSentences = textAnalysis && textAnalysis.page === selectedPage && textAnalysis.bytes === pdfBytes ? textAnalysis.analysis.sentences : [];
+
+  // 位置合わせの目印：文字を書き込む・選んで動かす操作のときに、表示中のページの文字から作る
+  useEffect(() => {
+    if ((mode !== "text" && mode !== "select") || !pdfBytes || !currentPageInfo) return;
+    if (textGuides && textGuides.page === selectedPage && textGuides.bytes === pdfBytes) return;
+    let cancelled = false;
+    const bytes = pdfBytes;
+    const page = selectedPage;
+    loadTextGuides(bytes, page)
+      .then((guides) => {
+        if (!cancelled) setTextGuides({ page, bytes, guides });
+      })
+      .catch(() => {
+        if (!cancelled) setTextGuides({ page, bytes, guides: { xs: [], ys: [] } });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, pdfBytes, selectedPage, pages.length]);
+
+  const pageGuides = textGuides && textGuides.page === selectedPage && textGuides.bytes === pdfBytes ? textGuides.guides : null;
+  /** 目印に吸い付く距離（画面で6px） */
+  const guideThreshold = 6 / Math.max(0.01, pageRenderScale);
+
+  /** 文字の左端・基準線を、近くの目印に合わせる（目印がなければ、そのまま） */
+  function snapToGuides(x: number, y: number): { x: number; y: number; guide: { x: number | null; y: number | null } | null } {
+    if (!pageGuides) return { x, y, guide: null };
+    const gx = nearestGuide(x, pageGuides.xs, guideThreshold);
+    const gy = nearestGuide(y, pageGuides.ys, guideThreshold);
+    return { x: gx ?? x, y: gy ?? y, guide: gx === null && gy === null ? null : { x: gx, y: gy } };
+  }
+
+  function sentenceAtScreen(e: React.MouseEvent<HTMLElement> | React.PointerEvent<HTMLElement>) {
+    if (!currentPageInfo) return null;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = screenToPdfX(e.clientX - rect.left, pageRenderScale);
+    const y = screenToPdfY(e.clientY - rect.top, 0, currentPageInfo.height, pageRenderScale);
+    return sentenceAt(pageSentences, x, y);
+  }
+
+  /** 新しいPDFのバイトに差し替える（文字を消した・戻したとき）。置いたもの・表示中のページはそのまま */
+  async function applyPdfBytes(next: ArrayBuffer) {
+    if (!file) return;
+    const nextFile = new File([next], file.name, { type: "application/pdf" });
+    setPdfBytes(next);
+    setFile(nextFile);
+    onFileChange?.(nextFile);
+    // 前に書き出した結果は、消す前のPDFから作ったものなので、片付ける
+    setResult(null);
+    setStatus("idle");
+    const pageInfo = pages.find((p) => p.pageNumber === selectedPage);
+    if (pageInfo) {
+      await withPdfDocument(new File([next.slice(0)], file.name, { type: "application/pdf" }), (pdf) =>
+        renderPagePreview(pdf, selectedPage, pageInfo, zoom)
+      );
+    }
+  }
+
+  async function handleEraseSelected() {
+    if (!pdfBytes || selectedSentenceIds.length === 0 || erasing) return;
+    setErasing(true);
+    setEraseMessage(null);
+    try {
+      const out = await eraseSentences(pdfBytes, selectedPage, selectedSentenceIds);
+      const next = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+      const count = selectedSentenceIds.length;
+      setEraseStack((prev) => [...prev, pdfBytes]);
+      setSelectedSentenceIds([]);
+      setHoverSentenceId(null);
+      await applyPdfBytes(next);
+      setEraseMessage(`${count}つの文を消しました。`);
+    } catch (e) {
+      setEraseMessage(e instanceof Error ? e.message : "文字を消せませんでした");
+    } finally {
+      setErasing(false);
+    }
+  }
+
+  async function handleEraseUndo() {
+    const prev = eraseStack[eraseStack.length - 1];
+    if (!prev || erasing) return;
+    setEraseStack((s) => s.slice(0, -1));
+    setSelectedSentenceIds([]);
+    setEraseMessage(null);
+    await applyPdfBytes(prev);
+  }
+
+  // 「文字を消す」で文を選んでいるとき、Delete・Backspace キーで消す（文字を入力している途中は除く）
+  useEffect(() => {
+    if (mode !== "erase-text" || selectedSentenceIds.length === 0 || inactive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      void handleEraseSelected();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, selectedSentenceIds, pdfBytes, inactive]);
+
   function toggleFullscreen(next: boolean) {
     fullscreenRef.current = next;
     setFullscreen(next);
@@ -858,6 +1016,21 @@ export function PdfFillAnnotateTool({
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!currentPageInfo) return;
+    if (mode === "erase-text") {
+      // 文字を消す：押した文を選ぶ（もう一度押すと外す。いくつでも選べる）
+      const s = sentenceAtScreen(e);
+      if (!s) {
+        setSelectedSentenceIds([]);
+        return;
+      }
+      if (!s.erasable) {
+        setEraseMessage("この文は、消せない文字（縦書き・特別なフォントなど）を含むため、選べません。");
+        return;
+      }
+      setEraseMessage(null);
+      setSelectedSentenceIds((prev) => (prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id]));
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
@@ -908,12 +1081,15 @@ export function PdfFillAnnotateTool({
       const pdfY = textVertical
         ? screenToPdfY(clickY, 0, currentPageInfo.height, pageRenderScale)
         : screenToPdfY(clickY, fontSize * 0.3, currentPageInfo.height, pageRenderScale);
+      // 横書き・左揃えの文字は、もともと書かれている文字の書き始めの位置・基準線に合わせる（近いときだけ）
+      const snapped = !textVertical && textAlign === "left" ? snapToGuides(pdfX, pdfY) : { x: pdfX, y: pdfY };
+      setActiveGuide(null);
       const obj: TextAnnotationObject = {
         id: createAnnotationId("text"),
         type: "text",
         page: selectedPage,
-        x: Math.max(0, pdfX),
-        y: Math.max(0, pdfY),
+        x: Math.max(0, snapped.x),
+        y: Math.max(0, snapped.y),
         text: "",
         fontSize,
         color: COLOR_CHOICES[textColorChoice],
@@ -1126,10 +1302,22 @@ export function PdfFillAnnotateTool({
       -(e.clientY - drag.startY) / pageRenderScale,
       page
     );
+    // 横書き・左揃えの文字は、もともと書かれている文字の書き始めの位置・基準線の近くに来たら、ぴったり合わせる
+    let snapDx = dxPdf;
+    let snapDy = dyPdf;
+    if (drag.original.type === "text" && !drag.original.vertical && (drag.original.align ?? "left") === "left") {
+      const snapped = snapToGuides(drag.original.x + dxPdf, drag.original.y + dyPdf);
+      snapDx = snapped.x - drag.original.x;
+      snapDy = snapped.y - drag.original.y;
+      if (snapped.guide?.x !== activeGuide?.x || snapped.guide?.y !== activeGuide?.y) setActiveGuide(snapped.guide);
+    }
     setObjects((prev) =>
       prev.map((o) => {
         if (o.id !== drag.id) return o;
         const original = drag.original;
+        if (original.type === "text" && o.type === "text") {
+          return { ...o, x: original.x + snapDx, y: original.y + snapDy };
+        }
         if (original.type === "ink" && o.type === "ink") {
           return { ...o, points: original.points.map((p) => ({ x: p.x + dxPdf, y: p.y + dyPdf })) };
         }
@@ -1159,6 +1347,7 @@ export function PdfFillAnnotateTool({
     const drag = dragState.current;
     dragState.current = null;
     setAdjustingWhiteoutId(null);
+    setActiveGuide(null);
     if (!drag) return;
     const totalMove = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
 
@@ -1287,6 +1476,25 @@ export function PdfFillAnnotateTool({
   }
 
   function handleWrapperPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (mode === "erase-text") {
+      const s = sentenceAtScreen(e);
+      const id = s ? s.id : null;
+      if (id !== hoverSentenceId) setHoverSentenceId(id);
+      return;
+    }
+    if (mode === "text" && currentPageInfo) {
+      // 文字を書き込む前：押したときに合う目印を、点線で先に見せる
+      if (textVertical || textAlign !== "left") {
+        if (activeGuide) setActiveGuide(null);
+        return;
+      }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = screenToPdfX(e.clientX - rect.left, pageRenderScale);
+      const y = screenToPdfY(e.clientY - rect.top, textFontSize * 0.3, currentPageInfo.height, pageRenderScale);
+      const { guide } = snapToGuides(x, y);
+      if (guide?.x !== activeGuide?.x || guide?.y !== activeGuide?.y) setActiveGuide(guide);
+      return;
+    }
     if (mode !== "ink" || eraseMode || !drawingPoints || !currentPageInfo) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = screenToPdfX(e.clientX - rect.left, pageRenderScale);
@@ -1386,9 +1594,11 @@ export function PdfFillAnnotateTool({
     exportedObjectsRef.current = null;
     // 書き出しに使う編集内容を、処理の開始時点で控えておく（処理中に編集が加わっても、結果と対応づけられるように）
     const snapshot = objects;
+    const bytesSnapshot = pdfBytes;
     try {
       const output = await new PdfFillAnnotateProcessor().process({ file, objects: snapshot });
       exportedObjectsRef.current = snapshot;
+      exportedBytesRef.current = bytesSnapshot;
       setResult(output);
       setStatus("success");
     } catch (e) {
@@ -1402,6 +1612,7 @@ export function PdfFillAnnotateTool({
     const blob = result.blob;
     const filename = `${stripExtension(file.name)}-記入済み.pdf`;
     const exported = exportedObjectsRef.current;
+    const exportedBytes = exportedBytesRef.current;
     // downloadBlob() と同じ流れ（広告の確認が必要な場合は保留される）。保存処理が実際に実行された時点でだけ「保存済み」にする。
     // 保存処理が例外で失敗した場合や、広告の確認画面で取りやめた場合は、保存済みにしない。
     // ブラウザがファイルを書き終えたか（OSへの保存完了）は、アプリからは検出できない。
@@ -1411,6 +1622,7 @@ export function PdfFillAnnotateTool({
       run: () => {
         saveBlob(blob, filename);
         if (exported) setSavedObjects(exported);
+        if (exportedBytes) setSavedPdfBytes(exportedBytes);
       },
     });
   }
@@ -1422,6 +1634,7 @@ export function PdfFillAnnotateTool({
     { value: "shape", label: "図形" },
     { value: "whiteout", label: "白消し" },
     { value: "blackout", label: "黒塗り（見た目だけ）" },
+    { value: "erase-text", label: "文字を消す（文単位）" },
     { value: "ink", label: "手書き" },
     { value: "image", label: "画像" },
     { value: "stamp", label: "印影" },
@@ -1697,6 +1910,59 @@ export function PdfFillAnnotateTool({
                 枠を外すと、マーク（レ点・×・○）だけを置きます。PDFにもともとあるチェック欄に印を付けるときに使います。
                 置いたあとは、ドラッグで位置を、右下のつまみで大きさを調整できます。
               </span>
+            </div>
+          )}
+
+          {mode === "erase-text" && (
+            <div
+              data-testid="pdf-erase-panel"
+              className="flex flex-col gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900 dark:border-red-800 dark:bg-red-950/20 dark:text-red-200"
+            >
+              <span>消したい文を押して選び（いくつでも選べます）、「選んだ文を消す」かDeleteキーで消します。</span>
+              <span>消した文字は、PDFのデータから取り除きます（コピー・検索でも出ません）。ほかの文字の位置は変わりません。</span>
+              {textAnalysisLoading && <span data-testid="pdf-erase-loading">文字を読み取っています…</span>}
+              {!textAnalysisLoading && textAnalysis && textAnalysis.page === selectedPage && !textAnalysis.analysis.hasText && (
+                <span className="font-semibold" data-testid="pdf-erase-no-text">
+                  このページには文字の情報がありません（スキャンしたPDFなど）。白消しで隠してください。
+                </span>
+              )}
+              {!textAnalysisLoading && textAnalysis && textAnalysis.page === selectedPage && textAnalysis.analysis.hasText && !textAnalysis.analysis.erasable && (
+                <span className="font-semibold" data-testid="pdf-erase-unsupported">
+                  このページの文字は、作りの都合で消せません（縦書き・特別なフォントなど）。白消しで隠してください。
+                </span>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleEraseSelected()}
+                  disabled={selectedSentenceIds.length === 0 || erasing}
+                  data-testid="pdf-erase-run"
+                  className="rounded bg-red-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+                >
+                  {erasing ? "消しています…" : `選んだ文を消す（${selectedSentenceIds.length}）`}
+                </button>
+                {selectedSentenceIds.length > 0 && (
+                  <button type="button" onClick={() => setSelectedSentenceIds([])} className="rounded border border-red-300 px-3 py-1.5 dark:border-red-800">
+                    選ぶのをやめる
+                  </button>
+                )}
+                {eraseStack.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleEraseUndo()}
+                    disabled={erasing}
+                    data-testid="pdf-erase-undo"
+                    className="rounded border border-red-300 px-3 py-1.5 dark:border-red-800"
+                  >
+                    消した文を1つ前に戻す
+                  </button>
+                )}
+              </div>
+              {eraseMessage && (
+                <span role="status" data-testid="pdf-erase-message">
+                  {eraseMessage}
+                </span>
+              )}
             </div>
           )}
 
@@ -1982,6 +2248,7 @@ export function PdfFillAnnotateTool({
           >
             <div
               data-testid="pdf-annotate-canvas"
+              data-text-guides={pageGuides ? `${pageGuides.xs.length},${pageGuides.ys.length}` : undefined}
               className={`relative select-none border border-neutral-300 dark:border-neutral-700${fullscreen ? " mx-auto" : ""}`}
               style={{
                 width: pageImagePixelSize.width || "100%",
@@ -1992,9 +2259,62 @@ export function PdfFillAnnotateTool({
               onPointerDown={handleWrapperPointerDown}
               onPointerMove={handleWrapperPointerMove}
               onPointerUp={handleWrapperPointerUp}
+              onPointerLeave={() => {
+                if (hoverSentenceId !== null) setHoverSentenceId(null);
+                if (mode === "text" && activeGuide) setActiveGuide(null);
+              }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={pageImageUrl} alt={`PDF ${selectedPage}ページ目のプレビュー`} draggable={false} />
+
+              {/* 位置合わせの目印：もともと書かれている文字の書き始めの位置（縦の点線）・基準線（横の点線） */}
+              {activeGuide && currentPageInfo && (mode === "text" || mode === "select") && (
+                <>
+                  {activeGuide.x !== null && (
+                    <div
+                      data-testid="pdf-text-guide-x"
+                      className="pointer-events-none absolute top-0 border-l border-dashed border-sky-500"
+                      style={{ left: activeGuide.x * pageRenderScale, height: currentPageInfo.height * pageRenderScale }}
+                    />
+                  )}
+                  {activeGuide.y !== null && (
+                    <div
+                      data-testid="pdf-text-guide-y"
+                      className="pointer-events-none absolute left-0 border-t border-dashed border-sky-500"
+                      style={{ top: (currentPageInfo.height - activeGuide.y) * pageRenderScale, width: currentPageInfo.width * pageRenderScale }}
+                    />
+                  )}
+                </>
+              )}
+
+              {/* 文字を消す：カーソルを乗せた文・選んだ文に色を付ける（押す操作はキャンバスで受ける） */}
+              {mode === "erase-text" && currentPageInfo &&
+                pageSentences
+                  .filter((s) => s.id === hoverSentenceId || selectedSentenceIds.includes(s.id))
+                  .flatMap((s) =>
+                    s.boxes.map((b, bi) => {
+                      const selected = selectedSentenceIds.includes(s.id);
+                      return (
+                        <div
+                          key={`${s.id}-${bi}`}
+                          data-testid={selected ? "pdf-erase-selected" : "pdf-erase-hover"}
+                          className={`pointer-events-none absolute rounded-sm ${
+                            !s.erasable
+                              ? "bg-neutral-400/30 outline outline-1 outline-neutral-400"
+                              : selected
+                                ? "bg-red-500/25 outline outline-2 outline-red-500"
+                                : "bg-amber-300/35 outline outline-1 outline-amber-500"
+                          }`}
+                          style={{
+                            left: (b.x0 - 1) * pageRenderScale,
+                            top: (currentPageInfo.height - b.y1 - 1) * pageRenderScale,
+                            width: (b.x1 - b.x0 + 2) * pageRenderScale,
+                            height: (b.y1 - b.y0 + 2) * pageRenderScale,
+                          }}
+                        />
+                      );
+                    })
+                  )}
 
               {/* ライブ描画中の手書きプレビュー */}
               {drawingPoints && drawingPoints.length > 1 && (

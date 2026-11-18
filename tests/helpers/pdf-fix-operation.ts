@@ -17,6 +17,7 @@ export const PDF_FIX_OPERATION_BY_LABEL: Record<string, string> = {
   印影: "stamp",
   ページ番号: "page-numbers",
   透かし: "watermark",
+  文字を消す: "erase-text",
 };
 
 export async function choosePdfFixOperation(page: Page, label: string): Promise<void> {

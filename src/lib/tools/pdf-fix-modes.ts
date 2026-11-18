@@ -76,7 +76,7 @@ export function parsePdfFixMode(value: string | null): PdfFixMode | null {
 // - ページ番号・透かしは、全ページにまとめて入れる別の画面。切り替えても、記入・注釈の編集内容は残る。
 
 /** 記入・注釈の画面の中の操作（pdf-fill-annotate-tool.tsx の ToolMode と同じ値） */
-export type PdfFixAnnotateOperation = "text" | "checkbox" | "shape" | "ink" | "image" | "stamp" | "whiteout" | "blackout" | "select";
+export type PdfFixAnnotateOperation = "text" | "checkbox" | "shape" | "ink" | "image" | "stamp" | "whiteout" | "blackout" | "select" | "erase-text";
 export type PdfFixOperation = PdfFixAnnotateOperation | "page-numbers" | "watermark" | "redact";
 
 export interface PdfFixOperationInfo {
@@ -105,6 +105,15 @@ export const PDF_FIX_OPERATIONS: PdfFixOperationInfo[] = [
   { value: "select", label: "置いたものを選ぶ・動かす・大きさを変える", group: "place", mode: "annotate", howTo: `置いたものをクリックすると選べます。${MOVE_RESIZE}` },
   { value: "page-numbers", label: "ページ番号を入れる", group: "pages", mode: "page-numbers", howTo: "全ページに、開始番号・位置・大きさを選んでページ番号を入れます。" },
   { value: "watermark", label: "透かしを入れる", group: "pages", mode: "watermark", howTo: "全ページに、「社外秘」などの文字を透かしとして入れます。" },
+  {
+    // 2026-11-18：文字の情報があるPDFの文字を、文を選んで本当に消す（記入・注釈の画面の中の操作）
+    value: "erase-text",
+    label: "文字を消す（文を選んでデータごと消す）",
+    group: "remove",
+    mode: "annotate",
+    howTo:
+      "消したい文を押して選び、「選んだ文を消す」かDeleteキーで消します。消した文字はPDFのデータから取り除かれ、ほかの文字の位置は変わりません。スキャンしたPDF（文字の情報がないもの）は消せないので、白消しを使います。",
+  },
   {
     value: "redact",
     label: "墨消し（元の文字ごと黒塗りで消す）",
