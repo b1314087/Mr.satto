@@ -1260,6 +1260,17 @@ const toolDefinitions: Tool[] = [
     keywords: ["動画カット", "動画 不要部分 削除", "動画結合", "動画 つなぐ", "動画 連結", "動画編集", "トリミング", "切り取り", "mp4 結合", "複数区間"],
   },
   {
+    // 2026-11-19：画像ホワイトボードの動画版。複数の動画を自由に置き、同時に再生した1本の動画に書き出す
+    id: "video-whiteboard",
+    name: "動画ホワイトボード",
+    category: "video",
+    description: "複数の動画を、縦動画・横動画・正方形のキャンバスに自由に配置（移動・拡大縮小・回転・重ね順）し、同時に再生した1本の動画に書き出します。音はすべての動画を混ぜます",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["動画 並べる", "動画 2画面", "画面分割", "動画 比較", "動画 コラージュ", "ワイプ", "縦動画", "リール", "ショート動画", "動画 合成"],
+  },
+  {
     id: "video-metadata-remove",
     name: "動画メタデータ削除",
     category: "video",

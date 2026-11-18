@@ -226,6 +226,7 @@ test.describe("設定の整合", () => {
     "video-mosaic": "video-mosaic-tool.tsx",
     "video-subtitle": "video-subtitle-tool.tsx",
     "video-thumbnail": "video-thumbnail-tool.tsx",
+    "video-whiteboard": "video-whiteboard-tool.tsx",
   };
   // 別ファイルで定義された定数（ファイル内の const で解決できないもの）
   const IMPORTED: Record<string, string | number> = {

@@ -119,6 +119,8 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "video-mosaic": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   // 動画字幕：字幕を焼き付けたMP4・WebMを送り出す
   "video-subtitle": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
+  // 動画ホワイトボード：複数の動画を受け取り（6本まで）、1本の動画を送り出す
+  "video-whiteboard": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 6, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   "video-thumbnail": { role: "inspect", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB } },
 
   // ---------------- 生成（受け取らない。作ったファイルは送り出せる） ----------------

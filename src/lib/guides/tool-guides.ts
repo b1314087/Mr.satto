@@ -669,6 +669,14 @@ export const toolGuides: Record<string, ToolGuide> = {
       ...finish("書き出す", "字幕つきの動画を書き出す", [head("書き出し"), seg("出力形式", ["MP4", "WebM"], 0)]).slice(0, 1),
     ],
   },
+  "video-whiteboard": {
+    steps: [
+      pick("動画を選ぶ", "動画をドラッグ&ドロップ（6本まで）"),
+      step("形を選んで配置", [seg("キャンバスの形", ["縦動画（9:16）", "横動画（16:9）", "正方形（1:1）"], 0), preview("video", "ドラッグで移動・四角で大きさ・丸で回転")], 1),
+      step("同時に再生して確かめる", [preview("video"), btn("▶ 同時に再生")], 1),
+      ...finish("書き出す", "動画を書き出す", [seg("出力形式", ["MP4", "WebM"], 0)]).slice(0, 1),
+    ],
+  },
   "video-mosaic": {
     steps: [
       pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),

@@ -223,6 +223,10 @@ const VoiceRecorderTool = dynamic(() =>
   import("./implementations/voice-recorder-tool").then((m) => m.VoiceRecorderTool),
   { loading: ToolLoading }
 );
+const VideoWhiteboardTool = dynamic(() =>
+  import("./implementations/video-whiteboard-tool").then((m) => m.VideoWhiteboardTool),
+  { loading: ToolLoading }
+);
 const AudioTranscribeTool = dynamic(() =>
   import("./implementations/audio-transcribe-tool").then((m) => m.AudioTranscribeTool),
   { loading: ToolLoading }
@@ -615,6 +619,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <ScreenRecorderTool />;
     case "audio-transcribe":
       return <AudioTranscribeTool />;
+    case "video-whiteboard":
+      return <VideoWhiteboardTool />;
     case "xls-to-xlsx":
       return <LegacyOfficeConvertTool kind="xls" />;
     case "doc-to-docx":

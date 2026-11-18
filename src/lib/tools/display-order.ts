@@ -126,6 +126,7 @@ export const TOOL_READINGS: Record<string, string> = {
   "voice-recorder": "ろくおん",
   "screen-recorder": "がめんろくが",
   "audio-transcribe": "もじおこし",
+  "video-whiteboard": "どうがほわいとぼーど",
   // その他
   "wareki-convert": "われき・せいれきいっかつへんかん",
   "pomodoro-timer": "ぽもどーろたいまー",
