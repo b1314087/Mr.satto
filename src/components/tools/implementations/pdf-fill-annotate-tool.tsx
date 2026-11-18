@@ -101,6 +101,8 @@ interface PendingImage {
 }
 
 const PREVIEW_MAX_WIDTH = 640;
+/** 全画面で編集するときの、100%表示でのページの幅の上限（画面いっぱいに広げすぎて、細かい調整がしにくくならないように） */
+const FULLSCREEN_PREVIEW_MAX_WIDTH = 1100;
 /** キャンバス枠をまだ計測できない最初の描画で使う幅。PC幅(lg以上)では右カラム(最大560px)に収まる幅にする */
 function fallbackPreviewWidth(): number {
   if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches && !window.matchMedia("(min-width: 1280px)").matches) return 540;
@@ -284,6 +286,9 @@ export function PdfFillAnnotateTool({
   const [pageImagePixelSize, setPageImagePixelSize] = useState({ width: 0, height: 0 });
   const [pageRenderScale, setPageRenderScale] = useState(1);
   const [zoom, setZoom] = useState<number>(100);
+  // プレビューを全画面にして編集する（2026-11-18）。プレビューの列を画面いっぱいに広げるだけなので、置いたものや操作はそのまま
+  const [fullscreen, setFullscreen] = useState(false);
+  const fullscreenRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
@@ -332,6 +337,8 @@ export function PdfFillAnnotateTool({
   const [activeObjectId, setActiveObjectId] = useState<string | null>(null);
   const [repositioningId, setRepositioningId] = useState<string | null>(null);
 
+  // 白消しを動かしている・大きさを変えている間だけ、半透明にして下の文字を透かす（縁が文字にかかっているか見やすくする。2026-11-18）
+  const [adjustingWhiteoutId, setAdjustingWhiteoutId] = useState<string | null>(null);
   const dragState = useRef<{
     id: string;
     startX: number;
@@ -766,7 +773,7 @@ export function PdfFillAnnotateTool({
   ) {
     const page = await pdf.getPage(pageNumber);
     const containerWidth = canvasWrapRef.current?.clientWidth || fallbackPreviewWidth();
-    const baseWidth = Math.min(containerWidth, PREVIEW_MAX_WIDTH);
+    const baseWidth = Math.min(containerWidth, fullscreenRef.current ? FULLSCREEN_PREVIEW_MAX_WIDTH : PREVIEW_MAX_WIDTH);
     const scale = (baseWidth / pageInfo.width) * (zoomPercent / 100);
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
@@ -802,6 +809,36 @@ export function PdfFillAnnotateTool({
     setZoom(z);
     void reloadPreview(selectedPage, z);
   }
+
+  function toggleFullscreen(next: boolean) {
+    fullscreenRef.current = next;
+    setFullscreen(next);
+  }
+
+  // 全画面の切り替え：広さが変わるので描き直す。全画面の間は、後ろのページがスクロールしないようにし、Escキーで閉じられるようにする
+  useEffect(() => {
+    if (!file || !pdfBytes) return;
+    const id = requestAnimationFrame(() => void reloadPreview(selectedPage, zoom));
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen]);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // 文字を入力している途中のEscは、入力の確定・取り消しに使うので、全画面は閉じない
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      toggleFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fullscreen]);
 
   // ---------------------------------------------------------------------
   // 2. 配置（クリックで配置 / 配置し直し）
@@ -1080,6 +1117,7 @@ export function PdfFillAnnotateTool({
   function handleObjectPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     const drag = dragState.current;
     if (!drag) return;
+    if (isWhiteoutObject(drag.original) && adjustingWhiteoutId !== drag.id) setAdjustingWhiteoutId(drag.id);
     // 工程4：ページの外へ出ないように、ずらす量を抑える（位置ずれ・書き出し時の見切れを防ぐ）
     const page = currentPageInfo ?? { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY };
     const { dx: dxPdf, dy: dyPdf } = clampMoveDelta(
@@ -1120,6 +1158,7 @@ export function PdfFillAnnotateTool({
   function handleObjectPointerUp(e: React.PointerEvent<HTMLDivElement>) {
     const drag = dragState.current;
     dragState.current = null;
+    setAdjustingWhiteoutId(null);
     if (!drag) return;
     const totalMove = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
 
@@ -1157,6 +1196,7 @@ export function PdfFillAnnotateTool({
   function handleResizePointerMove(e: React.PointerEvent<HTMLElement>) {
     const rs = resizeState.current;
     if (!rs || !currentPageInfo) return;
+    if (isWhiteoutObject(rs.original) && adjustingWhiteoutId !== rs.id) setAdjustingWhiteoutId(rs.id);
     e.stopPropagation();
     const page = currentPageInfo;
     const scale = pageRenderScale;
@@ -1203,6 +1243,7 @@ export function PdfFillAnnotateTool({
   function handleResizePointerUp(e: React.PointerEvent<HTMLElement>) {
     const rs = resizeState.current;
     resizeState.current = null;
+    setAdjustingWhiteoutId(null);
     if (!rs) return;
     e.stopPropagation();
     if (Math.hypot(e.clientX - rs.startX, e.clientY - rs.startY) >= 2) pushHistory(rs.snapshot);
@@ -1846,22 +1887,102 @@ export function PdfFillAnnotateTool({
 
           {/* プレビューの列：PCでは画面に固定（スクロールしても見えたまま）。一番上に「やりたい操作」の帯を置く */}
           <div
-            className="min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start"
+            className={
+              fullscreen
+                ? "fixed inset-0 z-[70] flex min-w-0 flex-col bg-white p-2 sm:p-3 dark:bg-neutral-950"
+                : "min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start"
+            }
             data-testid="pdf-preview-column"
+            data-fullscreen={fullscreen ? "true" : undefined}
+            role={fullscreen ? "dialog" : undefined}
+            aria-modal={fullscreen ? true : undefined}
+            aria-label={fullscreen ? "全画面で編集" : undefined}
           >
+          {/* 全画面のボタン（全画面の間は、ページ送り・表示倍率・閉じるをここにまとめる） */}
+          <div className="mb-2 flex flex-wrap items-center justify-end gap-2 text-xs" data-testid="pdf-fullscreen-bar">
+            {fullscreen && pages.length > 1 && (
+              <span className="mr-auto flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handlePageChange(selectedPage - 1)}
+                  disabled={selectedPage <= 1}
+                  className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700"
+                  aria-label="前のページ"
+                >
+                  ‹
+                </button>
+                <span className="tabular-nums" data-testid="pdf-fullscreen-page">
+                  {selectedPage} / {pages.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handlePageChange(selectedPage + 1)}
+                  disabled={selectedPage >= pages.length}
+                  className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700"
+                  aria-label="次のページ"
+                >
+                  ›
+                </button>
+              </span>
+            )}
+            {fullscreen && (
+              <span className="flex items-center gap-1" role="group" aria-label="表示倍率">
+                <button
+                  type="button"
+                  onClick={() => handleZoomChange(Math.max(50, zoom - 25))}
+                  disabled={zoom <= 50}
+                  className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700"
+                  aria-label="縮小"
+                >
+                  −
+                </button>
+                <span className="w-10 text-center tabular-nums" data-testid="pdf-fullscreen-zoom">
+                  {zoom}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleZoomChange(Math.min(300, zoom + 25))}
+                  disabled={zoom >= 300}
+                  className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700"
+                  aria-label="拡大"
+                >
+                  ＋
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => toggleFullscreen(!fullscreen)}
+              aria-pressed={fullscreen}
+              data-testid="pdf-fullscreen-toggle"
+              className={`flex items-center gap-1 rounded px-2 py-1 font-semibold ${
+                fullscreen ? "bg-blue-600 text-white" : "border border-neutral-300 dark:border-neutral-700"
+              }`}
+            >
+              <span aria-hidden="true">{fullscreen ? "✕" : "⛶"}</span>
+              {fullscreen ? "全画面を閉じる" : "全画面で編集"}
+            </button>
+          </div>
           {previewToolbar && (
-            <div className="sticky top-14 z-30 -mx-1 mb-2 px-1 lg:static lg:mx-0 lg:px-0" data-testid="pdf-fix-toolbar-slot">
+            <div
+              className={fullscreen ? "mb-2" : "sticky top-14 z-30 -mx-1 mb-2 px-1 lg:static lg:mx-0 lg:px-0"}
+              data-testid="pdf-fix-toolbar-slot"
+            >
               {previewToolbar}
             </div>
           )}
           <div
             ref={canvasWrapRef}
             data-testid="tool-preview"
-            className={`w-full min-w-0 overflow-x-auto lg:overflow-y-auto ${previewToolbar ? "lg:max-h-[calc(100vh-9.5rem)]" : "lg:max-h-[calc(100vh-6rem)]"}`}
+            className={
+              fullscreen
+                ? "w-full min-h-0 min-w-0 flex-1 overflow-auto"
+                : `w-full min-w-0 overflow-x-auto lg:overflow-y-auto ${previewToolbar ? "lg:max-h-[calc(100vh-9.5rem)]" : "lg:max-h-[calc(100vh-6rem)]"}`
+            }
           >
             <div
               data-testid="pdf-annotate-canvas"
-              className="relative select-none border border-neutral-300 dark:border-neutral-700"
+              className={`relative select-none border border-neutral-300 dark:border-neutral-700${fullscreen ? " mx-auto" : ""}`}
               style={{
                 width: pageImagePixelSize.width || "100%",
                 cursor: mode === "select" ? "default" : mode === "ink" ? (eraseMode ? "pointer" : "crosshair") : "crosshair",
@@ -2230,9 +2351,15 @@ export function PdfFillAnnotateTool({
                     // 白消しの上にも、テキストなどを配置できるようにする（白消し→書き直しのため）。選択モードでは従来どおり
                     onClick={isWhiteoutObject(obj) && mode !== "select" ? undefined : handleObjectInertClick}
                     data-testid={isBlackoutObject(obj) ? "pdf-blackout-object" : isWhiteoutObject(obj) ? "pdf-whiteout-object" : undefined}
-                    className={`absolute ${isActive ? "outline outline-2 outline-blue-500" : ""} ${
-                      obj.shapeKind === "circle" ? "rounded-full" : ""
-                    }`}
+                    // 白消しは、選択の枠を少し外側に点線で出す（白消しの縁が、枠に重なって見えなくならないように）
+                    className={`absolute ${
+                      isActive
+                        ? isWhiteoutObject(obj)
+                          ? "outline-dashed outline-2 outline-offset-[3px] outline-blue-500"
+                          : "outline outline-2 outline-blue-500"
+                        : ""
+                    } ${obj.shapeKind === "circle" ? "rounded-full" : ""}`}
+                    data-adjusting={adjustingWhiteoutId === obj.id ? "true" : undefined}
                     style={{
                       left: pdfToScreenX(obj.x, pageRenderScale),
                       top: pdfToScreenY(obj.y, obj.height, currentPageInfo.height, pageRenderScale),
@@ -2243,6 +2370,7 @@ export function PdfFillAnnotateTool({
                       transform: obj.rotation ? `rotate(${-obj.rotation}deg)` : undefined,
                       cursor: mode === "ink" ? "default" : "move",
                       touchAction: "none",
+                      opacity: adjustingWhiteoutId === obj.id ? 0.5 : undefined,
                     }}
                   >
                     {resizeHandle(obj)}

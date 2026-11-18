@@ -249,6 +249,71 @@ test.describe("PDF修正: 画面と機能", () => {
     }
   });
 
+  test("白消しを選ぶと、選択の枠は外側に点線で出る。動かしている間・大きさを変えている間だけ半透明になる（2026-11-18）", async ({ page }) => {
+    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+    await choosePdfFixOperation(page, "白消し");
+    await page.locator(CANVAS).click({ position: { x: 150, y: 120 } });
+    const w = page.getByTestId("pdf-whiteout-object");
+    await expect(w).toHaveCount(1);
+    // 選択の枠：白消しの縁と重ならないように、外側（3px）に点線
+    const outline = await w.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { style: cs.outlineStyle, offset: cs.outlineOffset, opacity: cs.opacity };
+    });
+    expect(outline).toEqual({ style: "dashed", offset: "3px", opacity: "1" });
+    // 動かしている間は半透明、離すと元に戻る
+    const box = (await w.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 10, { steps: 4 });
+    await expect(w).toHaveAttribute("data-adjusting", "true");
+    await expect.poll(() => w.evaluate((el) => getComputedStyle(el).opacity)).toBe("0.5");
+    await page.mouse.up();
+    await expect(w).not.toHaveAttribute("data-adjusting", "true");
+    await expect.poll(() => w.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+    // 右下のつまみで大きさを変えている間も半透明
+    const handle = (await page.getByTestId("pdf-annotate-resize-handle").boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + 30, handle.y + 20, { steps: 4 });
+    await expect(w).toHaveAttribute("data-adjusting", "true");
+    await page.mouse.up();
+    await expect(w).not.toHaveAttribute("data-adjusting", "true");
+  });
+
+  test("全画面で編集：プレビューが画面いっぱいに広がり、そのまま置ける。Escや閉じるボタンで戻り、置いたものは残る（2026-11-18）", async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await openAnnotateWithPdf(page, fixtures.singlePagePdf);
+    const column = page.getByTestId("pdf-preview-column");
+    const canvas = page.locator(CANVAS);
+    const before = (await canvas.boundingBox())!;
+    await page.getByTestId("pdf-fullscreen-toggle").click();
+    await expect(column).toHaveAttribute("data-fullscreen", "true");
+    await expect(page.getByTestId("pdf-fullscreen-toggle")).toHaveText(/全画面を閉じる/);
+    expect(await column.evaluate((el) => getComputedStyle(el).position)).toBe("fixed");
+    // 画面が広いので、ページも大きく描き直される（通常は幅640pxまで）
+    await expect.poll(async () => (await canvas.boundingBox())!.width).toBeGreaterThan(before.width + 100);
+    // 後ろのページはスクロールしない
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+    // 全画面のまま、白消しを置ける（操作の帯も全画面の中にある）
+    await choosePdfFixOperation(page, "白消し");
+    await canvas.click({ position: { x: 200, y: 160 } });
+    await expect(page.getByTestId("pdf-whiteout-object")).toHaveCount(1);
+    // 表示倍率を変えられる
+    await page.getByRole("button", { name: "拡大" }).click();
+    await expect(page.getByTestId("pdf-fullscreen-zoom")).toHaveText("125%");
+    // Escで閉じる（置いた白消しは残る）
+    await page.keyboard.press("Escape");
+    await expect(column).not.toHaveAttribute("data-fullscreen", "true");
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+    await expect(page.getByTestId("pdf-whiteout-object")).toHaveCount(1);
+    // もう一度開いて、閉じるボタンでも戻れる
+    await page.getByTestId("pdf-fullscreen-toggle").click();
+    await expect(column).toHaveAttribute("data-fullscreen", "true");
+    await page.getByTestId("pdf-fullscreen-toggle").click();
+    await expect(column).not.toHaveAttribute("data-fullscreen", "true");
+  });
+
   test("白消し→書き直し：白消しを置いてテキストを書き込み、書き出したPDFに反映される（元の文字は残る）", async ({ page }) => {
     await openAnnotateWithPdf(page, fixtures.singlePagePdf);
 
