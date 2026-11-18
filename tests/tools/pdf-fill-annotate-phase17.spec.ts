@@ -5,6 +5,9 @@ import { waitForSuccess, clickAndDownload, assertDownloadedFile } from "../helpe
 import { uploadWhenReady } from "../helpers/tool-ready";
 import { extractPdfContent, isValidPdfFile, getPageOpSummary } from "../helpers/pdf-inspect";
 import { choosePdfFixOperation, clickPdfCanvas } from "../helpers/pdf-fix-operation";
+import { readPageContent } from "../helpers/pdf-text-node";
+import fs from "node:fs";
+import { PDFDocument } from "pdf-lib";
 
 /** 図形の種類を選ぶ（UI・UX改善で、プルダウンからセグメントボタン（role="radio"）に変わった） */
 async function chooseShapeKind(page: import("@playwright/test").Page, label: "矩形" | "円・楕円" | "直線") {
@@ -77,6 +80,26 @@ test.describe("図形", () => {
     await chooseShapeKind(page, "直線");
     await clickCanvasAt(page, 150, 150);
     await expect(page.getByText("配置した注釈（1件）")).toBeVisible();
+  });
+
+  test("置いたあとの詳細設定で、図形の色と線の太さを変えられ、書き出したPDFにも反映される（文字・手書きにも同じ色の欄を出す。2026-11-18）", async ({ page }) => {
+    await openToolWithPdf(page, fixtures.singlePagePdf);
+    await choosePdfFixOperation(page, "図形");
+    await clickCanvasAt(page, 150, 150);
+    const item = page.locator(OBJECT_LIST).getByTestId("pdf-annotate-object-item").first();
+    const color = item.getByTestId("pdf-annotate-object-color");
+    // 置いたときの色（図形の最初の色は青）が選ばれている
+    await expect(color.getByRole("radio", { name: "青" })).toHaveAttribute("aria-checked", "true");
+    await color.getByRole("radio", { name: "赤" }).click();
+    await expect(color.getByRole("radio", { name: "赤" })).toHaveAttribute("aria-checked", "true");
+    await item.getByTestId("pdf-annotate-object-stroke").fill("6");
+    await expect(item.getByTestId("pdf-annotate-object-stroke")).toHaveValue("6");
+    // 書き出したPDFでも赤い線（0.82 0.15 0.15 RG）になっている
+    const path = await exportAndDownload(page);
+    const doc = await PDFDocument.load(fs.readFileSync(path));
+    const content = new TextDecoder("latin1").decode(await readPageContent(doc, 0));
+    expect(content).toMatch(/0\.82 0\.15 0\.15 RG/);
+    expect(content).toMatch(/\b6 w\b/);
   });
 
   test("図形を移動・リサイズ・削除できる", async ({ page }) => {

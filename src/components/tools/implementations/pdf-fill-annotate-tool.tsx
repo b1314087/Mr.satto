@@ -130,6 +130,14 @@ const COLOR_CHOICES: Record<ColorChoice, AnnotationColor> = {
   blue: { r: 0.1, g: 0.35, b: 0.85 },
 };
 const COLOR_LABELS: Record<ColorChoice, string> = { black: "黒", red: "赤", blue: "青" };
+/** 置いた注釈の色が、黒・赤・青のどれか（どれでもなければ null） */
+function colorChoiceOf(c: AnnotationColor): ColorChoice | null {
+  const hit = (Object.keys(COLOR_CHOICES) as ColorChoice[]).find((k) => {
+    const v = COLOR_CHOICES[k];
+    return Math.abs(v.r - c.r) < 0.02 && Math.abs(v.g - c.g) < 0.02 && Math.abs(v.b - c.b) < 0.02;
+  });
+  return hit ?? null;
+}
 /** 色のボタンに出す丸の色 */
 const COLOR_SWATCH: Record<ColorChoice, string> = { black: "#111827", red: "#dc2626", blue: "#2563eb" };
 
@@ -1664,6 +1672,35 @@ export function PdfFillAnnotateTool({
   }
 
   const previewShown = Boolean(file && pageImageUrl && currentPageInfo);
+  // 置いた注釈の色を、あとから変える欄（文字・手書き・図形。2026-11-18：置いたあとに色を変えられなかったため）
+  const colorField = (obj: AnnotationObject & { color: AnnotationColor }) => (
+    <div className="flex items-center gap-1.5" data-testid="pdf-annotate-object-color">
+      <span aria-hidden="true">色</span>
+      <Segmented
+        size="sm"
+        ariaLabel="色"
+        value={(colorChoiceOf(obj.color) ?? "") as ColorChoice}
+        onChange={(next) => patchObjectWithHistory(obj.id, { color: COLOR_CHOICES[next] })}
+        options={(Object.keys(COLOR_LABELS) as ColorChoice[]).map((c) => ({ value: c, label: COLOR_LABELS[c], swatch: COLOR_SWATCH[c] }))}
+      />
+    </div>
+  );
+  const strokeField = (obj: AnnotationObject & { strokeWidth: number }, label = "線の太さ") => (
+    <label className="flex items-center gap-1">
+      {label}
+      <input
+        type="number"
+        min={1}
+        max={20}
+        step={0.5}
+        value={obj.strokeWidth}
+        data-testid="pdf-annotate-object-stroke"
+        onChange={(e) => patchObjectWithHistory(obj.id, { strokeWidth: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })}
+        className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+      />
+    </label>
+  );
+
   // 配置した注釈の一覧（それぞれの設定を開ける）。ふだんは設定の列の下、全画面の「詳細設定」を出したときは、その中に出す
   const objectListContent = (
     <>
@@ -1782,6 +1819,7 @@ export function PdfFillAnnotateTool({
                           />
                           太字
                         </label>
+                        {colorField(obj)}
                         <label className="flex items-center gap-1">
                           <input type="checkbox" checked={!!obj.vertical} onChange={() => toggleTextVertical(obj)} data-testid="pdf-annotate-list-vertical" />
                           縦書き
@@ -1851,20 +1889,8 @@ export function PdfFillAnnotateTool({
 
                     {obj.type === "ink" && (
                       <>
-                        <label className="flex items-center gap-1">
-                          太さ
-                          <input
-                            type="number"
-                            min={1}
-                            max={20}
-                            step={0.5}
-                            value={obj.strokeWidth}
-                            onChange={(e) =>
-                              patchObjectWithHistory(obj.id, { strokeWidth: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })
-                            }
-                            className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                        </label>
+                        {colorField(obj)}
+                        {strokeField(obj, "太さ")}
                         <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
                       </>
                     )}
@@ -1956,6 +1982,8 @@ export function PdfFillAnnotateTool({
                           <input type="checkbox" checked={obj.fill} onChange={(e) => patchObjectWithHistory(obj.id, { fill: e.target.checked })} />
                           塗りつぶし
                         </label>
+                        {!isWhiteoutObject(obj) && !isBlackoutObject(obj) && colorField(obj)}
+                        {!isWhiteoutObject(obj) && !isBlackoutObject(obj) && strokeField(obj)}
                         <label className="flex items-center gap-1">
                           回転
                           <input
@@ -1973,7 +2001,11 @@ export function PdfFillAnnotateTool({
                     )}
 
                     {obj.type === "shape" && obj.shapeKind === "line" && (
-                      <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                      <>
+                        {colorField(obj)}
+                        {strokeField(obj)}
+                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                      </>
                     )}
 
                     <button
