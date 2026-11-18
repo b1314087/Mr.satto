@@ -23,7 +23,16 @@ export type HandoffFileKind =
   | "xlsx"
   | "docx"
   | "pptx"
-  | "zip";
+  | "zip"
+  // 2026-11-18：音声・動画（録音・画面録画の結果を、音声・動画のツールや文字起こしへ渡すため）
+  | "mp3"
+  | "wav"
+  | "m4a"
+  | "ogg"
+  | "flac"
+  | "mp4"
+  | "mov"
+  | "webm";
 
 export const HANDOFF_FILE_KIND_LABELS: Record<HandoffFileKind, string> = {
   pdf: "PDF",
@@ -40,6 +49,14 @@ export const HANDOFF_FILE_KIND_LABELS: Record<HandoffFileKind, string> = {
   docx: "Word（.docx）",
   pptx: "PowerPoint（.pptx）",
   zip: "ZIP",
+  mp3: "MP3音声",
+  wav: "WAV音声",
+  m4a: "M4A音声",
+  ogg: "OGG音声",
+  flac: "FLAC音声",
+  mp4: "MP4動画",
+  mov: "MOV動画",
+  webm: "WebM（音声・動画）",
 };
 
 /** 種類ごとのMIMEタイプ（結果のファイルにMIMEタイプが付いていないときに補う） */
@@ -58,6 +75,14 @@ export const HANDOFF_FILE_KIND_MIME: Record<HandoffFileKind, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   zip: "application/zip",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  m4a: "audio/mp4",
+  ogg: "audio/ogg",
+  flac: "audio/flac",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
 };
 
 /**

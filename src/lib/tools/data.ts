@@ -1130,8 +1130,20 @@ const toolDefinitions: Tool[] = [
     status: "available",
     requiredPlan: "standard",
     processor: "browser",
-    relatedToolIds: ["audio-trim", "audio-convert"],
+    relatedToolIds: ["audio-trim", "audio-transcribe"],
     keywords: ["録音", "ボイスレコーダー", "ボイスメモ", "マイク", "音声録音", "会議の録音", "mp3", "レコーダー"],
+  },
+  {
+    // 2026-11-18：AI（OpenAI）で音声・動画の話し声を文字にする（プレミアム。送るのは音声だけ・保存しない）
+    id: "audio-transcribe",
+    name: "文字起こし（AI）",
+    category: "audio",
+    description: "会議・インタビュー・動画の話し声を、AIで文字にします。時刻つきの文章や字幕ファイル（SRT）で保存できます（プレミアム）",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["voice-recorder", "video-subtitle"],
+    keywords: ["文字起こし", "書き起こし", "議事録", "音声認識", "テープ起こし", "AI文字起こし", "字幕", "srt"],
   },
   {
     id: "audio-volume",

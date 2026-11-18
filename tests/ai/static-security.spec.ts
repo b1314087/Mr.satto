@@ -27,7 +27,7 @@ test.describe("AI機能の静的な安全確認", () => {
   });
 
   test("クライアントコンポーネント（\"use client\"）が、サーバー専用のAIモジュールを読み込まない", () => {
-    const forbidden = ["@/lib/ai/server", "@/lib/ai/openai-client", "@/lib/ai/service", "@/lib/ai/ledger", "@/lib/supabase/service"];
+    const forbidden = ["@/lib/ai/server", "@/lib/ai/openai-client", "@/lib/ai/openai-transcribe", "@/lib/ai/service", "@/lib/ai/ledger", "@/lib/supabase/service"];
     for (const f of files) {
       const text = read(f);
       if (!/^\s*["']use client["']/.test(text)) continue;
@@ -39,9 +39,9 @@ test.describe("AI機能の静的な安全確認", () => {
     expect(read(join(SRC, "lib/ai/server.ts"))).toContain('import "server-only"');
   });
 
-  test("OpenAIのAPIを呼ぶコードは openai-client.ts だけ", () => {
+  test("OpenAIのAPIを呼ぶコードは openai-client.ts（文章・画像）と openai-transcribe.ts（文字起こし）だけ", () => {
     const hits = files.filter((f) => read(f).includes("api.openai.com")).map((f) => f.replace(SRC, "src"));
-    expect(hits).toEqual(["src/lib/ai/openai-client.ts"]);
+    expect(hits.sort()).toEqual(["src/lib/ai/openai-client.ts", "src/lib/ai/openai-transcribe.ts"]);
   });
 
   test("AI関連のモジュールが、本文をDB・ファイル・localStorageに書かない（書き込み系の呼び出しが無い）", () => {

@@ -385,6 +385,14 @@ export const toolGuides: Record<string, ToolGuide> = {
       step("ダウンロード", [preview("audio", "保存する音声"), btn("ダウンロード")], 1),
     ],
   },
+  "audio-transcribe": {
+    steps: [
+      pick("ファイルを選ぶ", "音声・動画ファイルをドラッグ&ドロップ"),
+      step("言語と用語", [select("言語", "日本語"), text("人名・社名・専門用語（任意）", ["Mr.Satto、山田、見積書"])], 0),
+      step("同意して実行", [check("このファイルの音声を、AI（OpenAI）に送って文字起こしすることに同意します"), run("AIで文字起こしする")], 1),
+      step("直して保存", [text(undefined, ["[00:00:01] 本日の議題は3つです。", "[00:00:05] まず見積書の件から。"]), btn("文章（.txt）をダウンロード")], 1),
+    ],
+  },
   "screen-recorder": {
     steps: [
       step("録るものを選ぶ", [check("マイクの声も録る"), check("パソコンの音も録る"), check("カメラの映像を隅に重ねる", false)], 0),

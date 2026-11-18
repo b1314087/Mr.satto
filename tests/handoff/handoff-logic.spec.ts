@@ -22,6 +22,8 @@ import { hasImplementation } from "@/lib/tools/registry";
 import { downloadBlob } from "@/lib/utils/format";
 import { matchesAccept } from "@/lib/utils/file-accept";
 import { MAX_OFFICE_FILE_MB } from "@/lib/office-convert/file-check";
+import { AUDIO_DROPZONE_MAX_MB, AUDIO_INPUT_ACCEPT, VIDEO_TO_AUDIO_INPUT_ACCEPT } from "@/lib/audio/shared";
+import { VIDEO_DROPZONE_MAX_MB, VIDEO_INPUT_ACCEPT } from "@/lib/video/shared";
 
 /**
  * 工程16：ツール間のファイル受け渡しの、判定・置き場・種類の判別・設定の整合のテスト（画面を使わない）。
@@ -207,9 +209,33 @@ test.describe("設定の整合", () => {
     "file-unzip": "file-unzip-tool.tsx",
     "excel-to-word": "excel-to-word-tool.tsx",
     "word-to-excel": "word-to-excel-tool.tsx",
+    "audio-convert": "audio-convert-tool.tsx",
+    "audio-extract": "audio-extract-tool.tsx",
+    "audio-trim": "audio-trim-tool.tsx",
+    "audio-merge": "audio-merge-tool.tsx",
+    "audio-volume": "audio-volume-tool.tsx",
+    "audio-compress": "audio-compress-tool.tsx",
+    "audio-transcribe": "audio-transcribe-tool.tsx",
+    "video-convert": "video-edit-tool.tsx",
+    "video-compress": "video-edit-tool.tsx",
+    "video-resize": "video-edit-tool.tsx",
+    "video-frame-rate": "video-edit-tool.tsx",
+    "video-h264": "video-h264-tool.tsx",
+    "video-cut-merge": "video-cut-merge-tool.tsx",
+    "video-metadata-remove": "video-metadata-remove-tool.tsx",
+    "video-mosaic": "video-mosaic-tool.tsx",
+    "video-subtitle": "video-subtitle-tool.tsx",
+    "video-thumbnail": "video-thumbnail-tool.tsx",
   };
   // 別ファイルで定義された定数（ファイル内の const で解決できないもの）
-  const IMPORTED: Record<string, string | number> = { MAX_OFFICE_FILE_MB };
+  const IMPORTED: Record<string, string | number> = {
+    MAX_OFFICE_FILE_MB,
+    AUDIO_DROPZONE_MAX_MB,
+    AUDIO_INPUT_ACCEPT,
+    VIDEO_TO_AUDIO_INPUT_ACCEPT,
+    VIDEO_DROPZONE_MAX_MB,
+    VIDEO_INPUT_ACCEPT,
+  };
 
   function resolve(code: string, raw: string | undefined): string | number | undefined {
     if (raw === undefined) return undefined;
@@ -347,6 +373,42 @@ test.describe("種類の判別と結果の受け取り", () => {
     // テキストは拡張子で決め、バイナリ（0バイトを含む）は除く
     expect(detectFileKindFromBytes(new TextEncoder().encode("a,b\n1,2"), "a.csv")).toBe("csv");
     expect(detectFileKindFromBytes(new Uint8Array([0x61, 0x00, 0x62]), "a.csv")).toBeNull();
+  });
+
+  test("音声・動画：先頭のバイトで系統を確かめ、同じ系統の中は拡張子（なければ形式の名前）で区別する", () => {
+    const ascii = (t: string) => [...t].map((c) => c.charCodeAt(0));
+    expect(detectFileKindFromBytes(bytes(...ascii("RIFF"), 0, 0, 0, 0, ...ascii("WAVE")), "rec.bin")).toBe("wav");
+    expect(detectFileKindFromBytes(bytes(...ascii("OggS")), "a.opus")).toBe("ogg");
+    expect(detectFileKindFromBytes(bytes(...ascii("fLaC")), "a.flac")).toBe("flac");
+    expect(detectFileKindFromBytes(bytes(...ascii("ID3"), 4), "voice.mp3")).toBe("mp3");
+    expect(detectFileKindFromBytes(bytes(0xff, 0xfb, 0x90), "voice.mp3")).toBe("mp3");
+    // フレームの同期だけ（ID3なし）は、拡張子もmp3のときだけMP3とする
+    expect(detectFileKindFromBytes(bytes(0xff, 0xfb, 0x90), "x.bin")).toBeNull();
+    const ftyp = (brand: string) => bytes(0, 0, 0, 0x20, ...ascii("ftyp"), ...ascii(brand));
+    expect(detectFileKindFromBytes(ftyp("isom"), "screen.mp4")).toBe("mp4");
+    expect(detectFileKindFromBytes(ftyp("M4A "), "voice.m4a")).toBe("m4a");
+    expect(detectFileKindFromBytes(ftyp("qt  "), "clip.mov")).toBe("mov");
+    expect(detectFileKindFromBytes(ftyp("M4A "), "noext")).toBe("m4a");
+    expect(detectFileKindFromBytes(ftyp("qt  "), "noext")).toBe("mov");
+    expect(detectFileKindFromBytes(bytes(0x1a, 0x45, 0xdf, 0xa3), "rec.webm")).toBe("webm");
+    // MKVは受け取れるツールがないため扱わない
+    expect(detectFileKindFromBytes(bytes(0x1a, 0x45, 0xdf, 0xa3), "subs.mkv")).toBeNull();
+    // 拡張子だけが音声のファイルは、音声と判別しない
+    expect(detectFileKindFromBytes(bytes(0x68, 0x65, 0x6c, 0x6c, 0x6f), "fake.mp3")).toBeNull();
+  });
+
+  test("録音→文字起こし・音声のツール、画面録画→動画のツール・文字起こしが候補になる。音声を動画のツールには渡さない", () => {
+    const targets = getHandoffTargets();
+    const mp3: HandoffFileInfo = { name: "録音.mp3", kind: "mp3", size: 50_000 };
+    const fromRecorder = findHandoffTargets({ toolId: "voice-recorder", send: TOOL_HANDOFF["voice-recorder"].send }, [mp3], targets, "premium").map((t) => t.id);
+    expect(fromRecorder).toEqual(expect.arrayContaining(["audio-transcribe", "audio-trim", "audio-convert", "audio-volume", "audio-compress", "audio-merge"]));
+    expect(fromRecorder).not.toContain("video-subtitle");
+    expect(fromRecorder).not.toContain("audio-extract");
+    const webm: HandoffFileInfo = { name: "画面録画.webm", kind: "webm", size: 5_000_000 };
+    const fromScreen = findHandoffTargets({ toolId: "screen-recorder", send: TOOL_HANDOFF["screen-recorder"].send }, [webm], targets, "premium").map((t) => t.id);
+    expect(fromScreen).toEqual(expect.arrayContaining(["video-subtitle", "video-cut-merge", "video-h264", "audio-extract", "audio-transcribe"]));
+    // 動画のファイル選択欄は上限なし（Infinity）。受け渡しでも大きさで断らない（置き場の合計の上限は別に確かめる）
+    expect(canReceiveFiles(TOOL_HANDOFF["video-subtitle"].receive!, [{ ...webm, size: 3_000 * 1024 * 1024 }], "free")).toBe(true);
   });
 
   test("受け取りモードの間、downloadBlob は保存せず、渡されたファイルを順番どおりに受け取る", async () => {

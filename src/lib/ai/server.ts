@@ -8,6 +8,7 @@ import { resolveAiPlan, resolveEffectivePlan } from "@/lib/plans/effective-plan"
 import { AI_TRIAL_LIMIT_MICRO_USD } from "@/lib/plans/grants";
 import { createRpcLedger, type Ledger } from "./ledger";
 import { buildImageInput, callOpenAi, type OpenAiInputMessage } from "./openai-client";
+import { callOpenAiTranscribe } from "./openai-transcribe";
 import { AI_MODELS } from "./pricing";
 import { IMAGE_OUTPUT_SCHEMA, OUTPUT_SCHEMA } from "./calendar-assist";
 import { FORM_OUTPUT_SCHEMA } from "./form-extract";
@@ -27,6 +28,8 @@ import type { Availability, AssistDeps, Caller } from "./service";
  * （プレビューのたびに本物のAPIを呼ばないため。キーはProductionにだけ設定する運用）。
  */
 const TIMEOUT_MS = 100_000;
+/** 文字起こしの制限時間（ミリ秒） */
+const TRANSCRIBE_TIMEOUT_MS = 55_000;
 
 export function getAiAvailability(): Availability {
   // AIはPremium限定の機能。課金システムがオフの間（src/lib/config/features.ts）は、キーが設定されていても利用不可にする
@@ -94,6 +97,8 @@ export function createAssistDeps(periodLimitMicroUsd?: number): AssistDeps | nul
         timeoutMs: TIMEOUT_MS,
       });
     },
+    // 文字起こし（約1分の音声1つ分）。route の maxDuration（60秒）より短く切る
+    callTranscribe: ({ modelId, audio, language, prompt }) => callOpenAiTranscribe({ apiKey, modelId, audio, language, prompt, timeoutMs: TRANSCRIBE_TIMEOUT_MS }),
     // 運用ログ。本文は含まれない（呼び出し側が渡さない）
     log: (event) => console.info("[ai]", JSON.stringify(event)),
   };

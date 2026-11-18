@@ -61,6 +61,8 @@ import { drawSubtitles, type SubtitleBackground } from "@/lib/video/subtitle-ren
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
 import { PreviewSplitLayout } from "@/components/common/preview-split-layout";
 import { SettingsSection, SettingsStack } from "@/components/ui/settings-section";
+import { TranscribeAi, transcribeAiEnabled } from "@/components/tools/implementations/shared/transcribe-ai";
+import type { TranscriptSegment } from "@/lib/transcribe/transcript";
 import { RunBar } from "@/components/ui/run-bar";
 import { Segmented } from "@/components/ui/segmented";
 
@@ -258,6 +260,26 @@ export function VideoSubtitleTool() {
     const id = newCueId();
     changeCues([...cues, { id, start: formatSubtitleTime(start), end: formatSubtitleTime(end), text: "", look: { ...DEFAULT_CUE_LOOK } }]);
     setSelectedId(id);
+  }
+
+  /** AIの文字起こしを、字幕として加える（今ある字幕は残し、時間順に並べる） */
+  function applyAiSegments(segments: TranscriptSegment[]) {
+    const added: SubtitleCue[] = segments
+      .filter((seg) => seg.text.trim() !== "")
+      .map((seg) => ({
+        id: newCueId(),
+        start: formatSubtitleTime(seg.start),
+        end: formatSubtitleTime(durationSec !== null ? Math.min(seg.end, durationSec) : seg.end),
+        text: seg.text.slice(0, SUBTITLE_TEXT_MAX),
+        look: { ...DEFAULT_CUE_LOOK },
+      }));
+    if (added.length === 0) return;
+    // 文字起こしの間に字幕を直していても消さないよう、最新の一覧に足す
+    setCues((prev) => sortCuesByTime([...prev, ...added]).slice(0, SUBTITLE_CUES_MAX));
+    if (result || burnResult) {
+      clearResults();
+      setStatus("idle");
+    }
   }
 
   function duplicateCue(index: number) {
@@ -521,6 +543,17 @@ export function VideoSubtitleTool() {
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
                 表示時間は、タイムラインのバーをドラッグするか、「時:分:秒.ミリ秒」（例：00:00:01.500）で入れられます。動画を止めて「今の時間」でも入れられます。
               </p>
+              {transcribeAiEnabled() && (
+                <TranscribeAi
+                  collapsible
+                  file={file}
+                  testIdPrefix="vs-ai"
+                  title="AIで字幕を自動で作る（任意）"
+                  sub="動画の話し声をAIが文字起こしして、時間つきの字幕として加えます。作ったあとで、文字と時間を直せます"
+                  runLabel="AIで字幕を作る"
+                  onSegments={(segments) => applyAiSegments(segments)}
+                />
+              )}
 
               {cues.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">

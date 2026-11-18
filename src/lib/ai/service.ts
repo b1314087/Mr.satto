@@ -60,8 +60,17 @@ import {
   parseDocMemoOutput,
   validateDocMemoRequest,
 } from "./document-memo";
+import {
+  TRANSCRIBE_CONSENT_VERSION,
+  TRANSCRIBE_MODEL_ID,
+  transcribeCostMicroUsd,
+  transcribeReserveMicroUsd,
+  validateTranscribeAudio,
+  validateTranscribeFields,
+} from "./transcribe";
 import type { Ledger, PeriodSnapshot, ReserveOutcome } from "./ledger";
 import type { OpenAiCallResult } from "./openai-client";
+import type { OpenAiTranscribeResult } from "./openai-transcribe";
 
 export const FEATURE_CALENDAR_ASSIST = "calendar-import";
 /** 記入済みPDF→Excelの、AI読み取り補助（利用台帳に残る機能名。内容は入れない） */
@@ -74,6 +83,8 @@ export const FEATURE_WORD_TABLE = "word-table";
 export const FEATURE_DOCUMENT_MEMO = "document-memo";
 /** PowerPoint白黒反転の、AIによる画像内の文字の読み取り（同上） */
 export const FEATURE_PPTX_TEXT = "pptx-text";
+/** 文字起こし・動画字幕の、AIによる音声の文字起こし（同上） */
+export const FEATURE_TRANSCRIBE = "transcribe";
 
 /** 1回の依頼で、予約できる額の上限（期間の上限の何分の1か）。1回で枠の大半を使い切る依頼を、AIを呼ぶ前に断る */
 const MAX_SINGLE_RESERVE_MICRO_USD = AI_PERIOD_LIMIT_MICRO_USD / 4;
@@ -92,6 +103,8 @@ export interface AssistDeps {
     mode?: "rows" | "image" | "form" | "pptx" | "docmemo";
     images?: AssistImage[];
   }): Promise<OpenAiCallResult>;
+  /** 音声の文字起こし（設定されていなければ、文字起こしは使えない） */
+  callTranscribe?(args: { modelId: string; audio: Uint8Array; language: string; prompt: string }): Promise<OpenAiTranscribeResult>;
   /** 運用ログ。本文（セルの文字・AIの出力）は渡さない */
   log(event: Record<string, unknown>): void;
 }
@@ -261,6 +274,98 @@ export async function handleDocumentMemo(
       const parsed = parseDocMemoOutput(text, request);
       return parsed ? { fields: { fields: parsed.fields, items: parsed.items, notes: parsed.notes }, rejected: parsed.rejected } : null;
     },
+  });
+}
+
+/** 文字起こし1回分の依頼（フォームの文字の項目と、音声のバイト列） */
+export interface TranscribeRequestInput {
+  fields: { requestId?: unknown; language?: unknown; prompt?: unknown; consentAccepted?: unknown; consentVersion?: unknown };
+  audio: Uint8Array | null;
+}
+
+/**
+ * 音声の文字起こし（約1分までの区切り1つ分）。流れは他のAI補助と同じ:
+ * 権限・同意 → 入力の検証（WAVの形式と長さはサーバーが自分で確かめる）→ 長さから予約 → 呼び出し → 長さで確定。
+ * 費用は音声の長さだけで決まる。サーバーが測った長さと、OpenAIが返した長さの大きいほうで確定する（多めに数える）。
+ */
+export async function handleTranscribe(deps: AssistDeps, caller: Caller, availability: Availability, req: TranscribeRequestInput): Promise<ServiceResponse> {
+  const consentBody = { consent: { accepted: req.fields.consentAccepted === "true", version: req.fields.consentVersion } };
+  const denied = checkAccess(caller, availability, consentBody, TRANSCRIBE_CONSENT_VERSION);
+  if (denied) return denied;
+  if (!deps.callTranscribe) {
+    return respond(503, { error: "unavailable", reason: "not_configured", message: "AIによる文字起こしは、現在ご利用いただけません。" });
+  }
+  const fields = validateTranscribeFields(req.fields);
+  if (!fields.ok) return respond(400, { error: "invalid_request", message: fields.message });
+  if (!req.audio) return respond(400, { error: "invalid_request", message: "音声がありません。" });
+  const audio = validateTranscribeAudio(req.audio);
+  if (!audio.ok) return respond(400, { error: "invalid_request", message: audio.message });
+
+  const userId = caller.userId as string;
+  const { requestId, language, prompt } = fields.value;
+  const reserved = transcribeReserveMicroUsd(audio.durationSec);
+
+  // ① 利用枠の予約（できなければ、AIは呼ばない）。区切りを続けて送るため、1分あたりの回数は多めに認める
+  let reservation;
+  try {
+    reservation = await deps.ledger.reserve({
+      userId,
+      requestId,
+      feature: FEATURE_TRANSCRIBE,
+      modelId: TRANSCRIBE_MODEL_ID,
+      reserveMicroUsd: reserved,
+      ttlSeconds: RESERVATION_TTL_SECONDS,
+      maxConcurrent: 3,
+      maxPerMinute: 30,
+    });
+  } catch {
+    deps.log({ event: "ai_transcribe", requestId, stage: "reserve", result: "ledger_error" });
+    return respond(503, { error: "ledger_unavailable", message: "利用枠を確認できませんでした。時間をおいて、もう一度お試しください。" });
+  }
+  if (reservation.outcome !== "ok") {
+    const info = RESERVE_ERRORS[reservation.outcome];
+    deps.log({ event: "ai_transcribe", requestId, stage: "reserve", result: reservation.outcome });
+    const message = reservation.outcome === "not_premium" ? "AIによる文字起こしは、プレミアムプランの機能です。" : info.message;
+    return respond(info.status, {
+      error: info.error,
+      message,
+      ...(reservation.period ? { usage: usageBody(reservation.period), resetAt: reservation.period.periodEnd } : {}),
+    });
+  }
+
+  // ② AIの呼び出し
+  let result: OpenAiTranscribeResult;
+  try {
+    result = await deps.callTranscribe({ modelId: TRANSCRIBE_MODEL_ID, audio: req.audio, language, prompt });
+  } catch {
+    result = { kind: "unknown", reason: "network" };
+  }
+
+  // ③ 結果に応じて、確定・解放・そのまま
+  if (result.kind === "rejected") {
+    const rejectedStatus = result.status;
+    await finalize(deps, () => deps.ledger.release({ userId, requestId, errorCode: `openai_${rejectedStatus}` }), requestId, "release");
+    deps.log({ event: "ai_transcribe", requestId, result: "rejected", status: rejectedStatus });
+    const message =
+      rejectedStatus === 429
+        ? "AIの利用が混み合っています。少し待ってから、もう一度お試しください。"
+        : "AIがこの音声を受け付けませんでした。時間をおいて、もう一度お試しください。";
+    return respond(502, { error: "ai_rejected", message });
+  }
+  if (result.kind === "unknown") {
+    deps.log({ event: "ai_transcribe", requestId, result: "unknown", reason: result.reason });
+    const message = result.reason === "timeout" ? "AIの応答に時間がかかりすぎたため、中止しました。" : "AIとの通信で問題が起きました。";
+    return respond(504, { error: "ai_unknown", message, quotaNote: "通信が不確かだったため、この分の利用枠はすぐには戻りません。" });
+  }
+
+  const actual = transcribeCostMicroUsd(Math.max(audio.durationSec, result.seconds ?? 0));
+  const settled = await finalize(deps, () => deps.ledger.settle({ userId, requestId, actualMicroUsd: actual, usage: null }), requestId, "settle");
+  deps.log({ event: "ai_transcribe", requestId, result: "ok", costMicroUsd: actual });
+  return respond(200, {
+    ok: true,
+    text: result.text.slice(0, 20_000),
+    durationSec: Math.round(audio.durationSec * 1000) / 1000,
+    usage: usageBody(settled?.period ?? null),
   });
 }
 

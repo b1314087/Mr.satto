@@ -206,11 +206,14 @@ export function AiRunButton({
   onClick,
   onCancel,
   cancelTestId,
+  runningLabel = "読み取り中…",
 }: {
   testId: string;
   disabled: boolean;
   running: boolean;
   label: string;
+  /** 実行中のボタンの文字（省略時は「読み取り中…」） */
+  runningLabel?: string;
   consentGiven: boolean;
   onClick: () => void;
   onCancel: () => void;
@@ -228,7 +231,7 @@ export function AiRunButton({
           className="inline-flex min-w-48 flex-1 items-center justify-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-base font-bold text-white shadow-sm transition-colors hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
         >
           <SparkleIcon className="h-4 w-4" />
-          {running ? "読み取り中…" : label}
+          {running ? runningLabel : label}
         </button>
         {running && (
           <button
