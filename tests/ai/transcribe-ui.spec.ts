@@ -164,8 +164,7 @@ test.describe("動画字幕: AIで字幕を自動で作る", () => {
     await page.getByTestId("vs-ai-run").click();
     await expect(page.getByTestId("vs-cues").locator("> li")).toHaveCount(2, { timeout: 60_000 });
     expect(sent).toHaveLength(1);
-    const values = await page.getByTestId("vs-cues").locator("textarea, input[type=text]").evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
-    expect(values).toContain("字幕のテストです。");
+    expect(await page.getByTestId("vs-cue-text-view").allTextContents()).toContain("字幕のテストです。");
   });
 });
 

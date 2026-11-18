@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { VideoSizeWarning } from "@/components/tools/implementations/shared/video-size-warning";
@@ -15,14 +15,10 @@ import { PositionSliders } from "@/components/common/position-sliders";
 import { TextColorField } from "@/components/common/text-color-field";
 import { VideoTimeline } from "@/components/common/video-timeline";
 import {
-  SUBTITLE_CONTAINER_OPTIONS,
   VideoSubtitleBurnProcessor,
-  VideoSubtitleProcessor,
   probeSubtitleSource,
-  type SubtitleContainer,
   type SubtitleSourceProbe,
   type VideoSubtitleBurnOutput,
-  type VideoSubtitleOutput,
 } from "@/lib/processors/browser/video-subtitle";
 import {
   OUTPUT_CONTAINER_OPTIONS,
@@ -39,13 +35,10 @@ import {
   SUBTITLE_CUES_MAX,
   SUBTITLE_FADE_MAX,
   SUBTITLE_FONT_OPTIONS,
-  SUBTITLE_LANGUAGE_OPTIONS,
   SUBTITLE_SIZE_MAX,
   SUBTITLE_SIZE_MIN,
   SUBTITLE_TEXT_MAX,
   activeCuesAt,
-  buildSrt,
-  buildWebVtt,
   checkCues,
   formatSubtitleTime,
   newCueId,
@@ -55,7 +48,6 @@ import {
   sortCuesByTime,
   type CueLook,
   type SubtitleCue,
-  type SubtitleLanguage,
 } from "@/lib/video/subtitles";
 import { drawSubtitles, type SubtitleBackground } from "@/lib/video/subtitle-render";
 import { downloadBlob, formatBytes, stripExtension } from "@/lib/utils/format";
@@ -69,24 +61,16 @@ import { Segmented } from "@/components/ui/segmented";
 /** 新しく足す字幕の長さ（秒） */
 const NEW_CUE_LENGTH_SEC = 2;
 
-type OutputMode = "burn" | "track";
-
-const OUTPUT_MODE_OPTIONS: { value: OutputMode; label: string }[] = [
-  { value: "burn", label: "映像に焼き付ける（見た目どおり）" },
-  { value: "track", label: "字幕トラックとして入れる（ON・OFFできる）" },
-];
-
 /**
  * 動画字幕追加（総合改修 11 で大幅に改善）。
  *
  * - 字幕ごとに、文字・フォント・大きさ・文字色・縁取り（色）・位置（X・Yのバー）・表示時間・フェードを別々に設定できる。
  * - タイムライン：動画全体の再生位置と、字幕ごとのバーを出す。バーをドラッグして表示時間を変えられる（数字の入力は必須ではない）。
- * - プレビューは動画の上に重ねたキャンバスに、書き出しと同じ描画関数で描く。再生中でも、字幕の編集・設定の変更ができる。
- * - 書き出し：
- *   1. 映像に焼き付ける（既定）：見た目どおり。どの再生アプリ・SNSでも表示される。映像は作り直す（MP4・WebM）。
- *   2. 字幕トラックとして入れる：従来どおり。映像・音声はそのまま、ON・OFFできる字幕トラック（MKV・WebM）。
- *      フォント・縁取り・フェードは字幕トラックでは表せない（再生アプリにより反映されない）。
- *   3. 字幕ファイル（.srt・.vtt）も保存できる。
+ * - プレビューは動画の上に重ねたキャンバスに、書き出しと同じ描画関数で描く。再生中でも、字幕の設定の変更ができる。
+ * - 字幕の文字は、プレビューの動画の上で直接入力する（2026-11-18。選んだ字幕の位置に入力欄が出る）。
+ *   「字幕を追加」は再生ボタンの横。「大きく表示」にしても、そのまま追加・入力・タイムラインでの時間の調整ができる。
+ * - 書き出し：字幕を映像に焼き付けた動画だけ（見た目どおり。どの再生アプリ・SNSでも表示される。MP4・WebM）。
+ *   2026-11-18：字幕トラック（MKV）と字幕ファイル（.srt・.vtt）の書き出しはやめた（画面を分かりやすくするため）。
  * - 動画はサーバーへ送らず、ブラウザの中だけで処理する。
  */
 export function VideoSubtitleTool() {
@@ -95,16 +79,12 @@ export function VideoSubtitleTool() {
   const [cues, setCues] = useState<SubtitleCue[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [background, setBackground] = useState<SubtitleBackground>({ color: DEFAULT_SUBTITLE_STYLE.backgroundColor, opacity: 0 });
-  const [language, setLanguage] = useState<SubtitleLanguage>("jpn");
-  const [mode, setMode] = useState<OutputMode>("burn");
-  const [rawContainer, setContainer] = useState<SubtitleContainer>("mkv");
   const [burnContainer, setBurnContainer] = useState<OutputContainer>("mp4");
   const [status, setStatus] = useState<ProcessingState>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [audioLoss, setAudioLoss] = useState<string | null>(null);
   const [showProblems, setShowProblems] = useState(false);
-  const [result, setResult] = useState<VideoSubtitleOutput | null>(null);
   const [burnResult, setBurnResult] = useState<VideoSubtitleBurnOutput | null>(null);
   const [canceling, setCanceling] = useState(false);
   const [wasCanceled, setWasCanceled] = useState(false);
@@ -115,21 +95,27 @@ export function VideoSubtitleTool() {
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
   // 再生・一時停止のボタン（タイムラインのすぐ上）の表示
   const [videoPlaying, setVideoPlaying] = useState(false);
+  // プレビューの動画の枠（入力欄の文字の大きさを、動画の高さに合わせるため）
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [stageHeight, setStageHeight] = useState(0);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  // 字幕を追加したら、プレビューの入力欄にすぐ文字を打てるようにする
+  const [focusRequest, setFocusRequest] = useState(0);
 
-  useRevokeObjectUrlOnChange(result?.url);
   useRevokeObjectUrlOnChange(burnResult?.url);
   const { previewUrl, meta, handleLoadedMetadata } = useVideoPreview(file);
 
   const probeState = file && probe?.file === file ? probe : null;
   const probing = file !== null && probeState === null;
   const durationSec = probeState?.result?.durationSec ?? (meta && meta.durationSec > 0 ? meta.durationSec : null);
-  const containers = probeState?.result?.containers ?? ["mkv"];
-  const container: SubtitleContainer = containers.includes(rawContainer) ? rawContainer : containers[0];
   const previewReady = probeState?.result != null;
 
   const check = useMemo(() => checkCues(cues, durationSec), [cues, durationSec]);
   const shown = useMemo(() => previewCues(cues), [cues]);
   const active = activeCuesAt(shown, currentTime);
+  // プレビューで入力中の字幕（止めている間だけ。再生中は書き出しと同じ見た目で流す）
+  const editingCue = !videoPlaying && selectedId ? (cues.find((c) => c.id === selectedId) ?? null) : null;
+  const editingIndex = editingCue ? cues.indexOf(editingCue) : -1;
 
   // 動画を選んだら、形式・長さ・音声の有無を調べる（このときに初めて動画の部品を読み込む）
   useEffect(() => {
@@ -184,8 +170,25 @@ export function VideoSubtitleTool() {
     const ctx = c.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, c.width, c.height);
-    drawSubtitles(ctx, c.width, c.height, shown, currentTime, background);
-  }, [shown, currentTime, background, meta]);
+    // 入力中の字幕は、上に重ねた入力欄で見せる（二重に描かない）
+    const drawn = editingCue ? shown.filter((cue) => cue.id !== editingCue.id) : shown;
+    drawSubtitles(ctx, c.width, c.height, drawn, currentTime, background);
+  }, [shown, currentTime, background, meta, editingCue]);
+
+  // 動画の枠の高さを測る（入力欄の文字の大きさ＝動画の高さ×字幕の大きさ%）
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setStageHeight(el.offsetHeight));
+    ro.observe(el);
+    setStageHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [previewUrl, previewReady]);
+
+  useEffect(() => {
+    if (focusRequest === 0) return;
+    editorRef.current?.focus();
+  }, [focusRequest]);
 
   useEffect(() => {
     return () => {
@@ -194,7 +197,6 @@ export function VideoSubtitleTool() {
   }, []);
 
   function clearResults() {
-    setResult(null);
     setBurnResult(null);
   }
 
@@ -226,7 +228,7 @@ export function VideoSubtitleTool() {
   // 字幕を変えたら、前の結果は捨てる（違う字幕の結果をダウンロードさせない）
   function changeCues(next: SubtitleCue[]) {
     setCues(next);
-    if (result || burnResult) {
+    if (burnResult) {
       clearResults();
       setStatus("idle");
     }
@@ -243,7 +245,7 @@ export function VideoSubtitleTool() {
 
   function changeBackground(next: Partial<SubtitleBackground>) {
     setBackground((prev) => ({ ...prev, ...next }));
-    if (result || burnResult) {
+    if (burnResult) {
       clearResults();
       setStatus("idle");
     }
@@ -258,8 +260,11 @@ export function VideoSubtitleTool() {
     let end = start + NEW_CUE_LENGTH_SEC;
     if (durationSec !== null) end = Math.min(end, durationSec);
     const id = newCueId();
+    // 止めて、プレビューの入力欄に文字を打てるようにする
+    videoRef.current?.pause();
     changeCues([...cues, { id, start: formatSubtitleTime(start), end: formatSubtitleTime(end), text: "", look: { ...DEFAULT_CUE_LOOK } }]);
     setSelectedId(id);
+    setFocusRequest((n) => n + 1);
   }
 
   /** AIの文字起こしを、字幕として加える（今ある字幕は残し、時間順に並べる） */
@@ -276,7 +281,7 @@ export function VideoSubtitleTool() {
     if (added.length === 0) return;
     // 文字起こしの間に字幕を直していても消さないよう、最新の一覧に足す
     setCues((prev) => sortCuesByTime([...prev, ...added]).slice(0, SUBTITLE_CUES_MAX));
-    if (result || burnResult) {
+    if (burnResult) {
       clearResults();
       setStatus("idle");
     }
@@ -341,38 +346,24 @@ export function VideoSubtitleTool() {
     setWasCanceled(false);
     setCanceling(false);
     try {
-      if (mode === "burn") {
-        const output = await new VideoSubtitleBurnProcessor().process({
-          file,
-          cues: check.resolved,
-          background,
-          container: burnContainer,
-          onProgress: setProgress,
-          cancelSignal: controller.signal,
-          dropAudio: options.dropAudio,
-        });
-        if (runIdRef.current !== runId) return;
-        setBurnResult(output);
-      } else {
-        const output = await new VideoSubtitleProcessor().process({
-          file,
-          cues: check.resolved,
-          background,
-          language,
-          container,
-          onProgress: setProgress,
-          cancelSignal: controller.signal,
-        });
-        if (runIdRef.current !== runId) return;
-        setResult(output);
-      }
+      const output = await new VideoSubtitleBurnProcessor().process({
+        file,
+        cues: check.resolved,
+        background,
+        container: burnContainer,
+        onProgress: setProgress,
+        cancelSignal: controller.signal,
+        dropAudio: options.dropAudio,
+      });
+      if (runIdRef.current !== runId) return;
+      setBurnResult(output);
       setStatus("success");
     } catch (e) {
       if (runIdRef.current !== runId) return;
       if (e instanceof VideoCanceledByUserError) {
         setWasCanceled(true);
         setStatus("idle");
-      } else if (e instanceof VideoAudioWouldBeLostError && mode === "burn") {
+      } else if (e instanceof VideoAudioWouldBeLostError) {
         setAudioLoss(e.message);
         setStatus("idle");
       } else {
@@ -394,22 +385,9 @@ export function VideoSubtitleTool() {
   }
 
   function handleDownload() {
-    if (!file) return;
-    if (burnResult) {
-      const ext = OUTPUT_CONTAINER_OPTIONS.find((o) => o.value === burnResult.container)?.ext ?? "mp4";
-      downloadBlob(burnResult.blob, `${stripExtension(file.name)}-subtitled.${ext}`);
-      return;
-    }
-    if (!result) return;
-    const ext = SUBTITLE_CONTAINER_OPTIONS.find((o) => o.value === result.container)?.ext ?? "mkv";
-    downloadBlob(result.blob, `${stripExtension(file.name)}-subtitled.${ext}`);
-  }
-
-  function downloadSubtitleFile(kind: "vtt" | "srt") {
-    if (!validateBeforeExport()) return;
-    const text = kind === "vtt" ? buildWebVtt(check.resolved, background) : buildSrt(check.resolved);
-    const base = file ? stripExtension(file.name) : "subtitles";
-    downloadBlob(new Blob([text], { type: kind === "vtt" ? "text/vtt;charset=utf-8" : "application/x-subrip;charset=utf-8" }), `${base}.${kind}`);
+    if (!file || !burnResult) return;
+    const ext = OUTPUT_CONTAINER_OPTIONS.find((o) => o.value === burnResult.container)?.ext ?? "mp4";
+    downloadBlob(burnResult.blob, `${stripExtension(file.name)}-subtitled.${ext}`);
   }
 
   const problemsById = new Map<string, Set<string>>();
@@ -438,6 +416,7 @@ export function VideoSubtitleTool() {
       >
           <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200">プレビュー（再生しながら字幕を編集できます）</p>
           <div
+            ref={stageRef}
             className="relative mx-auto w-full overflow-hidden rounded-lg bg-black"
             style={{ maxWidth: meta && meta.width > 0 && meta.height > 0 ? `calc(min(var(--vs-video-h), 28rem) * ${meta.width / meta.height})` : undefined }}
           >
@@ -456,6 +435,49 @@ export function VideoSubtitleTool() {
             />
             {/* 動画の上に重ねる字幕（書き出しと同じ描画）。操作バーの上でも邪魔にならないよう、クリックは下の動画に通す */}
             <canvas ref={overlayRef} aria-hidden="true" data-testid="vs-overlay-canvas" className="pointer-events-none absolute inset-0 h-full w-full" style={{ height: "calc(100% - 0px)" }} />
+            {/* 選んだ字幕の入力欄（動画の上の、字幕の位置に出す）。止めている間だけ。再生すると書き出しと同じ見た目で流れる */}
+            {editingCue && (() => {
+              const look = normalizeLook(editingCue.look);
+              const font = SUBTITLE_FONT_OPTIONS.find((f) => f.value === look.font);
+              const fontPx = Math.max(10, (stageHeight * look.size) / 100);
+              const outline = look.outline ? `0 0 2px ${look.outlineColor}, 0 0 2px ${look.outlineColor}, 0 0 3px ${look.outlineColor}` : undefined;
+              const bad = showProblems && problemsById.get(editingCue.id)?.has("text");
+              return (
+                <div
+                  className="absolute flex flex-col items-center gap-1"
+                  style={{ left: `${look.x}%`, top: `${look.y}%`, transform: "translate(-50%, -50%)", maxWidth: "94%", maxHeight: "94%" }}
+                >
+                  <span className="rounded bg-blue-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white shadow">
+                    {editingIndex + 1}番目の字幕（{editingCue.start.slice(0, 10)}〜）
+                  </span>
+                  <textarea
+                    ref={editorRef}
+                    data-testid="vs-cue-text"
+                    aria-label={`${editingIndex + 1}番目の字幕の文字`}
+                    value={editingCue.text}
+                    maxLength={SUBTITLE_TEXT_MAX}
+                    rows={Math.max(1, editingCue.text.split("\n").length)}
+                    placeholder="ここに字幕を入力"
+                    aria-invalid={bad || undefined}
+                    onChange={(e) => updateCue(editingCue.id, { text: e.target.value })}
+                    className={`ms-preview-subtitle-editor resize-none rounded-md border-2 border-dashed bg-black/30 px-2 text-center outline-none placeholder:text-white/60 focus:border-solid ${bad ? "border-red-500" : "border-blue-400"}`}
+                    style={{
+                      fontSize: `${fontPx}px`,
+                      lineHeight: 1.25,
+                      fontFamily: font?.family,
+                      fontWeight: font?.weight,
+                      color: look.color,
+                      textShadow: outline,
+                      writingMode: look.vertical ? "vertical-rl" : undefined,
+                      fieldSizing: "content",
+                      minWidth: look.vertical ? undefined : "6em",
+                      minHeight: look.vertical ? "4em" : undefined,
+                      maxWidth: "100%",
+                    } as CSSProperties}
+                  />
+                </div>
+              );
+            })()}
           </div>
           {/* いま表示している字幕（読み上げ・確認用） */}
           <ul className="sr-only" data-testid="vs-overlay" aria-live="polite">
@@ -474,21 +496,51 @@ export function VideoSubtitleTool() {
             )}
           </p>
           {durationSec !== null && durationSec > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                const v = videoRef.current;
-                if (!v) return;
-                if (v.paused) void v.play().catch(() => setVideoPlaying(false));
-                else v.pause();
-              }}
-              aria-label={videoPlaying ? "一時停止" : "再生"}
-              data-testid="vs-play"
-              className="inline-flex w-fit min-w-28 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-            >
-              <span aria-hidden="true">{videoPlaying ? "❚❚" : "▶"}</span>
-              {videoPlaying ? "一時停止" : "再生"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const v = videoRef.current;
+                  if (!v) return;
+                  if (v.paused) void v.play().catch(() => setVideoPlaying(false));
+                  else v.pause();
+                }}
+                aria-label={videoPlaying ? "一時停止" : "再生"}
+                data-testid="vs-play"
+                className="inline-flex w-fit min-w-28 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                <span aria-hidden="true">{videoPlaying ? "❚❚" : "▶"}</span>
+                {videoPlaying ? "一時停止" : "再生"}
+              </button>
+              <button
+                type="button"
+                data-testid="vs-add"
+                onClick={addCue}
+                disabled={cues.length >= SUBTITLE_CUES_MAX}
+                className="inline-flex items-center gap-1 rounded-lg border-2 border-blue-600 bg-white px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:bg-neutral-900 dark:text-blue-300"
+              >
+                ＋ 字幕を追加
+              </button>
+              {selectedId && cues.some((c) => c.id === selectedId) && (
+                <button
+                  type="button"
+                  data-testid="vs-preview-delete"
+                  onClick={() => removeCue(selectedId)}
+                  className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300"
+                >
+                  選んだ字幕を削除
+                </button>
+              )}
+            </div>
+          )}
+          {durationSec !== null && durationSec > 0 && (
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {editingCue
+                ? "動画の上の枠に、字幕の文字を入力します。表示時間は下のバーをドラッグして調整できます。"
+                : cues.length > 0
+                  ? "下のバーを押すと、その字幕を選んで、動画の上で文字を入力できます（止めている間）。"
+                  : "動画を止めた位置で「字幕を追加」を押すと、動画の上に入力欄が出ます。"}
+            </p>
           )}
           {durationSec !== null && durationSec > 0 && (
             <VideoTimeline
@@ -509,7 +561,7 @@ export function VideoSubtitleTool() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        字幕ごとにフォント・大きさ・色・縁取り・位置・フェードを決め、タイムラインで表示時間を調整できます。見た目どおりに映像へ焼き付けるか、ON・OFFできる字幕トラック（MKV・WebM）として入れるかを選べます。字幕ファイル（.srt・.vtt）も保存できます。
+        プレビューの動画の上で字幕を入力し、字幕ごとにフォント・大きさ・色・縁取り・位置・フェードを決め、タイムラインで表示時間を調整できます。字幕は見た目どおりに映像へ焼き付けて書き出します。
       </p>
 
       <FileDropzone
@@ -533,15 +585,12 @@ export function VideoSubtitleTool() {
             <section aria-label="字幕の一覧" className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-base font-bold text-neutral-800 dark:text-neutral-100">字幕（{cues.length}件）</h2>
-                <button type="button" data-testid="vs-add" onClick={addCue} disabled={cues.length >= SUBTITLE_CUES_MAX} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                  ＋ 字幕を追加
-                </button>
                 <button type="button" data-testid="vs-sort" onClick={() => changeCues(sortCuesByTime(cues))} disabled={cues.length < 2} className="rounded-lg bg-neutral-100 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
                   時間順に並べ替え
                 </button>
               </div>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                表示時間は、タイムラインのバーをドラッグするか、「時:分:秒.ミリ秒」（例：00:00:01.500）で入れられます。動画を止めて「今の時間」でも入れられます。
+                字幕の追加と文字の入力は、プレビュー（動画の上）で行います。ここでは、表示時間（「時:分:秒.ミリ秒」、例：00:00:01.500）と見た目を設定できます。
               </p>
               {transcribeAiEnabled() && (
                 <TranscribeAi
@@ -557,7 +606,7 @@ export function VideoSubtitleTool() {
 
               {cues.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-                  まだ字幕がありません。「字幕を追加」を押して入力してください。
+                  まだ字幕がありません。プレビューの「字幕を追加」を押して、動画の上で入力してください。
                 </p>
               ) : (
                 <ol className="flex flex-col gap-3" data-testid="vs-cues">
@@ -611,19 +660,13 @@ export function VideoSubtitleTool() {
                             <button type="button" data-testid="vs-cue-seek" onClick={() => seekTo(startSec)} className="rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-800">この字幕へ移動</button>
                           )}
                         </div>
-                        <label className="flex flex-col text-xs text-neutral-600 dark:text-neutral-300">
-                          字幕
-                          <textarea
-                            data-testid="vs-cue-text"
-                            value={cue.text}
-                            maxLength={SUBTITLE_TEXT_MAX}
-                            rows={2}
-                            onChange={(e) => updateCue(cue.id, { text: e.target.value })}
-                            aria-invalid={showBad("text") || undefined}
-                            placeholder="例）こんにちは"
-                            className={`ms-focus-ring rounded-md border px-2 py-1 text-base dark:bg-neutral-900 ${showBad("text") ? "border-red-500" : "border-neutral-300 dark:border-neutral-700"}`}
-                          />
-                        </label>
+                        {/* 文字は、プレビューの動画の上で入力する（ここでは見るだけ） */}
+                        <p
+                          data-testid="vs-cue-text-view"
+                          className={`whitespace-pre-wrap break-all rounded-md border px-2 py-1 text-sm ${showBad("text") ? "border-red-500 text-red-700 dark:text-red-300" : "border-transparent bg-neutral-50 text-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"}`}
+                        >
+                          {cue.text || <span className="text-neutral-400">（未入力：プレビューの動画の上で入力します）</span>}
+                        </p>
 
                         <SettingsSection
                           title={`${i + 1}番目の見た目`}
@@ -760,50 +803,18 @@ export function VideoSubtitleTool() {
               </SettingsSection>
 
               <SettingsSection title="書き出し" testId="vs-output">
-                <Segmented ariaLabel="書き出し方" size="sm" testId="vs-mode" value={mode} onChange={(v) => setMode(v)} options={OUTPUT_MODE_OPTIONS} />
-                {mode === "burn" ? (
-                  <>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      プレビューの見た目（フォント・縁取り・位置・フェード）のまま、字幕を映像に描き込みます。どの再生アプリ・SNSでも表示されます（字幕のON・OFFはできません）。映像は作り直すため、時間がかかります。
-                    </p>
-                    <fieldset className="flex flex-wrap items-center gap-3 text-sm">
-                      <legend className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">出力形式</legend>
-                      {OUTPUT_CONTAINER_OPTIONS.map((o) => (
-                        <label key={o.value} className="flex items-center gap-1">
-                          <input type="radio" name="vs-burn-container" data-testid={`vs-burn-container-${o.value}`} checked={burnContainer === o.value} onChange={() => setBurnContainer(o.value)} />
-                          {o.label}
-                        </label>
-                      ))}
-                    </fieldset>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      映像・音声は作り直さずにそのまま使い、ON・OFFできる字幕トラックとして入れます（VLCなどで表示。ブラウザ・SNSでは表示されません）。文字色・大きさ・位置・背景は字幕トラックに書きますが、フォント・縁取り・フェードは表せません。
-                    </p>
-                    <fieldset className="flex flex-wrap items-center gap-3 text-sm">
-                      <legend className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">出力形式</legend>
-                      {SUBTITLE_CONTAINER_OPTIONS.filter((o) => containers.includes(o.value)).map((o) => (
-                        <label key={o.value} className="flex items-center gap-1">
-                          <input type="radio" name="vs-container" data-testid={`vs-container-${o.value}`} checked={container === o.value} onChange={() => setContainer(o.value)} />
-                          {o.label}
-                        </label>
-                      ))}
-                      {!containers.includes("webm") && <span className="text-xs text-neutral-500 dark:text-neutral-400">WebM は、元の動画が WebM のときに選べます。</span>}
-                    </fieldset>
-                    <div className="flex items-center gap-2 text-sm">
-                      <span aria-hidden="true">字幕の言語</span>
-                      <Segmented
-                        ariaLabel="字幕の言語"
-                        size="sm"
-                        testId="vs-language"
-                        value={language}
-                        onChange={(v) => setLanguage(v)}
-                        options={SUBTITLE_LANGUAGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                      />
-                    </div>
-                  </>
-                )}
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  プレビューの見た目（フォント・縁取り・位置・フェード）のまま、字幕を映像に描き込みます。どの再生アプリ・SNSでも表示されます。映像は作り直すため、時間がかかります。
+                </p>
+                <fieldset className="flex flex-wrap items-center gap-3 text-sm">
+                  <legend className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">出力形式</legend>
+                  {OUTPUT_CONTAINER_OPTIONS.map((o) => (
+                    <label key={o.value} className="flex items-center gap-1">
+                      <input type="radio" name="vs-burn-container" data-testid={`vs-burn-container-${o.value}`} checked={burnContainer === o.value} onChange={() => setBurnContainer(o.value)} />
+                      {o.label}
+                    </label>
+                  ))}
+                </fieldset>
               </SettingsSection>
             </SettingsStack>
           )}
@@ -814,14 +825,7 @@ export function VideoSubtitleTool() {
                 <button type="button" data-testid="vs-run" onClick={() => handleRun()} disabled={busy} aria-busy={busy || undefined} className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50">
                   字幕つきの動画を書き出す
                 </button>
-                <button type="button" data-testid="vs-save-srt" onClick={() => downloadSubtitleFile("srt")} disabled={busy} className="rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
-                  字幕ファイル（.srt）を保存
-                </button>
-                <button type="button" data-testid="vs-save-vtt" onClick={() => downloadSubtitleFile("vtt")} disabled={busy} className="rounded-lg bg-neutral-100 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200">
-                  字幕ファイル（.vtt）を保存
-                </button>
               </RunBar>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">.srt は YouTube などに字幕としてアップロードできます（時間と文字だけ）。</p>
             </section>
           )}
         </PreviewSplitLayout>
@@ -829,7 +833,7 @@ export function VideoSubtitleTool() {
 
       <ProcessingStatus
         state={status}
-        processingLabel={`${mode === "burn" ? "字幕を焼き付けています" : "字幕を追加しています"}… ${Math.round(progress * 100)}%`}
+        processingLabel={`字幕を焼き付けています… ${Math.round(progress * 100)}%`}
         successLabel="字幕の追加が完了しました"
         onCancel={handleCancel}
         canceling={canceling}
@@ -854,21 +858,6 @@ export function VideoSubtitleTool() {
         </ResultPopup>
       )}
 
-      {result && (
-        <ResultPopup>
-          <div data-testid="vs-result" className="flex flex-col gap-1 text-sm text-neutral-700 dark:text-neutral-200">
-            <p>
-              形式：{SUBTITLE_CONTAINER_OPTIONS.find((o) => o.value === result.container)?.label}・字幕 {result.cueCount}件・{formatBytes(result.sizeBytes)}
-            </p>
-            <p data-testid="vs-result-copy" className="text-xs text-neutral-500 dark:text-neutral-400">
-              映像：{result.videoCopied ? "そのまま（再エンコードなし）" : "作り直しました"}
-              {result.audioCopied !== null && `・音声：${result.audioCopied ? "そのまま（再エンコードなし）" : "作り直しました"}`}
-            </p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">字幕はVLCなどの再生アプリで表示され、ON・OFFを切り替えられます。ブラウザでの再生では表示されません。</p>
-          </div>
-          <RewardedDownloadGate onDownload={handleDownload} label="ダウンロード" />
-        </ResultPopup>
-      )}
     </div>
   );
 }

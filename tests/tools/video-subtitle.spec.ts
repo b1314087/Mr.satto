@@ -7,7 +7,6 @@ import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
 import { uploadFixture } from "../helpers/tool-runner";
-import { parseMkv, subtitleCuesOf } from "../helpers/mkv-subtitles";
 import { cueAlphaAt, effectiveFades } from "@/lib/video/subtitle-render";
 import {
   DEFAULT_CUE_LOOK,
@@ -69,19 +68,25 @@ async function openWithVideo(page: Page, file: string) {
   await expect(page.getByTestId("vs-add")).toBeVisible({ timeout: 30_000 });
 }
 
-/** 字幕を1件足して、時間と文字を入れる */
+/** 字幕を1件足して、プレビュー（動画の上の入力欄）で文字を入れ、一覧で時間を入れる */
 async function addCue(page: Page, start: string, end: string, text: string) {
   await page.getByTestId("vs-add").click();
+  // 追加すると、動画の上に入力欄が出て、すぐに入力できる
+  const editor = page.getByTestId("vs-cue-text");
+  await expect(editor).toBeFocused();
+  await editor.fill(text);
   const row = page.getByTestId("vs-cue").last();
   await row.getByTestId("vs-cue-start").fill(start);
   await row.getByTestId("vs-cue-end").fill(end);
-  await row.getByTestId("vs-cue-text").fill(text);
 }
 
-/** 書き出し方：字幕トラック（従来の方法） */
-async function chooseTrackMode(page: Page) {
-  await page.getByTestId("vs-mode").getByRole("radio", { name: /字幕トラック/ }).click();
+/** 一覧の字幕を選んで、プレビューの入力欄で文字を書き換える */
+async function editText(page: Page, index: number, text: string) {
+  await page.getByTestId("vs-cue").nth(index).getByTestId("vs-cue-text-view").click();
+  await page.getByTestId("vs-cue-text").fill(text);
 }
+
+const cueTexts = (page: Page) => page.getByTestId("vs-cue-text-view").allTextContents();
 
 async function exportAndSave(page: Page): Promise<string> {
   await page.getByTestId("vs-run").click();
@@ -224,25 +229,68 @@ test.describe("動画字幕追加：字幕の編集とプレビュー", () => {
     // 複製
     await rows.nth(0).getByTestId("vs-cue-duplicate").click();
     await expect(rows).toHaveCount(3);
-    await expect(rows.nth(1).getByTestId("vs-cue-text")).toHaveValue("二番目");
-    // 複製した方を編集
-    await rows.nth(1).getByTestId("vs-cue-text").fill("三番目");
+    await expect(rows.nth(1).getByTestId("vs-cue-text-view")).toHaveText("二番目");
+    // 複製した方を編集（文字はプレビューの入力欄で）
+    await editText(page, 1, "三番目");
+    await expect(rows.nth(1).getByTestId("vs-cue-text-view")).toHaveText("三番目");
     await rows.nth(1).getByTestId("vs-cue-start").fill("00:00:03.000");
     await rows.nth(1).getByTestId("vs-cue-end").fill("00:00:03.900");
     // 上へ・下へ
     await rows.nth(2).getByTestId("vs-cue-up").click();
-    await expect(rows.nth(1).getByTestId("vs-cue-text")).toHaveValue("一番目");
+    await expect(rows.nth(1).getByTestId("vs-cue-text-view")).toHaveText("一番目");
     await rows.nth(0).getByTestId("vs-cue-down").click();
-    await expect(rows.nth(0).getByTestId("vs-cue-text")).toHaveValue("一番目");
+    await expect(rows.nth(0).getByTestId("vs-cue-text-view")).toHaveText("一番目");
     // 時間順に並べ替え
     await page.getByTestId("vs-sort").click();
-    const texts = await page.getByTestId("vs-cue-text").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value));
-    expect(texts).toEqual(["一番目", "二番目", "三番目"]);
+    expect(await cueTexts(page)).toEqual(["一番目", "二番目", "三番目"]);
     await expect(page.getByTestId("vs-order-note")).toHaveCount(0);
     // 削除
     await rows.nth(1).getByTestId("vs-cue-delete").click();
     await expect(rows).toHaveCount(2);
-    expect(await page.getByTestId("vs-cue-text").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value))).toEqual(["一番目", "三番目"]);
+    expect(await cueTexts(page)).toEqual(["一番目", "三番目"]);
+    // 一覧には文字の入力欄がない（文字はプレビューの動画の上で入力する）。入力欄は1つだけ
+    await expect(rows.first().locator("textarea")).toHaveCount(0);
+    await rows.first().getByTestId("vs-cue-text-view").click();
+    await expect(page.getByTestId("vs-cue-text")).toHaveCount(1);
+  });
+
+  test("プレビュー：字幕を追加すると、動画の上の字幕の位置に入力欄が出る。再生中は隠れ、選んだ字幕を削除できる。大きく表示しても編集できる", async ({ page }) => {
+    await openWithVideo(page, video4s);
+    // 「字幕を追加」は再生ボタンの横にある
+    const play = await page.getByTestId("vs-play").boundingBox();
+    const add = await page.getByTestId("vs-add").boundingBox();
+    expect(Math.abs(play!.y - add!.y)).toBeLessThan(20);
+    await seek(page, 1.0);
+    await page.getByTestId("vs-add").click();
+    const editor = page.getByTestId("vs-cue-text");
+    await expect(editor).toBeFocused();
+    await page.keyboard.type("動画の上で入力");
+    await expect(page.getByTestId("vs-cue").first().getByTestId("vs-cue-text-view")).toHaveText("動画の上で入力");
+    // 入力欄は動画の枠の中の、字幕の位置（既定は下の方：88%）にある
+    const video = await page.getByTestId("vs-video").boundingBox();
+    const box = await editor.boundingBox();
+    const cy = (box!.y + box!.height / 2 - video!.y) / video!.height;
+    expect(cy).toBeGreaterThan(0.7);
+    expect(cy).toBeLessThan(0.98);
+    // 再生中は入力欄を隠し、書き出しと同じ描画で流す
+    await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => { v.muted = true; v.loop = true; return v.play(); });
+    await expect(editor).toHaveCount(0);
+    await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => v.pause());
+    await expect(editor).toBeVisible();
+
+    // 大きく表示しても、追加・入力・削除ができる
+    await page.getByTestId("preview-fullscreen").click();
+    const frame = page.locator('[data-preview-fullscreen="true"]');
+    await expect(frame).toBeVisible();
+    await seek(page, 2.5);
+    await frame.getByTestId("vs-add").click();
+    await expect(frame.getByTestId("vs-cue-text")).toBeFocused();
+    await page.keyboard.type("大きく表示で入力");
+    await expect(frame.getByTestId("vs-timeline-row")).toHaveCount(2);
+    await frame.getByTestId("vs-preview-delete").click();
+    await expect(frame.getByTestId("vs-timeline-row")).toHaveCount(1);
+    await page.getByTestId("preview-fullscreen-close").click();
+    expect(await cueTexts(page)).toEqual(["動画の上で入力"]);
   });
 
   test("字幕が0件・不正な時間・動画の長さを超える字幕は、書き出す前にエラーを出し、書き出さない。重なりは警告だけ", async ({ page }) => {
@@ -292,6 +340,11 @@ test.describe("動画字幕追加：字幕の編集とプレビュー", () => {
     await row1.getByLabel("1番目の文字の大きさの数値").blur();
     await row1.getByTestId("vs-cue-color-黄").click();
     await row1.getByTestId("vs-cue-outline").uncheck();
+    // 入力欄にも、選んだ字幕の見た目（色・位置）が反映される
+    await expect(page.getByTestId("vs-cue-text")).toHaveCSS("color", "rgb(253, 216, 53)");
+    // 入力中の字幕はキャンバスには描かない（二重にならない）。2番目を選ぶと、1番目はキャンバスに描かれる
+    await page.getByTestId("vs-cue").nth(1).getByTestId("vs-cue-text-view").click();
+    await seek(page, 1.0);
     const cueEl = page.getByTestId("vs-overlay-cue");
     await expect(cueEl).toHaveAttribute("data-y", "10");
     await expect(cueEl).toHaveAttribute("data-size", "12");
@@ -314,13 +367,10 @@ test.describe("動画字幕追加：字幕の編集とプレビュー", () => {
     await page.getByTestId("vs-cue").nth(1).getByTestId("vs-cue-seek").click();
     await expect(cueEl).toHaveAttribute("data-y", "88");
     await expect(cueEl).toHaveAttribute("data-color", "#ffffff");
-    // 再生中でも、字幕の文字を編集できる（プレビューにすぐ出る）
-    await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => { v.muted = true; v.loop = true; return v.play(); });
-    await page.getByTestId("vs-cue").nth(1).getByTestId("vs-cue-text").fill("再生中に変更");
-    expect(await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => v.paused)).toBe(false);
-    await page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => v.pause());
+    // プレビューの入力欄で文字を変えると、すぐ反映される
+    await editText(page, 1, "あとから変更");
     await seek(page, 2.5);
-    await expect(cueEl).toHaveText(["再生中に変更"]);
+    await expect(cueEl).toHaveText(["あとから変更"]);
   });
 
   test("タイムライン：字幕ごとのバーの端・真ん中をドラッグして、表示時間を変えられる。目盛りを押すと再生位置が動く", async ({ page }) => {
@@ -358,27 +408,6 @@ test.describe("動画字幕追加：字幕の編集とプレビュー", () => {
     await page.mouse.click(ruler!.x + ruler!.width / 2, ruler!.y + ruler!.height / 2);
     await expect.poll(async () => page.getByTestId("vs-video").evaluate((v: HTMLVideoElement) => v.currentTime)).toBeGreaterThan(1.8);
   });
-
-  test("字幕ファイル（.srt・.vtt）を保存できる（時間順・表示設定入り）", async ({ page }) => {
-    await openWithVideo(page, video4s);
-    await addCue(page, "00:00:02.000", "00:00:03.000", "二");
-    await addCue(page, "00:00:00.500", "00:00:01.500", "一");
-    const save = async (id: string) => {
-      const wait = page.waitForEvent("download");
-      await page.getByTestId(id).click();
-      const d = await wait;
-      const dest = path.join(tmp(), d.suggestedFilename());
-      await d.saveAs(dest);
-      return { name: d.suggestedFilename(), text: fs.readFileSync(dest, "utf8") };
-    };
-    const srt = await save("vs-save-srt");
-    expect(srt.name).toMatch(/\.srt$/);
-    expect(srt.text).toBe("1\n00:00:00,500 --> 00:00:01,500\n一\n\n2\n00:00:02,000 --> 00:00:03,000\n二\n");
-    const vtt = await save("vs-save-vtt");
-    expect(vtt.name).toMatch(/\.vtt$/);
-    expect(vtt.text).toContain("WEBVTT\n\nSTYLE\n::cue { color: #ffffff; background-color: rgba(0,0,0,0); font-size: 100%; }");
-    expect(vtt.text).toContain("00:00:00.500 --> 00:00:01.500 align:center\n一");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -387,83 +416,34 @@ test.describe("動画字幕追加：字幕の編集とプレビュー", () => {
 test.describe("動画字幕追加：書き出し", () => {
   test.setTimeout(180_000);
 
-  test("MP4（H.264＋AAC）→ MKV：映像・音声はそのまま、字幕は独立した字幕トラック（WebVTT）として正しい時間で入る", async ({ page }) => {
-    const src = makeVideo({ sec: 4, audio: true });
-    await openWithVideo(page, src);
-    await chooseTrackMode(page);
-    // MP4 からは MKV だけを選べる
-    await expect(page.getByTestId("vs-container-mkv")).toBeChecked();
-    await expect(page.getByTestId("vs-container-webm")).toHaveCount(0);
-    await addCue(page, "00:00:01.000", "00:00:03.000", "こんにちは");
-    await addCue(page, "00:00:03.000", "00:00:03.900", "今日は旅行に来ています");
-    for (const n of [0, 1]) {
-      const row = page.getByTestId("vs-cue").nth(n);
-      await row.getByTestId("vs-cue-look").locator("summary").click();
-      await row.getByTestId("vs-cue-color-黄").click();
-    }
-    const out = await exportAndSave(page);
-    expect(out).toMatch(/-subtitled\.mkv$/);
-    await expect(page.getByTestId("vs-result-copy")).toContainText("映像：そのまま（再エンコードなし）・音声：そのまま（再エンコードなし）");
-
-    const buf = fs.readFileSync(out);
-    const { tracks } = parseMkv(buf);
-    expect(tracks.map((t) => t.type)).toEqual([1, 2, 17]); // 映像・音声・字幕の順
-    const { track, cues } = subtitleCuesOf(buf);
-    expect(track?.codecId).toBe("S_TEXT/WEBVTT");
-    expect(track?.language).toBe("jpn");
-    expect(track?.name).toBe("日本語");
-    expect(track?.codecPrivate).toContain("::cue { color: #fdd835;");
-    expect(cues.map((c) => c.text)).toEqual(["こんにちは", "今日は旅行に来ています"]);
-
-    // 映像・音声が残り、フレーム数も同じ。字幕の時間は、映像の最初のフレームとの差が入力どおり
-    const before = probeStreams(src);
-    const after = probeStreams(out);
-    expect(after.video).toBe("h264");
-    expect(after.audio).toBe("aac");
-    expect(after.frames).toBe(before.frames);
-    const offset = (after.videoFirst ?? 0) - (before.videoFirst ?? 0);
-    expect(cues[0].start - offset).toBeCloseTo(1.0, 2);
-    expect(cues[0].end - offset).toBeCloseTo(3.0, 2);
-    expect(cues[1].start - offset).toBeCloseTo(3.0, 2);
-    expect(cues[1].end - offset).toBeCloseTo(3.9, 2);
-  });
-
-  test("音声のない動画でも書き出せる（映像と字幕だけ）", async ({ page }) => {
-    const src = makeVideo({ sec: 2, audio: false });
-    await openWithVideo(page, src);
-    await chooseTrackMode(page);
-    await addCue(page, "00:00:00.200", "00:00:01.800", "音声なし");
-    const out = await exportAndSave(page);
-    await expect(page.getByTestId("vs-result-copy")).toContainText("映像：そのまま（再エンコードなし）");
-    await expect(page.getByTestId("vs-result-copy")).not.toContainText("音声");
-    const { tracks } = parseMkv(fs.readFileSync(out));
-    expect(tracks.map((t) => t.type)).toEqual([1, 17]);
-    expect(subtitleCuesOf(fs.readFileSync(out)).cues).toEqual([{ start: 0.2, end: 1.8, text: "音声なし" }]);
-  });
-
-  test("WebM の動画は WebM でも書き出せる（映像はそのまま、字幕トラック入り）", async ({ page }) => {
+  test("書き出しは、字幕を焼き付けた動画だけ（字幕トラック・字幕ファイルの選択肢はない）。WebMでも書き出せる", async ({ page }) => {
     await openWithVideo(page, fixtures.webm);
-    await chooseTrackMode(page);
-    await expect(page.getByTestId("vs-container-webm")).toBeVisible();
-    await page.getByTestId("vs-container-webm").check();
+    await expect(page.getByTestId("vs-mode")).toHaveCount(0);
+    await expect(page.getByTestId("vs-save-srt")).toHaveCount(0);
+    await expect(page.getByTestId("vs-save-vtt")).toHaveCount(0);
+    await expect(page.getByText("字幕トラック")).toHaveCount(0);
+    await page.getByTestId("vs-burn-container-webm").check();
     await addCue(page, "00:00:00.100", "00:00:00.900", "WebM の字幕");
     const out = await exportAndSave(page);
     expect(out).toMatch(/-subtitled\.webm$/);
-    const buf = fs.readFileSync(out);
-    expect(buf.includes(Buffer.from("webm"))).toBe(true); // DocType
-    const { track, cues } = subtitleCuesOf(buf);
-    expect(track?.codecId).toBe("S_TEXT/WEBVTT");
-    expect(cues).toEqual([{ start: 0.1, end: 0.9, text: "WebM の字幕" }]);
-    expect(probeStreams(out).video).toBe("vp8");
-    await expect(page.getByTestId("vs-result-copy")).toContainText("映像：そのまま（再エンコードなし）");
+    expect(probeStreams(out).video).not.toBeNull();
+  });
+
+  test("音声のない動画でも書き出せる（映像だけ）", async ({ page }) => {
+    const src = makeVideo({ sec: 2, audio: false });
+    await openWithVideo(page, src);
+    await addCue(page, "00:00:00.200", "00:00:01.800", "音声なし");
+    const out = await exportAndSave(page);
+    const streams = probeStreams(out);
+    expect(streams.video).not.toBeNull();
+    expect(streams.audio).toBeNull();
   });
 
   test("書き出し中にキャンセルすると、結果を出さずに止まり、そのあともう一度書き出せる", async ({ page }) => {
-    const src = makeVideo({ sec: 20, audio: true, w: 640, h: 360, bitrate: "4M" });
+    const src = makeVideo({ sec: 6, audio: true, w: 640, h: 360, bitrate: "4M" });
     await openWithVideo(page, src);
-    await chooseTrackMode(page);
     await addCue(page, "00:00:01.000", "00:00:02.000", "キャンセル");
-    // コピーだけの書き出しは速く終わるため、ファイルの読み込みを少し遅くして、書き出しの途中で止められるようにする
+    // 書き出しの途中で止められるよう、ファイルの読み込みを少し遅くする
     await page.evaluate(() => {
       const w = window as unknown as { __slow: boolean };
       w.__slow = true;
@@ -482,15 +462,15 @@ test.describe("動画字幕追加：書き出し", () => {
       (window as unknown as { __slow: boolean }).__slow = false;
     });
     const out = await exportAndSave(page);
-    expect(subtitleCuesOf(fs.readFileSync(out)).cues.map((c) => c.text)).toEqual(["キャンセル"]);
+    expect(out).toMatch(/-subtitled\.mp4$/);
+    expect(probeStreams(out).video).not.toBeNull();
   });
 
-  test("映像に焼き付ける（既定）：プレビューと同じ位置・色で字幕が映像に描かれ、どの再生アプリでも見える。音声も残る", async ({ page }) => {
+  test("映像に焼き付ける：プレビューと同じ位置・色で字幕が映像に描かれ、どの再生アプリでも見える。音声も残る", async ({ page }) => {
     // 赤い色が入らない、灰色の動画（音声あり）
     const src = path.join(tmp(), "gray.mp4");
     execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=320x240:r=30:d=3", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "3", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", src]);
     await openWithVideo(page, src);
-    await expect(page.getByTestId("vs-mode").getByRole("radio", { name: /焼き付ける/ })).toHaveAttribute("aria-checked", "true");
     await addCue(page, "00:00:00.000", "00:00:02.500", "■■■■");
     const row = page.getByTestId("vs-cue").nth(0);
     await row.getByTestId("vs-cue-look").locator("summary").click();

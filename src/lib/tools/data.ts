@@ -1287,7 +1287,7 @@ const toolDefinitions: Tool[] = [
     id: "video-subtitle",
     name: "動画字幕追加",
     category: "video",
-    description: "動画に字幕を追加します。字幕ごとにフォント・色・縁取り・位置・フェードを設定し、タイムラインで表示時間を調整できます。映像への焼き付けと、ON・OFFできる字幕トラックを選べます",
+    description: "動画に字幕を追加します。字幕ごとにフォント・色・縁取り・位置・フェードを設定し、タイムラインで表示時間を調整できます。字幕は動画の上で入力し、映像に焼き付けて書き出します",
     status: "available",
     requiredPlan: "premium",
     processor: "browser",

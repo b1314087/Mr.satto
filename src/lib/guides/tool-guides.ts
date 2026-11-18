@@ -664,9 +664,9 @@ export const toolGuides: Record<string, ToolGuide> = {
   "video-subtitle": {
     steps: [
       pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),
-      step("字幕を追加して時間を決める", [file(MP4), preview("video", "タイムラインのバーをドラッグ"), head("字幕（1件）"), run("＋ 字幕を追加")], 3),
+      step("動画の上で字幕を入力", [file(MP4), preview("video", "動画の上の枠に入力・バーで時間を調整"), btn("＋ 字幕を追加")], 2),
       step("字幕ごとの見た目を決める", [head("1番目の見た目"), seg("フォント", ["ゴシック", "太ゴシック", "明朝", "丸ゴシック"], 0), slider("文字の大きさ", 0.3), slider("横の位置（X）", 0.5), slider("縦の位置（Y）", 0.88)], 1),
-      ...finish("書き出す", "字幕つきの動画を書き出す", [head("書き出し"), seg(undefined, ["映像に焼き付ける", "字幕トラック"], 0)]).slice(0, 1),
+      ...finish("書き出す", "字幕つきの動画を書き出す", [head("書き出し"), seg("出力形式", ["MP4", "WebM"], 0)]).slice(0, 1),
     ],
   },
   "video-mosaic": {

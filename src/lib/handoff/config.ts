@@ -117,7 +117,7 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "video-cut-merge": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   "video-metadata-remove": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   "video-mosaic": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
-  // 動画字幕：字幕トラック入り（MKV）は受け取れるツールがないため、送り出しの候補はMP4・WebMだけになる
+  // 動画字幕：字幕を焼き付けたMP4・WebMを送り出す
   "video-subtitle": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   "video-thumbnail": { role: "inspect", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB } },
 
