@@ -550,6 +550,8 @@ export function PdfFillAnnotateTool({
   if (listSyncedActiveId !== activeObjectId) {
     setListSyncedActiveId(activeObjectId);
     setOpenListIds(activeObjectId ? [activeObjectId] : []);
+    // 全画面のときは、置いた・選んだ注釈の設定を、左の「詳細設定」に出す（2026-11-18）
+    if (activeObjectId && fullscreen) setFullscreenSettingsOpen(true);
     if (!activeObjectId) {
       setExtraSelectedIds([]);
       setMultiSelectMode(false);
@@ -969,6 +971,17 @@ export function PdfFillAnnotateTool({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, selectedSentenceIds, pdfBytes, inactive]);
+
+  /** 注釈の設定を出す（一覧でその注釈を開き、全画面なら左の詳細設定を出して、その注釈の設定までスクロールする） */
+  function openObjectSettings(id: string) {
+    setOpenListIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    if (fullscreen) setFullscreenSettingsOpen(true);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        document.querySelector(`[data-object-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      })
+    );
+  }
 
   function toggleFullscreen(next: boolean) {
     fullscreenRef.current = next;
@@ -1651,6 +1664,379 @@ export function PdfFillAnnotateTool({
   }
 
   const previewShown = Boolean(file && pageImageUrl && currentPageInfo);
+  // 配置した注釈の一覧（それぞれの設定を開ける）。ふだんは設定の列の下、全画面の「詳細設定」を出したときは、その中に出す
+  const objectListContent = (
+    <>
+              <h3 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">配置した注釈（{objects.length}件）</h3>
+              <ul className="flex flex-col gap-2" data-testid="pdf-annotate-object-list">
+                {objects.map((obj) => {
+                  const open = openListIds.includes(obj.id);
+                  const summary = objectSummary(obj);
+                  const special = isWhiteoutObject(obj) || isBlackoutObject(obj);
+                  return (
+                  <li
+                    key={obj.id}
+                    data-testid="pdf-annotate-object-item"
+                    data-object-id={obj.id}
+                    data-expanded={open ? "true" : "false"}
+                    onClick={() => {
+                      if (obj.page !== selectedPage) handlePageChange(obj.page);
+                      setActiveObjectId(obj.id);
+                    }}
+                    className={`flex flex-col gap-2 rounded-lg border p-2 text-xs ${
+                      activeObjectId === obj.id ? "border-blue-400 bg-blue-50 dark:bg-blue-950/20" : "border-neutral-200 dark:border-neutral-800"
+                    }`}
+                  >
+                    {/* 見出し：何の注釈か（種類・中身・ページ）。押すと開く／閉じる */}
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      data-testid="pdf-annotate-object-summary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (obj.page !== selectedPage) handlePageChange(obj.page);
+                        if (activeObjectId !== obj.id) {
+                          setActiveObjectId(obj.id);
+                          setOpenListIds([obj.id]);
+                        } else {
+                          setOpenListIds((prev) => (prev.includes(obj.id) ? prev.filter((id) => id !== obj.id) : [...prev, obj.id]));
+                        }
+                      }}
+                      className="flex w-full min-w-0 items-center gap-2 text-left"
+                    >
+                      <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                        {obj.page}p
+                      </span>
+                      {isWhiteoutObject(obj) && (
+                        <span
+                          data-testid="pdf-whiteout-badge"
+                          className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                        >
+                          白消し
+                        </span>
+                      )}
+                      {isBlackoutObject(obj) && (
+                        <span
+                          data-testid="pdf-blackout-badge"
+                          className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-red-800 dark:bg-red-900/40 dark:text-red-200"
+                          title={BLACKOUT_NOTICE.body}
+                        >
+                          黒塗り（見た目だけ・元データは残る）
+                        </span>
+                      )}
+                      {!special && <span className="shrink-0 font-semibold text-neutral-700 dark:text-neutral-200">{summary.kind}</span>}
+                      {!special && summary.detail && (
+                        <span className="min-w-0 truncate text-neutral-500 dark:text-neutral-400" data-testid="pdf-annotate-object-detail">
+                          {summary.detail}
+                        </span>
+                      )}
+                      <span className="ml-auto shrink-0 text-neutral-400" aria-hidden="true">
+                        {open ? "▲" : "▼"}
+                      </span>
+                    </button>
+                    {open && (
+                    <div className="flex flex-wrap items-center gap-2" data-testid="pdf-annotate-object-detail-panel">
+
+                    {obj.type === "text" && (
+                      <>
+                        {/* 2026-11：文字を打つ欄を、行いっぱいの幅・3行以上の高さに広げた（小さくて打ちにくかったため）。日付の挿入はやめた */}
+                        <label className="flex w-full basis-full items-center gap-1">
+                          <span className="sr-only">テキスト内容</span>
+                          <textarea
+                            rows={Math.min(8, Math.max(3, obj.text.split("\n").length))}
+                            value={obj.text}
+                            onFocus={() => (textEditStartRef.current = { id: obj.id, text: obj.text })}
+                            onChange={(e) =>
+                              patchObjectLive(obj.id, { text: e.target.value.slice(0, PDF_FILL_ANNOTATE_LIMITS.maxTextLength) })
+                            }
+                            onBlur={() => {
+                              const start = textEditStartRef.current;
+                              textEditStartRef.current = null;
+                              if (start && start.id === obj.id) {
+                                const latest = objects.find((o) => o.id === obj.id);
+                                if (latest && latest.type === "text" && latest.text !== start.text) {
+                                  pushHistory(objects.map((o) => (o.id === obj.id ? { ...o, text: start.text } : o)));
+                                }
+                              }
+                            }}
+                            placeholder="テキストを入力（Enterで改行）"
+                            className="w-full resize-y rounded border border-neutral-300 px-2.5 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                            data-testid="pdf-annotate-text-input"
+                          />
+                        </label>
+                        <div className="w-56">
+                          <SliderField
+                            label="文字サイズ"
+                            value={obj.fontSize}
+                            min={6}
+                            max={96}
+                            unit="pt"
+                            onChange={(v) => patchObjectWithHistory(obj.id, { fontSize: v })}
+                          />
+                        </div>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={obj.bold}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { bold: e.target.checked })}
+                          />
+                          太字
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input type="checkbox" checked={!!obj.vertical} onChange={() => toggleTextVertical(obj)} data-testid="pdf-annotate-list-vertical" />
+                          縦書き
+                        </label>
+                        <label className="flex items-center gap-1">
+                          整列
+                          <select
+                            value={obj.align ?? "left"}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { align: e.target.value as TextAlign })}
+                            className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          >
+                            {(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => (
+                              <option key={a} value={a}>
+                                {ALIGN_LABELS[a]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </>
+                    )}
+
+                    {obj.type === "checkbox" && (
+                      <>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={obj.checked}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { checked: e.target.checked })}
+                          />
+                          チェック
+                        </label>
+                        <label className="flex items-center gap-1">
+                          大きさ
+                          <input
+                            type="number"
+                            min={8}
+                            max={64}
+                            value={obj.size}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { size: Math.min(64, Math.max(8, Number(e.target.value) || 8)) })}
+                            className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          マーク
+                          <select
+                            value={obj.markStyle ?? "check"}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { markStyle: e.target.value as CheckboxMarkStyle })}
+                            className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          >
+                            {(Object.keys(MARK_STYLE_LABELS) as CheckboxMarkStyle[]).map((m) => (
+                              <option key={m} value={m}>
+                                {MARK_STYLE_LABELS[m]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={obj.frame !== false}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { frame: e.target.checked })}
+                          />
+                          枠
+                        </label>
+                      </>
+                    )}
+
+                    {obj.type === "ink" && (
+                      <>
+                        <label className="flex items-center gap-1">
+                          太さ
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            step={0.5}
+                            value={obj.strokeWidth}
+                            onChange={(e) =>
+                              patchObjectWithHistory(obj.id, { strokeWidth: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })
+                            }
+                            className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                      </>
+                    )}
+
+                    {obj.type === "image" && (
+                      <>
+                        <label className="flex items-center gap-1">
+                          幅
+                          <input
+                            type="number"
+                            min={10}
+                            max={2000}
+                            value={Math.round(obj.width)}
+                            onChange={(e) => {
+                              const width = Math.min(2000, Math.max(10, Number(e.target.value) || 10));
+                              const aspectLocked = obj.aspectLocked !== false;
+                              patchObjectWithHistory(obj.id, {
+                                width,
+                                height: aspectLocked ? width / obj.aspectRatio : obj.height,
+                              });
+                            }}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          高さ
+                          <input
+                            type="number"
+                            min={10}
+                            max={2000}
+                            disabled={obj.aspectLocked !== false}
+                            value={Math.round(obj.height)}
+                            onChange={(e) => {
+                              const height = Math.min(2000, Math.max(10, Number(e.target.value) || 10));
+                              patchObjectWithHistory(obj.id, { height });
+                            }}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={obj.aspectLocked !== false}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { aspectLocked: e.target.checked })}
+                          />
+                          縦横比を固定
+                        </label>
+                        <label className="flex items-center gap-1">
+                          回転
+                          <input
+                            type="number"
+                            min={0}
+                            max={359}
+                            value={Math.round(obj.rotation ?? 0)}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { rotation: normalizeRotation(Number(e.target.value) || 0) })}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                          °
+                        </label>
+                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                      </>
+                    )}
+
+                    {obj.type === "shape" && obj.shapeKind !== "line" && (
+                      <>
+                        <label className="flex items-center gap-1">
+                          幅
+                          <input
+                            type="number"
+                            min={5}
+                            max={2000}
+                            value={Math.round(obj.width)}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { width: Math.min(2000, Math.max(5, Number(e.target.value) || 5)) })}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          高さ
+                          <input
+                            type="number"
+                            min={5}
+                            max={2000}
+                            value={Math.round(obj.height)}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { height: Math.min(2000, Math.max(5, Number(e.target.value) || 5)) })}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input type="checkbox" checked={obj.fill} onChange={(e) => patchObjectWithHistory(obj.id, { fill: e.target.checked })} />
+                          塗りつぶし
+                        </label>
+                        <label className="flex items-center gap-1">
+                          回転
+                          <input
+                            type="number"
+                            min={0}
+                            max={359}
+                            value={Math.round(obj.rotation)}
+                            onChange={(e) => patchObjectWithHistory(obj.id, { rotation: normalizeRotation(Number(e.target.value) || 0) })}
+                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+                          />
+                          °
+                        </label>
+                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                      </>
+                    )}
+
+                    {obj.type === "shape" && obj.shapeKind === "line" && (
+                      <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (obj.page !== selectedPage) handlePageChange(obj.page);
+                        setRepositioningId(obj.id);
+                        setActiveObjectId(obj.id);
+                      }}
+                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
+                    >
+                      移動
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        duplicateObject(obj.id);
+                      }}
+                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
+                    >
+                      複製
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderObject(obj.id, "front");
+                      }}
+                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
+                    >
+                      最前面へ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderObject(obj.id, "back");
+                      }}
+                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
+                    >
+                      最背面へ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeObject(obj.id);
+                      }}
+                      className="rounded border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400"
+                    >
+                      削除
+                    </button>
+                    </div>
+                    )}
+                  </li>
+                  );
+                })}
+              </ul>
+    </>
+  );
+
   return (
     <div className="flex flex-col gap-6">
       {previewToolbar && !previewShown && previewToolbar}
@@ -1723,7 +2109,7 @@ export function PdfFillAnnotateTool({
               onClick={() => setFullscreenSettingsOpen(false)}
               className="self-end rounded border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700"
             >
-              ✕ 設定をしまう
+              ✕ 詳細設定をしまう
             </button>
           )}
           <StepHeading n={2} as="h2">記入・注釈を配置</StepHeading>
@@ -2169,6 +2555,11 @@ export function PdfFillAnnotateTool({
             <p className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">配置し直す位置をクリックしてください。</p>
           )}
 
+          {fullscreen && fullscreenSettingsOpen && objects.length > 0 && (
+            <div className="flex min-w-0 flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800" data-testid="pdf-fullscreen-object-list">
+              {objectListContent}
+            </div>
+          )}
           </div>
 
           {/* プレビューの列：PCでは画面に固定（スクロールしても見えたまま）。一番上に「やりたい操作」の帯を置く */}
@@ -2196,7 +2587,7 @@ export function PdfFillAnnotateTool({
                   fullscreenSettingsOpen ? "bg-blue-600 text-white" : "border border-neutral-300 dark:border-neutral-700"
                 }`}
               >
-                <span aria-hidden="true">⚙</span>設定
+                <span aria-hidden="true">⚙</span>詳細設定
               </button>
             )}
             {fullscreen && pages.length > 1 && (
@@ -2819,12 +3210,22 @@ export function PdfFillAnnotateTool({
                       type="button"
                       className={`${btn} ${multiSelectMode ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
                       aria-pressed={multiSelectMode}
-                      title="ほかの注釈も選んで、位置を揃える（PCでは Shift を押しながら押しても選べます）"
+                      title="ほかの注釈もいくつでも選んで、位置を揃える（PCでは Shift を押しながら押しても選べます）"
                       data-testid="pdf-annotate-toolbar-multi"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => setMultiSelectMode((v) => !v)}
                     >
-                      複数選択
+                      位置合わせ
+                    </button>
+                    <button
+                      type="button"
+                      className={btn}
+                      title="この文字の設定を、左の詳細設定に出す"
+                      data-testid="pdf-annotate-toolbar-settings"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => openObjectSettings(obj.id)}
+                    >
+                      詳細設定
                     </button>
                     <button type="button" className={`${btn} text-red-600`} title="この文字を削除" aria-label="この文字を削除" onMouseDown={(e) => e.preventDefault()} onClick={() => removeObject(obj.id)}>
                       ✕
@@ -2892,14 +3293,14 @@ export function PdfFillAnnotateTool({
                       style={{ left: Math.max(0, Math.min(b.minX * pageRenderScale, pageImagePixelSize.width - 260)), top: Math.min(bottom + 6, Math.max(0, pageImagePixelSize.height - 60)) }}
                       data-testid="pdf-annotate-multi-hint"
                     >
-                      揃えたい注釈を押して、いっしょに選んでください（もう一度押すと外れます）。
+                      揃えたい注釈を押して、いっしょに選んでください（いくつでも選べます。もう一度押すと外れます）。
                     </p>
                   );
                 }
                 return null;
               })()}
 
-              {/* 文字以外の注釈を選んだときの、小さな操作の帯（複製・複数選択・削除。2026-11-17） */}
+              {/* 文字以外の注釈を選んだときの、小さな操作の帯（複製・位置合わせ・詳細設定・削除。2026-11-17・2026-11-18） */}
               {(() => {
                 const obj = pageObjects.find((o) => o.id === activeObjectId);
                 if (!obj || obj.type === "text" || mode === "ink" || extraSelectedIds.length > 0 || repositioningId) return null;
@@ -2912,7 +3313,7 @@ export function PdfFillAnnotateTool({
                   <div
                     data-testid="pdf-annotate-object-toolbar"
                     className="absolute z-30 flex items-center gap-0.5 rounded-lg border border-neutral-300 bg-white p-0.5 text-neutral-800 shadow-md dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-                    style={{ left: Math.max(0, Math.min(b.minX * pageRenderScale, pageImagePixelSize.width - 230)), top: barTop }}
+                    style={{ left: Math.max(0, Math.min(b.minX * pageRenderScale, pageImagePixelSize.width - 300)), top: barTop }}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -2923,11 +3324,20 @@ export function PdfFillAnnotateTool({
                       type="button"
                       className={`${btn} ${multiSelectMode ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
                       aria-pressed={multiSelectMode}
-                      title="ほかの注釈も選んで、位置を揃える（PCでは Shift を押しながら押しても選べます）"
+                      title="ほかの注釈もいくつでも選んで、位置を揃える（PCでは Shift を押しながら押しても選べます）"
                       data-testid="pdf-annotate-toolbar-multi"
                       onClick={() => setMultiSelectMode((v) => !v)}
                     >
-                      複数選択
+                      位置合わせ
+                    </button>
+                    <button
+                      type="button"
+                      className={btn}
+                      title="この注釈の設定を、左の詳細設定に出す"
+                      data-testid="pdf-annotate-toolbar-settings"
+                      onClick={() => openObjectSettings(obj.id)}
+                    >
+                      詳細設定
                     </button>
                     <button type="button" className={`${btn} text-red-600`} aria-label="この注釈を削除" onClick={() => removeObject(obj.id)}>
                       ✕
@@ -2939,374 +3349,9 @@ export function PdfFillAnnotateTool({
           </div>
           </div>
 
-          {objects.length > 0 && (
+          {objects.length > 0 && !(fullscreen && fullscreenSettingsOpen) && (
             <div className="flex min-w-0 flex-col gap-2 lg:col-start-1 lg:row-start-2">
-              <h3 className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">配置した注釈（{objects.length}件）</h3>
-              <ul className="flex flex-col gap-2" data-testid="pdf-annotate-object-list">
-                {objects.map((obj) => {
-                  const open = openListIds.includes(obj.id);
-                  const summary = objectSummary(obj);
-                  const special = isWhiteoutObject(obj) || isBlackoutObject(obj);
-                  return (
-                  <li
-                    key={obj.id}
-                    data-testid="pdf-annotate-object-item"
-                    data-expanded={open ? "true" : "false"}
-                    onClick={() => {
-                      if (obj.page !== selectedPage) handlePageChange(obj.page);
-                      setActiveObjectId(obj.id);
-                    }}
-                    className={`flex flex-col gap-2 rounded-lg border p-2 text-xs ${
-                      activeObjectId === obj.id ? "border-blue-400 bg-blue-50 dark:bg-blue-950/20" : "border-neutral-200 dark:border-neutral-800"
-                    }`}
-                  >
-                    {/* 見出し：何の注釈か（種類・中身・ページ）。押すと開く／閉じる */}
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      data-testid="pdf-annotate-object-summary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (obj.page !== selectedPage) handlePageChange(obj.page);
-                        if (activeObjectId !== obj.id) {
-                          setActiveObjectId(obj.id);
-                          setOpenListIds([obj.id]);
-                        } else {
-                          setOpenListIds((prev) => (prev.includes(obj.id) ? prev.filter((id) => id !== obj.id) : [...prev, obj.id]));
-                        }
-                      }}
-                      className="flex w-full min-w-0 items-center gap-2 text-left"
-                    >
-                      <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                        {obj.page}p
-                      </span>
-                      {isWhiteoutObject(obj) && (
-                        <span
-                          data-testid="pdf-whiteout-badge"
-                          className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                        >
-                          白消し
-                        </span>
-                      )}
-                      {isBlackoutObject(obj) && (
-                        <span
-                          data-testid="pdf-blackout-badge"
-                          className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-red-800 dark:bg-red-900/40 dark:text-red-200"
-                          title={BLACKOUT_NOTICE.body}
-                        >
-                          黒塗り（見た目だけ・元データは残る）
-                        </span>
-                      )}
-                      {!special && <span className="shrink-0 font-semibold text-neutral-700 dark:text-neutral-200">{summary.kind}</span>}
-                      {!special && summary.detail && (
-                        <span className="min-w-0 truncate text-neutral-500 dark:text-neutral-400" data-testid="pdf-annotate-object-detail">
-                          {summary.detail}
-                        </span>
-                      )}
-                      <span className="ml-auto shrink-0 text-neutral-400" aria-hidden="true">
-                        {open ? "▲" : "▼"}
-                      </span>
-                    </button>
-                    {open && (
-                    <div className="flex flex-wrap items-center gap-2" data-testid="pdf-annotate-object-detail-panel">
-
-                    {obj.type === "text" && (
-                      <>
-                        {/* 2026-11：文字を打つ欄を、行いっぱいの幅・3行以上の高さに広げた（小さくて打ちにくかったため）。日付の挿入はやめた */}
-                        <label className="flex w-full basis-full items-center gap-1">
-                          <span className="sr-only">テキスト内容</span>
-                          <textarea
-                            rows={Math.min(8, Math.max(3, obj.text.split("\n").length))}
-                            value={obj.text}
-                            onFocus={() => (textEditStartRef.current = { id: obj.id, text: obj.text })}
-                            onChange={(e) =>
-                              patchObjectLive(obj.id, { text: e.target.value.slice(0, PDF_FILL_ANNOTATE_LIMITS.maxTextLength) })
-                            }
-                            onBlur={() => {
-                              const start = textEditStartRef.current;
-                              textEditStartRef.current = null;
-                              if (start && start.id === obj.id) {
-                                const latest = objects.find((o) => o.id === obj.id);
-                                if (latest && latest.type === "text" && latest.text !== start.text) {
-                                  pushHistory(objects.map((o) => (o.id === obj.id ? { ...o, text: start.text } : o)));
-                                }
-                              }
-                            }}
-                            placeholder="テキストを入力（Enterで改行）"
-                            className="w-full resize-y rounded border border-neutral-300 px-2.5 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                            data-testid="pdf-annotate-text-input"
-                          />
-                        </label>
-                        <div className="w-56">
-                          <SliderField
-                            label="文字サイズ"
-                            value={obj.fontSize}
-                            min={6}
-                            max={96}
-                            unit="pt"
-                            onChange={(v) => patchObjectWithHistory(obj.id, { fontSize: v })}
-                          />
-                        </div>
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={obj.bold}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { bold: e.target.checked })}
-                          />
-                          太字
-                        </label>
-                        <label className="flex items-center gap-1">
-                          <input type="checkbox" checked={!!obj.vertical} onChange={() => toggleTextVertical(obj)} data-testid="pdf-annotate-list-vertical" />
-                          縦書き
-                        </label>
-                        <label className="flex items-center gap-1">
-                          整列
-                          <select
-                            value={obj.align ?? "left"}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { align: e.target.value as TextAlign })}
-                            className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          >
-                            {(Object.keys(ALIGN_LABELS) as TextAlign[]).map((a) => (
-                              <option key={a} value={a}>
-                                {ALIGN_LABELS[a]}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </>
-                    )}
-
-                    {obj.type === "checkbox" && (
-                      <>
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={obj.checked}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { checked: e.target.checked })}
-                          />
-                          チェック
-                        </label>
-                        <label className="flex items-center gap-1">
-                          大きさ
-                          <input
-                            type="number"
-                            min={8}
-                            max={64}
-                            value={obj.size}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { size: Math.min(64, Math.max(8, Number(e.target.value) || 8)) })}
-                            className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                        </label>
-                        <label className="flex items-center gap-1">
-                          マーク
-                          <select
-                            value={obj.markStyle ?? "check"}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { markStyle: e.target.value as CheckboxMarkStyle })}
-                            className="rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          >
-                            {(Object.keys(MARK_STYLE_LABELS) as CheckboxMarkStyle[]).map((m) => (
-                              <option key={m} value={m}>
-                                {MARK_STYLE_LABELS[m]}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={obj.frame !== false}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { frame: e.target.checked })}
-                          />
-                          枠
-                        </label>
-                      </>
-                    )}
-
-                    {obj.type === "ink" && (
-                      <>
-                        <label className="flex items-center gap-1">
-                          太さ
-                          <input
-                            type="number"
-                            min={1}
-                            max={20}
-                            step={0.5}
-                            value={obj.strokeWidth}
-                            onChange={(e) =>
-                              patchObjectWithHistory(obj.id, { strokeWidth: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })
-                            }
-                            className="w-14 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                        </label>
-                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
-                      </>
-                    )}
-
-                    {obj.type === "image" && (
-                      <>
-                        <label className="flex items-center gap-1">
-                          幅
-                          <input
-                            type="number"
-                            min={10}
-                            max={2000}
-                            value={Math.round(obj.width)}
-                            onChange={(e) => {
-                              const width = Math.min(2000, Math.max(10, Number(e.target.value) || 10));
-                              const aspectLocked = obj.aspectLocked !== false;
-                              patchObjectWithHistory(obj.id, {
-                                width,
-                                height: aspectLocked ? width / obj.aspectRatio : obj.height,
-                              });
-                            }}
-                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                        </label>
-                        <label className="flex items-center gap-1">
-                          高さ
-                          <input
-                            type="number"
-                            min={10}
-                            max={2000}
-                            disabled={obj.aspectLocked !== false}
-                            value={Math.round(obj.height)}
-                            onChange={(e) => {
-                              const height = Math.min(2000, Math.max(10, Number(e.target.value) || 10));
-                              patchObjectWithHistory(obj.id, { height });
-                            }}
-                            className="w-16 rounded border border-neutral-300 px-1 py-1 disabled:opacity-40 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                        </label>
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={obj.aspectLocked !== false}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { aspectLocked: e.target.checked })}
-                          />
-                          縦横比を固定
-                        </label>
-                        <label className="flex items-center gap-1">
-                          回転
-                          <input
-                            type="number"
-                            min={0}
-                            max={359}
-                            value={Math.round(obj.rotation ?? 0)}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { rotation: normalizeRotation(Number(e.target.value) || 0) })}
-                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                          °
-                        </label>
-                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
-                      </>
-                    )}
-
-                    {obj.type === "shape" && obj.shapeKind !== "line" && (
-                      <>
-                        <label className="flex items-center gap-1">
-                          幅
-                          <input
-                            type="number"
-                            min={5}
-                            max={2000}
-                            value={Math.round(obj.width)}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { width: Math.min(2000, Math.max(5, Number(e.target.value) || 5)) })}
-                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                        </label>
-                        <label className="flex items-center gap-1">
-                          高さ
-                          <input
-                            type="number"
-                            min={5}
-                            max={2000}
-                            value={Math.round(obj.height)}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { height: Math.min(2000, Math.max(5, Number(e.target.value) || 5)) })}
-                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                        </label>
-                        <label className="flex items-center gap-1">
-                          <input type="checkbox" checked={obj.fill} onChange={(e) => patchObjectWithHistory(obj.id, { fill: e.target.checked })} />
-                          塗りつぶし
-                        </label>
-                        <label className="flex items-center gap-1">
-                          回転
-                          <input
-                            type="number"
-                            min={0}
-                            max={359}
-                            value={Math.round(obj.rotation)}
-                            onChange={(e) => patchObjectWithHistory(obj.id, { rotation: normalizeRotation(Number(e.target.value) || 0) })}
-                            className="w-16 rounded border border-neutral-300 px-1 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-                          />
-                          °
-                        </label>
-                        <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
-                      </>
-                    )}
-
-                    {obj.type === "shape" && obj.shapeKind === "line" && (
-                      <RotateButtons onRotate={(delta) => rotateObject(obj.id, delta)} />
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (obj.page !== selectedPage) handlePageChange(obj.page);
-                        setRepositioningId(obj.id);
-                        setActiveObjectId(obj.id);
-                      }}
-                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
-                    >
-                      移動
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        duplicateObject(obj.id);
-                      }}
-                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
-                    >
-                      複製
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderObject(obj.id, "front");
-                      }}
-                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
-                    >
-                      最前面へ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderObject(obj.id, "back");
-                      }}
-                      className="rounded border border-neutral-300 px-2 py-1 text-neutral-600 hover:border-blue-400 hover:text-blue-600 dark:border-neutral-700 dark:text-neutral-300"
-                    >
-                      最背面へ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeObject(obj.id);
-                      }}
-                      className="rounded border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400"
-                    >
-                      削除
-                    </button>
-                    </div>
-                    )}
-                  </li>
-                  );
-                })}
-              </ul>
+              {objectListContent}
             </div>
           )}
         </section>

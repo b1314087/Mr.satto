@@ -299,6 +299,19 @@ test.describe("PDF修正: 画面と機能", () => {
     await choosePdfFixOperation(page, "白消し");
     await canvas.click({ position: { x: 200, y: 160 } });
     await expect(page.getByTestId("pdf-whiteout-object")).toHaveCount(1);
+    // 置いた（選んだ）注釈の設定が、左の「詳細設定」に最初から出る（2026-11-18）
+    await expect(page.getByTestId("pdf-settings-column")).toHaveAttribute("data-fullscreen-drawer", "true");
+    await expect(page.getByTestId("pdf-fullscreen-object-list").getByTestId("pdf-annotate-object-item")).toHaveAttribute("data-expanded", "true");
+    await expect(page.getByTestId("pdf-fullscreen-settings")).toHaveText(/詳細設定/);
+    await page.getByTestId("pdf-fullscreen-settings").click();
+    await expect(page.getByTestId("pdf-settings-column")).not.toHaveAttribute("data-fullscreen-drawer", "true");
+    // 帯の「詳細設定」でも、左に設定を出せる。帯には「位置合わせ」もある
+    await page.getByTestId("pdf-whiteout-object").click();
+    await expect(page.getByTestId("pdf-annotate-toolbar-multi")).toHaveText("位置合わせ");
+    await expect(page.getByTestId("pdf-settings-column")).not.toHaveAttribute("data-fullscreen-drawer", "true");
+    await page.getByTestId("pdf-annotate-toolbar-settings").click();
+    await expect(page.getByTestId("pdf-settings-column")).toHaveAttribute("data-fullscreen-drawer", "true");
+    await page.getByTestId("pdf-fullscreen-settings").click();
     // 表示倍率を変えられる
     await page.getByRole("button", { name: "拡大" }).click();
     await expect(page.getByTestId("pdf-fullscreen-zoom")).toHaveText("125%");
@@ -307,7 +320,7 @@ test.describe("PDF修正: 画面と機能", () => {
     await expect(column).not.toHaveAttribute("data-fullscreen", "true");
     expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
     await expect(page.getByTestId("pdf-whiteout-object")).toHaveCount(1);
-    // 全画面のまま、左側に設定の欄を引き出して、文字の設定を変えられる（2026-11-18）
+    // 全画面のまま、左側に詳細設定の欄を引き出して、文字の設定を変えられる（2026-11-18）
     await page.getByTestId("pdf-fullscreen-toggle").click();
     await expect(column).toHaveAttribute("data-fullscreen", "true");
     const drawer = page.getByTestId("pdf-settings-column");

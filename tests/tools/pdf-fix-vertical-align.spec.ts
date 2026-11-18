@@ -219,12 +219,13 @@ print(json.dumps(out))`,
     expect(Math.abs(a.top - b.top)).toBeLessThanOrEqual(1);
   });
 
-  test("文字とチェックの高さ（上下の中央）を揃えられる。帯の「複数選択」でも選べる（スマホ向け）", async ({ page }) => {
+  test("文字とチェックの高さ（上下の中央）を揃えられる。帯の「位置合わせ」でも選べる（スマホ向け）", async ({ page }) => {
     await open(page, 390, 844);
     await addText(page, 0.15, 0.3, "氏名");
     await addCheck(page, 0.7, 0.6);
-    // 文字を選び直して、帯の「複数選択」をオンにし、チェックを押す
+    // 文字を選び直して、帯の「位置合わせ」をオンにし、チェックを押す
     await page.getByTestId("pdf-annotate-text-object").click();
+    await expect(page.getByTestId("pdf-annotate-toolbar-multi")).toHaveText("位置合わせ");
     await page.getByTestId("pdf-annotate-toolbar-multi").click();
     await expect(page.getByTestId("pdf-annotate-multi-hint")).toBeVisible();
     await page.getByTestId("pdf-annotate-checkbox-object").click();

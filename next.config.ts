@@ -178,6 +178,24 @@ const SECURITY_HEADERS = [
   },
 ];
 
+/**
+ * 録音・画面録画のページだけ、マイク・カメラ・画面の共有を許可する（2026-11-18）。
+ * ほかのページは、これまでどおりマイク・カメラを使えない（上の SECURITY_HEADERS）。
+ * 同じ見出し（Permissions-Policy）を、あとに書いた設定で上書きする（Next.js は、あとに一致した設定が勝つ）。
+ * 許可するのは自分のサイト（self）だけで、広告などの埋め込み（iframe）には許可しない。
+ * 実際に使うときは、ブラウザが利用者に「マイクを使ってよいか」を必ず確認する。
+ */
+const MEDIA_CAPTURE_PAGES: { source: string; policy: string }[] = [
+  {
+    source: "/tools/voice-recorder",
+    policy: "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), interest-cohort=()",
+  },
+  {
+    source: "/tools/screen-recorder",
+    policy: "camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=(), usb=(), interest-cohort=()",
+  },
+];
+
 const nextConfig: NextConfig = {
   /** 使用フレームワークを示す X-Powered-By ヘッダーを送らない（情報の最小化。工程36） */
   poweredByHeader: false,
@@ -366,6 +384,7 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: SECURITY_HEADERS,
       },
+      ...MEDIA_CAPTURE_PAGES.map(({ source, policy }) => ({ source, headers: [{ key: "Permissions-Policy", value: policy }] })),
       // プレビュー（一般の人に見せない確認用のアドレス）は、検索エンジンに載せない
       ...(IS_VERCEL_PREVIEW ? [{ source: "/(.*)", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] }] : []),
     ];

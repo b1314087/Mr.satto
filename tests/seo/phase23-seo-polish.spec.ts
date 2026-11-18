@@ -195,6 +195,7 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
     // Excel→Word・Word→Excel：互いと、近い用途のOffice変換（Excel→PDF・Word→PDF・PDF→Excel）を案内
     // 2026-11-17：新しい4ツール（Word結合・Word→画像・Excelシート分割/結合・和暦西暦変換）から、近い用途のツールを案内
     // 2026-11-17：アンケート用紙作成から、近い用途の帳票（名簿テンプレート・座席表）を案内
+    // 2026-11-18：テキスト読み上げ・録音・画面録画から、続けて使う音声・動画のツールを案内
     expect(withPins.map((t) => t.id).sort()).toEqual([
       "excel-merge",
       "excel-sheet-split-merge",
@@ -207,9 +208,12 @@ test.describe("L4: pptx-invertへの内部リンク", () => {
       "pdf-to-word",
       "pptx-invert",
       "receipt-accounting-csv",
+      "screen-recorder",
       "seating-chart",
       "survey-sheet",
+      "text-to-speech",
       "video-subtitle",
+      "voice-recorder",
       "wareki-convert",
       "word-merge",
       "word-to-excel",

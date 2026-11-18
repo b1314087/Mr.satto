@@ -1110,6 +1110,30 @@ const toolDefinitions: Tool[] = [
     keywords: ["音声結合", "mp3結合", "つなげる", "連結", "マージ"],
   },
   {
+    // 2026-11-18：ブラウザに入っている声で読み上げる（無料。保存はできない）。最初は端末の中だけで動く声を選ぶ
+    id: "text-to-speech",
+    name: "テキスト読み上げ",
+    category: "audio",
+    description: "貼り付けた文章を、パソコン・スマホに入っている声で読み上げます。速さ・声の高さを変えられ、読み間違える言葉は読み方を登録できます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["voice-recorder", "video-subtitle"],
+    keywords: ["読み上げ", "テキスト読み上げ", "音声読み上げ", "音読", "文章を読む", "TTS", "合成音声", "聞き直し", "校正"],
+  },
+  {
+    // 2026-11-18：マイクで録音して、MP3・WAV・M4Aなどで保存する（ブラウザの中だけ。サーバーへ送らない）
+    id: "voice-recorder",
+    name: "録音",
+    category: "audio",
+    description: "パソコン・スマホのマイクで録音し、MP3・WAV・M4Aなどで保存します。一時停止・雑音を減らす設定に対応。録音はサーバーへ送りません",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["audio-trim", "audio-convert"],
+    keywords: ["録音", "ボイスレコーダー", "ボイスメモ", "マイク", "音声録音", "会議の録音", "mp3", "レコーダー"],
+  },
+  {
     id: "audio-volume",
     name: "音量調整・ノーマライズ",
     category: "audio",
@@ -1140,6 +1164,18 @@ const toolDefinitions: Tool[] = [
   // Excel変換・OCR等と同様にpremium系統に合わせた（開発指示書 3章）。
   // 既存ツールのrequiredPlanや料金体系は変更していない。
   // ------------------------------------------------------------------
+  {
+    // 2026-11-18：パソコンの画面を録画する（マイク・パソコンの音・カメラの重ね。ブラウザの中だけ。スマホは非対応）
+    id: "screen-recorder",
+    name: "画面録画",
+    category: "video",
+    description: "パソコンの画面を録画します。マイクの声・パソコンの音を一緒に録れて、カメラの映像を隅に重ねることもできます。録画はサーバーへ送りません",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    relatedToolIds: ["video-cut-merge", "video-subtitle"],
+    keywords: ["画面録画", "画面収録", "スクリーン録画", "キャプチャ", "録画", "操作説明", "マニュアル動画", "ワイプ"],
+  },
   {
     id: "video-convert",
     name: "動画形式変換",

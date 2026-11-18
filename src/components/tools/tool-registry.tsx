@@ -215,6 +215,18 @@ const ExcelSheetsTool = dynamic(() =>
   import("./implementations/excel-sheets-tool").then((m) => m.ExcelSheetsTool),
   { loading: ToolLoading }
 );
+const TextToSpeechTool = dynamic(() =>
+  import("./implementations/text-to-speech-tool").then((m) => m.TextToSpeechTool),
+  { loading: ToolLoading }
+);
+const VoiceRecorderTool = dynamic(() =>
+  import("./implementations/voice-recorder-tool").then((m) => m.VoiceRecorderTool),
+  { loading: ToolLoading }
+);
+const ScreenRecorderTool = dynamic(() =>
+  import("./implementations/screen-recorder-tool").then((m) => m.ScreenRecorderTool),
+  { loading: ToolLoading }
+);
 const SurveySheetTool = dynamic(() =>
   import("./implementations/survey-sheet-tool").then((m) => m.SurveySheetTool),
   { loading: ToolLoading }
@@ -591,6 +603,12 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <WarekiConvertTool />;
     case "survey-sheet":
       return <SurveySheetTool />;
+    case "text-to-speech":
+      return <TextToSpeechTool />;
+    case "voice-recorder":
+      return <VoiceRecorderTool />;
+    case "screen-recorder":
+      return <ScreenRecorderTool />;
     case "xls-to-xlsx":
       return <LegacyOfficeConvertTool kind="xls" />;
     case "doc-to-docx":

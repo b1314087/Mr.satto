@@ -369,6 +369,30 @@ export const toolGuides: Record<string, ToolGuide> = {
       step("書き出す・印刷する", [btn("PDF"), btn("Word"), btn("印刷")], 0),
     ],
   },
+  "text-to-speech": {
+    steps: [
+      step("文章を貼り付ける", [text("読み上げる文章", ["こんにちは。これは読み上げのテストです。"])], 0),
+      step("声と速さを選ぶ", [select("声", "Kyoko（ja-JP）"), slider("速さ", 0.35, "1.0倍"), slider("声の高さ", 0.35, "1.0")], 0),
+      step("読み上げる", [btn("▶ 読み上げる"), text(undefined, ["こんにちは。", "これは読み上げのテストです。"])], 0),
+      step("読み方を直す", [adv("読みの登録", "明日 → あした")], 0),
+    ],
+  },
+  "voice-recorder": {
+    steps: [
+      step("録音を始める", [btn("● 録音を始める")], 0),
+      step("話して、終える", [btn("❚❚ 一時停止"), btn("■ 録音を終える")], 1),
+      step("形式を選ぶ", [preview("audio", "録音した音声"), btns(["MP3", "WAV", "M4A"], 0), run("保存用のファイルを作る")], 2),
+      step("ダウンロード", [preview("audio", "保存する音声"), btn("ダウンロード")], 1),
+    ],
+  },
+  "screen-recorder": {
+    steps: [
+      step("録るものを選ぶ", [check("マイクの声も録る"), check("パソコンの音も録る"), check("カメラの映像を隅に重ねる", false)], 0),
+      step("録画を始める", [btn("● 録画を始める")], 0),
+      step("録画を終える", [btn("■ 録画を終える")], 0),
+      step("確かめて保存", [preview("video", "録画した動画"), btn("ダウンロード")], 1),
+    ],
+  },
   "wareki-convert": {
     steps: [
       step("入れ方を選ぶ", [seg(undefined, ["日付を貼り付ける", "Excel・CSVから"], 0)], 0),

@@ -122,6 +122,9 @@ export const TOOL_READINGS: Record<string, string> = {
   "fiscal-calendar": "ねんどかれんだーさくせい",
   "sequence-generator": "れんばん・こうもくいっかつせいせい",
   "survey-sheet": "あんけーとようしさくせい",
+  "text-to-speech": "てきすとよみあげ",
+  "voice-recorder": "ろくおん",
+  "screen-recorder": "がめんろくが",
   // その他
   "wareki-convert": "われき・せいれきいっかつへんかん",
   "pomodoro-timer": "ぽもどーろたいまー",
