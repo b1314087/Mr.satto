@@ -291,6 +291,8 @@ export function PdfFillAnnotateTool({
   const [zoom, setZoom] = useState<number>(100);
   // プレビューを全画面にして編集する（2026-11-18）。プレビューの列を画面いっぱいに広げるだけなので、置いたものや操作はそのまま
   const [fullscreen, setFullscreen] = useState(false);
+  // 全画面のときに、左側へ設定の欄を引き出す（2026-11-18）
+  const [fullscreenSettingsOpen, setFullscreenSettingsOpen] = useState(false);
   const fullscreenRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -971,6 +973,7 @@ export function PdfFillAnnotateTool({
   function toggleFullscreen(next: boolean) {
     fullscreenRef.current = next;
     setFullscreen(next);
+    if (!next) setFullscreenSettingsOpen(false);
   }
 
   // 全画面の切り替え：広さが変わるので描き直す。全画面の間は、後ろのページがスクロールしないようにし、Escキーで閉じられるようにする
@@ -979,7 +982,7 @@ export function PdfFillAnnotateTool({
     const id = requestAnimationFrame(() => void reloadPreview(selectedPage, zoom));
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fullscreen]);
+  }, [fullscreen, fullscreenSettingsOpen]);
   useEffect(() => {
     if (!fullscreen) return;
     const prevOverflow = document.body.style.overflow;
@@ -1705,7 +1708,24 @@ export function PdfFillAnnotateTool({
       {file && pageImageUrl && currentPageInfo && (
         <section data-preview-split className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(360px,560px)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,664px)] lg:grid-rows-[auto_1fr] lg:gap-x-6">
           {/* PC幅: 左に設定、右にキャンバス(画面に固定)。スマホ幅は従来どおり 設定 → キャンバス → 注釈一覧 の順に縦並び */}
-          <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-1">
+          <div
+            className={
+              fullscreen && fullscreenSettingsOpen
+                ? "fixed bottom-0 left-0 top-0 z-[72] flex w-[min(340px,85vw)] flex-col gap-3 overflow-y-auto border-r border-neutral-200 bg-white p-3 shadow-xl dark:border-neutral-800 dark:bg-neutral-950"
+                : "flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-1"
+            }
+            data-testid="pdf-settings-column"
+            data-fullscreen-drawer={fullscreen && fullscreenSettingsOpen ? "true" : undefined}
+          >
+          {fullscreen && fullscreenSettingsOpen && (
+            <button
+              type="button"
+              onClick={() => setFullscreenSettingsOpen(false)}
+              className="self-end rounded border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700"
+            >
+              ✕ 設定をしまう
+            </button>
+          )}
           <StepHeading n={2} as="h2">記入・注釈を配置</StepHeading>
 
           {operationSlot && (
@@ -2155,7 +2175,7 @@ export function PdfFillAnnotateTool({
           <div
             className={
               fullscreen
-                ? "fixed inset-0 z-[70] flex min-w-0 flex-col bg-white p-2 sm:p-3 dark:bg-neutral-950"
+                ? `fixed inset-0 z-[70] flex min-w-0 flex-col bg-white p-2 sm:p-3 dark:bg-neutral-950${fullscreenSettingsOpen ? " lg:pl-[352px]" : ""}`
                 : "min-w-0 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start"
             }
             data-testid="pdf-preview-column"
@@ -2166,6 +2186,19 @@ export function PdfFillAnnotateTool({
           >
           {/* 全画面のボタン（全画面の間は、ページ送り・表示倍率・閉じるをここにまとめる） */}
           <div className="mb-2 flex flex-wrap items-center justify-end gap-2 text-xs" data-testid="pdf-fullscreen-bar">
+            {fullscreen && (
+              <button
+                type="button"
+                onClick={() => setFullscreenSettingsOpen((v) => !v)}
+                aria-pressed={fullscreenSettingsOpen}
+                data-testid="pdf-fullscreen-settings"
+                className={`flex items-center gap-1 rounded px-2 py-1 font-semibold ${
+                  fullscreenSettingsOpen ? "bg-blue-600 text-white" : "border border-neutral-300 dark:border-neutral-700"
+                }`}
+              >
+                <span aria-hidden="true">⚙</span>設定
+              </button>
+            )}
             {fullscreen && pages.length > 1 && (
               <span className="mr-auto flex items-center gap-1">
                 <button

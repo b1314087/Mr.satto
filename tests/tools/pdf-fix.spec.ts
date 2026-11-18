@@ -307,6 +307,30 @@ test.describe("PDF修正: 画面と機能", () => {
     await expect(column).not.toHaveAttribute("data-fullscreen", "true");
     expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
     await expect(page.getByTestId("pdf-whiteout-object")).toHaveCount(1);
+    // 全画面のまま、左側に設定の欄を引き出して、文字の設定を変えられる（2026-11-18）
+    await page.getByTestId("pdf-fullscreen-toggle").click();
+    await expect(column).toHaveAttribute("data-fullscreen", "true");
+    const drawer = page.getByTestId("pdf-settings-column");
+    await page.getByTestId("pdf-fullscreen-settings").click();
+    await expect(drawer).toHaveAttribute("data-fullscreen-drawer", "true");
+    const db = (await drawer.boundingBox())!;
+    expect(db.x).toBeLessThan(5); // 左端に出る
+    expect(await drawer.evaluate((el) => getComputedStyle(el).position)).toBe("fixed");
+    // 設定の欄はプレビューより手前にあり、押せる（例：白消しの説明が見える）
+    await choosePdfFixOperation(page, "白消し");
+    await expect(page.getByTestId("pdf-whiteout-panel")).toBeVisible();
+    // PCの幅では、プレビューは設定の欄の右に寄る（隠れない）
+    const cb = (await canvas.boundingBox())!;
+    expect(cb.x).toBeGreaterThanOrEqual(db.x + db.width - 1);
+    // しまう
+    await page.getByTestId("pdf-fullscreen-settings").click();
+    await expect(drawer).not.toHaveAttribute("data-fullscreen-drawer", "true");
+    // 開いたまま全画面を閉じると、設定の欄も元の場所に戻る
+    await page.getByTestId("pdf-fullscreen-settings").click();
+    await page.keyboard.press("Escape");
+    await expect(column).not.toHaveAttribute("data-fullscreen", "true");
+    await expect(drawer).not.toHaveAttribute("data-fullscreen-drawer", "true");
+
     // もう一度開いて、閉じるボタンでも戻れる
     await page.getByTestId("pdf-fullscreen-toggle").click();
     await expect(column).toHaveAttribute("data-fullscreen", "true");
