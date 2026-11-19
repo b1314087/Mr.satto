@@ -100,6 +100,54 @@ export interface RunTranscriptionOptions {
   onUsage?: (usage: Record<string, unknown>) => void;
 }
 
+export class TranscribeChunkError extends Error {
+  constructor(
+    message: string,
+    public readonly usage: Record<string, unknown> | null,
+  ) {
+    super(message);
+    this.name = "TranscribeChunkError";
+  }
+}
+
+/**
+ * 区切り1つ分の音声（16kHz・モノラルのWAV）を /api/ai/transcribe へ送り、文字を受け取る。
+ * 失敗は TranscribeChunkError（利用状況が返っていれば添える）、中止は TranscribeCanceledError。
+ */
+export async function sendTranscribeChunk(
+  wav: Uint8Array,
+  opts: { language: TranscribeLanguage; prompt: string; signal?: AbortSignal },
+): Promise<{ text: string; usage: Record<string, unknown> | null }> {
+  if (opts.signal?.aborted) throw new TranscribeCanceledError();
+  const form = new FormData();
+  form.append("audio", new Blob([wav.buffer as ArrayBuffer], { type: "audio/wav" }), "chunk.wav");
+  form.append("requestId", newRequestId());
+  form.append("language", opts.language);
+  form.append("prompt", opts.prompt);
+  form.append("consentAccepted", "true");
+  form.append("consentVersion", TRANSCRIBE_CONSENT_VERSION);
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  opts.signal?.addEventListener("abort", onAbort);
+  const timer = setTimeout(() => controller.abort(), 70_000);
+  let data: Record<string, unknown> | null = null;
+  let ok = false;
+  try {
+    const res = await fetch("/api/ai/transcribe", { method: "POST", body: form, cache: "no-store", signal: controller.signal });
+    data = await res.json().catch(() => null);
+    ok = res.ok && data?.ok === true;
+  } catch {
+    if (opts.signal?.aborted) throw new TranscribeCanceledError();
+    throw new TranscribeChunkError("通信に失敗しました。時間をおいて、もう一度お試しください。", null);
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onAbort);
+  }
+  const usage = data?.usage && typeof data.usage === "object" ? (data.usage as Record<string, unknown>) : null;
+  if (!ok) throw new TranscribeChunkError(typeof data?.message === "string" ? data.message : "文字起こしに失敗しました。", usage);
+  return { text: typeof data?.text === "string" ? data.text : "", usage };
+}
+
 /** 区切りを1つずつ送り、時間つきの文の一覧を返す */
 export async function runTranscription(audio: PreparedAudio, options: RunTranscriptionOptions): Promise<TranscriptSegment[]> {
   const { chunks } = planTranscription(audio);
@@ -113,40 +161,21 @@ export async function runTranscription(audio: PreparedAudio, options: RunTranscr
     const from = Math.floor(range.start * audio.sampleRate);
     const to = Math.min(audio.samples.length, Math.ceil(range.end * audio.sampleRate));
     const wav = encodeWavPcm16Mono(audio.samples.subarray(from, to), audio.sampleRate);
-    const form = new FormData();
-    form.append("audio", new Blob([wav.buffer as ArrayBuffer], { type: "audio/wav" }), "chunk.wav");
-    form.append("requestId", newRequestId());
-    form.append("language", options.language);
-    form.append("prompt", buildTranscribePrompt(options.terms, previous));
-    form.append("consentAccepted", "true");
-    form.append("consentVersion", TRANSCRIBE_CONSENT_VERSION);
-
-    const controller = new AbortController();
-    const onAbort = () => controller.abort();
-    options.signal?.addEventListener("abort", onAbort);
-    const timer = setTimeout(() => controller.abort(), 70_000);
-    let data: Record<string, unknown> | null = null;
-    let ok = false;
+    let text: string;
     try {
-      const res = await fetch("/api/ai/transcribe", { method: "POST", body: form, cache: "no-store", signal: controller.signal });
-      data = await res.json().catch(() => null);
-      ok = res.ok && data?.ok === true;
-    } catch {
-      if (options.signal?.aborted) throw new TranscribeCanceledError();
-      throw new TranscribeRunError("通信に失敗しました。時間をおいて、もう一度お試しください。", segments, lastUsage);
-    } finally {
-      clearTimeout(timer);
-      options.signal?.removeEventListener("abort", onAbort);
+      const r = await sendTranscribeChunk(wav, { language: options.language, prompt: buildTranscribePrompt(options.terms, previous), signal: options.signal });
+      text = r.text;
+      if (r.usage) {
+        lastUsage = r.usage;
+        options.onUsage?.(r.usage);
+      }
+    } catch (e) {
+      if (e instanceof TranscribeCanceledError) throw e;
+      const usage = e instanceof TranscribeChunkError ? e.usage : null;
+      if (usage) options.onUsage?.(usage);
+      throw new TranscribeRunError(e instanceof Error ? e.message : "文字起こしに失敗しました。", segments, usage ?? lastUsage);
     }
-    if (data?.usage && typeof data.usage === "object") {
-      lastUsage = data.usage as Record<string, unknown>;
-      options.onUsage?.(lastUsage);
-    }
-    if (!ok) {
-      const message = typeof data?.message === "string" ? data.message : "文字起こしに失敗しました。";
-      throw new TranscribeRunError(message, segments, lastUsage);
-    }
-    const text = typeof data?.text === "string" ? data.text : "";
+
     segments.push(...timeSegments(text, range, voiced));
     previous = text;
     options.onProgress?.(i + 1, chunks.length, segments);
