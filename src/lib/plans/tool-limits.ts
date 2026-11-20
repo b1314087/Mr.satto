@@ -46,7 +46,8 @@ export const PLAN_LIMITS = {
   "postal-bulk": { free: 1, standard: 10, premium: 10000, unit: "件", label: "まとめて調べる住所・郵便番号" },
   "postcard": { free: 1, standard: 10, premium: 500, unit: "件", label: "宛先" },
   "receipt-accounting-csv": { free: 3, standard: 50, premium: 200, unit: "枚", label: "読み取る領収書" },
-  "filled-pdf-to-excel": { free: 1, standard: 1, premium: 50, unit: "ファイル", label: "読み取るPDF" },
+  // 2026-11-20：プレミアムは無制限（AIを使う読み取りは、AI利用枠（トークン）で上限を決める）
+  "filled-pdf-to-excel": { free: 1, standard: 1, premium: UNLIMITED, unit: "ファイル", label: "読み取るPDF" },
   "form-to-individual-pdfs": { free: 10, standard: 10, premium: 1000, unit: "件", label: "作成するPDF" },
   "excel-label": { free: 5, standard: 5, premium: UNLIMITED, unit: "シート", label: "印刷するラベルのシート" },
   "fiscal-calendar-import": { free: 5, standard: 5, premium: 20000, unit: "件", label: "取り込む予定" },

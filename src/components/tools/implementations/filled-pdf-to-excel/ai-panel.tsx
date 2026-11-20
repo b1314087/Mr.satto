@@ -31,8 +31,11 @@ import {
  * 記入済みPDF→Excel の「AIで読み取る」補助（プレミアム）。
  *
  * - 従来の自動抽出・テンプレートは、このパネルを開かなくても、すべて今までどおり動く（AIは任意）。
- * - 文字のあるPDFは、PDFから取り出した「文字」だけを送る（5ページ・6,000文字まで）。PDFファイルそのものは送らない。
- * - スキャンしたページ（PDF→Excelだけ・4ページまで）は、端末内でOCRして文字（参考）を取り出し、
+ * - 文字のあるPDFは、PDFから取り出した「文字」だけを送る。PDFファイルそのものは送らない。
+ * - 2026-11-20：ページ数・ファイル数の上限をなくした（上限はAI利用枠＝トークンで決まる）。
+ *   1回に送れる量（5ページ・6,000文字・画像4枚）を超えるときは、自動で何回かに分けて順に送り、結果をつなげる。
+ *   途中で利用枠が足りなくなったときは、そこまでの結果を残す。
+ * - スキャンしたページ（PDF→Excelだけ）は、端末内でOCRして文字（参考）を取り出し、
  *   縮小した画像（JPEG）と一緒に送る。送る画像は画面に出して見せ、同意を取る。
  * - 送る内容を画面に出し、実行のたびに同意を取る。
  * - AIの結果は「提案」。原文に見つからない文字は目立たせ、利用者が直してから、Excelにする。
@@ -45,9 +48,34 @@ type UsageState =
 
 /** 画面に出し、AIに送るページ。スキャンしたページは image がある（text は端末内のOCRの文字） */
 interface SendPage {
+  /** AIに送るページの番号（ファイルが複数のときは、全部のファイルを通した番号） */
   page: number;
   text: string;
   image?: PreparedImage;
+  /** 画面に出すページの名前（ファイルが複数のときは、ファイル名つき） */
+  label: string;
+}
+
+/** 1回に送れる量に収まるように、ページを順に分ける（ページの途中では分けない） */
+export function batchSendPages<T extends { text: string; image?: unknown }>(pages: T[]): T[][] {
+  const batches: T[][] = [];
+  let cur: T[] = [];
+  let chars = 0;
+  let images = 0;
+  for (const pg of pages) {
+    const img = pg.image ? 1 : 0;
+    if (cur.length > 0 && (cur.length >= FORM_MAX_PAGES || chars + pg.text.length > FORM_MAX_CHARS_TOTAL || images + img > FORM_MAX_IMAGE_PAGES)) {
+      batches.push(cur);
+      cur = [];
+      chars = 0;
+      images = 0;
+    }
+    cur.push(pg);
+    chars += pg.text.length;
+    images += img;
+  }
+  if (cur.length > 0) batches.push(cur);
+  return batches;
 }
 
 /** スキャンしたページを画像にするときの、OCR用の描画サイズ（PDF→Excelの変換と同じ） */
@@ -57,7 +85,7 @@ const MAX_OCR_DIMENSION = 2200;
 type TextState =
   | { status: "idle" }
   | { status: "reading"; message: string }
-  | { status: "ready"; pages: SendPage[]; chars: number; imageCount: number }
+  | { status: "ready"; pages: SendPage[]; chars: number; imageCount: number; batches: number }
   | { status: "problem"; message: string };
 
 interface DraftRow {
@@ -141,13 +169,14 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
   const [excel, setExcel] = useState<{ blob: Blob; name: string; rowCount: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const eligibleFile = files.length === 1 ? files[0] : null;
+  // Word→Excel は、今までどおり1つの文書だけ。PDFは、ファイルの数・ページの数の上限なし（AI利用枠で決まる）
+  const eligibleFile = files.length >= 1 ? files[0] : null;
+  const filesKey = files.map((f) => `${f.name}:${f.size}:${f.lastModified}`).join("|");
   const pageLimitProblem =
-    files.length > 1
-      ? `AIで読み取れるのは、1つの${copy.sourceName}だけです。ほかのファイルを外してください。`
-      : totalPages !== null && totalPages > FORM_MAX_PAGES
-        ? `AIで読み取れるのは${FORM_MAX_PAGES}ページまでです（このPDFは${totalPages}ページ）。`
-        : null;
+    purpose === "word" && files.length > 1 ? `AIで読み取れるのは、1つの${copy.sourceName}だけです。ほかのファイルを外してください。` : null;
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // totalPages は、ほかの画面との呼び出しの形をそろえるために受け取る（AIの上限には使わない）
+  void totalPages;
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -161,7 +190,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     setError(null);
     setConsent(false);
     setText({ status: "idle" });
-  }, [eligibleFile]);
+  }, [filesKey]);
 
   // パネルを開いたときに、利用状況を取得する（AIは呼ばない）
   useEffect(() => {
@@ -206,71 +235,76 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
             });
             return;
           }
-          setText({ status: "ready", pages: chunked.pages, chars: chunked.chars, imageCount: 0 });
+          const wordPages = chunked.pages.map((pg) => ({ ...pg, label: copy.unit(pg.page) }));
+          setText({ status: "ready", pages: wordPages, chars: chunked.chars, imageCount: 0, batches: batchSendPages(wordPages).length });
         } catch (e) {
           if (!cancelled) setText({ status: "problem", message: e instanceof Error ? e.message : "Word文書の文章を取り出せませんでした。" });
         }
         return;
       }
       try {
-        const pdf = await loadPdfDocument(eligibleFile);
-        try {
-          if (pdf.numPages > FORM_MAX_PAGES) {
-            if (!cancelled) setText({ status: "problem", message: `AIで読み取れるのは${FORM_MAX_PAGES}ページまでです（このPDFは${pdf.numPages}ページ）。` });
-            return;
+        const pages: SendPage[] = [];
+        const multi = files.length > 1;
+        let globalPage = 0;
+        for (const file of files) {
+          const pdf = await loadPdfDocument(file);
+          try {
+            for (let p = 1; p <= pdf.numPages; p++) {
+              if (cancelled) return;
+              globalPage++;
+              const label = multi ? `${file.name} ${p}ページ目` : `${p}ページ目`;
+              const page = await pdf.getPage(p);
+              const items = await getPositionedTextItems(page);
+              if (pageHasText(items)) {
+                const pageText = itemsToPageText(items);
+                if (pageText.length > FORM_MAX_CHARS_TOTAL) {
+                  setText({ status: "problem", message: `${label}の文字が多すぎます（${pageText.length.toLocaleString("ja-JP")}文字。1ページで送れるのは${FORM_MAX_CHARS_TOTAL.toLocaleString("ja-JP")}文字まで）。` });
+                  return;
+                }
+                pages.push({ page: globalPage, text: pageText, label });
+                continue;
+              }
+              // 文字のないページ（スキャンした画像）
+              if (purpose !== "table") {
+                setText({ status: "problem", message: `${label}に文字がありません（スキャンした画像のPDFです）。この機能では送れません。従来の変換（OCR）をお使いください。` });
+                return;
+              }
+              setText({ status: "reading", message: `${label}はスキャンした画像です。画像にして、文字を読み取っています…（この端末の中だけで行います。時間がかかることがあります）` });
+              let canvas: HTMLCanvasElement;
+              try {
+                canvas = (await renderPageToCanvas(page, OCR_RENDER_SCALE, MAX_OCR_DIMENSION)).canvas;
+              } catch {
+                if (!cancelled) setText({ status: "problem", message: `${label}を画像にできませんでした。` });
+                return;
+              }
+              // 参考にする文字（端末内のOCR）。読めなくても、画像は送れる
+              let ocrText = "";
+              try {
+                const result = await recognizeImageWithWords(removeRuledLinesFromCanvas(canvas), "ja+en", () => {}, { pageSegMode: "6" });
+                ocrText = itemsToPageText(ocrWordsToPositionedTextItems(result.words)).slice(0, FORM_MAX_CHARS_TOTAL);
+              } catch {
+                ocrText = "";
+              }
+              if (cancelled) return;
+              const image = await encodeCanvasForAi(canvas, label);
+              if (!image) {
+                setText({ status: "problem", message: `${label}の画像を、送れる大きさに小さくできませんでした。` });
+                return;
+              }
+              pages.push({ page: globalPage, text: ocrText, image, label });
+            }
+          } finally {
+            await closePdfDocument(pdf);
           }
-          const pages: SendPage[] = [];
-          for (let p = 1; p <= pdf.numPages; p++) {
-            const page = await pdf.getPage(p);
-            const items = await getPositionedTextItems(page);
-            if (pageHasText(items)) {
-              pages.push({ page: p, text: itemsToPageText(items) });
-              continue;
-            }
-            // 文字のないページ（スキャンした画像）
-            if (purpose !== "table") {
-              if (!cancelled) setText({ status: "problem", message: `${p}ページ目に文字がありません（スキャンした画像のPDFです）。この機能では送れません。従来の変換（OCR）をお使いください。` });
-              return;
-            }
-            if (pages.filter((pg) => pg.image).length >= FORM_MAX_IMAGE_PAGES) {
-              if (!cancelled) setText({ status: "problem", message: `スキャンしたページ（画像）は、AIで${FORM_MAX_IMAGE_PAGES}ページまで読み取れます。ページを減らしたPDFでお試しください。` });
-              return;
-            }
-            if (!cancelled) setText({ status: "reading", message: `${p}ページ目はスキャンした画像です。画像にして、文字を読み取っています…（この端末の中だけで行います。時間がかかることがあります）` });
-            let canvas: HTMLCanvasElement;
-            try {
-              canvas = (await renderPageToCanvas(page, OCR_RENDER_SCALE, MAX_OCR_DIMENSION)).canvas;
-            } catch {
-              if (!cancelled) setText({ status: "problem", message: `${p}ページ目を画像にできませんでした。` });
-              return;
-            }
-            // 参考にする文字（端末内のOCR）。読めなくても、画像は送れる
-            let ocrText = "";
-            try {
-              const result = await recognizeImageWithWords(removeRuledLinesFromCanvas(canvas), "ja+en", () => {}, { pageSegMode: "6" });
-              ocrText = itemsToPageText(ocrWordsToPositionedTextItems(result.words));
-            } catch {
-              ocrText = "";
-            }
-            if (cancelled) return;
-            const image = await encodeCanvasForAi(canvas, `${p}ページ目`);
-            if (!image) {
-              setText({ status: "problem", message: `${p}ページ目の画像を、送れる大きさに小さくできませんでした。` });
-              return;
-            }
-            pages.push({ page: p, text: ocrText, image });
-          }
-          const chars = pages.reduce((sum, pg) => sum + pg.text.length, 0);
-          const imageCount = pages.filter((pg) => pg.image).length;
-          if (cancelled) return;
-          if (chars > FORM_MAX_CHARS_TOTAL) {
-            setText({ status: "problem", message: `文字が多すぎます（${chars.toLocaleString("ja-JP")}文字。送れるのは${FORM_MAX_CHARS_TOTAL.toLocaleString("ja-JP")}文字まで）。ページを減らしたPDFでお試しください。` });
-            return;
-          }
-          setText({ status: "ready", pages, chars, imageCount });
-        } finally {
-          await closePdfDocument(pdf);
         }
+        const chars = pages.reduce((sum, pg) => sum + pg.text.length, 0);
+        const imageCount = pages.filter((pg) => pg.image).length;
+        if (cancelled) return;
+        if (pages.length === 0) {
+          setText({ status: "problem", message: "送れるページがありませんでした。" });
+          return;
+        }
+        setText({ status: "ready", pages, chars, imageCount, batches: batchSendPages(pages).length });
       } catch {
         if (!cancelled) setText({ status: "problem", message: "PDFの文字を取り出せませんでした。" });
       }
@@ -278,7 +312,9 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     return () => {
       cancelled = true;
     };
-  }, [open, eligibleFile, pageLimitProblem, purpose, copy.textName]);
+    // filesKey が変わったときだけ取り出し直す（files は毎回の描画で新しい配列になることがある）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, filesKey, pageLimitProblem, purpose, copy.textName]);
 
   // 経過時間（読み取り中だけ）
   useEffect(() => {
@@ -299,52 +335,85 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     if (!canRun || text.status !== "ready") return;
     const controller = new AbortController();
     abortRef.current = controller;
-    const timer = setTimeout(() => controller.abort(), 130_000);
+    const batches = batchSendPages(text.pages);
     setRunning(true);
     setError(null);
     setExcel(null);
+    setProgress({ done: 0, total: batches.length });
+    const collected: DraftRow[] = [];
+    const allNotes: string[] = [];
+    let rejectedTotal = 0;
+    let stoppedAt: string | null = null;
     try {
-      const res = await fetch("/api/ai/form-extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        signal: controller.signal,
-        body: JSON.stringify({
-          requestId: newRequestId(),
-          model: tier,
-          // 記入済みPDF→Excelは、目的を省略して送る（従来どおりの依頼）。PDF→Excelは "table"、Word→Excelは "word" を付ける
-          ...(purpose !== "form" ? { purpose } : {}),
-          // スキャンしたページは、縮小した画像（JPEG）を付ける。表示用の名前・大きさは送らない
-          pages: text.pages.map((pg) => ({
-            page: pg.page,
-            text: pg.text,
-            ...(pg.image ? { image: { mediaType: pg.image.mediaType, base64: pg.image.base64 } } : {}),
-          })),
-          consent: { accepted: true, version: FORM_CONSENT_VERSION },
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        setError(typeof data?.message === "string" ? data.message : "AIによる読み取りに失敗しました。ほかの変換は、そのまま使えます。");
-        if (data?.usage) setUsage((u) => (u.status === "available" ? { ...u, ...data.usage } : u));
-        return;
+      for (const [bi, batch] of batches.entries()) {
+        const timer = setTimeout(() => controller.abort(), 130_000);
+        let data: Record<string, unknown> | null = null;
+        let ok = false;
+        try {
+          const res = await fetch("/api/ai/form-extract", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+            signal: controller.signal,
+            body: JSON.stringify({
+              requestId: newRequestId(),
+              model: tier,
+              // 記入済みPDF→Excelは、目的を省略して送る（従来どおりの依頼）。PDF→Excelは "table"、Word→Excelは "word" を付ける
+              ...(purpose !== "form" ? { purpose } : {}),
+              // スキャンしたページは、縮小した画像（JPEG）を付ける。表示用の名前・大きさは送らない
+              pages: batch.map((pg) => ({
+                page: pg.page,
+                text: pg.text,
+                ...(pg.image ? { image: { mediaType: pg.image.mediaType, base64: pg.image.base64 } } : {}),
+              })),
+              consent: { accepted: true, version: FORM_CONSENT_VERSION },
+            }),
+          });
+          data = await res.json().catch(() => null);
+          ok = res.ok && data?.ok === true;
+        } finally {
+          clearTimeout(timer);
+        }
+        if (data?.usage) setUsage((u) => (u.status === "available" ? { ...u, ...(data!.usage as Partial<AiUsage>) } : u));
+        if (!ok) {
+          const message = typeof data?.message === "string" ? data.message : "AIによる読み取りに失敗しました。ほかの変換は、そのまま使えます。";
+          stoppedAt = batch[0].label;
+          setError(
+            bi > 0
+              ? `${message}（${batches[bi - 1][batches[bi - 1].length - 1].label}までの結果を下に出しています）`
+              : message,
+          );
+          break;
+        }
+        for (const r of data!.rows as FormExtractRow[]) {
+          collected.push({ id: collected.length, page: r.page, kind: r.kind, cells: [...r.cells], unverified: new Set(r.unverified) });
+        }
+        if (Array.isArray(data!.notes)) for (const n of data!.notes as string[]) if (!allNotes.includes(n) && allNotes.length < 10) allNotes.push(n);
+        if (typeof data!.rejected === "number") rejectedTotal += data!.rejected as number;
+        setProgress({ done: bi + 1, total: batches.length });
       }
-      const incoming = (data.rows as FormExtractRow[]).map((r, i) => ({ id: i, page: r.page, kind: r.kind, cells: [...r.cells], unverified: new Set(r.unverified) }));
-      setSentImages(text.imageCount > 0);
-      setRows(incoming);
-      setNotes(Array.isArray(data.notes) ? (data.notes as string[]) : []);
-      setRejected(typeof data.rejected === "number" ? data.rejected : 0);
-      if (data.usage) setUsage({ status: "available", ...data.usage });
+      if (collected.length > 0 || stoppedAt === null) {
+        setSentImages(text.imageCount > 0);
+        setRows(collected);
+        setNotes(allNotes);
+        setRejected(rejectedTotal);
+      }
     } catch (e) {
       setError(
         e instanceof DOMException && e.name === "AbortError"
-          ? "AIの応答を待つ時間を超えたため、中止しました。ほかの変換は、そのまま使えます。"
+          ? "AIの応答を待つ時間を超えたか、中止したため、止めました。ほかの変換は、そのまま使えます。"
           : "通信に失敗しました。ほかの変換は、そのまま使えます。",
       );
+      if (collected.length > 0) {
+        setSentImages(text.imageCount > 0);
+        setRows(collected);
+        setNotes(allNotes);
+        setRejected(rejectedTotal);
+      }
     } finally {
-      clearTimeout(timer);
       abortRef.current = null;
       setRunning(false);
+      setProgress(null);
       // 同意は毎回確認する（実行のたびに外れる）
       setConsent(false);
     }
@@ -381,6 +450,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
     }
   }
 
+  const pageLabels = new Map(sendPages.map((pg) => [pg.page, pg.label] as const));
   const maxColumns = (rows ?? []).reduce((m, r) => Math.max(m, r.cells.length), 0);
 
   return (
@@ -432,14 +502,14 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                       {sendPages.map((pg) => (
                         <div key={pg.page} className="mb-2 last:mb-0">
                           <p className="text-[11px] font-semibold text-violet-800 dark:text-violet-200">
-                            {copy.unit(pg.page)}{pg.image ? "（スキャンした画像）" : ""}
+                            {pg.label}{pg.image ? "（スキャンした画像）" : ""}
                           </p>
                           {pg.image && (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                               data-testid="form-ai-image"
                               src={`data:${pg.image.mediaType};base64,${pg.image.base64}`}
-                              alt={`AIに送る${pg.page}ページ目の画像`}
+                              alt={`AIに送る${pg.label}の画像`}
                               className="mb-1 max-h-48 rounded border border-neutral-200 dark:border-neutral-700"
                             />
                           )}
@@ -455,6 +525,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                     <p data-testid="form-ai-count" className="text-xs text-neutral-700 dark:text-neutral-200">
                       送る{copy.unitCount}：{sendPages.length}{purpose === "word" ? "つ" : copy.unitCount} ／ 送る文字：{text.chars.toLocaleString("ja-JP")}文字
                       {text.imageCount > 0 ? ` ／ 送る画像：${text.imageCount}枚` : ""}
+                      {text.batches > 1 ? ` ／ ${text.batches}回に分けて順に送ります（AI利用枠を、送る量に応じて使います）` : ""}
                     </p>
                     <p className="text-xs text-neutral-600 dark:text-neutral-300">
                       {text.imageCount > 0 ? "PDFファイルそのものは送りません。スキャンしたページは、縮小した画像を送ります。" : purpose === "word" ? "Word文書のファイルそのもの・画像は送りません。" : "PDFファイルそのもの・画像は送りません。"}
@@ -491,6 +562,11 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                       onCancel={() => abortRef.current?.abort()}
                     />
                     {running && <AiProgress testId="form-ai-progress" seconds={seconds} />}
+                    {running && progress && progress.total > 1 && (
+                      <p data-testid="form-ai-batch-progress" role="status" className="text-xs text-violet-900 dark:text-violet-100">
+                        {progress.done} / {progress.total} 回目まで終わりました
+                      </p>
+                    )}
                   </div>
                 </>
               )}
@@ -522,7 +598,7 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                               {Array.from({ length: maxColumns }, (_, c) => (
                                 <td key={c} className="px-1 py-1">
                                   <input
-                                    aria-label={`${copy.unit(r.page)} ${rows.indexOf(r) + 1}行目 ${c + 1}列目`}
+                                    aria-label={`${pageLabels.get(r.page) ?? copy.unit(r.page)} ${rows.indexOf(r) + 1}行目 ${c + 1}列目`}
                                     value={r.cells[c] ?? ""}
                                     data-unverified={r.unverified.has(c) ? "true" : undefined}
                                     onChange={(e) => updateCell(r.id, c, e.target.value)}

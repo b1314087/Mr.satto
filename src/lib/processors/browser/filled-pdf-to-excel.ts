@@ -9,7 +9,6 @@ import { prepareScanForTable } from "@/lib/ocr/remove-ruled-lines";
 import { computeRuledColumnBreaks, mergeRuledBreaks, type VerticalRule } from "@/lib/pdf/ruling-lines";
 import { getPageImageBoxes } from "@/lib/pdf/pdf-style-sampling";
 import { classifyPage } from "./ocr";
-import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
 
 /**
  * 記入済みPDF→Excel Processor（Phase 11 ツール①）。
@@ -52,7 +51,11 @@ import { PLAN_LIMITS } from "@/lib/plans/tool-limits";
  */
 
 /** 1回に処理できる合計ページ数の上限（プレミアムで読み取れるファイル数と同じ。src/lib/plans/tool-limits.ts） */
-const MAX_PAGES_HARD_LIMIT: number = PLAN_LIMITS["filled-pdf-to-excel"].premium;
+/**
+ * 1回に読み取るページ数の上限（2026-11-20：プレミアムは無制限）。
+ * 無料・スタンダードは、利用の確認（usage-status-actions.ts）で決まった maxTotalPages で別に制限する。
+ */
+const MAX_PAGES_HARD_LIMIT: number = Number.POSITIVE_INFINITY;
 /**
  * OCR用にページを描画する倍率と、画像の最長辺の上限(px)。PDF→Excelと同じ値（A4で約180dpi）。
  * 細い文字・小さな数字の読み取りを安定させつつ、スマートフォンでのメモリ超過を防ぐ。

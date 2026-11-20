@@ -82,8 +82,11 @@ export const TEMPLATE_LIMITS = {
   maxPersonsPerPage: 20,
   maxFieldsPerPerson: 30,
   maxFieldsTotal: 400,
-  /** 記入済みPDF側の合計ページ数上限。既存の自動抽出モードと同じ技術上限を踏襲 */
-  maxFilledPagesHard: 20,
+  /**
+   * 記入済みPDF側の合計ページ数上限（2026-11-20：無制限。無料・スタンダードの1回あたりのページ数は、
+   * 利用の確認（usage-status-actions.ts）の maxPages で別に制限する）
+   */
+  maxFilledPagesHard: Number.POSITIVE_INFINITY,
 } as const;
 
 /**

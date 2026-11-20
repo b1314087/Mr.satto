@@ -183,22 +183,17 @@ test.describe("PDF→Excel: AIで表を読み取る（任意・プレミアム�
     expect(sent.pages[0].image).toBeDefined();
   });
 
-  test("スキャンしたページが5ページあると、画像は4ページまでと案内し、AIには何も送らない", async ({ page }) => {
-    const rec = await mockAi(page, { extract: okExtract(RESULT_ROWS) });
-    await openAndUpload(page, await blankPdf(5));
-    await page.getByTestId("form-ai-toggle").click();
-    await expect(page.getByTestId("form-ai-problem")).toContainText("4ページまで", { timeout: 120_000 });
-    await expect(page.getByTestId("form-ai-run")).toHaveCount(0);
-    expect(rec.bodies).toHaveLength(0);
-  });
-
-  test("6ページ以上のPDFは対象外と案内し（表示は1つだけ）、AIには何も送らない", async ({ page }) => {
+  test("ページ数の上限なし: 6ページ以上のPDFは、5ページずつ分けて送る（案内は出さない）", async ({ page }) => {
     const rec = await mockAi(page, { extract: okExtract(RESULT_ROWS) });
     await openAndUpload(page, await tablePdf(6));
     await page.getByTestId("form-ai-toggle").click();
-    await expect(page.getByTestId("form-ai-problem")).toHaveCount(1, { timeout: 30_000 });
-    await expect(page.getByTestId("form-ai-problem")).toContainText("5ページまで");
-    await expect(page.getByTestId("form-ai-run")).toHaveCount(0);
-    expect(rec.bodies).toHaveLength(0);
+    await expect(page.getByTestId("form-ai-count")).toContainText("2回に分けて順に送ります", { timeout: 30_000 });
+    await expect(page.getByTestId("form-ai-problem")).toHaveCount(0);
+    await page.getByTestId("form-ai-consent").check();
+    await page.getByTestId("form-ai-run").click();
+    await expect(page.getByTestId("form-ai-result")).toBeVisible();
+    expect(rec.bodies).toHaveLength(2);
+    expect((rec.bodies[0].pages as unknown[]).length).toBe(5);
+    expect((rec.bodies[0] as { purpose?: string }).purpose).toBe("table");
   });
 });

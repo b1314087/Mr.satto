@@ -161,13 +161,57 @@ test.describe("記入済みPDF→Excel: AIで項目を読み取る（任意・�
     expect(rec.bodies).toHaveLength(0);
   });
 
-  test("6ページ以上のPDFは対象外と案内する", async ({ page }) => {
-    const rec = await mockAi(page, { extract: okExtract(RESULT_ROWS) });
-    await openAndUpload(page, await textPdf(6));
+  test("ページ数の上限なし: 6ページ以上のPDFは、5ページずつ自動で分けて順に送り、結果をつなげる", async ({ page }) => {
+    const rec = await mockAi(page, {
+      extract: (body) => {
+        const pages = body.pages as { page: number }[];
+        return okExtract(pages.map((p) => ({ page: p.page, kind: "data", cells: ["Name", `Taro ${p.page}`], unverified: [] })))();
+      },
+    });
+    await openAndUpload(page, await textPdf(7));
     await page.getByTestId("form-ai-toggle").click();
-    await expect(page.getByTestId("form-ai-problem")).toContainText("5ページまで", { timeout: 30_000 });
-    await expect(page.getByTestId("form-ai-run")).toHaveCount(0);
-    expect(rec.bodies).toHaveLength(0);
+    await expect(page.getByTestId("form-ai-count")).toContainText("送るページ：7ページ", { timeout: 30_000 });
+    await expect(page.getByTestId("form-ai-count")).toContainText("2回に分けて順に送ります");
+    await expect(page.getByTestId("form-ai-problem")).toHaveCount(0);
+    await page.getByTestId("form-ai-consent").check();
+    await page.getByTestId("form-ai-run").click();
+    await expect(page.getByTestId("form-ai-row")).toHaveCount(7);
+    expect(rec.bodies).toHaveLength(2);
+    expect((rec.bodies[0].pages as unknown[]).length).toBe(5);
+    expect((rec.bodies[1].pages as unknown[]).length).toBe(2);
+    expect(rec.bodies[0].requestId).not.toBe(rec.bodies[1].requestId);
+  });
+
+  test("複数のPDFもまとめて送れる。途中で利用枠が足りなくなったら、そこまでの結果を残して知らせる", async ({ page }) => {
+    let n = 0;
+    const rec = await mockAi(page, {
+      extract: (body) => {
+        n++;
+        if (n === 2) return { status: 402, body: { ok: false, error: "quota_exceeded", message: "今月のAI利用枠が足りません。" } };
+        const pages = body.pages as { page: number }[];
+        return okExtract(pages.map((p) => ({ page: p.page, kind: "data", cells: ["Name", `Taro ${p.page}`], unverified: [] })))();
+      },
+    });
+    await page.goto(SLUG);
+    await waitForFileInputHydrated(page);
+    const a = await textPdf(3);
+    const b = await textPdf(3);
+    await page.locator('input[type="file"]').first().setInputFiles([
+      { ...a, name: "a.pdf" },
+      { ...b, name: "b.pdf" },
+    ]);
+    await expect(page.getByTestId("form-ai-panel")).toBeVisible({ timeout: 60_000 });
+    await page.getByTestId("form-ai-toggle").click();
+    await expect(page.getByTestId("form-ai-count")).toContainText("送るページ：6ページ", { timeout: 30_000 });
+    await expect(page.getByTestId("form-ai-preview")).toContainText("b.pdf 1ページ目");
+    await page.getByTestId("form-ai-consent").check();
+    await page.getByTestId("form-ai-run").click();
+    await expect(page.getByTestId("form-ai-error")).toContainText("AI利用枠が足りません");
+    await expect(page.getByTestId("form-ai-error")).toContainText("b.pdf 2ページ目までの結果");
+    await expect(page.getByTestId("form-ai-row")).toHaveCount(5);
+    expect(rec.bodies).toHaveLength(2);
+    // 送るページ番号は、ファイルをまたいで重ならない
+    expect((rec.bodies[1].pages as { page: number }[]).map((p) => p.page)).toEqual([6]);
   });
 
   test("AIが失敗しても、エラーを示し、ほかの変換は使える。同意は外れる", async ({ page }) => {

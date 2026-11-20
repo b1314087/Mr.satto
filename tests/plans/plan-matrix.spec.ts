@@ -157,7 +157,7 @@ test.describe("確定した表：ツールごとの上限（無料／スタン�
     "postal-bulk": [1, 10, 10000],
     postcard: [1, 10, 500],
     "receipt-accounting-csv": [3, 50, 200],
-    "filled-pdf-to-excel": [1, 1, 50],
+    "filled-pdf-to-excel": [1, 1, Number.POSITIVE_INFINITY],
     "form-to-individual-pdfs": [10, 10, 1000],
     "excel-label": [5, 5, Number.POSITIVE_INFINITY],
     "fiscal-calendar-import": [5, 5, 20000],
