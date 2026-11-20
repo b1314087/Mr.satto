@@ -7,7 +7,6 @@ import { ResultPopup } from "@/components/common/result-popup";
 import { FilledPdfAiPanel, formAiEnabled } from "./filled-pdf-to-excel/ai-panel";
 import { ProcessingStatus, type ProcessingState } from "@/components/common/processing-status";
 import { ErrorMessage } from "@/components/common/error-message";
-import { PdfThumbnails } from "@/components/common/pdf-thumbnails";
 import {
   FilledPdfCancelledError,
   FilledPdfToExcelProcessor,
@@ -30,7 +29,6 @@ const LANGUAGE_OPTIONS: { value: OcrLanguageOption; label: string }[] = [
   { value: "en", label: "英語のみ" },
 ];
 
-type ToolModeSelect = "auto" | "template";
 
 /**
  * 記入済みPDF→Excel（Phase 11 ツール①、Phase 18でテンプレートモードを追加）。
@@ -47,60 +45,23 @@ type ToolModeSelect = "auto" | "template";
  * アップロード・保存されません。処理はすべてブラウザ内で完結します。
  */
 export function FilledPdfToExcelTool() {
-  const [mode, setMode] = useState<ToolModeSelect>("auto");
+  // 2026-11-20：モードの切り替えをやめた。記入済みのPDFを入れると、その上で取り出す場所を囲める（囲まなければ、おまかせで整理）。
+  // 空のひな形PDFを使う従来のやり方は、下のボタンから使える（上級者向け）
+  const [blankTemplate, setBlankTemplate] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium text-neutral-700 dark:text-neutral-200">記入されたPDF → Excel</legend>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <ModeOption
-            active={mode === "auto"}
-            title="自動抽出"
-            description="PDFの内容を自動解析してExcel化"
-            onClick={() => setMode("auto")}
-          />
-          <ModeOption
-            active={mode === "template"}
-            title="テンプレート"
-            description="空の帳票テンプレートを指定し、決めた入力枠から情報を取得してExcel化"
-            onClick={() => setMode("template")}
-          />
-        </div>
-      </fieldset>
-
-      {mode === "auto" ? <AutoExtractSection /> : <FilledPdfToExcelTemplatePanel />}
+      {blankTemplate ? <FilledPdfToExcelTemplatePanel /> : <AutoExtractSection />}
+      <button
+        type="button"
+        onClick={() => setBlankTemplate((v) => !v)}
+        aria-pressed={blankTemplate}
+        data-testid="filled-pdf-blank-template-toggle"
+        className="w-fit text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100"
+      >
+        {blankTemplate ? "← 記入済みのPDFで指定する（ふつうのやり方）に戻る" : "空のひな形（テンプレート）PDFを使って場所を指定する（上級者向け）"}
+      </button>
     </div>
-  );
-}
-
-function ModeOption({
-  active,
-  title,
-  description,
-  onClick,
-}: {
-  active: boolean;
-  title: string;
-  description: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`flex-1 rounded-lg border px-4 py-3 text-left transition-colors ${
-        active
-          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/40"
-          : "border-neutral-300 hover:border-blue-400 dark:border-neutral-700"
-      }`}
-    >
-      <p className={`text-sm font-semibold ${active ? "text-blue-700 dark:text-blue-300" : "text-neutral-700 dark:text-neutral-200"}`}>
-        {title}
-      </p>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">{description}</p>
-    </button>
   );
 }
 
@@ -119,6 +80,8 @@ function AutoExtractSection() {
   const abortRef = useRef<AbortController | null>(null);
   const [cancelled, setCancelled] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  // 1つ目のPDFの上で囲んだ四角の数（0なら、おまかせで整理する）
+  const [regionCount, setRegionCount] = useState(0);
 
   const { usage, usageLoading, adPhase, isAdBusy, needsAdBeforeRun, handleWatchAd, refreshUsage, consumeUsage } =
     useFilledPdfToExcelUsage();
@@ -245,7 +208,7 @@ function AutoExtractSection() {
             ? "通常の変換は、AIを使わず、この端末の中だけで処理します。"
             : "このツールでは、AIによる読み取り補助や外部のAIサービスは使いません。"}
           複雑なレイアウトや手書き文字は、正しく項目化できない場合があります。
-          1ページに複数人分ある帳票は、上の「テンプレート」モードをお試しください。
+          PDFを入れると1枚目が表示されるので、取り出したい記入欄を囲むと、全部のページの同じ場所を1件1行の一覧にします（1ページに何人分もある帳票は「人物を追加」で）。何も囲まなければ、おまかせで整理します。
         </p>
       </div>
 
@@ -266,17 +229,14 @@ function AutoExtractSection() {
       {files.length > 0 && <FileList files={files} onRemove={handleRemove} />}
       {pageCountError && <ErrorMessage message={pageCountError} />}
 
-      {files.length > 0 && (
+      {files.length > 0 && !pageCountError && (
         <PreviewFullscreenFrame>
-        <div data-testid="tool-preview">
-          <PdfThumbnails
-            file={files[0]}
-            pages={[1]}
-            maxPages={1}
-            width={160}
-            title={files.length > 1 ? `読み取るPDFの1ページ目(1/${files.length}ファイル目)` : "読み取るPDFの1ページ目"}
-          />
-        </div>
+          <div data-testid="tool-preview" className="flex flex-col gap-2">
+            <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
+              取り出す場所を囲む（任意）{files.length > 1 ? `・1つ目のPDF（1/${files.length}ファイル目）を表示しています` : ""}
+            </p>
+            <FilledPdfToExcelTemplatePanel source={{ files, language }} onFieldCountChange={setRegionCount} />
+          </div>
         </PreviewFullscreenFrame>
       )}
 
@@ -330,7 +290,12 @@ function AutoExtractSection() {
         </label>
       )}
 
-      {files.length > 0 && (
+      {files.length > 0 && regionCount > 0 && (
+        <p data-testid="filled-pdf-region-note" className="text-sm text-neutral-600 dark:text-neutral-300">
+          囲んだ場所で一覧にするときは、上の「指定した場所で一覧にする」を押してください。囲んだ四角をすべて消すと、おまかせで整理できます。
+        </p>
+      )}
+      {files.length > 0 && regionCount === 0 && (
         <RunBar>
           <button
             type="button"
@@ -338,13 +303,13 @@ function AutoExtractSection() {
             disabled={!canRun || status === "processing"} aria-busy={status === "processing" || undefined}
             className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
           >
-            Excelに変換する
+            おまかせでExcelに変換する
           </button>
         </RunBar>
       )}
       {cancelled && (
         <p className="text-sm text-neutral-600 dark:text-neutral-300" data-testid="filled-pdf-cancelled">
-          読み取りを中断しました。もう一度「Excelに変換する」を押すと、最初から読み取ります。
+          読み取りを中断しました。もう一度「おまかせでExcelに変換する」を押すと、最初から読み取ります。
         </p>
       )}
 

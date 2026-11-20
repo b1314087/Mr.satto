@@ -1,3 +1,4 @@
+import { waitHydrated } from "../helpers/hydrated";
 import { test, expect } from "../fixtures/premium-test";
 import type { Page } from "@playwright/test";
 import { fixtures } from "../fixtures/paths";
@@ -32,6 +33,8 @@ const SAFE_CLICK_POSITION = { x: 20, y: 20 } as const;
 async function openTemplateTool(page: Page) {
   await page.goto("/tools/filled-pdf-to-excel");
   await expect(page.getByRole("button", { name: "テンプレート", exact: false })).toBeVisible({ timeout: 30_000 });
+  // 準備（hydration）の前のクリックは無視されるため、準備ができてから押す
+  await waitHydrated(page.getByRole("button", { name: "テンプレート", exact: false }));
   await page.getByRole("button", { name: "テンプレート", exact: false }).click();
   await expect(page.getByText("空のテンプレートPDFをドラッグ&ドロップ")).toBeVisible({ timeout: 30_000 });
 }

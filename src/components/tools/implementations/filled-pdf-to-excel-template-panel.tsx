@@ -72,8 +72,34 @@ interface DragState {
   origScreenRect: { left: number; top: number; width: number; height: number };
 }
 
-export function FilledPdfToExcelTemplatePanel() {
-  const [step, setStep] = useState<Step>("template");
+/**
+ * 2026-11-20：記入済みのPDFの上で、そのまま取り出す場所を囲めるようにした（source を渡したとき）。
+ * - 空のひな形は使わない。source.files の1つ目のファイルを表示し、その上で四角を囲む。
+ * - 囲み終えたら「指定した場所で一覧にする」で、source.files の全部のページを読み取る（ひな形の確認・アップロードの手順はとばす）。
+ * - 記入済みのPDFには「もともと印刷されている文字」と「記入された文字」の区別がないため、固定の文字は取り除かない
+ *   （画面で「記入欄だけを囲む」よう案内する）。
+ * source を渡さないときは、従来どおり（空のひな形PDFを使う）。
+ */
+export interface FilledRegionSource {
+  files: File[];
+  language: OcrLanguageOption;
+}
+
+/** 1件分のページ数として選べる上限 */
+const MAX_RECORD_PAGES = 10;
+
+export function FilledPdfToExcelTemplatePanel({
+  source,
+  onFieldCountChange,
+}: {
+  source?: FilledRegionSource;
+  onFieldCountChange?: (count: number) => void;
+} = {}) {
+  const fromFilled = source !== undefined;
+  const [step, setStep] = useState<Step>(fromFilled ? "editor" : "template");
+  // 記入済みのPDFを使うとき：1つ目のファイルのページ数と、1件分のページ数
+  const [sourcePageCount, setSourcePageCount] = useState(0);
+  const [recordPages, setRecordPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   // --- テンプレート登録・枠指定 ---
@@ -116,6 +142,45 @@ export function FilledPdfToExcelTemplatePanel() {
       void terminateOcrWorker();
     };
   }, []);
+
+  // 記入済みのPDFを使うとき：ファイルが変わったら、1つ目のファイルを表示し直す
+  const sourceFiles = source?.files;
+  const sourceKey = sourceFiles?.map((f) => `${f.name}:${f.size}:${f.lastModified}`).join("|") ?? "";
+  useEffect(() => {
+    if (!sourceFiles || sourceFiles.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const first = sourceFiles[0];
+        const count = await withPdfDocument(first, async (pdf) => pdf.numPages);
+        if (cancelled) return;
+        // ファイルが複数なら「1ファイル＝1件」（1つ目のファイルのページ数）、1つなら「1ページ＝1件」
+        const pages = Math.min(MAX_RECORD_PAGES, sourceFiles.length > 1 ? count : 1);
+        setSourcePageCount(count);
+        setRecordPages(pages);
+        await loadTemplateFromFile(first, pages);
+        handleFilledSelect(sourceFiles);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // sourceKey が変わったときだけ読み直す（毎回の描画では読み直さない）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceKey]);
+
+  // 記入済みのPDFを使うとき：OCRの言語は、親の画面の選択に合わせる
+  const sourceLanguage = source?.language;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (sourceLanguage) setLanguage(sourceLanguage);
+  }, [sourceLanguage]);
+
+  useEffect(() => {
+    onFieldCountChange?.(template.fields.length);
+  }, [template.fields.length, onFieldCountChange]);
 
   function resetAll() {
     setStep("template");
@@ -174,6 +239,42 @@ export function FilledPdfToExcelTemplatePanel() {
     await page.render({ canvasContext: ctx, viewport }).promise;
     setActiveViewport(viewport);
     setPageImageUrl(canvas.toDataURL("image/png"));
+  }
+
+  /**
+   * PDFを、四角を囲む画面に読み込む。maxPages を指定したときは、先頭からそのページ数だけを使う
+   * （記入済みのPDFを使うときの「1件分のページ数」）。囲んだ四角は、残っているページの分だけ残す。
+   */
+  async function loadTemplateFromFile(f: File, maxPages?: number) {
+    const bytes = await f.arrayBuffer();
+    await withPdfDocument(new File([bytes], f.name, { type: "application/pdf" }), async (pdf) => {
+      if (pdf.numPages === 0) throw new Error("このPDFにはページがありません");
+      const use = Math.min(pdf.numPages, maxPages ?? pdf.numPages);
+      const pageInfos: TemplatePageMeta[] = [];
+      for (let i = 1; i <= use; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 1 });
+        pageInfos.push({ pageIndex: i - 1, width: viewport.width, height: viewport.height });
+      }
+      setTemplateFile(f);
+      setTemplatePdfBytes(bytes);
+      setTemplatePages(pageInfos);
+      setCurrentPageIndex(0);
+      setTemplate((prev) => ({ pages: pageInfos, fields: prev.fields.filter((fl) => fl.pageIndex < use), excludeEmptyPersons: true }));
+      setPersonIndexes((prev) => (prev.length > 0 ? prev : [1]));
+      await renderTemplatePage(pdf, 0, pageInfos[0], zoomPercent);
+    });
+  }
+
+  async function changeRecordPages(next: number) {
+    if (!sourceFiles || sourceFiles.length === 0) return;
+    setRecordPages(next);
+    setError(null);
+    try {
+      await loadTemplateFromFile(sourceFiles[0], next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました");
+    }
   }
 
   async function handleTemplateSelect(files: File[]) {
@@ -258,7 +359,18 @@ export function FilledPdfToExcelTemplatePanel() {
   }
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
+    // 記入済みのPDFを使うとき：人物が1人だけなら、「項目を追加」を押さなくても、クリックした所に四角を置く
+    // （置いた四角の上のクリック・ドラッグのあとのクリックでは、新しい四角を作らない）
+    if (pendingFieldPerson === null && fromFilled && personIndexes.length === 1) {
+      if ((e.target as HTMLElement).closest('[data-testid^="template-field-"]')) return;
+      placeField(e, personIndexes[0]);
+      return;
+    }
     if (pendingFieldPerson === null) return;
+    placeField(e, pendingFieldPerson);
+  }
+
+  function placeField(e: React.MouseEvent<HTMLDivElement>, pendingFieldPerson: number) {
     const pageInfo = templatePages[currentPageIndex];
     if (!pageInfo || !activeViewport) return;
     if (template.fields.length >= TEMPLATE_LIMITS.maxFieldsTotal) {
@@ -443,7 +555,13 @@ export function FilledPdfToExcelTemplatePanel() {
   const overPageLimit = totalPages !== null && usage?.maxPagesPerUse != null && totalPages > usage.maxPagesPerUse;
   const [isSubmittingExtraction, setIsSubmittingExtraction] = useState(false);
   const canRunExtraction =
-    filledFiles.length > 0 && totalPages !== null && !pageCountError && !overPageLimit && !needsAdBeforeRun && !isSubmittingExtraction;
+    filledFiles.length > 0 &&
+    totalPages !== null &&
+    !pageCountError &&
+    !overPageLimit &&
+    // 記入済みのPDFを使うときは、広告の視聴の案内を親の画面が出す（利用できるかは、実行の直前にサーバーで確かめる）
+    (fromFilled || !needsAdBeforeRun) &&
+    !isSubmittingExtraction;
 
   async function handleRunExtraction() {
     // canRunExtractionのisSubmittingExtraction判定だけでは、クリックからstate更新の
@@ -487,7 +605,7 @@ export function FilledPdfToExcelTemplatePanel() {
       setStep("preview");
     } catch (e) {
       setError(e instanceof Error ? e.message : "処理に失敗しました");
-      setStep("upload");
+      setStep(fromFilled ? "editor" : "upload");
     } finally {
       setProgressLabel("");
       setIsSubmittingExtraction(false);
@@ -531,7 +649,11 @@ export function FilledPdfToExcelTemplatePanel() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-        <p>空のテンプレートPDF上で入力枠の位置を指定し、その位置だけから値を取り出してExcelへ整理します。設定はこのページを離れると消えます。</p>
+        <p>
+          {fromFilled
+            ? "1つ目のPDFの上で、取り出したい記入欄をクリックして四角を置き、大きさを合わせます（見出しの文字は入れず、記入欄だけを囲んでください）。すべてのページの同じ場所を読み取り、1件1行の一覧にします。設定はこのページを離れると消えます。"
+            : "空のテンプレートPDF上で入力枠の位置を指定し、その位置だけから値を取り出してExcelへ整理します。設定はこのページを離れると消えます。"}
+        </p>
       </div>
 
       {error && <ErrorMessage message={error} />}
@@ -574,6 +696,23 @@ export function FilledPdfToExcelTemplatePanel() {
               </>
             )}
 
+            {fromFilled && sourcePageCount > 1 && (
+              <label className="flex items-center gap-1 text-xs">
+                1件分のページ数
+                <select
+                  data-testid="filled-region-record-pages"
+                  value={recordPages}
+                  onChange={(e) => void changeRecordPages(Number(e.target.value))}
+                  className="rounded border border-neutral-300 bg-white px-1 py-0.5 dark:border-neutral-700 dark:bg-neutral-950"
+                >
+                  {Array.from({ length: Math.min(MAX_RECORD_PAGES, sourcePageCount) }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n}ページ
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="flex items-center gap-1" role="group" aria-label="表示倍率">
               <span className="text-xs text-neutral-500 dark:text-neutral-400">表示倍率:</span>
               <ZoomSlider value={zoomPercent} min={50} max={300} step={10} onChange={(p) => void handleZoomChange(p)} testId="template-zoom-slider" className="w-32" />
@@ -817,14 +956,27 @@ export function FilledPdfToExcelTemplatePanel() {
                 );
               })}
 
-              <button
-                type="button"
-                onClick={() => setStep("confirm")}
-                disabled={!canProceedToConfirm()}
-                className="mt-2 w-fit rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                テンプレート確認へ
-              </button>
+              {fromFilled ? (
+                <button
+                  type="button"
+                  data-testid="filled-region-run"
+                  onClick={() => void handleRunExtraction()}
+                  disabled={!canProceedToConfirm() || !canRunExtraction}
+                  aria-busy={isSubmittingExtraction || undefined}
+                  className="mt-2 w-fit rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  指定した場所で一覧にする
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setStep("confirm")}
+                  disabled={!canProceedToConfirm()}
+                  className="mt-2 w-fit rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  テンプレート確認へ
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1041,9 +1193,15 @@ export function FilledPdfToExcelTemplatePanel() {
           )}
 
           <div className="flex gap-3">
-            <button type="button" onClick={resetAll} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">
-              最初からやり直す
-            </button>
+            {fromFilled ? (
+              <button type="button" onClick={() => setStep("editor")} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">
+                場所を指定し直す
+              </button>
+            ) : (
+              <button type="button" onClick={resetAll} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">
+                最初からやり直す
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void handleDownloadExcel()}

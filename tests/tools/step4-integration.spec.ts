@@ -723,7 +723,7 @@ test("4-6: 入力フォームに記入したPDF（テキスト欄・チェック
   }
   await page.goto("/tools/filled-pdf-to-excel");
   await uploadFixture(page, src);
-  await page.getByRole("button", { name: "Excelに変換する", exact: true }).click();
+  await page.getByRole("button", { name: "おまかせでExcelに変換する", exact: true }).click();
   await waitForSuccess(page, "Excelファイルの生成が完了しました", 90_000);
   const d = await clickAndDownload(page, "Excelファイルをダウンロード");
   const { path: xlsx } = await assertDownloadedFile(d, { format: "zip" });

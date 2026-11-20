@@ -149,7 +149,7 @@ test.describe("テンプレート作成", () => {
     await expect(page.getByRole("button", { name: "テンプレート確認へ" })).toBeEnabled();
   });
 
-  test("モード切替(自動抽出⇔テンプレート)でUIが正しく切り替わる", async ({ page }) => {
+  test("空のひな形（テンプレート）を使うやり方⇔ふつうのやり方で、UIが正しく切り替わる", async ({ page }) => {
     await page.goto("/tools/filled-pdf-to-excel");
     // 既知の環境要因(このページの初回コンパイル遅延。openTemplateTool()のコメント参照)
     // を踏まえ、初回表示だけ長めのタイムアウトを与える。
@@ -160,7 +160,8 @@ test.describe("テンプレート作成", () => {
       expectAfter: page.getByText("空のテンプレートPDFをドラッグ&ドロップ"),
     });
 
-    await page.getByRole("button", { name: "自動抽出", exact: false }).click();
+    // 2026-11-20：モードの切り替えはやめ、ふつうのやり方（記入済みのPDFの上で囲む）に戻るボタンにした
+    await page.getByTestId("filled-pdf-blank-template-toggle").click();
     await expect(page.getByText("PDFをドラッグ&ドロップ", { exact: true })).toBeVisible();
   });
 
