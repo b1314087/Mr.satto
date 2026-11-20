@@ -642,3 +642,10 @@ test.describe("記入済みPDF→Excelの「指定した場所をAIで読み取�
     expect((await handleFormExtract(deps, { userId: USER_ID, plan: "standard" }, AVAILABLE, regionBody())).status).toBe(403);
   });
 });
+
+test.describe("指定した場所の指示：1で始まる数字を落とさない", () => {
+  test("赤い四角の意味と、細い縦の字（1）を枠の線と取り違えない注意が入っている", () => {
+    expect(REGION_INSTRUCTIONS).toContain("赤い四角");
+    expect(REGION_INSTRUCTIONS).toContain("「13」");
+  });
+});

@@ -8,7 +8,7 @@ import type { Template, TemplateField } from "./types";
 /**
  * 記入済みPDF→Excelの「指定した場所をAIで読み取る」（2026-11-20）。
  *
- * - AIに送るのは、利用者が囲んだ枠の中の画像だけ（ページ全体は送らない）。
+ * - AIに送るのは、利用者が囲んだ枠と、そのまわりの少しの余白の画像だけ（ページ全体は送らない）。
  * - 1件（1人・1枚）につき、枠の画像を上から順に並べた1枚の画像を作る（枠のあいだは灰色の帯で区切る）。
  * - 文字のあるPDFで、PDFの中の文字から読めた欄と、チェック欄は送らない（AIを使わなくても正確に読めるため）。
  */
@@ -52,12 +52,49 @@ export function fileIndexOfRecord(record: PersonRecord): number {
   return m ? Number(m[1]) : 0;
 }
 
+/**
+ * 枠のまわりを少し広げて切り出し、もとの枠の位置を赤い線で示す（2026-11-20）。
+ * 枠の線ぎりぎりに書かれた字（「13」の「1」など）が切れたり、枠の線と見分けられずに落ちたりするのを防ぐ。
+ * 赤い線は、もとの枠のすぐ外側に引く（字の上には重ねない）。
+ */
+export function cropWithMargin(
+  pageCanvas: HTMLCanvasElement,
+  field: Pick<TemplateField, "x" | "y" | "width" | "height">,
+  pageHeightPt: number,
+  renderScale: number,
+): HTMLCanvasElement | null {
+  const m = marginPt(field);
+  const expanded = { x: field.x - m, y: field.y - m, width: field.width + m * 2, height: field.height + m * 2 };
+  const crop = cropFieldCanvas(pageCanvas, expanded, pageHeightPt, renderScale);
+  if (!crop) return null;
+  const ctx = crop.getContext("2d");
+  if (!ctx) return crop;
+  // 切り出した画像の、1ptあたりのピクセル数（ページの端で切れたときも、おおよその位置になる）
+  const k = crop.width / (expanded.width * 1);
+  const line = Math.max(2, Math.round(k * 0.6));
+  ctx.strokeStyle = "#e11d48";
+  ctx.lineWidth = line;
+  const off = m * k - line / 2 - 1;
+  ctx.strokeRect(off, off, field.width * k + line + 2, field.height * k + line + 2);
+  return crop;
+}
+
+/** 枠のまわりに足す余白（pt）。枠の高さの25%（最低4pt・最大14pt） */
+export function marginPt(field: { height: number }): number {
+  return Math.min(14, Math.max(4, field.height * 0.25));
+}
+
+/** 並べるときの、1つの枠の最低の高さ（px）。小さい枠は拡大して、字を読みやすくする */
+const MIN_CROP_HEIGHT = 90;
+
 /** 枠の画像を、上から順に1枚に並べる（枠のあいだは灰色の帯） */
 export function stackCrops(crops: HTMLCanvasElement[]): HTMLCanvasElement | null {
   if (crops.length === 0) return null;
-  const width = Math.min(STACK_MAX_WIDTH, Math.max(...crops.map((c) => c.width)));
+  // 小さい枠は、高さが MIN_CROP_HEIGHT になるまで拡大する（最大3倍。幅の上限は超えない）
+  const grow = (c: HTMLCanvasElement) => (c.height < MIN_CROP_HEIGHT ? Math.min(3, MIN_CROP_HEIGHT / c.height) : 1);
+  const width = Math.min(STACK_MAX_WIDTH, Math.max(...crops.map((c) => Math.round(c.width * grow(c)))));
   const scaled = crops.map((c) => {
-    const k = Math.min(1, width / c.width);
+    const k = Math.min(grow(c), width / c.width);
     return { c, w: Math.max(1, Math.round(c.width * k)), h: Math.max(1, Math.round(c.height * k)) };
   });
   const height = scaled.reduce((sum, s) => sum + s.h, 0) + SEPARATOR_PX * (crops.length - 1);
@@ -75,6 +112,8 @@ export function stackCrops(crops: HTMLCanvasElement[]): HTMLCanvasElement | null
       ctx.fillRect(0, y, width, SEPARATOR_PX);
       y += SEPARATOR_PX;
     }
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     ctx.drawImage(s.c, 0, y, s.w, s.h);
     y += s.h;
   });
@@ -132,7 +171,7 @@ export async function buildRegionAiItems(opts: {
           if (!needsAi(fv.method)) continue;
           const tf = templateFieldOf(template, record, fv.fieldIndex);
           if (!tf) continue;
-          const crop = cropFieldCanvas(rendered.canvas, tf, rendered.heightPt, rendered.scale);
+          const crop = cropWithMargin(rendered.canvas, tf, rendered.heightPt, rendered.scale);
           if (!crop) continue;
           fieldIndexes.push(fv.fieldIndex);
           labels.push((fv.label || `項目${fv.fieldIndex}`).slice(0, 40));

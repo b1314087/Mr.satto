@@ -135,5 +135,19 @@ test.describe("記入済みPDF→Excel：記入済みのPDFの上で場所を囲
     expect(sent.fields).toEqual([birth.label, address.label]);
     expect(sent.pages).toHaveLength(1);
     expect(sent.pages[0].image?.mediaType).toBe("image/jpeg");
+    // 送る画像には、囲んだ場所を示す赤い線が入っている（枠の線ぎりぎりの字を落とさないよう、まわりを少し広げて切り出す）
+    const hasRed = await page.getByTestId("region-ai-image").evaluate(async (img: HTMLImageElement) => {
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      let red = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] - d[i + 1] > 60) red++;
+      return red;
+    });
+    expect(hasRed).toBeGreaterThan(50);
   });
 });

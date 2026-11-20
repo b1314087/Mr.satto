@@ -23,7 +23,7 @@ import {
 /**
  * 記入済みPDF→Excelの「指定した場所をAIで読み取る」（プレミアム・2026-11-20）。
  *
- * - AIに送るのは、利用者が囲んだ枠の中の画像だけ（ページ全体・PDFファイルそのものは送らない）。
+ * - AIに送るのは、利用者が囲んだ枠（と、字が切れないための少しの余白）の画像だけ（ページ全体・PDFファイルそのものは送らない）。
  * - 送る画像は、実行の前に画面に出して見せ、実行のたびに同意を取る。
  * - 結果は、下の一覧の欄にそのまま入る（利用者が確かめて直してから、Excelにする）。
  * - 量が多いときは、4件ずつ自動で分けて順に送る。途中で利用枠が足りなくなったら、そこまでの結果を残す。
@@ -246,7 +246,7 @@ export function RegionAiPanel({
               {items && items.length > 0 && (
                 <>
                   <div className="flex flex-col gap-2">
-                    <StepLabel n={1} hint="この画像（囲んだ枠の中だけ）をAIに送ります">送る内容の確認</StepLabel>
+                    <StepLabel n={1} hint="この画像（囲んだ枠と、そのまわりの少しの余白だけ）をAIに送ります。赤い四角が囲んだ場所です">送る内容の確認</StepLabel>
                     <p data-testid="region-ai-count" className="text-xs text-neutral-600 dark:text-neutral-300">
                       送る件数：{items.length}件（1件＝枠を上から並べた画像1枚）
                       {batches.length > 1 ? ` ／ ${batches.length}回に分けて順に送ります（AI利用枠を、送る量に応じて使います）` : ""}
@@ -282,7 +282,7 @@ export function RegionAiPanel({
                   <div className="flex flex-col gap-2">
                     <StepLabel n={3}>同意して実行</StepLabel>
                     <ConsentBox testId="region-ai-consent" checked={consent} onChange={setConsent}>
-                      上の画像（囲んだ枠の中だけ）を、AI（OpenAI）に送って読み取ることに同意します
+                      上の画像（囲んだ枠と、そのまわりの少しの余白だけ）を、AI（OpenAI）に送って読み取ることに同意します
                     </ConsentBox>
                     <AiRunButton
                       testId="region-ai-run"
