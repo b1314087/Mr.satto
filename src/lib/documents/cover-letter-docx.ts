@@ -5,10 +5,12 @@ import {
   coverLetterTitle,
   formatJapaneseDate,
   itemLines,
-  recipientLines,
-  senderLines,
+  recipientContactLine,
+  recipientLineEntries,
+  senderLineEntries,
   validateCoverLetter,
   type CoverLetterBlock,
+  type CoverLetterLine,
   type CoverLetterForm,
 } from "./cover-letter";
 
@@ -37,17 +39,23 @@ export async function buildCoverLetterDocx(form: CoverLetterForm): Promise<Blob>
   const font = { ascii: FONT, hAnsi: FONT, eastAsia: FONT, cs: FONT };
   const run = (text: string, o: { size?: number; bold?: boolean } = {}) => new TextRun({ text, font, size: Math.round((o.size ?? 10.5) * 2), bold: o.bold });
   /** ずらし量を、段落のインデント（横）と前の空き（縦）にする。base は標準の前の空き（pt） */
-  const place = (b: CoverLetterBlock, basePt: number, extraLeftMm = 0) => {
-    const x = layout[b].x;
+  // line を渡すと、その行だけのずらし（横は字下げ、縦は前の空き）も足す。
+  // Wordは文字の流れで並ぶため、1行だけ下げると、その下の行も一緒に下がる（PDF・プレビューでは、その行だけ動く）
+  const place = (b: CoverLetterBlock, basePt: number, extraLeftMm = 0, line?: CoverLetterLine) => {
+    const x = layout[b].x + (line ? layout[line].x : 0);
+    const y = layout[b].y + (line ? layout[line].y : 0);
     return {
       indent: { left: tw(extraLeftMm + x), right: tw(-x) },
-      spacing: { before: Math.max(0, Math.round(basePt * PT + tw(layout[b].y))), after: 0, line: Math.round(10.5 * PT * 1.7), lineRule: LineRuleType.AUTO },
+      spacing: { before: Math.max(0, Math.round(basePt * PT + tw(y))), after: 0, line: Math.round(10.5 * PT * 1.7), lineRule: LineRuleType.AUTO },
     };
   };
-  const inBlock = (b: CoverLetterBlock, extraLeftMm = 0) => ({
-    indent: { left: tw(extraLeftMm + layout[b].x), right: tw(-layout[b].x) },
-    spacing: { before: 0, after: 0, line: Math.round(10.5 * PT * 1.7), lineRule: LineRuleType.AUTO },
-  });
+  const inBlock = (b: CoverLetterBlock, extraLeftMm = 0, line?: CoverLetterLine) => {
+    const x = layout[b].x + (line ? layout[line].x : 0);
+    return {
+      indent: { left: tw(extraLeftMm + x), right: tw(-x) },
+      spacing: { before: Math.max(0, line ? tw(layout[line].y) : 0), after: 0, line: Math.round(10.5 * PT * 1.7), lineRule: LineRuleType.AUTO },
+    };
+  };
 
   // 差出人は、ページの右半分（左の余白から約85mm）に置く
   const SENDER_LEFT_MM = 85;
@@ -57,30 +65,34 @@ export async function buildCoverLetterDocx(form: CoverLetterForm): Promise<Blob>
     // 日付（右寄せ）
     children.push(new Paragraph({ children: [run(formatJapaneseDate(form.date))], alignment: AlignmentType.RIGHT, ...place("date", 0) }));
     // 宛先（最後の行は大きく、下線）
-    const toLines = recipientLines(recipient);
+    const toLines = recipientLineEntries(recipient);
     toLines.forEach((line, i) => {
       const last = i === toLines.length - 1;
+      const lx = layout.recipient.x + layout[line.key].x;
       children.push(
         new Paragraph({
-          children: [run(line, { size: last ? 14 : 12 })],
-          ...(i === 0 ? place("recipient", 18) : inBlock("recipient")),
+          children: [run(line.text, { size: last ? 14 : 12 })],
+          ...(i === 0 ? place("recipient", 18, 0, line.key) : inBlock("recipient", 0, line.key)),
           // 最後の行（担当者名・御中）は、下線を約100mmの長さにする（段落の右を字下げして、線を短くする）
           ...(last
             ? {
                 border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "8C8C94", space: 2 } },
-                indent: { left: tw(layout.recipient.x), right: tw(70 - layout.recipient.x) },
+                indent: { left: tw(lx), right: tw(70 - lx) },
               }
             : {}),
         }),
       );
     });
-    if (form.kind === "fax") {
-      const faxInfo = [recipient.fax.trim() && `FAX：${recipient.fax.trim()}`, recipient.tel.trim() && `TEL：${recipient.tel.trim()}`].filter(Boolean).join("　");
-      if (faxInfo) children.push(new Paragraph({ children: [run(faxInfo, { size: 10 })], ...inBlock("recipient") }));
-    }
+    const faxInfo = recipientContactLine(form.kind, recipient);
+    if (faxInfo) children.push(new Paragraph({ children: [run(faxInfo, { size: 10 })], ...inBlock("recipient", 0, "recipient.contact") }));
     // 差出人（右半分）
-    senderLines(form.sender).forEach((line, i) => {
-      children.push(new Paragraph({ children: [run(line, { size: i === 0 ? 11 : 9.5 })], ...(i === 0 ? place("sender", 18, SENDER_LEFT_MM) : inBlock("sender", SENDER_LEFT_MM)) }));
+    senderLineEntries(form.sender).forEach((line, i) => {
+      children.push(
+        new Paragraph({
+          children: [run(line.text, { size: i === 0 ? 11 : 9.5 })],
+          ...(i === 0 ? place("sender", 18, SENDER_LEFT_MM, line.key) : inBlock("sender", SENDER_LEFT_MM, line.key)),
+        }),
+      );
     });
     // 見出し
     children.push(new Paragraph({ children: [run(coverLetterTitle(form), { size: 18, bold: true })], alignment: AlignmentType.CENTER, ...place("title", 28) }));

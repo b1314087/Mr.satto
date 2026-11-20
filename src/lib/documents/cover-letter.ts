@@ -55,24 +55,67 @@ export const COVER_LETTER_BLOCKS: { id: CoverLetterBlock; label: string }[] = [
   { id: "notes", label: "連絡事項" },
 ];
 
-/** 項目ごとのずらし量（mm）。x は右へ、y は下へ（その項目の上の空きを増やす）。0 なら標準の位置 */
-export type CoverLetterLayout = Record<CoverLetterBlock, { x: number; y: number }>;
+/**
+ * 1行ずつ動かせる項目（宛先・差出人の中の、会社名・住所・電話など。2026-11-20）。
+ * まとまり（CoverLetterBlock）のずらしに足して、その行だけを動かす（ほかの行の位置は変えない）。
+ */
+export type CoverLetterLine =
+  | "recipient.company"
+  | "recipient.department"
+  | "recipient.name"
+  | "recipient.contact"
+  | "sender.company"
+  | "sender.department"
+  | "sender.name"
+  | "sender.postal"
+  | "sender.address"
+  | "sender.tel"
+  | "sender.fax"
+  | "sender.email";
+
+export const COVER_LETTER_LINES: { id: CoverLetterLine; label: string; group: "recipient" | "sender" }[] = [
+  { id: "recipient.company", label: "宛先の会社名", group: "recipient" },
+  { id: "recipient.department", label: "宛先の部署名", group: "recipient" },
+  { id: "recipient.name", label: "宛先の担当者名", group: "recipient" },
+  { id: "recipient.contact", label: "宛先のFAX・電話", group: "recipient" },
+  { id: "sender.company", label: "差出人の会社名", group: "sender" },
+  { id: "sender.department", label: "差出人の部署名", group: "sender" },
+  { id: "sender.name", label: "差出人の担当者名", group: "sender" },
+  { id: "sender.postal", label: "差出人の郵便番号", group: "sender" },
+  { id: "sender.address", label: "差出人の住所", group: "sender" },
+  { id: "sender.tel", label: "差出人の電話番号", group: "sender" },
+  { id: "sender.fax", label: "差出人のFAX番号", group: "sender" },
+  { id: "sender.email", label: "差出人のメール", group: "sender" },
+];
+
+export type CoverLetterLayoutKey = CoverLetterBlock | CoverLetterLine;
+
+/** 動かせる項目すべて（まとまり＋1行ずつの項目）の名前 */
+export const COVER_LETTER_LAYOUT_ITEMS: { id: CoverLetterLayoutKey; label: string }[] = [
+  ...COVER_LETTER_BLOCKS.map((b) => ({ id: b.id as CoverLetterLayoutKey, label: b.id === "recipient" || b.id === "sender" ? `${b.label}（まとめて）` : b.label })),
+  ...COVER_LETTER_LINES.map((l) => ({ id: l.id as CoverLetterLayoutKey, label: l.label })),
+];
+
+/** 項目ごとのずらし量（mm）。x は右へ、y は下へ。0 なら標準の位置 */
+export type CoverLetterLayout = Record<CoverLetterLayoutKey, { x: number; y: number }>;
 
 /** ずらせる範囲（mm） */
 export const LAYOUT_X_RANGE = { min: -40, max: 40 } as const;
 export const LAYOUT_Y_RANGE = { min: -20, max: 60 } as const;
 
+const ALL_LAYOUT_KEYS: CoverLetterLayoutKey[] = COVER_LETTER_LAYOUT_ITEMS.map((i) => i.id);
+
 export function createDefaultLayout(): CoverLetterLayout {
-  return Object.fromEntries(COVER_LETTER_BLOCKS.map((b) => [b.id, { x: 0, y: 0 }])) as CoverLetterLayout;
+  return Object.fromEntries(ALL_LAYOUT_KEYS.map((k) => [k, { x: 0, y: 0 }])) as CoverLetterLayout;
 }
 
 /** ずらし量を範囲に収める（壊れた値・ない値は0） */
 export function clampLayout(layout: Partial<CoverLetterLayout> | undefined): CoverLetterLayout {
   const out = createDefaultLayout();
-  for (const b of COVER_LETTER_BLOCKS) {
-    const x = Number(layout?.[b.id]?.x);
-    const y = Number(layout?.[b.id]?.y);
-    out[b.id] = {
+  for (const k of ALL_LAYOUT_KEYS) {
+    const x = Number(layout?.[k]?.x);
+    const y = Number(layout?.[k]?.y);
+    out[k] = {
       x: Number.isFinite(x) ? Math.min(LAYOUT_X_RANGE.max, Math.max(LAYOUT_X_RANGE.min, x)) : 0,
       y: Number.isFinite(y) ? Math.min(LAYOUT_Y_RANGE.max, Math.max(LAYOUT_Y_RANGE.min, y)) : 0,
     };
@@ -82,7 +125,12 @@ export function clampLayout(layout: Partial<CoverLetterLayout> | undefined): Cov
 
 /** 位置を標準から変えているか */
 export function isLayoutChanged(layout: CoverLetterLayout): boolean {
-  return COVER_LETTER_BLOCKS.some((b) => layout[b.id].x !== 0 || layout[b.id].y !== 0);
+  return ALL_LAYOUT_KEYS.some((k) => isItemMoved(layout, k));
+}
+
+/** その項目を、標準の位置から動かしているか */
+export function isItemMoved(layout: CoverLetterLayout, key: CoverLetterLayoutKey): boolean {
+  return (layout[key]?.x ?? 0) !== 0 || (layout[key]?.y ?? 0) !== 0;
 }
 
 export interface CoverLetterForm {
@@ -185,34 +233,51 @@ export function formatJapaneseDate(iso: string): string {
  * 担当者名にすでに「様」「殿」などが付いていれば、重ねて付けない。
  */
 export function recipientLines(r: CoverLetterRecipient): string[] {
+  return recipientLineEntries(r).map((e) => e.text);
+}
+
+/** 宛名の行と、その行がどの項目か（1行ずつ位置を動かすため） */
+export function recipientLineEntries(r: CoverLetterRecipient): { key: CoverLetterLine; text: string }[] {
   const company = r.companyName.trim();
   const dept = r.department.trim();
   const name = r.contactName.trim();
-  const lines: string[] = [];
+  const lines: { key: CoverLetterLine; text: string }[] = [];
   if (name) {
-    if (company) lines.push(company);
-    if (dept) lines.push(dept);
-    lines.push(/(様|殿|御中|先生)$/.test(name) ? name : `${name} 様`);
+    if (company) lines.push({ key: "recipient.company", text: company });
+    if (dept) lines.push({ key: "recipient.department", text: dept });
+    lines.push({ key: "recipient.name", text: /(様|殿|御中|先生)$/.test(name) ? name : `${name} 様` });
     return lines;
   }
-  const org = [company, dept].filter(Boolean);
-  if (org.length === 0) return [];
-  org.forEach((line, i) => lines.push(i === org.length - 1 && !/御中$/.test(line) ? `${line} 御中` : line));
+  const org: { key: CoverLetterLine; text: string }[] = [];
+  if (company) org.push({ key: "recipient.company", text: company });
+  if (dept) org.push({ key: "recipient.department", text: dept });
+  org.forEach((e, i) => lines.push(i === org.length - 1 && !/御中$/.test(e.text) ? { key: e.key, text: `${e.text} 御中` } : e));
   return lines;
 }
 
 /** 差出人の行（会社名・部署・担当者・住所・連絡先） */
 export function senderLines(s: CoverLetterSender): string[] {
-  const lines: string[] = [];
-  if (s.companyName.trim()) lines.push(s.companyName.trim());
-  if (s.department.trim()) lines.push(s.department.trim());
-  if (s.contactName.trim()) lines.push(s.contactName.trim());
-  if (s.postalCode.trim()) lines.push(`〒${s.postalCode.trim().replace(/^〒/, "")}`);
-  if (s.address.trim()) lines.push(s.address.trim());
-  if (s.tel.trim()) lines.push(`TEL：${s.tel.trim()}`);
-  if (s.fax.trim()) lines.push(`FAX：${s.fax.trim()}`);
-  if (s.email.trim()) lines.push(`メール：${s.email.trim()}`);
+  return senderLineEntries(s).map((e) => e.text);
+}
+
+/** 差出人の行と、その行がどの項目か（1行ずつ位置を動かすため） */
+export function senderLineEntries(s: CoverLetterSender): { key: CoverLetterLine; text: string }[] {
+  const lines: { key: CoverLetterLine; text: string }[] = [];
+  if (s.companyName.trim()) lines.push({ key: "sender.company", text: s.companyName.trim() });
+  if (s.department.trim()) lines.push({ key: "sender.department", text: s.department.trim() });
+  if (s.contactName.trim()) lines.push({ key: "sender.name", text: s.contactName.trim() });
+  if (s.postalCode.trim()) lines.push({ key: "sender.postal", text: `〒${s.postalCode.trim().replace(/^〒/, "")}` });
+  if (s.address.trim()) lines.push({ key: "sender.address", text: s.address.trim() });
+  if (s.tel.trim()) lines.push({ key: "sender.tel", text: `TEL：${s.tel.trim()}` });
+  if (s.fax.trim()) lines.push({ key: "sender.fax", text: `FAX：${s.fax.trim()}` });
+  if (s.email.trim()) lines.push({ key: "sender.email", text: `メール：${s.email.trim()}` });
   return lines;
+}
+
+/** 宛先のFAX・電話の行（FAX送付状のときだけ。なければ空文字） */
+export function recipientContactLine(kind: CoverLetterKind, r: CoverLetterRecipient): string {
+  if (kind !== "fax") return "";
+  return [r.fax.trim() && `FAX：${r.fax.trim()}`, r.tel.trim() && `TEL：${r.tel.trim()}`].filter(Boolean).join("　");
 }
 
 /** 送付書類の行（空の行は除く）。「見積書　1部」 */

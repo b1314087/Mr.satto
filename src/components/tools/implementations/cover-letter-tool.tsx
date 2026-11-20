@@ -14,6 +14,8 @@ import {
   COMMON_DOCUMENT_NAMES,
   COVER_LETTER_BLOCKS,
   COVER_LETTER_KIND_META,
+  COVER_LETTER_LAYOUT_ITEMS,
+  COVER_LETTER_LINES,
   LAYOUT_X_RANGE,
   LAYOUT_Y_RANGE,
   MAX_RECIPIENTS,
@@ -27,6 +29,7 @@ import {
   createEmptyRecipient,
   defaultGreeting,
   formatJapaneseDate,
+  isItemMoved,
   isLayoutChanged,
   isRecipientEmpty,
   itemLines,
@@ -35,10 +38,13 @@ import {
   parseRecipientRows,
   parseRecipientText,
   parseStoredSender,
+  recipientContactLine,
+  recipientLineEntries,
   recipientLines,
+  senderLineEntries,
   senderLines,
   validateCoverLetter,
-  type CoverLetterBlock,
+  type CoverLetterLayoutKey,
   type CoverLetterForm,
   type CoverLetterKind,
   type CoverLetterRecipient,
@@ -80,6 +86,11 @@ function readSender(): CoverLetterSender | null {
   }
 }
 
+/** 動かす項目の名前 */
+function itemLabel(key: CoverLetterLayoutKey): string {
+  return COVER_LETTER_LAYOUT_ITEMS.find((i) => i.id === key)?.label ?? key;
+}
+
 export function CoverLetterTool() {
   const [form, setForm] = useState<CoverLetterForm>(() => createEmptyCoverLetter("document"));
   const [rememberSender, setRememberSender] = useState(false);
@@ -92,6 +103,8 @@ export function CoverLetterTool() {
   const [recipientPaste, setRecipientPaste] = useState("");
   const [senderPaste, setSenderPaste] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
+  // 位置を動かす項目（プレビューの文字をクリックしても選べる）
+  const [selectedItem, setSelectedItem] = useState<CoverLetterLayoutKey>("date");
 
   // 保存した差出人があれば、最初に入れる（ブラウザの中だけ）
   useEffect(() => {
@@ -119,8 +132,14 @@ export function CoverLetterTool() {
   function setSender(key: keyof CoverLetterSender, value: string) {
     patch({ sender: { ...form.sender, [key]: value } });
   }
-  function setOffset(block: CoverLetterBlock, axis: "x" | "y", value: number) {
-    patch({ layout: clampLayout({ ...form.layout, [block]: { ...form.layout[block], [axis]: value } }) });
+  function setOffset(key: CoverLetterLayoutKey, axis: "x" | "y", value: number) {
+    patch({ layout: clampLayout({ ...form.layout, [key]: { ...form.layout[key], [axis]: value } }) });
+  }
+  /** プレビューで文字をクリックしたとき：その項目を選び、「位置の調整」を開く */
+  function pickFromPreview(key: CoverLetterLayoutKey) {
+    setSelectedItem(key);
+    const details = document.querySelector<HTMLDetailsElement>('[data-testid="cover-letter-layout"]');
+    if (details && !details.open) details.open = true;
   }
   function changeKind(kind: CoverLetterKind) {
     // あいさつ文をひな形のまま使っていたときだけ、種類に合わせて入れ替える（書き換えた文は残す）
@@ -289,7 +308,7 @@ export function CoverLetterTool() {
             </div>
           )}
           <div data-testid="tool-preview">
-            <CoverLetterPreview form={form} recipient={shownRecipient} />
+            <CoverLetterPreview form={form} recipient={shownRecipient} selected={selectedItem} onPick={pickFromPreview} />
           </div>
         </section>
       }
@@ -521,33 +540,83 @@ export function CoverLetterTool() {
         <SettingsSection n={7} title="位置の調整" summary={isLayoutChanged(form.layout) ? "変更あり" : "標準の位置"} defaultOpen={false} testId="cover-letter-layout">
           <div className="flex flex-col gap-4">
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              項目ごとに、横（右へ＋）と縦（下へ＋）の位置をmm単位で動かせます。プレビュー・PDF・Wordのどれにも同じように効きます（Wordは段落の字下げ・前の空きで動かします）。
+              動かしたい項目を選ぶか、プレビューの文字をクリックして選び、横（右へ＋）と縦（下へ＋）の位置をmm単位で動かします。会社名・住所・電話番号など、1行ずつ別々に動かせます。プレビュー・PDF・Wordのどれにも効きます（Wordは字下げ・行の前の空きで動かすため、1行を下げるとその下の行も一緒に下がります）。
             </p>
-            {COVER_LETTER_BLOCKS.map((b) => (
-              <div key={b.id} className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-                <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">{b.label}</p>
-                <SliderField
-                  label="横の位置（X）"
-                  ariaLabel={`${b.label} 横の位置`}
-                  value={form.layout[b.id].x}
-                  min={LAYOUT_X_RANGE.min}
-                  max={LAYOUT_X_RANGE.max}
-                  unit="mm"
-                  onChange={(v) => setOffset(b.id, "x", v)}
-                  onReset={form.layout[b.id].x !== 0 ? () => setOffset(b.id, "x", 0) : undefined}
-                />
-                <SliderField
-                  label="縦の位置（Y）"
-                  ariaLabel={`${b.label} 縦の位置`}
-                  value={form.layout[b.id].y}
-                  min={LAYOUT_Y_RANGE.min}
-                  max={LAYOUT_Y_RANGE.max}
-                  unit="mm"
-                  onChange={(v) => setOffset(b.id, "y", v)}
-                  onReset={form.layout[b.id].y !== 0 ? () => setOffset(b.id, "y", 0) : undefined}
-                />
+            <label className="flex flex-col gap-1 text-xs font-medium text-neutral-600 dark:text-neutral-300">
+              動かす項目
+              <select
+                data-testid="cover-letter-layout-item"
+                aria-label="動かす項目"
+                value={selectedItem}
+                onChange={(e) => setSelectedItem(e.target.value as CoverLetterLayoutKey)}
+                className={inputClass}
+              >
+                <optgroup label="まとまりで動かす">
+                  {COVER_LETTER_BLOCKS.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {itemLabel(b.id)}
+                      {isItemMoved(form.layout, b.id) ? "（変更あり）" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="宛先の1行ずつ">
+                  {COVER_LETTER_LINES.filter((l) => l.group === "recipient").map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.label}
+                      {isItemMoved(form.layout, l.id) ? "（変更あり）" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="差出人の1行ずつ">
+                  {COVER_LETTER_LINES.filter((l) => l.group === "sender").map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.label}
+                      {isItemMoved(form.layout, l.id) ? "（変更あり）" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </label>
+            <div className="flex flex-col gap-2 rounded-lg border border-blue-300 p-3 dark:border-blue-800" data-testid="cover-letter-layout-sliders">
+              <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">{itemLabel(selectedItem)}</p>
+              <SliderField
+                label="横の位置（X）"
+                ariaLabel={`${itemLabel(selectedItem)} 横の位置`}
+                value={form.layout[selectedItem].x}
+                min={LAYOUT_X_RANGE.min}
+                max={LAYOUT_X_RANGE.max}
+                unit="mm"
+                onChange={(v) => setOffset(selectedItem, "x", v)}
+                onReset={form.layout[selectedItem].x !== 0 ? () => setOffset(selectedItem, "x", 0) : undefined}
+              />
+              <SliderField
+                label="縦の位置（Y）"
+                ariaLabel={`${itemLabel(selectedItem)} 縦の位置`}
+                value={form.layout[selectedItem].y}
+                min={LAYOUT_Y_RANGE.min}
+                max={LAYOUT_Y_RANGE.max}
+                unit="mm"
+                onChange={(v) => setOffset(selectedItem, "y", v)}
+                onReset={form.layout[selectedItem].y !== 0 ? () => setOffset(selectedItem, "y", 0) : undefined}
+              />
+            </div>
+            {isLayoutChanged(form.layout) && (
+              <div className="flex flex-col gap-1" data-testid="cover-letter-layout-moved">
+                <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300">動かした項目（押すと選べます）</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {COVER_LETTER_LAYOUT_ITEMS.filter((i) => isItemMoved(form.layout, i.id)).map((i) => (
+                    <button
+                      key={i.id}
+                      type="button"
+                      onClick={() => setSelectedItem(i.id)}
+                      className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs dark:border-neutral-700"
+                    >
+                      {i.label}（横{form.layout[i.id].x}・縦{form.layout[i.id].y}mm）
+                    </button>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
             <button
               type="button"
               data-testid="cover-letter-layout-reset"
@@ -569,64 +638,105 @@ export function CoverLetterTool() {
   );
 }
 
-/** 画面のプレビュー（PDFと同じ並び・同じ文面・同じずらし量） */
-export function CoverLetterPreview({ form, recipient }: { form: CoverLetterForm; recipient: CoverLetterRecipient }) {
-  const to = recipientLines(recipient);
-  const from = senderLines(form.sender);
+/** 画面のプレビュー（PDFと同じ並び・同じ文面・同じずらし量）。文字をクリックすると、その項目を選べる */
+export function CoverLetterPreview({
+  form,
+  recipient,
+  selected,
+  onPick,
+}: {
+  form: CoverLetterForm;
+  recipient: CoverLetterRecipient;
+  selected?: CoverLetterLayoutKey;
+  onPick?: (key: CoverLetterLayoutKey) => void;
+}) {
+  const to = recipientLineEntries(recipient);
+  const from = senderLineEntries(form.sender);
+  const contact = recipientContactLine(form.kind, recipient);
   const items = itemLines(form.items);
   const greetingLines = form.greeting.replace(/\s+$/, "").split(/\r\n|\r|\n/);
   const layout = clampLayout(form.layout);
-  // ずらし量（mm）を、用紙の幅（210mm）に対する割合にする。left・margin-top の % は、どちらも外側の幅が基準
-  const shift = (b: CoverLetterBlock): React.CSSProperties => ({
-    position: "relative",
-    left: `${(layout[b].x / 210) * 100}%`,
-    marginTop: `${(layout[b].y / 210) * 100}%`,
-  });
+  // ずらし量（mm）を、用紙の幅（210mm）に対する割合（cqw＝プレビューの幅の1%）にする
+  const unit = (mm: number) => `${(mm / 210) * 100}cqw`;
+  /** まとまり：横は left、縦は上の空き（下の項目も一緒に動く。PDFと同じ） */
+  const block = (b: CoverLetterLayoutKey): React.CSSProperties => ({ position: "relative", left: unit(layout[b].x), marginTop: unit(layout[b].y) });
+  /** 1行ずつ：その行だけを動かす（ほかの行は動かない。PDFと同じ） */
+  const line = (k: CoverLetterLayoutKey): React.CSSProperties => ({ position: "relative", left: unit(layout[k].x), top: unit(layout[k].y) });
+  /** クリックで選べるようにする props（extra は、その要素のもとのクラス） */
+  const pick = (k: CoverLetterLayoutKey, extra = "") =>
+    onPick
+      ? {
+          onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            onPick(k);
+          },
+          "data-layout-item": k,
+          className: `${extra} cursor-pointer rounded-sm hover:bg-blue-50 ${selected === k ? "outline outline-2 outline-blue-500" : ""}`,
+        }
+      : { className: extra };
   return (
-    <div data-testid="cover-letter-preview" className="aspect-[1/1.414] w-full overflow-hidden rounded-xl border border-neutral-200 bg-white p-6 text-[11px] leading-relaxed text-neutral-900 shadow-sm dark:border-neutral-800 sm:p-8 sm:text-xs">
-      <p className="text-right" style={shift("date")} data-testid="cover-letter-preview-date">
-        {formatJapaneseDate(form.date)}
+    <div
+      data-testid="cover-letter-preview"
+      style={{ containerType: "inline-size" }}
+      className="aspect-[1/1.414] w-full overflow-hidden rounded-xl border border-neutral-200 bg-white p-6 text-[11px] leading-relaxed text-neutral-900 shadow-sm dark:border-neutral-800 sm:p-8 sm:text-xs"
+    >
+      <p style={block("date")} data-testid="cover-letter-preview-date" className="text-right">
+        <span {...pick("date")}>{formatJapaneseDate(form.date)}</span>
       </p>
-      <div className="mt-3" style={shift("recipient")}>
+      <div className="mt-3" style={block("recipient")}>
         {to.length === 0 ? (
           <p className="text-neutral-400">（宛先）</p>
         ) : (
-          to.map((line, i) => (
-            <p key={i} className={i === to.length - 1 ? "inline-block border-b border-neutral-500 pr-6 text-sm font-semibold" : ""}>
-              {line}
+          to.map((e, i) => (
+            <p key={e.key} style={line(e.key)}>
+              <span {...pick(e.key, i === to.length - 1 ? "inline-block border-b border-neutral-500 pr-6 text-sm font-semibold" : "")}>
+                {e.text}
+              </span>
             </p>
           ))
         )}
-        {form.kind === "fax" && (recipient.fax || recipient.tel) && (
-          <p className="mt-1 text-neutral-600">{[recipient.fax && `FAX：${recipient.fax}`, recipient.tel && `TEL：${recipient.tel}`].filter(Boolean).join("　")}</p>
+        {contact && (
+          <p className="mt-1 text-neutral-600" style={line("recipient.contact")}>
+            <span {...pick("recipient.contact")}>{contact}</span>
+          </p>
         )}
       </div>
-      <div className="ml-auto mt-3 w-1/2" style={shift("sender")}>
-        {from.length === 0 ? <p className="text-neutral-400">（差出人）</p> : from.map((line, i) => <p key={i} className={i === 0 ? "font-semibold" : ""}>{line}</p>)}
+      <div className="ml-auto mt-3 w-1/2" style={block("sender")}>
+        {from.length === 0 ? (
+          <p className="text-neutral-400">（差出人）</p>
+        ) : (
+          from.map((e, i) => (
+            <p key={e.key} style={line(e.key)}>
+              <span {...pick(e.key, i === 0 ? "font-semibold" : "")}>
+                {e.text}
+              </span>
+            </p>
+          ))
+        )}
       </div>
-      <p className="mt-5 text-center text-base font-bold" style={shift("title")}>
-        {coverLetterTitle(form)}
+      <p className="mt-5 text-center text-base font-bold" style={block("title")}>
+        <span {...pick("title")}>{coverLetterTitle(form)}</span>
       </p>
-      <div className="mt-3" style={shift("body")}>
-        {greetingLines.map((line, i) =>
-          /^\s*(敬具|敬白|草々|以上)\s*$/.test(line) ? (
+      <div style={block("body")} {...pick("body", "mt-3")}>
+        {greetingLines.map((l, i) =>
+          /^\s*(敬具|敬白|草々|以上)\s*$/.test(l) ? (
             <p key={i} className="text-right">
-              {line.trim()}
+              {l.trim()}
             </p>
           ) : (
             <p key={i} className="whitespace-pre-wrap">
-              {line || "\u00a0"}
+              {l || "\u00a0"}
             </p>
           ),
         )}
       </div>
       {(items.length > 0 || (form.kind === "fax" && form.faxPages.trim())) && (
-        <div className="mt-4" style={shift("items")}>
+        <div style={block("items")} {...pick("items", "mt-4")}>
           <p className="text-center">記</p>
           <ol className="mt-2 pl-8">
-            {items.map((line, i) => (
+            {items.map((l, i) => (
               <li key={i}>
-                {i + 1}．{line}
+                {i + 1}．{l}
               </li>
             ))}
           </ol>
@@ -634,7 +744,7 @@ export function CoverLetterPreview({ form, recipient }: { form: CoverLetterForm;
         </div>
       )}
       {form.notes.trim() && (
-        <div className="mt-4" style={shift("notes")}>
+        <div style={block("notes")} {...pick("notes", "mt-4")}>
           <p>【連絡事項】</p>
           <p className="whitespace-pre-wrap pl-2">{form.notes.trim()}</p>
         </div>

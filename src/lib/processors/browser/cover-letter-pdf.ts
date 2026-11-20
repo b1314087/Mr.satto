@@ -8,13 +8,14 @@ import {
   COVER_LETTER_KIND_META,
   activeRecipients,
   clampLayout,
-  type CoverLetterBlock,
+  recipientContactLine,
+  recipientLineEntries,
+  senderLineEntries,
+  type CoverLetterLayoutKey,
   coverLetterBaseName,
   coverLetterTitle,
   formatJapaneseDate,
   itemLines,
-  recipientLines,
-  senderLines,
   validateCoverLetter,
   type CoverLetterForm,
 } from "@/lib/documents/cover-letter";
@@ -95,8 +96,8 @@ export class CoverLetterPdfProcessor extends BrowserProcessor<{ form: CoverLette
 
     const layout = clampLayout(form.layout);
     const PT_PER_MM = 72 / 25.4;
-    const dx = (b: CoverLetterBlock) => layout[b].x * PT_PER_MM;
-    const dy = (b: CoverLetterBlock) => layout[b].y * PT_PER_MM;
+    const dx = (b: CoverLetterLayoutKey) => layout[b].x * PT_PER_MM;
+    const dy = (b: CoverLetterLayoutKey) => layout[b].y * PT_PER_MM;
     const pages: PDFPage[] = [];
     let page!: PDFPage;
     let y = 0;
@@ -128,7 +129,7 @@ export class CoverLetterPdfProcessor extends BrowserProcessor<{ form: CoverLette
       }
     };
     /** ずらし量（縦）をあける。上へのずらし（マイナス）は、ページの上の余白を越えない */
-    const moveDown = (b: CoverLetterBlock, base: number) => {
+    const moveDown = (b: CoverLetterLayoutKey, base: number) => {
       y = Math.min(A4_HEIGHT - MARGIN / 2, y - Math.max(0, base + dy(b)));
     };
 
@@ -144,21 +145,21 @@ export class CoverLetterPdfProcessor extends BrowserProcessor<{ form: CoverLette
       // 宛先（左）
       moveDown("recipient", 26);
       const recipientTop = y;
-      const toLines = recipientLines(recipient);
+      const toLines = recipientLineEntries(recipient);
       for (const [i, line] of toLines.entries()) {
         const isLast = i === toLines.length - 1;
         const size = isLast ? 14 : 12;
         y -= size + 6;
-        const x = MARGIN + dx("recipient");
-        text(line, x, y, size);
-        if (isLast) page.drawLine({ start: { x, y: y - 4 }, end: { x: x + Math.max(200, width(line, size) + 8), y: y - 4 }, thickness: 0.8, color: rgb(COLOR_LINE) });
+        // 1行ずつのずらしは、その行だけを動かす（次の行の位置は変えない）
+        const x = MARGIN + dx("recipient") + dx(line.key);
+        const ly = y - dy(line.key);
+        text(line.text, x, ly, size);
+        if (isLast) page.drawLine({ start: { x, y: ly - 4 }, end: { x: x + Math.max(200, width(line.text, size) + 8), y: ly - 4 }, thickness: 0.8, color: rgb(COLOR_LINE) });
       }
-      if (form.kind === "fax") {
-        const faxInfo = [recipient.fax.trim() && `FAX：${recipient.fax.trim()}`, recipient.tel.trim() && `TEL：${recipient.tel.trim()}`].filter(Boolean).join("　");
-        if (faxInfo) {
-          y -= 18;
-          text(faxInfo, MARGIN + dx("recipient"), y, 10, "left", COLOR_MUTED);
-        }
+      const faxInfo = recipientContactLine(form.kind, recipient);
+      if (faxInfo) {
+        y -= 18;
+        text(faxInfo, MARGIN + dx("recipient") + dx("recipient.contact"), y - dy("recipient.contact"), 10, "left", COLOR_MUTED);
       }
       const recipientBottom = y;
 
@@ -166,11 +167,12 @@ export class CoverLetterPdfProcessor extends BrowserProcessor<{ form: CoverLette
       y = Math.min(recipientBottom, recipientTop - 40);
       moveDown("sender", 18);
       const senderX = Math.max(MARGIN, Math.min(A4_WIDTH - MARGIN - 60, A4_WIDTH / 2 + 30 + dx("sender")));
-      for (const [i, line] of senderLines(form.sender).entries()) {
+      for (const [i, line] of senderLineEntries(form.sender).entries()) {
         const size = i === 0 ? 11 : 9.5;
-        for (const part of wrapByWidth(line, (t) => width(t, size), A4_WIDTH - MARGIN - senderX)) {
+        const lx = Math.max(12, Math.min(A4_WIDTH - 60, senderX + dx(line.key)));
+        for (const part of wrapByWidth(line.text, (t) => width(t, size), Math.max(60, A4_WIDTH - MARGIN - lx))) {
           y -= size + 5;
-          text(part, senderX, y, size);
+          text(part, lx, y - dy(line.key), size);
         }
       }
 

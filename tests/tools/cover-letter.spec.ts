@@ -19,7 +19,9 @@ import {
   formatJapaneseDate,
   itemLines,
   parseStoredSender,
+  recipientLineEntries,
   recipientLines,
+  senderLineEntries,
   senderLines,
   validateCoverLetter,
 } from "@/lib/documents/cover-letter";
@@ -103,6 +105,19 @@ test.describe("送付状：文面の組み立て", () => {
     });
     const r = parseRecipientText("株式会社テスト\n総務課\n山田 太郎 様");
     expect([r.companyName, r.department, r.contactName]).toEqual(["株式会社テスト", "総務課", "山田 太郎"]);
+  });
+
+  test("1行ずつの項目：宛先・差出人の各行が、どの項目かわかる", () => {
+    expect(recipientLineEntries({ companyName: "A社", department: "総務部", contactName: "", fax: "", tel: "" })).toEqual([
+      { key: "recipient.company", text: "A社" },
+      { key: "recipient.department", text: "総務部 御中" },
+    ]);
+    expect(senderLineEntries({ companyName: "B社", department: "", contactName: "", postalCode: "650-0001", address: "", tel: "078", fax: "", email: "" }).map((e) => e.key)).toEqual([
+      "sender.company",
+      "sender.postal",
+      "sender.tel",
+    ]);
+    expect(clampLayout({ "sender.address": { x: 99, y: 3 } } as never)["sender.address"]).toEqual({ x: 40, y: 3 });
   });
 
   test("位置のずらし量：範囲に収め、壊れた値は0。複数件のファイル名は件数", () => {
@@ -278,6 +293,7 @@ test.describe("送付状：画面", () => {
     const titleY = (pdf: typeof before) => pdf.pages[0].items.find((it) => it.str.includes("書類送付"))!.y;
 
     await page.getByTestId("cover-letter-layout").locator("summary").click();
+    await page.getByTestId("cover-letter-layout-item").selectOption("title");
     const xBox = page.getByLabel("件名 横の位置の数値");
     await xBox.fill("20");
     await xBox.press("Enter");
@@ -293,6 +309,35 @@ test.describe("送付状：画面", () => {
 
     await page.getByTestId("cover-letter-layout-reset").click();
     await expect(page.getByTestId("cover-letter-layout")).toContainText("標準の位置");
+  });
+
+  test("1行ずつの位置：プレビューの文字をクリックして選び、その行だけを動かせる（ほかの行は動かない）", async ({ page }) => {
+    await openTool(page);
+    await page.getByLabel("会社名・屋号").fill("株式会社テスト");
+    await page.getByLabel("電話番号").fill("078-123-4567");
+    await page.getByLabel("書類1", { exact: true }).fill("見積書");
+    const before = await extractPdfContent(await savePdf(page));
+    const find = (pdf: typeof before, s: string) => pdf.pages[0].items.find((it) => it.str.includes(s))!;
+
+    // プレビューの差出人の会社名をクリックすると、その行が選ばれ、位置の調整が開く
+    await page.getByTestId("cover-letter-preview").locator('[data-layout-item="sender.company"]').click();
+    await expect(page.getByTestId("cover-letter-layout-item")).toHaveValue("sender.company");
+    const box = page.getByLabel("差出人の会社名 横の位置の数値");
+    await expect(box).toBeVisible();
+    await box.fill("-30");
+    await box.press("Enter");
+    await expect(page.getByTestId("cover-letter-layout-moved")).toContainText("差出人の会社名（横-30・縦0mm）");
+    // プレビューでも、その行だけが動く
+    const style = await page.getByTestId("cover-letter-preview").locator('[data-layout-item="sender.company"]').evaluate((el) => (el.parentElement as HTMLElement).style.left);
+    expect(style).toContain("cqw");
+
+    const after = await extractPdfContent(await savePdf(page));
+    const moved = find(before, "株式会社テスト").x - find(after, "株式会社テスト").x;
+    expect(moved).toBeGreaterThan(80); // 30mm ≒ 85pt 左へ
+    expect(moved).toBeLessThan(90);
+    // 電話番号の行は動かない
+    expect(Math.abs(find(before, "078").x - find(after, "078").x)).toBeLessThan(0.5);
+    expect(Math.abs(find(before, "078").y - find(after, "078").y)).toBeLessThan(0.5);
   });
 
   test("プライバシーポリシーに、差出人をこの端末に保存することが書いてある", async ({ page }) => {
