@@ -284,7 +284,7 @@ test.describe("送付状：画面", () => {
     expect((xml.match(/<w:sectPr/g) ?? []).length).toBe(3);
   });
 
-  test("位置の調整：バーで動かすと、プレビューとPDFの位置が変わる", async ({ page }) => {
+  test("位置の調整：①の中のバーで件名を動かすと、プレビューとPDFの位置が変わる", async ({ page }) => {
     await openTool(page);
     await page.getByLabel("会社名・屋号").fill("株式会社テスト");
     await page.getByLabel("書類1", { exact: true }).fill("見積書");
@@ -292,15 +292,18 @@ test.describe("送付状：画面", () => {
     const titleX = (pdf: typeof before) => pdf.pages[0].items.find((it) => it.str.includes("書類送付"))!.x;
     const titleY = (pdf: typeof before) => pdf.pages[0].items.find((it) => it.str.includes("書類送付"))!.y;
 
-    await page.getByTestId("cover-letter-layout").locator("summary").click();
-    await page.getByTestId("cover-letter-layout-item").selectOption("title");
+    // ①（種類・日付・件名）の中に、日付・件名の位置のバーがある
+    const sec1 = page.getByTestId("cover-letter-section-1");
+    await expect(sec1.getByTestId("cover-letter-position-1")).toBeVisible();
+    await sec1.getByTestId("cover-letter-position-item-1").selectOption("title");
     const xBox = page.getByLabel("件名 横の位置の数値");
     await xBox.fill("20");
     await xBox.press("Enter");
     const yBox = page.getByLabel("件名 縦の位置の数値");
     await yBox.fill("10");
     await yBox.press("Enter");
-    await expect(page.getByTestId("cover-letter-layout")).toContainText("変更あり");
+    await expect(page.getByTestId("cover-letter-layout-status")).toContainText("変更あり");
+    await expect(sec1.getByTestId("cover-letter-position-moved-1")).toContainText("件名（横20・縦10mm）");
     const after = await extractPdfContent(await savePdf(page));
     // 20mm ≒ 56.7pt 右へ、10mm ≒ 28.3pt 下へ
     expect(titleX(after) - titleX(before)).toBeGreaterThan(50);
@@ -308,7 +311,7 @@ test.describe("送付状：画面", () => {
     expect(titleY(before) - titleY(after)).toBeGreaterThan(24);
 
     await page.getByTestId("cover-letter-layout-reset").click();
-    await expect(page.getByTestId("cover-letter-layout")).toContainText("標準の位置");
+    await expect(page.getByTestId("cover-letter-layout-status")).toContainText("標準");
   });
 
   test("1行ずつの位置：プレビューの文字をクリックして選び、その行だけを動かせる（ほかの行は動かない）", async ({ page }) => {
@@ -319,14 +322,14 @@ test.describe("送付状：画面", () => {
     const before = await extractPdfContent(await savePdf(page));
     const find = (pdf: typeof before, s: string) => pdf.pages[0].items.find((it) => it.str.includes(s))!;
 
-    // プレビューの差出人の会社名をクリックすると、その行が選ばれ、位置の調整が開く
+    // プレビューの差出人の会社名をクリックすると、③（差出人）の中の位置のバーで、その行が選ばれる
     await page.getByTestId("cover-letter-preview").locator('[data-layout-item="sender.company"]').click();
-    await expect(page.getByTestId("cover-letter-layout-item")).toHaveValue("sender.company");
+    await expect(page.getByTestId("cover-letter-section-3").getByTestId("cover-letter-position-item-3")).toHaveValue("sender.company");
     const box = page.getByLabel("差出人の会社名 横の位置の数値");
     await expect(box).toBeVisible();
     await box.fill("-30");
     await box.press("Enter");
-    await expect(page.getByTestId("cover-letter-layout-moved")).toContainText("差出人の会社名（横-30・縦0mm）");
+    await expect(page.getByTestId("cover-letter-position-moved-3")).toContainText("差出人の会社名（横-30・縦0mm）");
     // プレビューでも、その行だけが動く
     const style = await page.getByTestId("cover-letter-preview").locator('[data-layout-item="sender.company"]').evaluate((el) => (el.parentElement as HTMLElement).style.left);
     expect(style).toContain("cqw");
@@ -338,6 +341,29 @@ test.describe("送付状：画面", () => {
     // 電話番号の行は動かない
     expect(Math.abs(find(before, "078").x - find(after, "078").x)).toBeLessThan(0.5);
     expect(Math.abs(find(before, "078").y - find(after, "078").y)).toBeLessThan(0.5);
+  });
+
+  test("位置のバーは、それぞれの設定（①〜⑥）の中にある", async ({ page }) => {
+    await openTool(page);
+    const expectItems = async (sec: number, values: string[]) => {
+      const box = page.getByTestId(`cover-letter-section-${sec}`).getByTestId(`cover-letter-position-${sec}`);
+      if (values.length > 1) {
+        const options = await box.getByTestId(`cover-letter-position-item-${sec}`).locator("option").evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+        expect(options, String(sec)).toEqual(values);
+      } else {
+        await expect(box.getByRole("slider").first()).toHaveAttribute("aria-label", /横の位置/);
+      }
+    };
+    await expectItems(1, ["date", "title"]);
+    await expectItems(2, ["recipient", "recipient.company", "recipient.department", "recipient.name", "recipient.contact"]);
+    await expectItems(3, ["sender", "sender.company", "sender.department", "sender.name", "sender.postal", "sender.address", "sender.tel", "sender.fax", "sender.email"]);
+    await page.getByTestId("cover-letter-section-4").locator("summary").click();
+    await expectItems(4, ["body"]);
+    await expectItems(5, ["items"]);
+    await page.getByTestId("cover-letter-section-6").locator("summary").click();
+    await expectItems(6, ["notes"]);
+    // 別の位置の設定（⑦）はもうない
+    await expect(page.getByTestId("cover-letter-layout")).toHaveCount(0);
   });
 
   test("プライバシーポリシーに、差出人をこの端末に保存することが書いてある", async ({ page }) => {

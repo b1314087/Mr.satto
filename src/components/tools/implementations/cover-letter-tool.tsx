@@ -12,7 +12,6 @@ import { RunBar } from "@/components/ui/run-bar";
 import { LabeledField } from "./shared/party-info-form";
 import {
   COMMON_DOCUMENT_NAMES,
-  COVER_LETTER_BLOCKS,
   COVER_LETTER_KIND_META,
   COVER_LETTER_LAYOUT_ITEMS,
   COVER_LETTER_LINES,
@@ -91,6 +90,88 @@ function itemLabel(key: CoverLetterLayoutKey): string {
   return COVER_LETTER_LAYOUT_ITEMS.find((i) => i.id === key)?.label ?? key;
 }
 
+/** 設定（①〜⑥）ごとに、その中で位置を動かせる項目 */
+const SECTION_ITEMS: Record<number, CoverLetterLayoutKey[]> = {
+  1: ["date", "title"],
+  2: ["recipient", ...COVER_LETTER_LINES.filter((l) => l.group === "recipient").map((l) => l.id)],
+  3: ["sender", ...COVER_LETTER_LINES.filter((l) => l.group === "sender").map((l) => l.id)],
+  4: ["body"],
+  5: ["items"],
+  6: ["notes"],
+};
+
+function sectionOf(key: CoverLetterLayoutKey): number {
+  for (const [sec, keys] of Object.entries(SECTION_ITEMS)) if (keys.includes(key)) return Number(sec);
+  return 1;
+}
+
+/** 設定の中に置く「位置の調整」。項目が2つ以上なら、動かす項目を選んでからバーで動かす */
+function PositionControls({
+  sec,
+  keys,
+  current,
+  layout,
+  onSelect,
+  onChange,
+}: {
+  sec: number;
+  keys: CoverLetterLayoutKey[];
+  current: CoverLetterLayoutKey;
+  layout: CoverLetterForm["layout"];
+  onSelect: (key: CoverLetterLayoutKey) => void;
+  onChange: (key: CoverLetterLayoutKey, axis: "x" | "y", value: number) => void;
+}) {
+  const label = itemLabel(current);
+  const moved = keys.filter((k) => isItemMoved(layout, k));
+  return (
+    <div data-testid={`cover-letter-position-${sec}`} className="flex flex-col gap-2 rounded-lg border border-blue-200 bg-blue-50/40 p-3 dark:border-blue-900 dark:bg-blue-950/20">
+      <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">位置の調整（右へ＋・下へ＋、mm）</p>
+      {keys.length > 1 && (
+        <select
+          data-testid={`cover-letter-position-item-${sec}`}
+          aria-label="位置を動かす項目"
+          value={current}
+          onChange={(e) => onSelect(e.target.value as CoverLetterLayoutKey)}
+          className={inputClass}
+        >
+          {keys.map((k) => (
+            <option key={k} value={k}>
+              {itemLabel(k)}
+              {isItemMoved(layout, k) ? "（変更あり）" : ""}
+            </option>
+          ))}
+        </select>
+      )}
+      <SliderField
+        label={keys.length > 1 ? "横の位置（X）" : `${label}の横の位置（X）`}
+        ariaLabel={`${label} 横の位置`}
+        value={layout[current].x}
+        min={LAYOUT_X_RANGE.min}
+        max={LAYOUT_X_RANGE.max}
+        unit="mm"
+        onChange={(v) => onChange(current, "x", v)}
+        onReset={layout[current].x !== 0 ? () => onChange(current, "x", 0) : undefined}
+      />
+      <SliderField
+        label={keys.length > 1 ? "縦の位置（Y）" : `${label}の縦の位置（Y）`}
+        ariaLabel={`${label} 縦の位置`}
+        value={layout[current].y}
+        min={LAYOUT_Y_RANGE.min}
+        max={LAYOUT_Y_RANGE.max}
+        unit="mm"
+        onChange={(v) => onChange(current, "y", v)}
+        onReset={layout[current].y !== 0 ? () => onChange(current, "y", 0) : undefined}
+      />
+      {moved.length > 0 && keys.length > 1 && (
+        <p className="text-[11px] text-neutral-600 dark:text-neutral-400" data-testid={`cover-letter-position-moved-${sec}`}>
+          動かした項目：{moved.map((k) => `${itemLabel(k)}（横${layout[k].x}・縦${layout[k].y}mm）`).join("、")}
+        </p>
+      )}
+      {keys.length > 1 && <p className="text-[11px] text-neutral-500 dark:text-neutral-400">1行ずつ選ぶと、その行だけが動きます（Wordでは、下の行も一緒に下がります）。</p>}
+    </div>
+  );
+}
+
 export function CoverLetterTool() {
   const [form, setForm] = useState<CoverLetterForm>(() => createEmptyCoverLetter("document"));
   const [rememberSender, setRememberSender] = useState(false);
@@ -103,8 +184,10 @@ export function CoverLetterTool() {
   const [recipientPaste, setRecipientPaste] = useState("");
   const [senderPaste, setSenderPaste] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
-  // 位置を動かす項目（プレビューの文字をクリックしても選べる）
-  const [selectedItem, setSelectedItem] = useState<CoverLetterLayoutKey>("date");
+  // 各設定の中で、位置を動かす項目（プレビューの文字をクリックしても選べる）
+  const [selectedBySection, setSelectedBySection] = useState<Record<number, CoverLetterLayoutKey>>({});
+  // プレビューで最後に選んだ項目（青い枠で示す）
+  const [highlighted, setHighlighted] = useState<CoverLetterLayoutKey | null>(null);
 
   // 保存した差出人があれば、最初に入れる（ブラウザの中だけ）
   useEffect(() => {
@@ -135,11 +218,36 @@ export function CoverLetterTool() {
   function setOffset(key: CoverLetterLayoutKey, axis: "x" | "y", value: number) {
     patch({ layout: clampLayout({ ...form.layout, [key]: { ...form.layout[key], [axis]: value } }) });
   }
-  /** プレビューで文字をクリックしたとき：その項目を選び、「位置の調整」を開く */
+  /** プレビューで文字をクリックしたとき：その項目の設定（①〜⑥）を開き、位置のバーでその項目を選ぶ */
   function pickFromPreview(key: CoverLetterLayoutKey) {
-    setSelectedItem(key);
-    const details = document.querySelector<HTMLDetailsElement>('[data-testid="cover-letter-layout"]');
+    const sec = sectionOf(key);
+    setSelectedBySection((m) => ({ ...m, [sec]: key }));
+    setHighlighted(key);
+    const details = document.querySelector<HTMLDetailsElement>(`[data-testid="cover-letter-section-${sec}"]`);
     if (details && !details.open) details.open = true;
+    requestAnimationFrame(() => document.querySelector(`[data-testid="cover-letter-position-${sec}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  }
+
+  /** その設定（①〜⑥）の中に置く、位置のバー */
+  function positions(sec: number) {
+    const keys = SECTION_ITEMS[sec];
+    const current = selectedBySection[sec] && keys.includes(selectedBySection[sec]) ? selectedBySection[sec] : keys[0];
+    return (
+      <PositionControls
+        sec={sec}
+        keys={keys}
+        current={current}
+        layout={form.layout}
+        onSelect={(k) => {
+          setSelectedBySection((m) => ({ ...m, [sec]: k }));
+          setHighlighted(k);
+        }}
+        onChange={(k, axis, v) => {
+          setOffset(k, axis, v);
+          setHighlighted(k);
+        }}
+      />
+    );
   }
   function changeKind(kind: CoverLetterKind) {
     // あいさつ文をひな形のまま使っていたときだけ、種類に合わせて入れ替える（書き換えた文は残す）
@@ -226,7 +334,7 @@ export function CoverLetterTool() {
       previewWidth="lg"
       after={
         <section className="flex flex-col gap-3">
-          <StepHeading n={9} as="h2">
+          <StepHeading n={8} as="h2">
             出力
           </StepHeading>
           <div role="radiogroup" aria-label="出力する形式" className="flex flex-wrap gap-2">
@@ -291,9 +399,23 @@ export function CoverLetterTool() {
       }
       preview={
         <section className="flex flex-col gap-3">
-          <StepHeading n={8} as="h2">
+          <StepHeading n={7} as="h2">
             プレビュー
           </StepHeading>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
+            <span data-testid="cover-letter-layout-status">{isLayoutChanged(form.layout) ? "位置：変更あり" : "位置：標準"}</span>
+            <span>（文字をクリックすると、その項目の位置のバーへ移ります）</span>
+            {isLayoutChanged(form.layout) && (
+              <button
+                type="button"
+                data-testid="cover-letter-layout-reset"
+                onClick={() => patch({ layout: createDefaultLayout() })}
+                className="rounded border border-neutral-300 px-2 py-0.5 dark:border-neutral-700"
+              >
+                位置をすべて標準に戻す
+              </button>
+            )}
+          </div>
           {recipientCount > 1 && (
             <div className="flex items-center gap-2 text-sm" data-testid="cover-letter-preview-nav">
               <button type="button" aria-label="前の宛先" disabled={shownIndex <= 0} onClick={() => setPreviewIndex(shownIndex - 1)} className="rounded border border-neutral-300 px-2 py-1 disabled:opacity-40 dark:border-neutral-700">
@@ -308,13 +430,13 @@ export function CoverLetterTool() {
             </div>
           )}
           <div data-testid="tool-preview">
-            <CoverLetterPreview form={form} recipient={shownRecipient} selected={selectedItem} onPick={pickFromPreview} />
+            <CoverLetterPreview form={form} recipient={shownRecipient} selected={highlighted ?? undefined} onPick={pickFromPreview} />
           </div>
         </section>
       }
     >
       <SettingsStack testId="cover-letter-settings">
-        <SettingsSection n={1} title="種類・日付・件名" summary={`${meta.label}・${formatJapaneseDate(form.date)}`}>
+        <SettingsSection n={1} title="種類・日付・件名" summary={`${meta.label}・${formatJapaneseDate(form.date)}`} testId="cover-letter-section-1">
           <div className="flex flex-col gap-3">
             <div role="radiogroup" aria-label="送付状の種類" className="flex flex-wrap gap-2">
               {(Object.keys(COVER_LETTER_KIND_META) as CoverLetterKind[]).map((k) => (
@@ -338,10 +460,11 @@ export function CoverLetterTool() {
               <input type="date" value={form.date} onChange={(e) => patch({ date: e.target.value })} className={inputClass} />
             </label>
             <LabeledField label="件名（空なら「書類送付のご案内」など）" value={form.subject} onChange={(v) => patch({ subject: v })} placeholder={meta.title} />
+            {positions(1)}
           </div>
         </SettingsSection>
 
-        <SettingsSection n={2} title="宛先" summary={recipientCount > 1 ? `${recipientCount}件` : recipientLines(shownRecipient).join(" ") || "未入力"}>
+        <SettingsSection n={2} title="宛先" summary={recipientCount > 1 ? `${recipientCount}件` : recipientLines(shownRecipient).join(" ") || "未入力"} testId="cover-letter-section-2">
           <div className="flex flex-col gap-3">
             {form.recipients.map((r, i) => (
               <div key={r.id ?? i} data-testid="cover-letter-recipient" className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
@@ -412,10 +535,11 @@ export function CoverLetterTool() {
                 宛先に追加する
               </button>
             </div>
+            {positions(2)}
           </div>
         </SettingsSection>
 
-        <SettingsSection n={3} title="差出人（自分・自社）" summary={senderLines(form.sender)[0] ?? "未入力"}>
+        <SettingsSection n={3} title="差出人（自分・自社）" summary={senderLines(form.sender)[0] ?? "未入力"} testId="cover-letter-section-3">
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <LabeledField label="会社名・屋号" value={form.sender.companyName} onChange={(v) => setSender("companyName", v)} placeholder="例: 株式会社サンプル" autoComplete="organization" />
@@ -455,10 +579,11 @@ export function CoverLetterTool() {
               <input type="checkbox" data-testid="cover-letter-remember-sender" checked={rememberSender} onChange={(e) => setRememberSender(e.target.checked)} className="mt-0.5" />
               <span>差出人をこの端末に保存し、次回から自動で入れる（保存はこのブラウザの中だけで、サーバーには送りません。共用のパソコンでは使わないでください）</span>
             </label>
+            {positions(3)}
           </div>
         </SettingsSection>
 
-        <SettingsSection n={4} title="あいさつ文" summary="拝啓〜敬具（自由に書き換えられます）" defaultOpen={false}>
+        <SettingsSection n={4} title="あいさつ文" summary="拝啓〜敬具（自由に書き換えられます）" defaultOpen={false} testId="cover-letter-section-4">
           <div className="flex flex-col gap-2">
             <textarea
               aria-label="あいさつ文"
@@ -470,10 +595,11 @@ export function CoverLetterTool() {
             <button type="button" onClick={() => patch({ greeting: defaultGreeting(form.kind) })} className="w-fit text-xs text-blue-600 underline-offset-2 hover:underline dark:text-blue-400">
               ひな形に戻す
             </button>
+            {positions(4)}
           </div>
         </SettingsSection>
 
-        <SettingsSection n={5} title="送付書類" summary={filledItems.length > 0 ? `${filledItems.length}件` : form.kind === "fax" ? "任意" : "未入力"}>
+        <SettingsSection n={5} title="送付書類" summary={filledItems.length > 0 ? `${filledItems.length}件` : form.kind === "fax" ? "任意" : "未入力"} testId="cover-letter-section-5">
           <div className="flex flex-col gap-2">
             <datalist id="cover-letter-doc-names">
               {COMMON_DOCUMENT_NAMES.map((n) => (
@@ -524,108 +650,21 @@ export function CoverLetterTool() {
             {form.kind === "fax" && (
               <LabeledField label="送信枚数（この送付状を含む）" value={form.faxPages} onChange={(v) => patch({ faxPages: v })} placeholder="例: 3" inputMode="numeric" />
             )}
+            {positions(5)}
           </div>
         </SettingsSection>
 
-        <SettingsSection n={6} title="連絡事項（任意）" summary={form.notes.trim() ? "入力済み" : "任意"} defaultOpen={false}>
-          <textarea
-            aria-label="連絡事項"
-            value={form.notes}
-            onChange={(e) => patch({ notes: e.target.value })}
-            rows={4}
-            placeholder="例: ご確認のうえ、ご署名・ご捺印をいただき、ご返送をお願いいたします。"
-            className={inputClass}
-          />
-        </SettingsSection>
-        <SettingsSection n={7} title="位置の調整" summary={isLayoutChanged(form.layout) ? "変更あり" : "標準の位置"} defaultOpen={false} testId="cover-letter-layout">
-          <div className="flex flex-col gap-4">
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              動かしたい項目を選ぶか、プレビューの文字をクリックして選び、横（右へ＋）と縦（下へ＋）の位置をmm単位で動かします。会社名・住所・電話番号など、1行ずつ別々に動かせます。プレビュー・PDF・Wordのどれにも効きます（Wordは字下げ・行の前の空きで動かすため、1行を下げるとその下の行も一緒に下がります）。
-            </p>
-            <label className="flex flex-col gap-1 text-xs font-medium text-neutral-600 dark:text-neutral-300">
-              動かす項目
-              <select
-                data-testid="cover-letter-layout-item"
-                aria-label="動かす項目"
-                value={selectedItem}
-                onChange={(e) => setSelectedItem(e.target.value as CoverLetterLayoutKey)}
-                className={inputClass}
-              >
-                <optgroup label="まとまりで動かす">
-                  {COVER_LETTER_BLOCKS.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {itemLabel(b.id)}
-                      {isItemMoved(form.layout, b.id) ? "（変更あり）" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="宛先の1行ずつ">
-                  {COVER_LETTER_LINES.filter((l) => l.group === "recipient").map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.label}
-                      {isItemMoved(form.layout, l.id) ? "（変更あり）" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="差出人の1行ずつ">
-                  {COVER_LETTER_LINES.filter((l) => l.group === "sender").map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.label}
-                      {isItemMoved(form.layout, l.id) ? "（変更あり）" : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </label>
-            <div className="flex flex-col gap-2 rounded-lg border border-blue-300 p-3 dark:border-blue-800" data-testid="cover-letter-layout-sliders">
-              <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">{itemLabel(selectedItem)}</p>
-              <SliderField
-                label="横の位置（X）"
-                ariaLabel={`${itemLabel(selectedItem)} 横の位置`}
-                value={form.layout[selectedItem].x}
-                min={LAYOUT_X_RANGE.min}
-                max={LAYOUT_X_RANGE.max}
-                unit="mm"
-                onChange={(v) => setOffset(selectedItem, "x", v)}
-                onReset={form.layout[selectedItem].x !== 0 ? () => setOffset(selectedItem, "x", 0) : undefined}
-              />
-              <SliderField
-                label="縦の位置（Y）"
-                ariaLabel={`${itemLabel(selectedItem)} 縦の位置`}
-                value={form.layout[selectedItem].y}
-                min={LAYOUT_Y_RANGE.min}
-                max={LAYOUT_Y_RANGE.max}
-                unit="mm"
-                onChange={(v) => setOffset(selectedItem, "y", v)}
-                onReset={form.layout[selectedItem].y !== 0 ? () => setOffset(selectedItem, "y", 0) : undefined}
-              />
-            </div>
-            {isLayoutChanged(form.layout) && (
-              <div className="flex flex-col gap-1" data-testid="cover-letter-layout-moved">
-                <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300">動かした項目（押すと選べます）</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {COVER_LETTER_LAYOUT_ITEMS.filter((i) => isItemMoved(form.layout, i.id)).map((i) => (
-                    <button
-                      key={i.id}
-                      type="button"
-                      onClick={() => setSelectedItem(i.id)}
-                      className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs dark:border-neutral-700"
-                    >
-                      {i.label}（横{form.layout[i.id].x}・縦{form.layout[i.id].y}mm）
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <button
-              type="button"
-              data-testid="cover-letter-layout-reset"
-              disabled={!isLayoutChanged(form.layout)}
-              onClick={() => patch({ layout: createDefaultLayout() })}
-              className="w-fit rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold disabled:opacity-40 dark:border-neutral-700"
-            >
-              すべて標準の位置に戻す
-            </button>
+        <SettingsSection n={6} title="連絡事項（任意）" summary={form.notes.trim() ? "入力済み" : "任意"} defaultOpen={false} testId="cover-letter-section-6">
+          <div className="flex flex-col gap-3">
+            <textarea
+              aria-label="連絡事項"
+              value={form.notes}
+              onChange={(e) => patch({ notes: e.target.value })}
+              rows={4}
+              placeholder="例: ご確認のうえ、ご署名・ご捺印をいただき、ご返送をお願いいたします。"
+              className={inputClass}
+            />
+            {positions(6)}
           </div>
         </SettingsSection>
       </SettingsStack>
