@@ -78,6 +78,22 @@ test.describe("ツール検索", () => {
     await expect(page.getByTestId("home-search-option").first()).toHaveAttribute("data-tool-id", "audio-transcribe", { timeout: 15_000 });
   });
 
+  test("② トップページの「声でツールを探す」ボタン：押すとすぐ聞き取りを始め、話した言葉が検索欄に入って候補が出る", async ({ page }) => {
+    await fakeSpeech(page, "PDFを小さくしたい");
+    await page.goto("/");
+    const big = page.getByTestId("home-voice-big");
+    await waitHydrated(big);
+    await expect(big).toHaveText(/声でツールを探す/);
+    await big.click();
+    await expect(page.getByTestId("home-voice-status")).toContainText("聞き取っています");
+    await expect(page.getByTestId("home-search-input")).toHaveValue("PDFを小さくしたい", { timeout: 10_000 });
+    await expect(page.getByTestId("home-search-input")).toBeFocused();
+    await expect(page.getByTestId("home-search-option").first()).toHaveAttribute("data-tool-id", "pdf-compress", { timeout: 15_000 });
+    await expect(big).toHaveText(/声でツールを探す/);
+    // 幕やせり上がる案内は出さない
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
   test("② 音声認識のないブラウザでは、マイクのボタンを出さない", async ({ page }) => {
     await page.addInitScript(() => {
       const w = window as unknown as Record<string, unknown>;
@@ -87,6 +103,10 @@ test.describe("ツール検索", () => {
     await page.goto("/tools");
     await waitHydrated(page.getByRole("searchbox", { name: "ツールを検索" }).first());
     await expect(page.getByTestId("voice-search")).toHaveCount(0);
+    await page.goto("/");
+    await waitHydrated(page.getByTestId("home-search-input"));
+    await expect(page.getByTestId("home-voice-big")).toHaveCount(0);
+    await expect(page.getByTestId("home-voice-search")).toHaveCount(0);
   });
 
   test("③ AIに相談すると、合うツールと使う順番が出る（同意してから送る）", async ({ page }) => {

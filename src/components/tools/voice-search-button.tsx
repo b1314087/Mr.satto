@@ -37,19 +37,8 @@ const ERROR_TEXT: Record<string, string> = {
   "no-speech": "声が聞き取れませんでした。もう一度お試しください。",
 };
 
-export function VoiceSearchButton({
-  onResult,
-  onInterim,
-  className = "",
-  testId = "voice-search",
-}: {
-  /** 話し終えた言葉（ここで検索する） */
-  onResult: (text: string) => void;
-  /** 話している途中の言葉（検索欄に途中経過を出す） */
-  onInterim?: (text: string) => void;
-  className?: string;
-  testId?: string;
-}) {
+/** 話して探すの、聞き取りの状態と操作（ボタンを2つ置く画面でも、聞き取りは1つにするため） */
+export function useVoiceSearch({ onResult, onInterim }: { onResult: (text: string) => void; onInterim?: (text: string) => void }) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -66,8 +55,6 @@ export function VoiceSearchButton({
     const id = window.setTimeout(() => setMessage(null), 5000);
     return () => window.clearTimeout(id);
   }, [message]);
-
-  if (!supported) return null;
 
   function toggle() {
     if (listening) {
@@ -110,6 +97,38 @@ export function VoiceSearchButton({
     }
   }
 
+  return { supported, listening, message, toggle };
+}
+
+export const VOICE_LISTENING_TEXT = "聞き取っています…やりたいことを話してください（例：PDFを小さくしたい）";
+
+/** マイクの形のボタン（検索欄の中の右端に置く） */
+export function VoiceMicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-4 w-4">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+    </svg>
+  );
+}
+
+export function VoiceSearchButton({
+  onResult,
+  onInterim,
+  className = "",
+  testId = "voice-search",
+}: {
+  /** 話し終えた言葉（ここで検索する） */
+  onResult: (text: string) => void;
+  /** 話している途中の言葉（検索欄に途中経過を出す） */
+  onInterim?: (text: string) => void;
+  className?: string;
+  testId?: string;
+}) {
+  const voice = useVoiceSearch({ onResult, onInterim });
+  if (!voice.supported) return null;
+  const { listening, message, toggle } = voice;
+
   return (
     <span className={`absolute top-1/2 -translate-y-1/2 ${className}`}>
       <button
@@ -121,10 +140,7 @@ export function VoiceSearchButton({
         data-testid={testId}
         className={`ms-focus-ring flex h-8 w-8 items-center justify-center rounded-full ${listening ? "animate-pulse bg-red-600 text-white" : "text-ms-muted hover:bg-ms-hover-tint hover:text-ms-text"}`}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-4 w-4">
-          <rect x="9" y="3" width="6" height="11" rx="3" />
-          <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-        </svg>
+        <VoiceMicIcon />
       </button>
       {(listening || message) && (
         <span
@@ -132,7 +148,7 @@ export function VoiceSearchButton({
           data-testid={`${testId}-status`}
           className="absolute right-0 top-full z-40 mt-2 w-64 rounded-lg border border-ms-border bg-ms-strong px-3 py-2 text-xs text-ms-text shadow-[var(--ms-shadow-lift)]"
         >
-          {listening ? "聞き取っています…やりたいことを話してください（例：PDFを小さくしたい）" : message}
+          {listening ? VOICE_LISTENING_TEXT : message}
         </span>
       )}
     </span>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useRef, useState } from "react";
 import { searchToolsWithFallback, type SearchableTool } from "@/lib/tools/search";
-import { VoiceSearchButton } from "./voice-search-button";
+import { VOICE_LISTENING_TEXT, VoiceMicIcon, useVoiceSearch } from "./voice-search-button";
 import { categories, getCategory } from "@/lib/tools/categories";
 import { dispatchToolsNavigate } from "@/lib/navigation/tools-navigate";
 import { featureFlags } from "@/lib/config/features";
@@ -104,6 +104,26 @@ export function HomeSearch({ total }: { total: number }) {
     else goList(query);
   }
 
+  // 声で探す（検索欄の中のマイクと、下の大きいボタンで共通。聞き取りは1つ）
+  const voice = useVoiceSearch({
+    onInterim: (text) => {
+      setValue(text);
+      setOpen(true);
+    },
+    onResult: (text) => {
+      setValue(text);
+      setOpen(true);
+      setActive(-1);
+      inputRef.current?.focus();
+    },
+  });
+
+  function startVoice() {
+    ensureTools();
+    inputRef.current?.focus();
+    voice.toggle();
+  }
+
   function runExample(text: string) {
     setValue(text);
     goList(text);
@@ -111,9 +131,28 @@ export function HomeSearch({ total }: { total: number }) {
 
   return (
     <div className="flex w-full flex-col gap-2" data-testid="home-search">
-      <label htmlFor={`${listId}-input`} className="text-base font-semibold text-ms-text sm:text-lg">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+  <label htmlFor={`${listId}-input`} className="text-base font-semibold text-ms-text sm:text-lg">
         何をしたいですか？
       </label>
+        {/* 声で探す（目立つボタン。押すとすぐ聞き取りを始め、話した言葉が検索欄に入る） */}
+        {voice.supported && (
+          <button
+            type="button"
+            onClick={startVoice}
+            aria-pressed={voice.listening}
+            data-testid="home-voice-big"
+            className={`ms-focus-ring inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition-colors ${
+              voice.listening ? "animate-pulse bg-red-600 text-white" : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
+          >
+            <span aria-hidden="true" className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20">
+              <VoiceMicIcon />
+            </span>
+            {voice.listening ? "聞き取り中…（押すと止める）" : "声でツールを探す"}
+          </button>
+        )}
+      </div>
       <form
         role="search"
         onSubmit={onSubmit}
@@ -151,27 +190,24 @@ export function HomeSearch({ total }: { total: number }) {
           aria-controls={`${listId}-list`}
           aria-autocomplete="list"
           aria-activedescendant={showPanel && active >= 0 && active < optionCount ? optionId(active) : undefined}
-          aria-describedby={`${listId}-help`}
+          aria-describedby={voice.listening || voice.message ? undefined : `${listId}-help`}
           className="ms-input ms-input-soft ms-input-pill [&::-webkit-search-cancel-button]:hidden"
           style={{ paddingRight: value ? "8.75rem" : "6.25rem" }}
           data-testid="home-search-input"
         />
-        <VoiceSearchButton
-          className="right-14"
-          testId="home-voice-search"
-          onInterim={(text) => {
-            ensureTools();
-            setValue(text);
-            setOpen(true);
-          }}
-          onResult={(text) => {
-            ensureTools();
-            setValue(text);
-            setOpen(true);
-            setActive(-1);
-            inputRef.current?.focus();
-          }}
-        />
+        {voice.supported && (
+          <button
+            type="button"
+            onClick={startVoice}
+            aria-label={voice.listening ? "聞き取りをやめる" : "話して探す"}
+            aria-pressed={voice.listening}
+            title={voice.listening ? "聞き取りをやめる" : "話して探す（マイク）"}
+            data-testid="home-voice-search"
+            className={`ms-focus-ring absolute right-14 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full ${voice.listening ? "animate-pulse bg-red-600 text-white" : "text-ms-muted hover:bg-ms-hover-tint hover:text-ms-text"}`}
+          >
+            <VoiceMicIcon />
+          </button>
+        )}
         {value && (
           <button
             type="button"
@@ -274,9 +310,15 @@ export function HomeSearch({ total }: { total: number }) {
           </div>
         )}
       </form>
-      <p id={`${listId}-help`} className="text-xs text-ms-muted">
-        ツール名を知らなくても、やりたい作業やファイルの形式で探せます ・ 全 {total} ツール
-      </p>
+      {voice.listening || voice.message ? (
+        <p role="status" data-testid="home-voice-status" className="text-xs font-medium text-ms-text">
+          {voice.listening ? VOICE_LISTENING_TEXT : voice.message}
+        </p>
+      ) : (
+        <p id={`${listId}-help`} className="text-xs text-ms-muted">
+          ツール名を知らなくても、やりたい作業やファイルの形式で探せます ・ 全 {total} ツール
+        </p>
+      )}
       <div className="flex flex-wrap gap-1.5" aria-label="検索の例">
         {EXAMPLES.map((text) => (
           <button key={text} type="button" onClick={() => runExample(text)} className="ms-chip text-xs" data-testid="home-search-example">
