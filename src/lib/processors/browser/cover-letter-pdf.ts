@@ -6,6 +6,9 @@ import { ensurePdfLib, pdfLib, fontkitLib } from "@/lib/pdf/pdf-lib-loader";
 import { sanitizeFileName } from "@/lib/utils/format";
 import {
   COVER_LETTER_KIND_META,
+  activeRecipients,
+  clampLayout,
+  type CoverLetterBlock,
   coverLetterBaseName,
   coverLetterTitle,
   formatJapaneseDate,
@@ -90,28 +93,32 @@ export class CoverLetterPdfProcessor extends BrowserProcessor<{ form: CoverLette
     }
     doc.setTitle(`${COVER_LETTER_KIND_META[form.kind].label}`);
 
+    const layout = clampLayout(form.layout);
+    const PT_PER_MM = 72 / 25.4;
+    const dx = (b: CoverLetterBlock) => layout[b].x * PT_PER_MM;
+    const dy = (b: CoverLetterBlock) => layout[b].y * PT_PER_MM;
     const pages: PDFPage[] = [];
-    let page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
-    pages.push(page);
-    let y = A4_HEIGHT - MARGIN;
+    let page!: PDFPage;
+    let y = 0;
     const rgb = (c: [number, number, number]) => pdfLib().rgb(...c);
     const width = (s: string, size: number) => font.widthOfTextAtSize(s, size);
     const text = (s: string, x: number, yy: number, size: number, align: "left" | "right" | "center" = "left", color = COLOR_TEXT) => {
       const w = width(s, size);
-      let dx = align === "right" ? x - w : align === "center" ? x - w / 2 : x;
+      let tx = align === "right" ? x - w : align === "center" ? x - w / 2 : x;
       // 半角の文字（数字・英字）と全角の文字を分けて描く。「FAX：03-…」のように全角の「：」のすぐ後に数字が続くと、
       // フォントの組版で数字の間が大きく空いてしまうため（実際に確かめた不具合）
       for (const run of splitAsciiRuns(s)) {
-        page.drawText(run, { x: dx, y: yy, size, font, color: rgb(color) });
-        dx += width(run, size);
+        page.drawText(run, { x: tx, y: yy, size, font, color: rgb(color) });
+        tx += width(run, size);
       }
     };
+    const newPage = () => {
+      page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
+      pages.push(page);
+      y = A4_HEIGHT - MARGIN;
+    };
     const ensure = (h: number) => {
-      if (y - h < BOTTOM_LIMIT) {
-        page = doc.addPage([A4_WIDTH, A4_HEIGHT]);
-        pages.push(page);
-        y = A4_HEIGHT - MARGIN;
-      }
+      if (y - h < BOTTOM_LIMIT) newPage();
     };
     const paragraph = (s: string, size: number, lineH: number, x = MARGIN, maxW = CONTENT_WIDTH, color = COLOR_TEXT) => {
       for (const line of wrapByWidth(s, (t) => width(t, size), maxW)) {
@@ -120,98 +127,114 @@ export class CoverLetterPdfProcessor extends BrowserProcessor<{ form: CoverLette
         if (line !== "") text(line, x, y, size, "left", color);
       }
     };
+    /** ずらし量（縦）をあける。上へのずらし（マイナス）は、ページの上の余白を越えない */
+    const moveDown = (b: CoverLetterBlock, base: number) => {
+      y = Math.min(A4_HEIGHT - MARGIN / 2, y - Math.max(0, base + dy(b)));
+    };
 
-    // 日付（右上）
-    y -= 12;
-    text(formatJapaneseDate(form.date), A4_WIDTH - MARGIN, y, 10.5, "right");
+    const recipients = activeRecipients(form);
+    for (const recipient of recipients) {
+      const firstPageOfLetter = pages.length;
+      newPage();
 
-    // 宛先（左）
-    y -= 26;
-    const recipientTop = y;
-    for (const [i, line] of recipientLines(form.recipient).entries()) {
-      const isLast = i === recipientLines(form.recipient).length - 1;
-      const size = isLast ? 14 : 12;
-      y -= size + 6;
-      text(line, MARGIN, y, size);
-      if (isLast) page.drawLine({ start: { x: MARGIN, y: y - 4 }, end: { x: MARGIN + Math.max(200, width(line, size) + 8), y: y - 4 }, thickness: 0.8, color: rgb(COLOR_LINE) });
-    }
-    if (form.kind === "fax") {
-      const faxInfo = [form.recipient.fax.trim() && `FAX：${form.recipient.fax.trim()}`, form.recipient.tel.trim() && `TEL：${form.recipient.tel.trim()}`].filter(Boolean).join("　");
-      if (faxInfo) {
-        y -= 18;
-        text(faxInfo, MARGIN, y, 10, "left", COLOR_MUTED);
+      // 日付（右上）
+      moveDown("date", 12);
+      text(formatJapaneseDate(form.date), A4_WIDTH - MARGIN + dx("date"), y, 10.5, "right");
+
+      // 宛先（左）
+      moveDown("recipient", 26);
+      const recipientTop = y;
+      const toLines = recipientLines(recipient);
+      for (const [i, line] of toLines.entries()) {
+        const isLast = i === toLines.length - 1;
+        const size = isLast ? 14 : 12;
+        y -= size + 6;
+        const x = MARGIN + dx("recipient");
+        text(line, x, y, size);
+        if (isLast) page.drawLine({ start: { x, y: y - 4 }, end: { x: x + Math.max(200, width(line, size) + 8), y: y - 4 }, thickness: 0.8, color: rgb(COLOR_LINE) });
       }
-    }
-    const recipientBottom = y;
-
-    // 差出人（右）。宛先の下から始める（宛先と重ならないように）
-    y = Math.min(recipientBottom, recipientTop - 40) - 18;
-    const senderX = A4_WIDTH / 2 + 30;
-    for (const [i, line] of senderLines(form.sender).entries()) {
-      const size = i === 0 ? 11 : 9.5;
-      for (const part of wrapByWidth(line, (t) => width(t, size), A4_WIDTH - MARGIN - senderX)) {
-        y -= size + 5;
-        text(part, senderX, y, size);
-      }
-    }
-
-    // 見出し
-    y -= 36;
-    text(coverLetterTitle(form), A4_WIDTH / 2, y, 18, "center");
-    y -= 18;
-
-    // あいさつ文。「敬具」は右寄せ
-    if (form.greeting.trim() !== "") {
-      y -= 6;
-      const lines = form.greeting.replace(/\s+$/, "").split(/\r\n|\r|\n/);
-      for (const line of lines) {
-        if (/^\s*(敬具|敬白|草々|以上)\s*$/.test(line)) {
-          ensure(20);
-          y -= 20;
-          text(line.trim(), A4_WIDTH - MARGIN, y, 10.5, "right");
-        } else {
-          paragraph(line, 10.5, 20);
+      if (form.kind === "fax") {
+        const faxInfo = [recipient.fax.trim() && `FAX：${recipient.fax.trim()}`, recipient.tel.trim() && `TEL：${recipient.tel.trim()}`].filter(Boolean).join("　");
+        if (faxInfo) {
+          y -= 18;
+          text(faxInfo, MARGIN + dx("recipient"), y, 10, "left", COLOR_MUTED);
         }
       }
-    }
+      const recipientBottom = y;
 
-    // 記
-    const items = itemLines(form.items);
-    const pagesLine = form.kind === "fax" && form.faxPages.trim() ? `送信枚数：${form.faxPages.trim()}枚（本紙を含む）` : "";
-    if (items.length > 0 || pagesLine) {
-      ensure(60);
-      y -= 34;
-      text("記", A4_WIDTH / 2, y, 12, "center");
-      y -= 10;
-      const boxX = MARGIN + 40;
-      for (const [i, line] of items.entries()) {
-        paragraph(`${i + 1}．${line}`, 11, 22, boxX, CONTENT_WIDTH - 80);
+      // 差出人（右）。宛先の下から始める（宛先と重ならないように）
+      y = Math.min(recipientBottom, recipientTop - 40);
+      moveDown("sender", 18);
+      const senderX = Math.max(MARGIN, Math.min(A4_WIDTH - MARGIN - 60, A4_WIDTH / 2 + 30 + dx("sender")));
+      for (const [i, line] of senderLines(form.sender).entries()) {
+        const size = i === 0 ? 11 : 9.5;
+        for (const part of wrapByWidth(line, (t) => width(t, size), A4_WIDTH - MARGIN - senderX)) {
+          y -= size + 5;
+          text(part, senderX, y, size);
+        }
       }
-      if (pagesLine) {
+
+      // 見出し
+      moveDown("title", 36);
+      text(coverLetterTitle(form), A4_WIDTH / 2 + dx("title"), y, 18, "center");
+      y -= 18;
+
+      // あいさつ文。「敬具」は右寄せ
+      if (form.greeting.trim() !== "") {
+        moveDown("body", 6);
+        const bx = MARGIN + dx("body");
+        const bw = Math.max(120, CONTENT_WIDTH - Math.max(0, dx("body")));
+        for (const line of form.greeting.replace(/\s+$/, "").split(/\r\n|\r|\n/)) {
+          if (/^\s*(敬具|敬白|草々|以上)\s*$/.test(line)) {
+            ensure(20);
+            y -= 20;
+            text(line.trim(), Math.min(A4_WIDTH - 12, A4_WIDTH - MARGIN + dx("body")), y, 10.5, "right");
+          } else {
+            paragraph(line, 10.5, 20, bx, bw);
+          }
+        }
+      }
+
+      // 記
+      const items = itemLines(form.items);
+      const pagesLine = form.kind === "fax" && form.faxPages.trim() ? `送信枚数：${form.faxPages.trim()}枚（本紙を含む）` : "";
+      if (items.length > 0 || pagesLine) {
+        ensure(60);
+        moveDown("items", 34);
+        text("記", A4_WIDTH / 2 + dx("items"), y, 12, "center");
+        y -= 10;
+        const boxX = MARGIN + 40 + dx("items");
+        const boxW = Math.max(120, CONTENT_WIDTH - 80 - Math.max(0, dx("items")));
+        for (const [i, line] of items.entries()) paragraph(`${i + 1}．${line}`, 11, 22, boxX, boxW);
+        if (pagesLine) {
+          y -= 4;
+          paragraph(pagesLine, 11, 22, boxX, boxW);
+        }
+      }
+
+      // 連絡事項
+      if (form.notes.trim() !== "") {
+        ensure(48);
+        moveDown("notes", 26);
+        const nx = MARGIN + dx("notes");
+        text("【連絡事項】", nx, y, 10.5);
         y -= 4;
-        paragraph(pagesLine, 11, 22, boxX, CONTENT_WIDTH - 80);
+        paragraph(form.notes.trim(), 10, 18, nx + 10, Math.max(120, CONTENT_WIDTH - 10 - Math.max(0, dx("notes"))), COLOR_TEXT);
       }
-    }
 
-    // 連絡事項
-    if (form.notes.trim() !== "") {
-      ensure(48);
+      // 以上
+      ensure(30);
       y -= 26;
-      text("【連絡事項】", MARGIN, y, 10.5);
-      y -= 4;
-      paragraph(form.notes.trim(), 10, 18, MARGIN + 10, CONTENT_WIDTH - 10, COLOR_TEXT);
-    }
+      text("以上", A4_WIDTH - MARGIN, y, 10.5, "right");
 
-    // 以上
-    ensure(30);
-    y -= 26;
-    text("以上", A4_WIDTH - MARGIN, y, 10.5, "right");
-
-    if (pages.length > 1) {
-      pages.forEach((p, idx) => {
-        const label = `${idx + 1} / ${pages.length}`;
-        p.drawText(label, { x: A4_WIDTH - MARGIN - width(label, 8), y: MARGIN - 28, size: 8, font, color: rgb(COLOR_MUTED) });
-      });
+      // 1通が2ページ以上になったときだけ、その通の中のページ番号を付ける
+      const letterPages = pages.slice(firstPageOfLetter);
+      if (letterPages.length > 1) {
+        letterPages.forEach((p, idx) => {
+          const label = `${idx + 1} / ${letterPages.length}`;
+          p.drawText(label, { x: A4_WIDTH - MARGIN - width(label, 8), y: MARGIN - 28, size: 8, font, color: rgb(COLOR_MUTED) });
+        });
+      }
     }
 
     let bytes: Uint8Array;

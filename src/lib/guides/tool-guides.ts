@@ -791,8 +791,9 @@ export const toolGuides: Record<string, ToolGuide> = {
     split: true,
     steps: [
       step("種類と宛先を入れる", [head("種類・日付・件名", 1), seg("送付状の種類", ["書類送付状", "FAX送付状"], 0), head("宛先", 2), input("会社名", "株式会社サンプル"), input("担当者名", "山田 太郎"), preview("invoice")], 2),
+      step("宛先は貼り付けで複数件も", [head("宛先", 2), input("貼り付けて宛先を追加", "株式会社A　総務部　山田…"), btn("宛先に追加する"), preview("invoice", "1宛先＝1ページ")], 1),
       step("差出人と送付書類を入れる", [head("差出人", 3), input("会社名・屋号", "株式会社サンプル"), head("送付書類", 5), input2("書類1", "見積書", "部数", "1"), btn("＋ 書類を追加"), preview("invoice")], 4),
-      { title: "PDFを作る", parts: [head("PDF出力"), run("書類送付状を作成する"), preview("invoice", "プレビュー")], focus: 1 },
+      { title: "位置を整えてPDF・Wordで作る", parts: [head("位置の調整", 7), slider("件名 横の位置（X）", 0.5, "0 mm"), seg("出力する形式", ["PDF", "Word"], 0), run("書類送付状を作成する"), preview("invoice", "プレビュー")], focus: 3 },
     ],
   },
   "envelope-address": {
