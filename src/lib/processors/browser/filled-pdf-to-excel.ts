@@ -4,6 +4,7 @@ import { reconstructTable, groupIntoLines, computeColumnBreaksAcrossPages, type 
 import { toExcelWriteCell, type ExcelWriteCell } from "@/lib/pdf/cell-value";
 import { getFormFieldItems } from "@/lib/pdf/form-fields";
 import type { SheetData } from "write-excel-file/universal";
+import { filterCharacterWords } from "@/lib/ocr/ocr-enhance";
 import { recognizeImageWithWords, ocrWordsToPositionedTextItems, terminateOcrWorker, type OcrLanguageOption, type OcrWord } from "@/lib/ocr/tesseract-client";
 import { prepareScanForTable } from "@/lib/ocr/remove-ruled-lines";
 import { computeRuledColumnBreaks, mergeRuledBreaks, type VerticalRule } from "@/lib/pdf/ruling-lines";
@@ -261,7 +262,9 @@ async function readScannedPage(
     throw new Error("ページの画像化に失敗しました");
   }
   const prepared = prepareScanForTable(rendered.canvas);
-  const result = await recognizeWithAbort(prepared.canvas, language, onProgress, signal);
+  const raw = await recognizeWithAbort(prepared.canvas, language, onProgress, signal);
+  // 2026-11-20：図形・線（|、□、○ など）だけの読み取りは捨て、文字・数字だけを残す
+  const result = { ...raw, words: filterCharacterWords(raw.words) };
   // OCRの座標（画像のピクセル）を、PDFの文字と同じくらいの大きさ（ポイント）にそろえる（表の組み立ての基準値を同じにするため）
   const k = 1 / rendered.scale;
   const items = ocrWordsToPositionedTextItems(result.words).map((it) => ({ ...it, x: it.x * k, y: it.y * k, width: it.width * k, height: it.height * k, fontHeight: it.fontHeight * k }));
@@ -300,7 +303,8 @@ async function readMixedPage(
     crop.getContext("2d")?.drawImage(rendered.canvas, sx, sy, sw, sh, 0, 0, sw, sh);
     // 画像の中の表も、罫線を消してから読む（罫線を文字と読み違えないため）。傾きを直したときは位置が少しずれるが、行・列の判定には影響しない程度
     const prepared = prepareScanForTable(crop);
-    const result = await recognizeWithAbort(prepared.canvas, language, (p) => onProgress((i + p) / regions.length), signal);
+    const raw = await recognizeWithAbort(prepared.canvas, language, (p) => onProgress((i + p) / regions.length), signal);
+    const result = { ...raw, words: filterCharacterWords(raw.words) };
     if (result.words.length) confidences.push(result.confidence);
     for (const w of result.words) {
       // 画像の中の位置を、PDFのページ座標に直す

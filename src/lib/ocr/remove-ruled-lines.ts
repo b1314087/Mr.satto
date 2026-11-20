@@ -20,6 +20,8 @@
  * 純粋関数（DOM非依存）にしてあり、テストからも直接呼べる。
  */
 
+import { darkenText, estimateStrokeWidth, thickenStrokes, THIN_STROKE_PX } from "./ocr-enhance";
+
 export interface GrayImage {
   width: number;
   height: number;
@@ -504,11 +506,18 @@ export function prepareScanForTable(
     const skew = estimateSkewDegrees({ width: w, height: h, gray: even });
     const straight = Math.abs(skew) >= 0.4 ? deskewGray({ width: w, height: h, gray: even }, skew) : even;
     // 濃い帯の上の白い文字を反転する(straightはevenと同じ配列のことがあるため、コピーに対して行う)
-    const prepared = new Uint8Array(straight);
-    const inverted = invertDarkBlocks({ width: w, height: h, gray: prepared }, prepared);
-    const { gray: cleaned, removedPixels, verticalRules } = removeRuledLines({ width: w, height: h, gray: prepared }, options);
+    const inv = new Uint8Array(straight);
+    const inverted = invertDarkBlocks({ width: w, height: h, gray: inv }, inv);
+    // 2026-11-20：字を濃くする（紙を白・インクを黒にそろえ、薄い字を濃い側へ寄せる）。罫線の判定も安定する
+    const dark = darkenText({ width: w, height: h, gray: inv });
+    const prepared = dark.gray;
+    const { gray: noLines, removedPixels, verticalRules } = removeRuledLines({ width: w, height: h, gray: prepared }, options);
+    // 罫線を消したあと、字の線が細いときだけ、約1px太くする（罫線を太らせないよう、消したあとに行う）
+    const stroke = estimateStrokeWidth({ width: w, height: h, gray: noLines });
+    const thin = stroke > 0 && stroke < THIN_STROKE_PX;
+    const cleaned = thin ? thickenStrokes({ width: w, height: h, gray: noLines }) : noLines;
     const skewDegrees = Math.abs(skew) >= 0.4 ? skew : 0;
-    if (removedPixels === 0 && !changed && straight === even && inverted === 0) return { canvas, verticalRules, skewDegrees };
+    if (removedPixels === 0 && !changed && straight === even && inverted === 0 && !dark.changed && !thin) return { canvas, verticalRules, skewDegrees };
     const out = document.createElement("canvas");
     out.width = w;
     out.height = h;

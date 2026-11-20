@@ -1,6 +1,7 @@
 import type { PositionedTextItem, RenderedPageCanvas } from "@/lib/pdf/pdfjs-client";
 import { groupIntoLines } from "@/lib/pdf/table-reconstruction";
 import { recognizeImage, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
+import { cleanOcrText, cropScaleForOcr, prepareFieldCanvasForOcr } from "@/lib/ocr/ocr-enhance";
 import { pdfToScreenX, pdfToScreenY } from "@/lib/pdf/coords";
 import type { TemplateField } from "./types";
 
@@ -120,7 +121,8 @@ export function cropFieldCanvas(
 
   // 小さい枠はOCR精度が落ちやすいため、上限を設けつつ拡大して切り出す
   // （tesseract.jsは一般に極端に小さい文字画像の認識精度が低いため）。
-  const upscale = cropWidth < 200 ? Math.min(3, 200 / cropWidth) : 1;
+  // 2026-11-20：幅だけでなく高さも見て、文字の高さが十分になるまで拡大する（最大4倍）
+  const upscale = cropScaleForOcr(cropWidth, cropHeight);
   const outCanvas = document.createElement("canvas");
   outCanvas.width = Math.ceil(cropWidth * upscale);
   outCanvas.height = Math.ceil(cropHeight * upscale);
@@ -163,8 +165,9 @@ export async function extractFieldValue(params: ExtractFieldParams): Promise<Fie
     if (!rendered) return { value: "", method: "empty", confidence: null };
     const crop = cropFieldCanvas(rendered.canvas, field, pageHeightPt, rendered.scale);
     if (!crop) return { value: "", method: "empty", confidence: null };
-    const result = await recognizeImage(crop, language);
-    const stripped = stripFixedText(result.text, field.fixedText);
+    // 2026-11-20：字を濃くし、枠の線を消し、細い字を太くしてから読む。読んだあとは、図形・線の記号を取り除く
+    const result = await recognizeImage(prepareFieldCanvasForOcr(crop), language);
+    const stripped = stripFixedText(cleanOcrText(result.text), field.fixedText);
     if (stripped === "") return { value: "", method: "empty", confidence: result.confidence };
     return { value: stripped, method: "ocr", confidence: result.confidence };
   } catch {

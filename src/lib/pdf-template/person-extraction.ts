@@ -24,9 +24,10 @@ import { PERSON_VALID_MIN_RATIO, type Template, type TemplateField } from "./typ
  * 複数フィールドで使い回す（開発指示書40章：不要な画像コピー・再描画の削減）。
  */
 
-const OCR_RENDER_SCALE = 2;
-/** OCR用に描画するページ画像の最長辺の上限(px)。既存の自動抽出モードと同じ値 */
-const OCR_MAX_DIMENSION = 2000;
+/** 2026-11-20：2倍→3倍（A4で約216dpi）。細い字・小さい数字を読みやすくする */
+const OCR_RENDER_SCALE = 3;
+/** OCR用に描画するページ画像の最長辺の上限(px)。A4の3倍（約2,530px）が入る大きさ */
+const OCR_MAX_DIMENSION = 2600;
 
 export interface PersonFieldValue {
   fieldIndex: number;
