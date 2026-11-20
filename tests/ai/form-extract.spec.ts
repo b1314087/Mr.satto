@@ -394,11 +394,12 @@ test.describe("PDF→ExcelのAI読み取り: スキャンしたページ（画�
     expect(validateFormExtractRequest(scanBody({ pages: [{ page: 1, text: "", image: fakeJpeg() }] })).ok).toBe(true);
   });
 
-  test("form（記入済みPDF→Excel）や目的の省略では、画像を送れない", () => {
-    expect(validateFormExtractRequest(scanBody({ purpose: "form" })).ok).toBe(false);
+  test("form（記入済みPDF→Excel）や目的の省略でも、画像を送れる。word では送れない", () => {
+    expect(validateFormExtractRequest(scanBody({ purpose: "form" })).ok).toBe(true);
     const noPurpose = scanBody();
     delete noPurpose.purpose;
-    expect(validateFormExtractRequest(noPurpose).ok).toBe(false);
+    expect(validateFormExtractRequest(noPurpose).ok).toBe(true);
+    expect(validateFormExtractRequest(scanBody({ purpose: "word" })).ok).toBe(false);
   });
 
   test("画像の枚数・形式・大きさがおかしい依頼は断る", () => {

@@ -5,7 +5,7 @@ import { handleFormExtract } from "@/lib/ai/service";
 /**
  * 記入済みPDF→Excelの、AI読み取り補助（Premium限定・利用者が同意したPDFの「文字」だけを処理）。
  * 処理の流れと利用枠の扱いは src/lib/ai/service.ts を参照。
- * スキャンしたページは、ブラウザで縮小した画像を送る（PDF→Excelの表の読み取りだけ）。
+ * スキャンしたページは、ブラウザで縮小した画像を送る（PDF→Excel・記入済みPDF→Excel。Word→Excelは送れない）。
  * リクエスト本文（画像を含む）・AIの応答は、ログにもデータベースにも保存しない。
  */
 export const maxDuration = 120;

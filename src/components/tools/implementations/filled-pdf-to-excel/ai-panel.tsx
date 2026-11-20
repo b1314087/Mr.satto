@@ -35,7 +35,7 @@ import {
  * - 2026-11-20：ページ数・ファイル数の上限をなくした（上限はAI利用枠＝トークンで決まる）。
  *   1回に送れる量（5ページ・6,000文字・画像4枚）を超えるときは、自動で何回かに分けて順に送り、結果をつなげる。
  *   途中で利用枠が足りなくなったときは、そこまでの結果を残す。
- * - スキャンしたページ（PDF→Excelだけ）は、端末内でOCRして文字（参考）を取り出し、
+ * - スキャンしたページ（PDF→Excel・記入済みPDF→Excel）は、端末内でOCRして文字（参考）を取り出し、
  *   縮小した画像（JPEG）と一緒に送る。送る画像は画面に出して見せ、同意を取る。
  * - 送る内容を画面に出し、実行のたびに同意を取る。
  * - AIの結果は「提案」。原文に見つからない文字は目立たせ、利用者が直してから、Excelにする。
@@ -148,7 +148,7 @@ const PURPOSE_COPY: Record<
     runLabel: string;
   }
 > = {
-  form: { title: "AIで項目を読み取る（任意）", sub: "文字のPDFを、AIが項目ごとの表に整理します", sheet: "AI読み取り", loginNext: "/tools/filled-pdf-to-excel", textName: "PDFの文字", sourceName: "PDF", unit: (n) => `${n}ページ目`, unitCount: "ページ", fileSuffix: "_AI読み取り", runLabel: "AIで読み取る" },
+  form: { title: "AIで項目を読み取る（任意）", sub: "PDF（スキャンした画像のPDFも）を、AIが項目ごとの表に整理します", sheet: "AI読み取り", loginNext: "/tools/filled-pdf-to-excel", textName: "PDFの文字", sourceName: "PDF", unit: (n) => `${n}ページ目`, unitCount: "ページ", fileSuffix: "_AI読み取り", runLabel: "AIで読み取る" },
   table: { title: "AIで表を読み取る（任意）", sub: "PDFの表（スキャンしたPDFも）を、AIが整理してExcelの行にします", sheet: "AI読み取り", loginNext: "/tools/pdf-to-excel", textName: "PDFの文字", sourceName: "PDF", unit: (n) => `${n}ページ目`, unitCount: "ページ", fileSuffix: "_AI読み取り", runLabel: "AIで読み取る" },
   word: { title: "AIで表にする（任意）", sub: "表になっていない文章（項目と内容の並び・箇条書きなど）を、AIが列に分けて表にします", sheet: "AIで表にした文章", loginNext: "/tools/word-to-excel", textName: "Word文書の表以外の文章", sourceName: "Word文書", unit: (n) => `${n}つ目のまとまり`, unitCount: "まとまり", fileSuffix: "_AIで表にした文章", runLabel: "AIで表にする" },
 };
@@ -265,10 +265,6 @@ export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { file
                 continue;
               }
               // 文字のないページ（スキャンした画像）
-              if (purpose !== "table") {
-                setText({ status: "problem", message: `${label}に文字がありません（スキャンした画像のPDFです）。この機能では送れません。従来の変換（OCR）をお使いください。` });
-                return;
-              }
               setText({ status: "reading", message: `${label}はスキャンした画像です。画像にして、文字を読み取っています…（この端末の中だけで行います。時間がかかることがあります）` });
               let canvas: HTMLCanvasElement;
               try {

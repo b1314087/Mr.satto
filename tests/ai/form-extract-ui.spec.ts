@@ -151,14 +151,21 @@ test.describe("記入済みPDF→Excel: AIで項目を読み取る（任意・�
     });
   }
 
-  test("文字のないPDF（スキャン）は対象外と案内し、AIには何も送らない", async ({ page }) => {
+  test("スキャンした画像のPDFも、ページの画像を見せて同意を取り、画像つきでAIに送れる", async ({ page }) => {
+    test.setTimeout(240_000);
     const rec = await mockAi(page, { extract: okExtract(RESULT_ROWS) });
     await openAndUpload(page, await blankPdf());
     await page.getByTestId("form-ai-toggle").click();
-    await expect(page.getByTestId("form-ai-problem")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId("form-ai-problem")).toContainText("OCR");
-    await expect(page.getByTestId("form-ai-run")).toHaveCount(0);
-    expect(rec.bodies).toHaveLength(0);
+    await expect(page.getByTestId("form-ai-image")).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByTestId("form-ai-problem")).toHaveCount(0);
+    await expect(page.getByTestId("form-ai-count")).toContainText("送る画像：1枚");
+    await expect(page.getByTestId("form-ai-panel")).toContainText("スキャンしたページの画像");
+    await page.getByTestId("form-ai-consent").check();
+    await page.getByTestId("form-ai-run").click();
+    await expect(page.getByTestId("form-ai-row")).toHaveCount(3);
+    const sent = rec.bodies[0] as { purpose?: string; pages: { image?: { mediaType: string } }[] };
+    expect(sent.purpose).toBeUndefined();
+    expect(sent.pages[0].image?.mediaType).toBe("image/jpeg");
   });
 
   test("ページ数の上限なし: 6ページ以上のPDFは、5ページずつ自動で分けて順に送り、結果をつなげる", async ({ page }) => {
