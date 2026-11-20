@@ -130,8 +130,10 @@ export function itemsToPageText(items: PositionedTextItem[]): string {
 }
 
 /** 目的ごとの画面の文言（記入済みPDF→Excelは「項目」、PDF→Excelは「表」、Word→Excelは「表になっていない文章」） */
+type PanelPurpose = Exclude<FormPurpose, "region">;
+
 const PURPOSE_COPY: Record<
-  FormPurpose,
+  PanelPurpose,
   {
     title: string;
     sub: string;
@@ -153,7 +155,7 @@ const PURPOSE_COPY: Record<
   word: { title: "AIで表にする（任意）", sub: "表になっていない文章（項目と内容の並び・箇条書きなど）を、AIが列に分けて表にします", sheet: "AIで表にした文章", loginNext: "/tools/word-to-excel", textName: "Word文書の表以外の文章", sourceName: "Word文書", unit: (n) => `${n}つ目のまとまり`, unitCount: "まとまり", fileSuffix: "_AIで表にした文章", runLabel: "AIで表にする" },
 };
 
-export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { files: File[]; totalPages: number | null; purpose?: FormPurpose }) {
+export function FilledPdfAiPanel({ files, totalPages, purpose = "form" }: { files: File[]; totalPages: number | null; purpose?: PanelPurpose }) {
   const copy = PURPOSE_COPY[purpose];
   const [open, setOpen] = useState(false);
   const [usage, setUsage] = useState<UsageState>({ status: "loading" });

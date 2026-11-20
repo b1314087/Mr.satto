@@ -292,7 +292,7 @@ function AutoExtractSection() {
 
       {files.length > 0 && regionCount > 0 && (
         <p data-testid="filled-pdf-region-note" className="text-sm text-neutral-600 dark:text-neutral-300">
-          囲んだ場所で一覧にするときは、上の「指定した場所で一覧にする」を押してください。囲んだ四角をすべて消すと、おまかせで整理できます。
+          囲んだ場所で一覧にするときは、上の「指定した場所で一覧にする」を押してください。スキャンや手書きの書類は「指定した場所をAIで読み取る」を使うと、囲んだ場所だけをAIが読み取ります。囲んだ四角をすべて消すと、おまかせで整理できます。
         </p>
       )}
       {files.length > 0 && regionCount === 0 && (
@@ -328,7 +328,8 @@ function AutoExtractSection() {
       />
       {error && <ErrorMessage message={error} />}
 
-      {files.length > 0 && formAiEnabled() && <FilledPdfAiPanel files={files} totalPages={totalPages} />}
+      {/* 場所を囲んだときは、ページ全体をAIに送るパネルは出さない（囲んだ場所だけを読む「指定した場所をAIで読み取る」を使う） */}
+      {files.length > 0 && regionCount === 0 && formAiEnabled() && <FilledPdfAiPanel files={files} totalPages={totalPages} />}
 
       {result && (
         <ResultPopup size="lg">

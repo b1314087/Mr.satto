@@ -14,6 +14,8 @@ import {
   TABLE_INSTRUCTIONS,
   FORM_INSTRUCTIONS,
   WORD_INSTRUCTIONS,
+  REGION_INSTRUCTIONS,
+  REGION_MAX_FIELDS,
   type FormExtractRequest,
 } from "@/lib/ai/form-extract";
 import { chunkWordParagraphsForAi } from "@/lib/office-convert/word-ai-text";
@@ -567,5 +569,76 @@ test.describe("Word→ExcelのAIで表にする: 送る文章のまとまり", (
     const over = chunkWordParagraphsForAi(["あ".repeat(FORM_MAX_CHARS_TOTAL), "い"]);
     expect(over.ok).toBe(false);
     expect(!over.ok && over.reason).toBe("too_long");
+  });
+});
+
+function regionBody(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return body({
+    purpose: "region",
+    fields: ["氏名", "住所"],
+    pages: [
+      { page: 1, text: "", image: fakeJpeg() },
+      { page: 2, text: "", image: fakeJpeg() },
+    ],
+    ...over,
+  });
+}
+
+test.describe("記入済みPDF→Excelの「指定した場所をAIで読み取る」（purpose: region）", () => {
+  test("入力: 項目名と、枠の画像つきのページを受け付ける", () => {
+    const v = validateFormExtractRequest(regionBody());
+    expect(v.ok).toBe(true);
+    expect(v.ok && v.value.fields).toEqual(["氏名", "住所"]);
+  });
+
+  test("入力: 項目名がない・多すぎる・長すぎる、画像のないページは断る。ほかの目的で項目名を送るのも断る", () => {
+    expect(validateFormExtractRequest(regionBody({ fields: [] })).ok).toBe(false);
+    expect(validateFormExtractRequest(regionBody({ fields: Array.from({ length: REGION_MAX_FIELDS + 1 }, (_, i) => `項目${i}`) })).ok).toBe(false);
+    expect(validateFormExtractRequest(regionBody({ fields: ["あ".repeat(41)] })).ok).toBe(false);
+    expect(validateFormExtractRequest(regionBody({ fields: [1] })).ok).toBe(false);
+    expect(validateFormExtractRequest(regionBody({ pages: [{ page: 1, text: "山田" }] })).ok).toBe(false);
+    expect(validateFormExtractRequest(body({ fields: ["氏名"] })).ok).toBe(false);
+  });
+
+  test("AIへの入力は項目名と参考の文字だけ。指示は指定した場所用", () => {
+    const v = validateFormExtractRequest(regionBody({ pages: [{ page: 1, text: "ヤマダ", image: fakeJpeg() }] }));
+    if (!v.ok) throw new Error(v.message);
+    expect(JSON.parse(buildFormUserInput(v.value))).toEqual({ fields: ["氏名", "住所"], pages: [{ page: 1, ocr_hint: "ヤマダ" }] });
+  });
+
+  test("出力: 1件1行・項目の数にそろえ、空の項目も残す。同じ件の2行目・項目の多すぎる行・送っていない件は捨てる", () => {
+    const v = validateFormExtractRequest(regionBody());
+    if (!v.ok) throw new Error(v.message);
+    const parsed = parseFormOutput(
+      JSON.stringify({
+        rows: [
+          { page: 1, kind: "data", cells: ["山田 太郎", "神戸市中央区1-1"] },
+          { page: 1, kind: "data", cells: ["重複", "重複"] },
+          { page: 2, kind: "header", cells: ["佐藤 花子"] },
+          { page: 3, kind: "data", cells: ["送っていない", ""] },
+        ],
+        notes: [],
+      }),
+      v.value,
+    );
+    expect(parsed?.rows).toEqual([
+      { page: 1, kind: "data", cells: ["山田 太郎", "神戸市中央区1-1"], unverified: [] },
+      { page: 2, kind: "data", cells: ["佐藤 花子", ""], unverified: [] },
+    ]);
+    expect(parsed?.rejected).toBe(2);
+    const empty = parseFormOutput(JSON.stringify({ rows: [{ page: 1, kind: "data", cells: ["", ""] }, { page: 2, kind: "data", cells: ["a", "b", "c"] }], notes: [] }), v.value);
+    expect(empty?.rows).toEqual([{ page: 1, kind: "data", cells: ["", ""], unverified: [] }]);
+    expect(empty?.rejected).toBe(1);
+  });
+
+  test("サーバー: 画像を渡し、指定した場所用の指示で呼ぶ。プレミアム以外は処理しない", async () => {
+    const { ledger, model, deps } = setup();
+    model.next = { kind: "ok", text: JSON.stringify({ rows: [{ page: 1, kind: "data", cells: ["山田", "神戸"] }], notes: [] }), usage: USAGE };
+    const res = await handleFormExtract(deps, PREMIUM, AVAILABLE, regionBody());
+    expect(res.status).toBe(200);
+    expect(model.calls[0].imageCount).toBe(2);
+    expect(model.calls[0].instructions).toBe(REGION_INSTRUCTIONS);
+    expect(ledger.calls).toEqual(["reserve", "settle"]);
+    expect((await handleFormExtract(deps, { userId: USER_ID, plan: "standard" }, AVAILABLE, regionBody())).status).toBe(403);
   });
 });

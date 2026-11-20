@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { fixtures } from "../fixtures/paths";
 import { waitHydrated } from "../helpers/hydrated";
@@ -96,5 +96,44 @@ test.describe("記入済みPDF→Excel：記入済みのPDFの上で場所を囲
     await page.getByRole("button", { name: "削除", exact: true }).last().click();
     await expect(page.locator('[data-testid^="template-field-"]')).toHaveCount(0);
     await expect(page.getByRole("button", { name: "おまかせでExcelに変換する" })).toBeVisible();
+  });
+
+  test("指定した場所をAIで読み取る：囲んだ枠の画像だけをAIに送り、結果を一覧に入れる（スキャンしたPDF・AIは偽の応答）", async ({ page }) => {
+    const usage = { limitAiTokens: 30_000_000, usedAiTokens: 0, remainingAiTokens: 30_000_000, periodEnd: "2026-11-30T00:00:00Z" };
+    await page.route("**/api/ai/usage", (route: Route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ available: true, usage }) }),
+    );
+    const bodies: Record<string, unknown>[] = [];
+    await page.route("**/api/ai/form-extract", async (route: Route) => {
+      const body = route.request().postDataJSON() as { pages: { page: number }[] };
+      bodies.push(body as unknown as Record<string, unknown>);
+      const rows = body.pages.map((p) => ({ page: p.page, kind: "data", cells: [`2010年4月${p.page}日`, `神戸市中央区${p.page}-1`], unverified: [] }));
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, model: "standard", rows, notes: [], rejected: 0, usage }) });
+    });
+
+    await open(page, fixtures.templateFilledScannedPdf);
+    const [, birth, address] = TEMPLATE_FIELDS;
+    await placeField(page, birth, 1);
+    await placeField(page, address, 2);
+    // 場所を囲んだときは、ページ全体をAIに送るパネルは出さない
+    await expect(page.getByTestId("form-ai-panel")).toHaveCount(0);
+
+    await page.getByTestId("filled-region-run-ai").click();
+    // 端末内のOCRはとばし、AIのパネルが開いた状態で一覧が出る
+    await expect(page.getByTestId("region-ai-panel")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("region-ai-image")).toHaveCount(1, { timeout: 60_000 });
+    await expect(page.getByTestId("region-ai-count")).toContainText("送る件数：1件");
+    await page.getByTestId("region-ai-consent").check();
+    await page.getByTestId("region-ai-run").click();
+    await expect(page.getByTestId("region-ai-done")).toContainText("1件をAIで読み取り");
+    await expect(page.getByLabel("1人目 生年月日")).toHaveValue("2010年4月1日");
+    await expect(page.getByLabel("1人目 住所")).toHaveValue("神戸市中央区1-1");
+
+    expect(bodies).toHaveLength(1);
+    const sent = bodies[0] as { purpose: string; fields: string[]; pages: { image?: { mediaType: string } }[] };
+    expect(sent.purpose).toBe("region");
+    expect(sent.fields).toEqual([birth.label, address.label]);
+    expect(sent.pages).toHaveLength(1);
+    expect(sent.pages[0].image?.mediaType).toBe("image/jpeg");
   });
 });

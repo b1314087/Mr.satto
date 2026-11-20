@@ -19,6 +19,8 @@ export interface FilledPdfToExcelTemplateInput {
   template: Template;
   files: File[];
   language: OcrLanguageOption;
+  /** 2026-11-20：AIで読み取るときは、端末内のOCRをとばす（文字のあるPDFの文字・チェック欄は今までどおり読む） */
+  skipOcr?: boolean;
   maxTotalPages?: number;
   onPageProgress?: (info: {
     fileName: string;
@@ -42,7 +44,7 @@ export class FilledPdfToExcelTemplateProcessor extends BrowserProcessor<
   FilledPdfToExcelTemplateInput,
   FilledPdfToExcelTemplateOutput
 > {
-  async process({ template, files, language, maxTotalPages, onPageProgress }: FilledPdfToExcelTemplateInput): Promise<FilledPdfToExcelTemplateOutput> {
+  async process({ template, files, language, skipOcr, maxTotalPages, onPageProgress }: FilledPdfToExcelTemplateInput): Promise<FilledPdfToExcelTemplateOutput> {
     if (files.length === 0) {
       throw new Error("記入済みのPDFファイルを選択してください");
     }
@@ -86,6 +88,7 @@ export class FilledPdfToExcelTemplateProcessor extends BrowserProcessor<
           file,
           template,
           language,
+          skipOcr,
           fileIndex,
           onPageProgress: (info) => {
             onPageProgress?.({

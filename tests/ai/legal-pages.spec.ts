@@ -60,6 +60,8 @@ test.describe("法務ページ: 実装済みの機能と一致している", () 
     expect(text).toContain("通常のPDF→Excel、通常の記入済みPDF→Excel");
     expect(text).toContain("記入済みPDF→Excelの「AIで項目を読み取る」：文字情報のあるページは、ブラウザの中で取り出した文字だけを送信します");
     expect(text).toContain("JPEGに縮小した画像と、ブラウザの中の文字認識（OCR）で読み取った文字（参考）を、1回に最大4ページ分ずつ送信します");
+    expect(text).toContain("記入済みPDF→Excelの「指定した場所をAIで読み取る」：ユーザーがPDFの上で囲んだ場所（枠）の中だけを");
+    expect(text).toContain("ページのほかの部分、PDFファイルそのものは送信しません");
     expect(text).toContain("ページ数・ファイル数の上限はなく、1回に最大5ページ・合計6,000文字ずつに分けて送信します");
     expect(text).toContain("PDFファイルそのものは送信しません");
     // PDF→Excelの表の読み取りは、スキャンしたページの縮小した画像と、OCRの文字（参考）も送る

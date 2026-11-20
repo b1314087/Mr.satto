@@ -15,7 +15,10 @@ import {
   type Template,
   type TemplateField,
 } from "@/lib/pdf-template/types";
-import { captureFixedTextForTemplate, type PersonRecord } from "@/lib/pdf-template/person-extraction";
+import { captureFixedTextForTemplate, isPersonValid, type PersonRecord } from "@/lib/pdf-template/person-extraction";
+import { needsAi } from "@/lib/pdf-template/region-ai";
+import { RegionAiPanel, type RegionAiUpdate } from "./filled-pdf-to-excel/region-ai-panel";
+import { formAiEnabled } from "./filled-pdf-to-excel/ai-panel";
 import { exportPersonsToExcel } from "@/lib/pdf-template/excel-export";
 import { FilledPdfToExcelTemplateProcessor } from "@/lib/processors/browser/filled-pdf-to-excel-template";
 import { terminateOcrWorker, type OcrLanguageOption } from "@/lib/ocr/tesseract-client";
@@ -135,6 +138,8 @@ export function FilledPdfToExcelTemplatePanel({
 
   // --- プレビュー・出力 ---
   const [records, setRecords] = useState<PersonRecord[] | null>(null);
+  // 2026-11-20：「AIで読み取る」で実行したか（端末内のOCRをとばし、AIのパネルを開いた状態で一覧を出す）
+  const [aiMode, setAiMode] = useState(false);
   const [resultMeta, setResultMeta] = useState<{ pageCount: number; usedOcr: boolean; excludedPersonCount: number } | null>(null);
 
   useEffect(() => {
@@ -563,7 +568,7 @@ export function FilledPdfToExcelTemplatePanel({
     (fromFilled || !needsAdBeforeRun) &&
     !isSubmittingExtraction;
 
-  async function handleRunExtraction() {
+  async function handleRunExtraction(useAi = false) {
     // canRunExtractionのisSubmittingExtraction判定だけでは、クリックからstate更新の
     // 再描画が反映されるまでの間にもう一度呼ばれる余地が残るため、この関数自身の
     // 冒頭で同期的にフラグを立てて即座にガードする（開発指示書41章：処理ボタンの
@@ -591,6 +596,7 @@ export function FilledPdfToExcelTemplatePanel({
         template,
         files: filledFiles,
         language,
+        skipOcr: useAi,
         maxTotalPages: consumeResult.maxPages ?? undefined,
         onPageProgress: (info) => {
           const label =
@@ -600,7 +606,9 @@ export function FilledPdfToExcelTemplatePanel({
           setProgressLabel(info.method === "ocr" ? `OCR処理中: ${label}` : label);
         },
       });
-      setRecords(output.records);
+      // AIで読み取るときは、OCRをとばしたため空の件も、AIで読む前に除外しない
+      setRecords(useAi ? output.records.map((r) => (r.excluded && r.fields.some((f) => needsAi(f.method)) ? { ...r, excluded: false } : r)) : output.records);
+      setAiMode(useAi);
       setResultMeta({ pageCount: output.pageCount, usedOcr: output.usedOcr, excludedPersonCount: output.excludedPersonCount });
       setStep("preview");
     } catch (e) {
@@ -622,6 +630,26 @@ export function FilledPdfToExcelTemplatePanel({
         ? prev.map((r) => (r.id === recordId ? { ...r, fields: r.fields.map((f) => (f.fieldIndex === fieldIndex ? { ...f, value } : f)) } : r))
         : prev
     );
+  }
+
+  /** AIで読み取った値を一覧に入れ、空欄の判定をやり直す */
+  function applyRegionAi(updates: RegionAiUpdate[]) {
+    setRecords((prev) => {
+      if (!prev) return prev;
+      const byRecord = new Map<string, Map<number, string>>();
+      for (const u of updates) {
+        const m = byRecord.get(u.recordId) ?? new Map<number, string>();
+        m.set(u.fieldIndex, u.value);
+        byRecord.set(u.recordId, m);
+      }
+      return prev.map((r) => {
+        const m = byRecord.get(r.id);
+        if (!m) return r;
+        const fields = r.fields.map((f) => (m.has(f.fieldIndex) ? { ...f, value: m.get(f.fieldIndex) ?? "" } : f));
+        const valid = isPersonValid(fields);
+        return { ...r, fields, valid, excluded: !valid && template.excludeEmptyPersons };
+      });
+    });
   }
 
   async function handleDownloadExcel() {
@@ -956,7 +984,7 @@ export function FilledPdfToExcelTemplatePanel({
                 );
               })}
 
-              {fromFilled ? (
+              {fromFilled && (
                 <button
                   type="button"
                   data-testid="filled-region-run"
@@ -967,7 +995,20 @@ export function FilledPdfToExcelTemplatePanel({
                 >
                   指定した場所で一覧にする
                 </button>
-              ) : (
+              )}
+              {fromFilled && formAiEnabled() && (
+                <button
+                  type="button"
+                  data-testid="filled-region-run-ai"
+                  onClick={() => void handleRunExtraction(true)}
+                  disabled={!canProceedToConfirm() || !canRunExtraction}
+                  aria-busy={isSubmittingExtraction || undefined}
+                  className="w-fit rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  指定した場所をAIで読み取る（プレミアム・手書きも読めます）
+                </button>
+              )}
+              {!fromFilled && (
                 <button
                   type="button"
                   onClick={() => setStep("confirm")}
@@ -1154,6 +1195,17 @@ export function FilledPdfToExcelTemplatePanel({
               {resultMeta.excludedPersonCount > 0 && <span>空欄のため除外: {resultMeta.excludedPersonCount}人</span>}
               {resultMeta.usedOcr && <span>OCRを使用しました</span>}
             </div>
+          )}
+
+          {fromFilled && formAiEnabled() && (
+            <RegionAiPanel
+              key={aiMode ? "ai" : "ocr"}
+              records={records}
+              template={template}
+              files={filledFiles}
+              defaultOpen={aiMode}
+              onApply={applyRegionAi}
+            />
           )}
 
           <p className="text-xs text-neutral-500 dark:text-neutral-400">誤りは下の欄で直接編集できます。</p>

@@ -96,6 +96,8 @@ export interface ExtractPersonsFromFileOptions {
    * （個人情報は含まない）。省略時は0番目として扱う。
    */
   fileIndex?: number;
+  /** 2026-11-20：端末内のOCRをとばす（AIで読み取るとき）。文字のあるPDFの文字・チェック欄は今までどおり読む */
+  skipOcr?: boolean;
   onPageProgress?: (info: { currentPage: number; totalPages: number; method: "text-layer" | "ocr" }) => void;
 }
 
@@ -128,7 +130,7 @@ function formCheckboxInRegion(
 }
 
 export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions): Promise<ExtractPersonsFromFileResult> {
-  const { file, template, language, fileIndex = 0, onPageProgress } = opts;
+  const { file, template, language, fileIndex = 0, skipOcr = false, onPageProgress } = opts;
   const pdf = await loadPdfDocument(file);
   try {
     const templatePageCount = Math.max(1, template.pages.length);
@@ -199,7 +201,7 @@ export async function extractPersonsFromFile(opts: ExtractPersonsFromFileOptions
           const result = await extractFieldValue({
             field,
             textItems: hasText ? textItems : [],
-            getOcrPage,
+            getOcrPage: skipOcr ? async () => null : getOcrPage,
             pageHeightPt,
             language,
           });
