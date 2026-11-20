@@ -1186,7 +1186,7 @@ const toolDefinitions: Tool[] = [
     requiredPlan: "standard",
     processor: "browser",
     relatedToolIds: ["video-cut-merge", "video-subtitle"],
-    keywords: ["画面録画", "画面収録", "スクリーン録画", "キャプチャ", "録画", "操作説明", "マニュアル動画", "ワイプ"],
+    keywords: ["画面録画", "画面収録", "スクリーン録画", "画面キャプチャ", "録画", "操作説明", "マニュアル動画", "ワイプ"],
   },
   {
     id: "video-convert",
@@ -1264,7 +1264,7 @@ const toolDefinitions: Tool[] = [
     id: "video-whiteboard",
     name: "動画ホワイトボード",
     category: "video",
-    description: "複数の動画を、縦動画・横動画・正方形のキャンバスに自由に配置（移動・拡大縮小・回転・重ね順）し、同時に再生した1本の動画に書き出します。音はすべての動画を混ぜます",
+    description: "複数の動画を、縦動画・横動画・正方形のキャンバスに自由に並べて、同時に再生する1本の動画に書き出します。音はすべての動画を混ぜます",
     status: "available",
     requiredPlan: "premium",
     processor: "browser",

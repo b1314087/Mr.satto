@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useRef, useState } from "react";
-import { searchTools, type SearchableTool } from "@/lib/tools/search";
+import { searchToolsWithFallback, type SearchableTool } from "@/lib/tools/search";
+import { VoiceSearchButton } from "./voice-search-button";
 import { categories, getCategory } from "@/lib/tools/categories";
 import { dispatchToolsNavigate } from "@/lib/navigation/tools-navigate";
 import { featureFlags } from "@/lib/config/features";
@@ -53,7 +54,7 @@ export function HomeSearch({ total }: { total: number }) {
 
   const query = value.trim();
   // 入力が変わったときだけ検索する（候補の数え直しで、ページ全体を描き直さない）
-  const results = useMemo(() => (query && tools ? searchTools(tools, query) : []), [tools, query]);
+  const { tools: results, related } = useMemo(() => (query && tools ? searchToolsWithFallback(tools, query) : { tools: [] as HomeSearchTool[], related: false }), [tools, query]);
   const suggestions = results.slice(0, MAX_SUGGESTIONS);
   const showPanel = open && query.length > 0;
   // 候補の最後に「すべての結果を見る」を置く（候補がないときは置かない）
@@ -152,8 +153,24 @@ export function HomeSearch({ total }: { total: number }) {
           aria-activedescendant={showPanel && active >= 0 && active < optionCount ? optionId(active) : undefined}
           aria-describedby={`${listId}-help`}
           className="ms-input ms-input-soft ms-input-pill [&::-webkit-search-cancel-button]:hidden"
-          style={{ paddingRight: value ? "6.25rem" : undefined }}
+          style={{ paddingRight: value ? "8.75rem" : "6.25rem" }}
           data-testid="home-search-input"
+        />
+        <VoiceSearchButton
+          className="right-14"
+          testId="home-voice-search"
+          onInterim={(text) => {
+            ensureTools();
+            setValue(text);
+            setOpen(true);
+          }}
+          onResult={(text) => {
+            ensureTools();
+            setValue(text);
+            setOpen(true);
+            setActive(-1);
+            inputRef.current?.focus();
+          }}
         />
         {value && (
           <button
@@ -163,7 +180,7 @@ export function HomeSearch({ total }: { total: number }) {
               setActive(-1);
               inputRef.current?.focus();
             }}
-            className="ms-focus-ring absolute right-14 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-ms-muted hover:bg-ms-hover-tint hover:text-ms-text"
+            className="ms-focus-ring absolute right-24 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-ms-muted hover:bg-ms-hover-tint hover:text-ms-text"
             aria-label="入力を消す"
             data-testid="home-search-clear"
           >
@@ -188,6 +205,12 @@ export function HomeSearch({ total }: { total: number }) {
                 候補を探しています…
               </p>
             ) : suggestions.length > 0 ? (
+              <>
+              {related && (
+                <p data-testid="home-search-related" className="border-b border-ms-border px-4 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  ぴったりのツールが見つからなかったため、近いツールを表示しています
+                </p>
+              )}
               <ul id={`${listId}-list`} role="listbox" aria-label="検索候補" className="max-h-[60vh] overflow-y-auto py-1">
                 {suggestions.map((tool, i) => {
                   const category = getCategory(tool.category);
@@ -234,6 +257,7 @@ export function HomeSearch({ total }: { total: number }) {
                   「{query}」の検索結果をすべて見る（{results.length}件）→
                 </li>
               </ul>
+              </>
             ) : (
               <div className="flex flex-col gap-2 px-4 py-3 text-sm" role="status" data-testid="home-search-empty">
                 <p className="text-ms-text">該当するツールが見つかりませんでした。別の言葉でも検索してみてください。</p>

@@ -73,7 +73,7 @@ plainTest.describe("読み上げ・録音：部品", () => {
 // ---------------------------------------------------------------------------
 // 2. マイク・カメラの許可の範囲（ほかのページでは使えないまま）
 // ---------------------------------------------------------------------------
-test("マイク・カメラ・画面の共有は、録音・画面録画のページだけ許可し、ほかのページは使えないまま", async ({ request }) => {
+test("カメラ・画面の共有は画面録画のページだけ許可。マイクは自分のサイトだけに許可（話して探す検索のため、どのページでも）", async ({ request }) => {
   const policy = async (url: string) => (await request.get(url)).headers()["permissions-policy"] ?? "";
   expect(await policy("/tools/voice-recorder")).toContain("microphone=(self)");
   expect(await policy("/tools/voice-recorder")).toContain("camera=()");
@@ -83,8 +83,10 @@ test("マイク・カメラ・画面の共有は、録音・画面録画のペ�
   expect(screen).toContain("display-capture=(self)");
   for (const url of ["/", "/tools/pdf-fix", "/tools/text-to-speech"]) {
     const p = await policy(url);
-    expect(p, url).toContain("microphone=()");
+    // マイクは自分のサイトだけ（広告などの埋め込みには許可しない）。カメラは使えないまま
+    expect(p, url).toContain("microphone=(self)");
     expect(p, url).toContain("camera=()");
+    expect(p, url).not.toContain("display-capture=(self)");
   }
 });
 

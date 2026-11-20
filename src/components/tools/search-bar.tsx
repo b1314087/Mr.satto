@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type Ref } from "react";
 import { dispatchToolsNavigate } from "@/lib/navigation/tools-navigate";
+import { VoiceSearchButton } from "./voice-search-button";
 
 interface SearchBarProps {
   placeholder?: string;
@@ -59,10 +60,14 @@ export function SearchBar({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    submitValue(value);
+  }
+
+  function submitValue(text: string) {
     if (onSearch) {
-      onSearch(value);
+      onSearch(text);
     } else {
-      const q = value.trim();
+      const q = text.trim();
       const href = q ? `/tools?q=${encodeURIComponent(q)}` : "/tools";
       // すでに /tools を開いていても、一覧の絞り込みが検索語に追随するように知らせる
       dispatchToolsNavigate(href);
@@ -101,10 +106,22 @@ export function SearchBar({
           pill
             ? "ms-input ms-input-soft ms-input-pill"
             : size === "lg"
-              ? "ms-input ms-input-soft py-3 pl-10 pr-4"
+              ? "ms-input ms-input-soft py-3 pl-10 pr-12"
               : "ms-input ms-input-soft ms-input-sm pl-9 pr-3"
         }
+        style={pill ? { paddingRight: "6.25rem" } : undefined}
       />
+      {/* 話して探す（大きい検索欄だけ。ヘッダーの小さい検索欄には出さない） */}
+      {(pill || size === "lg") && (
+        <VoiceSearchButton
+          className={pill ? "right-14" : "right-2"}
+          onInterim={(text) => setValue(text)}
+          onResult={(text) => {
+            setValue(text);
+            submitValue(text);
+          }}
+        />
+      )}
       {pill && (
         <button type="submit" aria-label="検索する" className="ms-search-go">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-5 w-5">

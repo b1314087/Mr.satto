@@ -94,6 +94,15 @@ const SYNONYMS: readonly SynonymEntry[] = [
   { keys: ["ムービー", "ビデオ"], alts: ["動画"] },
   { keys: ["音楽", "オーディオ"], alts: ["音声"] },
   { keys: ["はんこ", "印鑑"], alts: ["印鑑", "電子印鑑", "印影"] },
+  // 2026-11-20：文章で探すときによく使う言い方（「会議を文字にしたい」「動画を2つ並べたい」など）
+  { keys: ["文字起こ", "書き起こ", "テープ起こ", "議事録", "文字にし", "文字に起こ", "聞き取"], alts: ["文字起こし", "書き起こし", "議事録"] },
+  { keys: ["読み上げ", "音読", "ナレーション", "しゃべらせ", "喋らせ", "声にし"], alts: ["読み上げ", "音声"] },
+  { keys: ["録音", "声を録", "声を残"], alts: ["録音"] },
+  { keys: ["録画", "画面を録", "画面収録", "スクリーンレコード"], alts: ["録画", "画面録画"] },
+  { keys: ["並べ", "2画面", "二画面", "画面分割", "比べ", "比較", "横並び", "縦並び"], alts: ["並べ", "画面分割", "比較", "ホワイトボード", "配置"] },
+  { keys: ["字幕", "テロップ"], alts: ["字幕", "テロップ"] },
+  { keys: ["署名", "サイン"], alts: ["署名", "サイン", "印鑑"] },
+  { keys: ["見積", "請求", "納品", "領収"], alts: ["見積書", "請求書", "納品書", "領収書"] },
   // それだけではツールが決まらない動詞（並び順にだけ使う）
   { keys: ["変え", "変える", "変更"], alts: ["変換", "変更"], soft: true },
   { keys: ["直し", "直す", "直"], alts: ["修正", "直す"], soft: true },
@@ -330,6 +339,41 @@ function wholeNameBonus(prepared: PreparedTool, compactQuery: string): number {
   if (prepared.nameCompact === compactQuery) return 100;
   if (compactQuery.length >= 2 && prepared.nameCompact.startsWith(compactQuery)) return 30;
   return 0;
+}
+
+/** 「近いツール」として出す数の上限 */
+const RELATED_MAX = 8;
+
+/**
+ * ツールを検索する（文章で探すとき向け。2026-11-20）。
+ * まず searchTools と同じAND検索をし、当てはまるツールがなければ、
+ * 語の一部だけが当てはまるツールを「近いツール」として返す（当てはまる語が多い順・点数の高い順）。
+ * related が true のときは、画面で「ぴったりのツールが見つからなかった」ことを知らせる。
+ */
+export function searchToolsWithFallback<T extends SearchableTool>(tools: T[], rawQuery: string): { tools: T[]; related: boolean } {
+  const exact = searchTools(tools, rawQuery);
+  if (exact.length > 0 || exact === tools) return { tools: exact, related: false };
+  const terms = buildTerms(rawQuery).filter((t) => !t.soft);
+  if (terms.length < 2) return { tools: [], related: false };
+  const scored: { tool: T; hits: number; score: number; index: number }[] = [];
+  tools.forEach((tool, index) => {
+    const prepared = prepare(tool);
+    let hits = 0;
+    let score = 0;
+    for (const term of terms) {
+      const s = scoreTerm(prepared, term);
+      if (s > 0) {
+        hits++;
+        score += s;
+      }
+    }
+    if (hits > 0) scored.push({ tool, hits, score, index });
+  });
+  if (scored.length === 0) return { tools: [], related: false };
+  scored.sort((a, b) => b.hits - a.hits || b.score - a.score || a.index - b.index);
+  // いちばん多く当てはまったツールより、2語以上少ないものは出さない（関係の薄いものを並べない）
+  const minHits = Math.max(1, scored[0].hits - 1);
+  return { tools: scored.filter((e) => e.hits >= minHits).slice(0, RELATED_MAX).map((e) => e.tool), related: true };
 }
 
 /**

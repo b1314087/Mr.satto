@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Tool, CategoryId } from "@/lib/tools/types";
 import type { Category } from "@/lib/tools/types";
-import { searchTools } from "@/lib/tools/search";
+import { searchToolsWithFallback } from "@/lib/tools/search";
 import { sortToolsForDisplay } from "@/lib/tools/display-order";
 import { SearchBar } from "./search-bar";
 import { ToolGrid } from "./tool-grid";
 import { CategoryIcon } from "@/components/ui/category-icon";
 import { TOOLS_NAVIGATE_EVENT, type ToolsNavigateDetail } from "@/lib/navigation/tools-navigate";
+import { ToolSearchAi } from "./tool-search-ai";
 
 interface ToolsExplorerProps {
   tools: Tool[];
@@ -36,12 +37,13 @@ export function ToolsExplorer({
     router.replace(qs ? `/tools?${qs}` : "/tools", { scroll: false });
   }
 
-  const filtered = useMemo(() => {
+  const { filtered, related } = useMemo(() => {
     const inCategory = category === "all" ? tools : tools.filter((t) => t.category === category);
     // 検索しているときは、検索の順（当てはまる順・同じ点数ならデータの順）のまま。
-    // 検索していないとき（searchTools が受け取った配列をそのまま返したとき）は、一覧の表示順（カテゴリーの順 → カテゴリーの中は50音順。src/lib/tools/display-order.ts）
-    const searched = searchTools(inCategory, query);
-    return searched === inCategory ? sortToolsForDisplay(inCategory) : searched;
+    // 検索していないとき（検索が受け取った配列をそのまま返したとき）は、一覧の表示順（カテゴリーの順 → カテゴリーの中は50音順。src/lib/tools/display-order.ts）
+    // ぴったり当てはまるツールがないときは、近いツールを出す（related）
+    const searched = searchToolsWithFallback(inCategory, query);
+    return searched.tools === inCategory ? { filtered: sortToolsForDisplay(inCategory), related: false } : { filtered: searched.tools, related: searched.related };
   }, [tools, category, query]);
 
   // Phase 19: 準備中（coming-soon）のツールは実装済みツールの検索結果に
@@ -190,6 +192,13 @@ export function ToolsExplorer({
               </button>
             )}
           </div>
+
+          {related && availableFiltered.length > 0 && (
+            <p data-testid="search-related-note" role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              ぴったりのツールが見つからなかったため、近いツールを表示しています。言葉を短くすると見つかることがあります。
+            </p>
+          )}
+          {query.trim().length > 0 && <ToolSearchAi query={query} tools={tools} />}
 
           {/* ページの見出し（h1「ツール一覧」）の直下の一覧なので、カードの見出しは h2 */}
           <ToolGrid tools={availableFiltered} headingLevel="h2" />

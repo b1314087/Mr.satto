@@ -170,7 +170,9 @@ const SECURITY_HEADERS = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+    // マイクは、どのページでも自分のサイトだけに許可する（2026-11-20：ツール検索の「話して探す」のため。
+    // 広告などの埋め込みには許可しない。使うときは、ブラウザが利用者に必ず確認する）
+    value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), interest-cohort=()",
   },
   {
     key: "Strict-Transport-Security",

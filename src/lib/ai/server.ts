@@ -9,6 +9,7 @@ import { AI_TRIAL_LIMIT_MICRO_USD } from "@/lib/plans/grants";
 import { createRpcLedger, type Ledger } from "./ledger";
 import { buildImageInput, callOpenAi, type OpenAiInputMessage } from "./openai-client";
 import { callOpenAiTranscribe } from "./openai-transcribe";
+import { TOOL_SEARCH_OUTPUT_SCHEMA } from "./tool-search";
 import { AI_MODELS } from "./pricing";
 import { IMAGE_OUTPUT_SCHEMA, OUTPUT_SCHEMA } from "./calendar-assist";
 import { FORM_OUTPUT_SCHEMA } from "./form-extract";
@@ -82,6 +83,7 @@ export function createAssistDeps(periodLimitMicroUsd?: number): AssistDeps | nul
       const isPptx = mode === "pptx";
       const isForm = mode === "form";
       const isDocMemo = mode === "docmemo";
+      const isToolSearch = mode === "toolsearch";
       // 画像つきの入力: カレンダー・PowerPointの画像、PDF→Excelのスキャンしたページ
       const isImage = (mode === "image" || isPptx) && images !== undefined && images.length > 0;
       const hasImages = (isImage || isForm) && images !== undefined && images.length > 0;
@@ -92,8 +94,8 @@ export function createAssistDeps(periodLimitMicroUsd?: number): AssistDeps | nul
         instructions,
         input: aiInput,
         maxOutputTokens,
-        schemaName: isDocMemo ? "document_memo" : isForm ? "form_rows" : isPptx ? "pptx_text_lines" : isImage ? "calendar_image_events" : "calendar_rows",
-        schema: isDocMemo ? DOC_MEMO_OUTPUT_SCHEMA : isForm ? FORM_OUTPUT_SCHEMA : isPptx ? PPTX_TEXT_OUTPUT_SCHEMA : isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
+        schemaName: isToolSearch ? "tool_search" : isDocMemo ? "document_memo" : isForm ? "form_rows" : isPptx ? "pptx_text_lines" : isImage ? "calendar_image_events" : "calendar_rows",
+        schema: isToolSearch ? TOOL_SEARCH_OUTPUT_SCHEMA : isDocMemo ? DOC_MEMO_OUTPUT_SCHEMA : isForm ? FORM_OUTPUT_SCHEMA : isPptx ? PPTX_TEXT_OUTPUT_SCHEMA : isImage ? IMAGE_OUTPUT_SCHEMA : OUTPUT_SCHEMA,
         timeoutMs: TIMEOUT_MS,
       });
     },

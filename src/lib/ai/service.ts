@@ -68,6 +68,15 @@ import {
   validateTranscribeAudio,
   validateTranscribeFields,
 } from "./transcribe";
+import {
+  TOOL_SEARCH_CONSENT_VERSION,
+  TOOL_SEARCH_OUTPUT_SCHEMA,
+  buildToolSearchInput,
+  buildToolSearchInstructions,
+  parseToolSearchOutput,
+  validateToolSearchRequest,
+  type ToolCatalogEntry,
+} from "./tool-search";
 import type { Ledger, PeriodSnapshot, ReserveOutcome } from "./ledger";
 import type { OpenAiCallResult } from "./openai-client";
 import type { OpenAiTranscribeResult } from "./openai-transcribe";
@@ -85,6 +94,8 @@ export const FEATURE_DOCUMENT_MEMO = "document-memo";
 export const FEATURE_PPTX_TEXT = "pptx-text";
 /** 文字起こし・動画字幕の、AIによる音声の文字起こし（同上） */
 export const FEATURE_TRANSCRIBE = "transcribe";
+/** ツール検索の「AIに相談して探す」（同上） */
+export const FEATURE_TOOL_SEARCH = "tool-search";
 
 /** 1回の依頼で、予約できる額の上限（期間の上限の何分の1か）。1回で枠の大半を使い切る依頼を、AIを呼ぶ前に断る */
 const MAX_SINGLE_RESERVE_MICRO_USD = AI_PERIOD_LIMIT_MICRO_USD / 4;
@@ -100,7 +111,7 @@ export interface AssistDeps {
     instructions: string;
     input: string;
     maxOutputTokens: number;
-    mode?: "rows" | "image" | "form" | "pptx" | "docmemo";
+    mode?: "rows" | "image" | "form" | "pptx" | "docmemo" | "toolsearch";
     images?: AssistImage[];
   }): Promise<OpenAiCallResult>;
   /** 音声の文字起こし（設定されていなければ、文字起こしは使えない） */
@@ -277,6 +288,43 @@ export async function handleDocumentMemo(
   });
 }
 
+/**
+ * ツール検索の「AIに相談して探す」（プレミアム）。利用者の文章とツールの一覧をAIに渡し、合うツールを選んでもらう。
+ * 流れ・利用枠の扱いは、ほかのAI補助と同じ（execute）。一覧にないツールは parseToolSearchOutput で捨てる。
+ */
+export async function handleToolSearch(
+  deps: AssistDeps,
+  caller: Caller,
+  availability: Availability,
+  rawBody: unknown,
+  catalog: ToolCatalogEntry[],
+): Promise<ServiceResponse> {
+  const denied = checkAccess(caller, availability, rawBody, TOOL_SEARCH_CONSENT_VERSION);
+  if (denied) return denied;
+  const validated = validateToolSearchRequest(rawBody);
+  if (!validated.ok) return respond(400, { error: "invalid_request", message: validated.message });
+  const request = validated.value;
+  const instructions = buildToolSearchInstructions(catalog);
+  const input = buildToolSearchInput(request);
+  const ids = new Set(catalog.map((t) => t.id));
+  return execute(deps, caller.userId as string, {
+    mode: "toolsearch",
+    feature: FEATURE_TOOL_SEARCH,
+    requestId: request.requestId,
+    tier: "standard",
+    instructions,
+    input,
+    maxOutputTokens: 1_500,
+    estimatedInputTokens: estimateInputTokens(instructions + JSON.stringify(TOOL_SEARCH_OUTPUT_SCHEMA) + input) + 500,
+    tooLargeMessage: "文章が長すぎます。短くして、もう一度お試しください。",
+    incompleteMessage: "AIの応答が途中で切れたため、結果を使えませんでした。もう一度お試しください。",
+    parse: (text) => {
+      const parsed = parseToolSearchOutput(text, ids);
+      return parsed ? { fields: { picks: parsed.picks, steps: parsed.steps, note: parsed.note }, rejected: parsed.rejected } : null;
+    },
+  });
+}
+
 /** 文字起こし1回分の依頼（フォームの文字の項目と、音声のバイト列） */
 export interface TranscribeRequestInput {
   fields: { requestId?: unknown; language?: unknown; prompt?: unknown; consentAccepted?: unknown; consentVersion?: unknown };
@@ -371,7 +419,7 @@ export async function handleTranscribe(deps: AssistDeps, caller: Caller, availab
 
 /** 1回の依頼の中身（文字の読み取り・画像の読み取りで共通の流れに渡す形） */
 interface Plan {
-  mode: "rows" | "image" | "form" | "pptx" | "docmemo";
+  mode: "rows" | "image" | "form" | "pptx" | "docmemo" | "toolsearch";
   /** 利用台帳に残る機能名 */
   feature: string;
   requestId: string;
@@ -490,6 +538,7 @@ async function execute(deps: AssistDeps, userId: string, plan: Plan): Promise<Se
       ...(plan.mode === "pptx" ? { mode: "pptx" as const, images: plan.images } : {}),
       ...(plan.mode === "form" ? { mode: "form" as const, ...(plan.images ? { images: plan.images } : {}) } : {}),
       ...(plan.mode === "docmemo" ? { mode: "docmemo" as const } : {}),
+      ...(plan.mode === "toolsearch" ? { mode: "toolsearch" as const } : {}),
     });
   } catch {
     // 呼び出しの中で想定外の例外が起きた: 課金されたか分からないので、そのままにする
