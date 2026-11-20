@@ -112,6 +112,7 @@ export const TOOL_READINGS: Record<string, string> = {
   "envelope-address": "ふうとうあてなさくせい",
   "ticket-voucher": "せいりけん・きんけん・ひきかえけんさくせい",
   "roster-template": "めいぼてんぷれーとさくせい",
+  "cover-letter": "そうふじょうさくせい",
   postcard: "はがきさくせい",
   "seating-chart": "ざせきひょうさくせい",
   "shift-schedule": "しふとひょうさくせい",

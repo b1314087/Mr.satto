@@ -787,6 +787,14 @@ export const toolGuides: Record<string, ToolGuide> = {
       { title: "PDFにして印刷する", parts: [head("PDFにして印刷する", 3), run("PDFを作成する"), preview("postcard")], focus: 1 },
     ],
   },
+  "cover-letter": {
+    split: true,
+    steps: [
+      step("種類と宛先を入れる", [head("種類・日付・件名", 1), seg("送付状の種類", ["書類送付状", "FAX送付状"], 0), head("宛先", 2), input("会社名", "株式会社サンプル"), input("担当者名", "山田 太郎"), preview("invoice")], 2),
+      step("差出人と送付書類を入れる", [head("差出人", 3), input("会社名・屋号", "株式会社サンプル"), head("送付書類", 5), input2("書類1", "見積書", "部数", "1"), btn("＋ 書類を追加"), preview("invoice")], 4),
+      { title: "PDFを作る", parts: [head("PDF出力"), run("書類送付状を作成する"), preview("invoice", "プレビュー")], focus: 1 },
+    ],
+  },
   "envelope-address": {
     split: true,
     steps: [

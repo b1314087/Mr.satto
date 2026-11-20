@@ -186,6 +186,10 @@ const PostalSearchTool = dynamic(() =>
   import("./implementations/postal-search-tool").then((m) => m.PostalSearchTool),
   { loading: ToolLoading }
 );
+const CoverLetterTool = dynamic(() =>
+  import("./implementations/cover-letter-tool").then((m) => m.CoverLetterTool),
+  { loading: ToolLoading }
+);
 // 総合改修 10：見積書・見積書注文書一体・請求書・注文書の4ツールを「見積書・注文書・請求書作成」に統合した
 const DocumentSuiteTool = dynamic(() =>
   import("./implementations/document-suite-tool").then((m) => m.DocumentSuiteTool),
@@ -585,6 +589,8 @@ export function ToolImplementation({ toolId }: { toolId: string }) {
       return <DocumentSuiteTool initialMode="invoice" />;
     case "order-generator":
       return <DocumentSuiteTool initialMode="order" />;
+    case "cover-letter":
+      return <CoverLetterTool />;
     case "pdf-to-excel":
       return <PdfToExcelTool />;
     case "pdf-to-word":

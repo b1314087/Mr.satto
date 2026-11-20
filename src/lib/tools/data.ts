@@ -1435,6 +1435,17 @@ const toolDefinitions: Tool[] = [
     keywords: ["名簿", "一覧表", "出席簿", "台帳"],
   },
   {
+    // 2026-11-20：書類送付状・FAX送付状。入力するだけでA4のPDFにする（ブラウザの中だけで作る）
+    id: "cover-letter",
+    name: "送付状作成",
+    category: "generator",
+    description: "書類送付状・FAX送付状を、宛先・差出人・送付書類を入れるだけでA4のPDFにします。敬称（様・御中）は自動、あいさつ文はひな形から書き換えられます",
+    status: "available",
+    requiredPlan: "standard",
+    processor: "browser",
+    keywords: ["送付状", "書類送付状", "FAX送付状", "ファックス送付状", "送り状", "添え状", "カバーレター", "書類送付のご案内", "ご査収"],
+  },
+  {
     // 総合改修 17：郵便番号 ⇔ 住所を調べる。住所データ（日本郵便の郵便番号データ）はサイト内に置き、ブラウザの中で検索する（外部APIは使わない）
     id: "postal-search",
     name: "郵便番号・住所検索",
