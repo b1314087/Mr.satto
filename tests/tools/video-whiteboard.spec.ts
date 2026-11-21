@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { test as plainTest } from "@playwright/test";
 import { test, expect } from "../fixtures/premium-test";
 import { uploadFixture } from "../helpers/tool-runner";
-import { arrangeInGrid, boardDuration, boardSize, localTime } from "@/lib/video/board-layout";
+import { alignOnBoard, arrangeInGrid, boardDuration, boardSize, fillOnBoard, itemBounds, localTime, snapMove, snapResize } from "@/lib/video/board-layout";
 
 /**
  * 動画ホワイトボード（2026-11-19）のテスト。
@@ -63,12 +63,55 @@ plainTest.describe("動画ホワイトボード：計算", () => {
     }
   });
 
-  plainTest("長さはいちばん長い動画。短い動画は、最後の場面で止めるか、くり返す", () => {
+  plainTest("吸い付き：端・真ん中・ほかの動画の端に近づくと、ぴったり合う（遠ければそのまま）", () => {
+    const canvas = { width: 1080, height: 1920 };
+    const p = { cx: 205, cy: 600, w: 400, h: 300, rotation: 0 }; // 左端は5
+    const s1 = snapMove(p, [], canvas, 10);
+    expect(s1.cx).toBe(200);
+    expect(s1.guides.x).toEqual([0]);
+    expect(s1.cy).toBe(600);
+    const far = snapMove({ ...p, cx: 230 }, [], canvas, 10);
+    expect(far.cx).toBe(230);
+    expect(far.guides.x).toEqual([]);
+    // ほかの動画の下の端に、上の端を合わせる
+    const other = { cx: 540, cy: 300, w: 600, h: 400, rotation: 0 }; // 下の端は500
+    const s2 = snapMove({ ...p, cx: 700, cy: 655 }, [other], canvas, 10);
+    expect(s2.cy).toBe(650);
+    expect(s2.guides.y).toEqual([500]);
+    // 90度回すと、外枠の縦横が入れ替わる
+    expect(itemBounds({ cx: 500, cy: 500, w: 400, h: 200, rotation: 90 })).toMatchObject({ w: expect.closeTo(200, 5), h: expect.closeTo(400, 5) });
+  });
+
+  plainTest("大きさの吸い付き：端の近くまで広げると、ちょうど端に合う大きさになる", () => {
+    const canvas = { width: 1080, height: 1920 };
+    const r = snapResize({ cx: 540, cy: 960, w: 1070, h: 535, rotation: 0 }, canvas, 10);
+    expect(r.w).toBeCloseTo(1080, 5);
+    expect(r.guides.x.length).toBe(1);
+    expect(snapResize({ cx: 540, cy: 960, w: 900, h: 450, rotation: 0 }, canvas, 10).w).toBe(900);
+  });
+
+  plainTest("端に寄せる（9か所）・幅／高さいっぱい", () => {
+    const canvas = { width: 1920, height: 1080 };
+    const p = { cx: 700, cy: 400, w: 400, h: 300, rotation: 0 };
+    expect(alignOnBoard(p, canvas, "top-left")).toEqual({ cx: 200, cy: 150 });
+    expect(alignOnBoard(p, canvas, "bottom-right")).toEqual({ cx: 1720, cy: 930 });
+    expect(alignOnBoard(p, canvas, "top")).toEqual({ cx: 960, cy: 150 });
+    expect(alignOnBoard(p, canvas, "center")).toEqual({ cx: 960, cy: 540 });
+    const fw = fillOnBoard(p, canvas, "width");
+    expect(fw.w).toBeCloseTo(1920, 5);
+    expect(fw.h).toBeCloseTo(1440, 5);
+    expect(fw.cx).toBe(960);
+    const fh = fillOnBoard(p, canvas, "height");
+    expect(fh.h).toBeCloseTo(1080, 5);
+    expect(fh.cy).toBe(540);
+    expect(fh.cx - fh.w / 2).toBeGreaterThanOrEqual(-0.01);
+  });
+
+  plainTest("長さはいちばん長い動画。短い動画は、最後の場面で止める", () => {
     expect(boardDuration([2, 5, 3])).toBe(5);
     expect(boardDuration([])).toBe(0);
     expect(localTime(1, 2, "hold")).toBe(1);
     expect(localTime(4, 2, "hold")).toBeCloseTo(1.999, 3);
-    expect(localTime(4.5, 2, "loop")).toBeCloseTo(0.5, 5);
   });
 });
 
@@ -112,6 +155,55 @@ test.describe("動画ホワイトボード：画面と書き出し", () => {
     await expect.poll(async () => (await page.getByTestId("vb-time").textContent()) ?? "", { timeout: 5_000 }).not.toMatch(/^0:00\.0 /);
     await page.getByTestId("vb-play").click();
     await expect(page.getByTestId("vb-length")).toContainText("0:03.0");
+    // 「短い動画が終わったら」の選択はない（最後の場面で止める）
+    await expect(page.getByTestId("vb-end")).toHaveCount(0);
+    await expect(page.getByTestId("vb-length")).toContainText("最後の場面で止まります");
+  });
+
+  test("端に寄せる・いっぱいに広げる・ドラッグで端に吸い付く", async ({ page }) => {
+    // キャンバス全体が画面に入る大きさにする（画面の外へはドラッグできないため）
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    await page.goto("/tools/video-whiteboard");
+    await uploadFixture(page, [red]);
+    const item = page.getByTestId("vb-item");
+    await expect(item).toHaveCount(1, { timeout: 30_000 });
+    const board = page.getByTestId("vb-board");
+    const bb = () => board.boundingBox().then((b) => b!);
+    const ib = () => item.boundingBox().then((b) => b!);
+    await item.click();
+    await expect(page.getByTestId("vb-align")).toBeVisible();
+    // 小さくしてから、右下に寄せる
+    await page.getByTestId("vb-fill-width").click();
+    let i = await ib();
+    let b = await bb();
+    expect(Math.abs(i.width - b.width)).toBeLessThan(1.5);
+    await page.getByTestId("vb-align-bottom-right").click();
+    i = await ib();
+    b = await bb(); // ボタンを押すと画面がスクロールすることがあるので、測り直す
+    expect(Math.abs(i.x + i.width - (b.x + b.width))).toBeLessThan(1.5);
+    expect(Math.abs(i.y + i.height - (b.y + b.height))).toBeLessThan(1.5);
+    await page.getByTestId("vb-align-top-left").click();
+    i = await ib();
+    b = await bb();
+    expect(Math.abs(i.x - b.x)).toBeLessThan(1.5);
+    expect(Math.abs(i.y - b.y)).toBeLessThan(1.5);
+
+    // 真ん中に置いてから、上の端の少し手前までドラッグすると、上の端にぴったり吸い付く
+    await page.getByTestId("vb-align-center").click();
+    await board.scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollBy(0, -150));
+    i = await ib();
+    b = await bb();
+    const gap = i.y - b.y; // 上の端までの距離（画面の画素）
+    await page.mouse.move(i.x + i.width / 2, i.y + i.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(i.x + i.width / 2 + 40, i.y + i.height / 2 - (gap - 6), { steps: 8 });
+    await expect(page.getByTestId("vb-guide").first()).toBeVisible();
+    await page.mouse.up();
+    await expect(page.getByTestId("vb-guide")).toHaveCount(0);
+    i = await ib();
+    b = await bb();
+    expect(Math.abs(i.y - b.y)).toBeLessThan(1);
   });
 
   test("書き出し：横動画で、左に赤・右に青。長さは長いほう（3秒）。短い赤は最後の場面で止まる。音は混ざって入る", async ({ page }) => {

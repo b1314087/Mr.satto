@@ -15,13 +15,19 @@ import { VideoBoardProcessor, type VideoBoardOutput } from "@/lib/processors/bro
 import {
   BOARD_MAX_SECONDS,
   BOARD_MAX_VIDEOS,
+  BOARD_ALIGNS,
   BOARD_SHAPES,
+  alignOnBoard,
   arrangeInGrid,
   boardDuration,
   boardSize,
+  fillOnBoard,
   localTime,
-  type BoardEndBehavior,
+  snapMove,
+  snapResize,
+  type BoardAlign,
   type BoardShape,
+  type SnapGuides,
 } from "@/lib/video/board-layout";
 import {
   OUTPUT_CONTAINER_OPTIONS,
@@ -38,7 +44,10 @@ import { downloadBlob, formatBytes } from "@/lib/utils/format";
  *
  * - 複数の動画（最大6本）を、縦動画（9:16）・横動画（16:9）・正方形のキャンバスに自由に置く（移動・拡大縮小・回転・重ね順）。
  * - プレビューでは、すべての動画を同時に再生する（音もすべて混ざる）。動画ごとに音量を変えられる。
- * - 書き出し：いちばん長い動画の長さの、1本の動画（MP4・WebM）。短い動画は、最後の場面で止めるか、くり返す。
+ * - 書き出し：いちばん長い動画の長さの、1本の動画（MP4・WebM）。短い動画は、最後の場面で止める。
+ *   （2026-11-21：「くり返す」の選択はなくした。使う場面が少なく、選択肢が増えて分かりにくいため）
+ * - 2026-11-21：動かす・大きさを変えるときに、キャンバスの端・真ん中、ほかの動画の端に吸い付く（Altキーを押している間は吸い付かない）。
+ *   選んだ動画を、ボタン1つでキャンバスの端（9か所）に寄せたり、幅・高さいっぱいに広げたりできる。
  * - 動画はサーバーへ送らず、ブラウザの中だけで処理する（src/lib/processors/browser/video-board.ts）。
  */
 
@@ -64,6 +73,10 @@ type Drag =
   | { kind: "rotate"; id: string; cx: number; cy: number };
 
 const MIN_SIZE = 60;
+/** 吸い付く距離（画面上の画素。キャンバスの画素には、表示の倍率で直して使う） */
+const SNAP_SCREEN_PX = 10;
+/** 短い動画が終わったあとは、最後の場面で止める */
+const END_BEHAVIOR = "hold" as const;
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Math.random()));
 const fmt = (sec: number) => {
   const s = Math.max(0, sec);
@@ -75,7 +88,8 @@ export function VideoWhiteboardTool() {
   const [items, setItems] = useState<BoardItem[]>([]);
   const [shape, setShape] = useState<BoardShape>("vertical");
   const [background, setBackground] = useState("#000000");
-  const [endBehavior, setEndBehavior] = useState<BoardEndBehavior>("hold");
+  // 吸い付いている間に出す目安の線
+  const [guides, setGuides] = useState<SnapGuides>({ x: [], y: [] });
   const [container, setContainer] = useState<OutputContainer>("mp4");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -125,9 +139,9 @@ export function VideoWhiteboardTool() {
       const el = videoRefs.current.get(it.id);
       if (!el) continue;
       el.volume = it.volume / 100;
-      el.loop = endBehavior === "loop";
-      const lt = localTime(t, it.duration, endBehavior);
-      const finished = endBehavior === "hold" && t >= it.duration;
+      el.loop = false;
+      const lt = localTime(t, it.duration, END_BEHAVIOR);
+      const finished = t >= it.duration;
       if (!play || finished) {
         if (!el.paused) el.pause();
         if (Math.abs(el.currentTime - lt) > 0.05) el.currentTime = lt;
@@ -158,9 +172,7 @@ export function VideoWhiteboardTool() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // syncVideos は毎回の描画で作り直すが、中身は refs だけを読む
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, total, endBehavior]);
+  }, [playing, total]);
 
   function togglePlay() {
     if (playing) {
@@ -281,6 +293,21 @@ export function VideoWhiteboardTool() {
     clearResult();
   }
 
+  /** 選んだ動画を、キャンバスの端（9か所）に寄せる */
+  function alignSelected(align: BoardAlign) {
+    const it = items.find((i) => i.id === selectedId);
+    if (!it) return;
+    patch(it.id, alignOnBoard(it, { width: W, height: H }, align));
+  }
+
+  /** 選んだ動画を、キャンバスの幅・高さいっぱいに広げる */
+  function fillSelected(axis: "width" | "height") {
+    const it = items.find((i) => i.id === selectedId);
+    if (!it) return;
+    const p = fillOnBoard(it, { width: W, height: H }, axis);
+    patch(it.id, { cx: p.cx, cy: p.cy, w: p.w, h: p.h });
+  }
+
   // キャンバスの上の位置（キャンバスの画素）。表示の倍率（大きく表示の拡大も含む）は、実際の表示の大きさから求める
   function boardPoint(e: { clientX: number; clientY: number }) {
     const rect = boardRef.current!.getBoundingClientRect();
@@ -296,14 +323,33 @@ export function VideoWhiteboardTool() {
     if (kind === "move") dragRef.current = { kind, id: it.id, startX: p.x, startY: p.y, cx: it.cx, cy: it.cy };
     else if (kind === "resize") dragRef.current = { kind, id: it.id, startDist: Math.max(1, Math.hypot(p.x - it.cx, p.y - it.cy)), w: it.w, h: it.h, cx: it.cx, cy: it.cy };
     else dragRef.current = { kind, id: it.id, cx: it.cx, cy: it.cy };
+    // 吸い付く距離（キャンバスの画素）。大きく表示しているときも、画面上で同じくらいの距離になるように
+    const threshold = SNAP_SCREEN_PX / Math.max(1e-6, boardRef.current!.getBoundingClientRect().width / W);
     const onMove = (ev: PointerEvent) => {
       const d = dragRef.current;
       if (!d) return;
       const q = boardPoint(ev);
-      if (d.kind === "move") patch(d.id, { cx: d.cx + (q.x - d.startX), cy: d.cy + (q.y - d.startY) });
-      else if (d.kind === "resize") {
+      const current = itemsRef.current.find((x) => x.id === d.id);
+      if (!current) return;
+      if (d.kind === "move") {
+        const raw = { ...current, cx: d.cx + (q.x - d.startX), cy: d.cy + (q.y - d.startY) };
+        if (ev.altKey) {
+          setGuides({ x: [], y: [] });
+          patch(d.id, { cx: raw.cx, cy: raw.cy });
+        } else {
+          const others = itemsRef.current.filter((x) => x.id !== d.id);
+          const snapped = snapMove(raw, others, { width: W, height: H }, threshold);
+          setGuides(snapped.guides);
+          patch(d.id, { cx: snapped.cx, cy: snapped.cy });
+        }
+      } else if (d.kind === "resize") {
         const ratio = Math.hypot(q.x - d.cx, q.y - d.cy) / d.startDist;
-        const w = Math.max(MIN_SIZE, d.w * ratio);
+        let w = Math.max(MIN_SIZE, d.w * ratio);
+        if (!ev.altKey) {
+          const snapped = snapResize({ ...current, w, h: (w * d.h) / d.w }, { width: W, height: H }, threshold);
+          w = Math.max(MIN_SIZE, snapped.w);
+          setGuides(snapped.guides);
+        } else setGuides({ x: [], y: [] });
         patch(d.id, { w, h: (w * d.h) / d.w });
       } else {
         let deg = (Math.atan2(q.y - d.cy, q.x - d.cx) * 180) / Math.PI + 90;
@@ -315,6 +361,7 @@ export function VideoWhiteboardTool() {
     };
     const onUp = () => {
       dragRef.current = null;
+      setGuides({ x: [], y: [] });
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
@@ -352,7 +399,7 @@ export function VideoWhiteboardTool() {
         width: W,
         height: H,
         background,
-        endBehavior,
+        endBehavior: END_BEHAVIOR,
         container,
         onProgress: setProgress,
         cancelSignal: controller.signal,
@@ -435,8 +482,44 @@ export function VideoWhiteboardTool() {
                 </div>
               );
             })}
+            {guides.x.map((x, i) => (
+              <span key={`gx${i}`} data-testid="vb-guide" aria-hidden="true" className="pointer-events-none absolute top-0 h-full w-px bg-fuchsia-500" style={{ left: x * scale, zIndex: 999 }} />
+            ))}
+            {guides.y.map((y, i) => (
+              <span key={`gy${i}`} data-testid="vb-guide" aria-hidden="true" className="pointer-events-none absolute left-0 h-px w-full bg-fuchsia-500" style={{ top: y * scale, zIndex: 999 }} />
+            ))}
           </div>
         </div>
+        {selected && (
+          <div data-testid="vb-align" className="flex flex-col gap-1.5 rounded-lg bg-neutral-50 p-2 dark:bg-neutral-900">
+            <p className="text-xs font-medium text-neutral-700 dark:text-neutral-200">選んだ動画をキャンバスの端に寄せる</p>
+            <div className="flex flex-wrap items-start gap-3">
+              <div className="grid w-fit grid-cols-3 gap-1" role="group" aria-label="端に寄せる">
+                {BOARD_ALIGNS.map((a) => (
+                  <button
+                    key={a.value}
+                    type="button"
+                    data-testid={`vb-align-${a.value}`}
+                    aria-label={a.label}
+                    title={a.label}
+                    onClick={() => alignSelected(a.value)}
+                    className="h-8 w-8 rounded border border-neutral-300 bg-white text-xs text-neutral-700 hover:bg-blue-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                  >
+                    {a.symbol}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-1">
+                <button type="button" data-testid="vb-fill-width" onClick={() => fillSelected("width")} className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800">
+                  横幅いっぱいにする
+                </button>
+                <button type="button" data-testid="vb-fill-height" onClick={() => fillSelected("height")} className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800">
+                  高さいっぱいにする
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -463,7 +546,7 @@ export function VideoWhiteboardTool() {
           </span>
         </div>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          動画を選ぶと、右下の四角で大きさ、上の丸で向きを変えられます。キャンバスの外にはみ出した部分は、書き出す動画に入りません。
+          動画を選ぶと、右下の四角で大きさ、上の丸で向きを変えられます。動かすと、キャンバスの端・真ん中やほかの動画の端にぴったり吸い付きます（Altキーを押しながらだと吸い付きません）。キャンバスの外にはみ出した部分は、書き出す動画に入りません。
         </p>
       </section>
     ) : null;
@@ -565,19 +648,8 @@ export function VideoWhiteboardTool() {
 
             <SettingsSection title="書き出し" testId="vb-output">
               <p className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="vb-length">
-                長さ：{fmt(total)}（いちばん長い動画に合わせます。音はすべての動画の音を混ぜます）
+                長さ：{fmt(total)}（いちばん長い動画に合わせます。短い動画は、終わったら最後の場面で止まります。音はすべての動画の音を混ぜます）
               </p>
-              <Segmented
-                label="短い動画が終わったら"
-                size="sm"
-                testId="vb-end"
-                value={endBehavior}
-                onChange={(v) => { setEndBehavior(v); clearResult(); }}
-                options={[
-                  { value: "hold", label: "最後の場面で止める" },
-                  { value: "loop", label: "くり返す" },
-                ]}
-              />
               <fieldset className="flex flex-wrap items-center gap-3 text-sm">
                 <legend className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">出力形式</legend>
                 {OUTPUT_CONTAINER_OPTIONS.filter((o) => o.value === "mp4" || o.value === "webm").map((o) => (
