@@ -9,6 +9,17 @@ import { photoExifRemove } from "./content/photo-exif-remove";
 import { csvMojibake } from "./content/csv-mojibake";
 import { envelopeAddressGuide } from "./content/envelope-address-guide";
 import { receiptToAccounting } from "./content/receipt-to-accounting";
+import { shiftScheduleGuide } from "./content/shift-schedule-guide";
+import { rosterExcelGuide } from "./content/roster-excel-guide";
+import { excelToPdfLayout } from "./content/excel-to-pdf-layout";
+import { invoiceEstimateGuide } from "./content/invoice-estimate-guide";
+import { seatingChartGuide } from "./content/seating-chart-guide";
+import { paperSurveyGuide } from "./content/paper-survey-guide";
+import { schoolYearCalendar } from "./content/school-year-calendar";
+import { pdfRedactionGuide } from "./content/pdf-redaction-guide";
+import { electronicSealGuide } from "./content/electronic-seal-guide";
+import { screenRecordingManual } from "./content/screen-recording-manual";
+import { pdfPasswordGuide } from "./content/pdf-password-guide";
 
 export type { Article, ArticleBlock } from "./types";
 
@@ -26,6 +37,18 @@ export const articles: Article[] = [
   photoExifRemove,
   envelopeAddressGuide,
   receiptToAccounting,
+  // 2026-11-23（2回目）：学校・事務・小さな事業でよく困ることの記事を追加
+  shiftScheduleGuide,
+  rosterExcelGuide,
+  excelToPdfLayout,
+  invoiceEstimateGuide,
+  seatingChartGuide,
+  paperSurveyGuide,
+  schoolYearCalendar,
+  pdfRedactionGuide,
+  electronicSealGuide,
+  pdfPasswordGuide,
+  screenRecordingManual,
 ];
 
 export function getArticle(slug: string): Article | undefined {

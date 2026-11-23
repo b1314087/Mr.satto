@@ -6,8 +6,8 @@ import { getToolById } from "@/lib/tools/data";
 /** 使い方ガイド（記事）のテスト（2026-11-23） */
 
 plainTest.describe("使い方ガイド：記事のデータ", () => {
-  plainTest("記事は10本以上。URL・見出しの目印は重ならず、形が正しい", () => {
-    expect(articles.length).toBeGreaterThanOrEqual(10);
+  plainTest("記事は20本以上。URL・見出しの目印は重ならず、形が正しい", () => {
+    expect(articles.length).toBeGreaterThanOrEqual(20);
     const slugs = articles.map((a) => a.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
     for (const a of articles) {
@@ -56,6 +56,8 @@ test.describe("使い方ガイド：画面", () => {
     await expect(page.getByRole("heading", { level: 1, name: "使い方ガイド" })).toBeVisible();
     await expect(page.getByTestId("guide-card")).toHaveCount(articles.length);
     await expect(page.getByRole("heading", { level: 2, name: "PDF" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "動画・音声" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "安全・プライバシー" })).toBeVisible();
   });
 
   test("記事：見出し・目次・本文・ツールへの案内・構造化データがあり、ツールのページへ進める", async ({ page }) => {
