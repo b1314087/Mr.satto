@@ -130,3 +130,19 @@ export function buildWebApplication() {
     inLanguage: "ja",
   };
 }
+
+/** 使い方ガイド（記事）の構造化データ（2026-11-23） */
+export function buildArticle(a: { title: string; description: string; path: string; publishedAt: string; updatedAt: string }) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: a.title,
+    description: a.description,
+    datePublished: a.publishedAt,
+    dateModified: a.updatedAt,
+    inLanguage: "ja",
+    mainEntityOfPage: `${siteConfig.url}${a.path}`,
+    author: { "@type": "Organization", name: siteConfig.name, url: siteConfig.url },
+    publisher: { "@type": "Organization", name: siteConfig.name, url: siteConfig.url },
+  };
+}

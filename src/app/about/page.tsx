@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CategoryIcon } from "@/components/ui/category-icon";
 import { categories } from "@/lib/tools/categories";
-import { siteConfig } from "@/lib/config/site";
+import { CANONICAL_ORIGIN, siteConfig } from "@/lib/config/site";
 import { featureFlags } from "@/lib/config/features";
 
 export const metadata: Metadata = {
@@ -116,6 +116,53 @@ export default function AboutPage() {
               のページをご覧ください。
             </p>
           )}
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
+            使い方ガイド（記事）について
+          </h2>
+          <p>
+            ツールの使い方だけでなく、PDFの圧縮・結合、画像の容量の調整、CSVの文字化けの直し方、送付状や封筒の宛名の書き方など、
+            書類・ファイルにまつわる「ちょっと面倒」を解決する手順を、
+            <Link href="/guides" className="text-ms-accent hover:underline dark:text-ms-focus">
+              使い方ガイド
+            </Link>
+            で解説しています。
+          </p>
+          <p className="mt-2">
+            記事は、{siteConfig.name}の編集部が、実際にツールを操作して手順や画面の表示を確かめたうえで書いています。
+            制度や決まりごと（敬称の使い方、和暦の改元日など）は、一般的に広く用いられている内容をもとにしています。
+            税務・法律などの専門的な判断が必要な内容は、記事の中でその旨をお知らせし、専門家への確認をおすすめしています。
+            内容に誤りを見つけた場合は、確かめたうえで速やかに直し、記事の更新日を改めます。
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-base font-semibold text-ms-text">
+            運営者情報
+          </h2>
+          <dl className="ms-glass grid grid-cols-[7rem_1fr] gap-x-4 gap-y-2 p-4" data-testid="about-operator">
+            <dt className="font-semibold">サイト名</dt>
+            <dd>{siteConfig.name}（{siteConfig.tagline}）</dd>
+            <dt className="font-semibold">URL</dt>
+            <dd>{CANONICAL_ORIGIN}</dd>
+            <dt className="font-semibold">運営</dt>
+            <dd>{siteConfig.name} 運営事務局</dd>
+            <dt className="font-semibold">お問い合わせ</dt>
+            <dd>
+              <a href={siteConfig.contactFormUrl} target="_blank" rel="noopener noreferrer" className="text-ms-accent hover:underline dark:text-ms-focus">
+                お問い合わせフォーム<span aria-hidden="true"> ↗</span>
+                <span className="sr-only">（Googleフォーム・新しいタブで開きます）</span>
+              </a>
+              、またはメール（{siteConfig.contactEmail}）
+            </dd>
+            <dt className="font-semibold">内容</dt>
+            <dd>ブラウザで使える、PDF・画像・Excel・書類作成などのオンラインツールと、その使い方ガイドの提供</dd>
+          </dl>
+          <p className="mt-2">
+            不具合のご報告・機能のご要望・記事の誤りのお知らせは、お問い合わせフォームからお送りください。いただいた内容は、改善のために役立てています。
+          </p>
         </section>
 
         <section>

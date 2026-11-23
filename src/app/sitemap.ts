@@ -3,6 +3,7 @@ import { tools } from "@/lib/tools/data";
 import { categories } from "@/lib/tools/categories";
 import { siteConfig } from "@/lib/config/site";
 import { featureFlags } from "@/lib/config/features";
+import { articles } from "@/lib/articles";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const staticRoutes: MetadataRoute.Sitemap = [
@@ -16,6 +17,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
           { url: `${siteConfig.url}/signup`, changeFrequency: "yearly", priority: 0.3 },
         ] satisfies MetadataRoute.Sitemap)
       : []),
+    { url: `${siteConfig.url}/guides`, changeFrequency: "weekly", priority: 0.8 },
     { url: `${siteConfig.url}/about`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${siteConfig.url}/privacy`, changeFrequency: "yearly", priority: 0.3 },
     { url: `${siteConfig.url}/terms`, changeFrequency: "yearly", priority: 0.3 },
@@ -46,5 +48,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.7,
     }));
 
-  return [...staticRoutes, ...categoryRoutes, ...toolRoutes];
+  // 2026-11-23：使い方ガイドの記事
+  const guideRoutes: MetadataRoute.Sitemap = articles.map((a) => ({
+    url: `${siteConfig.url}/guides/${a.slug}`,
+    lastModified: a.updatedAt,
+    changeFrequency: "monthly",
+    priority: 0.7,
+  }));
+
+  return [...staticRoutes, ...categoryRoutes, ...toolRoutes, ...guideRoutes];
 }

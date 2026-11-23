@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/common/error-message";
-import { FORM_CONSENT_VERSION, type FormExtractRow } from "@/lib/ai/form-extract";
+import { FORM_CONSENT_VERSION, FORM_MAX_IMAGE_PAGES, type FormExtractRow } from "@/lib/ai/form-extract";
 import type { AiModelTier } from "@/lib/ai/pricing";
 import type { PersonRecord } from "@/lib/pdf-template/person-extraction";
 import type { Template } from "@/lib/pdf-template/types";
@@ -136,7 +136,7 @@ export function RegionAiPanel({
     return () => clearInterval(t);
   }, [running]);
 
-  const batches = items ? batchRegionItems(items) : [];
+  const batches = items ? batchRegionItems(items, FORM_MAX_IMAGE_PAGES) : [];
   const canRun = usage.status === "available" && !!items && items.length > 0 && consent && !running;
 
   async function run() {

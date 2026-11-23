@@ -206,6 +206,14 @@ export function SiteMenu({ categories, showBilling, siteName, totalCount }: Site
                     )}
                   </Link>
                 </li>
+                <li>
+                  <Link href="/guides" className="ms-menu-link" aria-current={isCurrent("/guides") ? "page" : undefined}>
+                    <MenuGlyph>
+                      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" />
+                    </MenuGlyph>
+                    使い方ガイド
+                  </Link>
+                </li>
               </ul>
             </nav>
 

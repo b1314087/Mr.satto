@@ -28,6 +28,8 @@ import { siteConfig } from "@/lib/config/site";
 import { ToolHandoffProvider } from "@/components/handoff/handoff-provider";
 import { buildHandoffPageProps } from "@/lib/handoff/page-props";
 import { PaidAccessNotice } from "@/components/passkey/paid-access-notice";
+import Link from "next/link";
+import { articlesForTool } from "@/lib/articles";
 import { ToolConsentGate } from "@/components/legal/tool-consent-gate";
 import { getConsentState } from "@/lib/legal/consent-store";
 import { shouldRequireConsentForTools } from "@/lib/legal/consent";
@@ -176,6 +178,8 @@ export default async function ToolPage({ params }: ToolPageProps) {
   const mergedHub = tool.mergedInto ? getToolById(tool.mergedInto) : getMergedTools(tool.id).length > 0 ? tool : undefined;
   const mergedMembers = mergedHub ? getMergedTools(mergedHub.id) : [];
   const seo = isAvailable ? getToolSeoContent(tool.id) : undefined;
+  // 2026-11-23：このツールを使う使い方ガイド（統合済みの旧アドレスでは、まとめ先のツールの記事も出す）
+  const guides = [...new Map([...articlesForTool(tool.id), ...(tool.mergedInto ? articlesForTool(tool.mergedInto) : [])].map((g) => [g.slug, g])).values()].slice(0, 4);
   // 工程16：ほかのツールとのファイル受け渡し（設定は src/lib/handoff/config.ts）
   const handoff = serverPlan ? buildHandoffPageProps(tool, serverPlan.plan) : null;
 
@@ -281,6 +285,24 @@ export default async function ToolPage({ params }: ToolPageProps) {
         <div className="mt-6">
           <AdSlot placement="tool-page" />
         </div>
+      )}
+
+      {isAvailable && guides.length > 0 && (
+        <section className="mt-10" aria-labelledby="tool-guides-heading" data-testid="tool-related-guides">
+          <h2 id="tool-guides-heading" className="mb-3 text-lg font-semibold text-ms-text">
+            関連する使い方ガイド
+          </h2>
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {guides.map((g) => (
+              <li key={g.slug}>
+                <Link href={`/guides/${g.slug}`} className="ms-glass ms-glass-interactive flex h-full flex-col gap-1 p-4">
+                  <span className="text-sm font-semibold leading-snug text-ms-text">{g.title}</span>
+                  <span className="line-clamp-2 text-xs leading-relaxed text-ms-muted">{g.description}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {related.length > 0 && (

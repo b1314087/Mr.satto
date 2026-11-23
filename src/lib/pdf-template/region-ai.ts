@@ -1,6 +1,5 @@
 import { closePdfDocument, loadPdfDocument, renderPageToCanvas } from "@/lib/pdf/pdfjs-client";
 import { encodeCanvasForAi, type PreparedImage } from "@/lib/calendar/event-image";
-import { FORM_MAX_IMAGE_PAGES } from "@/lib/ai/form-extract";
 import { cropFieldCanvas } from "./field-extraction";
 import type { PersonRecord } from "./person-extraction";
 import type { Template, TemplateField } from "./types";
@@ -191,8 +190,11 @@ export async function buildRegionAiItems(opts: {
   return items;
 }
 
-/** 1回に送る件のまとまりに分ける（項目の並びが同じ件だけを、画像の上限の数ずつ） */
-export function batchRegionItems<T extends { labels: string[] }>(items: T[], perBatch = FORM_MAX_IMAGE_PAGES): T[][] {
+/**
+ * 1回に送る件のまとまりに分ける（項目の並びが同じ件だけを、perBatch 件ずつ）。
+ * perBatch は、AIの依頼1回に付けられる画像の数（呼び出し側が @/lib/ai から渡す。この部品はAIの部品に頼らない）
+ */
+export function batchRegionItems<T extends { labels: string[] }>(items: T[], perBatch: number): T[][] {
   const groups = new Map<string, T[]>();
   for (const it of items) {
     const key = it.labels.join("\u0001");

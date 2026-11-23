@@ -34,6 +34,9 @@ export function Footer() {
               料金プラン
             </Link>
           )}
+          <Link href="/guides" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
+            使い方ガイド
+          </Link>
           <Link href="/about" className="rounded-sm hover:text-ms-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ms-focus dark:hover:text-ms-focus">
             {siteConfig.shortName}について
           </Link>

@@ -5,6 +5,7 @@ import { HomeSearch } from "@/components/tools/home-search";
 import { CategoryCard } from "@/components/tools/category-card";
 import { categories } from "@/lib/tools/categories";
 import { getListedTools } from "@/lib/tools/data";
+import { sortedArticles } from "@/lib/articles";
 import { siteConfig } from "@/lib/config/site";
 import { JsonLd } from "@/components/seo/json-ld";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -72,6 +73,28 @@ export default function Home() {
             <CategoryCard key={category.id} category={category} toolCount={countByCategory(category.id)} />
           ))}
         </div>
+      </section>
+
+      {/* 2026-11-23：使い方ガイド（新しい記事を4つ） */}
+      <section className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8" aria-labelledby="home-guides" data-testid="home-guides">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 id="home-guides" className="text-lg font-semibold text-ms-text">使い方ガイド</h2>
+          <Link href="/guides" className="text-sm text-ms-accent hover:underline dark:text-ms-focus">
+            すべてのガイド →
+          </Link>
+        </div>
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {sortedArticles()
+            .slice(0, 4)
+            .map((a) => (
+              <li key={a.slug}>
+                <Link href={`/guides/${a.slug}`} className="ms-glass ms-glass-interactive flex h-full flex-col gap-1.5 p-4">
+                  <span className="text-[11px] font-semibold text-ms-accent dark:text-ms-focus">{a.topic}</span>
+                  <span className="text-sm font-semibold leading-snug text-ms-text">{a.title}</span>
+                </Link>
+              </li>
+            ))}
+        </ul>
       </section>
 
       {/* 2026-11：「よく使われるツール」の欄は運営の判断で削除した（カテゴリと検索から探す） */}
