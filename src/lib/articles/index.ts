@@ -20,6 +20,8 @@ import { pdfRedactionGuide } from "./content/pdf-redaction-guide";
 import { electronicSealGuide } from "./content/electronic-seal-guide";
 import { screenRecordingManual } from "./content/screen-recording-manual";
 import { pdfPasswordGuide } from "./content/pdf-password-guide";
+import { fileNamingRules } from "./content/file-naming-rules";
+import { addressLabelGuide } from "./content/address-label-guide";
 
 export type { Article, ArticleBlock } from "./types";
 
@@ -49,6 +51,9 @@ export const articles: Article[] = [
   electronicSealGuide,
   pdfPasswordGuide,
   screenRecordingManual,
+  // 2026-11-24
+  fileNamingRules,
+  addressLabelGuide,
 ];
 
 export function getArticle(slug: string): Article | undefined {
