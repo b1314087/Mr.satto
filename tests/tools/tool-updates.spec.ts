@@ -63,24 +63,24 @@ test.describe("パスワード生成の文字指定", () => {
   test("英字のみ・数字のみ・英数字のみのワンタッチ指定", async ({ page }) => {
     await openTool(page, "password-generator", /パスワードを生成する/);
     await page.getByRole("button", { name: "英字のみ", exact: true }).click();
-    await expect.poll(() => password(page)).toMatch(/^[A-Za-z]{16}$/);
+    await expect.poll(() => password(page)).toMatch(/^[A-Za-z]{20}$/);
     await page.getByRole("button", { name: "数字のみ", exact: true }).click();
-    await expect.poll(() => password(page)).toMatch(/^[0-9]{16}$/);
+    await expect.poll(() => password(page)).toMatch(/^[0-9]{20}$/);
     await page.getByRole("button", { name: "英数字のみ", exact: true }).click();
-    await expect.poll(() => password(page)).toMatch(/^[A-Za-z0-9]{16}$/);
+    await expect.poll(() => password(page)).toMatch(/^[A-Za-z0-9]{20}$/);
   });
 
   test("使う文字を自分で指定すると、その文字だけで作られる", async ({ page }) => {
     await openTool(page, "password-generator", /パスワードを生成する/);
     await page.getByLabel("使う文字を指定").fill("abcxyz789");
-    await expect.poll(() => password(page)).toMatch(/^[abcxyz789]{16}$/);
+    await expect.poll(() => password(page)).toMatch(/^[abcxyz789]{20}$/);
     await expect(page.getByRole("checkbox").first()).toBeDisabled();
     // 1種類だけではエラー
     await page.getByLabel("使う文字を指定").fill("aaaa");
     await expect(page.getByText("使う文字は2種類以上指定してください")).toBeVisible();
     // 日本語の文字も使える
     await page.getByLabel("使う文字を指定").fill("あいうえお");
-    await expect.poll(() => password(page)).toMatch(/^[あいうえお]{16}$/);
+    await expect.poll(() => password(page)).toMatch(/^[あいうえお]{20}$/);
   });
 });
 

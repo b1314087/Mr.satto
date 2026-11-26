@@ -17,7 +17,8 @@ const STRENGTH_COLOR = [
 ];
 
 export function PasswordGeneratorTool() {
-  const [length, setLength] = useState(16);
+  // 最初の長さは20文字（そのまま使っても十分に推測されにくい長さにする。2026-11-26）
+  const [length, setLength] = useState(20);
   const [useUppercase, setUseUppercase] = useState(true);
   const [useLowercase, setUseLowercase] = useState(true);
   const [useNumbers, setUseNumbers] = useState(true);
@@ -82,7 +83,8 @@ export function PasswordGeneratorTool() {
     if (!password) return;
     await navigator.clipboard.writeText(password);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // コピー後の注意を読めるよう、表示を少し長めに残す
+    setTimeout(() => setCopied(false), 8000);
   }
 
   const checkboxes: { label: string; checked: boolean; setter: (v: boolean) => void }[] = [
@@ -144,6 +146,11 @@ export function PasswordGeneratorTool() {
             </span>
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">{Array.from(password).length}文字</p>
+          {copied && (
+            <p data-testid="password-clipboard-note" className="text-xs text-amber-700 dark:text-amber-300">
+              パスワードをコピーしました。使い終わったら、ほかの文字をコピーして上書きしてください（コピーしたものは、パソコンのクリップボードに残ります）。
+            </p>
+          )}
         </div>
       ) : null
       }

@@ -855,8 +855,8 @@ export const toolGuides: Record<string, ToolGuide> = {
   "password-generator": {
     split: true,
     steps: [
-      step("文字数と文字の種類を決める", [slider("文字数", 0.3, "16"), btns(["英字のみ", "数字のみ", "英数字のみ", "すべて"], 3), check("記号 (!@#$ など)"), preview("text")], 0),
-      step("生成してコピーする", [run("パスワードを生成する"), text(undefined, ["k7#Qm2!vXp9Lr4@w"]), run("コピー")], 2),
+      step("文字数と文字の種類を決める", [slider("文字数", 0.27, "20"), btns(["英字のみ", "数字のみ", "英数字のみ", "すべて"], 3), check("記号 (!@#$ など)"), preview("text")], 0),
+      step("生成してコピーする", [run("パスワードを生成する"), text(undefined, ["k7#Qm2!vXp9Lr4@wN8$e"]), run("コピー")], 2),
     ],
   },
   "gradient-generator": {
