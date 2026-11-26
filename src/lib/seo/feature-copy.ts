@@ -233,6 +233,9 @@ const TEXT_RULES: TextRule[] = [
   // ---- 年度カレンダー作成（AIで読み取る機能は課金オンのときだけ提供。文言は fiscal-calendar-copy.ts）----
   // 課金オンの文言が元の文章。課金オフのときだけ、AI・画像に触れない文言へ差し替える。
   ...FISCAL_CALENDAR_COPY_PAIRS.map((pair): TextRule => ({ from: pair.on, resolve: (ctx) => (ctx.billing ? undefined : pair.off) })),
+  // ---- 文字起こし（AI）（AIの文字起こしは課金オンのときだけ提供。transcribeAiEnabled と同じ条件）----
+  { from: "AIでの文字起こしは、プレミアムプランの機能です。音声の長さに応じて、今期のAI利用枠を使います。話し声のない部分は送らないので、利用枠を使いません。", resolve: (ctx) => (ctx.billing ? undefined : "") },
+  { from: "（プレミアムプランの機能）", resolve: (ctx) => (ctx.billing ? undefined : "") },
   // 郵便番号・住所検索の「まとめて調べる」（プレミアム。課金オフの間は、だれでも使える）
   { from: "「まとめて調べる」（プレミアム）で、", resolve: (ctx) => (ctx.billing ? undefined : "「まとめて調べる」で、") },
   { from: "はい（プレミアムプランの機能）。", resolve: (ctx) => (ctx.billing ? undefined : "はい。") },

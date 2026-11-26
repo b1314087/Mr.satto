@@ -1,5 +1,6 @@
 import type { Tool } from "./types";
 import { TOOL_HANDOFF } from "@/lib/handoff/config";
+import { featureFlags } from "@/lib/config/features";
 
 /**
  * 全ツールの一覧（データ駆動）。
@@ -1138,7 +1139,8 @@ const toolDefinitions: Tool[] = [
     id: "audio-transcribe",
     name: "文字起こし（AI）",
     category: "audio",
-    description: "会議・インタビュー・動画の話し声を、AIで文字にします。時刻つきの文章や字幕ファイル（SRT）で保存できます（プレミアム）",
+    // 「（プレミアム）」は課金オンのときだけ付ける（課金オフの間はプランに触れない）
+    description: `会議・インタビュー・動画の話し声を、AIで文字にします。時刻つきの文章や字幕ファイル（SRT）で保存できます${featureFlags.billing ? "（プレミアム）" : ""}`,
     status: "available",
     requiredPlan: "standard",
     processor: "browser",

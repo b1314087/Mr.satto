@@ -5,7 +5,7 @@ import { FileDropzone } from "@/components/common/file-dropzone";
 import { FileList } from "@/components/common/file-list";
 import { ErrorMessage } from "@/components/common/error-message";
 import { RewardedDownloadGate } from "@/components/ads/rewarded-download-gate";
-import { TranscribeAi } from "@/components/tools/implementations/shared/transcribe-ai";
+import { TranscribeAi, transcribeAiEnabled } from "@/components/tools/implementations/shared/transcribe-ai";
 import { AUDIO_DROPZONE_MAX_MB, AUDIO_INPUT_ACCEPT } from "@/lib/audio/shared";
 import { formatClockTime, toPlainText, toSrt, toTimestampedText, type TranscriptSegment } from "@/lib/transcribe/transcript";
 import { downloadBlob, stripExtension } from "@/lib/utils/format";
@@ -67,16 +67,23 @@ export function AudioTranscribeTool() {
       {error && <ErrorMessage message={error} testId="transcribe-error" />}
       {file && <FileList files={[file]} onRemove={() => handleSelect([])} />}
 
-      <TranscribeAi
-        file={file}
-        title="AIで文字起こしする"
-        sub="会議・インタビュー・動画の話し声を、AIが文字にします。時刻つきの文章や字幕ファイル（SRT）で保存できます"
-        runLabel="AIで文字起こしする"
-        onSegments={(next, info) => {
-          setSegments(next);
-          setPartial(info.partial);
-        }}
-      />
+      {/* AIの文字起こしは、課金システムがオンの間だけ提供する（動画字幕と同じ条件） */}
+      {transcribeAiEnabled() ? (
+        <TranscribeAi
+          file={file}
+          title="AIで文字起こしする"
+          sub="会議・インタビュー・動画の話し声を、AIが文字にします。時刻つきの文章や字幕ファイル（SRT）で保存できます"
+          runLabel="AIで文字起こしする"
+          onSegments={(next, info) => {
+            setSegments(next);
+            setPartial(info.partial);
+          }}
+        />
+      ) : (
+        <p data-testid="transcribe-unavailable" className="rounded-xl border border-neutral-200 p-4 text-sm text-neutral-700 dark:border-neutral-800 dark:text-neutral-200">
+          AIで文字起こしする機能は、現在ご利用いただけません。
+        </p>
+      )}
 
       {segments.length > 0 && (
         <section data-testid="transcribe-result" className="flex flex-col gap-3 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
