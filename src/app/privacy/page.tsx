@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { siteConfig } from "@/lib/config/site";
 import { featureFlags } from "@/lib/config/features";
+import { adConfig } from "@/lib/ads/config";
 import { formatLegalVersion, LEGAL_VERSIONS } from "@/lib/legal/versions";
 
 export const metadata: Metadata = {
@@ -17,6 +18,9 @@ export default function PrivacyPage() {
   // 機能スイッチ（src/lib/config/features.ts）の状態に応じて、実際に提供していない機能の
   // 説明を出さないよう、記述を出し分ける（広告・課金を再開すると、元の説明が自動で表示される）。
   const { ads, billing } = featureFlags;
+  // 2026-11-27：広告の表示はオフでも、AdSenseの発行者IDを設定している（＝AdSenseの審査・利用に向けて準備している）間は、
+  // 広告配信事業者のCookieの扱いと止め方を記載する（AdSenseのプログラムポリシーで、プライバシーポリシーへの記載が求められるため）
+  const adsensePlanned = !ads && adConfig.adsenseClientId.length > 0;
   // 有料プランの本人確認（パスキー）・登録端末・同時利用の記載は、その仕組みの機能スイッチをオンにしたときから出す
   const passkey = billing && featureFlags.passkey;
   const cookiePurposes = [billing && "ログイン状態の維持", ads && "前述の広告視聴状況の確認"]
@@ -211,6 +215,39 @@ export default function PrivacyPage() {
                 サービスの操作ボタンと誤認されない形で配置します。広告が表示されない場合や、広告の内容が変わる場合があります。
               </p>
             </>
+          ) : adsensePlanned ? (
+            <div data-testid="privacy-adsense-planned">
+              <p>
+                本サービスは、Google LLCが提供する第三者配信の広告サービス「Google AdSense」の利用に向けて準備を進めています。現時点では、本サービスのページに広告は表示していません。
+              </p>
+              <p className="mt-2">
+                広告を配信する場合、Googleなどの広告配信事業者は、ユーザーの興味・関心に応じた広告（パーソナライズ広告）を表示するために、Cookie（匿名の識別子を含む）を使用することがあります。Cookieにより、ユーザーが本サービスやほかのウェブサイトを訪れた情報をもとに広告が配信されることがあります。
+              </p>
+              <p className="mt-2">
+                Googleが広告配信に使用するCookieを無効にしたい場合は、
+                <a
+                  href="https://adssettings.google.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-ms-accent hover:underline dark:text-ms-focus"
+                >
+                  Googleの広告設定
+                </a>
+                から行うことができます。また、第三者配信事業者のCookie使用を無効にする方法については、
+                <a
+                  href="https://www.google.com/policies/technologies/ads/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-ms-accent hover:underline dark:text-ms-focus"
+                >
+                  広告に関するポリシー
+                </a>
+                のページをご確認ください。
+              </p>
+              <p className="mt-2">
+                広告を表示する場合は、「広告」「スポンサーリンク」等と分かるように表示し、ダウンロードボタンなどサービスの操作ボタンと誤認されない形で配置します。パスワードを扱うツールなど、一部のページでは広告を表示しません。
+              </p>
+            </div>
           ) : (
             <p>
               現在、本サービスは広告を表示していません。広告の配信を始める場合は、広告配信事業者が使用するCookieなどの取り扱いについて、本ポリシーを改定してお知らせします。

@@ -22,6 +22,8 @@ import { screenRecordingManual } from "./content/screen-recording-manual";
 import { pdfPasswordGuide } from "./content/pdf-password-guide";
 import { fileNamingRules } from "./content/file-naming-rules";
 import { addressLabelGuide } from "./content/address-label-guide";
+import { wordFormatFix } from "./content/word-format-fix";
+import { photoCutoutFlyer } from "./content/photo-cutout-flyer";
 
 export type { Article, ArticleBlock } from "./types";
 
@@ -54,6 +56,9 @@ export const articles: Article[] = [
   // 2026-11-24
   fileNamingRules,
   addressLabelGuide,
+  // 2026-11-27
+  wordFormatFix,
+  photoCutoutFlyer,
 ];
 
 export function getArticle(slug: string): Article | undefined {

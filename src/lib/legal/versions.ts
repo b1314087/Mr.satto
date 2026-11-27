@@ -1,4 +1,5 @@
 import { featureFlags } from "@/lib/config/features";
+import { adConfig } from "@/lib/ads/config";
 
 /**
  * 利用規約・プライバシーポリシーの「現行の版」（工程38）。
@@ -16,7 +17,8 @@ export const LEGAL_VERSIONS = {
   terms: "2026-11-15",
   // 2026-11-17：有料プランの本人確認（パスキー）・登録端末・同時利用の記載を追加（機能スイッチをオンにした日）。
   // この記載は、その仕組みの機能スイッチ（featureFlags.passkey）をオンにしたときから表示するので、版もそのときに上がる
-  privacy: featureFlags.passkey ? "2026-11-17" : "2026-11-15",
+  // 2026-11-27：AdSenseの発行者IDを設定している間は、広告配信事業者のCookieの扱いと止め方を記載（src/app/privacy/page.tsx）
+  privacy: adConfig.adsenseClientId ? "2026-11-27" : featureFlags.passkey ? "2026-11-17" : "2026-11-15",
 } as const;
 
 export type LegalDocument = keyof typeof LEGAL_VERSIONS;

@@ -100,7 +100,7 @@ test.describe("本番に出す準備", () => {
 
   test("プライバシーポリシーの記載と版の更新は、機能スイッチと一緒に変わる（本番のスイッチはオン。2026-11-17 公開）", () => {
     expect(fs.readFileSync("src/app/privacy/page.tsx", "utf8")).toContain("const passkey = billing && featureFlags.passkey;");
-    expect(fs.readFileSync("src/lib/legal/versions.ts", "utf8")).toContain('privacy: featureFlags.passkey ? "2026-11-17" : "2026-11-15",');
+    expect(fs.readFileSync("src/lib/legal/versions.ts", "utf8")).toContain('featureFlags.passkey ? "2026-11-17" : "2026-11-15",');
     const flags = fs.readFileSync("src/lib/config/features.ts", "utf8");
     expect(flags.slice(flags.indexOf("const PRODUCTION_FLAGS"))).toMatch(/passkey:\s*true/);
   });
