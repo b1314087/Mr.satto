@@ -605,7 +605,7 @@ export const toolGuides: Record<string, ToolGuide> = {
 
   // ------------------------------------------------------------------ 動画・音声
   "video-convert": videoEdit("出力形式", ["MP4", "MOV", "WebM", "MKV"], 0, "変換する"),
-  "video-compress": videoEdit("画質・圧縮", ["元のまま", "高画質（弱め）", "標準", "高圧縮（強め）"], 2, "圧縮する"),
+  "video-compress": videoEdit("画質・圧縮", ["元のまま", "高画質（弱め）", "標準", "高圧縮（強め）", "目標サイズで指定"], 2, "圧縮する"),
   "video-resize": videoEdit("解像度", ["元の解像度", "1080p", "720p", "480p"], 2, "解像度を変更する"),
   "video-frame-rate": videoEdit("フレームレート", ["元のフレームレート", "60fps", "30fps", "24fps"], 2, "フレームレートを変更する"),
   "video-h264": {
@@ -656,6 +656,13 @@ export const toolGuides: Record<string, ToolGuide> = {
       pick("「複数の動画を結合」を選んで動画を選ぶ", "動画をドラッグ&ドロップ（複数可）", [seg(undefined, ["不要部分を削除", "複数の動画を結合"], 1)]),
       step("順番と残す範囲を決める", [file(MP4, true), file("movie2.mp4"), btn("⋮⋮ ドラッグで並べ替え"), preview("video", "バーの端をドラッグして切り取る")], 2),
       ...finish("結合する", "動画を結合する", [file(MP4, true), file("movie2.mp4")]),
+    ],
+  },
+  "video-speed": {
+    steps: [
+      pick("動画を選ぶ", "動画ファイルをドラッグ&ドロップ"),
+      step("速さと音声を決める", [file(MP4), btns(["0.5倍", "1.5倍", "2倍", "3倍"], 2), check("音の高さを保つ"), check("音声を消す", false)], 1),
+      ...finish("速さを変える", "速さを変える", [file(MP4), preview("video")]),
     ],
   },
   "video-metadata-remove": {

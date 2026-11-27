@@ -20,6 +20,8 @@ import {
   type ImageLayoutOutputFormat,
 } from "@/lib/processors/browser/image-layout";
 import type { ImageProcessorOutput, PdfProcessorOutput } from "@/lib/processors/types";
+import { BOARD_ALIGNS, alignOnBoard, fillOnBoard, snapMove, type BoardAlign, type SnapGuides } from "@/lib/video/board-layout";
+import { snapLines, snapResizeEdges, toPlacement } from "@/lib/image-layout/snap";
 import {
   PAPER_SIZE_IDS,
   PAPER_SIZE_LABELS,
@@ -78,6 +80,8 @@ const DEFAULT_CANVAS_WIDTH = 1200;
 const DEFAULT_CANVAS_HEIGHT = 800;
 const MIN_ITEM_SIZE = 24;
 const DEFAULT_ITEM_SIZE = 240;
+/** 吸い付く距離（画面上のピクセル。2026-11-27：動画ホワイトボードと同じ） */
+const SNAP_SCREEN_PX = 10;
 
 type Corner = "nw" | "ne" | "sw" | "se";
 
@@ -139,6 +143,8 @@ export function ImageLayoutTool() {
   const dragRef = useRef<DragState | null>(null);
   // ドラッグ中の写真を離すと入れ替わる相手（黄色い枠で示す）
   const [swapTargetId, setSwapTargetId] = useState<string | null>(null);
+  // 吸い付いたときに出す目安の線（キャンバスの画素。2026-11-27）
+  const [guides, setGuides] = useState<SnapGuides>({ x: [], y: [] });
   const nextItemIdRef = useRef(1);
   const [displayScale, setDisplayScale] = useState(1);
 
@@ -375,10 +381,25 @@ export function ImageLayoutTool() {
     const drag = dragRef.current;
     if (!drag || drag.pxPerCanvasPx === 0) return;
 
+    // 吸い付く距離（キャンバスの画素）。表示の倍率に関係なく、画面上で同じくらいの距離にする
+    const threshold = SNAP_SCREEN_PX / drag.pxPerCanvasPx;
+    const canvasSize = { width: canvasWidthPx, height: canvasHeightPx };
+    const others = items.filter((i) => i.id !== drag.itemId);
+
     if (drag.mode === "move") {
       const dx = (e.clientX - drag.startClientX) / drag.pxPerCanvasPx;
       const dy = (e.clientY - drag.startClientY) / drag.pxPerCanvasPx;
-      updateItem(drag.itemId, { x: drag.startItem.x + dx, y: drag.startItem.y + dy });
+      let x = drag.startItem.x + dx;
+      let y = drag.startItem.y + dy;
+      // 2026-11-27：キャンバスの端・真ん中、ほかのアイテムの端・真ん中に吸い付ける（Altキーを押している間は吸い付かない）
+      if (!e.altKey) {
+        const raw = toPlacement({ ...drag.startItem, x, y });
+        const snapped = snapMove(raw, others.map((o) => toPlacement(o)), canvasSize, threshold);
+        x = snapped.cx - drag.startItem.width / 2;
+        y = snapped.cy - drag.startItem.height / 2;
+        setGuides(snapped.guides);
+      } else if (guides.x.length || guides.y.length) setGuides({ x: [], y: [] });
+      updateItem(drag.itemId, { x, y });
       const target = findSwapTarget(e.clientX, e.clientY, drag);
       const id = target?.id ?? null;
       if (id !== swapTargetId) setSwapTargetId(id);
@@ -405,6 +426,12 @@ export function ImageLayoutTool() {
       // 幅・高さが最小値でクランプされた場合、"w"/"n"側のx/yが動きすぎないよう補正する
       if (corner.includes("w")) x = drag.startItem.x + (drag.startItem.width - width);
       if (corner.includes("n")) y = drag.startItem.y + (drag.startItem.height - height);
+      // 2026-11-27：動かしている辺を、キャンバスやほかのアイテムの端・真ん中に吸い付ける（回転していないときだけ。Altキーで止める）
+      if (!e.altKey) {
+        const snapped = snapResizeEdges({ x, y, width, height, rotation: drag.startItem.rotation }, corner, snapLines(others, canvasSize), threshold, MIN_ITEM_SIZE);
+        ({ x, y, width, height } = snapped);
+        setGuides(snapped.guides);
+      } else if (guides.x.length || guides.y.length) setGuides({ x: [], y: [] });
       updateItem(drag.itemId, { x, y, width, height });
       return;
     }
@@ -416,7 +443,10 @@ export function ImageLayoutTool() {
       const centerClientY = rect.top + drag.centerY * drag.pxPerCanvasPx;
       const angleRad = Math.atan2(e.clientY - centerClientY, e.clientX - centerClientX);
       // 0度 = 上向き（回転ハンドルがアイテム上部にあるため、-90度分オフセットする）
-      const degrees = (angleRad * 180) / Math.PI + 90;
+      let degrees = (angleRad * 180) / Math.PI + 90;
+      degrees = ((degrees % 360) + 360) % 360;
+      // 0・90・180・270度の近くでは、ぴったりに吸い付ける（動画ホワイトボードと同じ。Altキーで止める）
+      if (!e.altKey) for (const snap of [0, 90, 180, 270, 360]) if (Math.abs(degrees - snap) < 4) degrees = snap % 360;
       updateItem(drag.itemId, { rotation: Math.round(degrees) });
     }
   }
@@ -446,6 +476,7 @@ export function ImageLayoutTool() {
   function onCanvasPointerUp() {
     const drag = dragRef.current;
     dragRef.current = null;
+    if (guides.x.length || guides.y.length) setGuides({ x: [], y: [] });
     if (drag?.mode === "move" && swapTargetId) {
       const targetId = swapTargetId;
       // 2枚の写真を入れ替える：ドラッグした写真の枠は元の場所に戻し、中の写真だけを相手と取りかえる
@@ -466,6 +497,22 @@ export function ImageLayoutTool() {
   // ---------------------------------------------------------------------
   // グリッド自動配置
   // ---------------------------------------------------------------------
+
+  /** 選んだアイテムを、キャンバスの端（9か所）に寄せる（2026-11-27） */
+  function alignSelected(align: BoardAlign) {
+    const it = items.find((i) => i.id === selectedId);
+    if (!it) return;
+    const { cx, cy } = alignOnBoard(toPlacement(it), { width: canvasWidthPx, height: canvasHeightPx }, align);
+    updateItem(it.id, { x: cx - it.width / 2, y: cy - it.height / 2 });
+  }
+
+  /** 選んだアイテムを、キャンバスの幅・高さいっぱいに広げる（縦横比はそのまま。2026-11-27） */
+  function fillSelected(axis: "width" | "height") {
+    const it = items.find((i) => i.id === selectedId);
+    if (!it) return;
+    const p = fillOnBoard(toPlacement(it), { width: canvasWidthPx, height: canvasHeightPx }, axis);
+    updateItem(it.id, { x: p.cx - p.w / 2, y: p.cy - p.h / 2, width: p.w, height: p.h });
+  }
 
   function applyPaperMode(id: PaperSizeId | "custom", nextOrientation: PaperOrientation) {
     setPaperMode(id);
@@ -711,9 +758,49 @@ export function ImageLayoutTool() {
               </div>
             );
           })}
+          {guides.x.map((gx, i) => (
+            <span key={`gx${i}`} data-testid="whiteboard-guide" aria-hidden="true" className="pointer-events-none absolute top-0 h-full w-px bg-fuchsia-500" style={{ left: `${(gx / canvasWidthPx) * 100}%`, zIndex: 9999 }} />
+          ))}
+          {guides.y.map((gy, i) => (
+            <span key={`gy${i}`} data-testid="whiteboard-guide" aria-hidden="true" className="pointer-events-none absolute left-0 h-px w-full bg-fuchsia-500" style={{ top: `${(gy / canvasHeightPx) * 100}%`, zIndex: 9999 }} />
+          ))}
         </div>
         </div>
         </PreviewFullscreenFrame>
+
+        {selectedId && items.some((i) => i.id === selectedId) && (
+          <div data-testid="whiteboard-align" className="flex flex-col gap-1.5 rounded-lg bg-neutral-50 p-2 dark:bg-neutral-900">
+            <p className="text-xs font-medium text-neutral-700 dark:text-neutral-200">
+              選んだものをキャンバスの端に寄せる
+              <span className="ml-2 font-normal text-neutral-500 dark:text-neutral-400">（ドラッグすると端やほかの画像にぴったり吸い付きます。Altキーを押しながらだと吸い付きません）</span>
+            </p>
+            <div className="flex flex-wrap items-start gap-3">
+              <div className="grid w-fit grid-cols-3 gap-1" role="group" aria-label="端に寄せる">
+                {BOARD_ALIGNS.map((a) => (
+                  <button
+                    key={a.value}
+                    type="button"
+                    data-testid={`whiteboard-align-${a.value}`}
+                    aria-label={a.label}
+                    title={a.label}
+                    onClick={() => alignSelected(a.value)}
+                    className="h-8 w-8 rounded border border-neutral-300 bg-white text-xs text-neutral-700 hover:bg-blue-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                  >
+                    {a.symbol}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-1">
+                <button type="button" data-testid="whiteboard-fill-width" onClick={() => fillSelected("width")} className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                  横幅いっぱいにする
+                </button>
+                <button type="button" data-testid="whiteboard-fill-height" onClick={() => fillSelected("height")} className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+                  高さいっぱいにする
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {overflowing.length > 0 && (
           <div

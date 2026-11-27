@@ -7,7 +7,18 @@ import {
   type OutputContainer,
   type VideoOutputSummary,
 } from "@/lib/video/shared";
-import { buildVideoOptions, fpsChoicesFor, hasTrim, resolutionChoicesFor, trimError, type VideoEditSettings } from "@/lib/video/edit-settings";
+import {
+  DEFAULT_TARGET_MB,
+  buildVideoOptions,
+  fpsChoicesFor,
+  hasTrim,
+  plannedDuration,
+  resolutionChoicesFor,
+  targetBitrates,
+  targetSizeError,
+  trimError,
+  type VideoEditSettings,
+} from "@/lib/video/edit-settings";
 
 export interface VideoEditInput {
   file: File;
@@ -28,6 +39,8 @@ export interface VideoEditOutput {
   input: { width: number; height: number; fps: number; durationSec: number; hasAudio: boolean };
   /** 書き出した動画を読み直して調べた、実際の情報 */
   output: VideoOutputSummary;
+  /** 目標サイズで指定したとき：目標（バイト）と、目標に収まったか（2026-11-27） */
+  target?: { bytes: number; met: boolean };
 }
 
 /**
@@ -64,17 +77,41 @@ export class VideoEditProcessor extends BrowserProcessor<VideoEditInput, VideoEd
       if (trimProblem) throw new Error(trimProblem);
       const trimmed = hasTrim(settings, info.durationSec);
 
-      const { blob, sizeBytes } = await runConversion({
-        input: info.input,
-        container: settings.container,
-        video: buildVideoOptions(settings, { width: info.displayWidth, height: info.displayHeight }),
-        trim: trimmed ? { start: settings.trimStart, end: settings.trimEnd ?? undefined } : undefined,
-        copy: trimmed && !settings.fastTrim && settings.trimStart > 0 ? { boundaryTolerance: 0 } : undefined,
-        onProgress,
-        cancelSignal,
-        // 音声を消す（工程3）も「音声なしで書き出す」と同じ仕組みで外す（書き出し後の確認で、音声が無いことを失敗にしない）
-        dropAudio: dropAudio || settings.muted,
-      });
+      const withoutAudio = dropAudio || settings.muted;
+      // 目標サイズで指定（2026-11-27）：動画の長さから、目標に収まる映像・音声のビットレートを計算する
+      const isTarget = settings.quality === "target";
+      const targetMb = settings.targetMb ?? DEFAULT_TARGET_MB;
+      const targetBytes = Math.round(targetMb * 1024 * 1024);
+      if (isTarget) {
+        const problem = targetSizeError(settings, { bytes: file.size, durationSec: info.durationSec, hasAudio: info.hasAudio && !withoutAudio });
+        if (problem) throw new Error(problem);
+      }
+      const plan = isTarget ? targetBitrates(targetMb, plannedDuration(settings, info.durationSec), info.hasAudio && !withoutAudio) : null;
+
+      const convert = (videoBps?: number, audioBps?: number | null, progressFrom = 0, progressSpan = 1) =>
+        runConversion({
+          input: info.input,
+          container: settings.container,
+          video: buildVideoOptions(settings, { width: info.displayWidth, height: info.displayHeight }, videoBps),
+          audio: audioBps ? { bitrate: audioBps, forceTranscode: true } : undefined,
+          trim: trimmed ? { start: settings.trimStart, end: settings.trimEnd ?? undefined } : undefined,
+          copy: trimmed && !settings.fastTrim && settings.trimStart > 0 ? { boundaryTolerance: 0 } : undefined,
+          onProgress: onProgress ? (p) => onProgress(progressFrom + p * progressSpan) : undefined,
+          cancelSignal,
+          // 音声を消す（工程3）も「音声なしで書き出す」と同じ仕組みで外す（書き出し後の確認で、音声が無いことを失敗にしない）
+          dropAudio: withoutAudio,
+        });
+
+      let { blob, sizeBytes } = await (plan && plan.ok ? convert(plan.videoBps, plan.audioBps, 0, 1) : convert());
+      // 目標を超えたときは、超えた割合だけビットレートを下げて、もう1回だけ作り直す
+      // （動画の中身によって、ブラウザの圧縮が指定より大きく書き出すことがあるため）
+      if (plan && plan.ok && sizeBytes > targetBytes) {
+        const ratio = (targetBytes / sizeBytes) * 0.93;
+        const retryVideo = Math.max(50_000, Math.floor(plan.videoBps * ratio));
+        if (cancelSignal?.aborted) throw new VideoCanceledByUserError();
+        onProgress?.(0);
+        ({ blob, sizeBytes } = await convert(retryVideo, plan.audioBps, 0, 1));
+      }
 
       const output = await inspectOutputSummary(blob, settings.container);
       return {
@@ -91,6 +128,7 @@ export class VideoEditProcessor extends BrowserProcessor<VideoEditInput, VideoEd
           hasAudio: info.hasAudio,
         },
         output,
+        ...(isTarget ? { target: { bytes: targetBytes, met: sizeBytes <= targetBytes } } : {}),
       };
     } finally {
       info.input.dispose();

@@ -24,7 +24,10 @@ import {
   CONVERT_CONTAINER_OPTIONS,
 } from "@/lib/video/shared";
 import {
+  DEFAULT_TARGET_MB,
   QUALITY_CHOICES,
+  TARGET_MB_PRESETS,
+  targetSizeError,
   VIDEO_EDIT_PRESETS,
   compareSizes,
   estimateOutputRange,
@@ -179,6 +182,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
 
   async function handleRun(options: { dropAudio?: boolean } = {}) {
     if (!file || missingChoice(settings) || (source && trimError(settings, source.durationSec))) return;
+    if (source && targetSizeError(settings, { bytes: file.size, durationSec: plannedDuration(settings, source.durationSec), hasAudio: source.hasAudio })) return;
     const controller = new AbortController();
     cancelControllerRef.current = controller;
     const runId = ++runIdRef.current;
@@ -271,6 +275,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
   const resolutionOptions = source ? resolutionChoicesFor(source.width, source.height) : [];
   const fpsOptions = source ? fpsChoicesFor(source.fps) : [];
   const trimProblem = source ? trimError(settings, source.durationSec) : null;
+  const targetProblem = file && source ? targetSizeError(settings, { bytes: file.size, durationSec: plannedDuration(settings, source.durationSec), hasAudio: source.hasAudio }) : null;
   const trimInvalidText = (text: string) => text.trim() !== "" && Number.isNaN(parseTimeInput(text) ?? 0);
 
   // 工程3：切り取り（動画のすぐ下に置き、再生位置を見ながら決められるようにする）
@@ -355,15 +360,57 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
       />
     ),
     quality: (
-      <ChoiceGroup
-        key="quality"
-        legend="画質・圧縮"
-        name={`${toolId}-quality`}
-        options={QUALITY_CHOICES.map((o) => ({ value: o.value, label: o.label }))}
-        value={settings.quality}
-        onChange={(v) => update({ quality: v as QualityChoice })}
-        note={undefined}
-      />
+      <div key="quality" className="flex flex-col gap-3">
+        <ChoiceGroup
+          legend="画質・圧縮"
+          name={`${toolId}-quality`}
+          options={QUALITY_CHOICES.map((o) => ({ value: o.value, label: o.label }))}
+          value={settings.quality}
+          onChange={(v) => update({ quality: v as QualityChoice, ...(v === "target" && !settings.targetMb ? { targetMb: DEFAULT_TARGET_MB } : {}) })}
+          note={settings.quality === "target" ? QUALITY_CHOICES.find((o) => o.value === "target")?.description : undefined}
+        />
+        {/* 目標サイズで指定（2026-11-27）：MBを入れるか、よく使う大きさから選ぶ */}
+        {settings.quality === "target" && (
+          <div className="flex flex-col gap-2" data-testid="video-edit-target">
+            <div className="flex flex-wrap items-center gap-2">
+              <label htmlFor={`${toolId}-target-mb`} className="text-sm text-ms-text">
+                目標のサイズ
+              </label>
+              <input
+                id={`${toolId}-target-mb`}
+                type="number"
+                inputMode="decimal"
+                min={0.5}
+                step={0.5}
+                value={settings.targetMb ?? DEFAULT_TARGET_MB}
+                onChange={(e) => update({ targetMb: e.target.value === "" ? NaN : Number(e.target.value) })}
+                className="w-24 rounded-md border border-neutral-300 px-2 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                data-testid="video-edit-target-mb"
+              />
+              <span className="text-sm text-ms-text">MB以下</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {TARGET_MB_PRESETS.map((mb) => (
+                <button
+                  key={mb}
+                  type="button"
+                  onClick={() => update({ targetMb: mb })}
+                  aria-pressed={settings.targetMb === mb}
+                  className={`rounded-md px-3 py-1 text-xs ${settings.targetMb === mb ? "bg-blue-600 text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-200"}`}
+                  data-testid={`video-edit-target-preset-${mb}`}
+                >
+                  {mb}MB
+                </button>
+              ))}
+            </div>
+            {targetProblem && (
+              <p className="text-xs text-red-600 dark:text-red-400" data-testid="video-edit-target-error">
+                {targetProblem}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     ),
     resolution: (
       <ChoiceGroup
@@ -406,7 +453,10 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
     const trimmed = hasTrim(settings, source.durationSec) && !trimProblem;
     return [
       { label: "形式", value: settings.container.toUpperCase() },
-      { label: "画質", value: QUALITY_CHOICES.find((o) => o.value === settings.quality)?.label ?? "" },
+      {
+        label: "画質",
+        value: settings.quality === "target" ? `目標サイズ（${settings.targetMb ?? DEFAULT_TARGET_MB}MB以下）` : (QUALITY_CHOICES.find((o) => o.value === settings.quality)?.label ?? ""),
+      },
       {
         label: "解像度",
         value: settings.resolution === null ? "（選んでください）" : `${dims.width}×${dims.height}${settings.resolution === "original" && settings.rotate === 0 ? "（変更なし）" : ""}`,
@@ -472,7 +522,7 @@ export function VideoEditTool({ toolId }: { toolId: VideoEditToolId }) {
             <button
               type="button"
               onClick={() => handleRun()}
-              disabled={busy || detecting || !source || missing !== null || selectedContainerUnavailable || trimProblem !== null}
+              disabled={busy || detecting || !source || missing !== null || selectedContainerUnavailable || trimProblem !== null || targetProblem !== null}
               aria-busy={busy || undefined}
               className="w-fit rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             >
@@ -560,6 +610,16 @@ function ResultSummary({ result, outputName }: { result: VideoEditOutput; output
             ? "サイズは変わりませんでした。"
             : `サイズは小さくなりませんでした（${formatBytes(cmp.increasedBytes)} 増えました）。`}
       </p>
+      {result.target && (
+        <p
+          data-testid="video-edit-target-result"
+          className={result.target.met ? "font-medium text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}
+        >
+          {result.target.met
+            ? `目標（${formatBytes(result.target.bytes)}以下）に収まりました。`
+            : `目標（${formatBytes(result.target.bytes)}以下）を少し超えました。目標の数字をもう少し小さくして、もう一度お試しください。`}
+        </p>
+      )}
     </div>
   );
 }

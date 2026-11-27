@@ -21,8 +21,11 @@ import { COMPRESSION_RATIO_RANGE, estimateFrameRateBytes, estimateResizedBytes, 
 
 export type VideoEditToolId = "video-convert" | "video-compress" | "video-resize" | "video-frame-rate";
 
-/** 画質の指定。"original" は「画質を指定しない」（作り直しが必要なときも、従来どおりの既定の画質） */
-export type QualityChoice = "original" | CompressionLevel;
+/**
+ * 画質の指定。"original" は「画質を指定しない」（作り直しが必要なときも、従来どおりの既定の画質）。
+ * "target" は「目標のファイルサイズで指定」（2026-11-27）：動画の長さから、目標に収まるビットレートを計算して書き出す
+ */
+export type QualityChoice = "original" | CompressionLevel | "target";
 /** 解像度の指定（短い辺のピクセル数）。"original" は元のまま、null はまだ選んでいない */
 export type ResolutionChoice = "original" | number | null;
 /** フレームレートの指定。"original" は元のまま、null はまだ選んでいない */
@@ -49,6 +52,8 @@ export interface VideoEditSettings {
   muted: boolean;
   /** 回転（時計回り） */
   rotate: RotateChoice;
+  /** 目標のファイルサイズ（MB。quality が "target" のときだけ使う。2026-11-27） */
+  targetMb?: number;
 }
 
 /** 工程3（切り取り・音声・回転）の初期値。どのページでも「何もしない」 */
@@ -136,7 +141,59 @@ export const QUALITY_CHOICES: { value: QualityChoice; label: string; description
   { value: "low", label: "高画質（弱め）", description: "画質を優先し、圧縮は控えめにします（ファイルサイズはあまり小さくなりません）。" },
   { value: "medium", label: "標準", description: "画質とファイルサイズのバランスを取ります。" },
   { value: "high", label: "高圧縮（強め）", description: "ファイルサイズを優先して小さくします（画質は下がります）。" },
+  { value: "target", label: "目標サイズで指定", description: "「10MB以下」のように、できあがりのファイルサイズを指定します。動画の長さから画質を自動で決めます。" },
 ];
+
+/** 目標サイズの初期値と、すぐ選べる候補（MB） */
+export const DEFAULT_TARGET_MB = 10;
+export const TARGET_MB_PRESETS = [5, 10, 25, 50] as const;
+
+/** 1MB（ファイルサイズの表示と同じ 1024×1024 バイト） */
+const MB = 1024 * 1024;
+/** 映像の最低のビットレート（これより低いと、ほとんど見られない画質になる） */
+export const MIN_TARGET_VIDEO_BITRATE = 100_000;
+/** 入れ物（MP4・WebM）の分として、目標から差し引く割合 */
+const CONTAINER_OVERHEAD = 0.04;
+
+/** 目標サイズに収めるための音声のビットレート（全体のビットレートが小さいほど、音声も下げる） */
+function audioBitrateFor(totalBps: number): number {
+  if (totalBps >= 1_000_000) return 128_000;
+  if (totalBps >= 400_000) return 96_000;
+  return 64_000;
+}
+
+/**
+ * 目標のファイルサイズに収めるための、映像と音声のビットレート（bps）を計算する（2026-11-27）。
+ * 映像のビットレート ＝ 目標の大きさ（入れ物の分を差し引く）÷ 長さ − 音声のビットレート。
+ * 目標が小さすぎて、映像が最低のビットレートを下回るときは、必要な最小の目標サイズ（MB）を返す。
+ */
+export function targetBitrates(
+  targetMb: number,
+  durationSec: number,
+  withAudio: boolean
+): { ok: true; videoBps: number; audioBps: number | null } | { ok: false; minMb: number } {
+  const seconds = Math.max(0.1, durationSec);
+  const totalBps = (targetMb * MB * 8 * (1 - CONTAINER_OVERHEAD)) / seconds;
+  const audioBps = withAudio ? audioBitrateFor(totalBps) : null;
+  const videoBps = Math.floor(totalBps - (audioBps ?? 0));
+  if (!Number.isFinite(videoBps) || videoBps < MIN_TARGET_VIDEO_BITRATE) {
+    const minAudio = withAudio ? 64_000 : 0;
+    const minMb = ((MIN_TARGET_VIDEO_BITRATE + minAudio) * seconds) / 8 / (1 - CONTAINER_OVERHEAD) / MB;
+    return { ok: false, minMb: Math.ceil(minMb * 10) / 10 };
+  }
+  return { ok: true, videoBps, audioBps };
+}
+
+/** 目標サイズの指定に問題があれば、日本語の理由を返す（問題なければ null） */
+export function targetSizeError(settings: VideoEditSettings, source: { bytes: number; durationSec: number; hasAudio: boolean }): string | null {
+  if (settings.quality !== "target") return null;
+  const mb = settings.targetMb ?? DEFAULT_TARGET_MB;
+  if (!Number.isFinite(mb) || mb <= 0) return "目標のサイズを、0より大きい数字（MB）で入れてください。";
+  if (mb * MB >= source.bytes) return `元の動画（${(source.bytes / MB).toFixed(1)}MB）は、すでに目標のサイズ以下です。`;
+  const plan = targetBitrates(mb, source.durationSec, source.hasAudio && !settings.muted);
+  if (!plan.ok) return `この長さの動画を${mb}MBに収めると、画質が大きく下がりすぎます。目標を約${plan.minMb}MB以上にするか、動画カット・結合で短くしてからお試しください。`;
+  return null;
+}
 
 /** 選べる解像度（元の動画より大きいものは出さない＝拡大しない） */
 export function resolutionChoicesFor(width: number, height: number): number[] {
@@ -167,7 +224,9 @@ export function missingChoice(settings: VideoEditSettings): "resolution" | "fps"
  */
 export function buildVideoOptions(
   settings: VideoEditSettings,
-  source: { width: number; height: number }
+  source: { width: number; height: number },
+  /** 目標サイズで指定するときの、映像のビットレート（bps）。processor が動画の長さから計算して渡す */
+  targetVideoBps?: number
 ): ConversionVideoOptions | undefined {
   const options: ConversionVideoOptions = {};
   if (settings.rotate !== 0) {
@@ -175,7 +234,11 @@ export function buildVideoOptions(
     options.rotate = settings.rotate as Rotation;
     source = rotatedSize(settings.rotate, source.width, source.height);
   }
-  if (settings.quality !== "original") {
+  if (settings.quality === "target") {
+    // 目標サイズ：計算したビットレートで作り直す（qualityFor は使わない）
+    if (targetVideoBps) options.bitrate = targetVideoBps;
+    options.forceTranscode = true;
+  } else if (settings.quality !== "original") {
     options.quality = qualityFor(settings.quality);
     options.forceTranscode = true;
   }
@@ -284,6 +347,10 @@ export function estimateOutputRange(
   }
   if (typeof settings.fps === "number" && source.fps) {
     base = estimateFrameRateBytes(base, source.fps, settings.fps);
+  }
+  if (settings.quality === "target") {
+    const target = (settings.targetMb ?? DEFAULT_TARGET_MB) * MB;
+    return [Math.round(target * 0.8), Math.round(target)];
   }
   if (settings.quality === "original") {
     // 解像度・fpsを変えないなら、ほぼ元のまま（作り直さずに書き出す場合もある）

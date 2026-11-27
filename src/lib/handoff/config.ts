@@ -113,6 +113,7 @@ export const TOOL_HANDOFF: Readonly<Record<string, ToolHandoffSpec>> = {
   "video-compress": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   "video-resize": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   "video-frame-rate": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
+  "video-speed": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   "video-h264": { role: "convert", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: ["mp4"] } },
   "video-cut-merge": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },
   "video-metadata-remove": { role: "edit", receive: { kinds: VIDEO_IN, maxFiles: 1, maxFileSizeMB: VIDEO_DROPZONE_MAX_MB }, send: { kinds: VIDEO_OUT } },

@@ -1231,6 +1231,17 @@ const toolDefinitions: Tool[] = [
     keywords: ["フレームレート", "fps", "60fps", "30fps"],
   },
   {
+    // 2026-11-27：再生速度の変更（倍速・スロー）。音の高さを保ったまま長さだけを変えられる
+    id: "video-speed",
+    name: "動画の再生速度変更",
+    category: "video",
+    description: "動画を倍速・スローに変えます。音の高さはそのまま保てます",
+    status: "available",
+    requiredPlan: "premium",
+    processor: "browser",
+    keywords: ["倍速", "スロー", "速度変更", "早送り", "スローモーション", "再生速度", "2倍速"],
+  },
+  {
     id: "video-h264",
     name: "H.264変換（H.265対応）",
     category: "video",

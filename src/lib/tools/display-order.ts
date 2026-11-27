@@ -87,6 +87,7 @@ export const TOOL_READINGS: Record<string, string> = {
   "video-compress": "どうがあっしゅく",
   "video-resize": "どうがかいぞうどへんこう",
   "video-frame-rate": "どうがふれーむれーとへんこう",
+  "video-speed": "どうがのさいせいそくどへんこう",
   "video-h264": "えいちにーろくよんへんかん",
   "video-thumbnail": "どうがさむねいるちゅうしゅつ",
   "video-cut-merge": "どうがかっと・けつごう",

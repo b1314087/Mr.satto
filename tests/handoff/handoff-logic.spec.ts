@@ -219,6 +219,7 @@ test.describe("設定の整合", () => {
     "video-convert": "video-edit-tool.tsx",
     "video-compress": "video-edit-tool.tsx",
     "video-resize": "video-edit-tool.tsx",
+    "video-speed": "video-speed-tool.tsx",
     "video-frame-rate": "video-edit-tool.tsx",
     "video-h264": "video-h264-tool.tsx",
     "video-cut-merge": "video-cut-merge-tool.tsx",
